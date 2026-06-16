@@ -23,10 +23,13 @@ import CalendarModule from "../../../components/CalendarModule";
 import AddTaskModal from "../../../components/AddTaskModal";
 import { usePermission } from "../../../hooks/usePermission";
 
-// --- VERCEL PRODUCTION FIXES ---
+// --- VERCEL DEPLOYMENT CONFIG ---
 export const dynamic = 'force-dynamic';
-export const fetchCache = 'force-no-store';
 
+/**
+ * DASHBOARD LOGIC COMPONENT
+ * This part is isolated to handle search parameters and data fetching.
+ */
 function ProjectDashboardContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("id");
@@ -42,7 +45,7 @@ function ProjectDashboardContent() {
   // Authority Check Hook
   const canShare = usePermission('share_project');
 
-  // 1. Initial User Profile Fetch (Wrapped in Build-Check)
+  // 1. Initial User Fetch
   useEffect(() => {
     async function initUser() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -54,9 +57,9 @@ function ProjectDashboardContent() {
     initUser();
   }, []);
 
-  // 2. Data Fetching (Gated by projectId and userProfile)
+  // 2. Main Data Fetching (Gated by projectId)
   useEffect(() => {
-    if (projectId && userProfile) {
+    if (typeof window !== 'undefined' && projectId && userProfile) {
       fetchDetails();
       fetchLogs();
     }
@@ -82,8 +85,8 @@ function ProjectDashboardContent() {
         .order("due_date", { ascending: true });
       
       if (tsk) setTasks(tsk || []);
-    } catch (err) {
-      console.error("Build-time fetch ignored");
+    } catch (e) {
+      console.log("Fetch skipped during build");
     } finally {
       setLoading(false);
     }
@@ -100,27 +103,27 @@ function ProjectDashboardContent() {
   };
 
   const handleShare = async () => {
-    const email = prompt("Enter email for project access:");
+    const email = prompt("Enter email to share project:");
     if (!email) return;
     const { data: targetUser } = await supabase.from("profiles").select("id").eq("email", email).single();
     if (targetUser) {
       await supabase.from("project_members").insert([{ project_id: projectId, profile_id: targetUser.id }]);
-      alert("Project shared.");
+      alert("Shared successfully.");
     }
   };
 
-  // Welcome Screen (If no project selected)
+  // Welcome screen (Empty State)
   if (!projectId) {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-12 text-center bg-white font-sans antialiased">
+      <div className="h-full flex flex-col items-center justify-center p-12 text-center bg-white font-sans selection:bg-black">
         <div className="w-20 h-20 bg-slate-900 rounded-[32px] flex items-center justify-center shadow-2xl mb-8">
            <div className="w-8 h-8 rounded-full border-4 border-white opacity-20" />
         </div>
-        <h2 className="text-3xl font-black italic tracking-tighter text-slate-900 leading-none">Portfolio Workspace</h2>
+        <h2 className="text-3xl font-black italic tracking-tighter text-slate-900 leading-none">Select a Portfolio</h2>
         <p className="max-w-md text-slate-400 font-medium mt-4 text-[15px]">
           {userProfile?.company_id 
-            ? "Corporate environment active. Select a property portfolio to begin." 
-            : "Personal workspace active. Create a project to begin building your portfolio."}
+            ? "Your corporate environment is active. Choose a project from the tree to begin." 
+            : "Select a project from your tree or create a new one to begin."}
         </p>
       </div>
     );
@@ -136,9 +139,10 @@ function ProjectDashboardContent() {
                  Niksen Time Pty Ltd
                </span>
             </div>
-            <h1 className="text-5xl font-black tracking-tighter text-slate-900 italic leading-none">{project?.name || "Loading..."}</h1>
+            <h1 className="text-5xl font-black tracking-tighter text-slate-900 italic leading-none">{project?.name || "..."}</h1>
             <div className="flex flex-wrap gap-8 text-slate-500 font-bold text-[11px] uppercase tracking-wider mt-6">
-              <div className="flex items-center gap-2 font-black"><MapPin size={14} className="text-indigo-500" /> {project?.properties?.street_address}, {project?.properties?.suburb}</div>
+              <div className="flex items-center gap-2 font-black"><MapPin size={14} className="text-indigo-500" /> {project?.properties?.street_address || '---'}, {project?.properties?.suburb || '---'}</div>
+              <div className="flex items-center gap-2"><Users size={14} /> {project?.project_members?.[0]?.count || 1} Staff • {project?.project_teams?.[0]?.count || 0} Teams</div>
               <div className="flex items-center gap-2 border-l pl-8 border-slate-200">Completion: <span className="text-black font-black underline decoration-2">{project?.estimated_completion_date || 'TBD'}</span></div>
             </div>
           </div>
@@ -189,19 +193,23 @@ function ProjectDashboardContent() {
                   )}
                 </div>
               )}
+
               {activeTab === "calendar" && <CalendarModule tasks={tasks} />}
+
               {activeTab === "log" && (
                 <div className="max-w-4xl mx-auto space-y-6 py-6 animate-in slide-in-from-bottom-8">
-                  <h3 className="text-3xl font-black italic tracking-tighter mb-10">Operation Logs</h3>
+                  <h3 className="text-3xl font-black italic tracking-tighter mb-10 text-slate-900 underline decoration-slate-50 decoration-8 underline-offset-8">Operation Logs</h3>
                   {logs.map((log) => (
                     <div key={log.id} className="relative pl-12 group mb-6">
                       <div className="absolute left-[19px] top-4 bottom-0 w-0.5 bg-slate-100 group-last:bg-transparent" />
-                      <div className="absolute left-0 top-1 w-10 h-10 rounded-full bg-white border-2 border-slate-100 z-10 flex items-center justify-center font-black text-[9px] text-indigo-600 uppercase italic shadow-sm">{log.profiles?.full_name?.substring(0, 2)}</div>
+                      <div className="absolute left-0 top-1 w-10 h-10 rounded-full bg-white border-2 border-slate-100 z-10 flex items-center justify-center font-black text-[9px] text-indigo-600 uppercase italic shadow-sm">
+                        {log.profiles?.full_name?.substring(0, 2)}
+                      </div>
                       <div className="bg-slate-50 border border-slate-100 rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all">
                         <p className="text-[14px] text-slate-600 font-medium">
                           <span className="font-black text-slate-900">{log.profiles?.full_name}</span> 
                           <span className="mx-1 text-slate-400 italic">{log.action.toLowerCase()}</span> 
-                          <span className="font-black text-indigo-600">"{log.details?.task_name || 'Project'}"</span>
+                          <span className="font-black text-indigo-600 tracking-tight">"{log.details?.task_name || 'Item'}"</span>
                         </p>
                         <div className="flex items-center gap-2 text-[10px] text-slate-300 font-bold uppercase mt-2 tracking-widest italic">
                           <History size={12} /> {new Date(log.created_at).toLocaleString('en-AU')}
@@ -215,17 +223,22 @@ function ProjectDashboardContent() {
           )}
         </div>
       </main>
+
       <AddTaskModal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} onRefresh={fetchDetails} projectId={projectId} />
     </div>
   );
 }
 
-// THE FINAL VERCEL-SAFE EXPORT
+/**
+ * PRODUCTION WRAPPER
+ * This is the ONLY thing exported as default.
+ * It uses Suspense to isolate searchParams from the build worker.
+ */
 export default function ProjectsPage() {
   return (
     <Suspense fallback={
       <div className="h-full w-full flex items-center justify-center bg-white font-black italic text-slate-200 uppercase tracking-widest p-20">
-        Syncing Workspace...
+        Syncing Niksen-Flow...
       </div>
     }>
       <ProjectDashboardContent />
