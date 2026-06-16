@@ -12,6 +12,8 @@ import TaskItem from "../../../components/TaskItem";
 import CalendarModule from "../../../components/CalendarModule";
 import AddTaskModal from "../../../components/AddTaskModal";
 
+export const dynamic = 'force-dynamic';
+
 function ProjectContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("id");

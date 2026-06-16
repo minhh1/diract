@@ -14,6 +14,8 @@ import {
   Calendar
 } from "lucide-react";
 
+export const dynamic = 'force-dynamic';
+
 export default function AllTasksPage() {
   const [view, setView] = useState<"active" | "archived">("active");
   const [tasks, setTasks] = useState<any[]>([]);
