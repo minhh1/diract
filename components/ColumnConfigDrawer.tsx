@@ -1,10 +1,23 @@
 "use client";
 
 import { X, Database, Link as LinkIcon, Layers } from "lucide-react";
+import type { RelationDef } from "@/lib/relationDefinitions";
 
 export default function ColumnConfigDrawer({ 
-  isOpen, onClose, sections, tableCols, expandCols, onToggle 
-}: any) {
+  isOpen, onClose, sections, tableCols, expandCols, onToggle, activePresetName,
+  relations, expandRelations, onToggleRelation,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  sections: any[];
+  tableCols: string[];
+  expandCols: string[];
+  onToggle: (fieldId: string, target: 'table' | 'expand' | 'none') => void;
+  activePresetName: string;
+  relations?: RelationDef[];
+  expandRelations?: string[];
+  onToggleRelation?: (key: string, on: boolean) => void;
+}) {
   if (!isOpen) return null;
 
   return (
@@ -40,7 +53,7 @@ export default function ColumnConfigDrawer({
                       {['none', 'table', 'expand'].map(t => (
                         <button
                           key={t}
-                          onClick={() => onToggle(f.id, t)}
+                          onClick={() => onToggle(f.id, t as any)}
                           className={`px-3 py-1.5 text-[9px] rounded-md font-bold uppercase transition-all ${
                             current === t ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'
                           }`}
@@ -55,11 +68,44 @@ export default function ColumnConfigDrawer({
             </div>
           </div>
         ))}
+
+        {relations && relations.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-[32px] p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-slate-50 rounded-xl text-indigo-600">
+                <Layers size={16} />
+              </div>
+              <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">Related records</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              {relations.map(rel => {
+                const isOn = expandRelations?.includes(rel.key) ?? false;
+                return (
+                  <div key={rel.key} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-2xl transition-all border border-transparent hover:border-slate-100">
+                    <span className="text-[13px] font-medium text-slate-600">{rel.label}</span>
+                    <button
+                      onClick={() => onToggleRelation?.(rel.key, !isOn)}
+                      className={`px-4 py-1.5 text-[9px] rounded-full font-bold uppercase transition-all ${
+                        isOn ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      {isOn ? 'Showing' : 'Hidden'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">
+              Toggled-on records appear as a sub-table when you expand a row, since each can have multiple entries.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="p-8 bg-white border-t border-slate-100">
         <button onClick={onClose} className="w-full py-4 bg-slate-900 text-white rounded-full font-medium text-xs uppercase tracking-widest active:scale-95 transition-all">
-          Save and sync workspace
+          Save changes to "{activePresetName}"
         </button>
       </div>
     </div>
