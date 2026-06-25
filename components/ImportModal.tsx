@@ -31,15 +31,6 @@ interface ImportRowResult {
 
 const BLOCKING_SCORE = 3;
 
-const BASE_MODE_FOR_SECTION: Record<string, BaseMode> = {
-  properties: 'properties', entities: 'entities', projects: 'projects',
-  bills_local_government: 'properties', bills_electricity: 'properties', bills_water: 'properties',
-  bills_gas: 'properties', bills_land_tax: 'properties',
-  credentials_council: 'properties', credentials_electricity: 'properties', credentials_water: 'properties',
-  credentials_land_tax: 'properties', credentials_gas: 'properties',
-  valuations: 'properties', property_me: 'properties',
-};
-
 export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
   const [stage, setStage] = useState<Stage>("upload");
   const [baseMode, setBaseMode] = useState<BaseMode>("properties");
@@ -65,8 +56,30 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
   const currentSection = sections.find(s => s.key === sectionKey);
   const isBaseSection = currentSection ? currentSection.targetTable === baseMode : true;
 
+  // Refs mirroring the latest section/mode state. Every async function
+  // below (handleAnalyze, handleCommit, and their helpers) reads from
+  // these refs instead of closing over currentSection/isBaseSection/
+  // baseMode directly. This guarantees they always see what's ACTUALLY
+  // selected at the moment they run their core logic, regardless of any
+  // render/closure timing — this is the fix for the bug where
+  // handleAnalyze was observed to read currentSection.targetTable as
+  // "properties" even though the dropdown visibly showed a different
+  // section selected at click time.
+  const currentSectionRef = useRef(currentSection);
+  const isBaseSectionRef = useRef(isBaseSection);
+  const baseModeRef = useRef(baseMode);
+
+  useEffect(() => { currentSectionRef.current = currentSection; }, [currentSection]);
+  useEffect(() => { isBaseSectionRef.current = isBaseSection; }, [isBaseSection]);
+  useEffect(() => { baseModeRef.current = baseMode; }, [baseMode]);
+  useEffect(() => {
+  console.log('DEBUG5 ImportModal MOUNTED');
+  return () => console.log('DEBUG5 ImportModal UNMOUNTING');
+}, []);
+
   useEffect(() => {
     if (!isOpen) return;
+    console.log('DEBUG4 buildAllSections effect firing, baseMode:', baseMode);
     setLoadingSections(true);
     buildAllSections(baseMode).then(s => {
       setSections(s);
@@ -133,9 +146,14 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     setResults([]); setBatchId(null);
   };
 
-  // --- STAGE 1 -> 2: parse, stage (base sections only), run duplicate checks ---
+  // --- STAGE 1 -> 2: parse, stage (base sections only), run duplicate/parent checks ---
   const handleAnalyze = async () => {
-    if (!file || !currentSection) return;
+    const section = currentSectionRef.current;
+    const mode = baseModeRef.current;
+    if (!file || !section) return;
+    const sectionIsBase = section.targetTable === mode;
+    console.log('DEBUG3 sectionKey:', sectionKey, 'sections.map(s=>s.key):', sections.map(s => s.key));
+    console.log('DEBUG2 section.targetTable:', section?.targetTable, 'mode:', mode, 'sectionIsBase:', sectionIsBase);
     setStage("checking");
 
     const text = await file.text();
@@ -159,8 +177,12 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
 
       headers.forEach((header) => {
         const val = raw[header];
-        if (header === 'full_address' && baseMode === 'properties' && isBaseSection) {
+        if (header === 'full_address' && mode === 'properties' && sectionIsBase) {
           Object.assign(row, parseAUAddress(val));
+        } else if (header === 'property_street_address' && !sectionIsBase) {
+          const addr = parseAUAddress(val);
+          row.property_street_address = addr.street_address;
+          row.property_suburb = addr.suburb;
         } else if (header === 'purchase_price' || header === 'amount' || header === 'expected_amount') {
           row[header] = parseFloat(val.replace(/[$,\s]/g, '')) || 0;
         } else if (header.includes('date') || header.includes('expiry') || header === 'paid_up_to') {
@@ -181,15 +203,15 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     const actions = new Map<number, RowAction>();
     const updateTargets = new Map<number, string>();
 
-    if (isBaseSection) {
+    if (sectionIsBase) {
       try {
-        if (baseMode === 'properties') {
+        if (mode === 'properties') {
           flags = await stageAndCheckProperties(newBatchId, uid, cid, parsed.map(r => ({
             row_index: r.rowIndex, street_address: r.parsed.street_address, suburb: r.parsed.suburb,
             state: r.parsed.state, postcode: r.parsed.postcode, purchase_price: r.parsed.purchase_price,
             purchase_date: r.parsed.purchase_date, entity_name: r.parsed.entity_name || null, raw_payload: r.parsed,
           })));
-        } else if (baseMode === 'entities') {
+        } else if (mode === 'entities') {
           flags = await stageAndCheckEntities(newBatchId, uid, cid, parsed.map(r => ({
             row_index: r.rowIndex, name: r.parsed.entity_name || r.parsed.name, raw_payload: r.parsed,
           })));
@@ -198,39 +220,32 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
         alert(`Duplicate check failed: ${err.message}. You can still review and commit manually.`);
       }
 
-    parsed.forEach(row => {
+      parsed.forEach(row => {
         const rowFlags = flags.filter(f => f.staging_row_index === row.rowIndex);
         const blockingFlag = rowFlags.find(f => (f.match_score ?? 99) >= BLOCKING_SCORE || f.match_reason?.includes('Pty/Ltd'));
         const existingMatch = rowFlags.find(f => f.matched_against === 'existing' && f.matched_id);
 
         if (existingMatch) {
-            // Any match against an existing record defaults to "update" — the
-            // common case for a re-imported CSV is correcting/refreshing data
-            // for properties that already exist, not creating duplicates.
-            updateTargets.set(row.rowIndex, existingMatch.matched_id!);
-            actions.set(row.rowIndex, 'update');
+          updateTargets.set(row.rowIndex, existingMatch.matched_id!);
+          actions.set(row.rowIndex, 'update');
         } else if (blockingFlag) {
-            // Same-batch exact duplicates with no existing-record match (i.e.
-            // two new rows in this file describing the same new property) —
-            // default to skip, since there's nothing existing to update against.
-            actions.set(row.rowIndex, 'skip');
+          actions.set(row.rowIndex, 'skip');
         } else {
-            actions.set(row.rowIndex, 'include');
+          actions.set(row.rowIndex, 'include');
         }
-    });
+      });
     } else {
-      // Child-table sections: no duplicate staging defined yet, every row
-      // defaults to "include". Parent resolution happens at commit time,
-      // but we do a dry pre-check here so the review step can show
-      // "this property doesn't exist yet — will be created" up front.
       const warnings = new Map<number, string>();
       for (const row of parsed) {
         actions.set(row.rowIndex, 'include');
         const refAddress = row.parsed.property_street_address;
-        if (currentSection.parentKey === 'property_id' && refAddress) {
-          const { data: existing } = await supabase
+        const refSuburb = row.parsed.property_suburb;
+        if (section.parentKey === 'property_id' && refAddress) {
+          let query = supabase
             .from('properties').select('id').eq('company_id', cid)
-            .ilike('street_address', refAddress.trim()).is('deleted_at', null).limit(1).single();
+            .ilike('street_address', refAddress.trim()).is('deleted_at', null);
+          if (refSuburb) query = query.ilike('suburb', refSuburb.trim());
+          const { data: existing } = await query.limit(1).single();
           if (!existing) warnings.set(row.rowIndex, `Property "${refAddress}" not found — a new minimal property record will be created.`);
         }
       }
@@ -265,16 +280,18 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     return isBlocking && (rowActions.get(row.rowIndex) || 'include') === 'include';
   });
 
-  // --- Resolve provider_entity_name/type pseudo-columns shared by bills/credentials ---
-  const resolveProviderEntity = async (row: Record<string, any>): Promise<string | null> => {
+  const resolveProviderEntity = async (row: Record<string, any>, cid: string): Promise<string | null> => {
     if (!row.provider_entity_name) return null;
-    const res = await resolveEntityParent(companyId!, row.provider_entity_name, row.provider_entity_type);
+    const res = await resolveEntityParent(cid, row.provider_entity_name, row.provider_entity_type);
     return res.id;
   };
 
   // --- STAGE 3 -> 4: commit ---
   const handleCommit = async () => {
-    if (!companyId || !currentSection) return;
+    const section = currentSectionRef.current;
+    const mode = baseModeRef.current;
+    if (!companyId || !section) return;
+    const sectionIsBase = section.targetTable === mode;
 
     if (blockedRowsSetToInclude.length > 0) {
       const proceed = window.confirm(`${blockedRowsSetToInclude.length} row(s) flagged as likely duplicates are still set to create a new record. Continue anyway?`);
@@ -288,10 +305,10 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     for (const row of rowsToProcess) {
       const action = rowActions.get(row.rowIndex) || 'include';
 
-      if (isBaseSection) {
-        await commitBaseRow(row, action, importLogs);
+      if (sectionIsBase) {
+        await commitBaseRow(row, action, mode, importLogs);
       } else {
-        await commitChildRow(row, importLogs);
+        await commitChildRow(row, section, importLogs);
       }
     }
 
@@ -306,7 +323,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     });
 
     await supabase.from("import_history").insert([{
-      id: batchId, user_id: userId, company_id: companyId, target_table: currentSection.targetTable,
+      id: batchId, user_id: userId, company_id: companyId, target_table: section.targetTable,
       filename: file?.name, total_rows: parsedRows.length,
       success_count: importLogs.filter(r => r.status === 'new' || r.status === 'updated').length,
       error_count: importLogs.filter(r => r.status === 'failed').length,
@@ -319,24 +336,24 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     onRefresh();
   };
 
-  const commitBaseRow = async (row: ParsedRow, action: RowAction, importLogs: ImportRowResult[]) => {
+  const commitBaseRow = async (row: ParsedRow, action: RowAction, mode: BaseMode, importLogs: ImportRowResult[]) => {
     const obj: any = { company_id: companyId, import_id: batchId };
     let eName = ""; let eType = "";
 
     Object.entries(row.parsed).forEach(([header, val]) => {
       if (header === 'full_address') return;
       if (header === 'entity_name') { eName = String(val ?? ''); return; }
-      if (header === 'entity_type') { eType = String(val ?? ''); if (baseMode !== 'entities') return; }
+      if (header === 'entity_type') { eType = String(val ?? ''); if (mode !== 'entities') return; }
       obj[header] = val;
     });
 
-    if (baseMode === 'properties' && eName) {
+    if (mode === 'properties' && eName) {
       const { data: ent } = await supabase.from("entities")
         .upsert({ name: eName, entity_type: eType || 'Company', company_id: companyId }, { onConflict: 'company_id,name' })
         .select('id').single();
       if (ent) obj.holding_entity_id = ent.id;
     }
-    if (baseMode === 'entities') { obj.name = eName || obj.name; obj.entity_type = eType || obj.entity_type; }
+    if (mode === 'entities') { obj.name = eName || obj.name; obj.entity_type = eType || obj.entity_type; }
 
     if (action === 'update') {
       const targetId = rowUpdateTarget.get(row.rowIndex);
@@ -354,31 +371,31 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
         importLogs.push({ id: targetId, status: "updated", identifier: obj.street_address || obj.name || `Row ${row.rowIndex}`, message: "No non-empty fields to update", details: obj });
         return;
       }
-      const { data: rec, error } = await supabase.from(baseMode).update(updatePayload).eq('id', targetId).select('id').single();
+      const { data: rec, error } = await supabase.from(mode).update(updatePayload).eq('id', targetId).select('id').single();
       if (error) {
         importLogs.push({ id: targetId, status: "failed", identifier: obj.street_address || obj.name || `Row ${row.rowIndex}`, message: error.message, details: updatePayload });
       } else {
-        await supabase.from("audit_logs").insert([{ company_id: companyId, user_id: userId, [baseMode === 'properties' ? 'property_id' : baseMode === 'entities' ? 'entity_id' : 'project_id']: rec.id, action: `bulk import updated existing record`, details: updatePayload }]);
+        await supabase.from("audit_logs").insert([{ company_id: companyId, user_id: userId, [mode === 'properties' ? 'property_id' : mode === 'entities' ? 'entity_id' : 'project_id']: rec.id, action: `bulk import updated existing record`, details: updatePayload }]);
         importLogs.push({ id: rec.id, status: "updated", identifier: obj.street_address || obj.name, details: updatePayload });
       }
     } else {
-      const { data: rec, error } = await supabase.from(baseMode).insert(obj).select('id').single();
+      const { data: rec, error } = await supabase.from(mode).insert(obj).select('id').single();
       if (error) {
         importLogs.push({ id: '', status: "failed", identifier: obj.street_address || obj.name || `Row ${row.rowIndex}`, message: error.message, details: obj });
       } else {
-        await supabase.from("audit_logs").insert([{ company_id: companyId, user_id: userId, [baseMode === 'properties' ? 'property_id' : baseMode === 'entities' ? 'entity_id' : 'project_id']: rec.id, action: `bulk imported record`, details: obj }]);
+        await supabase.from("audit_logs").insert([{ company_id: companyId, user_id: userId, [mode === 'properties' ? 'property_id' : mode === 'entities' ? 'entity_id' : 'project_id']: rec.id, action: `bulk imported record`, details: obj }]);
         importLogs.push({ id: rec.id, status: "new", identifier: obj.street_address || obj.name, details: obj });
       }
     }
   };
 
-  const commitChildRow = async (row: ParsedRow, importLogs: ImportRowResult[]) => {
-    if (!currentSection) return;
+  const commitChildRow = async (row: ParsedRow, section: ImportSection, importLogs: ImportRowResult[]) => {
     const refAddress = row.parsed.property_street_address;
+    const refSuburb = row.parsed.property_suburb;
 
     let parentId: string | null = null;
-    if (currentSection.parentKey === 'property_id') {
-      const res = await resolvePropertyParent(companyId!, refAddress);
+    if (section.parentKey === 'property_id') {
+      const res = await resolvePropertyParent(companyId!, refAddress, refSuburb);
       if (res.error || !res.id) {
         importLogs.push({ id: '', status: "failed", identifier: refAddress || `Row ${row.rowIndex}`, message: res.error || "Could not resolve or create parent property", details: row.parsed });
         return;
@@ -386,39 +403,39 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
       parentId = res.id;
     }
 
-    const obj: any = { ...currentSection.fixedValues };
+    const obj: any = { ...section.fixedValues };
     Object.entries(row.parsed).forEach(([key, val]) => {
-      if (key === 'property_street_address' || key === 'provider_entity_name' || key === 'provider_entity_type') return;
+      if (key === 'property_street_address' || key === 'property_suburb' || key === 'provider_entity_name' || key === 'provider_entity_type') return;
       obj[key] = val;
     });
-    obj[currentSection.parentKey] = parentId;
+    obj[section.parentKey] = parentId;
 
     if (row.parsed.provider_entity_name) {
-      const providerId = await resolveProviderEntity(row.parsed);
-      if (providerId) obj.provider_entity_id = providerId;
-      else if (currentSection.targetTable === 'property_credentials') obj.entity_id = providerId;
-    }
-    if (currentSection.targetTable === 'property_credentials' && row.parsed.provider_entity_name) {
-      const providerId = await resolveProviderEntity(row.parsed);
-      obj.entity_id = providerId;
+      const providerId = await resolveProviderEntity(row.parsed, companyId!);
+      if (section.targetTable === 'property_credentials') {
+        obj.entity_id = providerId;
+      } else {
+        obj.provider_entity_id = providerId;
+      }
     }
 
-    const { data: rec, error } = await supabase.from(currentSection.targetTable).insert(obj).select('id').single();
+    const { data: rec, error } = await supabase.from(section.targetTable).insert(obj).select('id').single();
     if (error) {
       importLogs.push({ id: '', status: "failed", identifier: refAddress || `Row ${row.rowIndex}`, message: error.message, details: obj });
     } else {
       await supabase.from("audit_logs").insert([{
         company_id: companyId, user_id: userId, property_id: parentId,
-        action: `bulk imported ${currentSection.title.toLowerCase()}`, details: obj,
+        action: `bulk imported ${section.title.toLowerCase()}`, details: obj,
       }]);
       importLogs.push({ id: rec.id, status: "new", identifier: refAddress || `Row ${row.rowIndex}`, details: obj });
     }
   };
 
   const handleReverse = async (id: string, index: number) => {
-    if (!currentSection) return;
+    const section = currentSectionRef.current;
+    if (!section) return;
     if (!window.confirm("Archive this entry? It will be soft-deleted, not permanently removed.")) return;
-    const { error } = await supabase.from(currentSection.targetTable).update({ deleted_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase.from(section.targetTable).update({ deleted_at: new Date().toISOString() }).eq("id", id);
     if (!error) {
       const next = [...results]; next[index].status = "reversed"; setResults(next); onRefresh();
     }
@@ -474,7 +491,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
                   </div>
                   {!isBaseSection && (
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Include a <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200">property_street_address</code> column to link each row back to its property. Unmatched properties will be created automatically with minimal details.
+                      Include a <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200">property_street_address</code> column with the full address (street, suburb — same format as the property's own address) to link each row back to its property. Unmatched properties will be created automatically with minimal details.
                     </p>
                   )}
                   {currentSection && (
@@ -491,6 +508,9 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
                       Download template for this section
                     </button>
                   )}
+                  <p className="text-[9px] text-slate-300">
+                    Importing into: <span className="font-bold text-slate-400">{currentSection?.title || '—'}</span>
+                  </p>
                 </div>
               )}
 
@@ -547,6 +567,11 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
                             <td className="p-3 text-center">
                               <button
                                 onClick={() => cycleRowAction(row.rowIndex)}
+                                title={
+                                  action === 'include' ? 'Click to skip this row' :
+                                  action === 'skip' ? (hasExistingMatch ? 'Click to update the existing record instead' : 'Click to include as new') :
+                                  'Click to include as new'
+                                }
                                 className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-all w-full ${action === 'include' ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : action === 'skip' ? 'bg-slate-100 text-slate-400 hover:bg-slate-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
                               >
                                 {action === 'include' ? 'New' : action === 'skip' ? 'Skip' : 'Update'}

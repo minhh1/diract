@@ -39,35 +39,56 @@ export const preferenceService = {
    * Pass is_active: false explicitly if you ever need to save a preset
    * without switching to it.
    */
-  async save(payload: {
-    user_id: string;
-    table_slug: string;
-    preset_name: string;
-    columns: string[];
-    expansion_columns?: string[];
-    column_widths?: Record<string, number>;
-    expand_relations?: string[];
-    is_active?: boolean;
-  }) {
-    const isActive = payload.is_active ?? true;
+async save(payload: {
+  user_id: string;
+  table_slug: string;
+  preset_name: string;
+  columns: string[];
+  expansion_columns?: string[];
+  column_widths?: Record<string, number>;
+  expand_relations?: string[];
+  is_active?: boolean;
+}) {
+  const wantsActive = payload.is_active ?? true;
 
-    const { data, error } = await supabase
-      .from("user_column_preferences")
-      .upsert(
-        { ...payload, is_active: isActive },
-        { onConflict: 'user_id,table_slug,preset_name' }
-      )
-      .select()
-      .single();
+  // Always upsert with is_active forced false first. A row with
+  // is_active = false never collides with the partial unique index,
+  // regardless of how many other rows are already active.
+  const { data, error } = await supabase
+    .from("user_column_preferences")
+    .upsert(
+      { ...payload, is_active: false },
+      { onConflict: 'user_id,table_slug,preset_name' }
+    )
+    .select()
+    .single();
 
-    if (error) {
-      console.error("preferenceService.save error:", {
-        message: error.message, code: error.code, details: error.details, hint: error.hint,
-      });
+  if (error) {
+    console.error("preferenceService.save error:", {
+      message: error.message, code: error.code, details: error.details, hint: error.hint,
+    });
+    return { data: null, error };
+  }
+
+  // Activate via the same atomic two-statement RPC already proven correct
+  // for switching presets — deactivating siblings and activating the
+  // target happen as two separate sequential statements, never racing
+  // the partial index the way a single INSERT with is_active=true does.
+  if (wantsActive) {
+    const { data: activated, error: activateError } = await supabase.rpc('set_active_preference', {
+      p_user_id: payload.user_id,
+      p_table_slug: payload.table_slug,
+      p_preset_name: payload.preset_name,
+    });
+    if (activateError) {
+      console.error("preferenceService.save (activation) error:", activateError);
+      return { data, error: activateError };
     }
+    return { data: activated, error: null };
+  }
 
-    return { data, error };
-  },
+  return { data, error: null };
+},
 
   /**
    * Switch the active preset WITHOUT touching its stored columns/layout.
