@@ -1,3 +1,4 @@
+// components/DataTable.tsx
 "use client";
 
 import React from "react";
@@ -5,12 +6,25 @@ import React from "react";
 interface DataTableProps {
   children: React.ReactNode;
   minWidth?: number;
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
+  onScroll?: React.UIEventHandler<HTMLDivElement>;
+  className?: string;
 }
 
-export default function DataTable({ children, minWidth = 1200 }: DataTableProps) {
+export default function DataTable({
+  children,
+  minWidth = 1200,
+  scrollRef,
+  onScroll,
+  className = "",
+}: DataTableProps) {
   return (
-    <div className="flex-1 overflow-auto custom-scrollbar bg-[#F9FAFB] p-8">
-      <div 
+    <div
+      ref={scrollRef}
+      onScroll={onScroll}
+      className={`flex-1 overflow-auto min-h-0 custom-scrollbar ${className}`}
+    >
+      <div
         className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden inline-block min-w-full"
         style={{ minWidth: `${minWidth}px` }}
       >

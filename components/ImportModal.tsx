@@ -104,8 +104,8 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     if (parsed.length === 0) { alert("This file has no data rows."); setStage("upload"); return; }
 
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: prof } = await supabase.from("profiles").select("company_id").eq("id", user?.id).single();
-    const uid = user?.id || ''; const cid = prof?.company_id || '';
+    const { data: prof } = await supabase.from("profiles").select("active_company_id").eq("id", user?.id).single();
+    const uid = user?.id || ''; const cid = prof?.active_company_id || '';
     setUserId(uid); setCompanyId(cid);
 
     const newBatchId = crypto.randomUUID();

@@ -46,8 +46,8 @@ export default function UniversalSelectionModal({ isOpen, onClose, onSelect, tit
     setLoading(true);
     const fd = new FormData(e.currentTarget);
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: prof } = await supabase.from("profiles").select("company_id").eq("id", user?.id).single();
-    const compId = prof?.company_id;
+    const { data: prof } = await supabase.from("profiles").select("active_company_id").eq("id", user?.id).single();
+    const compId = prof?.active_company_id;
 
     try {
       let resultId = "";

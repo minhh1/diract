@@ -29,8 +29,8 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: any) {
     const { data: { user } } = await supabase.auth.getUser();
 
     try {
-      const { data: profile } = await supabase.from("profiles").select("company_id").eq("id", user?.id).single();
-      const compId = profile?.company_id;
+      const { data: profile } = await supabase.from("profiles").select("active_company_id").eq("id", user?.id).single();
+      const compId = profile?.active_company_id;
 
       let mainEntityId: string;
 

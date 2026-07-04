@@ -1,9 +1,9 @@
 // components/MasterTable.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, GripVertical, Trash2, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Trash2, ExternalLink, ChevronsUpDown } from "lucide-react";
 import DataTable from "@/components/DataTable";
 import RelationSubTable from "@/components/RelationSubTable";
 import UniversalSelectionModal from "@/components/UniversalSelectionModal";
@@ -11,13 +11,18 @@ import RecordEditModal from "@/components/RecordEditModal";
 import { updateRecord, softDeleteRecord } from "@/lib/genericRecordActions";
 import type { RelationDef } from "@/lib/relationDefinitions";
 import type { LogParentType } from "@/lib/logging";
-import type { FieldConfig } from "@/components/RecordEditModal";
 
 export interface RelationalEditConfig {
   table: "entities" | "projects" | "properties";
   title: string;
   editParentType: LogParentType;
-  editFields: FieldConfig[];
+  editFields: {
+    id: string;
+    label: string;
+    type?: 'text' | 'date' | 'number' | 'checkbox' | 'select';
+    options?: any[];
+    fetchOptions?: () => Promise<any[]>;
+  }[];
 }
 
 export interface MasterTableProps {
@@ -41,12 +46,22 @@ export interface MasterTableProps {
   parentType?: LogParentType;
   companyId?: string;
   editableCols?: string[];
-  // Columns that link to another table AND are edited via this dual
-  // mechanism: clicking the word opens a direct edit form for the
-  // LINKED record itself; clicking the small icon opens a search/select/
-  // create picker to RE-LINK this row to a different record.
   relationalEditCols?: Record<string, RelationalEditConfig>;
   onRowMutated?: () => void;
+  sort?: { colId: string; direction: 'asc' | 'desc'; mode?: string } | null;
+  onSort?: (colId: string, direction: 'asc' | 'desc', mode?: 'name' | 'number') => void;
+  addressSortOpen?: boolean;
+  onAddressSortOpenChange?: (open: boolean) => void;
+}
+
+function errorMessage(code: string): string {
+  switch (code) {
+    case '23505': return "A record with this value already exists — this field must be unique.";
+    case '23503': return "This value references a record that doesn't exist.";
+    case '23514': return "This value isn't valid for this field (check format or allowed values).";
+    case '42501': return "You don't have permission to edit this field.";
+    default: return "Couldn't save this change. Please try again.";
+  }
 }
 
 export default function MasterTable({
@@ -56,10 +71,12 @@ export default function MasterTable({
   relations = [], expandRelations = [],
   minWidth = 1200, rowKey = (item) => item.id,
   baseTable, parentType, companyId, editableCols, relationalEditCols, onRowMutated,
+  sort, onSort, addressSortOpen, onAddressSortOpenChange,
 }: MasterTableProps) {
   const router = useRouter();
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [savingCell, setSavingCell] = useState<{ rowId: string; colId: string } | null>(null);
+  const [cellErrors, setCellErrors] = useState<Map<string, string>>(new Map());
   const [relationalPicker, setRelationalPicker] = useState<{ item: any; colId: string } | null>(null);
   const [recordEditTarget, setRecordEditTarget] = useState<{
     config: RelationalEditConfig;
@@ -70,6 +87,26 @@ export default function MasterTable({
   const activeRelations = relations.filter(rel => expandRelations.includes(rel.key));
   const canEdit = !!(baseTable && parentType && companyId && editableCols);
 
+  // Close address sort dropdown on outside click
+  useEffect(() => {
+    if (!addressSortOpen) return;
+    const handleClick = () => onAddressSortOpenChange?.(false);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [addressSortOpen, onAddressSortOpenChange]);
+
+  const setCellError = (rowId: string, colId: string, message: string) => {
+    const key = `${rowId}:${colId}`;
+    setCellErrors(prev => { const next = new Map(prev); next.set(key, message); return next; });
+    setTimeout(() => {
+      setCellErrors(prev => { const next = new Map(prev); next.delete(key); return next; });
+    }, 6000);
+  };
+
+  const clearCellError = (rowId: string, colId: string) => {
+    setCellErrors(prev => { const next = new Map(prev); next.delete(`${rowId}:${colId}`); return next; });
+  };
+
   const handleCellSave = async (item: any, colId: string, newValue: string) => {
     if (!canEdit) return;
     setEditingCell(null);
@@ -79,7 +116,7 @@ export default function MasterTable({
 
     setSavingCell({ rowId: rowKey(item), colId });
 
-    await updateRecord({
+    const { error } = await updateRecord({
       table: baseTable!,
       id: item.id,
       changes: { [colId]: newValue },
@@ -90,6 +127,13 @@ export default function MasterTable({
     });
 
     setSavingCell(null);
+
+    if (error) {
+      setCellError(rowKey(item), colId, errorMessage((error as any).code || ''));
+      return;
+    }
+
+    clearCellError(rowKey(item), colId);
     onRowMutated?.();
   };
 
@@ -99,7 +143,7 @@ export default function MasterTable({
     setRelationalPicker(null);
     setSavingCell({ rowId: rowKey(item), colId });
 
-    await updateRecord({
+    const { error } = await updateRecord({
       table: baseTable!,
       id: item.id,
       changes: { [colId]: id },
@@ -110,6 +154,13 @@ export default function MasterTable({
     });
 
     setSavingCell(null);
+
+    if (error) {
+      setCellError(rowKey(item), colId, errorMessage((error as any).code || ''));
+      return;
+    }
+
+    clearCellError(rowKey(item), colId);
     onRowMutated?.();
   };
 
@@ -136,32 +187,91 @@ export default function MasterTable({
       <DataTable minWidth={minWidth}>
         <thead className="bg-slate-50 border-b border-slate-200 text-slate-400">
           <tr>
-            {tableCols.map((colId, idx) => (
-              <th key={colId} style={{ width: colWidths[colId] || 250 }} className="relative border-r border-slate-100 group/header select-none p-0">
-                <div className="flex items-center h-full">
-                  <div
-                    draggable
-                    onDragStart={() => setDraggedIdx(idx)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => {
-                      if (draggedIdx === null) return;
-                      const next = [...tableCols];
-                      const [moved] = next.splice(draggedIdx, 1);
-                      next.splice(idx, 0, moved);
-                      onReorder(next);
-                      setDraggedIdx(null);
-                    }}
-                    className="p-4 cursor-move opacity-0 group-hover/header:opacity-100 transition-opacity"
-                  >
-                    <GripVertical size={14} />
+            {tableCols.map((colId, idx) => {
+              const isAddressCol = colId === 'street_address';
+              const isActiveSortCol = sort?.colId === colId;
+
+              return (
+                <th key={colId} style={{ width: colWidths[colId] || 250 }} className="relative border-r border-slate-100 group/header select-none p-0">
+                  <div className="flex items-center h-full">
+                    <div
+                      draggable
+                      onDragStart={() => setDraggedIdx(idx)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => {
+                        if (draggedIdx === null) return;
+                        const next = [...tableCols];
+                        const [moved] = next.splice(draggedIdx, 1);
+                        next.splice(idx, 0, moved);
+                        onReorder(next);
+                        setDraggedIdx(null);
+                      }}
+                      className="p-4 cursor-move opacity-0 group-hover/header:opacity-100 transition-opacity shrink-0"
+                    >
+                      <GripVertical size={14} />
+                    </div>
+
+                    <div className={`flex-1 py-5 px-2 uppercase text-[10px] font-bold tracking-widest truncate ${isActiveSortCol ? 'text-indigo-600' : ''}`}>
+                      {colId.replace(/_id$/, '').replace(/_/g, ' ')}
+                    </div>
+
+                    {onSort && (
+                      isAddressCol ? (
+                        <div className="relative mr-2 shrink-0" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={() => onAddressSortOpenChange?.(!addressSortOpen)}
+                            className={`p-1.5 rounded-lg transition-all ${isActiveSortCol ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100 opacity-0 group-hover/header:opacity-100'}`}
+                            title="Sort options"
+                          >
+                            <ChevronsUpDown size={13} />
+                          </button>
+
+                          {addressSortOpen && (
+                            <div className="absolute top-full left-0 mt-1 bg-white rounded-2xl shadow-lg border border-slate-100 z-50 py-1 min-w-[172px]">
+                              {([
+                                { label: '# Number (asc)', direction: 'asc' as const, mode: 'number' as const },
+                                { label: '# Number (desc)', direction: 'desc' as const, mode: 'number' as const },
+                                { label: 'A–Z Street name', direction: 'asc' as const, mode: 'name' as const },
+                                { label: 'Z–A Street name', direction: 'desc' as const, mode: 'name' as const },
+                              ]).map(opt => {
+                                const isActive = sort?.colId === 'street_address' && sort?.direction === opt.direction && sort?.mode === opt.mode;
+                                return (
+                                  <button
+                                    key={opt.label}
+                                    onClick={() => onSort('street_address', opt.direction, opt.mode)}
+                                    className={`w-full text-left px-4 py-2.5 text-[11px] font-medium transition-colors ${isActive ? 'text-indigo-600 bg-indigo-50' : 'text-slate-600 hover:bg-slate-50'}`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isActiveSortCol) onSort(colId, 'asc');
+                            else if (sort?.direction === 'asc') onSort(colId, 'desc');
+                            else onSort(colId, 'asc');
+                          }}
+                          className={`p-1.5 rounded-lg mr-2 shrink-0 transition-all ${isActiveSortCol ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100 opacity-0 group-hover/header:opacity-100'}`}
+                          title={isActiveSortCol ? (sort?.direction === 'asc' ? 'Sort descending' : 'Sort ascending') : 'Sort'}
+                        >
+                          {isActiveSortCol
+                            ? sort?.direction === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />
+                            : <ChevronsUpDown size={13} />
+                          }
+                        </button>
+                      )
+                    )}
+
+                    <div onMouseDown={(e) => startResizing(colId, e)} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500 z-10" />
                   </div>
-                  <div className="flex-1 py-5 uppercase text-[10px] font-bold tracking-widest px-4">
-                    {colId.replace('_id', '').replace('.', ' ')}
-                  </div>
-                  <div onMouseDown={(e) => startResizing(colId, e)} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500 z-10" />
-                </div>
-              </th>
-            ))}
+                </th>
+              );
+            })}
             <th className="w-24"></th>
           </tr>
         </thead>
@@ -182,16 +292,19 @@ export default function MasterTable({
                     const isEditing = editingCell?.rowId === key && editingCell?.colId === colId;
                     const isSaving = savingCell?.rowId === key && savingCell?.colId === colId;
                     const rawValue = resolveValue(item, colId);
+                    const cellError = cellErrors.get(`${key}:${colId}`);
 
                     const startEdit = (e: React.MouseEvent) => {
                       e.stopPropagation();
+                      clearCellError(key, colId);
                       if (relationalConfig) {
-                        const linkedId = item[colId]; // raw FK value, e.g. item.holding_entity_id
-                        if (!linkedId) return; // nothing linked yet — use the icon to link one first
+                        const linkedId = item[colId];
+                        if (!linkedId) return;
+                        const alias = colId.replace(/_id$/, '');
                         setRecordEditTarget({
                           config: relationalConfig,
                           recordId: linkedId,
-                          currentValues: item.holding_entity || {},
+                          currentValues: item[alias] || {},
                         });
                       } else {
                         setEditingCell({ rowId: key, colId });
@@ -218,6 +331,22 @@ export default function MasterTable({
                             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
                             className="w-full p-1.5 -m-1.5 border border-indigo-300 rounded-lg text-sm outline-none"
                           />
+                        ) : cellError ? (
+                          // Error state — original value stays, shown red with tooltip
+                          <div className="relative group/error">
+                            <span
+                              onClick={canEditThisCol ? startEdit : undefined}
+                              className={`block truncate text-red-500 border-b border-dashed border-red-300 ${canEditThisCol ? 'cursor-text' : ''}`}
+                            >
+                              {String(rawValue || '-')}
+                            </span>
+                            <div className="absolute bottom-full left-0 mb-2 z-50 hidden group-hover/error:block pointer-events-none">
+                              <div className="bg-red-600 text-white text-[10px] font-medium rounded-xl px-3 py-2 max-w-[240px] leading-relaxed shadow-lg whitespace-normal">
+                                {cellError}
+                              </div>
+                              <div className="w-2 h-2 bg-red-600 rotate-45 ml-4 -mt-1" />
+                            </div>
+                          </div>
                         ) : linkTarget ? (
                           <span className="flex items-center justify-between gap-2 group/cell">
                             <span
@@ -272,7 +401,7 @@ export default function MasterTable({
                           {expandCols.map(colId => (
                             <div key={colId}>
                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                {colId.replace('_id', '').replace('.', ' ')}
+                                {colId.replace(/_id$/, '').replace(/_/g, ' ')}
                               </p>
                               <p className="text-[13px] font-medium text-slate-800 truncate">
                                 {String(resolveValue(item, colId) || '—')}

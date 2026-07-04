@@ -24,3 +24,32 @@
     @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
   }
 }
+
+/* Top scroll mirror — horizontal scrollbar pinned in the header */
+.top-scroll-mirror::-webkit-scrollbar {
+  height: 6px;
+}
+.top-scroll-mirror::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+.top-scroll-mirror::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+.top-scroll-mirror:hover::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.top-scroll-mirror:hover::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Hide native horizontal scrollbar on the DataTable scroll container
+   since the top mirror replaces it entirely */
+.data-table-scroll::-webkit-scrollbar:horizontal {
+  display: none;
+}
+.data-table-scroll {
+  scrollbar-width: none; /* Firefox */
+}
