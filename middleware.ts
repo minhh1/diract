@@ -53,5 +53,6 @@ export const config = {
      * - public (public assets)
      */
     '/((?!_next/static|_next/image|favicon.ico|public).*)',
+    '/dashboard/:path*',
   ],
 }

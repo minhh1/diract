@@ -5,12 +5,15 @@ import { supabase } from "@/lib/supabase";
 import {
   Database, Clock, Copy, ArrowLeft, Loader2,
   CheckCircle2, ChevronRight, AlertCircle,
-  Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2,
-  ChevronDown, ChevronUp
+  Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp
 } from "lucide-react";
 import ImportModal from "@/components/ImportModal";
 import DataFormattingTool from "@/components/DataFormattingTool";
 import SchemaVisualisation from "@/components/SchemaVisualisation";
+import SpreadsheetEditor from "@/components/SpreadsheetEditor";
+import CustomTableBuilder from "@/components/CustomTableBuilder";
+import SchemaMap from "@/components/SchemaMap";
+
 
 type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view";
 type DupType = "properties" | "entities" | "projects";
@@ -25,6 +28,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isFormatterOpen, setIsFormatterOpen] = useState(false);
+  const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
 
   useEffect(() => {
     if (view === "history") fetchHistory();
@@ -128,6 +132,16 @@ export default function SettingsPage() {
                 <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
               </button>
 
+              <button onClick={() => setIsSpreadsheetOpen(true)} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
+              <div className="flex items-center gap-5">
+                <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors">
+                  <LayoutGrid size={20} />
+                </div>
+                <span className="text-[15px] font-medium text-slate-700">Spreadsheet editor</span>
+              </div>
+              <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
+            </button>
+
               <button onClick={() => setView("schema")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
                 <div className="flex items-center gap-5">
                   <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors"><Database size={20} /></div>
@@ -226,7 +240,15 @@ export default function SettingsPage() {
           )}
 
           {/* ── SCHEMA VISUALISATION ── */}
-          {view === "schema" && <SchemaVisualisation />}
+   
+          {view === 'schema' && (
+            <div className="space-y-8">
+              <CustomTableBuilder />
+              <SchemaMap />
+              <SchemaVisualisation />
+            </div>
+          )}
+          
 
           {/* ── DUPLICATES MENU ── */}
           {view === "duplicates_menu" && (
@@ -288,7 +310,24 @@ export default function SettingsPage() {
 
         </div>
       </main>
-
+      {isSpreadsheetOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white font-sans">
+          <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
+            <h2 className="text-xl font-light uppercase tracking-tight text-slate-900">
+              Spreadsheet editor
+            </h2>
+            <button
+              onClick={() => setIsSpreadsheetOpen(false)}
+              className="p-2 text-slate-300 hover:text-black transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 p-6 min-h-0 overflow-hidden">
+            <SpreadsheetEditor onClose={() => setIsSpreadsheetOpen(false)} />
+          </div>
+        </div>
+      )}
       <ImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onRefresh={fetchHistory} />
       <DataFormattingTool isOpen={isFormatterOpen} onClose={() => setIsFormatterOpen(false)} onRefresh={() => {}} />
     </div>

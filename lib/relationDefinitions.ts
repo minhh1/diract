@@ -1,44 +1,16 @@
-export interface RelationDef {
-  key: string;              // unique id, used in expandRelations array + storage
-  label: string;            // shown in ColumnConfigDrawer toggle and sub-table header
-  parentTable: 'properties' | 'entities';
-  childTable: string;       // the related Supabase table to query
-  foreignKey: string;       // column on childTable pointing back to parent's id
-  columns: { id: string; label: string }[]; // columns shown in the sub-table, in order
-  orderBy?: { column: string; ascending?: boolean };
-  linkTo?: (row: any) => string | null; // optional: clicking a sub-row navigates
-}
+// lib/relationDefinitions.ts
+import { supabase } from "@/lib/supabase";
 
-export const ENTITY_RELATIONS: RelationDef[] = [
-  {
-    key: 'entity_officeholders',
-    label: 'Officeholders',
-    parentTable: 'entities',
-    childTable: 'entity_officeholders',
-    foreignKey: 'entity_id',
-    columns: [
-      { id: 'full_name', label: 'Name' },
-      { id: 'role', label: 'Role' },
-      { id: 'date_appointed', label: 'Appointed' },
-      { id: 'is_active', label: 'Active' },
-    ],
-    orderBy: { column: 'date_appointed', ascending: false },
-  },
-  {
-    key: 'owned_properties',
-    label: 'Owned properties',
-    parentTable: 'entities',
-    childTable: 'properties',
-    foreignKey: 'holding_entity_id',
-    columns: [
-      { id: 'street_address', label: 'Address' },
-      { id: 'suburb', label: 'Suburb' },
-      { id: 'is_sold', label: 'Sold' },
-    ],
-    orderBy: { column: 'street_address', ascending: true },
-    linkTo: (row) => `/dashboard/properties?id=${row.id}`,
-  },
-];
+export interface RelationDef {
+  key: string;
+  label: string;
+  parentTable?: string;
+  childTable: string;
+  foreignKey: string;
+  orderBy?: { column: string; ascending: boolean };
+  columns: { id: string; label: string }[];
+  linkTo?: (row: any) => string;
+}
 
 const BILL_COLUMNS = [
   { id: 'issued_date', label: 'Issued' },
@@ -49,7 +21,7 @@ const BILL_COLUMNS = [
   { id: 'expected_amount_period', label: 'Frequency' },
   { id: 'e_notice_reference', label: 'E-notice reference' },
   { id: 'email_notices', label: 'Email notices' },
-  { id: 'provider_entity_name', label: 'Provider' }, // resolved via provider_entity_id join, see below
+  { id: 'provider_entity_name', label: 'Provider' },
   { id: 'credential.account_number', label: 'Account/property number' },
   { id: 'credential.access_note', label: 'Online access note' },
   { id: 'credential.nominated_payor', label: 'Payor' },
@@ -63,35 +35,21 @@ export const PROPERTY_RELATIONS: RelationDef[] = [
     parentTable: 'properties',
     childTable: 'property_valuations',
     foreignKey: 'property_id',
+    orderBy: { column: 'valuation_date', ascending: false },
     columns: [
-      { id: 'valuation_date', label: 'Date' },
       { id: 'amount', label: 'Amount' },
+      { id: 'valuation_date', label: 'Date' },
       { id: 'is_full_valuation', label: 'Full valuation' },
     ],
-    orderBy: { column: 'valuation_date', ascending: false },
-  },
-  {
-    key: 'property_bills',
-    label: 'Bills (uncategorized)',
-    parentTable: 'properties',
-    childTable: 'property_bills',
-    foreignKey: 'property_id',
-    columns: [
-      { id: 'category', label: 'Category' },
-      { id: 'issued_date', label: 'Issued' },
-      { id: 'amount', label: 'Amount' },
-      { id: 'is_paid', label: 'Paid' },
-    ],
-    orderBy: { column: 'issued_date', ascending: false },
   },
   {
     key: 'property_bills_local_government',
-    label: 'Local government bills',
+    label: 'Council bills',
     parentTable: 'properties',
     childTable: 'property_bills_local_government',
     foreignKey: 'property_id',
-    columns: BILL_COLUMNS,
     orderBy: { column: 'issued_date', ascending: false },
+    columns: BILL_COLUMNS,
   },
   {
     key: 'property_bills_electricity',
@@ -99,8 +57,8 @@ export const PROPERTY_RELATIONS: RelationDef[] = [
     parentTable: 'properties',
     childTable: 'property_bills_electricity',
     foreignKey: 'property_id',
-    columns: BILL_COLUMNS,
     orderBy: { column: 'issued_date', ascending: false },
+    columns: BILL_COLUMNS,
   },
   {
     key: 'property_bills_water',
@@ -108,8 +66,8 @@ export const PROPERTY_RELATIONS: RelationDef[] = [
     parentTable: 'properties',
     childTable: 'property_bills_water',
     foreignKey: 'property_id',
-    columns: BILL_COLUMNS,
     orderBy: { column: 'issued_date', ascending: false },
+    columns: BILL_COLUMNS,
   },
   {
     key: 'property_bills_gas',
@@ -117,8 +75,8 @@ export const PROPERTY_RELATIONS: RelationDef[] = [
     parentTable: 'properties',
     childTable: 'property_bills_gas',
     foreignKey: 'property_id',
-    columns: BILL_COLUMNS,
     orderBy: { column: 'issued_date', ascending: false },
+    columns: BILL_COLUMNS,
   },
   {
     key: 'property_bills_land_tax',
@@ -126,7 +84,60 @@ export const PROPERTY_RELATIONS: RelationDef[] = [
     parentTable: 'properties',
     childTable: 'property_bills_land_tax',
     foreignKey: 'property_id',
-    columns: BILL_COLUMNS,
     orderBy: { column: 'issued_date', ascending: false },
+    columns: BILL_COLUMNS,
+  },
+  {
+    key: 'property_credentials',
+    label: 'Credentials',
+    parentTable: 'properties',
+    childTable: 'property_credentials',
+    foreignKey: 'property_id',
+    columns: [
+      { id: 'category', label: 'Category' },
+      { id: 'account_name', label: 'Account name' },
+      { id: 'account_number', label: 'Account number' },
+      { id: 'login_id', label: 'Login ID' },
+      { id: 'nominated_payor', label: 'Payor' },
+      { id: 'access_note', label: 'Access note' },
+    ],
+  },
+  // Project linked to a property — shown in property expand panel
+  {
+    key: 'projects',
+    label: 'Project',
+    parentTable: 'properties',
+    childTable: 'projects',
+    foreignKey: 'property_id',
+    orderBy: { column: 'created_at', ascending: false },
+    columns: [
+      { id: 'name', label: 'Name' },
+      { id: 'status', label: 'Status' },
+      { id: 'description', label: 'Description' },
+      { id: 'estimated_completion_date', label: 'Est. Completion' },
+    ],
+    linkTo: (row) => `/dashboard/projects?id=${row.id}`,
   },
 ];
+
+export const ENTITY_RELATIONS: RelationDef[] = [
+  {
+    key: 'entity_officeholders',
+    label: 'Officeholders',
+    parentTable: 'entities',
+    childTable: 'entity_officeholders',
+    foreignKey: 'entity_id',
+    columns: [
+      { id: 'name', label: 'Name' },
+      { id: 'role', label: 'Role' },
+      { id: 'date_appointed', label: 'Appointed' },
+      { id: 'is_current', label: 'Current' },
+    ],
+  },
+];
+
+// PROJECT_RELATIONS is intentionally empty here — it's fully driven
+// by useTableRelations which introspects sub-projects and child
+// properties from the database. Keeping this export so any legacy
+// imports don't break.
+export const PROJECT_RELATIONS: RelationDef[] = [];

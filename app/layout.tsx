@@ -6,6 +6,10 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata = {
   title: "niksen-flow | Investment Management",
   description: "Enterprise Portfolio & Task Tracking",
+  icons: {
+    icon: '/favicon.svg',
+    apple:'/favicon.svg',
+  }
 };
 
 export default function RootLayout({

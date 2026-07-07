@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { getSchemaMetadata, getCompanyId, deriveLabel, type ColumnMeta } from "@/lib/services/schemaService";
 import type { FieldConfig } from "@/components/RecordEditModal";
@@ -57,49 +57,66 @@ export function useTableSchema(tableName: string): TableSchema {
     setLoading(true);
 
     (async () => {
-      const cid = await getCompanyId();
-      const cols = await getSchemaMetadata(tableName, cid);
-      if (active) {
-        setCompanyId(cid);
-        setAll(cols);
-        setLoading(false);
+      try {
+        const cid = await getCompanyId();
+        const cols = await getSchemaMetadata(tableName, cid);
+        if (active) {
+          setCompanyId(cid);
+          setAll(cols);
+          setLoading(false);
+        }
+      } catch (err: any) {
+        if (active) {
+          setError(err.message);
+          setLoading(false);
+        }
       }
-    })().catch(err => {
-      if (active) { setError(err.message); setLoading(false); }
-    });
+    })();
 
     return () => { active = false; };
-  }, [tableName]);
+  }, [tableName]); // only tableName — getCompanyId/getSchemaMetadata are stable cached functions
 
-  // Filter out hidden columns and non-displayable categories.
-  // is_hidden lets a company hide base fields they don't use.
-  const displayable = all.filter(c =>
-    (c.category === 'data' || c.category === 'relation') && !c.is_hidden
+  const displayable = useMemo(() =>
+    all.filter(c => (c.category === 'data' || c.category === 'relation') && !c.is_hidden),
+    [all]
   );
 
-  const dataCols = all.filter(c => c.category === 'data' && !c.is_hidden);
-  const relationCols = all.filter(c => c.category === 'relation' && !c.is_hidden);
+  const dataCols = useMemo(() =>
+    all.filter(c => c.category === 'data' && !c.is_hidden),
+    [all]
+  );
 
-  const defaultTableCols = [
+  const relationCols = useMemo(() =>
+    all.filter(c => c.category === 'relation' && !c.is_hidden),
+    [all]
+  );
+
+  const defaultTableCols = useMemo(() => [
     ...dataCols.slice(0, 5).map(c => c.column_name),
     ...relationCols.map(c => c.column_name),
-  ].slice(0, 8);
+  ].slice(0, 8), [dataCols, relationCols]);
 
-  const editableCols = displayable.map(c => c.column_name);
+  const editableCols = useMemo(() =>
+    displayable.map(c => c.column_name),
+    [displayable]
+  );
 
-  const relationalEditCols: Record<string, RelationalEditConfig> = {};
-  relationCols.forEach(col => {
-    if (!col.relation_table) return;
-    const parentType = PARENT_TYPE_BY_TABLE[col.relation_table];
-    relationalEditCols[col.column_name] = {
-      table: col.relation_table as RelationalEditConfig['table'],
-      title: `Select ${col.label || deriveLabel(col.column_name)}`,
-      editParentType: parentType || 'entity',
-      editFields: [],
-    };
-  });
+  const relationalEditCols = useMemo(() => {
+    const result: Record<string, RelationalEditConfig> = {};
+    relationCols.forEach(col => {
+      if (!col.relation_table) return;
+      const parentType = PARENT_TYPE_BY_TABLE[col.relation_table];
+      result[col.column_name] = {
+        table: col.relation_table as RelationalEditConfig['table'],
+        title: `Select ${col.label || deriveLabel(col.column_name)}`,
+        editParentType: parentType || 'entity',
+        editFields: [],
+      };
+    });
+    return result;
+  }, [relationCols]);
 
-  const editFields: FieldConfig[] = dataCols.map(col => {
+  const editFields = useMemo(() => dataCols.map(col => {
     const fieldType = deriveFieldType(col);
     const field: FieldConfig = {
       id: col.column_name,
@@ -119,15 +136,15 @@ export function useTableSchema(tableName: string): TableSchema {
       };
     }
     return field;
-  });
+  }), [dataCols]);
 
-  const sections = [{
+  const sections = useMemo(() => [{
     title: deriveLabel(tableName),
     fields: displayable.map(c => ({
       id: c.column_name,
       label: c.label || deriveLabel(c.column_name),
     })),
-  }];
+  }], [tableName, displayable]);
 
   return {
     all, displayable, dataCols, relationCols,

@@ -1,0 +1,65 @@
+import {
+  Type, Hash, Calendar, ToggleLeft, List, Link2,
+  Fingerprint, Mail, Globe, DollarSign, MapPin, Building2
+} from "lucide-react";
+
+export type FieldType =
+  | 'text' | 'number' | 'date' | 'boolean' | 'select'
+  | 'auto_id' | 'email' | 'url' | 'currency' | 'link'
+  | 'property' | 'entity' | 'project' | 'table_relation';
+
+export interface CustomField {
+  id: string;
+  table_name: string;
+  table_id?: string;
+  field_key: string;
+  label: string;
+  field_type: FieldType;
+  select_options: string[] | null;
+  is_required: boolean;
+  is_unique: boolean;
+  display_order: number;
+  default_value: string | null;
+  validation_regex: string | null;
+  validation_min: number | null;
+  validation_max: number | null;
+  auto_generate: boolean;
+  auto_generate_type: string | null;
+  auto_generate_prefix: string | null;
+  linked_table: string | null;
+  linked_table_id: string | null;
+  linked_display_column: string | null;
+  section_name: string | null;
+  grid_width: number;
+  show_in_table: boolean;
+  help_text: string | null;
+  isCustomTable?: boolean;
+}
+
+export const FIELD_TYPES: {
+  type: FieldType;
+  label: string;
+  icon: React.ElementType;
+  color: string;
+}[] = [
+  { type: 'text',          label: 'Text',        icon: Type,        color: 'bg-blue-50 text-blue-600' },
+  { type: 'number',        label: 'Number',      icon: Hash,        color: 'bg-purple-50 text-purple-600' },
+  { type: 'date',          label: 'Date',        icon: Calendar,    color: 'bg-orange-50 text-orange-600' },
+  { type: 'boolean',       label: 'Yes / No',    icon: ToggleLeft,  color: 'bg-green-50 text-green-600' },
+  { type: 'select',        label: 'Dropdown',    icon: List,        color: 'bg-yellow-50 text-yellow-600' },
+  { type: 'link',          label: 'Link record', icon: Link2,       color: 'bg-indigo-50 text-indigo-600' },
+  { type: 'auto_id',       label: 'Auto ID',     icon: Fingerprint, color: 'bg-rose-50 text-rose-600' },
+  { type: 'email',         label: 'Email',       icon: Mail,        color: 'bg-cyan-50 text-cyan-600' },
+  { type: 'url',           label: 'URL',         icon: Globe,       color: 'bg-teal-50 text-teal-600' },
+  { type: 'currency',      label: 'Currency',    icon: DollarSign,  color: 'bg-emerald-50 text-emerald-600' },
+  { type: 'property',      label: 'Property',    icon: MapPin,      color: 'bg-violet-50 text-violet-600' },
+  { type: 'entity',        label: 'Entity',      icon: Building2,   color: 'bg-pink-50 text-pink-600' },
+  { type: 'table_relation',label: 'Relation',    icon: Link2,       color: 'bg-slate-50 text-slate-600' },
+];
+
+export function getFieldTypeConfig(type: string) {
+  return FIELD_TYPES.find(f => f.type === type) || FIELD_TYPES[0];
+}
+
+export const SYSTEM_TABLES = ['properties', 'entities', 'projects'] as const;
+export type SystemTable = typeof SYSTEM_TABLES[number];

@@ -1,38 +1,48 @@
+// lib/import/buildTemplate.ts
+
 import { supabase } from "@/lib/supabase";
-import { PROPERTY_COLUMNS, ENTITY_COLUMNS, PROJECT_COLUMNS } from "@/lib/columnDefinitions";
 
-const ALLOW_LISTS: Record<string, string[]> = {
-  properties: PROPERTY_COLUMNS,
-  entities: ENTITY_COLUMNS,
-  projects: PROJECT_COLUMNS,
-};
-
-const LINKED_ENTRY_COLUMNS: Record<string, string[]> = {
-  properties: ['entity_name', 'entity_type'],
-  entities: [],
-  projects: [],
-};
-
-const COLLAPSE_INTO: Record<string, { collapsedName: string; replaces: string[] }[]> = {
-  properties: [
-    { collapsedName: 'full_address', replaces: ['street_address', 'suburb', 'state', 'postcode'] },
-  ],
-  entities: [],
-  projects: [],
-};
-
-export interface ImportSection {
-  key: string;            // unique id, also used as the downloaded filename suffix
-  title: string;          // shown to the user (e.g. "Electricity bills")
-  targetTable: string;    // the real table this section's rows get written to
-  parentKey: 'property_id' | 'entity_id' | 'project_id';
-  headers: string[];      // resolved CSV header row for this section
-  fixedValues?: Record<string, string>; // values auto-filled for this section, not user-entered (e.g. category)
+export interface CrossTableField {
+  alias: string;       // e.g. 'holding_entity'
+  fkColumn: string;    // e.g. 'holding_entity_id'
+  sourceTable: string; // e.g. 'entities'
+  fieldName: string;   // e.g. 'abn'
+  label: string;       // e.g. 'Holding Entity — ABN'
+  headerKey: string;   // e.g. 'relation:holding_entity.abn'
 }
 
-// Bills: 5 repeated sections sharing one table per category, each with a
-// provider_entity link (resolved the same way holding_entity works for
-// properties — by provider_entity_name/provider_entity_type pseudo-columns).
+export interface ImportSection {
+  key: string;
+  title: string;
+  targetTable: string;
+  parentKey: string;
+  fixedValues?: Record<string, any>;
+  headers: string[];
+  customFields?: { id: string; table_name: string; field_key: string; label: string; field_type: string }[];
+  crossTableFields?: CrossTableField[];
+}
+
+// ── Static base section definitions ───────────────────────────────
+
+const PROPERTY_HEADERS = [
+  'full_address', 'suburb', 'state', 'postcode', 'country',
+  'folio_identifier', 'purchase_price', 'purchase_date',
+  'entity_name', 'entity_type',
+  'project_manager', 'project_owner', 'last_coc_date',
+];
+
+const ENTITY_HEADERS = [
+  'entity_name', 'entity_type', 'abn', 'acn',
+  'gst_registered', 'trust_deed_date', 'established_date',
+  'bank_name', 'bsb', 'account_number',
+];
+
+const PROJECT_HEADERS = [
+  'name', 'description', 'status',
+  'estimated_completion_date',
+  'property_street_address',
+];
+
 const BILL_HEADERS = [
   'issued_date', 'amount', 'is_paid', 'paid_up_to',
   'expected_amount', 'expected_amount_period', 'notes',
@@ -40,134 +50,200 @@ const BILL_HEADERS = [
   'provider_entity_name', 'provider_entity_type',
 ];
 
-const BILL_SECTIONS: Omit<ImportSection, 'headers'>[] = [
-  { key: 'bills_local_government', title: 'Local government bills', targetTable: 'property_bills_local_government', parentKey: 'property_id' },
-  { key: 'bills_electricity', title: 'Electricity bills', targetTable: 'property_bills_electricity', parentKey: 'property_id' },
-  { key: 'bills_water', title: 'Water bills', targetTable: 'property_bills_water', parentKey: 'property_id' },
-  { key: 'bills_gas', title: 'Gas bills', targetTable: 'property_bills_gas', parentKey: 'property_id' },
-  { key: 'bills_land_tax', title: 'Land tax bills', targetTable: 'property_bills_land_tax', parentKey: 'property_id' },
-];
-
-// Credentials: ONE physical table (property_credentials), but 5 repeated
-// import sections — one per service category — since each category is
-// filled in separately by the user, per your instruction. "fixedValues"
-// pins the category column so the import engine knows which value to
-// write without the user re-typing it on every row.
 const CREDENTIAL_HEADERS = [
-  'account_name', 'account_number', 'login_id', 'nominated_mobile',
-  'additional_email', 'access_note', 'nominated_payor', 'auto_forward_note',
-  'provider_entity_name', 'provider_entity_type',
-];
-// Deliberately excluded: encrypted_password — never importable via CSV,
-// since plaintext passwords should never travel through a spreadsheet.
-
-const CREDENTIAL_CATEGORIES: { key: string; title: string; category: string }[] = [
-  { key: 'credentials_council', title: 'Council credentials', category: 'Council' },
-  { key: 'credentials_electricity', title: 'Electricity credentials', category: 'Electricity' },
-  { key: 'credentials_water', title: 'Water credentials', category: 'Water' },
-  { key: 'credentials_land_tax', title: 'Land tax credentials', category: 'Land Tax' },
-  { key: 'credentials_gas', title: 'Gas credentials', category: 'Gas' },
+  'account_name', 'account_number', 'login_id',
+  'access_note', 'nominated_payor', 'nominated_mobile',
+  'additional_email', 'auto_forward_note',
 ];
 
-// Simple one-table relations, discoverable without per-category repetition.
-const SIMPLE_RELATIONS: Omit<ImportSection, 'headers'>[] = [
-  { key: 'valuations', title: 'Property valuations', targetTable: 'property_valuations', parentKey: 'property_id' },
-  { key: 'property_me', title: 'Property Me', targetTable: 'property_me', parentKey: 'property_id' },
+const VALUATION_HEADERS = [
+  'valuation_date', 'amount', 'is_full_valuation', 'notes',
 ];
 
-async function getLiveColumns(table: string): Promise<Set<string>> {
-  const { data, error } = await supabase.rpc('get_table_columns', { table_name_input: table });
-  if (error || !data) {
-    console.error(`getLiveColumns(${table}) failed`, error);
-    return new Set();
-  }
-  return new Set(data.map((c: any) => c.col_name));
-}
-
-// Metadata/relational columns never offered as CSV headers for ANY
-// table — these are system-managed or resolved via pseudo-columns instead.
-const ALWAYS_EXCLUDE = new Set([
-  'id', 'created_at', 'updated_at', 'deleted_at', 'import_id',
-  'company_id', 'property_id', 'entity_id', 'project_id',
-  'holding_entity_id', 'provider_entity_id', 'property_credential_id',
-  'encrypted_password', // never importable, regardless of table
+// Columns that should never appear as cross-table import targets —
+// either because they're identity/metadata columns, or because
+// they're already handled by the base import logic (e.g. entity_name
+// on properties already resolves the holding entity)
+const SKIP_CROSS_TABLE_COLUMNS = new Set([
+  'id', 'company_id', 'deleted_at', 'import_id',
+  'created_at', 'updated_at', 'created_by', 'team_id',
+  'active_company_id', 'is_admin', 'is_active',
 ]);
 
-export async function buildBaseTemplate(mode: 'properties' | 'entities' | 'projects'): Promise<string> {
-  const liveColumnNames = await getLiveColumns(mode);
-  const allowList = ALLOW_LISTS[mode] || [];
-
-  let headers = allowList.filter(col => liveColumnNames.has(col));
-
-  const collapses = COLLAPSE_INTO[mode] || [];
-  collapses.forEach(({ collapsedName, replaces }) => {
-    const anyPresent = replaces.some(r => headers.includes(r));
-    if (anyPresent) {
-      headers = headers.filter(h => !replaces.includes(h));
-      headers.unshift(collapsedName);
-    }
-  });
-
-  headers = [...headers, ...(LINKED_ENTRY_COLUMNS[mode] || [])];
-  return headers.join(',');
-}
-
-/**
- * Returns every importable section for a given mode: the base table
- * template plus every related-table section that links back to it
- * (bills x5, credentials x5, valuations, property_me, etc, for
- * properties — extend similarly for entities/projects as those grow).
- */
-export async function buildAllSections(mode: 'properties' | 'entities' | 'projects'): Promise<ImportSection[]> {
-  const sections: ImportSection[] = [];
-
-  const baseHeaders = await buildBaseTemplate(mode);
-  sections.push({
-    key: mode, title: `${mode.charAt(0).toUpperCase() + mode.slice(1)} (base)`,
-    targetTable: mode, parentKey: mode === 'properties' ? 'property_id' : mode === 'entities' ? 'entity_id' : 'project_id',
-    headers: baseHeaders.split(','),
-  });
-
-  if (mode === 'properties') {
-    for (const bill of BILL_SECTIONS) {
-      const live = await getLiveColumns(bill.targetTable);
-      const headers = BILL_HEADERS.filter(h =>
-        ALWAYS_EXCLUDE.has(h) ? false : (live.has(h) || h.startsWith('provider_entity_'))
-      );
-      sections.push({ ...bill, headers });
-    }
-
-    const credLive = await getLiveColumns('property_credentials');
-    for (const cred of CREDENTIAL_CATEGORIES) {
-      const headers = CREDENTIAL_HEADERS.filter(h =>
-        ALWAYS_EXCLUDE.has(h) ? false : (credLive.has(h) || h.startsWith('provider_entity_'))
-      );
-      sections.push({
-        key: cred.key, title: cred.title, targetTable: 'property_credentials',
-        parentKey: 'property_id', headers, fixedValues: { category: cred.category },
-      });
-    }
-
-    for (const rel of SIMPLE_RELATIONS) {
-      const live = await getLiveColumns(rel.targetTable);
-      const headers = Array.from(live).filter(c => !ALWAYS_EXCLUDE.has(c));
-      sections.push({ ...rel, headers });
-    }
+function buildBaseSections(
+  baseMode: "properties" | "entities" | "projects"
+): ImportSection[] {
+  if (baseMode === 'entities') {
+    return [{
+      key: 'entities', title: 'Entities',
+      targetTable: 'entities', parentKey: '',
+      headers: ENTITY_HEADERS,
+    }];
   }
 
-  return sections;
+  if (baseMode === 'projects') {
+    return [{
+      key: 'projects', title: 'Projects',
+      targetTable: 'projects', parentKey: '',
+      headers: PROJECT_HEADERS,
+    }];
+  }
+
+  return [
+    { key: 'properties', title: 'Properties', targetTable: 'properties', parentKey: '', headers: PROPERTY_HEADERS },
+    { key: 'valuations', title: 'Valuations', targetTable: 'property_valuations', parentKey: 'property_id', headers: VALUATION_HEADERS },
+    { key: 'bills_local_government', title: 'Local government bills', targetTable: 'property_bills_local_government', parentKey: 'property_id', fixedValues: { category: 'council' }, headers: BILL_HEADERS },
+    { key: 'bills_electricity', title: 'Electricity bills', targetTable: 'property_bills_electricity', parentKey: 'property_id', fixedValues: { category: 'electricity' }, headers: BILL_HEADERS },
+    { key: 'bills_water', title: 'Water bills', targetTable: 'property_bills_water', parentKey: 'property_id', fixedValues: { category: 'water' }, headers: BILL_HEADERS },
+    { key: 'bills_gas', title: 'Gas bills', targetTable: 'property_bills_gas', parentKey: 'property_id', fixedValues: { category: 'gas' }, headers: BILL_HEADERS },
+    { key: 'bills_land_tax', title: 'Land tax bills', targetTable: 'property_bills_land_tax', parentKey: 'property_id', fixedValues: { category: 'land_tax' }, headers: BILL_HEADERS },
+    { key: 'credentials_council', title: 'Council credentials', targetTable: 'property_credentials', parentKey: 'property_id', fixedValues: { category: 'council' }, headers: CREDENTIAL_HEADERS },
+    { key: 'credentials_electricity', title: 'Electricity credentials', targetTable: 'property_credentials', parentKey: 'property_id', fixedValues: { category: 'electricity' }, headers: CREDENTIAL_HEADERS },
+    { key: 'credentials_water', title: 'Water credentials', targetTable: 'property_credentials', parentKey: 'property_id', fixedValues: { category: 'water' }, headers: CREDENTIAL_HEADERS },
+    { key: 'credentials_gas', title: 'Gas credentials', targetTable: 'property_credentials', parentKey: 'property_id', fixedValues: { category: 'gas' }, headers: CREDENTIAL_HEADERS },
+    { key: 'credentials_land_tax', title: 'Land tax credentials', targetTable: 'property_credentials', parentKey: 'property_id', fixedValues: { category: 'land_tax' }, headers: CREDENTIAL_HEADERS },
+  ];
 }
 
-/**
- * Downloads ONE combined CSV-template ZIP-free package: actually, since a
- * single CSV can only represent one table's rows, this returns a single
- * text blob with each section's headers as a labeled block — readable as
- * a reference document, while the actual import still happens one
- * section/file at a time via the section picker in the UI.
- */
-export async function buildReferenceDocument(mode: 'properties' | 'entities' | 'projects'): Promise<string> {
-  const sections = await buildAllSections(mode);
-  return sections.map(s =>
-    `# ${s.title} (table: ${s.targetTable})\n${s.headers.join(',')}`
-  ).join('\n\n');
+// ── Append custom fields ───────────────────────────────────────────
+
+async function appendCustomFieldHeaders(
+  sections: ImportSection[],
+  companyId: string
+): Promise<ImportSection[]> {
+  const { data: customFields } = await supabase
+    .from('company_custom_fields')
+    .select('id, table_name, field_key, label, field_type')
+    .eq('company_id', companyId)
+    .order('display_order');
+
+  if (!customFields?.length) return sections;
+
+  return sections.map(section => {
+    const tableCustomFields = customFields.filter(
+      f => f.table_name === section.targetTable
+    );
+    if (!tableCustomFields.length) return section;
+
+    // Use the field's label as the CSV header — human readable
+    // Keep custom: prefix only internally for the parser
+    const customHeaders = tableCustomFields.map(
+      f => `custom:${f.id}:${f.field_key}`
+    );
+
+    return {
+      ...section,
+      headers: [...section.headers, ...customHeaders],
+      customFields: tableCustomFields,
+    };
+  });
+}
+
+// ── Append cross-table fields from get_all_related_fields ──────────
+
+async function appendCrossTableHeaders(
+  sections: ImportSection[],
+  companyId: string
+): Promise<ImportSection[]> {
+  // Cache results per table so we don't call the RPC multiple times
+  // for sections that share the same targetTable (e.g. all 5 bill tables)
+  const cache = new Map<string, any[]>();
+
+  const getRelatedFields = async (tableName: string) => {
+    if (cache.has(tableName)) return cache.get(tableName)!;
+    const { data } = await supabase.rpc('get_all_related_fields', {
+      base_table: tableName,
+      p_company_id: companyId,
+      max_depth: 1, // depth 1 only for import — deep nesting gets unwieldy in CSV
+    });
+    const fields = (data || []).filter((f: any) => !f.is_sensitive);
+    cache.set(tableName, fields);
+    return fields;
+  };
+
+  return Promise.all(sections.map(async section => {
+    const relatedFields = await getRelatedFields(section.targetTable);
+    if (!relatedFields.length) return section;
+
+    const crossTableFields: CrossTableField[] = relatedFields
+      .filter((f: any) => !SKIP_CROSS_TABLE_COLUMNS.has(f.field_name))
+      .map((f: any) => ({
+        alias: f.alias,
+        fkColumn: f.fk_column,
+        sourceTable: f.source_table,
+        fieldName: f.field_name,
+        label: f.label,
+        headerKey: `relation:${f.alias}.${f.field_name}`,
+      }));
+
+    if (!crossTableFields.length) return section;
+
+    return {
+      ...section,
+      headers: [...section.headers, ...crossTableFields.map(f => f.headerKey)],
+      crossTableFields,
+    };
+  }));
+}
+
+// ── Public API ─────────────────────────────────────────────────────
+
+export async function buildAllSections(
+  baseMode: "properties" | "entities" | "projects"
+): Promise<ImportSection[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return buildBaseSections(baseMode);
+
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('active_company_id')
+    .eq('id', user.id)
+    .single();
+
+  const companyId = prof?.active_company_id;
+  if (!companyId) return buildBaseSections(baseMode);
+
+  const base = buildBaseSections(baseMode);
+  const withCustom = await appendCustomFieldHeaders(base, companyId);
+  const withCrossTable = await appendCrossTableHeaders(withCustom, companyId);
+  return withCrossTable;
+}
+
+// ── Label resolver for template download ──────────────────────────
+// Converts raw header keys to human-readable CSV column names
+
+export function headerToLabel(
+  header: string,
+  section: ImportSection
+): string {
+  if (header.startsWith('custom:')) {
+    const parts = header.split(':');
+    const fieldId = parts[1];
+    const fieldKey = parts[2];
+
+    // Always prefer the label from section metadata
+    const cf = section.customFields?.find(f => f.id === fieldId);
+    if (cf?.label) return cf.label;
+
+    // Fallback: clean up the field_key
+    return fieldKey
+      ? fieldKey
+          .replace(/^(field_|custom_)\d+$/, 'Custom Field') // clean up auto-keys
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase())
+      : `Custom ${fieldId.slice(0, 6)}`;
+  }
+
+  if (header.startsWith('relation:')) {
+    // "relation:property.street_address" → "Property Street Address"
+    const path = header.replace('relation:', '');
+    const [tableAlias, fieldName] = path.split('.');
+    if (!fieldName) return path;
+    const tablePart = tableAlias.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const fieldPart = fieldName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    return `${tablePart} ${fieldPart}`;
+  }
+
+  // Base field
+  return header.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }

@@ -1,10 +1,9 @@
-// components/GenericMasterTable.tsx
 "use client";
 
 import React, { useState, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Search, Settings2 } from "lucide-react";
+import { Search, Settings2, LayoutGrid, X } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
 import ColumnConfigDrawer from "@/components/ColumnConfigDrawer";
@@ -15,10 +14,14 @@ import { usePresetTable } from "@/lib/hooks/usePresetTable";
 import { useTableSchema } from "@/lib/hooks/useTableSchema";
 import { useRelationalEditFields } from "@/lib/hooks/useRelationalEditFields";
 import { useTableRealtime } from "@/lib/hooks/useTableRealtime";
+import { useTableRelations } from "@/lib/hooks/useTableRelations";
+import { useRelatedFields } from "@/lib/hooks/useRelatedFields";
+import { useRelationSections } from "@/lib/hooks/useRelationSections";
 import { deriveLabel } from "@/lib/services/schemaService";
 import { propertyService } from "@/lib/services/propertyService";
 import { buildCredentialColumnSections } from "@/lib/columnDefinitions";
 import { PROPERTY_RELATIONS, ENTITY_RELATIONS } from "@/lib/relationDefinitions";
+import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 
 interface GenericMasterTableProps {
   tableName: "properties" | "entities" | "projects";
@@ -45,21 +48,51 @@ function getCategoryKeyForColumn(colId: string): string | null {
   return null;
 }
 
-const RELATIONS_BY_TABLE: Record<string, any[]> = {
-  properties: PROPERTY_RELATIONS,
-  entities: ENTITY_RELATIONS,
-  projects: [],
-};
-
 const TABLE_AREA_CLASS = "bg-[#F9FAFB] p-8";
 
-function buildSelectQuery(tableName: string, columns: any[]): string {
-  const relationCols = columns.filter(c => c.category === 'relation' && c.relation_table);
-  const embeds = relationCols.map(col => {
+// Builds a dynamic Supabase select string.
+// - Always embeds the display column for every FK relation from schema metadata
+// - Extends embeds with any extra fields needed by visible cross-table columns
+function buildDynamicSelectQuery(
+  schemaColumns: any[],
+  visibleCols: string[],
+  relatedFieldsByPath: Map<string, any>
+): string {
+  const aliasMap = new Map<string, { fkColumn: string; fields: Set<string> }>();
+
+  // Base FK embeds — always include id + display col
+  for (const col of schemaColumns.filter(c => c.category === 'relation' && c.relation_table)) {
     const alias = col.column_name.replace(/_id$/, '');
     const displayCol = col.relation_display_column || 'name';
-    return `${alias}:${col.column_name}(id,${displayCol})`;
-  });
+    if (!aliasMap.has(alias)) {
+      aliasMap.set(alias, { fkColumn: col.column_name, fields: new Set(['id', displayCol]) });
+    } else {
+      aliasMap.get(alias)!.fields.add('id');
+      aliasMap.get(alias)!.fields.add(displayCol);
+    }
+  }
+
+  // Extend embeds for visible cross-table dotted-path columns
+  for (const col of visibleCols) {
+    if (!col.includes('.')) continue;
+    const fieldMeta = relatedFieldsByPath.get(col);
+    if (!fieldMeta) continue;
+
+    if (!aliasMap.has(fieldMeta.alias)) {
+      aliasMap.set(fieldMeta.alias, {
+        fkColumn: fieldMeta.fk_column,
+        fields: new Set(['id', fieldMeta.field_name]),
+      });
+    } else {
+      aliasMap.get(fieldMeta.alias)!.fields.add(fieldMeta.field_name);
+    }
+  }
+
+  const embeds = [...aliasMap.entries()].map(
+    ([alias, { fkColumn, fields }]) =>
+      `${alias}:${fkColumn}(${[...fields].join(',')})`
+  );
+
   return ['*', ...embeds].join(', ');
 }
 
@@ -68,19 +101,15 @@ function extractStreetNumber(address: string): number {
   const clean = address.replace(/,/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
   const words = clean.split(' ');
 
-  // Handle "3/12" slash format — take the number after the slash
   if (words[0] && /^\d+[a-z]?\/(\d+)/.test(words[0])) {
     const match = words[0].match(/\/(\d+)/);
     return match ? parseInt(match[1]) : Infinity;
   }
 
   let idx = 0;
-  // Skip unit/lot prefix (consumes 2 tokens: keyword + number)
   if (words[0] && ['unit', 'lot', 'suite', 'shop', 'apartment', 'apt', 'villa', 'level'].includes(words[0])) {
     idx = 2;
   }
-
-  // The real street number starts here
   if (idx < words.length && /^\d+/.test(words[idx])) {
     return parseInt(words[idx]);
   }
@@ -91,14 +120,11 @@ function extractStreetName(address: string): string {
   if (!address) return '';
   const clean = address.replace(/,/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
   const words = clean.split(' ');
-
   let idx = 0;
   if (words[0] && ['unit', 'lot', 'suite', 'shop', 'apartment', 'apt', 'villa', 'level'].includes(words[0])) {
     idx = 2;
   }
-  // Skip the street number
   if (idx < words.length && /^\d+/.test(words[idx])) idx++;
-
   return words.slice(idx).join(' ');
 }
 
@@ -118,15 +144,30 @@ function GenericMasterTableInner({
 
   const schema = useTableSchema(tableName);
   const relationalEditCols = useRelationalEditFields(schema.relationalEditCols);
+  const relatedFields = useRelatedFields(tableName);
   const fetchedCategoriesRef = useRef<Set<string>>(new Set());
+
+  // DB-driven relations for projects; hardcoded for properties/entities
+  // since bill/credential relations have complex embedded join shapes
+  const { relations: projectRelations } = useTableRelations(
+    tableName === 'projects' ? 'projects' : '__skip__'
+  );
+  const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
+
+  const relations = useMemo(() => {
+    if (tableName === 'properties') return PROPERTY_RELATIONS;
+    if (tableName === 'entities') return ENTITY_RELATIONS;
+    return projectRelations;
+  }, [tableName, projectRelations]);
+
+  // Expand-panel sections for column config — DB-driven via get_schema_metadata
+  // on each child table, zero hardcoded field names
+  const relationSections = useRelationSections(relations, companyId);
 
   const fetchItems = useCallback(async (visibleColumns: string[]) => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: prof } = await supabase
-    .from("profiles")
-    .select("active_company_id")
-    .eq("id", user?.id)
-    .single();
+      .from("profiles").select("active_company_id").eq("id", user?.id).single();
     setCompanyId(prof?.active_company_id || null);
 
     if (tableName === 'properties') {
@@ -136,7 +177,12 @@ function GenericMasterTableInner({
       return propertyService.getAll(visibleColumns);
     }
 
-    const selectQuery = buildSelectQuery(tableName, schema.all);
+    const selectQuery = buildDynamicSelectQuery(
+      schema.all,
+      visibleColumns,
+      relatedFields.byPath
+    );
+
     const { data, error } = await supabase
       .from(tableName)
       .select(selectQuery)
@@ -144,7 +190,7 @@ function GenericMasterTableInner({
 
     if (error) { console.error(`fetchItems(${tableName}):`, error); return []; }
     return data || [];
-  }, [tableName, schema.all]);
+  }, [tableName, schema.all, relatedFields.byPath]);
 
   const t = usePresetTable({
     tableSlug: tableName,
@@ -169,7 +215,11 @@ function GenericMasterTableInner({
     const hasRelationChange = relationColNames.some(col => col in row);
 
     if (hasRelationChange) {
-      const selectQuery = buildSelectQuery(tableName, schema.all);
+      const selectQuery = buildDynamicSelectQuery(
+        schema.all,
+        [...t.tableCols, ...t.expandCols],
+        relatedFields.byPath
+      );
       const { data, error } = await supabase
         .from(tableName)
         .select(selectQuery)
@@ -186,7 +236,7 @@ function GenericMasterTableInner({
         item.id === row.id ? { ...item, ...row } : item
       ));
     }
-  }, [tableName, schema.all, t.setItems]);
+  }, [tableName, schema.all, t.tableCols, t.expandCols, t.setItems, relatedFields.byPath]);
 
   const handleRealtimeDelete = useCallback((id: string) => {
     t.setItems(prev => prev.filter(item => item.id !== id));
@@ -212,7 +262,7 @@ function GenericMasterTableInner({
     setAddressSortOpen(false);
   }, []);
 
-  // ── Column toggle ──────────────────────────────────────────────────
+  // ── Column toggle with lazy credential refetch ─────────────────────
 
   const handleToggleColumnWithRefetch = async (
     fieldId: string, target: 'table' | 'expand' | 'none'
@@ -230,6 +280,16 @@ function GenericMasterTableInner({
   // ── Value resolution ───────────────────────────────────────────────
 
   const resolveValue = useCallback((item: any, path: string): any => {
+    if (!path) return '';
+
+    // Cross-table dotted path e.g. 'holding_entity.abn'
+    // Supabase embed response uses the alias as the key
+    if (path.includes('.')) {
+      const value = path.split('.').reduce((obj: any, key: string) => obj?.[key], item);
+      return typeof value === 'object' ? '' : (value ?? '');
+    }
+
+    // Base table FK column — return display value from embedded object
     const col = schema.all.find(c => c.column_name === path);
     if (col?.category === 'relation' && col.relation_display_column) {
       const alias = path.replace(/_id$/, '');
@@ -237,13 +297,19 @@ function GenericMasterTableInner({
         ?? item[alias]?.name
         ?? '';
     }
+
+    // Plain scalar column
     const value = path.split('.').reduce((obj: any, key: string) => obj?.[key], item);
     return typeof value === 'object' ? '' : (value ?? '');
   }, [schema.all]);
 
   const getLinkTarget = useCallback((colId: string, item: any): string | null => {
+    // Cross-table fields are display-only — never navigation links
+    if (colId.includes('.')) return null;
+
     const primaryCol = tableName === 'properties' ? 'street_address' : 'name';
     if (colId === primaryCol) return `/dashboard/${tableName}?id=${item.id}`;
+
     const col = schema.all.find(c => c.column_name === colId);
     if (col?.category === 'relation' && col.relation_table) {
       const alias = colId.replace(/_id$/, '');
@@ -263,11 +329,19 @@ function GenericMasterTableInner({
   // ── Derived data ───────────────────────────────────────────────────
 
   const drawerSections = useMemo(() => {
-    if (tableName === 'properties') {
-      return [...schema.sections, ...buildCredentialColumnSections()];
-    }
-    return schema.sections;
-  }, [tableName, schema.sections]);
+    // Base sections: the table's own columns
+    const baseSections = tableName === 'properties'
+      ? [...schema.sections, ...buildCredentialColumnSections()]
+      : schema.sections;
+
+    // Cross-table flat column sections — DB-driven via get_all_related_fields
+    // e.g. "Holding Entity", "Council Entity", "Parent Property" etc.
+    const crossSections = relatedFields.sections;
+
+    // Expand-panel relation sections — DB-driven via get_schema_metadata
+    // on each child table (child properties, sub-projects, valuations etc.)
+    return [...baseSections, ...crossSections, ...relationSections];
+  }, [tableName, schema.sections, relatedFields.sections, relationSections]);
 
   const tableContentWidth = useMemo(() => {
     const baseWidth = t.tableCols.reduce((sum, colId) => {
@@ -284,15 +358,17 @@ function GenericMasterTableInner({
     );
 
     if (!sort) {
-      // Default: properties sort by street number asc, others by first col
       if (tableName === 'properties') {
         return filtered.sort((a, b) =>
-          extractStreetNumber(a.street_address || '') - extractStreetNumber(b.street_address || '')
+          extractStreetNumber(a.street_address || '') -
+          extractStreetNumber(b.street_address || '')
         );
       }
+      const firstCol = t.tableCols[0];
+      if (!firstCol) return filtered;
       return filtered.sort((a, b) => {
-        const va = String(resolveValue(a, t.tableCols[0]) || '');
-        const vb = String(resolveValue(b, t.tableCols[0]) || '');
+        const va = String(resolveValue(a, firstCol) || '');
+        const vb = String(resolveValue(b, firstCol) || '');
         return va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
       });
     }
@@ -302,7 +378,9 @@ function GenericMasterTableInner({
       let vb: any;
 
       if (sort.colId === 'street_address' && sort.mode === 'number') {
-        const diff = extractStreetNumber(a.street_address || '') - extractStreetNumber(b.street_address || '');
+        const diff =
+          extractStreetNumber(a.street_address || '') -
+          extractStreetNumber(b.street_address || '');
         return sort.direction === 'asc' ? diff : -diff;
       }
 
@@ -337,6 +415,7 @@ function GenericMasterTableInner({
       </div>
     );
   }
+
   // ── Render ─────────────────────────────────────────────────────────
 
   return (
@@ -354,6 +433,12 @@ function GenericMasterTableInner({
               >
                 <Settings2 size={16} /> Setup
               </button>
+                <button
+                    onClick={() => setIsSpreadsheetOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
+                >
+                    <LayoutGrid size={16} /> Spreadsheet
+                </button>
               <button
                 onClick={() => setIsModalOpen(true)}
                 className="bg-slate-900 text-white px-6 py-2 rounded-full text-[11px] font-bold shadow-sm"
@@ -372,6 +457,7 @@ function GenericMasterTableInner({
               onChange={e => setSearch(e.target.value)}
             />
           </div>
+
 
           <ViewPresets
             presets={t.presets}
@@ -408,7 +494,7 @@ function GenericMasterTableInner({
           toggleExpandRow={t.toggleExpandRow}
           resolveValue={resolveValue}
           getLinkTarget={getLinkTarget}
-          relations={RELATIONS_BY_TABLE[tableName]}
+          relations={relations}
           expandRelations={t.expandRelations}
           minWidth={tableContentWidth}
           baseTable={tableName}
@@ -423,6 +509,28 @@ function GenericMasterTableInner({
           onAddressSortOpenChange={setAddressSortOpen}
         />
       </main>
+
+      {isSpreadsheetOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white font-sans">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
+            <h2 className="text-xl font-light uppercase tracking-tight text-slate-900">
+                Spreadsheet — {pageTitle}
+            </h2>
+            <button
+                onClick={() => { setIsSpreadsheetOpen(false); t.refresh(); }}
+                className="p-2 text-slate-300 hover:text-black transition-colors"
+            >
+                <X size={20} />
+            </button>
+            </div>
+            <div className="flex-1 p-6 min-h-0 overflow-hidden">
+            <SpreadsheetEditor
+                tableName={tableName}
+                onClose={() => { setIsSpreadsheetOpen(false); t.refresh(); }}
+            />
+            </div>
+        </div>
+        )}
 
       <UniversalSelectionModal
         isOpen={isModalOpen}

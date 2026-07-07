@@ -273,6 +273,46 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
   const flagsByRow = new Map<number, StagingFlag[]>();
   stagingFlags.forEach(f => flagsByRow.set(f.staging_row_index, [...(flagsByRow.get(f.staging_row_index) || []), f]));
 
+  const handleDownloadTemplate = async () => {
+  if (!currentSection) return;
+
+  // currentSection already has customFields attached from buildAllSections
+  // Filter out relation: headers — too advanced for basic users
+  const downloadHeaders = currentSection.headers.filter(
+    h => !h.startsWith('relation:')
+  );
+
+  // Convert every header to human-readable label
+  const labelledHeaders = downloadHeaders.map(h => {
+    if (h.startsWith('custom:')) {
+      const parts = h.split(':');
+      const fieldId = parts[1];
+      const cf = currentSection.customFields?.find((f: any) => f.id === fieldId);
+      // Use the field's label from DB metadata
+      if (cf?.label) return cf.label;
+      // Fallback: clean up field_key
+      const fieldKey = parts[2] || '';
+      return fieldKey
+        .replace(/^(field_|custom_)\d+$/, 'Custom Field')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c: string) => c.toUpperCase());
+    }
+    // Base field — humanise snake_case
+    return h.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+  });
+
+  // Child sections need property address prepended
+  const prefix = !isBaseSection ? ['Property Street Address'] : [];
+  const allHeaders = [...prefix, ...labelledHeaders];
+
+  const blob = new Blob([allHeaders.join(',') + '\n'], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `niksen_${currentSection.key}_template.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  };
+
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-md font-sans antialiased text-slate-600">
       <div className="bg-white w-full max-w-7xl rounded-[40px] shadow-2xl flex flex-col max-h-[92vh]">
@@ -304,6 +344,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
                 isBaseSection={isBaseSection}
                 loadingSections={loadingSections}
                 detectedNotice={detectedNotice}
+                onDownloadTemplate={handleDownloadTemplate}
               />
               <FileUploader file={file} onFileSelect={handleFileSelect} fileInputRef={fileInputRef} />
               <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={(e) => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]); }} />

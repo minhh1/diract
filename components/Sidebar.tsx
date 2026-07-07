@@ -3,13 +3,16 @@
 import { useState, useEffect } from "react";
 import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
-  SortAsc, Settings, Shield, ChevronsUpDown, Loader2
+  SortAsc, Settings, Shield, ChevronsUpDown, Loader2, Mail
 } from "lucide-react";
+import * as LucideIcons from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
+import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import { icons } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -25,6 +28,7 @@ export default function Sidebar() {
   const [items, setItems] = useState<any[]>([]);
   const [isProjOpen, setIsProjOpen] = useState(false);
   const [isEntOpen, setIsEntOpen] = useState(false);
+  const { tables: customTables } = useCustomTables();
 
   const mode = pathname.includes("projects") ? "projects"
     : pathname.includes("properties") ? "properties"
@@ -113,28 +117,61 @@ export default function Sidebar() {
       </div>
 
       {/* Mode switcher */}
-      <div className="px-6 mb-8">
-        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
-          <button
-            onClick={() => router.push('/dashboard/projects')}
-            className={`flex-1 flex justify-center py-2.5 rounded-xl transition-all ${mode === 'projects' ? 'bg-white text-black shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <LayoutGrid size={18} />
-          </button>
-          <button
-            onClick={() => router.push('/dashboard/properties')}
-            className={`flex-1 flex justify-center py-2.5 rounded-xl transition-all ${mode === 'properties' ? 'bg-white text-black shadow-sm' : 'text-slate-400'}`}
-          >
-            <MapPin size={18} />
-          </button>
-          <button
-            onClick={() => router.push('/dashboard/entities')}
-            className={`flex-1 flex justify-center py-2.5 rounded-xl transition-all ${mode === 'entities' ? 'bg-white text-black shadow-sm' : 'text-slate-400'}`}
-          >
-            <Building2 size={18} />
-          </button>
+      <div className="px-6 mb-4">
+        {/* System tables */}
+        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 mb-3">
+          {[
+            { slug: 'projects', icon: LayoutGrid },
+            { slug: 'properties', icon: MapPin },
+            { slug: 'entities', icon: Building2 },
+          ].map(({ slug, icon: Icon }) => (
+            <button
+              key={slug}
+              onClick={() => router.push(`/dashboard/${slug}`)}
+              className={`flex-1 flex justify-center py-2.5 rounded-xl transition-all ${
+                pathname.includes(slug) ? 'bg-white text-black shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <Icon size={18} />
+            </button>
+          ))}
         </div>
+
+        {/* Custom tables */}
+        {customTables.length > 0 && (
+          <div className="space-y-1">
+            {customTables.map(table => {
+              const Icon = (LucideIcons as any)[table.icon] || LucideIcons.Table2;
+              const isActive = pathname.includes(table.slug);
+              return (
+                <button
+                  key={table.id}
+                  onClick={() => router.push(`/dashboard/${table.slug}`)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-[12px] font-bold transition-all ${
+                    isActive ? 'text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50 hover:text-black'
+                  }`}
+                  style={isActive ? { backgroundColor: table.color } : undefined}
+                >
+                  <Icon size={16} />
+                  <span className="truncate">{table.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+        {/* Gmail Dashboard */}
+        <Link
+          href="/dashboard/gmail"
+          className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-[13px] font-bold transition-all ${
+            pathname.includes('/gmail')
+              ? 'bg-red-50 text-red-600'
+              : 'text-slate-500 hover:bg-slate-50 hover:text-black'
+          }`}
+        >
+          <Mail size={16} /> Gmail
+        </Link>
 
       {/* Tree nav */}
       <nav className="flex-1 overflow-y-auto px-4 space-y-1 custom-scrollbar">
