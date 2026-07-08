@@ -54,6 +54,8 @@ export default function RecordDashboard({
   const [fieldPickerTabId, setFieldPickerTabId] = useState<string | null>(null);
   const [subProjectHeight, setSubProjectHeight] = useState(400);
   const resizingRef = useRef<{ startY: number; startH: number } | null>(null);
+  const [linkedEntityNames, setLinkedEntityNames] = useState<Record<string, string>>({});
+
 
   const recordTable = systemTable || tableId || '';
 
@@ -87,30 +89,43 @@ export default function RecordDashboard({
     const cid = await getCompanyId();
     if (!cid) { setLoading(false); return; }
     setCompanyId(cid);
-    await Promise.all([
-      loadRecord(cid),
-      loadTabs(cid),
-      loadFields(cid),
-      loadSubProjects(),
-      loadParent(),
-    ]);
+    await Promise.all([loadRecord(cid), loadTabs(cid), loadFields(cid), loadSubProjects(), loadParent()]);
     setLoading(false);
   };
 
   const loadRecord = async (cid: string) => {
     if (systemTable) {
+      // Load base record
       const { data } = await supabase
         .from(systemTable)
         .select('*')
         .eq('id', recordId)
         .single();
-      setRecord(data || {});
+
+      if (!data) return;
+
+      // Also load custom field values
+      const { data: cfValues } = await supabase
+        .from('company_custom_field_values')
+        .select('field_id, value_text, value_number, value_date, value_boolean')
+        .eq('record_id', recordId)
+        .eq('table_name', systemTable);
+
+      // Merge custom field values into record using field_id as key
+      const customValues: Record<string, any> = {};
+      (cfValues || []).forEach(v => {
+        customValues[v.field_id] =
+          v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
+      });
+
+      setRecord({ ...data, ...customValues });
     } else if (tableId) {
       const { data: rec } = await supabase
         .from('company_table_records')
         .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean)')
         .eq('id', recordId)
         .single();
+
       if (rec) {
         const values: Record<string, any> = {};
         (rec.values || []).forEach((v: any) => {
@@ -122,6 +137,42 @@ export default function RecordDashboard({
     }
   };
 
+  // After loadRecord, resolve entity/property names for display:
+  const resolveLinkedNames = async (rec: Record<string, any>) => {
+    const entityFields = fields.filter(f =>
+      f.field_source === 'custom' &&
+      (f.fieldType === 'entity' || f.fieldType === 'property')
+    );
+
+    const names: Record<string, string> = {};
+
+    await Promise.all(entityFields.map(async f => {
+      const storedValue = rec[f.id];
+      if (!storedValue) return;
+
+      // Check if it looks like a UUID — if so resolve the name
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(String(storedValue));
+      if (!isUUID) { names[f.id] = storedValue; return; }
+
+      if (f.fieldType === 'entity') {
+        const { data } = await supabase
+          .from('entities')
+          .select('name')
+          .eq('id', storedValue)
+          .single();
+        if (data?.name) names[f.id] = data.name;
+      } else if (f.fieldType === 'property') {
+        const { data } = await supabase
+          .from('properties')
+          .select('street_address')
+          .eq('id', storedValue)
+          .single();
+        if (data?.street_address) names[f.id] = data.street_address;
+      }
+    }));
+
+    setLinkedEntityNames(names);
+  };
   const loadFields = async (cid: string) => {
     if (systemTable) {
       const { data: schemaCols } = await supabase.rpc('get_schema_metadata', {
@@ -320,37 +371,106 @@ export default function RecordDashboard({
   // ── Field save ─────────────────────────────────────────────────
 
   const handleFieldSave = async (fieldKey: string, value: any) => {
-    if (!record) return;
+  if (!record) return;
 
-    if (systemTable) {
-      const isCustom = fields.find(f => f.field_key === fieldKey)?.field_source === 'custom';
-      if (isCustom) {
-        await supabase.from('company_custom_field_values').upsert({
-          company_id: companyId,
-          field_id: fieldKey,
-          record_id: recordId,
-          table_name: systemTable,
-          value_text: value,
-        }, { onConflict: 'field_id,record_id' });
-      } else {
-        await supabase
-          .from(systemTable)
-          .update({ [fieldKey]: value || null })
-          .eq('id', recordId);
+  if (systemTable) {
+    const field = fields.find(f => f.field_key === fieldKey || f.id === fieldKey);
+    const isCustom = field?.field_source === 'custom';
+
+    if (isCustom && field) {
+      let saveValue = value;
+
+      // ── Entity type — find or create entity, store ID ──────────
+      if (field.fieldType === 'entity' && value) {
+        const { data: existing } = await supabase
+          .from('entities')
+          .select('id')
+          .eq('company_id', companyId)
+          .ilike('name', value.trim())
+          .is('deleted_at', null)
+          .limit(1)
+          .single();
+
+        if (existing) {
+          saveValue = existing.id;
+        } else {
+          const { data: newEnt } = await supabase
+            .from('entities')
+            .insert({
+              company_id: companyId,
+              name: value.trim(),
+              entity_type: 'Person', // default — user can change in entity record
+            })
+            .select('id')
+            .single();
+          saveValue = newEnt?.id || value;
+        }
       }
-    } else if (tableId) {
-      await supabase.from('company_table_values').upsert({
+
+      // ── Property type — find or create property, store ID ──────
+      if (field.fieldType === 'property' && value) {
+        const { data: existing } = await supabase
+          .from('properties')
+          .select('id')
+          .eq('company_id', companyId)
+          .ilike('street_address', value.trim())
+          .is('deleted_at', null)
+          .limit(1)
+          .single();
+
+        if (existing) {
+          saveValue = existing.id;
+        } else {
+          const { data: newProp } = await supabase
+            .from('properties')
+            .insert({
+              company_id: companyId,
+              street_address: value.trim(),
+            })
+            .select('id')
+            .single();
+          saveValue = newProp?.id || value;
+        }
+      }
+
+      // Save to custom_field_values
+      const fieldType = field.fieldType;
+      const valueCol =
+        ['number', 'currency'].includes(fieldType) ? 'value_number'
+        : fieldType === 'date' ? 'value_date'
+        : fieldType === 'boolean' ? 'value_boolean'
+        : 'value_text';
+
+      await supabase.from('company_custom_field_values').upsert({
         company_id: companyId,
-        table_id: tableId,
+        field_id: field.id,
         record_id: recordId,
-        field_id: fieldKey,
-        value_text: value,
-      }, { onConflict: 'record_id,field_id' });
+        table_name: systemTable,
+        [valueCol]: saveValue,
+      }, { onConflict: 'field_id,record_id' });
+
+      setRecord(prev => prev ? { ...prev, [field.id]: saveValue } : prev);
+
+    } else {
+      // Base column
+      await supabase
+        .from(systemTable)
+        .update({ [fieldKey]: value || null })
+        .eq('id', recordId);
+      setRecord(prev => prev ? { ...prev, [fieldKey]: value } : prev);
     }
 
+  } else if (tableId) {
+    await supabase.from('company_table_values').upsert({
+      company_id: companyId,
+      table_id: tableId,
+      record_id: recordId,
+      field_id: fieldKey,
+      value_text: value,
+    }, { onConflict: 'record_id,field_id' });
     setRecord(prev => prev ? { ...prev, [fieldKey]: value } : prev);
-  };
-
+  }
+};
   // ── Field layout ───────────────────────────────────────────────
 
   const getTabFieldLayout = (tabId: string): FieldLayout[] => {
@@ -456,6 +576,12 @@ export default function RecordDashboard({
     onBack();
   };
 
+  useEffect(() => {
+    if (record && fields.length > 0) {
+      resolveLinkedNames(record);
+    }
+  }, [record, fields]);
+
   // ── Derived ────────────────────────────────────────────────────
 
   const primaryValue = record
@@ -476,6 +602,7 @@ export default function RecordDashboard({
           recordValues={record || {}}
           isEditing={isEditingLayout}
           onSave={handleFieldSave}
+          linkedNames={linkedEntityNames}
           onLayoutChange={layout => {
             handleLayoutChange(activeTab.id, layout);
             saveTabFieldLayout(activeTab.id, layout);
