@@ -12,6 +12,7 @@ import GenericRecordDashboard from "@/components/GenericRecordDashboard";
 import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import RecordDashboard from "@/components/dashboard/RecordDashboard";
 
 interface Props {
   tableSlug: string;
@@ -182,14 +183,11 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   // ── Dashboard view ─────────────────────────────────────────────
   if (selectedId && tableDef) {
     return (
-      <GenericRecordDashboard
+      <RecordDashboard
         tableId={tableDef.id}
         tableSlug={tableSlug}
         tableName={tableDef.name}
-        tableColor={tableDef.color}
-        tableIcon={tableDef.icon}
         recordId={selectedId}
-        companyId={companyId || ''}
         onBack={() => {
           refetch();
           router.push(`/dashboard/${tableSlug}`);
@@ -197,7 +195,6 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       />
     );
   }
-
   if (loading || !tableDef) {
     return (
       <div className="flex items-center justify-center h-screen">

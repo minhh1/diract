@@ -1,21 +1,15 @@
 "use client";
-
 import GenericMasterTable from "@/components/GenericMasterTable";
-import GenericRecordDashboard from "@/components/GenericRecordDashboard";
+import RecordDashboard from "@/components/dashboard/RecordDashboard";
 
-export default function ProjectsPage() {
+export default function PropertiesPage() {
   return (
     <GenericMasterTable
       tableName="projects"
       pageTitle="Projects"
-      newButtonLabel="+ New project"
+      newButtonLabel="+ New Projects"
       renderDashboard={(id, onBack) => (
-        <GenericRecordDashboard
-          systemTable="projects"
-          recordId={id}
-          companyId=""
-          onBack={onBack}
-        />
+        <RecordDashboard systemTable="projects" recordId={id} onBack={onBack} />
       )}
     />
   );

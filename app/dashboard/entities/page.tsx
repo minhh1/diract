@@ -1,21 +1,16 @@
+// app/dashboard/properties/page.tsx
 "use client";
-
 import GenericMasterTable from "@/components/GenericMasterTable";
-import GenericRecordDashboard from "@/components/GenericRecordDashboard";
+import RecordDashboard from "@/components/dashboard/RecordDashboard";
 
-export default function EntitiesPage() {
+export default function PropertiesPage() {
   return (
     <GenericMasterTable
       tableName="entities"
       pageTitle="Entities"
-      newButtonLabel="+ New entity"
+      newButtonLabel="+ New Entity"
       renderDashboard={(id, onBack) => (
-        <GenericRecordDashboard
-          systemTable="entities"
-          recordId={id}
-          companyId=""
-          onBack={onBack}
-        />
+        <RecordDashboard systemTable="entities" recordId={id} onBack={onBack} />
       )}
     />
   );

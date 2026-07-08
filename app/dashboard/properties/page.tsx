@@ -1,8 +1,7 @@
 // app/dashboard/properties/page.tsx
 "use client";
-
 import GenericMasterTable from "@/components/GenericMasterTable";
-import GenericRecordDashboard from "@/components/GenericRecordDashboard";
+import RecordDashboard from "@/components/dashboard/RecordDashboard";
 
 export default function PropertiesPage() {
   return (
@@ -11,12 +10,7 @@ export default function PropertiesPage() {
       pageTitle="Properties"
       newButtonLabel="+ New property"
       renderDashboard={(id, onBack) => (
-        <GenericRecordDashboard
-          systemTable="properties"
-          recordId={id}
-          companyId=""
-          onBack={onBack}
-        />
+        <RecordDashboard systemTable="properties" recordId={id} onBack={onBack} />
       )}
     />
   );

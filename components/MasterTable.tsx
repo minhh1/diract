@@ -52,6 +52,7 @@ export interface MasterTableProps {
   onSort?: (colId: string, direction: 'asc' | 'desc', mode?: 'name' | 'number') => void;
   addressSortOpen?: boolean;
   onAddressSortOpenChange?: (open: boolean) => void;
+  resolveColLabel?: (colId: string) => string;
 }
 
 function errorMessage(code: string): string {
@@ -71,7 +72,7 @@ export default function MasterTable({
   relations = [], expandRelations = [],
   minWidth = 1200, rowKey = (item) => item.id,
   baseTable, parentType, companyId, editableCols, relationalEditCols, onRowMutated,
-  sort, onSort, addressSortOpen, onAddressSortOpenChange,
+  sort, onSort, addressSortOpen, onAddressSortOpenChange, resolveColLabel,
 }: MasterTableProps) {
   const router = useRouter();
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
@@ -212,7 +213,7 @@ export default function MasterTable({
                     </div>
 
                     <div className={`flex-1 py-5 px-2 uppercase text-[10px] font-bold tracking-widest truncate ${isActiveSortCol ? 'text-indigo-600' : ''}`}>
-                      {colId.replace(/_id$/, '').replace(/_/g, ' ')}
+                      {resolveColLabel ? resolveColLabel(colId) : colId.replace('_id', '').replace('.', ' ')}
                     </div>
 
                     {onSort && (
@@ -401,7 +402,7 @@ export default function MasterTable({
                           {expandCols.map(colId => (
                             <div key={colId}>
                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                {colId.replace(/_id$/, '').replace(/_/g, ' ')}
+                                {resolveColLabel ? resolveColLabel(colId) : colId.replace('_id', '').replace('.', ' ')}
                               </p>
                               <p className="text-[13px] font-medium text-slate-800 truncate">
                                 {String(resolveValue(item, colId) || '—')}

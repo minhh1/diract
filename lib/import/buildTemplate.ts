@@ -247,3 +247,31 @@ export function headerToLabel(
   // Base field
   return header.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
+
+export async function buildHeaderMap(
+  targetTable: string,
+  companyId: string
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (!targetTable) return map;
+
+  // Note: don't filter by company_id here — if cid is wrong/empty
+  // we'd silently return an empty map. Filter by table_name only,
+  // since custom fields are already company-scoped via RLS.
+  const { data: customFields } = await supabase
+    .from('company_custom_fields')
+    .select('id, field_key, label')
+    .eq('table_name', targetTable)
+    .order('display_order');
+
+  (customFields || []).forEach(f => {
+    map.set(f.label.toLowerCase().trim(), `custom:${f.id}:${f.field_key}`);
+    map.set(f.field_key.toLowerCase().trim(), `custom:${f.id}:${f.field_key}`);
+    map.set(
+      f.label.toLowerCase().trim().replace(/\s+/g, '_'),
+      `custom:${f.id}:${f.field_key}`
+    );
+  });
+
+  return map;
+}

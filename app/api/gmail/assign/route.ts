@@ -33,6 +33,22 @@ export async function POST(req: NextRequest) {
     gmail_label_applied: true,
   }, { onConflict: 'user_id,gmail_message_id' });
 
+  //log
+
+  await supabase.from('email_activity_log').insert({
+    user_id: user.id,
+    company_id: prof?.active_company_id,
+    gmail_message_id: messageId,
+    project_id: projectId,
+    action: 'label_applied',
+    details: {
+      subject,
+      from,
+      label: projectName,
+      thread_id: threadId,
+  },
+  });
+
   // Apply Gmail label
   if (projectName) {
     await applyProjectLabel(threadId, projectName, user.id, supabase);

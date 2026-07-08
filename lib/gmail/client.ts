@@ -127,17 +127,31 @@ export async function fetchEmailBody(
     if (!payload) return '';
 
     if (payload.body?.data) {
-      return Buffer.from(payload.body.data, 'base64url').toString('utf-8');
+      // Replace + and / back from URL-safe base64, then decode
+      const base64 = payload.body.data
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+      try {
+        return atob(base64);
+      } catch {
+        return '';
+      }
     }
 
     if (payload.parts?.length) {
-      // Prefer HTML over plain text
       const htmlPart = payload.parts.find((p: any) => p.mimeType === 'text/html');
       const textPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
       const preferred = htmlPart || textPart;
 
       if (preferred?.body?.data) {
-        return Buffer.from(preferred.body.data, 'base64url').toString('utf-8');
+        const base64 = preferred.body.data
+          .replace(/-/g, '+')
+          .replace(/_/g, '/');
+        try {
+          return atob(base64);
+        } catch {
+          return '';
+        }
       }
 
       // Recurse into nested multipart
@@ -225,12 +239,11 @@ export async function sendEmail(
     body,
   ];
 
-  const raw = Buffer.from(emailLines.join('\r\n'))
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
+const raw = btoa(unescape(encodeURIComponent(emailLines.join('\r\n'))))
+  .replace(/\+/g, '-')
+  .replace(/\//g, '_')
+  .replace(/=+$/, '');
+  
   await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: {
