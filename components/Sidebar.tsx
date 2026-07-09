@@ -609,8 +609,13 @@ export default function Sidebar() {
     }
 
     setProfile({ ...prof, company });
-    setIsAdmin(prof?.is_admin || false);
-
+    const { data: membership } = await supabase
+      .from('company_memberships')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('company_id', prof?.active_company_id)
+      .single();
+    setIsAdmin(membership?.role === 'company_admin');
     // Set visible tables
     if (visibleTablesData) {
       setVisibleTables(visibleTablesData);

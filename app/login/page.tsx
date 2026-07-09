@@ -48,48 +48,141 @@ function LoginPageInner() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Token state
   const [tokenValid, setTokenValid] = useState<boolean | null>(null);
+  const [tokenData, setTokenData] = useState<{
+    id: string;
+    company_id: string | null;
+    company_name: string | null;
+    note: string | null;
+    expires_at: string | null;
+    used_at: string | null;
+  } | null>(null);
+
+  // Is this an invite to join an existing company (vs creating a new one)?
+  const isJoinInvite = !!inviteToken && !!tokenData?.company_id;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace("/dashboard/properties");
+      if (session) {
+        // If logged in with a token, handle joining the company
+        if (inviteToken) {
+          handleTokenJoin(session.user.id);
+        } else {
+          router.replace("/dashboard/properties");
+        }
+      }
     });
   }, [router]);
 
-  // Validate token on load if present
+  // Validate token on load
   useEffect(() => {
     if (!inviteToken) return;
-    supabase
-      .from('registration_tokens')
-      .select('id, note, expires_at, used_at')
-      .eq('token', inviteToken)
-      .single()
-      .then(({ data, error }) => {
-        if (error || !data) { setTokenValid(false); return; }
-        const isExpired = data.expires_at && new Date(data.expires_at) < new Date();
-        const isUsed = !!data.used_at;
-        setTokenValid(!isExpired && !isUsed);
-      });
+    validateToken();
   }, [inviteToken]);
+
+  const validateToken = async () => {
+    console.log('[validateToken] looking up token:', inviteToken);
+    const { data, error } = await supabase
+      .from('registration_tokens')
+      .select('id, note, expires_at, used_at, company_id, company:company_id(name)')
+      .eq('token', inviteToken!)
+      .single();
+
+    if (error || !data) {
+      setTokenValid(false);
+      return;
+    }
+
+    const isExpired = data.expires_at
+      ? new Date(data.expires_at) < new Date()
+      : false;
+    const isUsed = !!data.used_at;
+
+    if (isExpired || isUsed) {
+      setTokenValid(false);
+      setTokenData(null);
+      return;
+    }
+
+    setTokenValid(true);
+    setTokenData({
+      id: data.id,
+      company_id: data.company_id,
+      company_name: (data.company as any)?.name || null,
+      note: data.note,
+      expires_at: data.expires_at,
+      used_at: data.used_at,
+    });
+
+    // If joining existing company, default to login mode
+    if (data.company_id) {
+      setMode("login");
+    } else {
+      setMode("register");
+    }
+  };
+
+  // Handle joining an existing company (called when already logged in with token)
+  const handleTokenJoin = async (userId: string) => {
+    if (!inviteToken || !tokenData?.company_id) {
+      router.replace("/dashboard/properties");
+      return;
+    }
+
+    try {
+      // Add to company_memberships
+      await supabase.from('company_memberships').upsert({
+        company_id: tokenData.company_id,
+        user_id: userId,
+        role: 'operator' as any,
+      }, { onConflict: 'company_id,user_id' });
+
+      // Switch active company
+      await supabase.from('profiles')
+        .update({ active_company_id: tokenData.company_id })
+        .eq('id', userId);
+
+      // Mark token used
+      await supabase.from('registration_tokens')
+        .update({ used_at: new Date().toISOString() })
+        .eq('token', inviteToken);
+
+      router.replace("/dashboard/properties");
+    } catch {
+      router.replace("/dashboard/properties");
+    }
+  };
 
   const clearMessages = () => { setError(null); setSuccess(null); };
 
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     clearMessages();
+    const redirectTo = inviteToken
+      ? `${window.location.origin}/auth/callback?token=${inviteToken}`
+      : `${window.location.origin}/auth/callback`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo,
         queryParams: { prompt: 'select_account' },
       },
     });
     if (error) { setError(error.message); setGoogleLoading(false); }
   };
 
+  // ── Login — also handles joining existing company with token ──────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
+
+    if (inviteToken && tokenValid === false) {
+      setError("This invitation link is invalid or has already been used.");
+      return;
+    }
+
     setLoading(true);
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -112,24 +205,45 @@ function LoginPageInner() {
       return;
     }
 
+    // If there's an invite token — use server route to join company
+    if (inviteToken && tokenValid && tokenData?.company_id) {
+      try {
+        const res = await fetch('/api/join-company', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: inviteToken }),
+        });
+        const result = await res.json();
+        if (!res.ok) {
+          console.error('[login] join-company error:', result.error);
+          // Don't block login — just log the error
+        }
+      } catch (err) {
+        console.error('[login] join-company fetch error:', err);
+      }
+    }
+
     router.replace("/dashboard/properties");
   };
 
+  // ── Register — creates new company OR joins existing via token ────
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
 
-    if (!companyName.trim()) { setError("Company name is required."); return; }
+    if (inviteToken && tokenValid === false) {
+      setError("This invitation link is invalid or has already been used.");
+      return;
+    }
+
+    // If joining existing company, just need email + password
+    if (!isJoinInvite) {
+      if (!companyName.trim()) { setError("Company name is required."); return; }
+    }
     if (password !== confirmPassword) { setError("Passwords don't match."); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
     if (abn.trim() && !isValidABN(abn.trim())) { setError("ABN is not valid."); return; }
     if (acn.trim() && !isValidACN(acn.trim())) { setError("ACN is not valid."); return; }
-
-    // If token provided but invalid, block registration
-    if (inviteToken && tokenValid === false) {
-      setError("This invitation link is invalid or has expired.");
-      return;
-    }
 
     setLoading(true);
 
@@ -139,28 +253,59 @@ function LoginPageInner() {
         password,
         options: {
           data: { full_name: fullName || email.split('@')[0] },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: inviteToken
+            ? `${window.location.origin}/auth/callback?token=${inviteToken}`
+            : `${window.location.origin}/auth/callback`,
         },
       });
 
       if (authError) throw new Error(authError.message);
       if (!authData.user) throw new Error("User creation failed.");
 
-      const { data: result, error: rpcError } = await supabase.rpc(
-        'register_company_and_profile',
-        {
-          p_user_id: authData.user.id,
-          p_full_name: fullName || email.split('@')[0],
-          p_email: email,
-          p_company_name: companyName.trim(),
-          p_abn: abn.trim() || null,
-          p_acn: acn.trim() || null,
-          p_invite_token: inviteToken || null,
-        }
-      );
+      const userId = authData.user.id;
 
-      if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
-      if (result && !result.success) throw new Error(result.error || 'Registration failed');
+      if (isJoinInvite && tokenData?.company_id) {
+        const companyId = tokenData.company_id;
+
+        // Switch active company first
+        await supabase.from('profiles').upsert({
+          id: userId,
+          full_name: fullName || email.split('@')[0],
+          email,
+          active_company_id: companyId,  // ← set to invited company
+          is_admin: false,
+          is_active: true,
+        }, { onConflict: 'id' });
+
+        // Then insert membership
+        await supabase.from('company_memberships').upsert({
+          company_id: companyId,
+          user_id: userId,
+          role: 'operator' as any,
+        }, { onConflict: 'company_id,user_id' });
+
+        // Mark token used
+        await supabase.from('registration_tokens')
+          .update({ used_at: new Date().toISOString() })
+          .eq('token', inviteToken);
+      } else {
+        // ── Create new company (original flow) ─────────────────
+        const { data: result, error: rpcError } = await supabase.rpc(
+          'register_company_and_profile',
+          {
+            p_user_id: userId,
+            p_full_name: fullName || email.split('@')[0],
+            p_email: email,
+            p_company_name: companyName.trim(),
+            p_abn: abn.trim() || null,
+            p_acn: acn.trim() || null,
+            p_invite_token: inviteToken || null,
+          }
+        );
+
+        if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
+        if (result && !result.success) throw new Error(result.error || 'Registration failed');
+      }
 
       const needsConfirmation = !authData.session;
       if (needsConfirmation) {
@@ -193,12 +338,15 @@ function LoginPageInner() {
           </div>
           <h1 className="text-3xl font-black italic tracking-tighter text-slate-900">niksen-flow</h1>
           <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mt-3">
-            {mode === 'register' ? 'New Company Enrolment' : 'Enterprise Secure Access'}
+            {mode === 'register'
+              ? isJoinInvite ? `Join ${tokenData?.company_name || 'Company'}` : 'New Company Enrolment'
+              : isJoinInvite ? `Sign in to join ${tokenData?.company_name || 'Company'}` : 'Enterprise Secure Access'
+            }
           </p>
         </div>
 
         {/* Invite token status */}
-        {inviteToken && mode === 'register' && (
+        {inviteToken && (
           <div className={`mb-6 px-5 py-3.5 rounded-2xl text-[11px] font-bold flex items-center gap-2 ${
             tokenValid === false
               ? 'bg-red-50 border border-red-100 text-red-600'
@@ -212,10 +360,22 @@ function LoginPageInner() {
               ? <CheckCircle2 size={14} />
               : <AlertCircle size={14} />
             }
-            {tokenValid === null ? 'Validating invitation...'
-              : tokenValid ? 'Valid invitation — complete registration below'
-              : 'This invitation link is invalid or has already been used'}
+            {tokenValid === null
+              ? 'Validating invitation...'
+              : tokenValid
+              ? isJoinInvite
+                ? `You've been invited to join ${tokenData?.company_name || 'a company'}`
+                : 'Valid invitation — complete registration below'
+              : 'This invitation link is invalid or has already been used'
+            }
           </div>
+        )}
+
+        {/* Note from inviter */}
+        {tokenData?.note && tokenValid && (
+          <p className="text-[12px] text-slate-400 italic text-center mb-6">
+            "{tokenData.note}"
+          </p>
         )}
 
         {/* Messages */}
@@ -233,7 +393,7 @@ function LoginPageInner() {
         {/* Google */}
         <button
           onClick={handleGoogleLogin}
-          disabled={googleLoading || loading}
+          disabled={googleLoading || loading || tokenValid === false}
           className="w-full flex items-center justify-center gap-3 py-4 rounded-full border border-slate-200 font-bold text-sm hover:bg-slate-50 transition-all mb-8 group disabled:opacity-50"
         >
           {googleLoading
@@ -265,38 +425,41 @@ function LoginPageInner() {
                 className="w-full p-4 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
               />
 
-              <div className="rounded-[28px] border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">
-                  Company details
-                </p>
-                <div className="relative">
-                  <Building2 className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                  <input
-                    required
-                    type="text"
-                    placeholder="Company name"
-                    value={companyName}
-                    onChange={e => { setCompanyName(e.target.value); clearMessages(); }}
-                    className="w-full p-4 pl-12 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
-                  />
+              {/* Only show company fields if creating a new company */}
+              {!isJoinInvite && (
+                <div className="rounded-[28px] border border-slate-100 bg-slate-50/50 p-4 space-y-3">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">
+                    Company details
+                  </p>
+                  <div className="relative">
+                    <Building2 className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                    <input
+                      required
+                      type="text"
+                      placeholder="Company name"
+                      value={companyName}
+                      onChange={e => { setCompanyName(e.target.value); clearMessages(); }}
+                      className="w-full p-4 pl-12 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="ABN (optional)"
+                      value={abn}
+                      onChange={e => { setAbn(e.target.value); clearMessages(); }}
+                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="ACN (optional)"
+                      value={acn}
+                      onChange={e => { setAcn(e.target.value); clearMessages(); }}
+                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                    />
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    placeholder="ABN (optional)"
-                    value={abn}
-                    onChange={e => { setAbn(e.target.value); clearMessages(); }}
-                    className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
-                  />
-                  <input
-                    type="text"
-                    placeholder="ACN (optional)"
-                    value={acn}
-                    onChange={e => { setAcn(e.target.value); clearMessages(); }}
-                    className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
-                  />
-                </div>
-              </div>
+              )}
             </>
           )}
 
@@ -347,24 +510,34 @@ function LoginPageInner() {
 
           <button
             type="submit"
-            disabled={loading || googleLoading || (mode === 'register' && inviteToken !== null && tokenValid === false)}
+            disabled={loading || googleLoading || tokenValid === false}
             className="w-full bg-black text-white py-4 rounded-full font-black uppercase text-xs tracking-widest shadow-xl shadow-black/10 hover:bg-slate-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {loading
               ? <Loader2 className="animate-spin" size={18} />
-              : <>{mode === 'login' ? 'Sign in' : 'Create account'}<ArrowRight size={16} /></>
+              : <>
+                  {mode === 'login'
+                    ? isJoinInvite ? `Sign in & join ${tokenData?.company_name || 'company'}` : 'Sign in'
+                    : isJoinInvite ? `Create account & join ${tokenData?.company_name || 'company'}` : 'Create account'
+                  }
+                  <ArrowRight size={16} />
+                </>
             }
           </button>
         </form>
 
-        {/* Toggle */}
+        {/* Toggle — for invite links, allow switching between sign in and register */}
         <button
           onClick={switchMode}
           className="w-full mt-8 text-[10px] font-black uppercase text-slate-400 hover:text-indigo-600 transition-colors tracking-widest text-center"
         >
           {mode === 'login'
-            ? "New here? Create an account"
-            : "Already have an account? Sign in"
+            ? isJoinInvite
+              ? "New to niksen? Create an account instead"
+              : "New here? Create an account"
+            : isJoinInvite
+              ? "Already have an account? Sign in instead"
+              : "Already have an account? Sign in"
           }
         </button>
       </div>

@@ -5,9 +5,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, ArrowLeft, Building2, Users, Settings,
-  Shield, Trash2, CheckCircle2, XCircle, Plus, X,
-  Copy, Link, Clock, ChevronDown, ChevronUp
+  Loader2, Users, Settings, Shield, Trash2,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock,
 } from "lucide-react";
 
 interface Member {
@@ -36,6 +35,12 @@ interface Token {
   expires_at: string | null;
   used_at: string | null;
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  company_admin: 'Admin',
+  manager: 'Manager',
+  operator: 'Operator',
+};
 
 export default function AdminPage() {
   const router = useRouter();
@@ -66,9 +71,7 @@ export default function AdminPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return; }
 
-    const { data: isAdmin } = await supabase.rpc('is_current_user_admin');
-    if (!isAdmin) { setUnauthorized(true); setLoading(false); return; }
-
+    // Get profile first
     const { data: profile } = await supabase
       .from('profiles')
       .select('active_company_id')
@@ -81,10 +84,34 @@ export default function AdminPage() {
       return;
     }
 
-    const [{ data: comp }, { data: memberData }, { data: tokenData }] = await Promise.all([
-      supabase.from('companies').select('*').eq('id', profile.active_company_id).single(),
-      supabase.from('profiles').select('id, full_name, email, role, is_active, is_admin').eq('active_company_id', profile.active_company_id),
-      supabase.from('registration_tokens').select('*').eq('created_by', user.id).order('created_at', { ascending: false }),
+    const companyId = profile.active_company_id;
+
+    // Check admin via membership role — per-company, not global is_admin
+    const { data: membership } = await supabase
+      .from('company_memberships')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('company_id', companyId)
+      .single();
+
+    const isAdmin = membership?.role === 'company_admin';
+    if (!isAdmin) { setUnauthorized(true); setLoading(false); return; }
+
+    const [
+      { data: comp },
+      { data: memberData },
+      { data: tokenData },
+    ] = await Promise.all([
+      supabase.from('companies').select('*').eq('id', companyId).single(),
+      supabase
+        .from('company_memberships')
+        .select('role, profile:user_id(id, full_name, email, is_active)')
+        .eq('company_id', companyId),
+      supabase
+        .from('registration_tokens')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false }),
     ]);
 
     if (comp) {
@@ -93,30 +120,56 @@ export default function AdminPage() {
       setCompanyAbn(comp.abn || '');
       setCompanyAcn(comp.acn || '');
     }
-    setMembers(memberData || []);
+
+    setMembers(
+      (memberData || []).map((m: any) => ({
+        id: m.profile.id,
+        full_name: m.profile.full_name || '',
+        email: m.profile.email || '',
+        role: m.role || 'operator',
+        is_active: m.profile.is_active ?? true,
+        is_admin: m.role === 'company_admin', // derived from membership role
+      }))
+    );
+
     setTokens(tokenData || []);
     setLoading(false);
   };
 
   const handleToggleAdmin = async (member: Member) => {
     setSaving(member.id);
-    await supabase.from('profiles').update({ is_admin: !member.is_admin }).eq('id', member.id);
-    setMembers(prev => prev.map(m => m.id === member.id ? { ...m, is_admin: !m.is_admin } : m));
+    const newIsAdmin = !member.is_admin;
+    // Only update membership role — NOT profiles.is_admin (which is global)
+    await supabase.from('company_memberships')
+      .update({ role: (newIsAdmin ? 'company_admin' : 'operator') as any })
+      .eq('user_id', member.id)
+      .eq('company_id', company!.id);
+    setMembers(prev => prev.map(m =>
+      m.id === member.id
+        ? { ...m, is_admin: newIsAdmin, role: newIsAdmin ? 'company_admin' : 'operator' }
+        : m
+    ));
     setSaving(null);
   };
 
   const handleToggleActive = async (member: Member) => {
     setSaving(member.id);
-    await supabase.from('profiles').update({ is_active: !member.is_active }).eq('id', member.id);
-    setMembers(prev => prev.map(m => m.id === member.id ? { ...m, is_active: !m.is_active } : m));
+    await supabase.from('profiles')
+      .update({ is_active: !member.is_active })
+      .eq('id', member.id);
+    setMembers(prev => prev.map(m =>
+      m.id === member.id ? { ...m, is_active: !m.is_active } : m
+    ));
     setSaving(null);
   };
 
   const handleRemoveMember = async (member: Member) => {
     if (!window.confirm(`Remove ${member.full_name || member.email} from this company?`)) return;
     setSaving(member.id);
-    await supabase.from('company_memberships').delete()
-      .eq('user_id', member.id).eq('company_id', company!.id);
+    await supabase.from('company_memberships')
+      .delete()
+      .eq('user_id', member.id)
+      .eq('company_id', company!.id);
     setMembers(prev => prev.filter(m => m.id !== member.id));
     setSaving(null);
   };
@@ -135,12 +188,13 @@ export default function AdminPage() {
 
   const handleGenerateToken = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user || !company) return;
     setGeneratingToken(true);
     const { data } = await supabase
       .from('registration_tokens')
       .insert({
         created_by: user.id,
+        company_id: company.id,
         note: newTokenNote.trim() || null,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
@@ -181,109 +235,138 @@ export default function AdminPage() {
       <p className="text-slate-400 font-bold text-[11px] uppercase tracking-widest">
         Admin access required
       </p>
-      <button onClick={() => router.back()} className="text-[11px] text-indigo-600 font-bold hover:underline">
+      <button
+        onClick={() => router.back()}
+        className="text-[11px] text-indigo-600 font-bold hover:underline"
+      >
         Go back
       </button>
     </div>
   );
 
   const tabs = [
-    { id: 'members', label: 'Members', icon: Users },
-    { id: 'invites', label: 'Invite links', icon: Link },
-    { id: 'company', label: 'Company', icon: Settings },
+    { id: 'members' as const,  label: 'Members',      icon: Users },
+    { id: 'invites' as const,  label: 'Invite links', icon: Link },
+    { id: 'company' as const,  label: 'Company',      icon: Settings },
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600">
-      <header className="bg-white border-b border-slate-100 p-8 shrink-0">
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase hover:text-black mb-6 transition-all tracking-widest"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
+    <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
 
-        <div className="flex items-center gap-4 mb-6">
-          <div className="h-12 w-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shrink-0">
-            {company?.name?.substring(0, 1).toUpperCase()}
-          </div>
-          <div>
-            <h1 className="text-3xl font-light uppercase tracking-tight text-slate-900">
-              {company?.name}
-            </h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-              Company administration · {members.length} member{members.length !== 1 ? 's' : ''}
-            </p>
+      {/* Header */}
+      <header className="bg-white border-b border-slate-100 shrink-0 px-8 pt-8 pb-0">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-2xl bg-amber-50 flex items-center justify-center">
+              <Shield size={18} className="text-amber-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-light uppercase tracking-tight text-slate-900">
+                Admin
+              </h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {company?.name}
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="flex gap-1 bg-slate-100 p-1 rounded-full w-fit border border-slate-200">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-5 py-2 rounded-full text-[11px] font-medium transition-all ${
-                activeTab === tab.id ? 'bg-white text-black shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <tab.icon size={13} /> {tab.label}
-            </button>
-          ))}
+        <div className="flex gap-1">
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 text-[11px] font-bold border-b-2 transition-all ${
+                  activeTab === tab.id
+                    ? 'border-amber-500 text-amber-600'
+                    : 'border-transparent text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                <Icon size={13} />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-8">
+      {/* Main */}
+      <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl mx-auto space-y-4">
 
-          {/* ── Members ── */}
+          {/* ── Members tab ── */}
           {activeTab === 'members' && (
-            members.length === 0 ? (
-              <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-20">
-                No members yet
-              </p>
-            ) : (
-              members.map(member => {
-                const isSaving = saving === member.id;
-                return (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  {members.length} member{members.length !== 1 ? 's' : ''}
+                </p>
+                <button
+                  onClick={() => setActiveTab('invites')}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-full text-[10px] font-bold hover:bg-amber-700 transition-all"
+                >
+                  <Plus size={12} /> Invite member
+                </button>
+              </div>
+
+              {members.length === 0 ? (
+                <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
+                  No members yet
+                </p>
+              ) : (
+                members.map(member => (
                   <div
                     key={member.id}
-                    className={`bg-white border border-slate-200 rounded-[28px] p-5 flex items-center gap-4 transition-opacity ${!member.is_active ? 'opacity-50' : ''}`}
+                    className={`bg-white border rounded-[28px] p-5 flex items-center gap-4 ${
+                      member.is_active ? 'border-slate-100' : 'border-slate-100 opacity-50'
+                    }`}
                   >
-                    <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-[11px] font-bold text-indigo-600 uppercase shrink-0">
-                      {member.full_name?.substring(0, 2) || '??'}
+                    {/* Avatar */}
+                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-[12px] font-bold text-slate-600 uppercase shrink-0">
+                      {(member.full_name || member.email).substring(0, 2)}
                     </div>
+
+                    {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-bold text-slate-800 truncate">
-                        {member.full_name || '—'}
-                      </p>
-                      <p className="text-[11px] text-slate-400 truncate">{member.email}</p>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[9px] font-bold uppercase">
-                          {member.role?.replace('_', ' ')}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-[13px] font-bold text-slate-800 truncate">
+                          {member.full_name || '—'}
+                        </p>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                          member.role === 'company_admin'
+                            ? 'bg-amber-100 text-amber-700'
+                            : member.role === 'manager'
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {ROLE_LABELS[member.role] || member.role}
                         </span>
-                        {member.is_admin && (
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-bold uppercase">
-                            Admin
-                          </span>
-                        )}
                         {!member.is_active && (
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-400 rounded-full text-[9px] font-bold uppercase">
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-red-100 text-red-500">
                             Inactive
                           </span>
                         )}
                       </div>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {member.email}
+                      </p>
                     </div>
+
+                    {/* Actions */}
                     <div className="flex items-center gap-2 shrink-0">
-                      {isSaving ? (
+                      {saving === member.id ? (
                         <Loader2 size={16} className="animate-spin text-slate-300" />
                       ) : (
                         <>
                           <button
                             onClick={() => handleToggleAdmin(member)}
+                            title={member.is_admin ? 'Remove admin' : 'Make admin'}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
                               member.is_admin
-                                ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
-                                : 'bg-slate-50 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'
+                                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                : 'bg-slate-50 text-slate-500 hover:bg-amber-50 hover:text-amber-600'
                             }`}
                           >
                             <Shield size={11} />
@@ -293,16 +376,19 @@ export default function AdminPage() {
                             onClick={() => handleToggleActive(member)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
                               member.is_active
-                                ? 'bg-slate-50 text-slate-500 hover:bg-amber-50 hover:text-amber-600'
+                                ? 'bg-slate-50 text-slate-500 hover:bg-red-50 hover:text-red-500'
                                 : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                             }`}
                           >
-                            {member.is_active ? <XCircle size={11} /> : <CheckCircle2 size={11} />}
-                            {member.is_active ? 'Deactivate' : 'Activate'}
+                            {member.is_active
+                              ? <><XCircle size={11} /> Deactivate</>
+                              : <><CheckCircle2 size={11} /> Activate</>
+                            }
                           </button>
                           <button
                             onClick={() => handleRemoveMember(member)}
                             className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                            title="Remove from company"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -310,28 +396,30 @@ export default function AdminPage() {
                       )}
                     </div>
                   </div>
-                );
-              })
-            )
+                ))
+              )}
+            </>
           )}
 
-          {/* ── Invite links ── */}
+          {/* ── Invite links tab ── */}
           {activeTab === 'invites' && (
             <>
-              {/* Generate new token */}
-              <div className="bg-white border border-slate-200 rounded-[32px] p-6">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
-                  Generate invitation link
-                </p>
-                <p className="text-[12px] text-slate-500 mb-4">
-                  Share this link with a new team member. Each link can only be used once and expires in 7 days.
-                </p>
+              <div className="bg-white border border-slate-200 rounded-[32px] p-6 space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    Generate invitation link
+                  </p>
+                  <p className="text-[12px] text-slate-500">
+                    Share this link with a new team member. Each link can only be used once and expires in 7 days.
+                    The invited user will join as Operator — you can promote them to Admin after they join.
+                  </p>
+                </div>
                 <div className="flex gap-3">
                   <input
                     value={newTokenNote}
                     onChange={e => setNewTokenNote(e.target.value)}
                     placeholder="Note e.g. 'For John Smith onboarding'"
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-full px-4 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-indigo-100"
                     onKeyDown={e => { if (e.key === 'Enter') handleGenerateToken(); }}
                   />
                   <button
@@ -339,13 +427,15 @@ export default function AdminPage() {
                     disabled={generatingToken}
                     className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold disabled:opacity-50 shrink-0"
                   >
-                    {generatingToken ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                    {generatingToken
+                      ? <Loader2 size={12} className="animate-spin" />
+                      : <Plus size={12} />
+                    }
                     Generate
                   </button>
                 </div>
               </div>
 
-              {/* Token list */}
               {tokens.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">
                   No invitation links generated yet
@@ -366,7 +456,9 @@ export default function AdminPage() {
                         isActive ? 'border-emerald-100' : 'border-slate-100 opacity-60'
                       }`}
                     >
-                      <div className={`p-2.5 rounded-2xl shrink-0 ${isActive ? 'bg-emerald-50' : 'bg-slate-50'}`}>
+                      <div className={`p-2.5 rounded-2xl shrink-0 ${
+                        isActive ? 'bg-emerald-50' : 'bg-slate-50'
+                      }`}>
                         <Link size={16} className={isActive ? 'text-emerald-600' : 'text-slate-400'} />
                       </div>
 
@@ -375,7 +467,7 @@ export default function AdminPage() {
                           <p className="text-[13px] font-bold text-slate-700 mb-1">{token.note}</p>
                         )}
                         <p className="text-[10px] font-mono text-slate-400 truncate">{link}</p>
-                        <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
                           {isUsed ? (
                             <span className="flex items-center gap-1 text-[9px] font-bold uppercase text-slate-400">
                               <CheckCircle2 size={10} /> Used
@@ -408,7 +500,10 @@ export default function AdminPage() {
                                 : 'bg-slate-50 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600'
                             }`}
                           >
-                            {copied === token.token ? <CheckCircle2 size={11} /> : <Copy size={11} />}
+                            {copied === token.token
+                              ? <CheckCircle2 size={11} />
+                              : <Copy size={11} />
+                            }
                             {copied === token.token ? 'Copied!' : 'Copy link'}
                           </button>
                         )}
@@ -429,7 +524,7 @@ export default function AdminPage() {
             </>
           )}
 
-          {/* ── Company settings ── */}
+          {/* ── Company settings tab ── */}
           {activeTab === 'company' && (
             <div className="bg-white border border-slate-200 rounded-[40px] p-8 space-y-5">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -477,7 +572,10 @@ export default function AdminPage() {
                 disabled={savingCompany}
                 className="w-full py-3.5 bg-slate-900 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {savingCompany ? <Loader2 size={14} className="animate-spin" /> : 'Save changes'}
+                {savingCompany
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : 'Save changes'
+                }
               </button>
 
               <div className="pt-4 border-t border-slate-100">
@@ -488,6 +586,7 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
         </div>
       </main>
     </div>
