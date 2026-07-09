@@ -71,7 +71,7 @@ export default function AdminPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return; }
 
-    // Get profile first
+    // Get profile
     const { data: profile } = await supabase
       .from('profiles')
       .select('active_company_id')
@@ -86,27 +86,23 @@ export default function AdminPage() {
 
     const companyId = profile.active_company_id;
 
-    // Check admin via membership role — per-company, not global is_admin
-    const { data: membership } = await supabase
+    // Check admin via membership role (per-company)
+    const { data: myMembership } = await supabase
       .from('company_memberships')
       .select('role')
       .eq('user_id', user.id)
       .eq('company_id', companyId)
       .single();
 
-    const isAdmin = membership?.role === 'company_admin';
-    if (!isAdmin) { setUnauthorized(true); setLoading(false); return; }
+    if (myMembership?.role !== 'company_admin') {
+      setUnauthorized(true);
+      setLoading(false);
+      return;
+    }
 
-    const [
-      { data: comp },
-      { data: memberData },
-      { data: tokenData },
-    ] = await Promise.all([
+    // Load company + tokens in parallel
+    const [{ data: comp }, { data: tokenData }] = await Promise.all([
       supabase.from('companies').select('*').eq('id', companyId).single(),
-      supabase
-        .from('company_memberships')
-        .select('role, profile:user_id(id, full_name, email, is_active)')
-        .eq('company_id', companyId),
       supabase
         .from('registration_tokens')
         .select('*')
@@ -120,26 +116,42 @@ export default function AdminPage() {
       setCompanyAbn(comp.abn || '');
       setCompanyAcn(comp.acn || '');
     }
-
-    setMembers(
-      (memberData || []).map((m: any) => ({
-        id: m.profile.id,
-        full_name: m.profile.full_name || '',
-        email: m.profile.email || '',
-        role: m.role || 'operator',
-        is_active: m.profile.is_active ?? true,
-        is_admin: m.role === 'company_admin', // derived from membership role
-      }))
-    );
-
     setTokens(tokenData || []);
+
+    // Members — two separate queries to avoid FK join issues
+    const { data: memberships } = await supabase
+      .from('company_memberships')
+      .select('user_id, role')
+      .eq('company_id', companyId);
+
+    if (memberships && memberships.length > 0) {
+      const userIds = memberships.map((m: any) => m.user_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, is_active')
+        .in('id', userIds);
+
+      setMembers(memberships.map((m: any) => {
+        const prof = profiles?.find((p: any) => p.id === m.user_id);
+        return {
+          id: m.user_id,
+          full_name: prof?.full_name || '',
+          email: prof?.email || '',
+          role: m.role || 'operator',
+          is_active: prof?.is_active ?? true,
+          is_admin: m.role === 'company_admin',
+        };
+      }));
+    } else {
+      setMembers([]);
+    }
+
     setLoading(false);
   };
 
   const handleToggleAdmin = async (member: Member) => {
     setSaving(member.id);
     const newIsAdmin = !member.is_admin;
-    // Only update membership role — NOT profiles.is_admin (which is global)
     await supabase.from('company_memberships')
       .update({ role: (newIsAdmin ? 'company_admin' : 'operator') as any })
       .eq('user_id', member.id)
@@ -223,6 +235,8 @@ export default function AdminPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  // ── Loading / unauthorized ─────────────────────────────────────
+
   if (loading) return (
     <div className="flex items-center justify-center h-screen">
       <Loader2 className="animate-spin text-slate-300" size={24} />
@@ -296,7 +310,7 @@ export default function AdminPage() {
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl mx-auto space-y-4">
 
-          {/* ── Members tab ── */}
+          {/* ── Members ── */}
           {activeTab === 'members' && (
             <>
               <div className="flex items-center justify-between mb-2">
@@ -323,12 +337,10 @@ export default function AdminPage() {
                       member.is_active ? 'border-slate-100' : 'border-slate-100 opacity-50'
                     }`}
                   >
-                    {/* Avatar */}
                     <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-[12px] font-bold text-slate-600 uppercase shrink-0">
                       {(member.full_name || member.email).substring(0, 2)}
                     </div>
 
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-[13px] font-bold text-slate-800 truncate">
@@ -354,7 +366,6 @@ export default function AdminPage() {
                       </p>
                     </div>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-2 shrink-0">
                       {saving === member.id ? (
                         <Loader2 size={16} className="animate-spin text-slate-300" />
@@ -362,7 +373,6 @@ export default function AdminPage() {
                         <>
                           <button
                             onClick={() => handleToggleAdmin(member)}
-                            title={member.is_admin ? 'Remove admin' : 'Make admin'}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
                               member.is_admin
                                 ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
@@ -388,7 +398,6 @@ export default function AdminPage() {
                           <button
                             onClick={() => handleRemoveMember(member)}
                             className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                            title="Remove from company"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -401,7 +410,7 @@ export default function AdminPage() {
             </>
           )}
 
-          {/* ── Invite links tab ── */}
+          {/* ── Invite links ── */}
           {activeTab === 'invites' && (
             <>
               <div className="bg-white border border-slate-200 rounded-[32px] p-6 space-y-4">
@@ -410,8 +419,8 @@ export default function AdminPage() {
                     Generate invitation link
                   </p>
                   <p className="text-[12px] text-slate-500">
-                    Share this link with a new team member. Each link can only be used once and expires in 7 days.
-                    The invited user will join as Operator — you can promote them to Admin after they join.
+                    Share this link with a new team member. Each link can only be used once and
+                    expires in 7 days. Invited users join as Operator — promote them to Admin after they join.
                   </p>
                 </div>
                 <div className="flex gap-3">
@@ -511,7 +520,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => handleRevokeToken(token.id)}
                             className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                            title="Revoke this link"
+                            title="Revoke"
                           >
                             <X size={14} />
                           </button>
@@ -524,7 +533,7 @@ export default function AdminPage() {
             </>
           )}
 
-          {/* ── Company settings tab ── */}
+          {/* ── Company settings ── */}
           {activeTab === 'company' && (
             <div className="bg-white border border-slate-200 rounded-[40px] p-8 space-y-5">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
