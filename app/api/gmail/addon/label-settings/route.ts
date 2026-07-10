@@ -12,23 +12,16 @@ export async function GET(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  // Resolve email from token — try userinfo first, then tokeninfo
-  let email: string | null = null;
+  // Resolve email — prefer X-User-Email header (sent by addon directly),
+  // fall back to token userinfo lookup
+  let email: string | null = req.headers.get('X-User-Email');
 
-  const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo',
-    { headers: { Authorization: `Bearer ${accessToken}` } });
-
-  if (userRes.ok) {
-    const userInfo = await userRes.json();
-    email = userInfo.email || null;
-  } else {
-    // Fallback — tokeninfo works for ScriptApp.getOAuthToken()
-    const tokenRes = await fetch(
-      `https://oauth2.googleapis.com/tokeninfo?access_token=${accessToken}`
-    );
-    if (tokenRes.ok) {
-      const tokenInfo = await tokenRes.json();
-      email = tokenInfo.email || null;
+  if (!email) {
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo',
+      { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (userRes.ok) {
+      const userInfo = await userRes.json();
+      email = userInfo.email || null;
     }
   }
 
