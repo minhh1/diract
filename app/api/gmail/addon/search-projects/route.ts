@@ -4,8 +4,10 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
   const accessToken = req.headers.get('X-Gmail-Access-Token');
-  const q = new URL(req.url).searchParams.get('q') || '';
-  if (!accessToken) return NextResponse.json({ error: 'No token' }, { status: 401 });
+  const userEmailHeader = req.headers.get('X-User-Email');
+  const url = new URL(req.url);
+  const q = url.searchParams.get('q') || '';
+  const labelledOnly = url.searchParams.get('labelled') === 'true';
 
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,40 +15,75 @@ export async function GET(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  // Resolve email — prefer header, fall back to token
-  let email: string | null = req.headers.get('X-User-Email');
-  if (!email) {
-    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo',
+  // Resolve email
+  let email: string | null = userEmailHeader;
+  if (!email && accessToken) {
+    const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo',
       { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (userRes.ok) email = (await userRes.json()).email || null;
+    if (r.ok) email = (await r.json()).email || null;
   }
   if (!email) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
 
+  // Find userId
   let userId: string | null = null;
-  const { data: tokenRow } = await db
-    .from('user_gmail_tokens').select('user_id').eq('email', email).single();
-  if (tokenRow?.user_id) {
-    userId = userId;
-  } else {
+  const { data: tr } = await db.from('user_gmail_tokens').select('user_id').eq('email', email).single();
+  if (tr?.user_id) userId = tr.user_id;
+  else {
     const { data: pr } = await db.from('profiles').select('id').eq('email', email).single();
     if (pr?.id) userId = pr.id;
   }
   if (!userId) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-  const tokenRow2 = { user_id: userId };
 
-  const { data: prof } = await db
-    .from('profiles').select('active_company_id').eq('id', userId).single();
+  const { data: prof } = await db.from('profiles').select('active_company_id').eq('id', userId).single();
   if (!prof?.active_company_id) return NextResponse.json({ error: 'No company' }, { status: 404 });
 
-  // Search projects by name or matter number
+  const companyId = prof.active_company_id;
+
+  if (labelledOnly) {
+    // Return all projects that have a gmail label (not deleted, not removed)
+    const { data: labels } = await db
+      .from('project_gmail_labels')
+      .select('project_id, gmail_label_name')
+      .eq('company_id', companyId)
+      .is('removed_at', null)
+      .is('deleted_at', null);
+
+    if (!labels?.length) return NextResponse.json({ projects: [] });
+
+    const projectIds = labels.map(l => l.project_id);
+    const labelMap = new Map(labels.map(l => [l.project_id, l.gmail_label_name]));
+
+    let query = db
+      .from('projects')
+      .select('id, name')
+      .eq('company_id', companyId)
+      .is('deleted_at', null)
+      .in('id', projectIds)
+      .order('name');
+
+    if (q) query = query.ilike('name', `%${q}%`);
+
+    const { data: projects } = await query;
+
+    return NextResponse.json({
+      projects: (projects || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        labelName: labelMap.get(p.id) || null,
+      })),
+    });
+  }
+
+  // Regular search
   const { data: projects } = await db
     .from('projects')
     .select('id, name')
-    .eq('company_id', prof.active_company_id)
+    .eq('company_id', companyId)
+    .is('deleted_at', null)
     .ilike('name', `%${q}%`)
-    .limit(10);
+    .order('name')
+    .limit(20);
 
-  // Get label names for results
   const projectIds = (projects || []).map(p => p.id);
   const { data: labels } = await db
     .from('project_gmail_labels')
