@@ -42,6 +42,7 @@ const features = [
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-white text-slate-900 antialiased">
+      <meta name="google-site-verification" content="a9Xz9Q_dR3_MIzA_Dgsp01YgxVIEu-CdTKFViW4oBMg" />
 
       {/* Nav */}
       <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
