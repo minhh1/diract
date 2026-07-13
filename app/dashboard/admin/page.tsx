@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
+import AdminDefaultViewsTab from "@/components/admin/AdminDefaultViewsTab";
 
 interface Member {
   id: string;
@@ -52,7 +53,7 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'company' | 'invites' | 'gmail'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail'>('members');
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -314,6 +315,7 @@ export default function AdminPage() {
   const tabs = [
     { id: 'members' as const,  label: 'Members',      icon: Users },
     { id: 'teams'   as const,  label: 'Teams',        icon: Users },
+    { id: 'views'   as const,  label: 'Default views', icon: Settings },
     { id: 'invites' as const,  label: 'Invite links', icon: Link },
     { id: 'gmail'   as const,  label: 'Gmail',        icon: Mail },
     { id: 'company' as const,  label: 'Company',      icon: Settings },
@@ -636,6 +638,11 @@ export default function AdminPage() {
           {/* ── Teams ── */}
           {activeTab === 'teams' && company?.id && (
             <AdminTeamsTab companyId={company.id} />
+          )}
+
+          {/* ── Default views ── */}
+          {activeTab === 'views' && company?.id && (
+            <AdminDefaultViewsTab companyId={company.id} />
           )}
 
           {/* ── Gmail source of truth ── */}

@@ -54,27 +54,45 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
       .from('projects').select('access_mode').eq('id', projectId).single();
     if (project?.access_mode) setAccessMode(project.access_mode as AccessMode);
 
-    // Assigned teams with members
-    const { data: pts } = await supabase
+    // Assigned teams — two-step to avoid join issues
+    const { data: ptRows } = await supabase
       .from('project_teams')
-      .select('team:team_id(id, team_name, leader_id)')
+      .select('team_id')
       .eq('project_id', projectId);
 
-    const teams: Team[] = (pts || []).map((r: any) => r.team).filter(Boolean);
-    // Load members for each team
-    for (const team of teams) {
-      const { data: profs } = await supabase
-        .from('profiles').select('id, full_name, email').eq('team_id', team.id);
-      team.members = profs || [];
+    const teamIds = (ptRows || []).map((r: any) => r.team_id).filter(Boolean);
+    const teams: Team[] = [];
+    if (teamIds.length > 0) {
+      const { data: teamData } = await supabase
+        .from('teams')
+        .select('id, team_name, leader_id')
+        .in('id', teamIds);
+      for (const team of (teamData || [])) {
+        const { data: profs } = await supabase
+          .from('profiles').select('id, full_name, email').eq('team_id', team.id);
+        teams.push({ ...team, members: profs || [] });
+      }
     }
     setAssignedTeams(teams);
 
-    // Assigned individual members
-    const { data: pms } = await supabase
+    // Assigned individual members — two-step to avoid join issues
+    const { data: pmRows, error: pmErr } = await supabase
       .from('project_members')
-      .select('profile:profile_id(id, full_name, email)')
+      .select('profile_id')
       .eq('project_id', projectId);
-    setAssignedMembers((pms || []).map((r: any) => r.profile).filter(Boolean));
+    
+    console.log('[ProjectAccessPanel] project_members rows:', pmRows?.length, pmErr?.message);
+    
+    if (pmRows && pmRows.length > 0) {
+      const profileIds = pmRows.map((r: any) => r.profile_id).filter(Boolean);
+      const { data: memberProfiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', profileIds);
+      setAssignedMembers(memberProfiles || []);
+    } else {
+      setAssignedMembers([]);
+    }
 
     // All company teams
     const { data: allT } = await supabase
@@ -107,11 +125,11 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
   };
 
   const addTeam = async (team: Team) => {
-    await supabase.from('project_teams').upsert(
+    const { error } = await supabase.from('project_teams').upsert(
       { project_id: projectId, team_id: team.id },
-      { onConflict: 'project_id,team_id' }
+      { onConflict: 'project_id,team_id', ignoreDuplicates: true }
     );
-    // Load members for display
+    if (error) { console.error('[ProjectAccessPanel] addTeam error:', error.message); return; }
     const { data: profs } = await supabase
       .from('profiles').select('id, full_name, email').eq('team_id', team.id);
     setAssignedTeams(prev => [...prev.filter(t => t.id !== team.id), { ...team, members: profs || [] }]);
@@ -123,11 +141,12 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
   };
 
   const addMember = async (member: Member) => {
-    await supabase.from('project_members').upsert(
+    const { error } = await supabase.from('project_members').upsert(
       { project_id: projectId, profile_id: member.id },
-      { onConflict: 'project_id,profile_id' }
+      { onConflict: 'project_id,profile_id', ignoreDuplicates: true }
     );
-    setAssignedMembers(prev => [...prev.filter(m => m.id !== member.id), member]);
+    if (error) console.error('[ProjectAccessPanel] addMember error:', error.message);
+    else setAssignedMembers(prev => [...prev.filter(m => m.id !== member.id), member]);
   };
 
   const removeMember = async (memberId: string) => {

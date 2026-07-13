@@ -178,6 +178,15 @@ export default function RecordDashboard({
       }
     }
 
+    // ── Person link fields — value is stored as text name directly ──
+    const personLinkFields = currentFields.filter(f =>
+      f.field_source === 'base' && f.fieldType === 'person_link'
+    );
+    for (const f of personLinkFields) {
+      const storedName = currentRecord?.[f.field_key];
+      if (storedName) map[f.field_key] = [{ id: storedName, name: storedName }];
+    }
+
     // ── Base relation fields (e.g. parent_property_id) ──────────
     const baseRelationFields = currentFields.filter(f =>
       f.field_source === 'base' && f.fieldType === 'relation'
@@ -208,25 +217,52 @@ export default function RecordDashboard({
         .order('display_order');
 
       const HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id'];
+
+      // Hardcoded relation map — overrides RPC which sometimes returns wrong table
+      const RELATION_MAP: Record<string, { table: string; displayCol: string; fieldType?: string }> = {
+        // Properties
+        holding_entity_id:  { table: 'entities',   displayCol: 'name' },
+        purchase_entity_id: { table: 'entities',   displayCol: 'name' },
+        council_entity_id:  { table: 'entities',   displayCol: 'name' },
+        insurer_entity_id:  { table: 'entities',   displayCol: 'name' },
+        property_id:        { table: 'properties', displayCol: 'street_address' },
+        project_id:         { table: 'projects',   displayCol: 'name' },
+        // Projects
+        parent_property_id: { table: 'properties', displayCol: 'street_address' },
+        parent_project_id:  { table: 'projects',   displayCol: 'name' },
+        // Entities
+        type_id:            { table: 'entity_types', displayCol: 'label' },
+      };
+
+      // project_manager and project_owner — text fields that should offer entity or profile linking
+      // Rendered as text for now but flagged as 'person_link' for future enhancement
+      const PERSON_LINK_COLS = ['project_manager', 'project_owner'];
+
       const baseFields: FieldLayout[] = (schemaCols || [])
         .filter((c: any) => ['data', 'relation'].includes(c.category) && !c.is_hidden && !HIDDEN_COLS.includes(c.column_name))
-        .map((c: any, i: number) => ({
-          id: c.column_name,
-          field_key: c.column_name,
-          field_source: 'base' as const,
-          label: c.label || c.column_name.replace(/_/g, ' '),
-          fieldType:
-            c.category === 'relation' ? 'relation'
-            : c.data_type === 'boolean' ? 'boolean'
-            : c.data_type?.includes('timestamp') ? 'date'
-            : ['numeric', 'integer'].includes(c.data_type) ? 'number'
-            : 'text',
-          relationTable: c.relation_table || undefined,
-          relationDisplayColumn: c.relation_display_column || undefined,
-          col_start: 1,
-          col_span: 6,
-          row_order: i,
-        }));
+        .map((c: any, i: number) => {
+          const relOverride = RELATION_MAP[c.column_name];
+          const isPersonLink = PERSON_LINK_COLS.includes(c.column_name);
+          return {
+            id: c.column_name,
+            field_key: c.column_name,
+            field_source: 'base' as const,
+            label: c.label || c.column_name.replace(/_/g, ' '),
+            fieldType:
+              relOverride ? 'relation'
+              : isPersonLink ? 'person_link'
+              : c.category === 'relation' ? 'relation'
+              : c.data_type === 'boolean' ? 'boolean'
+              : c.data_type?.includes('timestamp') ? 'date'
+              : ['numeric', 'integer'].includes(c.data_type) ? 'number'
+              : 'text',
+            relationTable: relOverride?.table || c.relation_table || undefined,
+            relationDisplayColumn: relOverride?.displayCol || c.relation_display_column || undefined,
+            col_start: 1,
+            col_span: 6,
+            row_order: i,
+          };
+        });
 
       const cfFields: FieldLayout[] = (customFields || []).map((cf: any, i: number) => ({
         id: cf.id,
@@ -309,28 +345,31 @@ export default function RecordDashboard({
         setTabFieldLayouts(byTab);
       }
     } else {
+      // Default tabs differ by table type
+      const defaultTabs = [
+        {
+          company_id: cid,
+          record_id: recordId,
+          record_table: recordTable,
+          title: 'Details',
+          icon: 'FileText',
+          tab_type: 'fields',
+          display_order: 0,
+        },
+        ...(systemTable === 'projects' ? [{
+          company_id: cid,
+          record_id: recordId,
+          record_table: recordTable,
+          title: 'Checklist',
+          icon: 'CheckSquare',
+          tab_type: 'checklist',
+          display_order: 1,
+        }] : []),
+      ];
+
       const { data: newTabs } = await supabase
         .from('record_tabs')
-        .insert([
-          {
-            company_id: cid,
-            record_id: recordId,
-            record_table: recordTable,
-            title: 'Details',
-            icon: 'FileText',
-            tab_type: 'fields',
-            display_order: 0,
-          },
-          {
-            company_id: cid,
-            record_id: recordId,
-            record_table: recordTable,
-            title: 'Checklist',
-            icon: 'CheckSquare',
-            tab_type: 'checklist',
-            display_order: 1,
-          },
-        ])
+        .insert(defaultTabs)
         .select();
 
       if (newTabs?.length) {
@@ -434,6 +473,14 @@ export default function RecordDashboard({
     if (field.field_source === 'base' && field.fieldType === 'relation') {
       await supabase.from(systemTable!).update({ [field.field_key]: item.id }).eq('id', recordId);
       setRecord(prev => prev ? { ...prev, [field.field_key]: item.id } : prev);
+      setLinkedItems(prev => ({ ...prev, [field.field_key]: [item] }));
+      return;
+    }
+
+    // Person link fields — store the display name as text
+    if (field.field_source === 'base' && field.fieldType === 'person_link') {
+      await supabase.from(systemTable!).update({ [field.field_key]: item.name }).eq('id', recordId);
+      setRecord(prev => prev ? { ...prev, [field.field_key]: item.name } : prev);
       setLinkedItems(prev => ({ ...prev, [field.field_key]: [item] }));
       return;
     }

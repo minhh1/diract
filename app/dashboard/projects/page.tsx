@@ -7,8 +7,8 @@ export default function ProjectsPage() {
     <GenericMasterTable
       tableName="projects"
       pageTitle="Projects"
-      newButtonLabel="+ New Projects"
-      renderDashboard={(id, onBack, initialRecord) => (
+      newButtonLabel="+ New project"
+      renderDashboard={(id: string, onBack: () => void, initialRecord?: any) => (
         <RecordDashboard systemTable="projects" recordId={id} onBack={onBack} initialRecord={initialRecord} />
       )}
     />

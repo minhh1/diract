@@ -35,6 +35,8 @@ interface Props {
   filters?: ActiveFilter[];
   filterableFields?: FilterableField[];
   onFiltersChange?: (filters: ActiveFilter[]) => void;
+  isAdmin?: boolean;
+  onSetCompanyDefault?: () => Promise<void>;
 }
 
 type ActiveTab = 'columns' | 'filters';
@@ -43,12 +45,15 @@ export default function ColumnConfigDrawer({
   isOpen, onClose, sections, tableCols, expandCols,
   activePresetName, onToggle,
   filters = [], filterableFields = [], onFiltersChange,
+  isAdmin = false, onSetCompanyDefault,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('columns');
 
   // Local draft for filters — only applied on Save
   const [draftFilters, setDraftFilters] = useState<ActiveFilter[]>(filters);
   const [filtersDirty, setFiltersDirty] = useState(false);
+  const [savingDefault, setSavingDefault] = useState(false);
+  const [defaultSaved, setDefaultSaved] = useState(false);
 
   // Sync draft when external filters change (e.g. preset switch)
   useEffect(() => {
@@ -213,7 +218,22 @@ export default function ColumnConfigDrawer({
             </div>
           )}
 
-          <div className="flex items-center justify-between text-[10px] text-slate-400">
+          {isAdmin && onSetCompanyDefault && (
+          <button
+            onClick={async () => {
+              setSavingDefault(true);
+              await onSetCompanyDefault();
+              setSavingDefault(false);
+              setDefaultSaved(true);
+              setTimeout(() => setDefaultSaved(false), 2000);
+            }}
+            disabled={savingDefault}
+            className="w-full flex items-center justify-center gap-2 py-2 border border-slate-200 rounded-full text-[11px] text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-50"
+          >
+            {defaultSaved ? '✓ Saved as company default' : savingDefault ? 'Saving...' : '⋮ Set as company default view'}
+          </button>
+        )}
+        <div className="flex items-center justify-between text-[10px] text-slate-400">
             <span>{tableCols.length} in table · {expandCols.length} in expand</span>
             {activeTab === 'filters' && filtersDirty && (
               <span className="text-amber-500 font-bold">Unsaved changes</span>

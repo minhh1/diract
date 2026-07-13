@@ -89,6 +89,22 @@ async function loadTreeConfigFromDB(tableSlug: string): Promise<TreeConfig> {
       ...data.config,
     };
   }
+
+  // No user config — check for company default
+  const { data: profile } = await supabase
+    .from('profiles').select('active_company_id').eq('id', user.id).single();
+  if (profile?.active_company_id) {
+    const { data: companyDefault } = await supabase
+      .from('company_default_views')
+      .select('columns')
+      .eq('company_id', profile.active_company_id)
+      .eq('table_slug', `tree_${tableSlug}`)
+      .single();
+    if (companyDefault?.columns?.[0]) {
+      return companyDefault.columns[0] as unknown as TreeConfig;
+    }
+  }
+
   return DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects;
 }
 
@@ -184,14 +200,19 @@ function TableVisibilityPanel({
 
 function TreeConfigPanel({
   config, availableFields, customFields, onChange, onClose,
+  isAdmin, onSetCompanyDefault,
 }: {
   config: TreeConfig;
   availableFields: { key: string; label: string }[];
   customFields: any[];
   onChange: (config: TreeConfig) => void;
   onClose: () => void;
+  isAdmin?: boolean;
+  onSetCompanyDefault?: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<TreeConfig>({ ...config });
+  const [savingDefault, setSavingDefault] = useState(false);
+  const [defaultSaved, setDefaultSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<'display' | 'sort' | 'filter'>('display');
 
   const allFields = [
@@ -487,6 +508,24 @@ function TreeConfigPanel({
       </div>
 
       {/* Footer */}
+      {isAdmin && onSetCompanyDefault && (
+        <div className="px-4 pb-2">
+          <button
+            onClick={async () => {
+              setSavingDefault(true);
+              onChange(draft); // apply first
+              await onSetCompanyDefault();
+              setSavingDefault(false);
+              setDefaultSaved(true);
+              setTimeout(() => setDefaultSaved(false), 2000);
+            }}
+            disabled={savingDefault}
+            className="w-full py-2 border border-slate-200 text-slate-400 rounded-full text-[9px] font-bold uppercase tracking-widest hover:border-indigo-300 hover:text-indigo-600 transition-all disabled:opacity-50"
+          >
+            {defaultSaved ? '✓ Saved as company default' : savingDefault ? 'Saving...' : 'Set as company default'}
+          </button>
+        </div>
+      )}
       <div className="px-4 pb-4 flex gap-2">
         <button
           onClick={onClose}
@@ -757,8 +796,27 @@ export default function Sidebar() {
   const handleTreeConfigChange = async (config: TreeConfig) => {
     setTreeConfig(config);
     await saveTreeConfigToDB(mode, config);
-    // Re-fetch with new config so custom fields / filters apply
     fetchTreeData();
+  };
+
+  const handleSetTreeCompanyDefault = async () => {
+    if (!profileData?.active_company_id) return;
+    await supabase.from('company_default_views').upsert({
+      company_id: profileData.active_company_id,
+      table_slug: `tree_${mode}`,
+      columns: [],
+      filters: treeConfig.filters || [],
+      preset_name: 'Default tree view',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,table_slug' });
+    // Store full tree config as columns jsonb
+    await supabase.from('company_default_views').upsert({
+      company_id: profileData.active_company_id,
+      table_slug: `tree_${mode}`,
+      columns: [treeConfig] as any,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,table_slug' });
+    console.log(`[Sidebar] Company default tree config saved for ${mode}`);
   };
 
   const handleVisibilityChange = async (slugs: string[]) => {
@@ -1021,6 +1079,8 @@ export default function Sidebar() {
               customFields={customFieldCols}
               onChange={handleTreeConfigChange}
               onClose={() => setShowTreeConfig(false)}
+              isAdmin={isAdmin}
+              onSetCompanyDefault={isAdmin ? handleSetTreeCompanyDefault : undefined}
             />
           )}
 

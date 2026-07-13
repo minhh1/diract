@@ -76,6 +76,9 @@ function buildDynamicSelectQuery(
     if (!col.includes('.')) continue;
     const fieldMeta = relatedFieldsByPath.get(col);
     if (!fieldMeta) continue;
+    // Skip if this is a nested relation path (alias already contains a dot)
+    // PostgREST doesn't support nested embeds in a single select string
+    if (fieldMeta.alias?.includes('.')) continue;
     if (!aliasMap.has(fieldMeta.alias)) {
       aliasMap.set(fieldMeta.alias, {
         fkColumn: fieldMeta.fk_column,
@@ -86,10 +89,12 @@ function buildDynamicSelectQuery(
     }
   }
 
-  const embeds = [...aliasMap.entries()].map(
-    ([alias, { fkColumn, fields }]) =>
-      `${alias}:${fkColumn}(${[...fields].join(',')})`
-  );
+  const embeds = [...aliasMap.entries()]
+    .filter(([alias]) => !alias.includes('.')) // skip nested paths — not supported by PostgREST
+    .map(
+      ([alias, { fkColumn, fields }]) =>
+        `${alias}:${fkColumn}(${[...fields].join(',')})`
+    );
 
   return ['*', ...embeds].join(', ');
 }
@@ -135,6 +140,7 @@ function GenericMasterTableInner({
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [sort, setSort] = useState<SortState | null>(null);
   const [addressSortOpen, setAddressSortOpen] = useState(false);
   const [filters, setFilters] = useState<ActiveFilter[]>([]);
@@ -218,6 +224,12 @@ function GenericMasterTableInner({
       cid = prof?.active_company_id || null;
       companyIdRef.current = cid;
       setCompanyId(cid);
+      // Check admin status
+      if (user) {
+        const { data: mem } = await supabase.from('company_memberships')
+          .select('role').eq('user_id', user.id).eq('company_id', cid).single();
+        setIsAdmin(mem?.role === 'company_admin');
+      }
       console.log(`[MasterTable:${tableName}] auth+profile (first load): ${(performance.now()-tFetch0).toFixed(0)}ms`);
     } else {
       console.log(`[MasterTable:${tableName}] auth+profile (cached): 0ms`);
@@ -796,6 +808,23 @@ function GenericMasterTableInner({
         filters={filters}
         filterableFields={filterableFields}
         onFiltersChange={setFilters}
+        isAdmin={isAdmin}
+        onSetCompanyDefault={isAdmin ? async () => {
+          if (!companyId) return;
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+          await supabase.from('company_default_views').upsert({
+            company_id: companyId,
+            table_slug: tableName,
+            columns: t.tableCols,
+            expansion_columns: t.expandCols,
+            column_widths: t.colWidths || {},
+            filters: filters,
+            preset_name: t.activePreset || 'Default view',
+            created_by: user.id,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'company_id,table_slug' });
+        } : undefined}
       />
 
       <main className={`flex-1 flex flex-col min-h-0 overflow-x-auto ${TABLE_AREA_CLASS}`}>

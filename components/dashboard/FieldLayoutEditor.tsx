@@ -51,24 +51,51 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<LinkedItem[]>(selected);
-  const isEntity = field.fieldType === 'entity';
-  // For base relation fields, use relationTable and relationDisplayColumn
-  const table = field.fieldType === 'relation'
+  const isPersonLink = field.fieldType === 'person_link';
+  const [personLinkType, setPersonLinkType] = useState<'entity' | 'profile'>('entity');
+
+  // Derive table and nameCol purely from field definition — never from page context
+  const table = isPersonLink
+    ? (personLinkType === 'profile' ? 'profiles' : 'entities')
+    : field.fieldType === 'relation'
     ? (field.relationTable || 'entities')
-    : isEntity ? 'entities' : 'properties';
-  const nameCol = field.fieldType === 'relation'
+    : field.fieldType === 'entity' ? 'entities'
+    : field.fieldType === 'property' ? 'properties'
+    : (field.relationTable || 'entities');
+
+  const nameCol = isPersonLink
+    ? (personLinkType === 'profile' ? 'full_name' : 'name')
+    : field.fieldType === 'relation'
     ? (field.relationDisplayColumn || 'name')
-    : isEntity ? 'name' : 'street_address';
+    : field.fieldType === 'property' ? 'street_address'
+    : 'name';
+
+  // Modal title
+  const modalTitle = isPersonLink
+    ? (personLinkType === 'profile' ? 'Link team member' : 'Link entity')
+    : field.label || table;
 
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
     const timer = setTimeout(async () => {
       setSearching(true);
-      const { data } = await supabase
-        .from(table).select(`id, ${nameCol}`)
-        .eq('company_id', companyId)
-        .ilike(nameCol, `%${query}%`)
-        .is('deleted_at', null).limit(10);
+      let data: any[] | null = null;
+      if (table === 'profiles') {
+        // profiles has no company_id or deleted_at
+        const res = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .or(`full_name.ilike.%${query}%,email.ilike.%${query}%`)
+          .limit(10);
+        data = (res.data || []).map(p => ({ ...p, [nameCol]: p.full_name || p.email }));
+      } else {
+        const res = await supabase
+          .from(table).select(`id, ${nameCol}`)
+          .eq('company_id', companyId)
+          .ilike(nameCol, `%${query}%`)
+          .is('deleted_at', null).limit(10);
+        data = res.data;
+      }
       setResults(data || []);
       setSearching(false);
     }, 250);
@@ -76,7 +103,7 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
   }, [query]);
 
   const toggle = (item: any) => {
-    const name = item[nameCol];
+    const name = item[nameCol] || item.full_name || item.email || item.name || item.street_address || '';
     const exists = draft.find(d => d.id === item.id);
     if (exists) {
       setDraft(draft.filter(d => d.id !== item.id));
@@ -107,7 +134,7 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
         <div className="px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[13px] font-bold text-slate-800 uppercase tracking-wide">
-              {isEntity ? 'Link entities' : 'Link properties'}
+              {modalTitle}
             </h3>
             <button onClick={onClose} className="p-1.5 text-slate-300 hover:text-slate-700"><X size={16} /></button>
           </div>
@@ -126,11 +153,26 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
             </div>
           )}
 
+          {/* Person link type switcher */}
+          {isPersonLink && (
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => { setPersonLinkType('entity'); setQuery(''); setResults([]); }}
+                className={`flex-1 py-2 rounded-full text-[11px] font-bold transition-colors ${personLinkType === 'entity' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                Entity
+              </button>
+              <button onClick={() => { setPersonLinkType('profile'); setQuery(''); setResults([]); }}
+                className={`flex-1 py-2 rounded-full text-[11px] font-bold transition-colors ${personLinkType === 'profile' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                Team member
+              </button>
+            </div>
+          )}
           <div className="relative">
             <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !exactMatch && query.trim()) handleCreateNew(); }}
-              placeholder={isEntity ? 'Search or create entity...' : 'Search or create property...'}
+              placeholder={isPersonLink
+                ? (personLinkType === 'profile' ? 'Search team member...' : 'Search or create entity...')
+                : table === 'entities' ? 'Search or create entity...' : table === 'properties' ? 'Search or create property...' : `Search ${table}...`}
               className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
           </div>
         </div>
@@ -146,7 +188,9 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
                 <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'}`}>
                   {isSelected && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                 </div>
-                <span className={`text-[13px] font-medium ${isSelected ? 'text-indigo-700' : 'text-slate-700'}`}>{item[nameCol]}</span>
+                <span className={`text-[13px] font-medium ${isSelected ? 'text-indigo-700' : 'text-slate-700'}`}>
+                {table === 'profiles' ? ((item as any).full_name || (item as any).email || item[nameCol]) : item[nameCol]}
+              </span>
               </button>
             );
           })}
@@ -155,7 +199,7 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
             <button onClick={handleCreateNew}
               className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-green-50 transition-colors text-left">
               <Plus size={12} className="text-green-500 shrink-0" />
-              <span className="text-[13px] text-green-700 font-medium">Create "{query}" as new {isEntity ? 'entity' : 'property'}</span>
+              <span className="text-[13px] text-green-700 font-medium">Create "{query}" as new {table === 'profiles' ? 'person' : table.replace('ies', 'y').replace(/s$/, '')}</span>
             </button>
           )}
 
@@ -202,11 +246,12 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   const getLinkedPath = (item: LinkedItem) => {
     const table = field.fieldType === 'entity' ? 'entities'
       : field.fieldType === 'property' ? 'properties'
+      : field.fieldType === 'person_link' ? 'entities'
       : field.relationTable || 'entities';
     return `/dashboard/${table}?id=${item.id}`;
   };
 
-  const isLinked = field.fieldType === 'entity' || field.fieldType === 'property' || field.fieldType === 'relation';
+  const isLinked = field.fieldType === 'entity' || field.fieldType === 'property' || field.fieldType === 'relation' || field.fieldType === 'person_link';
 
   const handleSave = async () => {
     setSaving(true);
@@ -448,32 +493,51 @@ const RELATED_TABLES: Record<string, RelatedTableConfig[]> = {
       label: 'Officeholders',
       fkCol: 'entity_id',
       displayCols: [
-        { key: 'name', label: 'Name' },
+        { key: 'full_name', label: 'Name' },
         { key: 'role', label: 'Role' },
-        { key: 'appointed_date', label: 'Appointed' },
+        { key: 'date_appointed', label: 'Appointed' },
       ],
       editableCols: [
-        { key: 'name', label: 'Name', type: 'text' },
+        { key: 'full_name', label: 'Name', type: 'text' },
         { key: 'role', label: 'Role', type: 'select', options: ['Director', 'Secretary', 'Public Officer', 'Shareholder', 'Trustee', 'Beneficiary', 'Other'] },
-        { key: 'appointed_date', label: 'Appointed date', type: 'date' },
-        { key: 'resigned_date', label: 'Resigned date', type: 'date' },
+        { key: 'email', label: 'Email', type: 'text' },
+        { key: 'phone', label: 'Phone', type: 'text' },
+        { key: 'date_appointed', label: 'Date appointed', type: 'date' },
+        { key: 'is_active', label: 'Is active', type: 'select', options: ['true', 'false'] },
       ],
     },
     {
       table: 'entity_relationships',
       label: 'Relationships',
-      fkCol: 'entity_id',
+      fkCol: 'parent_entity_id',
       displayCols: [
-        { key: 'related_entity_name', label: 'Related entity' },
         { key: 'relationship_type', label: 'Type' },
+        { key: 'date_appointed', label: 'Date' },
       ],
       editableCols: [
-        { key: 'related_entity_name', label: 'Related entity', type: 'text' },
         { key: 'relationship_type', label: 'Relationship type', type: 'text' },
+        { key: 'date_appointed', label: 'Date appointed', type: 'date' },
+        { key: 'is_current', label: 'Is current', type: 'select', options: ['true', 'false'] },
       ],
     },
   ],
-  properties: [],
+  properties: [
+    {
+      table: 'property_valuations',
+      label: 'Valuations',
+      fkCol: 'property_id',
+      displayCols: [
+        { key: 'amount', label: 'Amount' },
+        { key: 'valuation_date', label: 'Date' },
+        { key: 'is_full_valuation', label: 'Full valuation' },
+      ],
+      editableCols: [
+        { key: 'amount', label: 'Amount ($)', type: 'text' },
+        { key: 'valuation_date', label: 'Valuation date', type: 'date' },
+        { key: 'is_full_valuation', label: 'Full valuation', type: 'select', options: ['true', 'false'] },
+      ],
+    },
+  ],
 };
 
 // ── RelatedRowEditor — inline edit/add for a related table row ────

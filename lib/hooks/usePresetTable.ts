@@ -81,7 +81,38 @@ export function usePresetTable({
       setExpandRelations(active.expand_relations || defaultExpandRelations);
       setActivePreset(active.preset_name);
     } else {
+      // No user preferences yet — check for company default view
       setPresets([]);
+      const { data: profile } = await supabase
+        .from('profiles').select('active_company_id').eq('id', user.id).single();
+      if (profile?.active_company_id) {
+        const { data: companyDefault } = await supabase
+          .from('company_default_views')
+          .select('*')
+          .eq('company_id', profile.active_company_id)
+          .eq('table_slug', tableSlug)
+          .single();
+        if (companyDefault) {
+          console.log(`[usePresetTable] Applying company default view for ${tableSlug}`);
+          resolvedTableCols = companyDefault.columns || defaultCols;
+          resolvedExpandCols = companyDefault.expansion_columns || defaultExpandCols;
+          setTableCols(resolvedTableCols);
+          setExpandCols(resolvedExpandCols);
+          setColWidths(companyDefault.column_widths || {});
+          setActivePreset(companyDefault.preset_name || 'Default view');
+          // Save as user's own preference so it persists
+          await supabase.from('user_column_preferences').insert({
+            user_id: user.id,
+            table_slug: tableSlug,
+            columns: resolvedTableCols,
+            expansion_columns: resolvedExpandCols,
+            column_widths: companyDefault.column_widths || {},
+            filters: companyDefault.filters || [],
+            preset_name: companyDefault.preset_name || 'Default view',
+            is_active: true,
+          });
+        }
+      }
     }
 
     // ── Step 3: fetch fresh data ──────────────────────────────────
