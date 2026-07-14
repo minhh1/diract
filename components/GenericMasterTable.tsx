@@ -25,6 +25,7 @@ import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { useInvalidateRows } from "@/lib/hooks/useTableRows";
 import { swr, clearCache } from "@/lib/queryCache";
+import { useCompany } from "@/components/CompanyContext";
 
 
 interface GenericMasterTableProps {
@@ -136,6 +137,9 @@ function GenericMasterTableInner({
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("id");
 
+  // Use shared company context — avoids duplicate auth call with Sidebar
+  const { companyId: ctxCompanyId, isAdmin: ctxIsAdmin, userId: ctxUserId } = useCompany();
+
   const [search, setSearch] = useState("");
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -198,6 +202,13 @@ function GenericMasterTableInner({
   // Pre-populate from localStorage profile cache immediately
   useEffect(() => {
     if (companyIdRef.current) return;
+    // Use context value if available — avoids auth round-trip
+    if (ctxCompanyId) {
+      companyIdRef.current = ctxCompanyId;
+      setCompanyId(ctxCompanyId);
+      setIsAdmin(ctxIsAdmin);
+      return;
+    }
     try {
       // Try profile cache first
       const keys = Object.keys(localStorage).filter(k => k.startsWith('nk_cache_profile_'));
@@ -210,7 +221,7 @@ function GenericMasterTableInner({
         }
       }
     } catch {}
-  }, []);
+  }, [ctxCompanyId, ctxIsAdmin]);
 
   const fetchItems = useCallback(async (visibleColumns: string[]) => {
     const tFetch0 = performance.now();
@@ -343,6 +354,7 @@ function GenericMasterTableInner({
   const t = usePresetTable({
     tableSlug: tableName,
     defaultCols: schema.defaultTableCols,
+    userId: ctxUserId,
     fetchItems,
   });
 

@@ -10,9 +10,7 @@ interface UsePresetTableOptions {
   defaultCols: string[];
   defaultExpandCols?: string[];
   defaultExpandRelations?: string[];
-  // Receives the resolved visible columns (table + expand combined) as
-  // soon as the active preset is known — the fetcher no longer needs to
-  // independently re-derive the preset itself.
+  userId?: string | null; // pass from context to skip auth call
   fetchItems: (visibleColumns: string[]) => Promise<any[]>;
 }
 
@@ -32,6 +30,7 @@ export function usePresetTable({
   defaultCols,
   defaultExpandCols = [],
   defaultExpandRelations = [],
+  userId: providedUserId,
   fetchItems,
 }: UsePresetTableOptions) {
   const [items, setItems] = useState<any[]>([]);
@@ -77,10 +76,14 @@ export function usePresetTable({
     } catch {}
 
     // ── Step 2: load preferences (columns/presets) ────────────────
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoading(false); return; }
+    let userId = providedUserId;
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+      userId = user.id;
+    }
 
-    const saved = await preferenceService.getByTable(user.id, tableSlug);
+    const saved = await preferenceService.getByTable(userId!, tableSlug);
 
     let resolvedTableCols = defaultCols;
     let resolvedExpandCols = defaultExpandCols;
@@ -99,7 +102,7 @@ export function usePresetTable({
       // No user preferences yet — check for company default view
       setPresets([]);
       const { data: profile } = await supabase
-        .from('profiles').select('active_company_id').eq('id', user.id).single();
+        .from('profiles').select('active_company_id').eq('id', userId!).single();
       if (profile?.active_company_id) {
         const { data: companyDefault } = await supabase
           .from('company_default_views')
@@ -117,7 +120,7 @@ export function usePresetTable({
           setActivePreset(companyDefault.preset_name || 'Default view');
           // Save as user's own preference so it persists
           await supabase.from('user_column_preferences').insert({
-            user_id: user.id,
+            user_id: userId,
             table_slug: tableSlug,
             columns: resolvedTableCols,
             expansion_columns: resolvedExpandCols,

@@ -1,7 +1,7 @@
 // components/Sidebar.tsx
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
@@ -14,9 +14,8 @@ import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import { useCompany } from "@/components/CompanyContext";
 import type { ActiveFilter } from "@/lib/types/filters";
-import { useTableRows, useInvalidateRows } from "@/lib/hooks/useTableRows";
-import { useProfile } from "@/lib/hooks/useProfile";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -73,39 +72,28 @@ const SEPARATORS = [
 // ── DB helpers ─────────────────────────────────────────────────────
 
 async function loadTreeConfigFromDB(tableSlug: string): Promise<TreeConfig> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects;
 
-  const { data } = await supabase
-    .from('sidebar_tree_config')
-    .select('config')
-    .eq('user_id', user.id)
-    .eq('table_slug', tableSlug)
-    .single();
+    const { data, error } = await supabase
+      .from('sidebar_tree_config')
+      .select('config')
+      .eq('user_id', user.id)
+      .eq('table_slug', tableSlug)
+      .maybeSingle();
 
-  if (data?.config) {
+    if (error || !data?.config) {
+      return DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects;
+    }
+
     return {
       ...(DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects),
       ...data.config,
     };
+  } catch {
+    return DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects;
   }
-
-  // No user config — check for company default
-  const { data: profile } = await supabase
-    .from('profiles').select('active_company_id').eq('id', user.id).single();
-  if (profile?.active_company_id) {
-    const { data: companyDefault } = await supabase
-      .from('company_default_views')
-      .select('columns')
-      .eq('company_id', profile.active_company_id)
-      .eq('table_slug', `tree_${tableSlug}`)
-      .single();
-    if (companyDefault?.columns?.[0]) {
-      return companyDefault.columns[0] as unknown as TreeConfig;
-    }
-  }
-
-  return DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects;
 }
 
 async function saveTreeConfigToDB(tableSlug: string, config: TreeConfig): Promise<void> {
@@ -200,19 +188,14 @@ function TableVisibilityPanel({
 
 function TreeConfigPanel({
   config, availableFields, customFields, onChange, onClose,
-  isAdmin, onSetCompanyDefault,
 }: {
   config: TreeConfig;
   availableFields: { key: string; label: string }[];
   customFields: any[];
   onChange: (config: TreeConfig) => void;
   onClose: () => void;
-  isAdmin?: boolean;
-  onSetCompanyDefault?: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<TreeConfig>({ ...config });
-  const [savingDefault, setSavingDefault] = useState(false);
-  const [defaultSaved, setDefaultSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<'display' | 'sort' | 'filter'>('display');
 
   const allFields = [
@@ -508,24 +491,6 @@ function TreeConfigPanel({
       </div>
 
       {/* Footer */}
-      {isAdmin && onSetCompanyDefault && (
-        <div className="px-4 pb-2">
-          <button
-            onClick={async () => {
-              setSavingDefault(true);
-              onChange(draft); // apply first
-              await onSetCompanyDefault();
-              setSavingDefault(false);
-              setDefaultSaved(true);
-              setTimeout(() => setDefaultSaved(false), 2000);
-            }}
-            disabled={savingDefault}
-            className="w-full py-2 border border-slate-200 text-slate-400 rounded-full text-[9px] font-bold uppercase tracking-widest hover:border-indigo-300 hover:text-indigo-600 transition-all disabled:opacity-50"
-          >
-            {defaultSaved ? '✓ Saved as company default' : savingDefault ? 'Saving...' : 'Set as company default'}
-          </button>
-        </div>
-      )}
       <div className="px-4 pb-4 flex gap-2">
         <button
           onClick={onClose}
@@ -552,84 +517,32 @@ export default function Sidebar() {
   const router = useRouter();
   const currentId = searchParams.get("id");
 
+  // Use shared company context — avoids duplicate auth call with GenericMasterTable
+  const { companyId: ctxCompanyId, companyName: ctxCompanyName, isAdmin: ctxIsAdmin, loading: ctxLoading } = useCompany();
+
+  const [profile, setProfile] = useState<any>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [memberships, setMemberships] = useState<any[]>([]);
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false);
   const [switchingCompany, setSwitchingCompany] = useState(false);
+  const [items, setItems] = useState<any[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
   const [isProjOpen, setIsProjOpen] = useState(false);
   const [isEntOpen, setIsEntOpen] = useState(false);
   const [visibleTables, setVisibleTables] = useState<string[]>([]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showTreeConfig, setShowTreeConfig] = useState(false);
-  const [treeConfig, setTreeConfig] = useState<TreeConfig>(DEFAULT_TREE_CONFIG.projects);
+  const [treeConfig, setTreeConfig] = useState<TreeConfig>(() => DEFAULT_TREE_CONFIG[
+    pathname.includes('properties') ? 'properties' :
+    pathname.includes('entities') ? 'entities' : 'projects'
+  ] || DEFAULT_TREE_CONFIG.projects);
   const [customFieldCols, setCustomFieldCols] = useState<any[]>([]);
   const { tables: customTables } = useCustomTables();
 
-  const mode = pathname.includes("properties") ? "properties"
-    : pathname.includes("entities") ? "entities"
-    : "projects"; // default to projects for admin, settings, and all other pages
-
-  // ── TanStack Query — shared cache across sidebar + master table ──
-  const { data: profileData } = useProfile();
-  const profile = profileData ?? null;
-  const isAdmin = profileData?.isAdmin ?? false;
-  const memberships = profileData?.memberships ?? [];
-  const invalidateRows = useInvalidateRows();
-
-  const { data: rowsData = [] } = useTableRows(mode as 'projects' | 'properties' | 'entities');
-  const [enhancedItems, setEnhancedItems] = useState<any[] | null>(null);
-
-  // Apply tree config (sort + filter) to rowsData in memory — no extra DB fetch
-  // Use enhancedItems when custom fields are needed, otherwise use rowsData
-  const items = useMemo(() => {
-    let result = [...(enhancedItems ?? rowsData)];
-    const config = treeConfig;
-
-    // Apply base filters
-    config.filters
-      .filter(f => !f.fieldId.startsWith('cf:'))
-      .forEach(filter => {
-        if (!filter.value && !['is_empty', 'is_not_empty', 'is_true', 'is_false'].includes(filter.operator)) return;
-        result = result.filter((item: any) => {
-          const val = String(item[filter.fieldId] ?? '').toLowerCase();
-          const fval = filter.value.toLowerCase();
-          switch (filter.operator) {
-            case 'equals':       return val === fval;
-            case 'not_equals':   return val !== fval;
-            case 'contains':     return val.includes(fval);
-            case 'not_contains': return !val.includes(fval);
-            case 'starts_with':  return val.startsWith(fval);
-            case 'is_empty':     return val === '';
-            case 'is_not_empty': return val !== '';
-            default:             return true;
-          }
-        });
-      });
-
-    // Sort in memory
-    if (config.sortField && !config.sortField.startsWith('cf:')) {
-      result.sort((a: any, b: any) => {
-        const va = String(a[config.sortField] ?? '');
-        const vb = String(b[config.sortField] ?? '');
-        const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
-        return config.sortDirection === 'asc' ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [rowsData, enhancedItems, treeConfig]);
-
-  // Reset enhancedItems when mode changes so we don't show stale custom field data
-  useEffect(() => {
-    setEnhancedItems(null);
-  }, [mode]);
-
-  // Apply visible tables from profile
-  useEffect(() => {
-    if (profileData?.sidebar_visible_tables?.length) {
-      setVisibleTables(profileData.sidebar_visible_tables);
-    } else if (profileData) {
-      setVisibleTables(ALL_SYSTEM_TABLES.map(t => t.slug));
-    }
-  }, [profileData?.sidebar_visible_tables]);
+  const mode = pathname.includes("projects") ? "projects"
+    : pathname.includes("properties") ? "properties"
+    : "entities";
 
   // ── Load tree config from DB when mode changes ─────────────────
   useEffect(() => {
@@ -653,11 +566,13 @@ export default function Sidebar() {
     loadCF();
   }, [mode]);
 
-  // items loaded via useTableRows hook (shared cache with master table)
-  // fetchTreeData called for custom fields and config-specific filters
   useEffect(() => {
-    if (treeConfig) fetchTreeData();
+    fetchTreeData();
   }, [mode, treeConfig]);
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
 
   useEffect(() => {
     if (!showCompanySwitcher) return;
@@ -666,10 +581,79 @@ export default function Sidebar() {
     return () => document.removeEventListener('click', handleClick);
   }, [showCompanySwitcher]);
 
-  // fetchProfile removed — data comes from useProfile() TanStack Query hook
+  // ── Profile + visibility ───────────────────────────────────────
+  const fetchProfile = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    if (!user) return;
+
+    // Try with sidebar_visible_tables first, fall back if column doesn't exist
+    let prof: any = null;
+    let visibleTablesData: any = null;
+
+    const { data: profFull, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, is_admin, active_company_id, sidebar_visible_tables")
+      .eq("id", user.id)
+      .single();
+
+    if (error) {
+      // Column might not exist yet — fetch without it
+      const { data: profBasic } = await supabase
+        .from("profiles")
+        .select("id, full_name, is_admin, active_company_id")
+        .eq("id", user.id)
+        .single();
+      prof = profBasic;
+    } else {
+      prof = profFull;
+      visibleTablesData = profFull?.sidebar_visible_tables;
+    }
+
+    if (!prof) return;
+
+    // Get company
+    let company = null;
+    if (prof.active_company_id) {
+      const { data: comp } = await supabase
+        .from("companies")
+        .select("id, name, status")
+        .eq("id", prof.active_company_id)
+        .single();
+      company = comp;
+    }
+
+    setProfile({ ...prof, company });
+
+    const { data: membership } = await supabase
+      .from('company_memberships')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('company_id', prof?.active_company_id)
+      .single();
+    setIsAdmin(membership?.role === 'company_admin');
+
+    // Set visible tables
+    if (visibleTablesData) {
+      setVisibleTables(visibleTablesData);
+    } else {
+      setVisibleTables(ALL_SYSTEM_TABLES.map(t => t.slug));
+    }
+
+    // Get memberships
+    const { data: ms } = await supabase
+      .from("company_memberships")
+      .select("company_id, role, company:company_id(id, name, status)")
+      .eq("user_id", user.id);
+    setMemberships(ms || []);
+
+    // Mark profile fully loaded only after all data is set
+    setProfileLoading(false);
+  };
 
   // ── Tree data fetch ────────────────────────────────────────────
   const fetchTreeData = async () => {
+    setItemsLoading(true);
     const config = treeConfig;
     const cfIds: string[] = [];
     const baseColsSet = new Set<string>(['id']);
@@ -764,8 +748,8 @@ export default function Sidebar() {
         });
     }
 
-    // Write results to enhancedItems so useMemo picks them up
-    setEnhancedItems(items);
+    setItems(items);
+    setItemsLoading(false);
   };
 
   // ── Resolve display label ──────────────────────────────────────
@@ -796,27 +780,6 @@ export default function Sidebar() {
   const handleTreeConfigChange = async (config: TreeConfig) => {
     setTreeConfig(config);
     await saveTreeConfigToDB(mode, config);
-    fetchTreeData();
-  };
-
-  const handleSetTreeCompanyDefault = async () => {
-    if (!profileData?.active_company_id) return;
-    await supabase.from('company_default_views').upsert({
-      company_id: profileData.active_company_id,
-      table_slug: `tree_${mode}`,
-      columns: [],
-      filters: treeConfig.filters || [],
-      preset_name: 'Default tree view',
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,table_slug' });
-    // Store full tree config as columns jsonb
-    await supabase.from('company_default_views').upsert({
-      company_id: profileData.active_company_id,
-      table_slug: `tree_${mode}`,
-      columns: [treeConfig] as any,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,table_slug' });
-    console.log(`[Sidebar] Company default tree config saved for ${mode}`);
   };
 
   const handleVisibilityChange = async (slugs: string[]) => {
@@ -885,6 +848,18 @@ export default function Sidebar() {
             </button>
           </div>
 
+          {profileLoading ? (
+            // Skeleton for table nav items
+            <div className="space-y-1 px-1">
+              {[1,2,3].map(i => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-2xl">
+                  <div className="h-4 w-4 rounded bg-slate-100 animate-pulse shrink-0" />
+                  <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${i === 1 ? 'w-20' : i === 2 ? 'w-16' : 'w-24'}`} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
           {visibleSystemTables.map(({ slug, label, icon: Icon }) => (
             <button
               key={slug}
@@ -917,8 +892,10 @@ export default function Sidebar() {
               </button>
             );
           })}
+            </>
+          )}
 
-          {visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
+          {!profileLoading && visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
             <button
               onClick={() => setShowTableSettings(true)}
               className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
@@ -1033,6 +1010,18 @@ export default function Sidebar() {
           )}
 
           {/* Tree items */}
+          {itemsLoading ? (
+            <div className="space-y-0.5 px-1">
+              {[1,2,3,4,5].map(i => (
+                <div key={i} className="flex items-center px-3 py-2 rounded-2xl">
+                  <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${
+                    i % 3 === 0 ? 'w-32' : i % 3 === 1 ? 'w-40' : 'w-28'
+                  }`} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
           {items.map((item: any) => (
             <Link
               key={item.id}
@@ -1047,11 +1036,13 @@ export default function Sidebar() {
             </Link>
           ))}
 
-          {items.length === 0 && (
+          {!itemsLoading && items.length === 0 && (
             <p className="px-3 py-2 text-[11px] text-slate-300 italic">
               No records
               {hasActiveFilters && ' — filters active'}
             </p>
+          )}
+            </>
           )}
         </div>
       </nav>
@@ -1079,12 +1070,19 @@ export default function Sidebar() {
               customFields={customFieldCols}
               onChange={handleTreeConfigChange}
               onClose={() => setShowTreeConfig(false)}
-              isAdmin={isAdmin}
-              onSetCompanyDefault={isAdmin ? handleSetTreeCompanyDefault : undefined}
             />
           )}
 
           {/* Profile card */}
+          {profileLoading ? (
+            <div className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl">
+              <div className="h-8 w-8 rounded-full bg-slate-200 animate-pulse shrink-0" />
+              <div className="flex flex-col gap-1.5 flex-1">
+                <div className="h-3 w-24 bg-slate-200 animate-pulse rounded-full" />
+                <div className="h-2.5 w-16 bg-slate-100 animate-pulse rounded-full" />
+              </div>
+            </div>
+          ) : (
           <button
             onClick={() => setShowCompanySwitcher(p => !p)}
             className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl hover:bg-slate-50 transition-all text-left"
@@ -1104,6 +1102,7 @@ export default function Sidebar() {
               <ChevronsUpDown size={14} className="text-slate-300 shrink-0" />
             )}
           </button>
+          )}
 
           {/* Company switcher */}
           {showCompanySwitcher && memberships.length > 0 && (
@@ -1125,13 +1124,13 @@ export default function Sidebar() {
                     <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
                       isActive ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
                     }`}>
-                      {(m.company as any)?.name?.substring(0, 2)?.toUpperCase() || '??'}
+                      {m.company?.name?.substring(0, 2)?.toUpperCase() || '??'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-[12px] font-bold truncate ${
                         isActive ? 'text-slate-900' : 'text-slate-600'
                       }`}>
-                        {(m.company as any)?.name || 'Unknown'}
+                        {m.company?.name || 'Unknown'}
                       </p>
                       <p className="text-[9px] text-slate-400 uppercase font-medium">
                         {m.role?.replace('_', ' ')}
@@ -1165,12 +1164,12 @@ export default function Sidebar() {
       <NewProjectModal
         isOpen={isProjOpen}
         onClose={() => setIsProjOpen(false)}
-        onRefresh={() => invalidateRows(mode as any)}
+        onRefresh={fetchTreeData}
       />
       <NewEntityModal
         isOpen={isEntOpen}
         onClose={() => setIsEntOpen(false)}
-        onRefresh={() => invalidateRows(mode as any)}
+        onRefresh={fetchTreeData}
       />
     </div>
   );
