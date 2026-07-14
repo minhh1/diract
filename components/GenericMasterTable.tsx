@@ -711,12 +711,48 @@ function GenericMasterTableInner({
     }, initialRecord)}</>;
   }
 
-  if (schema.loading) {
+  if (schema.loading || t.loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-slate-400 text-[11px] uppercase font-bold tracking-widest">
-          Loading schema...
-        </p>
+      <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased overflow-hidden">
+        {/* Header skeleton */}
+        <div className="bg-white border-b border-slate-100 shrink-0 p-8 pb-4 space-y-6">
+          <div className="flex justify-between items-center">
+            <div className="h-8 w-40 bg-slate-100 animate-pulse rounded-full" />
+            <div className="flex gap-2">
+              <div className="h-9 w-20 bg-slate-100 animate-pulse rounded-full" />
+              <div className="h-9 w-28 bg-slate-100 animate-pulse rounded-full" />
+              <div className="h-9 w-24 bg-slate-100 animate-pulse rounded-full" />
+            </div>
+          </div>
+          {/* Search bar skeleton */}
+          <div className="h-12 w-full bg-slate-100 animate-pulse rounded-2xl" />
+          {/* Preset tabs skeleton */}
+          <div className="flex gap-2">
+            {[80, 100, 70].map((w, i) => (
+              <div key={i} className="h-7 bg-slate-100 animate-pulse rounded-full" style={{ width: w }} />
+            ))}
+          </div>
+        </div>
+        {/* Table skeleton */}
+        <div className="flex-1 overflow-hidden p-8">
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+            {/* Column headers */}
+            <div className="flex items-center gap-4 px-4 py-3 border-b border-slate-100 bg-slate-50">
+              {[120, 200, 160, 140, 180].map((w, i) => (
+                <div key={i} className="h-3 bg-slate-200 animate-pulse rounded-full shrink-0" style={{ width: w }} />
+              ))}
+            </div>
+            {/* Rows */}
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3.5 border-b border-slate-50 last:border-0">
+                {[120, 200, 160, 140, 180].map((w, j) => {
+                  const factor = [0.9, 0.7, 1, 0.6, 0.8, 0.95, 0.75, 0.85, 0.65, 0.9, 0.7, 1][(i + j) % 12];
+                  return <div key={j} className="h-3 bg-slate-100 animate-pulse rounded-full shrink-0" style={{ width: Math.round(w * factor) }} />;
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
