@@ -71,6 +71,11 @@ export default function AdminPage() {
   const [sourceEmails, setSourceEmails] = useState<string[]>([]);
   const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
 
+  // Calendar settings
+  const [calendarTitleFormat, setCalendarTitleFormat] = useState('{matter_number} — {task_name}');
+  const [calendarDuration, setCalendarDuration] = useState(30);
+  const [savingCalendar, setSavingCalendar] = useState(false);
+
   // Invite token default team
   const [newTokenTeamId, setNewTokenTeamId] = useState<string>('');
   const [allTeams, setAllTeams] = useState<{ id: string; team_name: string }[]>([]);
@@ -140,6 +145,8 @@ export default function AdminPage() {
 
     // Load source emails from company
     setSourceEmails(comp?.gmail_source_emails || []);
+    setCalendarTitleFormat(comp?.calendar_event_title_format || '{matter_number} — {task_name}');
+    setCalendarDuration(comp?.calendar_event_duration_mins || 30);
 
     // Members — two separate queries to avoid FK join issues
     const { data: memberships } = await supabase
@@ -227,6 +234,16 @@ export default function AdminPage() {
     }).eq('id', company.id);
     setCompany(prev => prev ? { ...prev, name: companyName } : prev);
     setSavingCompany(false);
+  };
+
+  const handleSaveCalendar = async () => {
+    if (!company) return;
+    setSavingCalendar(true);
+    await supabase.from('companies').update({
+      calendar_event_title_format: calendarTitleFormat,
+      calendar_event_duration_mins: calendarDuration,
+    }).eq('id', company.id);
+    setSavingCalendar(false);
   };
 
   const handleSourceEmailsChange = async (emails: string[]) => {
@@ -750,11 +767,65 @@ export default function AdminPage() {
                 disabled={savingCompany}
                 className="w-full py-3.5 bg-slate-900 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {savingCompany
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : 'Save changes'
-                }
+                {savingCompany ? <Loader2 size={14} className="animate-spin" /> : 'Save changes'}
               </button>
+
+              {/* ── Calendar settings ── */}
+              <div className="pt-6 border-t border-slate-100 space-y-4">
+                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Calendar sync</p>
+                <p className="text-[11px] text-slate-400">
+                  Events are created in the nominated source email's Google Calendar and the assignee's calendar.
+                  Use <code className="bg-slate-100 px-1 rounded text-[10px]">{'{matter_number}'}</code>, <code className="bg-slate-100 px-1 rounded text-[10px]">{'{task_name}'}</code>, <code className="bg-slate-100 px-1 rounded text-[10px]">{'{project_name}'}</code> as tokens.
+                </p>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                    Event title format
+                  </label>
+                  <input
+                    value={calendarTitleFormat}
+                    onChange={e => setCalendarTitleFormat(e.target.value)}
+                    placeholder="{matter_number} — {task_name}"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100 font-mono"
+                  />
+                  {calendarTitleFormat && (
+                    <p className="text-[10px] text-slate-400 mt-1.5 px-2">
+                      Preview: <span className="text-slate-600 font-medium">
+                        {calendarTitleFormat
+                          .replace('{matter_number}', '260576')
+                          .replace('{task_name}', 'File court documents')
+                          .replace('{project_name}', '175 Bourke Street')}
+                      </span>
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                    Default event duration (minutes)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {[15, 30, 60, 90, 120].map(d => (
+                      <button
+                        key={d}
+                        onClick={() => setCalendarDuration(d)}
+                        className={`px-4 py-2 rounded-full text-[11px] font-bold border transition-colors ${
+                          calendarDuration === d
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        {d}m
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={handleSaveCalendar}
+                  disabled={savingCalendar}
+                  className="w-full py-3 bg-indigo-600 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {savingCalendar ? <Loader2 size={14} className="animate-spin" /> : 'Save calendar settings'}
+                </button>
+              </div>
 
               <div className="pt-4 border-t border-slate-100">
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
