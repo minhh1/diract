@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   Loader2, Users, Settings, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical,
 } from "lucide-react";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
@@ -46,6 +46,44 @@ const ROLE_LABELS: Record<string, string> = {
   operator: 'Operator',
 };
 
+// Calendar event title tokens — what each field means, with an example so
+// admins don't have to guess what {matter_number} etc. actually renders as.
+const CALENDAR_TOKENS = [
+  { id: 'matter_number', label: 'Matter Number', example: '260576' },
+  { id: 'task_name',     label: 'Task Name',     example: 'File court documents' },
+  { id: 'project_name',  label: 'Project Name',  example: '175 Bourke Street' },
+];
+
+const CALENDAR_SEPARATORS = [
+  { value: ' — ', label: 'Em dash  ( — )' },
+  { value: ' - ', label: 'Hyphen   ( - )' },
+  { value: '/',   label: 'Slash    ( / )' },
+  { value: ' | ', label: 'Pipe     ( | )' },
+  { value: ' ',   label: 'Space' },
+];
+
+function parseCalendarFormat(format: string): { tokens: string[]; separator: string } {
+  const regex = /\{(\w+)\}/g;
+  const tokens: string[] = [];
+  const positions: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(format))) {
+    tokens.push(m[1]);
+    positions.push(m.index);
+  }
+  let separator = ' — ';
+  if (tokens.length >= 2) {
+    const firstEnd = format.indexOf('}', positions[0]) + 1;
+    separator = format.slice(firstEnd, positions[1]);
+  }
+  const known = tokens.filter(t => CALENDAR_TOKENS.some(tk => tk.id === t));
+  return { tokens: known.length ? known : ['matter_number', 'task_name'], separator };
+}
+
+function buildCalendarFormat(tokens: string[], separator: string): string {
+  return tokens.map(t => `{${t}}`).join(separator);
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -72,7 +110,9 @@ export default function AdminPage() {
   const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
 
   // Calendar settings
-  const [calendarTitleFormat, setCalendarTitleFormat] = useState('{matter_number} — {task_name}');
+  const [calendarTokens, setCalendarTokens] = useState<string[]>(['matter_number', 'task_name']);
+  const [calendarSeparator, setCalendarSeparator] = useState(' — ');
+  const [calendarDragIdx, setCalendarDragIdx] = useState<number | null>(null);
   const [calendarDuration, setCalendarDuration] = useState(30);
   const [savingCalendar, setSavingCalendar] = useState(false);
 
@@ -145,7 +185,9 @@ export default function AdminPage() {
 
     // Load source emails from company
     setSourceEmails(comp?.gmail_source_emails || []);
-    setCalendarTitleFormat(comp?.calendar_event_title_format || '{matter_number} — {task_name}');
+    const parsedFormat = parseCalendarFormat(comp?.calendar_event_title_format || '{matter_number} — {task_name}');
+    setCalendarTokens(parsedFormat.tokens);
+    setCalendarSeparator(parsedFormat.separator);
     setCalendarDuration(comp?.calendar_event_duration_mins || 30);
 
     // Members — two separate queries to avoid FK join issues
@@ -240,7 +282,7 @@ export default function AdminPage() {
     if (!company) return;
     setSavingCalendar(true);
     await supabase.from('companies').update({
-      calendar_event_title_format: calendarTitleFormat,
+      calendar_event_title_format: buildCalendarFormat(calendarTokens, calendarSeparator),
       calendar_event_duration_mins: calendarDuration,
     }).eq('id', company.id);
     setSavingCalendar(false);
@@ -775,28 +817,100 @@ export default function AdminPage() {
                 <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Calendar sync</p>
                 <p className="text-[11px] text-slate-400">
                   Events are created in the nominated source email's Google Calendar and the assignee's calendar.
-                  Use <code className="bg-slate-100 px-1 rounded text-[10px]">{'{matter_number}'}</code>, <code className="bg-slate-100 px-1 rounded text-[10px]">{'{task_name}'}</code>, <code className="bg-slate-100 px-1 rounded text-[10px]">{'{project_name}'}</code> as tokens.
                 </p>
-                <div>
-                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+
+                <div className="space-y-3">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">
                     Event title format
                   </label>
-                  <input
-                    value={calendarTitleFormat}
-                    onChange={e => setCalendarTitleFormat(e.target.value)}
-                    placeholder="{matter_number} — {task_name}"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100 font-mono"
-                  />
-                  {calendarTitleFormat && (
-                    <p className="text-[10px] text-slate-400 mt-1.5 px-2">
-                      Preview: <span className="text-slate-600 font-medium">
-                        {calendarTitleFormat
-                          .replace('{matter_number}', '260576')
-                          .replace('{task_name}', 'File court documents')
-                          .replace('{project_name}', '175 Bourke Street')}
-                      </span>
-                    </p>
+                  <p className="text-[11px] text-slate-400">
+                    Drag to reorder. Fields are joined with the separator below to build each event's title.
+                  </p>
+
+                  {/* Active tokens */}
+                  <div className="space-y-1.5">
+                    {calendarTokens.map((id, idx) => {
+                      const tok = CALENDAR_TOKENS.find(t => t.id === id);
+                      return (
+                        <div
+                          key={id}
+                          draggable
+                          onDragStart={() => setCalendarDragIdx(idx)}
+                          onDragOver={e => e.preventDefault()}
+                          onDrop={() => {
+                            if (calendarDragIdx === null || calendarDragIdx === idx) return;
+                            const next = [...calendarTokens];
+                            const [moved] = next.splice(calendarDragIdx, 1);
+                            next.splice(idx, 0, moved);
+                            setCalendarTokens(next);
+                            setCalendarDragIdx(null);
+                          }}
+                          className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-100 rounded-2xl cursor-grab active:cursor-grabbing"
+                        >
+                          <GripVertical size={14} className="text-indigo-300 shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-[12px] font-bold text-indigo-800">{tok?.label || id}</p>
+                            <p className="text-[10px] text-indigo-400">e.g. {tok?.example}</p>
+                          </div>
+                          <button
+                            onClick={() => setCalendarTokens(prev => prev.filter(t => t !== id))}
+                            className="text-indigo-300 hover:text-red-500 transition-colors"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Add tokens */}
+                  {CALENDAR_TOKENS.filter(t => !calendarTokens.includes(t.id)).length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {CALENDAR_TOKENS.filter(t => !calendarTokens.includes(t.id)).map(tok => (
+                        <button
+                          key={tok.id}
+                          onClick={() => setCalendarTokens(prev => [...prev, tok.id])}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-full text-[11px] text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                        >
+                          + {tok.label}
+                        </button>
+                      ))}
+                    </div>
                   )}
+
+                  {/* Separator */}
+                  <div className="pt-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                      Separator between fields
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {CALENDAR_SEPARATORS.map(s => (
+                        <button
+                          key={s.value}
+                          onClick={() => setCalendarSeparator(s.value)}
+                          className={`px-3 py-1.5 rounded-full text-[11px] font-mono border transition-all ${
+                            calendarSeparator === s.value
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Live preview */}
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <p className="text-[10px] text-slate-400 mb-1">Preview</p>
+                    <p className="text-[12px] text-slate-700 font-medium">
+                      {calendarTokens.length
+                        ? calendarTokens
+                            .map(id => CALENDAR_TOKENS.find(t => t.id === id)?.example || id)
+                            .join(calendarSeparator)
+                        : '—'}
+                    </p>
+                  </div>
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">

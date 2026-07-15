@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
         .select("id").eq("company_id", companyId).eq("field_key", "matter_number").maybeSingle();
       if (matterField) {
         const { data: cfv } = await db.from("company_custom_field_values")
-          .select("value_text").eq("field_id", matterField.id).eq("project_id", task.project_id).maybeSingle();
+          .select("value_text").eq("field_id", matterField.id).eq("record_id", task.project_id).maybeSingle();
         matterNumber = cfv?.value_text || "";
       }
     }

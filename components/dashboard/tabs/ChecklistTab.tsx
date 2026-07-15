@@ -7,6 +7,7 @@ import {
   User, Users, DollarSign, Pencil, X,
   Copy, ArrowLeft, CheckSquare,
 } from "lucide-react";
+import DateCalculator from "@/components/DateCalculator";
 
 interface Task {
   id: string; project_id: string; name: string; is_completed: boolean;
@@ -23,7 +24,10 @@ interface TemplateItem {
   priority: string; assigned_team_id: string | null; assignee_id: string | null;
   is_monetary: boolean; estimated_cost: number; due_offset_days: number | null;
   due_anchor: string; display_order: number;
+  due_offset_mode?: 'calendar' | 'business'; due_offset_state?: string | null;
 }
+
+const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'];
 interface Template { id: string; name: string; items: TemplateItem[]; }
 interface Props { recordId: string; companyId: string; }
 
@@ -105,7 +109,10 @@ function TaskEditModal({ task, profiles, teams, statuses, onSave, onClose }: any
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Due date</p>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Due date</p>
+                <DateCalculator onApply={date => set({ due_date: date })} />
+              </div>
               <input type="date" value={draft.due_date ? String(draft.due_date).slice(0,10) : ''} onChange={e => set({ due_date: e.target.value || null })}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none" />
             </div>
@@ -226,29 +233,62 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
     { value: 'record_due', label: 'Project due date' },
   ];
 
+  const getAnchorDate = (item: TemplateItem): Date => {
+    if (item.due_anchor === 'record_created') return new Date(projectCreatedAt);
+    if (item.due_anchor === 'record_due' && projectDueDate) return new Date(projectDueDate);
+    return new Date();
+  };
+
+  // Calendar-day resolution — instant, no network call.
   const resolveDate = (item: TemplateItem): string | null => {
     if (item.due_offset_days === null) return null;
-    let anchor: Date;
-    if (item.due_anchor === 'record_created') anchor = new Date(projectCreatedAt);
-    else if (item.due_anchor === 'record_due' && projectDueDate) anchor = new Date(projectDueDate);
-    else anchor = new Date();
+    const anchor = getAnchorDate(item);
     anchor.setDate(anchor.getDate() + (item.due_offset_days || 0));
     return anchor.toISOString().split('T')[0];
   };
+
+  // Business-day resolution — calls date-calc for AU state-aware holiday skipping.
+  // Falls back to the calendar-day result if the item isn't in business mode or the call fails.
+  const resolveDateAsync = async (item: TemplateItem): Promise<string | null> => {
+    if (item.due_offset_days === null) return null;
+    if (item.due_offset_mode === 'business' && item.due_offset_state) {
+      const fromDateStr = getAnchorDate(item).toISOString().split('T')[0];
+      const { data, error } = await supabase.functions.invoke('date-calc', {
+        body: { fromDate: fromDateStr, days: item.due_offset_days, mode: 'business', state: item.due_offset_state },
+      });
+      if (!error && data?.resultDate) return data.resultDate;
+    }
+    return resolveDate(item);
+  };
+
+  // Resolved dates for the "apply" preview — keyed by item id, populated async
+  // for business-day items (calendar-day items resolve instantly via resolveDate).
+  const [resolvedDates, setResolvedDates] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    if (view !== 'apply' || !selected) return;
+    let cancelled = false;
+    (async () => {
+      const items = selected.items.filter(i => !i.parent_item_id);
+      const entries = await Promise.all(items.map(async item => [item.id, await resolveDateAsync(item)] as const));
+      if (!cancelled) setResolvedDates(Object.fromEntries(entries));
+    })();
+    return () => { cancelled = true; };
+  }, [view, selected]);
 
   const handleApply = async () => {
     if (!selected) return;
     setSaving(true);
     console.log('[template] Applying:', selected.name, 'items:', selected.items.length);
-    const tasksToCreate: Partial<Task>[] = selected.items
+    const itemsToApply = selected.items
       .filter(i => !i.parent_item_id)
-      .sort((a, b) => a.display_order - b.display_order)
-      .map(item => ({
-        project_id: projectId, company_id: companyId, name: item.title,
-        assignee_id: item.assignee_id || null, assigned_team_id: item.assigned_team_id || null,
-        is_monetary: item.is_monetary || false, estimated_cost: item.estimated_cost || 0,
-        due_date: resolveDate(item), is_completed: false,
-      }));
+      .sort((a, b) => a.display_order - b.display_order);
+    const tasksToCreate: Partial<Task>[] = await Promise.all(itemsToApply.map(async item => ({
+      project_id: projectId, company_id: companyId, name: item.title,
+      assignee_id: item.assignee_id || null, assigned_team_id: item.assigned_team_id || null,
+      is_monetary: item.is_monetary || false, estimated_cost: item.estimated_cost || 0,
+      due_date: await resolveDateAsync(item), is_completed: false,
+    })));
     console.log('[template] tasksToCreate:', tasksToCreate);
     await onApply(tasksToCreate);
     setSaving(false);
@@ -351,7 +391,10 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                           {item.due_offset_days === 0 ? 'On ' : item.due_offset_days > 0 ? `+${item.due_offset_days}d from ` : `${item.due_offset_days}d from `}
                           {ANCHORS.find(a => a.value === item.due_anchor)?.label || item.due_anchor}
                           {' → '}
-                          <span className="font-medium text-indigo-600">{resolveDate(item) || '—'}</span>
+                          <span className="font-medium text-indigo-600">{resolvedDates[item.id] ?? resolveDate(item) ?? '—'}</span>
+                          {item.due_offset_mode === 'business' && (
+                            <span className="text-slate-300"> ({item.due_offset_state} business days)</span>
+                          )}
                         </span>
                       )}
                       {item.assignee_id && (
@@ -416,6 +459,27 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                           </select>
                         </div>
                       </div>
+                      <div className={`grid gap-2 ${item.due_offset_mode === 'business' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <div>
+                          <p className="text-[9px] text-slate-400 mb-1">Day type</p>
+                          <select value={item.due_offset_mode || 'calendar'} onChange={e => {
+                            const next = [...newItems]; next[idx] = { ...next[idx], due_offset_mode: e.target.value as 'calendar' | 'business' }; setNewItems(next);
+                          }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
+                            <option value="calendar">Calendar days</option>
+                            <option value="business">Business days</option>
+                          </select>
+                        </div>
+                        {item.due_offset_mode === 'business' && (
+                          <div>
+                            <p className="text-[9px] text-slate-400 mb-1">State</p>
+                            <select value={item.due_offset_state || 'NSW'} onChange={e => {
+                              const next = [...newItems]; next[idx] = { ...next[idx], due_offset_state: e.target.value }; setNewItems(next);
+                            }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
+                              {AU_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <p className="text-[9px] text-slate-400 mb-1">Assignee</p>
@@ -438,7 +502,7 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                       </div>
                     </div>
                   ))}
-                  <button onClick={() => setNewItems([...newItems, { title: '', due_offset_days: 0, due_anchor: 'record_created', display_order: newItems.length }])}
+                  <button onClick={() => setNewItems([...newItems, { title: '', due_offset_days: 0, due_anchor: 'record_created', due_offset_mode: 'calendar', display_order: newItems.length }])}
                     className="w-full flex items-center gap-2 justify-center py-2.5 border border-dashed border-slate-300 text-slate-400 rounded-2xl hover:border-indigo-300 hover:text-indigo-600 transition-colors text-[12px]">
                     <Plus size={13} /> Add task
                   </button>
@@ -484,6 +548,27 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                           </select>
                         </div>
                       </div>
+                      <div className={`grid gap-2 ${item.due_offset_mode === 'business' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <div>
+                          <p className="text-[9px] text-slate-400 mb-1">Day type</p>
+                          <select value={item.due_offset_mode || 'calendar'} onChange={e => {
+                            const next = [...editItems]; next[idx] = { ...next[idx], due_offset_mode: e.target.value as 'calendar' | 'business' }; setEditItems(next);
+                          }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
+                            <option value="calendar">Calendar days</option>
+                            <option value="business">Business days</option>
+                          </select>
+                        </div>
+                        {item.due_offset_mode === 'business' && (
+                          <div>
+                            <p className="text-[9px] text-slate-400 mb-1">State</p>
+                            <select value={item.due_offset_state || 'NSW'} onChange={e => {
+                              const next = [...editItems]; next[idx] = { ...next[idx], due_offset_state: e.target.value }; setEditItems(next);
+                            }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
+                              {AU_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <p className="text-[9px] text-slate-400 mb-1">Assignee</p>
@@ -506,7 +591,7 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                       </div>
                     </div>
                   ))}
-                  <button onClick={() => setEditItems([...editItems, { title: '', due_offset_days: 0, due_anchor: 'record_created', display_order: editItems.length }])}
+                  <button onClick={() => setEditItems([...editItems, { title: '', due_offset_days: 0, due_anchor: 'record_created', due_offset_mode: 'calendar', display_order: editItems.length }])}
                     className="w-full flex items-center gap-2 justify-center py-2.5 border border-dashed border-slate-300 text-slate-400 rounded-2xl hover:border-indigo-300 hover:text-indigo-600 transition-colors text-[12px]">
                     <Plus size={13} /> Add task
                   </button>
