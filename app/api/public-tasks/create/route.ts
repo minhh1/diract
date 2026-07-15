@@ -42,12 +42,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Only company admins can create a company-wide page" }, { status: 403 });
   }
   if (scope === "team") {
-    const { data: team } = await admin.from("teams").select("id, leader_id, company_id").eq("id", teamId).maybeSingle();
-    if (!team || team.company_id !== companyId) {
-      return NextResponse.json({ error: "Team not found" }, { status: 404 });
-    }
+    // teams has no company_id column — teams aren't scoped to a company in
+    // this schema, so we just check the team exists and the user belongs to it.
+    const { data: team } = await admin.from("teams").select("id, leader_id").eq("id", teamId).maybeSingle();
+    if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
     if (!isAdmin && team.leader_id !== user.id) {
-      return NextResponse.json({ error: "Only the team leader or a company admin can create a page for this team" }, { status: 403 });
+      const { data: membership } = await admin
+        .from("team_members").select("id").eq("team_id", teamId).eq("profile_id", user.id).maybeSingle();
+      if (!membership) {
+        return NextResponse.json({ error: "You're not a member of this team" }, { status: 403 });
+      }
     }
   }
 

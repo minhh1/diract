@@ -24,7 +24,7 @@ function defaultExpiry(): string {
 export default function PublicTaskPagesTab() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [ledTeams, setLedTeams] = useState<Team[]>([]);
+  const [myTeams, setMyTeams] = useState<Team[]>([]);
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -45,9 +45,19 @@ export default function PublicTaskPagesTab() {
     const admin = membership?.role === "company_admin";
     setIsAdmin(admin);
 
-    const { data: teams } = await supabase.from("teams").select("id, team_name, leader_id").eq("company_id", companyId).eq("is_active", true);
+    // teams has no company_id column — teams aren't scoped to a company in
+    // this schema (see components/admin/AdminTeamsTab.tsx, which loads them
+    // the same unfiltered way).
+    const [{ data: teams }, { data: myMemberships }] = await Promise.all([
+      supabase.from("teams").select("id, team_name, leader_id").eq("is_active", true).order("team_name"),
+      supabase.from("team_members").select("team_id").eq("profile_id", user.id),
+    ]);
     setAllTeams(teams || []);
-    setLedTeams((teams || []).filter(t => t.leader_id === user.id));
+    const myTeamIds = new Set([
+      ...(myMemberships || []).map(m => m.team_id),
+      ...(teams || []).filter(t => t.leader_id === user.id).map(t => t.id),
+    ]);
+    setMyTeams((teams || []).filter(t => myTeamIds.has(t.id)));
 
     const res = await fetch("/api/public-tasks/list");
     const json = await res.json();
@@ -68,7 +78,7 @@ export default function PublicTaskPagesTab() {
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  const teamOptions = isAdmin ? allTeams : ledTeams;
+  const teamOptions = isAdmin ? allTeams : myTeams;
 
   if (loading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-slate-300" /></div>;
 
