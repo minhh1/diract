@@ -81,7 +81,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     }))
     .sort((a: any, b: any) => a.userName.localeCompare(b.userName));
 
-  // ── Form options for "add/edit task" (projects are searched separately) ──
+  // ── Form options for "add/edit task" ────────────────────────────
+  // Full project catalog is loaded once here (not searched per-keystroke) —
+  // the picker filters it client-side, which is far faster than a network
+  // round trip on every keystroke.
+  const { data: allProjects } = await admin
+    .from("projects").select("id, name").eq("company_id", page.company_id).is("deleted_at", null).order("name");
+  const { data: matterFieldForCatalog } = await admin
+    .from("company_custom_fields").select("id")
+    .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").maybeSingle();
+  let matterByProjectCatalog: Record<string, string> = {};
+  if (matterFieldForCatalog && allProjects?.length) {
+    // Don't filter by .in(record_id, ...) with hundreds of IDs — hits URL
+    // limits and silently returns nothing. Fetch all values for this field
+    // (already scoped to this company via field_id) and map in memory.
+    const { data: values } = await admin
+      .from("company_custom_field_values").select("record_id, value_text")
+      .eq("field_id", matterFieldForCatalog.id);
+    matterByProjectCatalog = Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || ""]));
+  }
+
   const { data: statuses } = await admin
     .from("task_statuses").select("id, label").eq("is_active", true).order("display_order");
   const { data: teams } = await admin
@@ -91,8 +110,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     title: page.title,
     scope: page.scope,
     columns: page.columns,
+    companyId: page.company_id,
     tabs,
     formOptions: {
+      projects: (allProjects || []).map((p: any) => ({ id: p.id, name: p.name, matterNumber: matterByProjectCatalog[p.id] || null })),
       statuses: statuses || [],
       teams: teams || [],
       assignees: (targetProfiles || []).map((p: any) => ({ id: p.id, name: p.full_name || p.email || "Unknown" })),

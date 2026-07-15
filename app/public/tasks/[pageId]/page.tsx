@@ -4,7 +4,7 @@
 // team / company) is enforced server-side in the API route.
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack } from "lucide-react";
@@ -22,11 +22,12 @@ interface Task {
 }
 interface Tab { userId: string; userName: string; tasks: Task[]; }
 interface FormOptions {
+  projects: PickedProject[];
   statuses: { id: string; label: string }[];
   teams: { id: string; team_name: string }[];
   assignees: { id: string; name: string }[];
 }
-interface PageData { title: string; scope: string; columns: string[]; tabs: Tab[]; formOptions: FormOptions; }
+interface PageData { title: string; scope: string; columns: string[]; companyId: string; tabs: Tab[]; formOptions: FormOptions; }
 
 export default function PublicTaskPage() {
   const params = useParams();
@@ -43,27 +44,45 @@ export default function PublicTaskPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Silent refetch — updates data in place without flashing the full-page
+  // loading spinner. Used for realtime-triggered refreshes and after the
+  // current user's own mutations.
+  const refresh = useCallback(async () => {
+    const res = await fetch(`/api/public-tasks/${pageId}`);
+    const json = await res.json();
+    if (!res.ok) { setError(json.error || "Failed to load page"); return; }
+    setData(json);
+    setActiveTab(prev => prev || json.tabs[0]?.userId || null);
+    setError(null);
+  }, [pageId]);
+
   const checkAuthAndLoad = useCallback(async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     setSignedIn(!!user);
     setAuthChecked(true);
     if (!user) { setLoading(false); return; }
-
-    const res = await fetch(`/api/public-tasks/${pageId}`);
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Failed to load page");
-      setLoading(false);
-      return;
-    }
-    setData(json);
-    setActiveTab(prev => prev || json.tabs[0]?.userId || null);
-    setError(null);
+    await refresh();
     setLoading(false);
-  }, [pageId]);
+  }, [refresh]);
 
   useEffect(() => { checkAuthAndLoad(); }, [checkAuthAndLoad]);
+
+  // ── Realtime — live-refresh when anyone (this page or the main app)
+  // changes a task for this company, so multiple viewers stay in sync
+  // without a manual reload.
+  const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!data?.companyId) return;
+    const channel = supabase
+      .channel(`public-tasks-${pageId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `company_id=eq.${data.companyId}` }, () => {
+        if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+        refreshDebounceRef.current = setTimeout(() => refresh(), 400);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [data?.companyId, pageId, refresh]);
 
   const isEmbedded = typeof window !== "undefined" && window.self !== window.top;
 
@@ -72,18 +91,26 @@ export default function PublicTaskPage() {
   };
 
   const toggleComplete = async (task: Task) => {
-    await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, {
+    // Optimistic — flip it locally right away, then confirm with the server.
+    setData(prev => prev ? {
+      ...prev,
+      tabs: prev.tabs.map(tab => ({
+        ...tab,
+        tasks: tab.tasks.map(t => t.id === task.id ? { ...t, isCompleted: !t.isCompleted } : t),
+      })),
+    } : prev);
+    const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isCompleted: !task.isCompleted }),
     });
-    checkAuthAndLoad();
+    if (!res.ok) refresh(); // revert to server truth on failure
   };
 
   const deleteTask = async (task: Task) => {
     if (!window.confirm(`Delete "${task.name}"?`)) return;
     await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, { method: "DELETE" });
-    checkAuthAndLoad();
+    refresh();
   };
 
   // ── Not signed in ────────────────────────────────────────────────
@@ -228,7 +255,7 @@ export default function PublicTaskPage() {
           saving={saving}
           setSaving={setSaving}
           onClose={() => setShowAddForm(false)}
-          onSaved={() => { setShowAddForm(false); checkAuthAndLoad(); }}
+          onSaved={() => { setShowAddForm(false); refresh(); }}
         />
       )}
 
@@ -241,16 +268,17 @@ export default function PublicTaskPage() {
           saving={saving}
           setSaving={setSaving}
           onClose={() => setEditingTask(null)}
-          onSaved={() => { setEditingTask(null); checkAuthAndLoad(); }}
-          onDeleted={() => { setEditingTask(null); checkAuthAndLoad(); }}
+          onSaved={() => { setEditingTask(null); refresh(); }}
+          onDeleted={() => { setEditingTask(null); refresh(); }}
         />
       )}
 
       {showTemplates && (
         <TemplatesModal
           pageId={pageId}
+          projects={data.formOptions.projects}
           onClose={() => setShowTemplates(false)}
-          onApplied={() => { setShowTemplates(false); checkAuthAndLoad(); }}
+          onApplied={() => { setShowTemplates(false); refresh(); }}
         />
       )}
     </div>
@@ -331,7 +359,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
           </div>
           {!isEdit && (
-            <ProjectPicker pageId={pageId} value={project} onChange={setProject} />
+            <ProjectPicker projects={formOptions.projects} value={project} onChange={setProject} />
           )}
           {isEdit && task?.projectName && (
             <div>
@@ -402,7 +430,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
 }
 
 // ── Apply template modal ────────────────────────────────────────────
-function TemplatesModal({ pageId, onClose, onApplied }: { pageId: string; onClose: () => void; onApplied: () => void }) {
+function TemplatesModal({ pageId, projects, onClose, onApplied }: { pageId: string; projects: PickedProject[]; onClose: () => void; onApplied: () => void }) {
   const [project, setProject] = useState<PickedProject | null>(null);
   const [templates, setTemplates] = useState<{ id: string; name: string; itemCount: number }[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
@@ -456,7 +484,7 @@ function TemplatesModal({ pageId, onClose, onApplied }: { pageId: string; onClos
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          <ProjectPicker pageId={pageId} value={project} onChange={setProject} label="Project *" />
+          <ProjectPicker projects={projects} value={project} onChange={setProject} label="Project *" />
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Template *</p>
             {loadingTemplates ? (

@@ -1,28 +1,28 @@
 // components/public/ProjectPicker.tsx
 // Searchable project picker (by name and/or matter number) for the public
-// task page — replaces a plain <select> that would otherwise list every
-// project in the company.
+// task page. Filters an already-loaded project catalog client-side — no
+// network round trip per keystroke, which is what made this feel slow when
+// it hit a search API on every character typed.
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Search, X } from "lucide-react";
 
 export interface PickedProject { id: string; name: string; matterNumber: string | null; }
 
 interface Props {
-  pageId: string;
+  projects: PickedProject[];
   value: PickedProject | null;
   onChange: (project: PickedProject | null) => void;
   label?: string;
 }
 
-export default function ProjectPicker({ pageId, value, onChange, label = "Project *" }: Props) {
+const MAX_RESULTS = 20;
+
+export default function ProjectPicker({ projects, value, onChange, label = "Project *" }: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<PickedProject[]>([]);
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -32,18 +32,14 @@ export default function ProjectPicker({ pageId, value, onChange, label = "Projec
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) { setResults([]); return; }
-    debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      const res = await fetch(`/api/public-tasks/${pageId}/projects?q=${encodeURIComponent(query)}`);
-      const json = await res.json();
-      setResults(json.projects || []);
-      setLoading(false);
-    }, 300);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query, pageId]);
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const matches = projects.filter(p =>
+      p.name.toLowerCase().includes(q) || (p.matterNumber || "").toLowerCase().includes(q)
+    );
+    return matches.slice(0, MAX_RESULTS);
+  }, [query, projects]);
 
   if (value) {
     return (
@@ -74,9 +70,8 @@ export default function ProjectPicker({ pageId, value, onChange, label = "Projec
       </div>
       {open && query.trim() && (
         <div className="absolute z-10 top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-lg max-h-56 overflow-y-auto">
-          {loading && <p className="px-4 py-3 text-[12px] text-slate-400">Searching...</p>}
-          {!loading && results.length === 0 && <p className="px-4 py-3 text-[12px] text-slate-300 italic">No projects found</p>}
-          {!loading && results.map(p => (
+          {results.length === 0 && <p className="px-4 py-3 text-[12px] text-slate-300 italic">No projects found</p>}
+          {results.map(p => (
             <button key={p.id} type="button"
               onClick={() => { onChange(p); setQuery(""); setOpen(false); }}
               className="w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
