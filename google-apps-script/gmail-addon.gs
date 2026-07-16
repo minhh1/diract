@@ -242,6 +242,12 @@ function getTaskStatusLabel(isCompleted, awaitingFollowUp) {
   return 'Pending';
 }
 
+// Gmail web URL for a message, given its hex message ID (the same format
+// already threaded through the add-on as `messageId`/`cleanMessageId`).
+function gmailMessageUrl(messageId) {
+  return 'https://mail.google.com/mail/u/0/#all/' + messageId;
+}
+
 function errorNotification(msg) {
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification()
@@ -690,7 +696,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
       atSub += (atSub ? ' · ' : '') + getTaskStatusLabel(at.isCompleted, at.awaitingFollowUp);
       if (at.isMonetary && at.estimatedCost) atSub += (atSub ? ' · ' : '') + '$' + at.estimatedCost;
       if (at.createdBy) atSub += (atSub ? ' · ' : '') + 'Added by ' + at.createdBy;
-      if (at.awaitingFollowUp) atSub += (atSub ? ' · ' : '') + '🚩 Follow up' + (at.followUpDate ? ' ' + getRelativeDateLabel(at.followUpDate) : '');
+      if (at.followUpCount) atSub += (atSub ? ' · ' : '') + '🚩 Followed up ' + at.followUpCount + 'x' + (at.followUpDate ? ' · last ' + getRelativeDateLabel(at.followUpDate) : '');
       if (at.notes) atSub += (atSub ? ' · ' : '') + '📝 ' + at.notes;
 
       var atRow = CardService.newDecoratedText()
@@ -708,6 +714,12 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
             messageId: '',
             accessToken: token,
           }));
+
+      if (at.sourceMessageId) {
+        atRow.setButton(CardService.newTextButton()
+          .setText('📧')
+          .setOpenLink(CardService.newOpenLink().setUrl(gmailMessageUrl(at.sourceMessageId))));
+      }
 
       allTasksSection.addWidget(atRow);
       // Spacing between rows — a divider reads clearer than blank widgets.
@@ -911,8 +923,8 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     if (t.assignedTeam) sub += (sub ? ' · ' : '') + '👥 ' + t.assignedTeam;
     sub += (sub ? ' · ' : '') + getTaskStatusLabel(t.isCompleted, t.awaitingFollowUp);
     if (t.createdBy) sub += (sub ? ' · ' : '') + 'Added by ' + t.createdBy;
-    if (t.awaitingFollowUp) {
-      sub += (sub ? ' · ' : '') + '🚩 Follow up' + (t.followUpDate ? ' ' + getRelativeDateLabel(t.followUpDate) : '');
+    if (t.followUpCount) {
+      sub += (sub ? ' · ' : '') + '🚩 Followed up ' + t.followUpCount + 'x' + (t.followUpDate ? ' · last ' + getRelativeDateLabel(t.followUpDate) : '');
     }
     if (t.notes) sub += (sub ? ' · ' : '') + '📝 ' + t.notes;
 
@@ -932,7 +944,9 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       taskCost: t.estimatedCost ? String(t.estimatedCost) : '',
       taskAwaitingFollowUp: t.awaitingFollowUp ? 'true' : 'false',
       taskFollowUpDate: t.followUpDate || '',
+      taskFollowUpCount: String(t.followUpCount || 0),
       taskNotes: t.notes || '',
+      taskSourceMessageId: t.sourceMessageId || '',
       projectId: projectId,
       projectName: projectName,
       labelCode: labelCode,
@@ -961,17 +975,41 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
 
     // Second tick — "done on our end, awaiting follow-up" — and a note button,
     // shown on the same row.
-    taskSection.addWidget(CardService.newButtonSet()
+    var taskButtonRow = CardService.newButtonSet()
       .addButton(CardService.newTextButton()
-        .setText(t.awaitingFollowUp ? '🚩 Awaiting follow-up (tap to clear)' : '🏳️ Mark awaiting follow-up')
+        .setText(t.followUpCount ? '🚩 Followed up ' + t.followUpCount + 'x — manage' : '🏳️ Log follow-up')
         .setOnClickAction(CardService.newAction()
-          .setFunctionName('onToggleFollowUp')
+          .setFunctionName('onOpenFollowUpsCard')
           .setParameters(taskParams)))
       .addButton(CardService.newTextButton()
         .setText(t.notes ? '📝 Edit note' : '📝 Add note')
         .setOnClickAction(CardService.newAction()
           .setFunctionName('onOpenNoteCard')
-          .setParameters(taskParams))));
+          .setParameters(taskParams)));
+
+    // Reference email — open the message that prompted this task if one's
+    // linked, offer to replace it with whichever email is currently open,
+    // or (if none is linked yet) offer to link the one currently open.
+    if (t.sourceMessageId) {
+      taskButtonRow.addButton(CardService.newTextButton()
+        .setText('📧 Open email')
+        .setOpenLink(CardService.newOpenLink().setUrl(gmailMessageUrl(t.sourceMessageId))));
+      if (messageId && messageId !== t.sourceMessageId) {
+        taskButtonRow.addButton(CardService.newTextButton()
+          .setText('🔄 Replace with this email')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onLinkEmail')
+            .setParameters(taskParams)));
+      }
+    } else if (messageId) {
+      taskButtonRow.addButton(CardService.newTextButton()
+        .setText('📎 Link this email')
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onLinkEmail')
+          .setParameters(taskParams)));
+    }
+
+    taskSection.addWidget(taskButtonRow);
   }
   card.addSection(taskSection);
 
@@ -1022,6 +1060,21 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     .setFieldName('newTaskName')
     .setTitle('Task name *')
     .setValue(newTaskDraft.name || ''));
+
+  // Reference email — link the email currently open in Gmail, so anyone
+  // looking at the task later can jump straight back to it. On by default
+  // when there's an email open; only shown when there is one.
+  if (messageId) {
+    addSection.addWidget(CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.CHECK_BOX)
+      .setFieldName('newTaskLinkEmail')
+      .setTitle('')
+      .addItem('📎 Link the email I\'m viewing', 'true', newTaskDraft.linkEmail !== false));
+    addSection.addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+        .setText('📧 Preview email')
+        .setOpenLink(CardService.newOpenLink().setUrl(gmailMessageUrl(messageId)))));
+  }
 
   // Due date — "Specific date" or "Days from" a date (calendar/business, AU state-aware)
   var dueMode = newTaskDraft.dueMode || 'specific';
@@ -1201,6 +1254,7 @@ function onChangeNewTaskDueMode(e) {
     days: parseInt((fi.newTaskDaysFromDays || ['7'])[0]) || 7,
     dayType: (fi.newTaskDaysFromType || ['calendar'])[0] || 'calendar',
     state: (fi.newTaskDaysFromState || ['NSW'])[0] || 'NSW',
+    linkEmail: (fi.newTaskLinkEmail || []).indexOf('true') !== -1,
   };
 
   var card = buildTaskCardById(
@@ -1354,81 +1408,99 @@ function onToggleTask(e) {
     .build();
 }
 
-// Toggles the second "awaiting follow-up" tick. If turning it on, prompts
-// for an optional follow-up date via the edit-task card; if turning it off
-// (already awaiting), clears it immediately.
-function onToggleFollowUp(e) {
+// Follow-ups are a dated log, not a single tick — a task can be followed
+// up more than once (e.g. chasing the same person repeatedly). Tapping the
+// row's follow-up button always opens this manage card: past entries with
+// a remove button each, plus a date field to log a new one.
+function onOpenFollowUpsCard(e) {
   var token = e.parameters.accessToken || getToken();
-  var wasAwaiting = e.parameters.taskAwaitingFollowUp === 'true';
-
-  if (wasAwaiting) {
-    var result = apiPost('/toggle-follow-up', {
-      taskId: e.parameters.taskId,
-      awaitingFollowUp: false,
-      followUpDate: null,
-    }, token);
-    if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
-    return CardService.newActionResponseBuilder()
-      .setNavigation(CardService.newNavigation()
-        .updateCard(buildTaskCardById(
-          e.parameters.projectId, e.parameters.projectName,
-          e.parameters.labelCode, e.parameters.companyId,
-          token, e.parameters.messageId || null)))
-      .build();
-  }
-
-  // Turning it on — push a small card asking for an optional follow-up date
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation()
-      .pushCard(buildFollowUpDateCard(e.parameters)))
+      .pushCard(buildFollowUpsCard(e.parameters, token)))
     .build();
 }
 
-function buildFollowUpDateCard(params) {
+function buildFollowUpsCard(params, token) {
   var card = CardService.newCardBuilder()
-    .setName('follow_up_' + params.taskId)
+    .setName('follow_ups_' + params.taskId)
     .setHeader(CardService.newCardHeader()
-      .setTitle('Awaiting follow-up')
+      .setTitle('Follow-ups')
       .setSubtitle(params.taskName || ''));
 
   var section = CardService.newCardSection();
-  var datePicker = CardService.newDatePicker()
-    .setFieldName('followUpDate')
-    .setTitle('Follow-up date (optional)');
-  if (params.taskFollowUpDate) {
-    var fd = new Date(params.taskFollowUpDate + 'T00:00:00');
-    if (!isNaN(fd.getTime())) datePicker.setValueInMsSinceEpoch(fd.getTime());
-  }
-  section.addWidget(datePicker);
+  var res = apiGet('/task-follow-ups?taskId=' + params.taskId, token);
+  var entries = res.ok ? (res.data.entries || []) : [];
 
+  if (!entries.length) {
+    section.addWidget(CardService.newTextParagraph().setText('No follow-ups logged yet.'));
+  } else {
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      section.addWidget(CardService.newDecoratedText()
+        .setText(entry.followedUpAt)
+        .setButton(CardService.newImageButton()
+          .setIconUrl('https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/close/default/24px.svg')
+          .setAltText('Remove')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onRemoveFollowUpEntry')
+            .setParameters(Object.assign({}, params, { followUpId: entry.id })))));
+    }
+  }
+
+  var newDatePicker = CardService.newDatePicker()
+    .setFieldName('followUpDate')
+    .setTitle('Date followed up')
+    .setValueInMsSinceEpoch(dateStrToUtcMidnight(todayDateStr()).getTime());
+  section.addWidget(newDatePicker);
   section.addWidget(CardService.newButtonSet()
     .addButton(CardService.newTextButton()
-      .setText('Save')
+      .setText('Log follow-up')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
       .setBackgroundColor('#f59e0b')
       .setOnClickAction(CardService.newAction()
-        .setFunctionName('onConfirmFollowUp')
-        .setParameters(params)))
-    .addButton(CardService.newTextButton()
-      .setText('← Back')
-      .setOnClickAction(CardService.newAction()
-        .setFunctionName('onPopCard')
-        .setParameters({}))));
+        .setFunctionName('onAddFollowUpEntry')
+        .setParameters(params))));
 
   card.addSection(section);
+
+  card.addSection(CardService.newCardSection()
+    .addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+        .setText('← Back')
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName(params.fromEditCard === 'true' ? 'onCloseFollowUpsCardFromEdit' : 'onCloseFollowUpsCard')
+          .setParameters(params)))));
+
   return card.build();
 }
 
-function onConfirmFollowUp(e) {
+function onAddFollowUpEntry(e) {
   var token = e.parameters.accessToken || getToken();
-  var followUpDate = parseDatePickerValue(e, 'followUpDate') || null;
+  var followedUpAt = parseDatePickerValue(e, 'followUpDate') || todayDateStr();
 
-  var result = apiPost('/toggle-follow-up', {
-    taskId: e.parameters.taskId,
-    awaitingFollowUp: true,
-    followUpDate: followUpDate,
-  }, token);
+  var result = apiPost('/add-follow-up', { taskId: e.parameters.taskId, followedUpAt: followedUpAt }, token);
   if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
+  invalidateTaskCache(e.parameters.companyId);
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().updateCard(buildFollowUpsCard(e.parameters, token)))
+    .setNotification(CardService.newNotification().setText('🚩 Follow-up logged'))
+    .build();
+}
+
+function onRemoveFollowUpEntry(e) {
+  var token = e.parameters.accessToken || getToken();
+  var result = apiPost('/remove-follow-up', { taskId: e.parameters.taskId, followUpId: e.parameters.followUpId }, token);
+  if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
+  invalidateTaskCache(e.parameters.companyId);
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().updateCard(buildFollowUpsCard(e.parameters, token)))
+    .build();
+}
+
+// Back out of the manage-follow-ups card to the (now stale) task list —
+// rebuild it fresh so the updated follow-up count/status shows immediately.
+function onCloseFollowUpsCard(e) {
+  var token = e.parameters.accessToken || getToken();
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation()
       .popCard()
@@ -1436,7 +1508,22 @@ function onConfirmFollowUp(e) {
         e.parameters.projectId, e.parameters.projectName,
         e.parameters.labelCode, e.parameters.companyId,
         token, e.parameters.messageId || null)))
-    .setNotification(CardService.newNotification().setText('🚩 Marked awaiting follow-up'))
+    .build();
+}
+
+// Same, but for when the manage-follow-ups card was opened from the edit-
+// task card — pops both levels (follow-ups card, then edit card) back to
+// the refreshed task list.
+function onCloseFollowUpsCardFromEdit(e) {
+  var token = e.parameters.accessToken || getToken();
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .popCard()
+      .popCard()
+      .updateCard(buildTaskCardById(
+        e.parameters.projectId, e.parameters.projectName,
+        e.parameters.labelCode, e.parameters.companyId,
+        token, e.parameters.messageId || null)))
     .build();
 }
 
@@ -1501,6 +1588,50 @@ function onSaveNote(e) {
     .build();
 }
 
+// Attaches the email currently open in Gmail to a task as its reference —
+// so anyone looking at the task later can jump straight back to the email
+// that prompted it.
+function onLinkEmail(e) {
+  var token = e.parameters.accessToken || getToken();
+  if (!e.parameters.messageId) return errorNotification('No email is open to link');
+
+  var result = apiPost('/link-email', {
+    taskId: e.parameters.taskId,
+    messageId: e.parameters.messageId,
+  }, token);
+  if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .updateCard(buildTaskCardById(
+        e.parameters.projectId, e.parameters.projectName,
+        e.parameters.labelCode, e.parameters.companyId,
+        token, e.parameters.messageId || null)))
+    .setNotification(CardService.newNotification().setText('📎 Email linked to task'))
+    .build();
+}
+
+// Same as onLinkEmail, but for the button inside the pushed edit-task card
+// — pops back to the (now updated) task list instead of updating in place.
+function onLinkEmailFromEditCard(e) {
+  var token = e.parameters.accessToken || getToken();
+  if (!e.parameters.messageId) return errorNotification('No email is open to link');
+
+  var result = apiPost('/link-email', {
+    taskId: e.parameters.taskId,
+    messageId: e.parameters.messageId,
+  }, token);
+  if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .popCard()
+      .updateCard(buildTaskCardById(
+        e.parameters.projectId, e.parameters.projectName,
+        e.parameters.labelCode, e.parameters.companyId,
+        token, e.parameters.messageId || null)))
+    .setNotification(CardService.newNotification().setText('📎 Email linked to task'))
+    .build();
+}
+
 function onOpenEditTask(e) {
   var token = e.parameters.accessToken || getToken();
   var ctxRes = apiGet('/task-context?companyId=' + e.parameters.companyId, token);
@@ -1527,6 +1658,31 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     .setFieldName('editTaskName')
     .setTitle('Task name *')
     .setValue(params.taskName || ''));
+
+  // Reference email — open the message that prompted this task, offer to
+  // replace it with whichever email is currently open, or (if none is
+  // linked yet) offer to link the one currently open.
+  if (params.taskSourceMessageId) {
+    var emailBtnRow = CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+        .setText('📧 Open reference email')
+        .setOpenLink(CardService.newOpenLink().setUrl(gmailMessageUrl(params.taskSourceMessageId))));
+    if (params.messageId && params.messageId !== params.taskSourceMessageId) {
+      emailBtnRow.addButton(CardService.newTextButton()
+        .setText('🔄 Replace with this email')
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onLinkEmailFromEditCard')
+          .setParameters(params)));
+    }
+    section.addWidget(emailBtnRow);
+  } else if (params.messageId) {
+    section.addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+        .setText('📎 Link this email')
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onLinkEmailFromEditCard')
+          .setParameters(params))));
+  }
 
   // Due date — "Specific date" or "Days from" a date (calendar/business, AU state-aware)
   var editDueMode = params.taskDueMode || 'specific';
@@ -1644,27 +1800,18 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     .setTitle('Estimated cost ($)')
     .setValue(params.taskCost || ''));
 
-  // Follow-up — done on our end, but still awaiting a follow-up
-  var awaitingFollowUp = params.taskAwaitingFollowUp === 'true';
-  section.addWidget(CardService.newSelectionInput()
-    .setType(CardService.SelectionInputType.CHECK_BOX)
-    .setFieldName('editTaskAwaitingFollowUp')
-    .setTitle('')
-    .addItem('Done on our end — awaiting follow-up', 'true', awaitingFollowUp)
-    .setOnChangeAction(CardService.newAction()
-      .setFunctionName('onChangeEditTaskDueMode')
-      .setParameters(params)));
-
-  if (awaitingFollowUp) {
-    var followUpDatePicker = CardService.newDatePicker()
-      .setFieldName('editTaskFollowUpDate')
-      .setTitle('Follow-up date (optional)');
-    if (params.taskFollowUpDate) {
-      var fud = new Date(params.taskFollowUpDate + 'T00:00:00');
-      if (!isNaN(fud.getTime())) followUpDatePicker.setValueInMsSinceEpoch(fud.getTime());
-    }
-    section.addWidget(followUpDatePicker);
-  }
+  // Follow-ups — a task can be followed up more than once, so this opens
+  // the same dated log/manage card used from the task list row.
+  section.addWidget(CardService.newDecoratedText()
+    .setTopLabel('Follow-ups')
+    .setText(params.taskFollowUpCount && params.taskFollowUpCount !== '0'
+      ? 'Followed up ' + params.taskFollowUpCount + 'x'
+      : 'Not followed up yet')
+    .setButton(CardService.newTextButton()
+      .setText('Manage')
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onOpenFollowUpsCard')
+        .setParameters(Object.assign({}, params, { fromEditCard: 'true' })))));
 
   // Notes
   section.addWidget(CardService.newTextInput()
@@ -1727,6 +1874,7 @@ var TASK_HISTORY_ACTION_LABELS = {
   follow_up_set: 'marked this task awaiting follow-up',
   follow_up_cleared: 'cleared the follow-up flag',
   note_updated: 'updated the note',
+  email_linked: 'linked a reference email',
   deleted: 'deleted this task',
 };
 
@@ -1797,8 +1945,6 @@ function onChangeEditTaskDueMode(e) {
     taskTeam: (fi.editTaskTeam || [e.parameters.taskTeam || ''])[0] || '',
     taskMonetary: (fi.editTaskMonetary || []).indexOf('true') !== -1 ? 'true' : 'false',
     taskCost: (fi.editTaskCost || [e.parameters.taskCost || ''])[0] || '',
-    taskAwaitingFollowUp: (fi.editTaskAwaitingFollowUp || []).indexOf('true') !== -1 ? 'true' : 'false',
-    taskFollowUpDate: parseDatePickerValue(e, 'editTaskFollowUpDate') || e.parameters.taskFollowUpDate || '',
     taskNotes: (fi.editTaskNotes || [e.parameters.taskNotes || ''])[0] || '',
   });
 
@@ -1821,8 +1967,6 @@ function onUpdateTask(e) {
   var isMonetary = (e.formInputs.editTaskMonetary || []).indexOf('true') !== -1;
   var costRaw = ((e.formInputs.editTaskCost || [''])[0] || '').trim();
   var estimatedCost = costRaw ? parseFloat(costRaw.replace(/,/g, '')) : null;
-  var awaitingFollowUp = (e.formInputs.editTaskAwaitingFollowUp || []).indexOf('true') !== -1;
-  var followUpDate = awaitingFollowUp ? (parseDatePickerValue(e, 'editTaskFollowUpDate') || null) : null;
   var notes = ((e.formInputs.editTaskNotes || [''])[0] || '').trim();
 
   if (!name) return errorNotification('Task name is required');
@@ -1865,8 +2009,6 @@ function onUpdateTask(e) {
     assignedTeamId: teamId || null,
     isMonetary: isMonetary,
     estimatedCost: estimatedCost,
-    awaitingFollowUp: awaitingFollowUp,
-    followUpDate: followUpDate,
     notes: notes || null,
   }, token);
 
@@ -1951,6 +2093,8 @@ function onCreateTask(e) {
     if (estimatedCost < 0) return errorNotification('Estimated cost cannot be negative');
   }
 
+  var linkEmail = (e.formInputs.newTaskLinkEmail || []).indexOf('true') !== -1;
+
   var result = apiPost('/create-task', {
     projectId: e.parameters.projectId,
     companyId: e.parameters.companyId,
@@ -1963,6 +2107,7 @@ function onCreateTask(e) {
     reminderSetting: reminderSetting !== 'none' ? reminderSetting : null,
     isMonetary: isMonetary,
     estimatedCost: estimatedCost,
+    messageId: linkEmail ? (e.parameters.messageId || null) : null,
   }, token);
 
   if (!result.ok || !result.data.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));

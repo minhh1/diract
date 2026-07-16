@@ -955,7 +955,7 @@ Deno.serve(async (req) => {
 
       const { data: tasks, error: tasksErr } = await db
         .from('tasks')
-        .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
+        .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
         .eq('project_id', projectId)
         .is('deleted_at', null)
         .order('date_entered', { ascending: true });
@@ -971,6 +971,13 @@ Deno.serve(async (req) => {
         .from('task_statuses')
         .select('id, label, color_hex')
         .eq('is_active', true);
+
+      const followUpCounts: Record<string, number> = {};
+      if (tasks?.length) {
+        const { data: followUps } = await db.from('task_follow_ups').select('task_id')
+          .in('task_id', tasks.map((t: any) => t.id));
+        for (const f of followUps || []) followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
+      }
 
       return json({
         tasks: (tasks || []).map((t: any) => ({
@@ -991,7 +998,9 @@ Deno.serve(async (req) => {
           createdBy: t.creator?.full_name || t.creator?.email || null,
           awaitingFollowUp: t.awaiting_follow_up,
           followUpDate: t.follow_up_date,
+          followUpCount: followUpCounts[t.id] || 0,
           notes: t.notes,
+          sourceMessageId: t.source_message_id,
         })),
         statuses: statuses || [],
       }, 200, headers);
@@ -1008,7 +1017,7 @@ Deno.serve(async (req) => {
         isMonetary, estimatedCost,
         reminderSetting, reminderSettings,
         responsibleTeam, assignedTo,
-        notes,
+        notes, messageId,
       } = body;
 
       // ── Validation ──────────────────────────────────────────────
@@ -1041,6 +1050,7 @@ Deno.serve(async (req) => {
         responsible_team: responsibleTeam || null,
         assigned_to: assignedTo || null,
         notes: notes || null,
+        source_message_id: messageId || null,
         created_by: profile?.id,
         date_entered: new Date().toISOString().split('T')[0],
         is_completed: false,
@@ -1075,29 +1085,68 @@ Deno.serve(async (req) => {
       return json({ ok: true }, 200, headers);
     }
 
-    // ── POST /toggle-follow-up ──────────────────────────────────────
-    if (req.method === 'POST' && path === '/toggle-follow-up') {
+    // ── POST /add-follow-up ──────────────────────────────────────────
+    // A task can be followed up more than once (e.g. chasing the same
+    // person repeatedly) — each log entry is its own row. awaiting_follow_up
+    // / follow_up_date on the task are kept as a denormalized "latest
+    // state" cache so status badges elsewhere don't need to know about
+    // the log table.
+    if (req.method === 'POST' && path === '/add-follow-up') {
       const body = await req.json();
-      const { taskId, awaitingFollowUp, followUpDate } = body;
+      const { taskId, followedUpAt } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
+      const date = followedUpAt || new Date().toISOString().slice(0, 10);
 
       const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+      if (!existingTask) return json({ error: 'Task not found' }, 404, headers);
 
-      const { error } = await db.from('tasks').update({
-        awaiting_follow_up: !!awaitingFollowUp,
-        follow_up_date: awaitingFollowUp ? (followUpDate || null) : null,
-      }).eq('id', taskId);
-
+      const actorId = await getProfileId(userEmail);
+      const { data: entry, error } = await db.from('task_follow_ups').insert({
+        task_id: taskId, company_id: existingTask.company_id, followed_up_at: date, created_by: actorId,
+      }).select().single();
       if (error) return json({ error: error.message }, 500, headers);
-      if (existingTask) {
-        const actorId = await getProfileId(userEmail);
-        logTaskActivity({
-          taskId, companyId: existingTask.company_id, actorId,
-          action: awaitingFollowUp ? 'follow_up_set' : 'follow_up_cleared',
-          detail: awaitingFollowUp && followUpDate ? `follow-up date: ${followUpDate}` : null,
-        });
-      }
+
+      await db.from('tasks').update({ awaiting_follow_up: true, follow_up_date: date }).eq('id', taskId);
+      logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'follow_up_set', detail: `follow-up date: ${date}` });
+
+      return json({ ok: true, entry: { id: entry.id, followedUpAt: String(entry.followed_up_at).slice(0, 10) } }, 200, headers);
+    }
+
+    // ── POST /remove-follow-up ───────────────────────────────────────
+    if (req.method === 'POST' && path === '/remove-follow-up') {
+      const body = await req.json();
+      const { taskId, followUpId } = body;
+      if (!taskId || !followUpId) return json({ error: 'Missing taskId or followUpId' }, 400, headers);
+
+      const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+      if (!existingTask) return json({ error: 'Task not found' }, 404, headers);
+
+      const { error } = await db.from('task_follow_ups').delete().eq('id', followUpId).eq('task_id', taskId);
+      if (error) return json({ error: error.message }, 500, headers);
+
+      const { data: remaining } = await db.from('task_follow_ups').select('followed_up_at').eq('task_id', taskId);
+      const dates = (remaining || []).map((r: any) => String(r.followed_up_at).slice(0, 10));
+      const latest = dates.length ? dates.reduce((a: string, b: string) => (a > b ? a : b)) : null;
+      await db.from('tasks').update({ awaiting_follow_up: dates.length > 0, follow_up_date: latest }).eq('id', taskId);
+
+      const actorId = await getProfileId(userEmail);
+      logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'follow_up_cleared' });
+
       return json({ ok: true }, 200, headers);
+    }
+
+    // ── GET /task-follow-ups ─────────────────────────────────────────
+    if (req.method === 'GET' && path === '/task-follow-ups') {
+      const taskId = url.searchParams.get('taskId') || '';
+      if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
+
+      const { data: entries, error } = await db.from('task_follow_ups')
+        .select('id, followed_up_at').eq('task_id', taskId).order('followed_up_at', { ascending: false });
+      if (error) return json({ error: error.message }, 500, headers);
+
+      return json({
+        entries: (entries || []).map((e: any) => ({ id: e.id, followedUpAt: String(e.followed_up_at).slice(0, 10) })),
+      }, 200, headers);
     }
 
     // ── POST /update-notes ──────────────────────────────────────────
@@ -1114,6 +1163,27 @@ Deno.serve(async (req) => {
       if (existingTask) {
         const actorId = await getProfileId(userEmail);
         logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'note_updated' });
+      }
+      return json({ ok: true }, 200, headers);
+    }
+
+    // ── POST /link-email ────────────────────────────────────────────
+    // Attaches (or replaces) the Gmail message a task references — lets a
+    // user viewing a task open the email that prompted it.
+    if (req.method === 'POST' && path === '/link-email') {
+      const body = await req.json();
+      const { taskId, messageId } = body;
+      if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
+      if (!messageId) return json({ error: 'Missing messageId' }, 400, headers);
+
+      const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+
+      const { error } = await db.from('tasks').update({ source_message_id: messageId }).eq('id', taskId);
+
+      if (error) return json({ error: error.message }, 500, headers);
+      if (existingTask) {
+        const actorId = await getProfileId(userEmail);
+        logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'email_linked' });
       }
       return json({ ok: true }, 200, headers);
     }
@@ -1549,7 +1619,7 @@ Deno.serve(async (req) => {
         .from('tasks')
         .select(`
           id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
-          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes,
+          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id,
           project_id,
           projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
           profiles:assignee_id(full_name, email),
@@ -1569,6 +1639,13 @@ Deno.serve(async (req) => {
       const { count: totalCount } = await db
         .from('tasks').select('id', { count: 'exact', head: true })
         .eq('company_id', companyId).eq('assignee_id', assigneeId).eq('is_completed', false).is('deleted_at', null);
+
+      const followUpCounts: Record<string, number> = {};
+      if (tasks?.length) {
+        const { data: followUps } = await db.from('task_follow_ups').select('task_id')
+          .in('task_id', tasks.map((t: any) => t.id));
+        for (const f of followUps || []) followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
+      }
 
       return json({
         tasks: (tasks || []).map((t: any) => ({
@@ -1593,7 +1670,9 @@ Deno.serve(async (req) => {
           createdBy: t.creator?.full_name || t.creator?.email || null,
           awaitingFollowUp: t.awaiting_follow_up,
           followUpDate: t.follow_up_date,
+          followUpCount: followUpCounts[t.id] || 0,
           notes: t.notes,
+          sourceMessageId: t.source_message_id,
         })),
         limit,
         offset,

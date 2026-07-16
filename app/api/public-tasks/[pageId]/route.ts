@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     .from("tasks")
     .select(`
       id, name, due_date, due_time, is_completed, estimated_cost, date_entered, assignee_id, project_id,
-      status_id, assigned_team_id, is_monetary, created_by, awaiting_follow_up, follow_up_date, notes,
+      status_id, assigned_team_id, is_monetary, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id,
       assignee:assignee_id(id, full_name, email),
       creator:created_by(id, full_name, email),
       project:project_id(id, name),
@@ -38,6 +38,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     .eq("company_id", page.company_id)
     .is("deleted_at", null)
     .order("due_date", { ascending: true, nullsFirst: false });
+
+  // ── Follow-up log, grouped per task ──────────────────────────────
+  let followUpsByTask: Record<string, { id: string; followedUpAt: string }[]> = {};
+  if (tasks?.length) {
+    const { data: followUps } = await admin
+      .from("task_follow_ups").select("id, task_id, followed_up_at")
+      .in("task_id", tasks.map((t: any) => t.id));
+    for (const f of followUps || []) {
+      (followUpsByTask[f.task_id] ||= []).push({ id: f.id, followedUpAt: String(f.followed_up_at).slice(0, 10) });
+    }
+  }
 
   // ── Matter numbers, if requested ────────────────────────────────
   let matterByProject: Record<string, string> = {};
@@ -83,6 +94,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
           awaitingFollowUp: t.awaiting_follow_up,
           followUpDate: t.follow_up_date ? String(t.follow_up_date).slice(0, 10) : null,
           notes: t.notes,
+          sourceMessageId: t.source_message_id,
+          followUps: followUpsByTask[t.id] || [],
         })),
     }))
     .sort((a: any, b: any) => a.userName.localeCompare(b.userName));

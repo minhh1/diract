@@ -29,6 +29,7 @@ const ACTION_LABELS: Record<string, string> = {
   follow_up_set: "marked this task awaiting follow-up",
   follow_up_cleared: "cleared the follow-up flag",
   note_updated: "updated the note",
+  email_linked: "linked a reference email",
   deleted: "deleted this task",
 };
 

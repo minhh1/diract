@@ -5,10 +5,10 @@ import { supabase } from "@/lib/supabase";
 import {
   Plus, Check, ChevronDown, ChevronRight, Trash2, Calendar,
   User, Users, DollarSign, Pencil, X,
-  Copy, ArrowLeft, CheckSquare, Flag, StickyNote,
+  Copy, ArrowLeft, CheckSquare, Flag, StickyNote, Mail,
 } from "lucide-react";
 import DateCalculator from "@/components/DateCalculator";
-import FollowUpToggle from "@/components/FollowUpToggle";
+import FollowUpToggle, { FollowUpEntry } from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
 import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
@@ -21,7 +21,7 @@ interface Task {
   estimated_cost: number; reminder_settings: any; parent_task_id: string | null;
   date_entered: string | null; company_id: string; created_by: string | null;
   awaiting_follow_up: boolean; follow_up_date: string | null;
-  notes: string | null;
+  notes: string | null; source_message_id: string | null;
 }
 interface Profile { id: string; full_name: string | null; email: string | null; }
 interface Team { id: string; team_name: string; }
@@ -38,12 +38,13 @@ interface Template { id: string; name: string; items: TemplateItem[]; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, onDelete, onAddSubtask, onEdit }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
   const creator = profiles.find((p: any) => p.id === task.created_by);
   const completedSubtasks = subtasks.filter((s: any) => s.is_completed).length;
+  const followUps: FollowUpEntry[] = followUpsByTask[task.id] || [];
   return (
     <div className={depth > 0 ? 'ml-6 border-l-2 border-slate-100 pl-4' : ''}>
       <div className={`group flex items-start gap-3 py-2.5 px-3 rounded-2xl transition-all hover:bg-slate-50 ${task.is_completed ? 'opacity-60' : ''}`}>
@@ -56,9 +57,9 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, o
         </button>
         <div className="mt-0.5 shrink-0">
           <FollowUpToggle
-            checked={task.awaiting_follow_up}
-            date={task.follow_up_date}
-            onChange={(checked, date) => onUpdate(task.id, { awaiting_follow_up: checked, follow_up_date: date })}
+            entries={followUps}
+            onAdd={date => onAddFollowUp(task.id, date)}
+            onRemove={id => onRemoveFollowUp(task.id, id)}
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -72,15 +73,21 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, o
             {assignee && <span className="flex items-center gap-1 text-[10px] text-slate-400"><User size={10} />{assignee.full_name || assignee.email}</span>}
             {team && <span className="flex items-center gap-1 text-[10px] text-slate-400"><Users size={10} />{team.team_name}</span>}
             {task.is_monetary && task.estimated_cost > 0 && <span className="flex items-center gap-1 text-[10px] text-slate-400"><DollarSign size={10} />${Number(task.estimated_cost).toLocaleString()}</span>}
-            {task.awaiting_follow_up && (
+            {followUps.length > 0 && (
               <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
-                <Flag size={10} /> Follow up{task.follow_up_date ? ` ${getRelativeDateLabel(task.follow_up_date)}` : ''}
+                <Flag size={10} /> Followed up {followUps.length}x{task.follow_up_date ? ` · last ${getRelativeDateLabel(task.follow_up_date)}` : ''}
               </span>
             )}
             {task.notes && (
               <span className="flex items-center gap-1 text-[10px] text-slate-400 italic">
                 <StickyNote size={10} /> {task.notes}
               </span>
+            )}
+            {task.source_message_id && (
+              <a href={`https://mail.google.com/mail/u/0/#all/${task.source_message_id}`} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 font-medium">
+                <Mail size={10} /> Open email
+              </a>
             )}
             {creator && <span className="text-[10px] text-slate-300">Added by {creator.full_name || creator.email}</span>}
           </div>
@@ -95,8 +102,9 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, o
         <div className="mt-1">
           {subtasks.map((sub: any) => (
             <TaskRow key={sub.id} task={sub} subtasks={allTasks.filter((t: any) => t.parent_task_id === sub.id)} allTasks={allTasks}
-              profiles={profiles} teams={teams} depth={depth + 1}
-              onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit} />
+              profiles={profiles} teams={teams} depth={depth + 1} followUpsByTask={followUpsByTask}
+              onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit}
+              onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} />
           ))}
         </div>
       )}
@@ -105,7 +113,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, o
 }
 
 // ── TaskEditModal ─────────────────────────────────────────────────
-function TaskEditModal({ task, profiles, teams, onSave, onClose }: any) {
+function TaskEditModal({ task, profiles, teams, followUps, onAddFollowUp, onRemoveFollowUp, onSave, onClose }: any) {
   const [draft, setDraft] = useState<Partial<Task>>({ ...task });
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<'details' | 'history'>('details');
@@ -214,28 +222,32 @@ function TaskEditModal({ task, profiles, teams, onSave, onClose }: any) {
               </div>
             </div>
           </div>
-          <div>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div onClick={() => set({ awaiting_follow_up: !draft.awaiting_follow_up, follow_up_date: !draft.awaiting_follow_up ? draft.follow_up_date : null })}
-                className={`w-10 h-6 rounded-full transition-colors ${draft.awaiting_follow_up ? 'bg-amber-500' : 'bg-slate-200'}`}>
-                <div className={`w-5 h-5 bg-white rounded-full shadow mt-0.5 transition-transform ${draft.awaiting_follow_up ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          {task.id && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Follow-ups</p>
+              <div className="flex items-center gap-2">
+                <FollowUpToggle
+                  entries={followUps}
+                  onAdd={(date: string) => onAddFollowUp(task.id, date)}
+                  onRemove={(id: string) => onRemoveFollowUp(task.id, id)}
+                />
+                <span className="text-[12px] text-slate-500">
+                  {followUps.length ? `Followed up ${followUps.length} time${followUps.length !== 1 ? 's' : ''}` : 'Not followed up yet'}
+                </span>
               </div>
-              <span className="text-[12px] text-slate-700 font-medium">Done on our end — awaiting follow-up</span>
-            </label>
-            {draft.awaiting_follow_up && (
-              <div className="mt-3">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Follow-up date</p>
-                <input type="date" value={draft.follow_up_date ? String(draft.follow_up_date).slice(0,10) : ''}
-                  onChange={e => set({ follow_up_date: e.target.value || null })}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none" />
-              </div>
-            )}
-          </div>
+            </div>
+          )}
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Notes</p>
             <textarea value={draft.notes || ''} onChange={e => set({ notes: e.target.value || null })} rows={3} placeholder="Add a note..."
               className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[13px] outline-none focus:border-indigo-400 resize-none" />
           </div>
+          {task.source_message_id && (
+            <a href={`https://mail.google.com/mail/u/0/#all/${task.source_message_id}`} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[12px] text-indigo-600 hover:text-indigo-800 font-medium">
+              <Mail size={12} /> Open reference email
+            </a>
+          )}
         </div>
         )}
         {tab === 'details' && (
@@ -694,6 +706,7 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
 // ── ChecklistTab (main) ────────────────────────────────────────────
 export default function ChecklistTab({ recordId, companyId }: Props) {
   const [tasks, setTasks]               = useState<Task[]>([]);
+  const [followUpsByTask, setFollowUpsByTask] = useState<Record<string, FollowUpEntry[]>>({});
   const [profiles, setProfiles]         = useState<Profile[]>([]);
   const [teams, setTeams]               = useState<Team[]>([]);
   const [templates, setTemplates]       = useState<Template[]>([]);
@@ -722,6 +735,20 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     setTemplates((templateData || []).map((t: any) => ({
       ...t, items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
     })));
+
+    const taskIds = (taskData || []).map((t: any) => t.id);
+    if (taskIds.length) {
+      const { data: followUpData } = await supabase
+        .from('task_follow_ups').select('id, task_id, followed_up_at').in('task_id', taskIds);
+      const grouped: Record<string, FollowUpEntry[]> = {};
+      for (const f of followUpData || []) {
+        (grouped[f.task_id] ||= []).push({ id: f.id, followedUpAt: f.followed_up_at });
+      }
+      setFollowUpsByTask(grouped);
+    } else {
+      setFollowUpsByTask({});
+    }
+
     setLoading(false);
   }, [recordId, companyId]);
 
@@ -761,17 +788,43 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     const actorId = user?.id || null;
     if ('is_completed' in patch) {
       logTaskActivity(supabase, { taskId: id, companyId, actorId, action: patch.is_completed ? 'completed' : 'reopened' });
-    } else if ('awaiting_follow_up' in patch) {
-      logTaskActivity(supabase, {
-        taskId: id, companyId, actorId,
-        action: patch.awaiting_follow_up ? 'follow_up_set' : 'follow_up_cleared',
-        detail: patch.awaiting_follow_up && patch.follow_up_date ? `follow-up date: ${patch.follow_up_date}` : null,
-      });
     } else {
       const existing = tasks.find(t => t.id === id);
       const changes = describeTaskChanges(existing || {}, patch, { profiles, teams });
       if (changes.length) logTaskActivity(supabase, { taskId: id, companyId, actorId, action: 'updated', detail: changes.join(', ') });
     }
+  };
+
+  // A task can be followed up more than once — each log entry is its own
+  // row; awaiting_follow_up/follow_up_date on the task itself are kept as a
+  // denormalized "latest state" cache so status badges elsewhere don't need
+  // to know about the log table.
+  const recomputeFollowUpCache = async (id: string, entries: FollowUpEntry[]) => {
+    const latest = entries.length ? entries.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
+    const patch = { awaiting_follow_up: entries.length > 0, follow_up_date: latest?.followedUpAt || null };
+    await supabase.from('tasks').update(patch).eq('id', id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+  };
+
+  const handleAddFollowUp = async (taskId: string, date: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data } = await supabase.from('task_follow_ups').insert({
+      task_id: taskId, company_id: companyId, followed_up_at: date, created_by: user?.id,
+    }).select().single();
+    if (!data) return;
+    const next = [...(followUpsByTask[taskId] || []), { id: data.id, followedUpAt: data.followed_up_at }];
+    setFollowUpsByTask(prev => ({ ...prev, [taskId]: next }));
+    await recomputeFollowUpCache(taskId, next);
+    logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_set', detail: `follow-up date: ${date}` });
+  };
+
+  const handleRemoveFollowUp = async (taskId: string, followUpId: string) => {
+    await supabase.from('task_follow_ups').delete().eq('id', followUpId);
+    const next = (followUpsByTask[taskId] || []).filter(f => f.id !== followUpId);
+    setFollowUpsByTask(prev => ({ ...prev, [taskId]: next }));
+    await recomputeFollowUpCache(taskId, next);
+    const { data: { user } } = await supabase.auth.getUser();
+    logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_cleared' });
   };
 
   const handleDelete = async (id: string) => {
@@ -867,8 +920,9 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
         <div className="space-y-1">
           {activeTasks.map(task => (
             <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
-              allTasks={tasks} profiles={profiles} teams={teams} depth={0}
-              onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)} />
+              allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask}
+              onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
+              onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
           ))}
         </div>
       )}
@@ -883,8 +937,9 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
             <div className="space-y-1 opacity-70">
               {completedTasks.map(task => (
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
-                  allTasks={tasks} profiles={profiles} teams={teams} depth={0}
-                  onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)} />
+                  allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask}
+                  onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
+                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
               ))}
             </div>
           )}
@@ -894,6 +949,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       {/* Modals */}
       {editingTask && (
         <TaskEditModal task={editingTask} profiles={profiles} teams={teams}
+          followUps={editingTask.id ? (followUpsByTask[editingTask.id] || []) : []}
+          onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp}
           companyId={companyId} projectId={recordId} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
       )}
       {showTemplates && (
