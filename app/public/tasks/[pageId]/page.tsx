@@ -14,6 +14,8 @@ import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker"
 import FollowUpToggle from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
+import { getTaskStatus } from "@/lib/taskStatus";
+import TaskHistoryTab from "@/components/TaskHistoryTab";
 
 interface Task {
   id: string; name: string; isCompleted: boolean;
@@ -340,9 +342,10 @@ function renderCell(key: string, t: Task) {
     case "matter_number": return t.matterNumber || "—";
     case "due_date": return t.dueDate || "—";
     case "due_time": return t.dueTime ? t.dueTime.slice(0, 5) : "—";
-    case "status": return t.status
-      ? <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase" style={{ background: (t.statusColor || "#94a3b8") + "20", color: t.statusColor || "#64748b" }}>{t.status}</span>
-      : "—";
+    case "status": {
+      const s = getTaskStatus(t.isCompleted, t.awaitingFollowUp);
+      return <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase" style={{ background: s.colorHex + "20", color: s.colorHex }}>{s.label}</span>;
+    }
     case "team": return t.team || "—";
     case "estimated_cost": return t.estimatedCost ? `$${Number(t.estimatedCost).toLocaleString()}` : "—";
     case "date_entered": return t.dateEntered || "—";
@@ -363,7 +366,6 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
   );
   const [dueDate, setDueDate] = useState(task?.dueDate || "");
   const [dueTime, setDueTime] = useState(task?.dueTime ? task.dueTime.slice(0, 5) : "09:00");
-  const [statusId, setStatusId] = useState(task?.statusId || "");
   const [teamId, setTeamId] = useState(task?.teamId || "");
   const [assigneeId, setAssigneeId] = useState(defaultAssigneeId || "");
   const [awaitingFollowUp, setAwaitingFollowUp] = useState(task?.awaitingFollowUp || false);
@@ -371,6 +373,8 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
   const [notes, setNotes] = useState(task?.notes || "");
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<"details" | "history">("details");
+  const status = getTaskStatus(task?.isCompleted || false, awaitingFollowUp);
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError("Task name is required"); return; }
@@ -378,7 +382,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
     setSaving(true);
     setError(null);
     const body: any = {
-      name, dueDate: dueDate || null, dueTime: dueTime || null, statusId: statusId || null, teamId: teamId || null,
+      name, dueDate: dueDate || null, dueTime: dueTime || null, teamId: teamId || null,
       awaitingFollowUp, followUpDate: awaitingFollowUp ? (followUpDate || null) : null,
       notes: notes.trim() || null,
     };
@@ -409,6 +413,26 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
           <h3 className="text-[13px] font-bold text-slate-800">{isEdit ? "Edit task" : "Add task"}</h3>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
+        {isEdit && (
+          <div className="flex items-center gap-1 px-6 pt-4 shrink-0">
+            <button onClick={() => setTab("details")}
+              className={`px-4 py-2 text-[11px] font-bold rounded-full transition-colors ${tab === "details" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700"}`}>
+              Details
+            </button>
+            <button onClick={() => setTab("history")}
+              className={`px-4 py-2 text-[11px] font-bold rounded-full transition-colors ${tab === "history" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700"}`}>
+              History
+            </button>
+          </div>
+        )}
+        {tab === "history" && task ? (
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <TaskHistoryTab
+              taskId={task.id}
+              profiles={formOptions.assignees.map(a => ({ id: a.id, full_name: a.name, email: null }))}
+            />
+          </div>
+        ) : (
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Task name *</p>
@@ -441,11 +465,10 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
           </div>
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Status</p>
-            <select value={statusId} onChange={e => setStatusId(e.target.value)}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-              <option value="">— No status —</option>
-              {formOptions.statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
+            <span className="inline-flex px-3 py-1.5 rounded-full text-[11px] font-bold uppercase" style={{ background: status.colorHex + "20", color: status.colorHex }}>
+              {status.label}
+            </span>
+            <p className="text-[10px] text-slate-400 mt-1.5">Automatic — based on completion and follow-up below.</p>
           </div>
           {!isEdit && formOptions.assignees.length > 1 && (
             <div>
@@ -490,6 +513,8 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
           </div>
           {error && <p className="text-[11px] text-red-500">{error}</p>}
         </div>
+        )}
+        {tab === "details" && (
         <div className="px-6 py-4 border-t border-slate-100 shrink-0 space-y-2">
           <button onClick={handleSubmit} disabled={saving}
             className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
@@ -502,6 +527,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
             </button>
           )}
         </div>
+        )}
       </div>
     </div>
   );

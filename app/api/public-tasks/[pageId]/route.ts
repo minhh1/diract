@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { createClient } from "@supabase/supabase-js";
 import { loadPageAndAuthorize } from "@/lib/publicTaskPageAuth";
+import { logTaskActivity } from "@/lib/taskActivityLog";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ pageId: string }> }) {
   const { pageId } = await params;
@@ -175,6 +176,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   }).select().single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logTaskActivity(admin, { taskId: task.id, companyId: page.company_id, actorId: user.id, action: "created" });
 
   return NextResponse.json({ ok: true, task });
 }

@@ -234,6 +234,14 @@ function getRelativeDueLabel(dueDate, isCompleted) {
   return '🟢 due in ' + weeks + (weeks !== 1 ? ' weeks' : ' week');
 }
 
+// Task status is derived, not manually set — mirrors lib/taskStatus.ts
+// (duplicated since Apps Script can't import from the Next.js app).
+function getTaskStatusLabel(isCompleted, awaitingFollowUp) {
+  if (isCompleted) return 'Complete';
+  if (awaitingFollowUp) return 'Follow Up';
+  return 'Pending';
+}
+
 function errorNotification(msg) {
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification()
@@ -679,7 +687,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
       var atDaysLeft = getRelativeDueLabel(at.dueDate, at.isCompleted);
       if (atDaysLeft) atSub += (atSub ? ' · ' : '') + atDaysLeft;
       if (at.assignedTeam) atSub += (atSub ? ' · ' : '') + '👥 ' + at.assignedTeam;
-      if (at.status) atSub += (atSub ? ' · ' : '') + at.status;
+      atSub += (atSub ? ' · ' : '') + getTaskStatusLabel(at.isCompleted, at.awaitingFollowUp);
       if (at.isMonetary && at.estimatedCost) atSub += (atSub ? ' · ' : '') + '$' + at.estimatedCost;
       if (at.createdBy) atSub += (atSub ? ' · ' : '') + 'Added by ' + at.createdBy;
       if (at.awaitingFollowUp) atSub += (atSub ? ' · ' : '') + '🚩 Follow up' + (at.followUpDate ? ' ' + getRelativeDateLabel(at.followUpDate) : '');
@@ -901,7 +909,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     }
     if (t.assignee) sub += (sub ? ' · ' : '') + '👤 ' + t.assignee;
     if (t.assignedTeam) sub += (sub ? ' · ' : '') + '👥 ' + t.assignedTeam;
-    if (t.status) sub += (sub ? ' · ' : '') + t.status;
+    sub += (sub ? ' · ' : '') + getTaskStatusLabel(t.isCompleted, t.awaitingFollowUp);
     if (t.createdBy) sub += (sub ? ' · ' : '') + 'Added by ' + t.createdBy;
     if (t.awaitingFollowUp) {
       sub += (sub ? ' · ' : '') + '🚩 Follow up' + (t.followUpDate ? ' ' + getRelativeDateLabel(t.followUpDate) : '');
@@ -914,6 +922,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     var taskParams = {
       taskId: t.id,
       taskName: t.name,
+      taskIsCompleted: t.isCompleted ? 'true' : 'false',
       taskDue: t.dueDate || '',
       taskTime: t.dueTime || '',
       taskStatus: t.statusId || '',
@@ -1084,19 +1093,6 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     dueTimePicker.setHours(9).setMinutes(0);
   }
   addSection.addWidget(dueTimePicker);
-
-  // Status
-  if (statuses.length) {
-    var statusSelect = CardService.newSelectionInput()
-      .setType(CardService.SelectionInputType.DROPDOWN)
-      .setFieldName('newTaskStatus')
-      .setTitle('Status');
-    statusSelect.addItem('', '', true);
-    for (var si = 0; si < statuses.length; si++) {
-      statusSelect.addItem(statuses[si].label, statuses[si].id, false);
-    }
-    addSection.addWidget(statusSelect);
-  }
 
   // Person responsible (team members)
   if (profiles.length) {
@@ -1603,18 +1599,10 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
   }
   section.addWidget(timePicker);
 
-  // Status
-  if (statuses.length) {
-    var statusSelect = CardService.newSelectionInput()
-      .setType(CardService.SelectionInputType.DROPDOWN)
-      .setFieldName('editTaskStatus')
-      .setTitle('Status');
-    statusSelect.addItem('', '', !params.taskStatus);
-    for (var si = 0; si < statuses.length; si++) {
-      statusSelect.addItem(statuses[si].label, statuses[si].id, params.taskStatus === statuses[si].id);
-    }
-    section.addWidget(statusSelect);
-  }
+  // Status — automatic, not user-set (Pending / Follow Up / Complete)
+  section.addWidget(CardService.newDecoratedText()
+    .setTopLabel('Status')
+    .setText(getTaskStatusLabel(params.taskIsCompleted === 'true', params.taskAwaitingFollowUp === 'true')));
 
   // Assignee
   if (profiles.length) {
@@ -1702,6 +1690,72 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
         .setFunctionName('onDeleteTask')
         .setParameters(params))));
 
+  section.addWidget(CardService.newButtonSet()
+    .addButton(CardService.newTextButton()
+      .setText('🕘 History')
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onOpenTaskHistory')
+        .setParameters(params))));
+
+  card.addSection(section);
+
+  card.addSection(CardService.newCardSection()
+    .addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+        .setText('← Back')
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onPopCard')
+          .setParameters({})))));
+
+  return card.build();
+}
+
+// Task history — who created/changed/noted this task, and when.
+function onOpenTaskHistory(e) {
+  var token = e.parameters.accessToken || getToken();
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .pushCard(buildTaskHistoryCard(e.parameters, token)))
+    .build();
+}
+
+var TASK_HISTORY_ACTION_LABELS = {
+  created: 'created this task',
+  updated: 'updated this task',
+  completed: 'marked this task complete',
+  reopened: 'marked this task incomplete',
+  follow_up_set: 'marked this task awaiting follow-up',
+  follow_up_cleared: 'cleared the follow-up flag',
+  note_updated: 'updated the note',
+  deleted: 'deleted this task',
+};
+
+function buildTaskHistoryCard(params, token) {
+  var card = CardService.newCardBuilder()
+    .setName('task_history_' + params.taskId)
+    .setHeader(CardService.newCardHeader()
+      .setTitle('Task history')
+      .setSubtitle(params.taskName || ''));
+
+  var section = CardService.newCardSection();
+  var res = apiGet('/task-history?taskId=' + params.taskId, token);
+  var entries = res.ok ? (res.data.entries || []) : [];
+
+  if (!entries.length) {
+    section.addWidget(CardService.newTextParagraph().setText('No activity yet.'));
+  } else {
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var when = new Date(entry.createdAt);
+      var whenStr = Utilities.formatDate(when, APP_TIMEZONE, 'd MMM yyyy, h:mm a');
+      var label = TASK_HISTORY_ACTION_LABELS[entry.action] || entry.action;
+      var dt = CardService.newDecoratedText()
+        .setText(entry.actorName + ' ' + label + (entry.detail ? ' — ' + entry.detail : ''))
+        .setBottomLabel(whenStr)
+        .setWrapText(true);
+      section.addWidget(dt);
+    }
+  }
   card.addSection(section);
 
   card.addSection(CardService.newCardSection()

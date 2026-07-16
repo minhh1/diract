@@ -12,6 +12,22 @@ const db = createClient(supabaseUrl, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+async function getProfileId(email: string): Promise<string | null> {
+  if (!email) return null;
+  const { data } = await db.from('profiles').select('id').eq('email', email).maybeSingle();
+  return data?.id || null;
+}
+
+async function logTaskActivity(params: { taskId: string; companyId: string; actorId: string | null; action: string; detail?: string | null }) {
+  await db.from('task_activity_log').insert({
+    task_id: params.taskId,
+    company_id: params.companyId,
+    actor_id: params.actorId,
+    action: params.action,
+    detail: params.detail || null,
+  });
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/gmail-addon/, '');
@@ -1033,6 +1049,7 @@ Deno.serve(async (req) => {
       if (error) return json({ error: error.message }, 500, headers);
       // Trigger calendar sync (non-blocking)
       if (task?.id && task?.due_date) triggerCalendarSync(task.id, 'upsert');
+      logTaskActivity({ taskId: task.id, companyId, actorId: profile?.id || null, action: 'created' });
       return json({ ok: true, task }, 200, headers);
     }
 
@@ -1042,6 +1059,8 @@ Deno.serve(async (req) => {
       const { taskId, isCompleted } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
 
+      const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+
       const { error } = await db.from('tasks').update({
         is_completed: isCompleted,
       }).eq('id', taskId);
@@ -1049,6 +1068,10 @@ Deno.serve(async (req) => {
       if (error) return json({ error: error.message }, 500, headers);
       // Sync calendar — mark complete or re-activate
       triggerCalendarSync(taskId, isCompleted ? 'complete' : 'upsert');
+      if (existingTask) {
+        const actorId = await getProfileId(userEmail);
+        logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: isCompleted ? 'completed' : 'reopened' });
+      }
       return json({ ok: true }, 200, headers);
     }
 
@@ -1058,12 +1081,22 @@ Deno.serve(async (req) => {
       const { taskId, awaitingFollowUp, followUpDate } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
 
+      const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+
       const { error } = await db.from('tasks').update({
         awaiting_follow_up: !!awaitingFollowUp,
         follow_up_date: awaitingFollowUp ? (followUpDate || null) : null,
       }).eq('id', taskId);
 
       if (error) return json({ error: error.message }, 500, headers);
+      if (existingTask) {
+        const actorId = await getProfileId(userEmail);
+        logTaskActivity({
+          taskId, companyId: existingTask.company_id, actorId,
+          action: awaitingFollowUp ? 'follow_up_set' : 'follow_up_cleared',
+          detail: awaitingFollowUp && followUpDate ? `follow-up date: ${followUpDate}` : null,
+        });
+      }
       return json({ ok: true }, 200, headers);
     }
 
@@ -1073,9 +1106,15 @@ Deno.serve(async (req) => {
       const { taskId, notes } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
 
+      const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+
       const { error } = await db.from('tasks').update({ notes: notes || null }).eq('id', taskId);
 
       if (error) return json({ error: error.message }, 500, headers);
+      if (existingTask) {
+        const actorId = await getProfileId(userEmail);
+        logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'note_updated' });
+      }
       return json({ ok: true }, 200, headers);
     }
 
@@ -1085,6 +1124,10 @@ Deno.serve(async (req) => {
       const { taskId, name, dueDate, dueTime, statusId, assigneeId, assignedTeamId, isMonetary, estimatedCost, awaitingFollowUp, followUpDate, notes } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
       if (!name?.trim()) return json({ error: 'Task name required' }, 400, headers);
+
+      const { data: before } = await db.from('tasks')
+        .select('company_id, name, due_date, due_time, assignee_id, assigned_team_id, is_monetary, estimated_cost, notes')
+        .eq('id', taskId).maybeSingle();
 
       const update: Record<string, unknown> = {
         name: name.trim(),
@@ -1107,6 +1150,22 @@ Deno.serve(async (req) => {
       if (error) return json({ error: error.message }, 500, headers);
       // Sync calendar with updated details
       triggerCalendarSync(taskId, 'upsert');
+
+      if (before) {
+        const changes: string[] = [];
+        if (name.trim() !== before.name) changes.push(`renamed to "${name.trim()}"`);
+        if ((dueDate || null) !== (before.due_date ? String(before.due_date).slice(0, 10) : null)) changes.push(`due date → ${dueDate || 'none'}`);
+        if ((dueTime || null) !== before.due_time) changes.push(`due time → ${dueTime || 'none'}`);
+        if ((assigneeId || null) !== before.assignee_id) changes.push('assignee changed');
+        if ((assignedTeamId || null) !== before.assigned_team_id) changes.push('team changed');
+        if (!!isMonetary !== !!before.is_monetary) changes.push(isMonetary ? 'marked as monetary' : 'unmarked as monetary');
+        if (Number(estimatedCost || 0) !== Number(before.estimated_cost || 0)) changes.push(`estimated cost → $${Number(estimatedCost || 0).toLocaleString()}`);
+        if (notes !== undefined && (notes || '') !== (before.notes || '')) changes.push('notes updated');
+        if (changes.length) {
+          const actorId = await getProfileId(userEmail);
+          logTaskActivity({ taskId, companyId: before.company_id, actorId, action: 'updated', detail: changes.join(', ') });
+        }
+      }
       return json({ ok: true }, 200, headers);
     }
 
@@ -1116,6 +1175,8 @@ Deno.serve(async (req) => {
       const { taskId } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
 
+      const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+
       const { error } = await db.from('tasks')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', taskId);
@@ -1123,7 +1184,34 @@ Deno.serve(async (req) => {
       if (error) return json({ error: error.message }, 500, headers);
       // Delete calendar event
       triggerCalendarSync(taskId, 'delete');
+      if (existingTask) {
+        const actorId = await getProfileId(userEmail);
+        logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'deleted' });
+      }
       return json({ ok: true }, 200, headers);
+    }
+
+    // ── GET /task-history ─────────────────────────────────────────
+    if (req.method === 'GET' && path === '/task-history') {
+      const taskId = url.searchParams.get('taskId') || '';
+      if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
+
+      const { data: entries, error } = await db.from('task_activity_log')
+        .select('id, action, detail, created_at, actor:actor_id(full_name, email)')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: false });
+
+      if (error) return json({ error: error.message }, 500, headers);
+
+      return json({
+        entries: (entries || []).map((e: any) => ({
+          id: e.id,
+          action: e.action,
+          detail: e.detail,
+          createdAt: e.created_at,
+          actorName: e.actor?.full_name || e.actor?.email || 'System',
+        })),
+      }, 200, headers);
     }
 
     // ── GET /project-by-matter ────────────────────────────────────

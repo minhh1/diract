@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { createClient } from "@supabase/supabase-js";
 import { loadPageAndAuthorize } from "@/lib/publicTaskPageAuth";
+import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pageId: string; taskId: string }> }) {
   const { pageId, taskId } = await params;
@@ -20,7 +21,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   if (auth.error) return auth.error;
   const { page, targetUserIds } = auth;
 
-  const { data: existing } = await admin.from("tasks").select("id, company_id").eq("id", taskId).maybeSingle();
+  const { data: existing } = await admin.from("tasks").select(
+    "id, company_id, name, due_date, due_time, assignee_id, assigned_team_id, is_monetary, estimated_cost, notes, is_completed, awaiting_follow_up, follow_up_date"
+  ).eq("id", taskId).maybeSingle();
   if (!existing || existing.company_id !== page.company_id) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
@@ -57,6 +60,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   const { error } = await admin.from("tasks").update(update).eq("id", taskId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  const bodyKeys = Object.keys(body);
+  if (bodyKeys.length === 1 && body.isCompleted !== undefined) {
+    await logTaskActivity(admin, { taskId, companyId: page.company_id, actorId: user.id, action: body.isCompleted ? "completed" : "reopened" });
+  } else if (body.name === undefined && body.awaitingFollowUp !== undefined) {
+    await logTaskActivity(admin, {
+      taskId, companyId: page.company_id, actorId: user.id,
+      action: body.awaitingFollowUp ? "follow_up_set" : "follow_up_cleared",
+      detail: body.awaitingFollowUp && body.followUpDate ? `follow-up date: ${body.followUpDate}` : null,
+    });
+  } else {
+    const after: any = {};
+    if (update.name !== undefined) after.name = update.name;
+    if (update.due_date !== undefined) after.due_date = update.due_date;
+    if (update.due_time !== undefined) after.due_time = update.due_time;
+    if (update.assignee_id !== undefined) after.assignee_id = update.assignee_id;
+    if (update.assigned_team_id !== undefined) after.assigned_team_id = update.assigned_team_id;
+    if (update.is_monetary !== undefined) after.is_monetary = update.is_monetary;
+    if (update.estimated_cost !== undefined) after.estimated_cost = update.estimated_cost;
+    if (update.notes !== undefined) after.notes = update.notes;
+
+    let lookupProfiles: { id: string; full_name: string | null; email: string | null }[] = [];
+    let lookupTeams: { id: string; team_name: string }[] = [];
+    if (after.assignee_id !== undefined) {
+      const { data: memberships } = await admin.from("company_memberships").select("user_id").eq("company_id", page.company_id);
+      const memberIds = (memberships || []).map((m: any) => m.user_id);
+      if (memberIds.length) {
+        const { data } = await admin.from("profiles").select("id, full_name, email").in("id", memberIds);
+        lookupProfiles = data || [];
+      }
+    }
+    if (after.assigned_team_id !== undefined) {
+      const { data } = await admin.from("teams").select("id, team_name").eq("is_active", true);
+      lookupTeams = data || [];
+    }
+    const changes = describeTaskChanges(existing, after, { profiles: lookupProfiles, teams: lookupTeams });
+    if (changes.length) {
+      await logTaskActivity(admin, { taskId, companyId: page.company_id, actorId: user.id, action: "updated", detail: changes.join(", ") });
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }
 
@@ -81,6 +124,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 
   const { error } = await admin.from("tasks").update({ deleted_at: new Date().toISOString() }).eq("id", taskId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logTaskActivity(admin, { taskId, companyId: page.company_id, actorId: user.id, action: "deleted" });
 
   return NextResponse.json({ ok: true });
 }

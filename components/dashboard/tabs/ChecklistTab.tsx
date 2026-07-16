@@ -11,6 +11,9 @@ import DateCalculator from "@/components/DateCalculator";
 import FollowUpToggle from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
+import { getTaskStatus } from "@/lib/taskStatus";
+import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
+import TaskHistoryTab from "@/components/TaskHistoryTab";
 
 interface Task {
   id: string; project_id: string; name: string; is_completed: boolean;
@@ -23,7 +26,6 @@ interface Task {
 }
 interface Profile { id: string; full_name: string | null; email: string | null; }
 interface Team { id: string; team_name: string; }
-interface Status { id: string; label: string; color_hex: string; }
 interface TemplateItem {
   id: string; template_id: string; parent_item_id: string | null; title: string;
   priority: string; assigned_team_id: string | null; assignee_id: string | null;
@@ -37,11 +39,11 @@ interface Template { id: string; name: string; items: TemplateItem[]; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, statuses, depth, onUpdate, onDelete, onAddSubtask, onEdit }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, onDelete, onAddSubtask, onEdit }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
-  const status = statuses.find((s: any) => s.id === task.status_id);
+  const status = getTaskStatus(task.is_completed, task.awaiting_follow_up);
   const creator = profiles.find((p: any) => p.id === task.created_by);
   const completedSubtasks = subtasks.filter((s: any) => s.is_completed).length;
   return (
@@ -64,7 +66,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, statuses, depth, o
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-[13px] font-medium ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.name}</span>
-            {status && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase" style={{ background: status.color_hex + '20', color: status.color_hex }}>{status.label}</span>}
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase" style={{ background: status.colorHex + '20', color: status.colorHex }}>{status.label}</span>
             {subtasks.length > 0 && <span className="text-[10px] text-slate-400 font-medium">{completedSubtasks}/{subtasks.length}</span>}
           </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
@@ -96,7 +98,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, statuses, depth, o
         <div className="mt-1">
           {subtasks.map((sub: any) => (
             <TaskRow key={sub.id} task={sub} subtasks={allTasks.filter((t: any) => t.parent_task_id === sub.id)} allTasks={allTasks}
-              profiles={profiles} teams={teams} statuses={statuses} depth={depth + 1}
+              profiles={profiles} teams={teams} depth={depth + 1}
               onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit} />
           ))}
         </div>
@@ -106,11 +108,13 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, statuses, depth, o
 }
 
 // ── TaskEditModal ─────────────────────────────────────────────────
-function TaskEditModal({ task, profiles, teams, statuses, onSave, onClose }: any) {
+function TaskEditModal({ task, profiles, teams, onSave, onClose }: any) {
   const [draft, setDraft] = useState<Partial<Task>>({ ...task });
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<'details' | 'history'>('details');
   const set = (patch: Partial<Task>) => setDraft(p => ({ ...p, ...patch }));
   const handleSave = async () => { setSaving(true); await onSave(draft); setSaving(false); onClose(); };
+  const status = getTaskStatus(!!draft.is_completed, !!draft.awaiting_follow_up);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
@@ -124,6 +128,23 @@ function TaskEditModal({ task, profiles, teams, statuses, onSave, onClose }: any
           </div>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
+        {task.id && (
+          <div className="flex items-center gap-1 px-8 pt-4 shrink-0">
+            <button onClick={() => setTab('details')}
+              className={`px-4 py-2 text-[11px] font-bold rounded-full transition-colors ${tab === 'details' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-700'}`}>
+              Details
+            </button>
+            <button onClick={() => setTab('history')}
+              className={`px-4 py-2 text-[11px] font-bold rounded-full transition-colors ${tab === 'history' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-700'}`}>
+              History
+            </button>
+          </div>
+        )}
+        {tab === 'history' && task.id ? (
+          <div className="flex-1 overflow-y-auto px-8 py-6">
+            <TaskHistoryTab taskId={task.id} profiles={profiles} />
+          </div>
+        ) : (
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Task name *</p>
@@ -132,11 +153,10 @@ function TaskEditModal({ task, profiles, teams, statuses, onSave, onClose }: any
           </div>
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Status</p>
-            <select value={draft.status_id || ''} onChange={e => set({ status_id: e.target.value || null })}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-              <option value="">— No status —</option>
-              {statuses.map((s: any) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
+            <span className="inline-flex px-3 py-1.5 rounded-full text-[11px] font-bold uppercase" style={{ background: status.colorHex + '20', color: status.colorHex }}>
+              {status.label}
+            </span>
+            <p className="text-[10px] text-slate-400 mt-1.5">Automatic — based on completion and follow-up below.</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -228,12 +248,15 @@ function TaskEditModal({ task, profiles, teams, statuses, onSave, onClose }: any
               className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[13px] outline-none focus:border-indigo-400 resize-none" />
           </div>
         </div>
+        )}
+        {tab === 'details' && (
         <div className="px-8 py-5 border-t border-slate-100 shrink-0">
           <button onClick={handleSave} disabled={saving || !draft.name?.trim()}
             className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
             {saving ? 'Saving...' : task.id ? 'Save changes' : 'Add task'}
           </button>
         </div>
+        )}
       </div>
     </div>
   );
@@ -684,7 +707,6 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   const [tasks, setTasks]               = useState<Task[]>([]);
   const [profiles, setProfiles]         = useState<Profile[]>([]);
   const [teams, setTeams]               = useState<Team[]>([]);
-  const [statuses, setStatuses]         = useState<Status[]>([]);
   const [templates, setTemplates]       = useState<Template[]>([]);
   const [project, setProject]           = useState<any>(null);
   const [loading, setLoading]           = useState(true);
@@ -696,19 +718,17 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     setLoading(true);
     const [
       { data: taskData }, { data: profileData }, { data: teamData },
-      { data: statusData }, { data: templateData }, { data: projectData },
+      { data: templateData }, { data: projectData },
     ] = await Promise.all([
       supabase.from('tasks').select('*').eq('project_id', recordId).is('deleted_at', null).order('date_entered'),
       supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
       supabase.from('teams').select('id, team_name').eq('is_active', true),
-      supabase.from('task_statuses').select('*').eq('is_active', true),
       supabase.from('checklist_templates').select('*, items:checklist_template_items(*)').eq('company_id', companyId).order('created_at'),
       supabase.from('projects').select('created_at, estimated_completion_date').eq('id', recordId).single(),
     ]);
     setTasks(taskData || []);
     setProfiles(profileData || []);
     setTeams(teamData || []);
-    setStatuses(statusData || []);
     setProject(projectData);
     setTemplates((templateData || []).map((t: any) => ({
       ...t, items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
@@ -723,30 +743,54 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   };
 
   const handleSaveTask = async (draft: Partial<Task>) => {
+    const { data: { user } } = await supabase.auth.getUser();
     if (draft.id) {
       const { id, ...rest } = draft;
       await supabase.from('tasks').update(rest).eq('id', id);
       setTasks(prev => prev.map(t => t.id === id ? { ...t, ...rest } : t));
+      const changes = describeTaskChanges(editingTask || {}, rest, { profiles, teams });
+      if (changes.length) {
+        logTaskActivity(supabase, { taskId: id, companyId, actorId: user?.id || null, action: 'updated', detail: changes.join(', ') });
+      }
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
       const { data } = await supabase.from('tasks').insert({
         ...draft,
         created_by: user?.id,
         date_entered: new Date().toISOString().split('T')[0],
       }).select().single();
-      if (data) setTasks(prev => [...prev, data]);
+      if (data) {
+        setTasks(prev => [...prev, data]);
+        logTaskActivity(supabase, { taskId: data.id, companyId, actorId: user?.id || null, action: 'created' });
+      }
     }
   };
 
   const handleUpdate = async (id: string, patch: Partial<Task>) => {
     await supabase.from('tasks').update(patch).eq('id', id);
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    const { data: { user } } = await supabase.auth.getUser();
+    const actorId = user?.id || null;
+    if ('is_completed' in patch) {
+      logTaskActivity(supabase, { taskId: id, companyId, actorId, action: patch.is_completed ? 'completed' : 'reopened' });
+    } else if ('awaiting_follow_up' in patch) {
+      logTaskActivity(supabase, {
+        taskId: id, companyId, actorId,
+        action: patch.awaiting_follow_up ? 'follow_up_set' : 'follow_up_cleared',
+        detail: patch.awaiting_follow_up && patch.follow_up_date ? `follow-up date: ${patch.follow_up_date}` : null,
+      });
+    } else {
+      const existing = tasks.find(t => t.id === id);
+      const changes = describeTaskChanges(existing || {}, patch, { profiles, teams });
+      if (changes.length) logTaskActivity(supabase, { taskId: id, companyId, actorId, action: 'updated', detail: changes.join(', ') });
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this task?')) return;
     await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', id);
     setTasks(prev => prev.filter(t => t.id !== id));
+    const { data: { user } } = await supabase.auth.getUser();
+    logTaskActivity(supabase, { taskId: id, companyId, actorId: user?.id || null, action: 'deleted' });
   };
 
   const handleApplyTemplate = async (tasksToCreate: Partial<Task>[]) => {
@@ -766,7 +810,12 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       alert(`Failed to apply template: ${error.message}`);
       return;
     }
-    if (data) setTasks(prev => [...prev, ...data]);
+    if (data) {
+      setTasks(prev => [...prev, ...data]);
+      for (const t of data) {
+        logTaskActivity(supabase, { taskId: t.id, companyId, actorId: user?.id || null, action: 'created', detail: 'via template' });
+      }
+    }
   };
 
   const handleSaveTemplate = async (name: string, items: Partial<TemplateItem>[]) => {
@@ -829,7 +878,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
         <div className="space-y-1">
           {activeTasks.map(task => (
             <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
-              allTasks={tasks} profiles={profiles} teams={teams} statuses={statuses} depth={0}
+              allTasks={tasks} profiles={profiles} teams={teams} depth={0}
               onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)} />
           ))}
         </div>
@@ -845,7 +894,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
             <div className="space-y-1 opacity-70">
               {completedTasks.map(task => (
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
-                  allTasks={tasks} profiles={profiles} teams={teams} statuses={statuses} depth={0}
+                  allTasks={tasks} profiles={profiles} teams={teams} depth={0}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)} />
               ))}
             </div>
@@ -855,7 +904,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
 
       {/* Modals */}
       {editingTask && (
-        <TaskEditModal task={editingTask} profiles={profiles} teams={teams} statuses={statuses}
+        <TaskEditModal task={editingTask} profiles={profiles} teams={teams}
           companyId={companyId} projectId={recordId} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
       )}
       {showTemplates && (
