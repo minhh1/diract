@@ -729,6 +729,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     if (t.awaitingFollowUp) {
       sub += (sub ? ' · ' : '') + '🚩 Follow up' + (t.followUpDate ? ' ' + String(t.followUpDate).substring(0, 10) : '');
     }
+    if (t.notes) sub += (sub ? ' · ' : '') + '📝 ' + t.notes;
 
     var dt = CardService.newDecoratedText().setText(label).setWrapText(true);
     if (sub) dt.setBottomLabel(sub);
@@ -745,6 +746,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       taskCost: t.estimatedCost ? String(t.estimatedCost) : '',
       taskAwaitingFollowUp: t.awaitingFollowUp ? 'true' : 'false',
       taskFollowUpDate: t.followUpDate || '',
+      taskNotes: t.notes || '',
       projectId: projectId,
       projectName: projectName,
       labelCode: labelCode,
@@ -771,12 +773,18 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
 
     taskSection.addWidget(dt);
 
-    // Second tick — "done on our end, awaiting follow-up" (distinct from completion)
+    // Second tick — "done on our end, awaiting follow-up" — and a note button,
+    // shown on the same row.
     taskSection.addWidget(CardService.newButtonSet()
       .addButton(CardService.newTextButton()
         .setText(t.awaitingFollowUp ? '🚩 Awaiting follow-up (tap to clear)' : '🏳️ Mark awaiting follow-up')
         .setOnClickAction(CardService.newAction()
           .setFunctionName('onToggleFollowUp')
+          .setParameters(taskParams)))
+      .addButton(CardService.newTextButton()
+        .setText(t.notes ? '📝 Edit note' : '📝 Add note')
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onOpenNoteCard')
           .setParameters(taskParams))));
   }
   card.addSection(taskSection);
@@ -1257,6 +1265,67 @@ function onConfirmFollowUp(e) {
     .build();
 }
 
+// Note editor — a small pushed card with a single text area, saved via a
+// dedicated endpoint so it doesn't require re-submitting the whole task.
+function onOpenNoteCard(e) {
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .pushCard(buildNoteCard(e.parameters)))
+    .build();
+}
+
+function buildNoteCard(params) {
+  var card = CardService.newCardBuilder()
+    .setName('note_' + params.taskId)
+    .setHeader(CardService.newCardHeader()
+      .setTitle('Task note')
+      .setSubtitle(params.taskName || ''));
+
+  var section = CardService.newCardSection();
+  section.addWidget(CardService.newTextInput()
+    .setFieldName('taskNoteText')
+    .setTitle('Note')
+    .setMultiline(true)
+    .setValue(params.taskNotes || ''));
+
+  section.addWidget(CardService.newButtonSet()
+    .addButton(CardService.newTextButton()
+      .setText('Save')
+      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#4f46e5')
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onSaveNote')
+        .setParameters(params)))
+    .addButton(CardService.newTextButton()
+      .setText('← Back')
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onPopCard')
+        .setParameters({}))));
+
+  card.addSection(section);
+  return card.build();
+}
+
+function onSaveNote(e) {
+  var token = e.parameters.accessToken || getToken();
+  var noteText = ((e.formInputs.taskNoteText || [''])[0] || '').trim();
+
+  var result = apiPost('/update-notes', {
+    taskId: e.parameters.taskId,
+    notes: noteText || null,
+  }, token);
+  if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .popCard()
+      .updateCard(buildTaskCardById(
+        e.parameters.projectId, e.parameters.projectName,
+        e.parameters.labelCode, e.parameters.companyId,
+        token, e.parameters.messageId || null)))
+    .setNotification(CardService.newNotification().setText('✓ Note saved'))
+    .build();
+}
+
 function onOpenEditTask(e) {
   var token = e.parameters.accessToken || getToken();
   var ctxRes = apiGet('/task-context?companyId=' + e.parameters.companyId, token);
@@ -1428,6 +1497,13 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     section.addWidget(followUpDatePicker);
   }
 
+  // Notes
+  section.addWidget(CardService.newTextInput()
+    .setFieldName('editTaskNotes')
+    .setTitle('Notes')
+    .setMultiline(true)
+    .setValue(params.taskNotes || ''));
+
   // Save + Delete buttons
   section.addWidget(CardService.newButtonSet()
     .addButton(CardService.newTextButton()
@@ -1488,6 +1564,7 @@ function onChangeEditTaskDueMode(e) {
     taskCost: (fi.editTaskCost || [e.parameters.taskCost || ''])[0] || '',
     taskAwaitingFollowUp: (fi.editTaskAwaitingFollowUp || []).indexOf('true') !== -1 ? 'true' : 'false',
     taskFollowUpDate: parseDatePickerValue(e, 'editTaskFollowUpDate') || e.parameters.taskFollowUpDate || '',
+    taskNotes: (fi.editTaskNotes || [e.parameters.taskNotes || ''])[0] || '',
   });
 
   var ctxRes = apiGet('/task-context?companyId=' + params.companyId, params.accessToken || getToken());
@@ -1511,6 +1588,7 @@ function onUpdateTask(e) {
   var estimatedCost = costRaw ? parseFloat(costRaw.replace(/,/g, '')) : null;
   var awaitingFollowUp = (e.formInputs.editTaskAwaitingFollowUp || []).indexOf('true') !== -1;
   var followUpDate = awaitingFollowUp ? (parseDatePickerValue(e, 'editTaskFollowUpDate') || null) : null;
+  var notes = ((e.formInputs.editTaskNotes || [''])[0] || '').trim();
 
   if (!name) return errorNotification('Task name is required');
 
@@ -1554,6 +1632,7 @@ function onUpdateTask(e) {
     estimatedCost: estimatedCost,
     awaitingFollowUp: awaitingFollowUp,
     followUpDate: followUpDate,
+    notes: notes || null,
   }, token);
 
   if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));

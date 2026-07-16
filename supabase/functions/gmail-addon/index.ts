@@ -938,7 +938,7 @@ Deno.serve(async (req) => {
 
       const { data: tasks, error: tasksErr } = await db
         .from('tasks')
-        .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
+        .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
         .eq('project_id', projectId)
         .is('deleted_at', null)
         .order('date_entered', { ascending: true });
@@ -974,6 +974,7 @@ Deno.serve(async (req) => {
           createdBy: t.creator?.full_name || t.creator?.email || null,
           awaitingFollowUp: t.awaiting_follow_up,
           followUpDate: t.follow_up_date,
+          notes: t.notes,
         })),
         statuses: statuses || [],
       }, 200, headers);
@@ -990,6 +991,7 @@ Deno.serve(async (req) => {
         isMonetary, estimatedCost,
         reminderSetting, reminderSettings,
         responsibleTeam, assignedTo,
+        notes,
       } = body;
 
       // ── Validation ──────────────────────────────────────────────
@@ -1021,6 +1023,7 @@ Deno.serve(async (req) => {
         reminder_settings: reminderSettings || null,
         responsible_team: responsibleTeam || null,
         assigned_to: assignedTo || null,
+        notes: notes || null,
         created_by: profile?.id,
         date_entered: new Date().toISOString().split('T')[0],
         is_completed: false,
@@ -1063,10 +1066,22 @@ Deno.serve(async (req) => {
       return json({ ok: true }, 200, headers);
     }
 
+    // ── POST /update-notes ──────────────────────────────────────────
+    if (req.method === 'POST' && path === '/update-notes') {
+      const body = await req.json();
+      const { taskId, notes } = body;
+      if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
+
+      const { error } = await db.from('tasks').update({ notes: notes || null }).eq('id', taskId);
+
+      if (error) return json({ error: error.message }, 500, headers);
+      return json({ ok: true }, 200, headers);
+    }
+
     // ── POST /update-task ──────────────────────────────────────────
     if (req.method === 'POST' && path === '/update-task') {
       const body = await req.json();
-      const { taskId, name, dueDate, dueTime, statusId, assigneeId, assignedTeamId, isMonetary, estimatedCost, awaitingFollowUp, followUpDate } = body;
+      const { taskId, name, dueDate, dueTime, statusId, assigneeId, assignedTeamId, isMonetary, estimatedCost, awaitingFollowUp, followUpDate, notes } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
       if (!name?.trim()) return json({ error: 'Task name required' }, 400, headers);
 
@@ -1084,6 +1099,7 @@ Deno.serve(async (req) => {
         update.awaiting_follow_up = !!awaitingFollowUp;
         update.follow_up_date = awaitingFollowUp ? (followUpDate || null) : null;
       }
+      if (notes !== undefined) update.notes = notes || null;
 
       const { error } = await db.from('tasks').update(update).eq('id', taskId);
 

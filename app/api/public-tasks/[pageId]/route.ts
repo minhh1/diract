@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     .from("tasks")
     .select(`
       id, name, due_date, due_time, is_completed, estimated_cost, date_entered, assignee_id, project_id,
-      status_id, assigned_team_id, is_monetary, created_by, awaiting_follow_up, follow_up_date,
+      status_id, assigned_team_id, is_monetary, created_by, awaiting_follow_up, follow_up_date, notes,
       assignee:assignee_id(id, full_name, email),
       creator:created_by(id, full_name, email),
       project:project_id(id, name),
@@ -81,6 +81,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
           createdBy: t.creator?.full_name || t.creator?.email || null,
           awaitingFollowUp: t.awaiting_follow_up,
           followUpDate: t.follow_up_date ? String(t.follow_up_date).slice(0, 10) : null,
+          notes: t.notes,
         })),
     }))
     .sort((a: any, b: any) => a.userName.localeCompare(b.userName));
@@ -143,7 +144,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const { name, projectId, dueDate, dueTime, statusId, teamId, assigneeId } = body;
+  const { name, projectId, dueDate, dueTime, statusId, teamId, assigneeId, notes } = body;
   if (!name?.trim()) return NextResponse.json({ error: "Task name is required" }, { status: 400 });
   if (!projectId) return NextResponse.json({ error: "Project is required" }, { status: 400 });
 
@@ -167,6 +168,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     status_id: statusId || null,
     assigned_team_id: teamId || null,
     assignee_id: finalAssigneeId,
+    notes: notes || null,
     created_by: user.id,
     date_entered: new Date().toISOString().split("T")[0],
     is_completed: false,

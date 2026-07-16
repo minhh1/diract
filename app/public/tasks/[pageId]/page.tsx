@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag } from "lucide-react";
+import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
 import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker";
@@ -23,6 +23,7 @@ interface Task {
   isMonetary: boolean; estimatedCost: number | null; dateEntered: string | null;
   createdBy: string | null;
   awaitingFollowUp: boolean; followUpDate: string | null;
+  notes: string | null;
 }
 interface Tab { userId: string; userName: string; tasks: Task[]; }
 interface FormOptions {
@@ -230,8 +231,7 @@ export default function PublicTaskPage() {
           <table className="w-full min-w-[760px] text-[13px]">
             <thead>
               <tr className="border-b border-slate-100 text-left">
-                <th className="px-4 py-3.5 w-10"></th>
-                <th className="px-2 py-3.5 w-10"></th>
+                <th className="px-4 py-3.5 w-16"></th>
                 <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[280px]">Task</th>
                 {columns.map(c => (
                   <th key={c.key} className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{c.label}</th>
@@ -241,24 +241,24 @@ export default function PublicTaskPage() {
             </thead>
             <tbody>
               {activeTasks.length === 0 && (
-                <tr><td colSpan={columns.length + 4} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No tasks</td></tr>
+                <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No tasks</td></tr>
               )}
               {activeTasks.map(t => {
                 const dl = getDaysLeft(t.dueDate, t.isCompleted);
                 return (
                 <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 group">
                   <td className="px-4 py-4">
-                    <button onClick={() => toggleComplete(t)}
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${t.isCompleted ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-indigo-400"}`}>
-                      {t.isCompleted && <Check size={11} className="text-white" />}
-                    </button>
-                  </td>
-                  <td className="px-2 py-4">
-                    <FollowUpToggle
-                      checked={t.awaitingFollowUp}
-                      date={t.followUpDate}
-                      onChange={(checked, date) => toggleFollowUp(t, checked, date)}
-                    />
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => toggleComplete(t)}
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${t.isCompleted ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-indigo-400"}`}>
+                        {t.isCompleted && <Check size={11} className="text-white" />}
+                      </button>
+                      <FollowUpToggle
+                        checked={t.awaitingFollowUp}
+                        date={t.followUpDate}
+                        onChange={(checked, date) => toggleFollowUp(t, checked, date)}
+                      />
+                    </div>
                   </td>
                   <td className={`px-4 py-4 font-medium cursor-pointer leading-snug ${t.isCompleted ? "line-through text-slate-400" : "text-slate-800"}`}
                     onClick={() => setEditingTask(t)}>
@@ -268,6 +268,11 @@ export default function PublicTaskPage() {
                       {t.awaitingFollowUp && (
                         <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
                           <Flag size={9} /> Follow up{t.followUpDate ? ` ${t.followUpDate}` : ""}
+                        </span>
+                      )}
+                      {t.notes && (
+                        <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium italic">
+                          <StickyNote size={9} /> {t.notes}
                         </span>
                       )}
                     </div>
@@ -362,6 +367,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
   const [assigneeId, setAssigneeId] = useState(defaultAssigneeId || "");
   const [awaitingFollowUp, setAwaitingFollowUp] = useState(task?.awaitingFollowUp || false);
   const [followUpDate, setFollowUpDate] = useState(task?.followUpDate || "");
+  const [notes, setNotes] = useState(task?.notes || "");
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -373,6 +379,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
     const body: any = {
       name, dueDate: dueDate || null, dueTime: dueTime || null, statusId: statusId || null, teamId: teamId || null,
       awaitingFollowUp, followUpDate: awaitingFollowUp ? (followUpDate || null) : null,
+      notes: notes.trim() || null,
     };
     if (!isEdit) { body.projectId = project!.id; body.assigneeId = assigneeId || null; }
     const res = await fetch(`/api/public-tasks/${pageId}${isEdit ? `/tasks/${task!.id}` : ""}`, {
@@ -474,6 +481,11 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none" />
               </div>
             )}
+          </div>
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Notes</p>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Add a note..."
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[13px] outline-none focus:border-indigo-400 resize-none" />
           </div>
           {error && <p className="text-[11px] text-red-500">{error}</p>}
         </div>

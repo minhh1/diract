@@ -44,6 +44,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   if (body.isCompleted !== undefined) update.is_completed = !!body.isCompleted;
   if (body.awaitingFollowUp !== undefined) update.awaiting_follow_up = !!body.awaitingFollowUp;
   if (body.followUpDate !== undefined) update.follow_up_date = body.followUpDate || null;
+  if (body.notes !== undefined) update.notes = body.notes || null;
   if (body.assigneeId !== undefined) {
     if (body.assigneeId && !targetUserIds.includes(body.assigneeId)) {
       return NextResponse.json({ error: "Assignee is outside this page's scope" }, { status: 400 });

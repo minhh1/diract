@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import {
   Plus, Check, ChevronDown, ChevronRight, Trash2, Calendar,
   User, Users, DollarSign, Pencil, X,
-  Copy, ArrowLeft, CheckSquare, Flag,
+  Copy, ArrowLeft, CheckSquare, Flag, StickyNote,
 } from "lucide-react";
 import DateCalculator from "@/components/DateCalculator";
 import FollowUpToggle from "@/components/FollowUpToggle";
@@ -18,6 +18,7 @@ interface Task {
   estimated_cost: number; reminder_settings: any; parent_task_id: string | null;
   date_entered: string | null; company_id: string; created_by: string | null;
   awaiting_follow_up: boolean; follow_up_date: string | null;
+  notes: string | null;
 }
 interface Profile { id: string; full_name: string | null; email: string | null; }
 interface Team { id: string; team_name: string; }
@@ -74,6 +75,11 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, statuses, depth, o
             {task.awaiting_follow_up && (
               <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
                 <Flag size={10} /> Follow up{task.follow_up_date ? ` ${new Date(task.follow_up_date).toLocaleDateString('en-AU')}` : ''}
+              </span>
+            )}
+            {task.notes && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-400 italic">
+                <StickyNote size={10} /> {task.notes}
               </span>
             )}
             {creator && <span className="text-[10px] text-slate-300">Added by {creator.full_name || creator.email}</span>}
@@ -214,6 +220,11 @@ function TaskEditModal({ task, profiles, teams, statuses, onSave, onClose }: any
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none" />
               </div>
             )}
+          </div>
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Notes</p>
+            <textarea value={draft.notes || ''} onChange={e => set({ notes: e.target.value || null })} rows={3} placeholder="Add a note..."
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[13px] outline-none focus:border-indigo-400 resize-none" />
           </div>
         </div>
         <div className="px-8 py-5 border-t border-slate-100 shrink-0">

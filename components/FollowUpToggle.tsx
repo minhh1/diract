@@ -5,6 +5,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Flag } from "lucide-react";
 
 interface Props {
@@ -16,15 +17,46 @@ interface Props {
 export default function FollowUpToggle({ checked, date, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [pendingDate, setPendingDate] = useState(date || "");
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // Popover width is 256px (w-64); flip to the left of the button if it
+  // would otherwise overflow the right edge of the viewport, and reposition
+  // on scroll/resize since it's now portaled to <body> (fixed positioning).
+  useEffect(() => {
+    if (!open) return;
+    const reposition = () => {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const popoverWidth = 256;
+      let left = rect.left;
+      if (left + popoverWidth > window.innerWidth - 8) {
+        left = Math.max(8, rect.right - popoverWidth);
+      }
+      setPos({ top: rect.bottom + 8, left });
+    };
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
   }, [open]);
 
   const handleClick = () => {
@@ -42,8 +74,9 @@ export default function FollowUpToggle({ checked, date, onChange }: Props) {
   };
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative inline-block">
       <button
+        ref={btnRef}
         onClick={handleClick}
         title={checked ? "Awaiting follow-up — click to clear" : "Mark done on our end, awaiting follow-up"}
         className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${
@@ -52,8 +85,12 @@ export default function FollowUpToggle({ checked, date, onChange }: Props) {
       >
         {checked && <Flag size={10} className="text-white" />}
       </button>
-      {open && (
-        <div className="absolute z-50 top-full left-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-lg p-4 space-y-3">
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          ref={popoverRef}
+          style={{ position: "fixed", top: pos.top, left: pos.left }}
+          className="z-[9999] w-64 bg-white border border-slate-200 rounded-2xl shadow-lg p-4 space-y-3"
+        >
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Follow-up date (optional)</p>
           <input
             type="date"
@@ -71,7 +108,8 @@ export default function FollowUpToggle({ checked, date, onChange }: Props) {
               Set
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
