@@ -21,36 +21,51 @@ function teamName(id: string | null | undefined, teams: TaskLogLookups["teams"])
   return teams?.find(x => x.id === id)?.team_name || "Unknown";
 }
 
+function truncate(text: string, max = 40): string {
+  const t = text.trim();
+  return t.length > max ? t.slice(0, max - 1) + "…" : t;
+}
+
+function quoted(text: string | null | undefined): string {
+  const t = (text || "").trim();
+  return t ? `"${truncate(t)}"` : "(none)";
+}
+
 // Compares a "before" and "after" task record and returns a list of plain-
-// English change descriptions, e.g. ["due date → 20/07/2026", "assignee →
-// Jason Cao"]. Only fields present (not undefined) on `after` are compared,
-// so partial patches don't get flagged as changing everything else to blank.
+// English change descriptions, each showing what changed from → to, e.g.
+// ["due date 16/07/2026 → 20/07/2026", "assignee Jason Cao → Minh Huynh"].
+// Only fields present (not undefined) on `after` are compared, so partial
+// patches don't get flagged as changing everything else to blank.
 export function describeTaskChanges(before: any, after: any, lookups: TaskLogLookups = {}): string[] {
   const changes: string[] = [];
 
   if (after.name !== undefined && after.name !== before.name) {
-    changes.push(`renamed to "${after.name}"`);
+    changes.push(`renamed ${quoted(before.name)} → ${quoted(after.name)}`);
   }
   if (after.due_date !== undefined && String(after.due_date || "").slice(0, 10) !== String(before.due_date || "").slice(0, 10)) {
-    changes.push(`due date → ${after.due_date ? String(after.due_date).slice(0, 10) : "none"}`);
+    const from = before.due_date ? String(before.due_date).slice(0, 10) : "none";
+    const to = after.due_date ? String(after.due_date).slice(0, 10) : "none";
+    changes.push(`due date ${from} → ${to}`);
   }
   if (after.due_time !== undefined && (after.due_time || "").slice(0, 5) !== (before.due_time || "").slice(0, 5)) {
-    changes.push(`due time → ${after.due_time ? String(after.due_time).slice(0, 5) : "none"}`);
+    const from = before.due_time ? String(before.due_time).slice(0, 5) : "none";
+    const to = after.due_time ? String(after.due_time).slice(0, 5) : "none";
+    changes.push(`due time ${from} → ${to}`);
   }
   if (after.assignee_id !== undefined && after.assignee_id !== before.assignee_id) {
-    changes.push(`assignee → ${personName(after.assignee_id, lookups.profiles)}`);
+    changes.push(`assignee ${personName(before.assignee_id, lookups.profiles)} → ${personName(after.assignee_id, lookups.profiles)}`);
   }
   if (after.assigned_team_id !== undefined && after.assigned_team_id !== before.assigned_team_id) {
-    changes.push(`team → ${teamName(after.assigned_team_id, lookups.teams)}`);
+    changes.push(`team ${teamName(before.assigned_team_id, lookups.teams)} → ${teamName(after.assigned_team_id, lookups.teams)}`);
   }
   if (after.is_monetary !== undefined && !!after.is_monetary !== !!before.is_monetary) {
-    changes.push(after.is_monetary ? "marked as monetary" : "unmarked as monetary");
+    changes.push(`monetary ${before.is_monetary ? "Yes" : "No"} → ${after.is_monetary ? "Yes" : "No"}`);
   }
   if (after.estimated_cost !== undefined && Number(after.estimated_cost || 0) !== Number(before.estimated_cost || 0)) {
-    changes.push(`estimated cost → $${Number(after.estimated_cost || 0).toLocaleString()}`);
+    changes.push(`estimated cost $${Number(before.estimated_cost || 0).toLocaleString()} → $${Number(after.estimated_cost || 0).toLocaleString()}`);
   }
   if (after.notes !== undefined && (after.notes || "") !== (before.notes || "")) {
-    changes.push("notes updated");
+    changes.push(`notes ${quoted(before.notes)} → ${quoted(after.notes)}`);
   }
 
   return changes;

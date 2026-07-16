@@ -28,6 +28,28 @@ async function logTaskActivity(params: { taskId: string; companyId: string; acto
   });
 }
 
+function truncateText(text: string, max = 40): string {
+  const t = text.trim();
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+
+function quotedText(text: string | null | undefined): string {
+  const t = (text || '').trim();
+  return t ? `"${truncateText(t)}"` : '(none)';
+}
+
+async function nameForProfileId(id: string | null | undefined): Promise<string> {
+  if (!id) return 'Unassigned';
+  const { data } = await db.from('profiles').select('full_name, email').eq('id', id).maybeSingle();
+  return data?.full_name || data?.email || 'Unknown';
+}
+
+async function nameForTeamId(id: string | null | undefined): Promise<string> {
+  if (!id) return 'No team';
+  const { data } = await db.from('teams').select('team_name').eq('id', id).maybeSingle();
+  return data?.team_name || 'Unknown';
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/gmail-addon/, '');
@@ -1223,14 +1245,26 @@ Deno.serve(async (req) => {
 
       if (before) {
         const changes: string[] = [];
-        if (name.trim() !== before.name) changes.push(`renamed to "${name.trim()}"`);
-        if ((dueDate || null) !== (before.due_date ? String(before.due_date).slice(0, 10) : null)) changes.push(`due date → ${dueDate || 'none'}`);
-        if ((dueTime || null) !== before.due_time) changes.push(`due time → ${dueTime || 'none'}`);
-        if ((assigneeId || null) !== before.assignee_id) changes.push('assignee changed');
-        if ((assignedTeamId || null) !== before.assigned_team_id) changes.push('team changed');
-        if (!!isMonetary !== !!before.is_monetary) changes.push(isMonetary ? 'marked as monetary' : 'unmarked as monetary');
-        if (Number(estimatedCost || 0) !== Number(before.estimated_cost || 0)) changes.push(`estimated cost → $${Number(estimatedCost || 0).toLocaleString()}`);
-        if (notes !== undefined && (notes || '') !== (before.notes || '')) changes.push('notes updated');
+        if (name.trim() !== before.name) changes.push(`renamed ${quotedText(before.name)} → ${quotedText(name.trim())}`);
+        if ((dueDate || null) !== (before.due_date ? String(before.due_date).slice(0, 10) : null)) {
+          changes.push(`due date ${before.due_date ? String(before.due_date).slice(0, 10) : 'none'} → ${dueDate || 'none'}`);
+        }
+        if ((dueTime || null) !== before.due_time) {
+          changes.push(`due time ${before.due_time ? String(before.due_time).slice(0, 5) : 'none'} → ${dueTime || 'none'}`);
+        }
+        if ((assigneeId || null) !== before.assignee_id) {
+          const [fromName, toName] = await Promise.all([nameForProfileId(before.assignee_id), nameForProfileId(assigneeId || null)]);
+          changes.push(`assignee ${fromName} → ${toName}`);
+        }
+        if ((assignedTeamId || null) !== before.assigned_team_id) {
+          const [fromTeam, toTeam] = await Promise.all([nameForTeamId(before.assigned_team_id), nameForTeamId(assignedTeamId || null)]);
+          changes.push(`team ${fromTeam} → ${toTeam}`);
+        }
+        if (!!isMonetary !== !!before.is_monetary) changes.push(`monetary ${before.is_monetary ? 'Yes' : 'No'} → ${isMonetary ? 'Yes' : 'No'}`);
+        if (Number(estimatedCost || 0) !== Number(before.estimated_cost || 0)) {
+          changes.push(`estimated cost $${Number(before.estimated_cost || 0).toLocaleString()} → $${Number(estimatedCost || 0).toLocaleString()}`);
+        }
+        if (notes !== undefined && (notes || '') !== (before.notes || '')) changes.push(`notes ${quotedText(before.notes)} → ${quotedText(notes)}`);
         if (changes.length) {
           const actorId = await getProfileId(userEmail);
           logTaskActivity({ taskId, companyId: before.company_id, actorId, action: 'updated', detail: changes.join(', ') });
