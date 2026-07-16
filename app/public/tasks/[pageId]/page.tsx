@@ -208,13 +208,13 @@ export default function PublicTaskPage() {
         )}
 
         <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
-          <table className="w-full text-[13px] table-fixed">
+          <table className="w-full min-w-[760px] text-[13px]">
             <thead>
               <tr className="border-b border-slate-100 text-left">
                 <th className="px-4 py-3.5 w-10"></th>
-                <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest w-[38%] min-w-[280px]">Task</th>
+                <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[280px]">Task</th>
                 {columns.map(c => (
-                  <th key={c.key} className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest ${WRAP_COLUMNS.has(c.key) ? "" : "whitespace-nowrap"}`}>{c.label}</th>
+                  <th key={c.key} className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{c.label}</th>
                 ))}
                 <th className="px-4 py-3.5 w-20"></th>
               </tr>
@@ -236,7 +236,7 @@ export default function PublicTaskPage() {
                     {t.name}
                   </td>
                   {columns.map(c => (
-                    <td key={c.key} className={`px-4 py-4 text-slate-600 leading-snug ${WRAP_COLUMNS.has(c.key) ? "" : "whitespace-nowrap"}`}>
+                    <td key={c.key} className={`px-4 py-4 text-slate-600 leading-snug ${WRAP_COLUMNS.has(c.key) ? "max-w-[220px]" : "whitespace-nowrap"}`}>
                       {renderCell(c.key, t)}
                     </td>
                   ))}

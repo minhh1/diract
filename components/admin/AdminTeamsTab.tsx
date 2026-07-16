@@ -28,19 +28,30 @@ interface Props {
   companyId: string;
 }
 
+// Module-level cache (survives this component unmounting/remounting as the
+// user switches tabs and comes back, e.g. Members -> Teams -> Members ->
+// Teams) so re-opening the Teams tab doesn't force a full network refetch.
+const CACHE_TTL_MS = 60_000;
+const teamsCache = new Map<string, { teams: Team[]; profiles: Profile[]; fetchedAt: number }>();
+
 export default function AdminTeamsTab({ companyId }: Props) {
-  const [teams, setTeams]             = useState<Team[]>([]);
-  const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
-  const [loading, setLoading]         = useState(true);
+  const cached = teamsCache.get(companyId);
+  const [teams, setTeams]             = useState<Team[]>(cached?.teams || []);
+  const [allProfiles, setAllProfiles] = useState<Profile[]>(cached?.profiles || []);
+  const [loading, setLoading]         = useState(!cached);
   const [newTeamName, setNewTeamName] = useState('');
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [editName, setEditName]       = useState('');
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
-  useEffect(() => { load(); }, [companyId]);
+  useEffect(() => {
+    const isFresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
+    if (isFresh) return; // show cached data instantly, skip the refetch
+    load();
+  }, [companyId]);
 
   const load = async () => {
-    setLoading(true);
+    if (!teamsCache.get(companyId)) setLoading(true);
 
     // Load teams
     const { data: ts } = await supabase
@@ -104,33 +115,51 @@ export default function AdminTeamsTab({ companyId }: Props) {
     }
 
     setTeams(activeTeams);
+    setAllProfiles(profs);
+    teamsCache.set(companyId, { teams: activeTeams, profiles: profs, fetchedAt: Date.now() });
     setLoading(false);
   };
 
   const createTeam = async () => {
-    if (!newTeamName.trim()) return;
-    await supabase.from('teams').insert({ team_name: newTeamName.trim(), is_active: true });
+    const name = newTeamName.trim();
+    if (!name) return;
     setNewTeamName('');
-    load();
+    const { data: created } = await supabase
+      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active').single();
+    if (created) {
+      const newTeam: Team = { ...created, members: [] };
+      updateTeams(prev => [...prev, newTeam].sort((a, b) => a.team_name.localeCompare(b.team_name)));
+    }
   };
 
-  const renameTeam = async (teamId: string) => {
-    if (!editName.trim()) return;
-    await supabase.from('teams').update({ team_name: editName.trim() }).eq('id', teamId);
+  const renameTeam = (teamId: string) => {
+    const name = editName.trim();
+    if (!name) return;
     setEditingId(null);
-    load();
+    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, team_name: name } : t));
+    supabase.from('teams').update({ team_name: name }).eq('id', teamId).then();
   };
 
-  const deleteTeam = async (teamId: string) => {
+  const deleteTeam = (teamId: string) => {
     if (!window.confirm('Remove this team?')) return;
-    await supabase.from('teams').update({ is_active: false }).eq('id', teamId);
-    load();
+    updateTeams(prev => prev.filter(t => t.id !== teamId));
+    supabase.from('teams').update({ is_active: false }).eq('id', teamId).then();
+  };
+
+  // Applies a local state update and keeps the cache in sync in one step —
+  // every mutation below is optimistic (UI updates instantly, the network
+  // write happens in the background) so the cache never goes stale relative
+  // to what's on screen.
+  const updateTeams = (updater: (prev: Team[]) => Team[]) => {
+    setTeams(prev => {
+      const next = updater(prev);
+      teamsCache.set(companyId, { teams: next, profiles: allProfiles, fetchedAt: Date.now() });
+      return next;
+    });
   };
 
   const toggleMember = (teamId: string, profileId: string, isMember: boolean) => {
-    // Update local state immediately — don't wait on the network round trip
-    // for the checkbox to feel responsive.
-    setTeams(prev => prev.map(t => {
+    updateTeams(prev => prev.map(t => {
       if (t.id !== teamId) return t;
       const members = isMember
         ? t.members.filter(m => m.profile_id !== profileId)
@@ -145,9 +174,8 @@ export default function AdminTeamsTab({ companyId }: Props) {
     }
   };
 
-  const setLeader = async (teamId: string, profileId: string) => {
-    await supabase.from('teams').update({ leader_id: profileId }).eq('id', teamId);
-    setTeams(prev => prev.map(t => {
+  const setLeader = (teamId: string, profileId: string) => {
+    updateTeams(prev => prev.map(t => {
       if (t.id !== teamId) return t;
       return {
         ...t,
@@ -155,6 +183,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
         members: t.members.map(m => ({ ...m, is_leader: m.profile_id === profileId })),
       };
     }));
+    supabase.from('teams').update({ leader_id: profileId }).eq('id', teamId).then();
   };
 
   const getProfile = (id: string) => allProfiles.find(p => p.id === id);
