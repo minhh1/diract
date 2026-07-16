@@ -8,6 +8,7 @@ import {
   Pencil, FolderKanban, Plus, X, ShieldCheck
 } from "lucide-react";
 import ProjectAccessPanel from "@/components/projects/ProjectAccessPanel";
+import ProjectDeletedTasksPanel from "@/components/projects/ProjectDeletedTasksPanel";
 import TabBar, { type RecordTab } from "./TabBar";
 import AddTabModal from "./AddTabModal";
 import FieldLayoutEditor, { type FieldLayout } from "./FieldLayoutEditor";
@@ -759,6 +760,9 @@ export default function RecordDashboard({
           isAdmin={isAdmin}
         />
       )}
+      {activeTabId === '__admin__' && systemTable === 'projects' && (
+        <ProjectDeletedTasksPanel projectId={recordId} />
+      )}
 
       {!activeTab && tabs.length === 0 && (
         <div
@@ -1028,7 +1032,7 @@ export default function RecordDashboard({
         {/* Tab bar */}
         <TabBar
           tabs={tabs}
-          activeTabId={activeTabId === '__access__' ? null : activeTabId}
+          activeTabId={(activeTabId === '__access__' || activeTabId === '__admin__') ? null : activeTabId}
           onSelect={setActiveTabId}
           onAdd={() => setShowAddTab(true)}
           onRename={handleRenameTab}
@@ -1036,7 +1040,10 @@ export default function RecordDashboard({
           onReorder={handleReorderTabs}
           isEditing={isEditingTabs}
           onToggleEdit={() => setIsEditingTabs(p => !p)}
-          extraTabs={systemTable === 'projects' && isAdmin ? [{ id: '__access__', label: 'Access', icon: ShieldCheck }] : []}
+          extraTabs={systemTable === 'projects' && isAdmin ? [
+            { id: '__access__', label: 'Access', icon: ShieldCheck },
+            { id: '__admin__', label: 'Admin', icon: Trash2 },
+          ] : []}
           onSelectExtra={setActiveTabId}
         />
       </header>

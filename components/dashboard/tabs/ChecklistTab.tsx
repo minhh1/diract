@@ -11,7 +11,6 @@ import DateCalculator from "@/components/DateCalculator";
 import FollowUpToggle from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
-import { getTaskStatus } from "@/lib/taskStatus";
 import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
 
@@ -43,7 +42,6 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, o
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
-  const status = getTaskStatus(task.is_completed, task.awaiting_follow_up);
   const creator = profiles.find((p: any) => p.id === task.created_by);
   const completedSubtasks = subtasks.filter((s: any) => s.is_completed).length;
   return (
@@ -66,7 +64,6 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, onUpdate, o
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-[13px] font-medium ${task.is_completed ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.name}</span>
-            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase" style={{ background: status.colorHex + '20', color: status.colorHex }}>{status.label}</span>
             {subtasks.length > 0 && <span className="text-[10px] text-slate-400 font-medium">{completedSubtasks}/{subtasks.length}</span>}
           </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
@@ -114,7 +111,6 @@ function TaskEditModal({ task, profiles, teams, onSave, onClose }: any) {
   const [tab, setTab] = useState<'details' | 'history'>('details');
   const set = (patch: Partial<Task>) => setDraft(p => ({ ...p, ...patch }));
   const handleSave = async () => { setSaving(true); await onSave(draft); setSaving(false); onClose(); };
-  const status = getTaskStatus(!!draft.is_completed, !!draft.awaiting_follow_up);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
@@ -150,13 +146,6 @@ function TaskEditModal({ task, profiles, teams, onSave, onClose }: any) {
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Task name *</p>
             <input value={draft.name || ''} onChange={e => set({ name: e.target.value })} placeholder="Enter task name..."
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
-          </div>
-          <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Status</p>
-            <span className="inline-flex px-3 py-1.5 rounded-full text-[11px] font-bold uppercase" style={{ background: status.colorHex + '20', color: status.colorHex }}>
-              {status.label}
-            </span>
-            <p className="text-[10px] text-slate-400 mt-1.5">Automatic — based on completion and follow-up below.</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

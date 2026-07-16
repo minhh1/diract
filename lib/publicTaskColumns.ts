@@ -7,7 +7,6 @@ export const PUBLIC_TASK_COLUMNS = [
   { key: "matter_number", label: "Matter number" },
   { key: "due_date", label: "Due date" },
   { key: "due_time", label: "Due time" },
-  { key: "status", label: "Status" },
   { key: "team", label: "Team" },
   { key: "estimated_cost", label: "Estimated cost" },
   { key: "date_entered", label: "Date entered" },

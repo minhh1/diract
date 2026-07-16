@@ -14,7 +14,6 @@ import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker"
 import FollowUpToggle from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
-import { getTaskStatus } from "@/lib/taskStatus";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
 
 interface Task {
@@ -342,10 +341,6 @@ function renderCell(key: string, t: Task) {
     case "matter_number": return t.matterNumber || "—";
     case "due_date": return t.dueDate || "—";
     case "due_time": return t.dueTime ? t.dueTime.slice(0, 5) : "—";
-    case "status": {
-      const s = getTaskStatus(t.isCompleted, t.awaitingFollowUp);
-      return <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase" style={{ background: s.colorHex + "20", color: s.colorHex }}>{s.label}</span>;
-    }
     case "team": return t.team || "—";
     case "estimated_cost": return t.estimatedCost ? `$${Number(t.estimatedCost).toLocaleString()}` : "—";
     case "date_entered": return t.dateEntered || "—";
@@ -374,7 +369,6 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
-  const status = getTaskStatus(task?.isCompleted || false, awaitingFollowUp);
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError("Task name is required"); return; }
@@ -462,13 +456,6 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
               <input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none" />
             </div>
-          </div>
-          <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Status</p>
-            <span className="inline-flex px-3 py-1.5 rounded-full text-[11px] font-bold uppercase" style={{ background: status.colorHex + "20", color: status.colorHex }}>
-              {status.label}
-            </span>
-            <p className="text-[10px] text-slate-400 mt-1.5">Automatic — based on completion and follow-up below.</p>
           </div>
           {!isEdit && formOptions.assignees.length > 1 && (
             <div>
