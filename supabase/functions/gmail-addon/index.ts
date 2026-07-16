@@ -62,6 +62,7 @@ Deno.serve(async (req) => {
 
       return json({
         email: userEmail,
+        userId: profile.id,
         companies,
         activeCompanyId: activeCompany?.id || null,
         activeCompanyName: activeCompany?.name || null,
@@ -1440,6 +1441,75 @@ Deno.serve(async (req) => {
           { value: '2days', label: '2 days before' },
           { value: '1week', label: '1 week before' },
         ],
+      }, 200, headers);
+    }
+
+    // ── GET /all-tasks ──────────────────────────────────────────────
+    // Powers the Home card's "All My Tasks" section — the requesting user's
+    // own active tasks across every project, with each project's Gmail
+    // label name (so users can tell at a glance which label/thread a task
+    // belongs to). Paginated via limit/offset.
+    if (req.method === 'GET' && path === '/all-tasks') {
+      const companyId = url.searchParams.get('companyId') || '';
+      const assigneeId = url.searchParams.get('assigneeId') || '';
+      if (!companyId) return json({ error: 'Missing companyId' }, 400, headers);
+      if (!assigneeId) return json({ error: 'Missing assigneeId' }, 400, headers);
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '20') || 20, 100);
+      const offset = Math.max(parseInt(url.searchParams.get('offset') || '0') || 0, 0);
+
+      const { data: tasks, error: tasksErr } = await db
+        .from('tasks')
+        .select(`
+          id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
+          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes,
+          project_id,
+          projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
+          profiles:assignee_id(full_name, email),
+          teams:assigned_team_id(team_name),
+          task_statuses:status_id(label, color_hex),
+          creator:created_by(full_name, email)
+        `)
+        .eq('company_id', companyId)
+        .eq('assignee_id', assigneeId)
+        .eq('is_completed', false)
+        .is('deleted_at', null)
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .range(offset, offset + limit - 1);
+
+      if (tasksErr) return json({ error: tasksErr.message }, 500, headers);
+
+      const { count: totalCount } = await db
+        .from('tasks').select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId).eq('assignee_id', assigneeId).eq('is_completed', false).is('deleted_at', null);
+
+      return json({
+        tasks: (tasks || []).map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          isCompleted: t.is_completed,
+          dueDate: t.due_date,
+          dueTime: t.due_time,
+          projectId: t.project_id,
+          projectName: t.projects?.name || null,
+          labelName: t.projects?.project_gmail_labels?.[0]?.gmail_label_name || null,
+          labelCode: t.projects?.project_gmail_labels?.[0]?.label_code || null,
+          assigneeId: t.assignee_id,
+          assignee: t.profiles?.full_name || t.profiles?.email || null,
+          assignedTeamId: t.assigned_team_id,
+          assignedTeam: t.teams?.team_name || null,
+          statusId: t.status_id,
+          status: t.task_statuses?.label || null,
+          statusColor: t.task_statuses?.color_hex || null,
+          isMonetary: t.is_monetary,
+          estimatedCost: t.estimated_cost,
+          createdBy: t.creator?.full_name || t.creator?.email || null,
+          awaitingFollowUp: t.awaiting_follow_up,
+          followUpDate: t.follow_up_date,
+          notes: t.notes,
+        })),
+        limit,
+        offset,
+        totalCount,
       }, 200, headers);
     }
 

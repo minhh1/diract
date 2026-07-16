@@ -47,12 +47,16 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 // Calendar event title tokens — what each field means, with an example so
-// admins don't have to guess what {matter_number} etc. actually renders as.
-const CALENDAR_TOKENS = [
-  { id: 'matter_number', label: 'Matter Number', example: '260576' },
-  { id: 'task_name',     label: 'Task Name',     example: 'File court documents' },
-  { id: 'project_name',  label: 'Project Name',  example: '175 Bourke Street' },
+// admins don't have to guess what a token renders as. Beyond these two
+// built-ins, the available tokens depend on this company's own custom
+// fields on projects (e.g. "Matter Number" for a law firm, "Job Reference"
+// for a trades company) — fetched at runtime, not hardcoded here.
+const CALENDAR_BASE_TOKENS = [
+  { id: 'task_name',    label: 'Task Name',    example: 'Follow up with client' },
+  { id: 'project_name', label: 'Project Name', example: 'Acme Corp' },
 ];
+
+interface ProjectCustomField { id: string; field_key: string; label: string; }
 
 const CALENDAR_SEPARATORS = [
   { value: ' — ', label: 'Em dash  ( — )' },
@@ -62,7 +66,7 @@ const CALENDAR_SEPARATORS = [
   { value: ' ',   label: 'Space' },
 ];
 
-function parseCalendarFormat(format: string): { tokens: string[]; separator: string } {
+function parseCalendarFormat(format: string, knownTokenIds: string[]): { tokens: string[]; separator: string } {
   const regex = /\{(\w+)\}/g;
   const tokens: string[] = [];
   const positions: number[] = [];
@@ -76,8 +80,8 @@ function parseCalendarFormat(format: string): { tokens: string[]; separator: str
     const firstEnd = format.indexOf('}', positions[0]) + 1;
     separator = format.slice(firstEnd, positions[1]);
   }
-  const known = tokens.filter(t => CALENDAR_TOKENS.some(tk => tk.id === t));
-  return { tokens: known.length ? known : ['matter_number', 'task_name'], separator };
+  const known = tokens.filter(t => knownTokenIds.includes(t));
+  return { tokens: known.length ? known : ['task_name'], separator };
 }
 
 function buildCalendarFormat(tokens: string[], separator: string): string {
@@ -115,6 +119,10 @@ export default function AdminPage() {
   const [calendarDragIdx, setCalendarDragIdx] = useState<number | null>(null);
   const [calendarDuration, setCalendarDuration] = useState(30);
   const [savingCalendar, setSavingCalendar] = useState(false);
+  const [projectCustomFields, setProjectCustomFields] = useState<ProjectCustomField[]>([]);
+  const [addingCustomField, setAddingCustomField] = useState(false);
+  const [newCustomFieldLabel, setNewCustomFieldLabel] = useState('');
+  const [savingNewCustomField, setSavingNewCustomField] = useState(false);
 
   // Invite token default team
   const [newTokenTeamId, setNewTokenTeamId] = useState<string>('');
@@ -157,15 +165,25 @@ export default function AdminPage() {
       return;
     }
 
-    // Load company + tokens in parallel
-    const [{ data: comp }, { data: tokenData }] = await Promise.all([
+    // Load company + tokens + this company's own custom fields on projects
+    // (calendar sync tokens depend on what this specific company has
+    // configured, not a hardcoded list — e.g. a law firm might have
+    // "Matter Number" while another company has nothing extra at all).
+    const [{ data: comp }, { data: tokenData }, { data: customFieldData }] = await Promise.all([
       supabase.from('companies').select('*').eq('id', companyId).single(),
       supabase
         .from('registration_tokens')
         .select('*')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('company_custom_fields')
+        .select('id, field_key, label')
+        .eq('company_id', companyId)
+        .eq('table_name', 'projects')
+        .order('display_order'),
     ]);
+    setProjectCustomFields(customFieldData || []);
 
     if (comp) {
       setCompany(comp);
@@ -185,7 +203,8 @@ export default function AdminPage() {
 
     // Load source emails from company
     setSourceEmails(comp?.gmail_source_emails || []);
-    const parsedFormat = parseCalendarFormat(comp?.calendar_event_title_format || '{matter_number} — {task_name}');
+    const knownTokenIds = [...CALENDAR_BASE_TOKENS.map(t => t.id), ...(customFieldData || []).map(f => f.field_key)];
+    const parsedFormat = parseCalendarFormat(comp?.calendar_event_title_format || '{task_name}', knownTokenIds);
     setCalendarTokens(parsedFormat.tokens);
     setCalendarSeparator(parsedFormat.separator);
     setCalendarDuration(comp?.calendar_event_duration_mins || 30);
@@ -288,6 +307,36 @@ export default function AdminPage() {
     setSavingCalendar(false);
   };
 
+  // Lets an admin whose company doesn't have a relevant custom field yet
+  // (e.g. no "Matter Number" equivalent) create one on the spot, so it's
+  // immediately available as a calendar title token — instead of being
+  // stuck with only the fixed Task Name / Project Name tokens.
+  const handleAddCustomField = async () => {
+    if (!company || !newCustomFieldLabel.trim()) return;
+    setSavingNewCustomField(true);
+    const field_key = `field_${Date.now()}`;
+    const { data, error } = await supabase
+      .from('company_custom_fields')
+      .insert({
+        company_id: company.id,
+        table_name: 'projects',
+        field_key,
+        label: newCustomFieldLabel.trim(),
+        field_type: 'text',
+        display_order: projectCustomFields.length,
+        show_in_table: false,
+        is_required: false,
+      })
+      .select('id, field_key, label')
+      .single();
+    setSavingNewCustomField(false);
+    if (error || !data) return;
+    setProjectCustomFields(prev => [...prev, data]);
+    setCalendarTokens(prev => [...prev, data.field_key]);
+    setNewCustomFieldLabel('');
+    setAddingCustomField(false);
+  };
+
   const handleSourceEmailsChange = async (emails: string[]) => {
     setSourceEmails(emails);
     if (!company) return;
@@ -370,6 +419,13 @@ export default function AdminPage() {
       </button>
     </div>
   );
+
+  // Tokens available for the calendar title format: the two universal ones
+  // plus whatever custom fields this company has configured on projects.
+  const calendarTokenDefs = [
+    ...CALENDAR_BASE_TOKENS,
+    ...projectCustomFields.map(f => ({ id: f.field_key, label: f.label, example: 'Custom value' })),
+  ];
 
   const tabs = [
     { id: 'members' as const,  label: 'Members',      icon: Users },
@@ -830,7 +886,7 @@ export default function AdminPage() {
                   {/* Active tokens */}
                   <div className="space-y-1.5">
                     {calendarTokens.map((id, idx) => {
-                      const tok = CALENDAR_TOKENS.find(t => t.id === id);
+                      const tok = calendarTokenDefs.find(t => t.id === id);
                       return (
                         <div
                           key={id}
@@ -864,17 +920,52 @@ export default function AdminPage() {
                   </div>
 
                   {/* Add tokens */}
-                  {CALENDAR_TOKENS.filter(t => !calendarTokens.includes(t.id)).length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {CALENDAR_TOKENS.filter(t => !calendarTokens.includes(t.id)).map(tok => (
-                        <button
-                          key={tok.id}
-                          onClick={() => setCalendarTokens(prev => [...prev, tok.id])}
-                          className="flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-full text-[11px] text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                        >
-                          + {tok.label}
-                        </button>
-                      ))}
+                  <div className="flex flex-wrap gap-2">
+                    {calendarTokenDefs.filter(t => !calendarTokens.includes(t.id)).map(tok => (
+                      <button
+                        key={tok.id}
+                        onClick={() => setCalendarTokens(prev => [...prev, tok.id])}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-slate-300 rounded-full text-[11px] text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                      >
+                        + {tok.label}
+                      </button>
+                    ))}
+                    {!addingCustomField && (
+                      <button
+                        onClick={() => setAddingCustomField(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-indigo-300 rounded-full text-[11px] text-indigo-600 hover:bg-indigo-50 transition-all"
+                      >
+                        <Plus size={12} /> Add custom field
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Inline "add custom field" — for when this company doesn't
+                      have the reference field it wants to sync yet (e.g. a
+                      matter number, job reference, PO number...). */}
+                  {addingCustomField && (
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                      <input
+                        autoFocus
+                        value={newCustomFieldLabel}
+                        onChange={e => setNewCustomFieldLabel(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddCustomField(); if (e.key === 'Escape') setAddingCustomField(false); }}
+                        placeholder="Field name, e.g. Job Reference"
+                        className="flex-1 bg-white border border-slate-200 rounded-full py-2 px-4 text-[12px] outline-none focus:ring-4 focus:ring-indigo-100"
+                      />
+                      <button
+                        onClick={handleAddCustomField}
+                        disabled={savingNewCustomField || !newCustomFieldLabel.trim()}
+                        className="px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40"
+                      >
+                        {savingNewCustomField ? <Loader2 size={12} className="animate-spin" /> : 'Add'}
+                      </button>
+                      <button
+                        onClick={() => { setAddingCustomField(false); setNewCustomFieldLabel(''); }}
+                        className="p-2 text-slate-300 hover:text-slate-600"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
                   )}
 
@@ -906,7 +997,7 @@ export default function AdminPage() {
                     <p className="text-[12px] text-slate-700 font-medium">
                       {calendarTokens.length
                         ? calendarTokens
-                            .map(id => CALENDAR_TOKENS.find(t => t.id === id)?.example || id)
+                            .map(id => calendarTokenDefs.find(t => t.id === id)?.example || id)
                             .join(calendarSeparator)
                         : '—'}
                     </p>

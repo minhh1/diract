@@ -6,7 +6,7 @@
     margin: 0;
     padding: 0;
     /* Use @apply for Tailwind utilities */
-    @apply bg-slate-50 text-slate-900 antialiased overflow-hidden select-none;
+    @apply bg-slate-50 text-slate-900 antialiased select-none;
     /* For fonts, standard CSS is safer in the base layer for v4 */
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }

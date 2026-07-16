@@ -719,7 +719,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   useEffect(() => { load(); }, [load]);
 
   const handleAddTask = (parentId?: string) => {
-    setEditingTask({ project_id: recordId, company_id: companyId, parent_task_id: parentId || null, is_completed: false, is_monetary: false, estimated_cost: 0, reminder_settings: { days: 0, time: '09:00' } });
+    setEditingTask({ project_id: recordId, company_id: companyId, parent_task_id: parentId || null, is_completed: false, is_monetary: false, estimated_cost: 0, due_time: '09:00', reminder_settings: { days: 0, time: '09:00' } });
   };
 
   const handleSaveTask = async (draft: Partial<Task>) => {

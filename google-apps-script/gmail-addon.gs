@@ -5,6 +5,35 @@ var NIKSEN_API_URL = 'https://txzzgtwrrokomiphairy.supabase.co/functions/v1/gmai
 var DATE_CALC_API_URL = 'https://txzzgtwrrokomiphairy.supabase.co/functions/v1/date-calc';
 var AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'];
 
+// Apps Script projects run on whatever timezone the script is configured
+// with (often UTC or US, not the user's) — so `new Date()` alone can put
+// "today" on the wrong calendar day for an Australian user (e.g. a task
+// due today reading as "due tomorrow"). All day-boundary math below is
+// anchored to this timezone instead of the script's ambient one.
+var APP_TIMEZONE = 'Australia/Sydney';
+
+// "Today" as a YYYY-MM-DD string in APP_TIMEZONE, regardless of the
+// script's own execution timezone.
+function todayDateStr() {
+  return Utilities.formatDate(new Date(), APP_TIMEZONE, 'yyyy-MM-dd');
+}
+
+// Parses a YYYY-MM-DD string into a UTC-midnight Date, so subtracting two
+// such dates gives a whole-number day difference unaffected by timezone —
+// only todayDateStr() needs to know about APP_TIMEZONE.
+function dateStrToUtcMidnight(dateStr) {
+  var parts = String(dateStr).substring(0, 10).split('-');
+  return new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+}
+
+// Whole-day difference between a YYYY-MM-DD date and "today", both
+// resolved in APP_TIMEZONE.
+function daysFromToday(dateStr) {
+  var today = dateStrToUtcMidnight(todayDateStr());
+  var target = dateStrToUtcMidnight(dateStr);
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
 // ── Helpers ────────────────────────────────────────────────────────
 
 // Convert large decimal string to hex (for Gmail message IDs)
@@ -64,10 +93,14 @@ function apiGet(path, token) {
   }
 }
 
+function cacheKeyForPath(path) {
+  return 'api_' + path.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 200);
+}
+
 // Cached GET — use for endpoints that rarely change (user-context, label-settings)
 function cachedApiGet(path, token, ttlSeconds) {
   var cache = CacheService.getUserCache();
-  var key = 'api_' + path.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 200);
+  var key = cacheKeyForPath(path);
   var hit = cache.get(key);
   if (hit) {
     try { return { ok: true, code: 200, data: JSON.parse(hit), fromCache: true }; } catch(e) {}
@@ -77,6 +110,13 @@ function cachedApiGet(path, token, ttlSeconds) {
     try { cache.put(key, JSON.stringify(res.data), ttlSeconds || 300); } catch(e) {}
   }
   return res;
+}
+
+// Drop a cached GET response — call after an action that makes it stale
+// (e.g. switching company invalidates the cached /user-context, which
+// otherwise keeps showing the old active company for up to its TTL).
+function invalidateCachedApiGet(path) {
+  try { CacheService.getUserCache().remove(cacheKeyForPath(path)); } catch (e) {}
 }
 
 // Call after any mutation (create/update/delete task, apply template)
@@ -159,10 +199,8 @@ function parseDatePickerValue(e, fieldName) {
 var RELATIVE_DATE_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function getRelativeDateLabel(dateStr) {
   if (!dateStr) return null;
-  var target = new Date(String(dateStr).substring(0, 10) + 'T00:00:00');
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
-  var diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
+  var diffDays = daysFromToday(dateStr);
+  var target = dateStrToUtcMidnight(dateStr);
 
   if (diffDays < 0) {
     var n = Math.abs(diffDays);
@@ -171,9 +209,29 @@ function getRelativeDateLabel(dateStr) {
   if (diffDays === 0) return 'today';
   if (diffDays === 1) return 'tomorrow';
   if (diffDays <= 6) return 'in ' + diffDays + ' days';
-  if (diffDays <= 13) return RELATIVE_DATE_WEEKDAYS[target.getDay()] + ' next week';
+  if (diffDays <= 13) return RELATIVE_DATE_WEEKDAYS[target.getUTCDay()] + ' next week';
   var weeks = Math.round(diffDays / 7);
   return 'in ' + weeks + (weeks !== 1 ? ' weeks' : ' week');
+}
+
+// "Due" label for a task's own due date — mirrors the inline logic in
+// buildTaskCardById's task-row rendering ("⚠ overdue N days", "🔴 due
+// today", etc), factored out so the Home card's All-tasks list can use the
+// same wording without duplicating the dot/urgency thresholds.
+function getRelativeDueLabel(dueDate, isCompleted) {
+  if (!dueDate || isCompleted) return null;
+  var diffDays = daysFromToday(dueDate);
+  if (diffDays < 0) {
+    var n = Math.abs(diffDays);
+    return '🔴 overdue ' + n + (n !== 1 ? ' days' : ' day');
+  }
+  if (diffDays === 0) return '🔴 due today';
+  if (diffDays === 1) return '🟠 due tomorrow';
+  if (diffDays <= 3) return '🟠 due in ' + diffDays + ' days';
+  if (diffDays <= 7) return '🟡 due in ' + diffDays + ' days';
+  if (diffDays <= 14) return '🟢 due in ' + diffDays + ' days';
+  var weeks = Math.floor(diffDays / 7);
+  return '🟢 due in ' + weeks + (weeks !== 1 ? ' weeks' : ' week');
 }
 
 function errorNotification(msg) {
@@ -341,7 +399,8 @@ function onGmailMessage(e) {
 
 // ── Main card ──────────────────────────────────────────────────────
 
-function buildMainCard(messageId, accessToken) {
+function buildMainCard(messageId, accessToken, allTasksOffset) {
+  allTasksOffset = allTasksOffset || 0;
   var token = accessToken || getToken();
 
   var ctx = getUserContext(token);
@@ -591,6 +650,92 @@ function buildMainCard(messageId, accessToken) {
             })))));
   }
 
+  // ── All My Tasks ─────────────────────────────────────────────────
+  // The requesting user's own active tasks across every project — every
+  // field we track, with the Gmail label shown first so it's obvious which
+  // label/thread a task lives under. Paginated 20 at a time.
+  var allTasksPageSize = 20;
+  var allTasksRes = ctx.userId
+    ? cachedApiGet('/all-tasks?companyId=' + activeCompanyId + '&assigneeId=' + ctx.userId +
+        '&limit=' + allTasksPageSize + '&offset=' + allTasksOffset, token, 30)
+    : { ok: false };
+  var allTasksData = allTasksRes.ok ? allTasksRes.data : null;
+
+  var allTasksSection = CardService.newCardSection()
+    .setHeader('All My Tasks')
+    .setCollapsible(true)
+    .setNumUncollapsibleWidgets(0);
+
+  if (allTasksData && allTasksData.tasks && allTasksData.tasks.length) {
+    var atTasks = allTasksData.tasks;
+    for (var ai = 0; ai < atTasks.length; ai++) {
+      var at = atTasks[ai];
+
+      var atLabel = at.labelName || 'No label';
+      var atTitle = at.name;
+
+      var atSub = '';
+      if (at.projectName) atSub += at.projectName;
+      var atDaysLeft = getRelativeDueLabel(at.dueDate, at.isCompleted);
+      if (atDaysLeft) atSub += (atSub ? ' · ' : '') + atDaysLeft;
+      if (at.assignedTeam) atSub += (atSub ? ' · ' : '') + '👥 ' + at.assignedTeam;
+      if (at.status) atSub += (atSub ? ' · ' : '') + at.status;
+      if (at.isMonetary && at.estimatedCost) atSub += (atSub ? ' · ' : '') + '$' + at.estimatedCost;
+      if (at.createdBy) atSub += (atSub ? ' · ' : '') + 'Added by ' + at.createdBy;
+      if (at.awaitingFollowUp) atSub += (atSub ? ' · ' : '') + '🚩 Follow up' + (at.followUpDate ? ' ' + getRelativeDateLabel(at.followUpDate) : '');
+      if (at.notes) atSub += (atSub ? ' · ' : '') + '📝 ' + at.notes;
+
+      var atRow = CardService.newDecoratedText()
+        .setTopLabel(atLabel)
+        .setText(atTitle)
+        .setWrapText(true)
+        .setBottomLabel(atSub)
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onViewTasks')
+          .setParameters({
+            projectId: at.projectId || '',
+            projectName: at.projectName || '',
+            labelCode: at.labelCode || '',
+            companyId: activeCompanyId,
+            messageId: '',
+            accessToken: token,
+          }));
+
+      allTasksSection.addWidget(atRow);
+      // Spacing between rows — a divider reads clearer than blank widgets.
+      if (ai < atTasks.length - 1) allTasksSection.addWidget(CardService.newDivider());
+    }
+
+    var atTotal = allTasksData.totalCount || atTasks.length;
+    if (atTotal > allTasksPageSize) {
+      var atFrom = allTasksOffset + 1;
+      var atTo = allTasksOffset + atTasks.length;
+      allTasksSection.addWidget(CardService.newTextParagraph()
+        .setText('Showing ' + atFrom + '–' + atTo + ' of ' + atTotal));
+
+      var atPageBtns = CardService.newButtonSet();
+      if (allTasksOffset > 0) {
+        atPageBtns.addButton(CardService.newTextButton()
+          .setText('← Previous')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onChangeAllTasksPage')
+            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(Math.max(0, allTasksOffset - allTasksPageSize)) })));
+      }
+      if (atTo < atTotal) {
+        atPageBtns.addButton(CardService.newTextButton()
+          .setText('Next →')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onChangeAllTasksPage')
+            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset + allTasksPageSize) })));
+      }
+      allTasksSection.addWidget(atPageBtns);
+    }
+  } else {
+    allTasksSection.addWidget(CardService.newTextParagraph().setText('No active tasks.'));
+  }
+
+  card.addSection(allTasksSection);
+
   // ── View project tasks ────────────────────────────────────────
   card.addSection(CardService.newCardSection()
     .setHeader('Project tasks')
@@ -612,6 +757,16 @@ function buildMainCard(messageId, accessToken) {
   return card.build();
 }
 
+// Fired by the Home card's "All My Tasks" Previous/Next buttons.
+function onChangeAllTasksPage(e) {
+  var token = e.parameters.accessToken || getToken();
+  var offset = parseInt(e.parameters.offset || '0') || 0;
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .updateCard(buildMainCard(e.parameters.messageId || null, token, offset)))
+    .build();
+}
+
 // ── Switch company ─────────────────────────────────────────────────
 
 function onSwitchCompany(e) {
@@ -620,6 +775,7 @@ function onSwitchCompany(e) {
   if (!companyId) return errorNotification('No company selected');
   var result = apiPost('/switch-company', { companyId: companyId }, token);
   if (!result.ok) return errorNotification('Failed to switch: ' + (result.data.error || 'Unknown'));
+  invalidateCachedApiGet('/user-context');
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation().updateCard(buildMainCard(null, token)))
     .setNotification(CardService.newNotification()
@@ -688,7 +844,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
   for (var ti = 0; ti < tasks.length; ti++) {
     var t = tasks[ti];
     Logger.log('[task ' + ti + '] name=' + t.name + ' dueDate=' + t.dueDate + ' assignee=' + t.assignee + ' team=' + t.assignedTeam);
-    var overdue = t.dueDate && !t.isCompleted && new Date(t.dueDate) < new Date();
+    var overdue = t.dueDate && !t.isCompleted && daysFromToday(t.dueDate) < 0;
 
     // Strikethrough completed tasks using Unicode combining strikethrough
     var taskName = t.name;
@@ -705,13 +861,10 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
 
     // Time remaining indicator (same line as task name)
     if (t.dueDate && !t.isCompleted) {
-      var now = new Date();
-      var due = new Date(String(t.dueDate).substring(0, 10) + 'T23:59:59');
-      var diffMs = due - now;
-      var diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      var diffDays = daysFromToday(t.dueDate);
       var timeStr = '';
       var dot = '';
-      if (diffMs < 0) {
+      if (diffDays < 0) {
         // Overdue
         var overdueDays = Math.abs(diffDays);
         dot = '🔴';
@@ -881,7 +1034,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     var dfDatePicker = CardService.newDatePicker()
       .setFieldName('newTaskDaysFromDate')
       .setTitle('From date');
-    var dfDateMs = newTaskDraft.daysFromDate ? new Date(newTaskDraft.daysFromDate + 'T00:00:00').getTime() : new Date().setHours(0,0,0,0);
+    var dfDateMs = newTaskDraft.daysFromDate ? new Date(newTaskDraft.daysFromDate + 'T00:00:00').getTime() : dateStrToUtcMidnight(todayDateStr()).getTime();
     dfDatePicker.setValueInMsSinceEpoch(dfDateMs);
     addSection.addWidget(dfDatePicker);
 
@@ -927,6 +1080,8 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
   if (newTaskDraft.dueTime) {
     var dtp = newTaskDraft.dueTime.split(':');
     if (dtp.length >= 2) dueTimePicker.setHours(parseInt(dtp[0])).setMinutes(parseInt(dtp[1]));
+  } else {
+    dueTimePicker.setHours(9).setMinutes(0);
   }
   addSection.addWidget(dueTimePicker);
 
@@ -1393,7 +1548,7 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     var editDfDatePicker = CardService.newDatePicker()
       .setFieldName('editTaskDaysFromDate')
       .setTitle('From date');
-    var editDfDateMs = params.taskDaysFromDate ? new Date(params.taskDaysFromDate + 'T00:00:00').getTime() : new Date().setHours(0,0,0,0);
+    var editDfDateMs = params.taskDaysFromDate ? new Date(params.taskDaysFromDate + 'T00:00:00').getTime() : dateStrToUtcMidnight(todayDateStr()).getTime();
     editDfDatePicker.setValueInMsSinceEpoch(editDfDateMs);
     section.addWidget(editDfDatePicker);
 
@@ -1443,6 +1598,8 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     if (tp.length >= 2) {
       timePicker.setHours(parseInt(tp[0])).setMinutes(parseInt(tp[1]));
     }
+  } else {
+    timePicker.setHours(9).setMinutes(0);
   }
   section.addWidget(timePicker);
 
@@ -1620,7 +1777,7 @@ function onUpdateTask(e) {
   var editDueMode = ((e.formInputs.editTaskDueMode || ['specific'])[0] || 'specific');
   var dueDate = null;
   if (editDueMode === 'days_from') {
-    var edfDate = parseDatePickerValue(e, 'editTaskDaysFromDate') || new Date().toISOString().slice(0, 10);
+    var edfDate = parseDatePickerValue(e, 'editTaskDaysFromDate') || todayDateStr();
     var edfDays = parseInt((e.formInputs.editTaskDaysFromDays || ['0'])[0]) || 0;
     var edfType = (e.formInputs.editTaskDaysFromType || ['calendar'])[0] || 'calendar';
     var edfState = (e.formInputs.editTaskDaysFromState || ['NSW'])[0] || 'NSW';
@@ -1700,7 +1857,7 @@ function onCreateTask(e) {
   var dueMode = ((e.formInputs.newTaskDueMode || ['specific'])[0] || 'specific');
   var dueDate = null;
   if (dueMode === 'days_from') {
-    var dfDate = parseDatePickerValue(e, 'newTaskDaysFromDate') || new Date().toISOString().slice(0, 10);
+    var dfDate = parseDatePickerValue(e, 'newTaskDaysFromDate') || todayDateStr();
     var dfDays = parseInt((e.formInputs.newTaskDaysFromDays || ['0'])[0]) || 0;
     var dfType = (e.formInputs.newTaskDaysFromType || ['calendar'])[0] || 'calendar';
     var dfState = (e.formInputs.newTaskDaysFromState || ['NSW'])[0] || 'NSW';

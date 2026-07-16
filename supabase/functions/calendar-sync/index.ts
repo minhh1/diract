@@ -99,12 +99,26 @@ async function deleteCalendarEvent(
 
 // ── Build event object ─────────────────────────────────────────────
 
-function buildEventTitle(format: string, taskName: string, matterNumber: string, projectName: string): string {
-  return format
-    .replace("{task_name}", taskName)
-    .replace("{matter_number}", matterNumber || "")
-    .replace("{project_name}", projectName || "")
-    .trim().replace(/^[\s—\-]+|[\s—\-]+$/g, ""); // strip leading/trailing separators
+function extractTokens(format: string): string[] {
+  const regex = /\{(\w+)\}/g;
+  const tokens: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(format))) tokens.push(m[1]);
+  return tokens;
+}
+
+// Title format can reference {task_name}, {project_name}, or any of the
+// company's custom fields on the projects table (by field_key) — e.g.
+// {matter_number} for a law firm, {job_reference} for a trades company.
+// customFieldValues is keyed by field_key, resolved by the caller.
+function buildEventTitle(format: string, taskName: string, projectName: string, customFieldValues: Record<string, string>): string {
+  let title = format
+    .replace("{task_name}", taskName || "")
+    .replace("{project_name}", projectName || "");
+  for (const [key, value] of Object.entries(customFieldValues)) {
+    title = title.split(`{${key}}`).join(value || "");
+  }
+  return title.trim().replace(/^[\s—\-]+|[\s—\-]+$/g, ""); // strip leading/trailing separators
 }
 
 function buildEvent(params: {
@@ -191,7 +205,7 @@ Deno.serve(async (req) => {
     }
 
     const companyEmail = company.gmail_source_emails[0];
-    const titleFormat = company.calendar_event_title_format || "{matter_number} — {task_name}";
+    const titleFormat = company.calendar_event_title_format || "{task_name}";
     const durationMins = company.calendar_event_duration_mins || 30;
 
     // Get company calendar token (source email's OAuth)
@@ -201,25 +215,36 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "No token for company email" }), { status: 400, headers: corsHeaders });
     }
 
-    // Get matter number for this project
-    let matterNumber = "";
-    if (task.project_id) {
-      const { data: matterField } = await db.from("company_custom_fields")
-        .select("id").eq("company_id", companyId).eq("field_key", "matter_number").maybeSingle();
-      if (matterField) {
-        const { data: cfv } = await db.from("company_custom_field_values")
-          .select("value_text").eq("field_id", matterField.id).eq("record_id", task.project_id).maybeSingle();
-        matterNumber = cfv?.value_text || "";
+    // Resolve any custom-field tokens referenced in the title format (e.g.
+    // {matter_number}, {job_reference} — whatever fields this company has
+    // configured on the projects table) for this task's project.
+    const customTokenKeys = extractTokens(titleFormat).filter(t => t !== "task_name" && t !== "project_name");
+    const customFieldValues: Record<string, string> = {};
+    const customFieldLabels: Record<string, string> = {};
+    if (customTokenKeys.length && task.project_id) {
+      const { data: fields } = await db.from("company_custom_fields")
+        .select("id, field_key, label").eq("company_id", companyId).eq("table_name", "projects").in("field_key", customTokenKeys);
+      if (fields?.length) {
+        const fieldIds = fields.map((f: any) => f.id);
+        const { data: vals } = await db.from("company_custom_field_values")
+          .select("field_id, value_text").eq("record_id", task.project_id).in("field_id", fieldIds);
+        const byFieldId = Object.fromEntries((vals || []).map((v: any) => [v.field_id, v.value_text || ""]));
+        for (const f of fields) {
+          customFieldValues[f.field_key] = byFieldId[f.id] || "";
+          customFieldLabels[f.field_key] = f.label;
+        }
       }
     }
 
     const projectName = (task.project as any)?.name || "";
-    const title = buildEventTitle(titleFormat, task.name, matterNumber, projectName);
+    const title = buildEventTitle(titleFormat, task.name, projectName, customFieldValues);
     const assigneeEmail = (task.assignee as any)?.email || null;
 
     const description = [
       projectName ? `Project: ${projectName}` : null,
-      matterNumber ? `Matter: ${matterNumber}` : null,
+      ...Object.entries(customFieldValues)
+        .filter(([, value]) => value)
+        .map(([key, value]) => `${customFieldLabels[key] || key}: ${value}`),
       (task.assignee as any)?.full_name ? `Assigned to: ${(task.assignee as any).full_name}` : null,
     ].filter(Boolean).join("\n");
 

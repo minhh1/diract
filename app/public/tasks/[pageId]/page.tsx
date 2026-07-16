@@ -362,7 +362,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
     task?.projectId ? { id: task.projectId, name: task.projectName || "", matterNumber: task.matterNumber } : null
   );
   const [dueDate, setDueDate] = useState(task?.dueDate || "");
-  const [dueTime, setDueTime] = useState(task?.dueTime ? task.dueTime.slice(0, 5) : "");
+  const [dueTime, setDueTime] = useState(task?.dueTime ? task.dueTime.slice(0, 5) : "09:00");
   const [statusId, setStatusId] = useState(task?.statusId || "");
   const [teamId, setTeamId] = useState(task?.teamId || "");
   const [assigneeId, setAssigneeId] = useState(defaultAssigneeId || "");
