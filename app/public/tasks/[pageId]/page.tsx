@@ -13,6 +13,7 @@ import DateCalculator from "@/components/DateCalculator";
 import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker";
 import FollowUpToggle from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
+import { getRelativeDateLabel } from "@/lib/relativeDate";
 
 interface Task {
   id: string; name: string; isCompleted: boolean;
@@ -267,7 +268,7 @@ export default function PublicTaskPage() {
                       {dl && <span className={`text-[10px] font-bold ${dl.colorClass}`}>{dl.text}</span>}
                       {t.awaitingFollowUp && (
                         <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
-                          <Flag size={9} /> Follow up{t.followUpDate ? ` ${t.followUpDate}` : ""}
+                          <Flag size={9} /> Follow up{t.followUpDate ? ` ${getRelativeDateLabel(t.followUpDate)}` : ""}
                         </span>
                       )}
                       {t.notes && (

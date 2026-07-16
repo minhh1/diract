@@ -10,6 +10,7 @@ import {
 import DateCalculator from "@/components/DateCalculator";
 import FollowUpToggle from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
+import { getRelativeDateLabel } from "@/lib/relativeDate";
 
 interface Task {
   id: string; project_id: string; name: string; is_completed: boolean;
@@ -74,7 +75,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, statuses, depth, o
             {task.is_monetary && task.estimated_cost > 0 && <span className="flex items-center gap-1 text-[10px] text-slate-400"><DollarSign size={10} />${Number(task.estimated_cost).toLocaleString()}</span>}
             {task.awaiting_follow_up && (
               <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
-                <Flag size={10} /> Follow up{task.follow_up_date ? ` ${new Date(task.follow_up_date).toLocaleDateString('en-AU')}` : ''}
+                <Flag size={10} /> Follow up{task.follow_up_date ? ` ${getRelativeDateLabel(task.follow_up_date)}` : ''}
               </span>
             )}
             {task.notes && (

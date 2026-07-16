@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, Plus, Copy, Check, AlertTriangle, Trash2, ExternalLink, X,
+  Loader2, Plus, Copy, Check, Trash2, ExternalLink, X,
 } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
 
@@ -84,14 +84,6 @@ export default function PublicTaskPagesTab() {
 
   return (
     <div className="space-y-6 animate-in fade-in">
-      <div className="flex gap-3 p-5 bg-amber-50 border border-amber-100 rounded-[24px]">
-        <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
-        <div className="text-[12px] text-amber-700 leading-relaxed">
-          <p className="font-bold mb-1">Public pages are reachable by anyone with the link who is signed in.</p>
-          <p>Anyone with the URL and a Flow account in your company can view the tasks it shows (and add new ones). Set an expiry date whenever possible, and revoke pages you no longer need.</p>
-        </div>
-      </div>
-
       <button onClick={() => setShowCreate(true)}
         className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
         <Plus size={14} /> Create public page

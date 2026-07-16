@@ -152,6 +152,30 @@ function parseDatePickerValue(e, fieldName) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// Human-friendly relative label for an arbitrary date — "today",
+// "tomorrow", "in 3 days", "Monday next week", "in 3 weeks" — instead of a
+// raw date string. Mirrors lib/relativeDate.ts (kept in sync manually
+// since Apps Script can't import from the Next.js app).
+var RELATIVE_DATE_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function getRelativeDateLabel(dateStr) {
+  if (!dateStr) return null;
+  var target = new Date(String(dateStr).substring(0, 10) + 'T00:00:00');
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
+
+  if (diffDays < 0) {
+    var n = Math.abs(diffDays);
+    return n + (n !== 1 ? ' days' : ' day') + ' ago';
+  }
+  if (diffDays === 0) return 'today';
+  if (diffDays === 1) return 'tomorrow';
+  if (diffDays <= 6) return 'in ' + diffDays + ' days';
+  if (diffDays <= 13) return RELATIVE_DATE_WEEKDAYS[target.getDay()] + ' next week';
+  var weeks = Math.round(diffDays / 7);
+  return 'in ' + weeks + (weeks !== 1 ? ' weeks' : ' week');
+}
+
 function errorNotification(msg) {
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification()
@@ -727,7 +751,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     if (t.status) sub += (sub ? ' · ' : '') + t.status;
     if (t.createdBy) sub += (sub ? ' · ' : '') + 'Added by ' + t.createdBy;
     if (t.awaitingFollowUp) {
-      sub += (sub ? ' · ' : '') + '🚩 Follow up' + (t.followUpDate ? ' ' + String(t.followUpDate).substring(0, 10) : '');
+      sub += (sub ? ' · ' : '') + '🚩 Follow up' + (t.followUpDate ? ' ' + getRelativeDateLabel(t.followUpDate) : '');
     }
     if (t.notes) sub += (sub ? ' · ' : '') + '📝 ' + t.notes;
 
