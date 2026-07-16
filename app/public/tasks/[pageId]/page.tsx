@@ -126,31 +126,45 @@ export default function PublicTaskPage() {
     refresh();
   };
 
-  const addFollowUp = async (task: Task, date: string) => {
-    const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}/follow-ups`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ followedUpAt: date }),
-    });
-    const json = await res.json();
-    if (!res.ok) return;
+  // Optimistic — update local state immediately so the tick feels instant,
+  // then fire the request in the background. Re-fetch to resync on failure.
+  const addFollowUp = (task: Task, date: string) => {
+    const tempId = `temp-${Date.now()}`;
+    const optimisticEntry = { id: tempId, followedUpAt: date };
     setData(prev => prev ? {
       ...prev,
       tabs: prev.tabs.map(tab => ({
         ...tab,
         tasks: tab.tasks.map(t => t.id === task.id
-          ? { ...t, followUps: [...t.followUps, json.entry], awaitingFollowUp: true, followUpDate: date }
+          ? { ...t, followUps: [...t.followUps, optimisticEntry], awaitingFollowUp: true, followUpDate: date }
           : t),
       })),
     } : prev);
     setEditingTask(prev => prev && prev.id === task.id
-      ? { ...prev, followUps: [...prev.followUps, json.entry], awaitingFollowUp: true, followUpDate: date }
+      ? { ...prev, followUps: [...prev.followUps, optimisticEntry], awaitingFollowUp: true, followUpDate: date }
       : prev);
+
+    (async () => {
+      const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}/follow-ups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ followedUpAt: date }),
+      });
+      if (!res.ok) { refresh(); return; }
+      const json = await res.json();
+      const replace = (entries: FollowUpEntry[]) => entries.map(f => f.id === tempId ? json.entry : f);
+      setData(prev => prev ? {
+        ...prev,
+        tabs: prev.tabs.map(tab => ({
+          ...tab,
+          tasks: tab.tasks.map(t => t.id === task.id ? { ...t, followUps: replace(t.followUps) } : t),
+        })),
+      } : prev);
+      setEditingTask(prev => prev && prev.id === task.id ? { ...prev, followUps: replace(prev.followUps) } : prev);
+    })();
   };
 
-  const removeFollowUp = async (task: Task, followUpId: string) => {
-    const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}/follow-ups/${followUpId}`, { method: "DELETE" });
-    if (!res.ok) return;
+  const removeFollowUp = (task: Task, followUpId: string) => {
     setData(prev => prev ? {
       ...prev,
       tabs: prev.tabs.map(tab => ({
@@ -169,6 +183,11 @@ export default function PublicTaskPage() {
       const latest = remaining.length ? remaining.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
       return { ...prev, followUps: remaining, awaitingFollowUp: remaining.length > 0, followUpDate: latest?.followedUpAt || null };
     });
+
+    (async () => {
+      const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}/follow-ups/${followUpId}`, { method: "DELETE" });
+      if (!res.ok) refresh();
+    })();
   };
 
   // ── Not signed in ────────────────────────────────────────────────
@@ -189,7 +208,7 @@ export default function PublicTaskPage() {
             </button>
           ) : (
             <>
-              <button onClick={() => { window.location.href = "/login"; }}
+              <button onClick={() => { window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`; }}
                 className="w-full py-3 bg-slate-900 text-white text-[12px] font-bold rounded-full hover:bg-slate-700 flex items-center justify-center gap-2">
                 <ExternalLink size={13} /> Sign in
               </button>

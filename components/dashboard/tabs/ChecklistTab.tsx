@@ -798,33 +798,51 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   // A task can be followed up more than once — each log entry is its own
   // row; awaiting_follow_up/follow_up_date on the task itself are kept as a
   // denormalized "latest state" cache so status badges elsewhere don't need
-  // to know about the log table.
-  const recomputeFollowUpCache = async (id: string, entries: FollowUpEntry[]) => {
+  // to know about the log table. Both actions update local state immediately
+  // (optimistic) and fire the writes in the background so the tick doesn't
+  // feel laggy.
+  const applyFollowUpCacheLocally = (taskId: string, entries: FollowUpEntry[]) => {
     const latest = entries.length ? entries.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
     const patch = { awaiting_follow_up: entries.length > 0, follow_up_date: latest?.followedUpAt || null };
-    await supabase.from('tasks').update(patch).eq('id', id);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t));
+    return patch;
   };
 
-  const handleAddFollowUp = async (taskId: string, date: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data } = await supabase.from('task_follow_ups').insert({
-      task_id: taskId, company_id: companyId, followed_up_at: date, created_by: user?.id,
-    }).select().single();
-    if (!data) return;
-    const next = [...(followUpsByTask[taskId] || []), { id: data.id, followedUpAt: data.followed_up_at }];
+  const handleAddFollowUp = (taskId: string, date: string) => {
+    const tempId = `temp-${Date.now()}`;
+    const next = [...(followUpsByTask[taskId] || []), { id: tempId, followedUpAt: date }];
     setFollowUpsByTask(prev => ({ ...prev, [taskId]: next }));
-    await recomputeFollowUpCache(taskId, next);
-    logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_set', detail: `follow-up date: ${date}` });
+    const patch = applyFollowUpCacheLocally(taskId, next);
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data, error } = await supabase.from('task_follow_ups').insert({
+        task_id: taskId, company_id: companyId, followed_up_at: date, created_by: user?.id,
+      }).select().single();
+      if (error || !data) {
+        setFollowUpsByTask(prev => ({ ...prev, [taskId]: (prev[taskId] || []).filter(f => f.id !== tempId) }));
+        return;
+      }
+      setFollowUpsByTask(prev => ({
+        ...prev,
+        [taskId]: (prev[taskId] || []).map(f => f.id === tempId ? { id: data.id, followedUpAt: data.followed_up_at } : f),
+      }));
+      supabase.from('tasks').update(patch).eq('id', taskId);
+      logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_set', detail: `follow-up date: ${date}` });
+    })();
   };
 
-  const handleRemoveFollowUp = async (taskId: string, followUpId: string) => {
-    await supabase.from('task_follow_ups').delete().eq('id', followUpId);
+  const handleRemoveFollowUp = (taskId: string, followUpId: string) => {
     const next = (followUpsByTask[taskId] || []).filter(f => f.id !== followUpId);
     setFollowUpsByTask(prev => ({ ...prev, [taskId]: next }));
-    await recomputeFollowUpCache(taskId, next);
-    const { data: { user } } = await supabase.auth.getUser();
-    logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_cleared' });
+    const patch = applyFollowUpCacheLocally(taskId, next);
+
+    (async () => {
+      await supabase.from('task_follow_ups').delete().eq('id', followUpId);
+      await supabase.from('tasks').update(patch).eq('id', taskId);
+      const { data: { user } } = await supabase.auth.getUser();
+      logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_cleared' });
+    })();
   };
 
   const handleDelete = async (id: string) => {

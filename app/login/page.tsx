@@ -34,6 +34,13 @@ function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get('token');
+  // Where to send the user after a successful sign-in — e.g. back to the
+  // public task page they were trying to view. Only relative paths are
+  // honoured, so this can't be abused as an open redirect.
+  const redirectParam = searchParams.get('redirect');
+  const postLoginPath = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')
+    ? redirectParam
+    : '/dashboard/properties';
 
   const [mode, setMode] = useState<AuthMode>(inviteToken ? "register" : "login");
   const [email, setEmail] = useState("");
@@ -70,7 +77,7 @@ function LoginPageInner() {
         if (inviteToken) {
           handleTokenJoin(session.user.id);
         } else {
-          router.replace("/dashboard/properties");
+          router.replace(postLoginPath);
         }
       }
     });
@@ -126,7 +133,7 @@ function LoginPageInner() {
   // Handle joining an existing company (called when already logged in with token)
   const handleTokenJoin = async (userId: string) => {
     if (!inviteToken || !tokenData?.company_id) {
-      router.replace("/dashboard/properties");
+      router.replace(postLoginPath);
       return;
     }
 
@@ -148,9 +155,9 @@ function LoginPageInner() {
         .update({ used_at: new Date().toISOString() })
         .eq('token', inviteToken);
 
-      router.replace("/dashboard/properties");
+      router.replace(postLoginPath);
     } catch {
-      router.replace("/dashboard/properties");
+      router.replace(postLoginPath);
     }
   };
 
@@ -159,9 +166,13 @@ function LoginPageInner() {
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     clearMessages();
-    // Store invite token in cookie so callback can read it after OAuth redirect
+    // Store invite token / post-login destination in cookies so the
+    // callback route can read them after the OAuth round trip.
     if (inviteToken) {
       document.cookie = `invite_token=${inviteToken}; path=/; max-age=600; SameSite=Lax`;
+    }
+    if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')) {
+      document.cookie = `post_login_redirect=${encodeURIComponent(redirectParam)}; path=/; max-age=600; SameSite=Lax`;
     }
     const redirectTo = `${window.location.origin}/auth/callback`;
     const { error } = await supabase.auth.signInWithOAuth({
@@ -238,7 +249,7 @@ function LoginPageInner() {
       }
     }
 
-    router.replace("/dashboard/properties");
+    router.replace(postLoginPath);
   };
 
   // ── Register — creates new company OR joins existing via token ────
@@ -327,7 +338,7 @@ function LoginPageInner() {
         setSuccess("Account created! Check your inbox and confirm your email to get started.");
         setLoading(false);
       } else {
-        router.replace("/dashboard/properties");
+        router.replace(postLoginPath);
       }
     } catch (err: any) {
       setError(err.message || "Registration failed. Please try again.");

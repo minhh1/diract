@@ -28,7 +28,7 @@ function todayStr() {
 export default function FollowUpToggle({ entries, onAdd, onRemove }: Props) {
   const [open, setOpen] = useState(false);
   const [pendingDate, setPendingDate] = useState(todayStr());
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState<{ left: number; top: number | null; bottom: number | null; maxHeight: number }>({ left: 0, top: 0, bottom: null, maxHeight: 340 });
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -50,8 +50,13 @@ export default function FollowUpToggle({ entries, onAdd, onRemove }: Props) {
   }, [open]);
 
   // Popover width is 272px; flip to the left of the button if it would
-  // otherwise overflow the right edge of the viewport, and reposition on
-  // scroll/resize since it's portaled to <body> (fixed positioning).
+  // otherwise overflow the right edge of the viewport. Vertically, pick
+  // whichever side (above/below the button) has more room — and clamp the
+  // popover's own max-height to whatever that side actually has, with
+  // internal scrolling as the last-resort safety net — so it can never
+  // render off-screen even when the task row is right at the edge of the
+  // viewport. Repositions on scroll/resize since it's portaled to <body>
+  // (fixed positioning).
   useEffect(() => {
     if (!open) return;
     const reposition = () => {
@@ -62,7 +67,16 @@ export default function FollowUpToggle({ entries, onAdd, onRemove }: Props) {
       if (left + popoverWidth > window.innerWidth - 8) {
         left = Math.max(8, rect.right - popoverWidth);
       }
-      setPos({ top: rect.bottom + 8, left });
+      const gap = 8;
+      const spaceBelow = window.innerHeight - rect.bottom - gap;
+      const spaceAbove = rect.top - gap;
+      const minComfortable = 220; // enough for header + date field + button without scrolling
+      const openBelow = spaceBelow >= minComfortable || spaceBelow >= spaceAbove;
+      if (openBelow) {
+        setPos({ left, top: rect.bottom + gap, bottom: null, maxHeight: Math.max(120, spaceBelow) });
+      } else {
+        setPos({ left, top: null, bottom: window.innerHeight - rect.top + gap, maxHeight: Math.max(120, spaceAbove) });
+      }
     };
     reposition();
     window.addEventListener("scroll", reposition, true);
@@ -94,7 +108,11 @@ export default function FollowUpToggle({ entries, onAdd, onRemove }: Props) {
       {open && typeof document !== "undefined" && createPortal(
         <div
           ref={popoverRef}
-          style={{ position: "fixed", top: pos.top, left: pos.left }}
+          style={{
+            position: "fixed", left: pos.left,
+            top: pos.top ?? undefined, bottom: pos.bottom ?? undefined,
+            maxHeight: pos.maxHeight, overflowY: "auto",
+          }}
           className="z-[9999] w-[272px] bg-white border border-slate-200 rounded-2xl shadow-lg p-4 space-y-3"
         >
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">

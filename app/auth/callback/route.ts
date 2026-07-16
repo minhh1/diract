@@ -10,8 +10,16 @@ export async function GET(request: NextRequest) {
     || request.cookies.get('invite_token')?.value
     || null
 
+  // Where to land after sign-in — e.g. back on the public task page the
+  // user was trying to view. Only relative paths are honoured.
+  const postLoginRedirect = request.cookies.get('post_login_redirect')?.value
+  const destination = postLoginRedirect && postLoginRedirect.startsWith('/') && !postLoginRedirect.startsWith('//')
+    ? postLoginRedirect
+    : '/dashboard/projects'
+
   if (code) {
-    const response = NextResponse.redirect(`${origin}/dashboard/projects`)
+    const response = NextResponse.redirect(`${origin}${destination}`)
+    if (postLoginRedirect) response.cookies.set('post_login_redirect', '', { maxAge: 0, path: '/' })
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
