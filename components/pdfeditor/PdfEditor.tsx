@@ -18,11 +18,13 @@ import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import {
   ArrowLeft, MousePointer2, Type, Highlighter, Pencil, PenTool,
-  Undo2, Redo2, Save, ZoomIn, ZoomOut, Loader2, Trash2, Download,
+  Undo2, Redo2, Save, ZoomIn, ZoomOut, Loader2, Trash2, Download, Files,
 } from "lucide-react";
 import PdfPageView from "./PdfPageView";
 import SignaturePad from "./SignaturePad";
+import PageManager from "./PageManager";
 import { applyEdits } from "@/lib/pdfeditor/applyEdits";
+import { loadPdfDocument } from "@/lib/pdfeditor/loadPdf";
 import type { PdfEditOp, ToolId } from "@/lib/pdfeditor/types";
 
 export type PdfSource = { kind: "existing"; documentId: string } | { kind: "new"; file: File };
@@ -31,6 +33,10 @@ interface Props {
   source: PdfSource;
   onBack: () => void;
 }
+
+// How many pages before/after the current one actually render their canvas —
+// see the render-loop comment below for why this exists.
+const PAGE_RENDER_WINDOW = 2;
 
 const TOOLS: { id: ToolId; label: string; icon: any }[] = [
   { id: "select", label: "Select / edit text", icon: MousePointer2 },
@@ -61,6 +67,7 @@ export default function PdfEditor({ source, onBack }: Props) {
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [pendingSignature, setPendingSignature] = useState<string | null>(null);
+  const [showPageManager, setShowPageManager] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -92,9 +99,7 @@ export default function PdfEditor({ source, onBack }: Props) {
         if (cancelled) return;
         originalBytesRef.current = buf;
 
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-        const doc = await pdfjsLib.getDocument({ data: buf.slice() }).promise;
+        const doc = await loadPdfDocument(buf);
         if (cancelled) return;
         setPdfDoc(doc);
         setNumPages(doc.numPages);
@@ -122,25 +127,50 @@ export default function PdfEditor({ source, onBack }: Props) {
     return () => { cancelled = true; };
   }, [pdfDoc]);
 
-  // ── Track which page is most visible to drive the page-number indicator ──
+  // ── Track which page is "current" (drives the page-number indicator and the
+  // render-virtualization window) via scroll position rather than
+  // IntersectionObserver ratio thresholds. Ratio thresholds are relative to
+  // each *target's own* area, which breaks down for a page many times taller
+  // than the viewport (as little as a sliver of it may ever be visible at
+  // once, so its ratio can simply never cross 0.25) — pages 8-17 of a real
+  // contract PDF are ~2x the usual point size and never registered as
+  // "current" this way, so they never entered the render window and stayed
+  // permanently blank. Picking whichever page's rect straddles a fixed line
+  // near the top of the viewport works regardless of how large any one page is.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || pages.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        let best: { idx: number; ratio: number } | null = null;
-        for (const entry of entries) {
-          const idx = Number((entry.target as HTMLElement).dataset.pageIdx);
-          if (entry.isIntersecting && (!best || entry.intersectionRatio > best.ratio)) {
-            best = { idx, ratio: entry.intersectionRatio };
-          }
-        }
-        if (best) setCurrentPage(best.idx);
-      },
-      { root: container, threshold: [0.25, 0.5, 0.75] }
-    );
-    pageWrapperRefs.current.forEach((el) => el && observer.observe(el));
-    return () => observer.disconnect();
+    let rafId: number | null = null;
+
+    const updateCurrentPage = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const containerRect = container.getBoundingClientRect();
+        const readingLine = containerRect.top + containerRect.height * 0.3;
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        pageWrapperRefs.current.forEach((el, idx) => {
+          if (!el) return;
+          const rect = el.getBoundingClientRect();
+          const dist = rect.top <= readingLine && rect.bottom >= readingLine
+            ? 0
+            : Math.min(Math.abs(rect.top - readingLine), Math.abs(rect.bottom - readingLine));
+          if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
+        });
+        setCurrentPage(bestIdx);
+      });
+    };
+
+    updateCurrentPage();
+    container.addEventListener("scroll", updateCurrentPage, { passive: true });
+    const resizeObserver = new ResizeObserver(updateCurrentPage);
+    pageWrapperRefs.current.forEach((el) => el && resizeObserver.observe(el));
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      container.removeEventListener("scroll", updateCurrentPage);
+      resizeObserver.disconnect();
+    };
   }, [pages, scale]);
 
   const scrollToPage = (idx: number) => {
@@ -220,8 +250,7 @@ export default function PdfEditor({ source, onBack }: Props) {
       originalBytesRef.current = newBytes;
       setOps([]); setHistory([]); setFuture([]);
 
-      const pdfjsLib = await import("pdfjs-dist");
-      const doc = await pdfjsLib.getDocument({ data: newBytes.slice() }).promise;
+      const doc = await loadPdfDocument(newBytes);
       setPdfDoc(doc);
       setNumPages(doc.numPages);
       setCurrentPage((p) => Math.min(p, doc.numPages - 1));
@@ -246,6 +275,21 @@ export default function PdfEditor({ source, onBack }: Props) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // Page structure changes (reorder/add/remove) aren't part of the ops log —
+  // they replace the working copy directly, the same way a Save does. Any
+  // pending annotation ops are cleared since their page indices are no longer
+  // valid against the restructured document.
+  const handlePagesApplied = async (newBytes: Uint8Array) => {
+    setShowPageManager(false);
+    originalBytesRef.current = newBytes;
+    setOps([]); setHistory([]); setFuture([]);
+
+    const doc = await loadPdfDocument(newBytes);
+    setPdfDoc(doc);
+    setNumPages(doc.numPages);
+    setCurrentPage(0);
   };
 
   const handleDelete = async () => {
@@ -311,6 +355,14 @@ export default function PdfEditor({ source, onBack }: Props) {
               </button>
             </div>
 
+            <button
+              title="Manage pages"
+              onClick={() => setShowPageManager(true)}
+              className="p-2 rounded-full text-slate-400 hover:text-slate-700"
+            >
+              <Files size={16} />
+            </button>
+
             {saveMsg && <span className="text-[11px] font-medium text-slate-400">{saveMsg}</span>}
             <button
               title="Download PDF"
@@ -347,22 +399,40 @@ export default function PdfEditor({ source, onBack }: Props) {
         )}
         {loadError && <div className="text-[13px] text-red-500 mt-20">{loadError}</div>}
 
-        {!loading && !loadError && pages.map((page, idx) => (
-          <div key={idx} ref={(el) => { pageWrapperRefs.current[idx] = el; }} data-page-idx={idx}>
-            <PdfPageView
-              pdfPage={page}
-              pageIndex={idx}
-              scale={scale}
-              ops={ops}
-              activeTool={activeTool}
-              pendingSignature={pendingSignature}
-              onAddOp={handleAddOp}
-              onUpdateOp={handleUpdateOp}
-              onDeleteOp={handleDeleteOp}
-              onPlacementComplete={() => { setPendingSignature(null); setActiveTool("select"); }}
-            />
-          </div>
-        ))}
+        {!loading && !loadError && pages.map((page, idx) => {
+          // Only the pages near the current scroll position actually mount
+          // PdfPageView (which renders a real canvas + text layer) — rendering
+          // every page's canvas up front doesn't scale to long documents, and
+          // gets especially expensive for oversized pages (e.g. a page at 2x
+          // the usual point dimensions renders a ~4x-pixel-count canvas).
+          // Off-window pages are an empty placeholder sized via the page's own
+          // (cheap, non-rendering) viewport so scroll height/position stay
+          // stable as pages enter and leave the window.
+          const inWindow = Math.abs(idx - currentPage) <= PAGE_RENDER_WINDOW;
+          const viewport = page.getViewport({ scale });
+          return (
+            <div key={idx} ref={(el) => { pageWrapperRefs.current[idx] = el; }} data-page-idx={idx}>
+              {inWindow ? (
+                <PdfPageView
+                  pdfPage={page}
+                  pageIndex={idx}
+                  scale={scale}
+                  ops={ops}
+                  activeTool={activeTool}
+                  pendingSignature={pendingSignature}
+                  onAddOp={handleAddOp}
+                  onUpdateOp={handleUpdateOp}
+                  onDeleteOp={handleDeleteOp}
+                  onPlacementComplete={() => { setPendingSignature(null); setActiveTool("select"); }}
+                />
+              ) : (
+                <div className="bg-white shadow-md flex items-center justify-center" style={{ width: viewport.width, height: viewport.height }}>
+                  <Loader2 size={16} className="animate-spin text-slate-200" />
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {!loading && !loadError && numPages > 1 && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 text-[12px] text-slate-500 bg-white/95 backdrop-blur px-4 py-2 rounded-full shadow-lg border border-slate-100">
@@ -384,6 +454,15 @@ export default function PdfEditor({ source, onBack }: Props) {
           </div>
         )}
       </main>
+
+      {showPageManager && originalBytesRef.current && (
+        <PageManager
+          pages={pages}
+          originalBytes={originalBytesRef.current}
+          onApply={handlePagesApplied}
+          onCancel={() => setShowPageManager(false)}
+        />
+      )}
 
       {showSignaturePad && (
         <SignaturePad

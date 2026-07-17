@@ -50,6 +50,47 @@ async function nameForTeamId(id: string | null | undefined): Promise<string> {
   return data?.team_name || 'Unknown';
 }
 
+// Watchers — extra people (beyond the assignee) who see a task and get
+// notified, but aren't responsible for it. Grouped per task for list views.
+async function watchersByTaskIds(taskIds: string[]): Promise<Record<string, { id: string; name: string }[]>> {
+  const result: Record<string, { id: string; name: string }[]> = {};
+  if (!taskIds.length) return result;
+  const { data: rows } = await db.from('task_watchers').select('task_id, profile_id').in('task_id', taskIds);
+  if (!rows?.length) return result;
+  const profileIds = [...new Set(rows.map((r: any) => r.profile_id))];
+  const { data: profiles } = await db.from('profiles').select('id, full_name, email').in('id', profileIds);
+  const nameById: Record<string, string> = {};
+  for (const p of profiles || []) nameById[p.id] = p.full_name || p.email || 'Unknown';
+  for (const r of rows) {
+    (result[r.task_id] ||= []).push({ id: r.profile_id, name: nameById[r.profile_id] || 'Unknown' });
+  }
+  return result;
+}
+
+// Reconciles a task's watcher list to exactly `newIds`, logging the diff.
+async function saveWatchers(taskId: string, companyId: string, newIds: string[], actorEmail: string): Promise<void> {
+  const { data: existing } = await db.from('task_watchers').select('profile_id').eq('task_id', taskId);
+  const oldIds = (existing || []).map((w: any) => w.profile_id);
+  const added = newIds.filter(id => !oldIds.includes(id));
+  const removed = oldIds.filter((id: string) => !newIds.includes(id));
+  if (!added.length && !removed.length) return;
+
+  if (removed.length) await db.from('task_watchers').delete().eq('task_id', taskId).in('profile_id', removed);
+  const actorId = await getProfileId(actorEmail);
+  if (added.length) {
+    await db.from('task_watchers').insert(added.map(profile_id => ({ task_id: taskId, company_id: companyId, profile_id, created_by: actorId })));
+  }
+  const [addedNames, removedNames] = await Promise.all([
+    Promise.all(added.map(id => nameForProfileId(id))),
+    Promise.all(removed.map(id => nameForProfileId(id))),
+  ]);
+  const detail = [
+    addedNames.length ? `+watcher ${addedNames.join(', ')}` : null,
+    removedNames.length ? `-watcher ${removedNames.join(', ')}` : null,
+  ].filter(Boolean).join(', ');
+  if (detail) logTaskActivity({ taskId, companyId, actorId, action: 'updated', detail });
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/gmail-addon/, '');
@@ -977,7 +1018,7 @@ Deno.serve(async (req) => {
 
       const { data: tasks, error: tasksErr } = await db
         .from('tasks')
-        .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
+        .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
         .eq('project_id', projectId)
         .is('deleted_at', null)
         .order('date_entered', { ascending: true });
@@ -1000,6 +1041,8 @@ Deno.serve(async (req) => {
           .in('task_id', tasks.map((t: any) => t.id));
         for (const f of followUps || []) followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
       }
+
+      const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
 
       return json({
         tasks: (tasks || []).map((t: any) => ({
@@ -1025,6 +1068,8 @@ Deno.serve(async (req) => {
           sourceMessageId: t.source_message_id,
           sourceEmailSubject: t.source_email_subject,
           sourceEmailBody: t.source_email_body,
+          calendarTarget: t.calendar_target,
+          watchers: watchersByTask[t.id] || [],
         })),
         statuses: statuses || [],
       }, 200, headers);
@@ -1041,7 +1086,7 @@ Deno.serve(async (req) => {
         isMonetary, estimatedCost,
         reminderSetting, reminderSettings,
         responsibleTeam, assignedTo,
-        notes, messageId, emailSubject, emailBody,
+        notes, messageId, emailSubject, emailBody, watcherIds, calendarTarget,
       } = body;
 
       // ── Validation ──────────────────────────────────────────────
@@ -1077,6 +1122,7 @@ Deno.serve(async (req) => {
         source_message_id: messageId || null,
         source_email_subject: emailSubject || null,
         source_email_body: emailBody || null,
+        calendar_target: calendarTarget === 'main_calendar' ? 'main_calendar' : 'tasks_calendar',
         created_by: profile?.id,
         date_entered: new Date().toISOString().split('T')[0],
         is_completed: false,
@@ -1086,6 +1132,9 @@ Deno.serve(async (req) => {
       // Trigger calendar sync (non-blocking)
       if (task?.id && task?.due_date) triggerCalendarSync(task.id, 'upsert');
       logTaskActivity({ taskId: task.id, companyId, actorId: profile?.id || null, action: 'created' });
+      if (Array.isArray(watcherIds) && watcherIds.length) {
+        await db.from('task_watchers').insert(watcherIds.map((profile_id: string) => ({ task_id: task.id, company_id: companyId, profile_id, created_by: profile?.id || null })));
+      }
       return json({ ok: true, task }, 200, headers);
     }
 
@@ -1221,7 +1270,7 @@ Deno.serve(async (req) => {
     // ── POST /update-task ──────────────────────────────────────────
     if (req.method === 'POST' && path === '/update-task') {
       const body = await req.json();
-      const { taskId, name, dueDate, dueTime, statusId, assigneeId, assignedTeamId, isMonetary, estimatedCost, awaitingFollowUp, followUpDate, notes } = body;
+      const { taskId, name, dueDate, dueTime, statusId, assigneeId, assignedTeamId, isMonetary, estimatedCost, awaitingFollowUp, followUpDate, notes, watcherIds, calendarTarget } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
       if (!name?.trim()) return json({ error: 'Task name required' }, 400, headers);
 
@@ -1239,6 +1288,7 @@ Deno.serve(async (req) => {
         is_monetary: isMonetary || false,
         estimated_cost: estimatedCost || null,
       };
+      if (calendarTarget !== undefined) update.calendar_target = calendarTarget === 'main_calendar' ? 'main_calendar' : 'tasks_calendar';
       if (awaitingFollowUp !== undefined) {
         update.awaiting_follow_up = !!awaitingFollowUp;
         update.follow_up_date = awaitingFollowUp ? (followUpDate || null) : null;
@@ -1276,6 +1326,9 @@ Deno.serve(async (req) => {
         if (changes.length) {
           const actorId = await getProfileId(userEmail);
           logTaskActivity({ taskId, companyId: before.company_id, actorId, action: 'updated', detail: changes.join(', ') });
+        }
+        if (Array.isArray(watcherIds)) {
+          await saveWatchers(taskId, before.company_id, watcherIds, userEmail);
         }
       }
       return json({ ok: true }, 200, headers);
@@ -1661,7 +1714,7 @@ Deno.serve(async (req) => {
         .from('tasks')
         .select(`
           id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
-          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body,
+          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target,
           project_id,
           projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
           profiles:assignee_id(full_name, email),
@@ -1688,6 +1741,8 @@ Deno.serve(async (req) => {
           .in('task_id', tasks.map((t: any) => t.id));
         for (const f of followUps || []) followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
       }
+
+      const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
 
       return json({
         tasks: (tasks || []).map((t: any) => ({
@@ -1717,6 +1772,8 @@ Deno.serve(async (req) => {
           sourceMessageId: t.source_message_id,
           sourceEmailSubject: t.source_email_subject,
           sourceEmailBody: t.source_email_body,
+          calendarTarget: t.calendar_target,
+          watchers: watchersByTask[t.id] || [],
         })),
         limit,
         offset,

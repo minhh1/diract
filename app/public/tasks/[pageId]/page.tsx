@@ -29,6 +29,8 @@ interface Task {
   notes: string | null; sourceMessageId: string | null;
   sourceEmailSubject: string | null; sourceEmailBody: string | null;
   followUps: FollowUpEntry[];
+  isWatcher: boolean;
+  watcherIds: string[];
 }
 interface Tab { userId: string; userName: string; tasks: Task[]; }
 interface FormOptions {
@@ -132,8 +134,13 @@ export default function PublicTaskPage() {
 
   const deleteTask = async (task: Task) => {
     if (!window.confirm(`Delete "${task.name}"?`)) return;
-    await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, { method: "DELETE" });
-    refresh();
+    // Optimistic — remove it locally right away, then confirm with the server.
+    setData(prev => prev ? {
+      ...prev,
+      tabs: prev.tabs.map(tab => ({ ...tab, tasks: tab.tasks.filter(t => t.id !== task.id) })),
+    } : prev);
+    const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, { method: "DELETE" });
+    if (!res.ok) refresh(); // revert to server truth on failure
   };
 
   // Optimistic — update local state immediately so the tick feels instant,
@@ -258,7 +265,7 @@ export default function PublicTaskPage() {
   const renderRow = (t: Task) => {
     const dl = getDaysLeft(t.dueDate, t.isCompleted);
     return (
-      <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 group">
+      <tr key={t.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 group ${t.isWatcher ? "border-l-2 border-l-violet-300" : ""}`}>
         <td className="px-4 py-4">
           <div className="flex items-center gap-2">
             <button onClick={() => toggleComplete(t)}
@@ -274,7 +281,10 @@ export default function PublicTaskPage() {
         </td>
         <td className={`px-4 py-4 font-medium cursor-pointer leading-snug ${t.isCompleted ? "line-through text-slate-400" : "text-slate-800"}`}
           onClick={() => setEditingTask(t)}>
-          <div>{t.name}</div>
+          <div className="flex items-center gap-2">
+            <span>{t.name}</span>
+            {t.isWatcher && <span className="text-[9px] font-bold text-violet-500 uppercase tracking-wide">Watching</span>}
+          </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             {dl && <span className={`text-[10px] font-bold ${dl.colorClass}`}>{dl.text}</span>}
             {t.followUps.length > 0 && (
@@ -475,6 +485,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
   const [dueTime, setDueTime] = useState(task?.dueTime ? task.dueTime.slice(0, 5) : "09:00");
   const [teamId, setTeamId] = useState(task?.teamId || "");
   const [assigneeId, setAssigneeId] = useState(defaultAssigneeId || "");
+  const [watcherIds, setWatcherIds] = useState<string[]>(task?.watcherIds || []);
   const [notes, setNotes] = useState(task?.notes || "");
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -487,7 +498,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
     setError(null);
     const body: any = {
       name, dueDate: dueDate || null, dueTime: dueTime || null, teamId: teamId || null,
-      notes: notes.trim() || null,
+      notes: notes.trim() || null, watcherIds,
     };
     if (!isEdit) { body.projectId = project!.id; body.assigneeId = assigneeId || null; }
     const res = await fetch(`/api/public-tasks/${pageId}${isEdit ? `/tasks/${task!.id}` : ""}`, {
@@ -584,6 +595,23 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
                 <option value="">— No team —</option>
                 {formOptions.teams.map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
               </select>
+            </div>
+          )}
+          {formOptions.assignees.length > 0 && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Watchers <span className="text-slate-300 font-normal normal-case">— also notified, shown on their task list</span></p>
+              <div className="flex flex-wrap gap-1.5">
+                {formOptions.assignees.map(a => {
+                  const active = watcherIds.includes(a.id);
+                  return (
+                    <button key={a.id} type="button"
+                      onClick={() => setWatcherIds(prev => active ? prev.filter(id => id !== a.id) : [...prev, a.id])}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all ${active ? "bg-violet-100 border-violet-300 text-violet-700" : "bg-white border-slate-200 text-slate-500 hover:border-violet-300"}`}>
+                      {a.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
           {isEdit && task && (

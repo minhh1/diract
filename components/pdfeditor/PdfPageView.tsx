@@ -9,9 +9,96 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PDFPageProxy } from "pdfjs-dist";
-import type { DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, ToolId } from "@/lib/pdfeditor/types";
-import { matchStandardFont, isBoldFont, isItalicFont, withBoldItalic } from "@/lib/pdfeditor/fontMatch";
-import type { StandardFontKey } from "@/lib/pdfeditor/types";
+import type { DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, TextRun, ToolId } from "@/lib/pdfeditor/types";
+import { matchStandardFont, standardFontCss } from "@/lib/pdfeditor/fontMatch";
+
+// Shared offscreen canvas for text-width measurement — used to auto-grow the
+// inline-edit input as the user types and to size the matching post-commit
+// overlay, so the two line up with no visual jump between them.
+let measureCanvas: HTMLCanvasElement | null = null;
+// Single-glyph checkbox characters commonly used in generated business PDFs
+// (ballot box, white square variants, shadowed/dingbat squares), plus plain
+// bracket-style boxes some documents use instead of a real glyph. The
+// "already checked" variants are recognized separately so a first click
+// unchecks them (draws an empty box) rather than adding a redundant mark.
+const CHECKBOX_EMPTY_GLYPH = /^[☐□▢▫❐❑❒⬜]$/u;
+const CHECKBOX_CHECKED_GLYPH = /^[☑☒⬛]$/u;
+function isCheckboxGlyph(str: string): boolean {
+  const t = str.trim();
+  if (t.length === 1 && (CHECKBOX_EMPTY_GLYPH.test(t) || CHECKBOX_CHECKED_GLYPH.test(t))) return true;
+  return /^\[\s*\]$/.test(t) || /^\(\s*\)$/.test(t) || /^\[[xX]\]$/.test(t);
+}
+function isCheckedGlyph(str: string): boolean {
+  const t = str.trim();
+  return CHECKBOX_CHECKED_GLYPH.test(t) || /^\[[xX]\]$/.test(t);
+}
+
+function measureTextWidth(text: string, fontSizePx: number, fontFamily: string): number {
+  if (!measureCanvas) measureCanvas = document.createElement("canvas");
+  const ctx = measureCanvas.getContext("2d")!;
+  ctx.font = `${fontSizePx}px ${fontFamily}`;
+  return ctx.measureText(text || " ").width;
+}
+
+// Reads the current browser text selection as a [start, end) character range
+// relative to `container`'s concatenated text content — the standard technique
+// for mapping window.getSelection() (which is per-text-node) onto a flat
+// string offset, used to know which part of a text box's runs to reformat.
+function getSelectionOffsetsWithin(container: HTMLElement): { start: number; end: number } | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  if (!container.contains(range.commonAncestorContainer)) return null;
+
+  const preRange = document.createRange();
+  preRange.selectNodeContents(container);
+  preRange.setEnd(range.startContainer, range.startOffset);
+  const start = preRange.toString().length;
+  const end = start + range.toString().length;
+  return end > start ? { start, end } : null;
+}
+
+function runsSliceAllTrue(runs: TextRun[], start: number, end: number, key: "bold" | "italic" | "underline"): boolean {
+  let pos = 0;
+  for (const r of runs) {
+    const runStart = pos, runEnd = pos + r.text.length;
+    pos = runEnd;
+    if (runEnd <= start || runStart >= end) continue;
+    if (!r[key]) return false;
+  }
+  return true;
+}
+
+// Splits runs at [start, end) and applies `patch` only to the covered slice,
+// then merges back-to-back runs left with identical formatting.
+function splitAndPatchRuns(runs: TextRun[], start: number, end: number, patch: Partial<TextRun>): TextRun[] {
+  const out: TextRun[] = [];
+  let pos = 0;
+  for (const run of runs) {
+    const runStart = pos, runEnd = pos + run.text.length;
+    pos = runEnd;
+    if (runEnd <= start || runStart >= end || !run.text) { out.push(run); continue; }
+
+    const cuts = [runStart, Math.max(runStart, start), Math.min(runEnd, end), runEnd].filter((v, i, arr) => arr.indexOf(v) === i).sort((a, b) => a - b);
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const from = cuts[i], to = cuts[i + 1];
+      const segText = run.text.slice(from - runStart, to - runStart);
+      if (!segText) continue;
+      const inSelection = from >= start && to <= end;
+      out.push(inSelection ? { ...run, ...patch, text: segText } : { ...run, text: segText });
+    }
+  }
+  const merged: TextRun[] = [];
+  for (const r of out) {
+    const last = merged[merged.length - 1];
+    if (last && last.bold === r.bold && last.italic === r.italic && last.underline === r.underline) {
+      last.text += r.text;
+    } else {
+      merged.push({ ...r });
+    }
+  }
+  return merged;
+}
 
 // pdfjs-dist doesn't re-export TextContent/TextItem from its top-level types
 // module — shapes mirrored here from display/api.d.ts (str/transform/width/
@@ -46,7 +133,8 @@ function opBoundingBox(viewport: any, o: HighlightOp | TextBoxOp | ImageOp | Dra
   if (o.type === "highlight" || o.type === "image") return pdfRectToScreen(viewport, o.x, o.y, o.width, o.height);
   if (o.type === "textbox") {
     const [sx, sy] = viewport.convertToViewportPoint(o.x, o.y);
-    const approxWidth = o.text.length * o.fontSize * scale * 0.55;
+    const totalChars = o.runs.reduce((n, r) => n + r.text.length, 0);
+    const approxWidth = totalChars * o.fontSize * scale * 0.55;
     return { left: sx, top: sy - o.fontSize * scale, width: approxWidth, height: o.fontSize * scale * 1.2 };
   }
   const screenPts = o.points.map((p) => viewport.convertToViewportPoint(p.x, p.y));
@@ -76,12 +164,23 @@ export default function PdfPageView({
 
   // ── Annotation selection / drag / delete (select tool only) ─────────────
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
+  // Text boxes default to drag-to-move (like every other annotation); double-click
+  // one to switch to a text-select mode instead, where dragging over its words
+  // selects a substring to bold/italicize/underline via TextBoxToolbar. The two
+  // gestures both start with pointerdown-and-drag so they can't be active at once.
+  const [textSelectId, setTextSelectId] = useState<string | null>(null);
   const dragStateRef = useRef<{ id: string; startClientX: number; startClientY: number; startX: number; startY: number; moved: boolean } | null>(null);
   const [dragOffset, setDragOffset] = useState<{ id: string; dx: number; dy: number } | null>(null);
 
   useEffect(() => {
-    if (activeTool !== "select") setSelectedOpId(null);
+    if (activeTool !== "select") { setSelectedOpId(null); setTextSelectId(null); }
   }, [activeTool]);
+
+  // If a different annotation (or nothing) becomes selected, exit text-select
+  // mode for whichever box was previously in it.
+  useEffect(() => {
+    setTextSelectId((prev) => (prev && prev !== selectedOpId ? null : prev));
+  }, [selectedOpId]);
 
   useEffect(() => {
     if (!selectedOpId) return;
@@ -98,7 +197,7 @@ export default function PdfPageView({
   }, [selectedOpId, onDeleteOp]);
 
   const beginDrag = (id: string, startX: number, startY: number, e: React.PointerEvent) => {
-    if (activeTool !== "select") return;
+    if (activeTool !== "select" || textSelectId === id) return; // in text-select mode, let native selection happen instead
     e.stopPropagation();
     setSelectedOpId(id);
     dragStateRef.current = { id, startClientX: e.clientX, startClientY: e.clientY, startX, startY, moved: false };
@@ -153,25 +252,50 @@ export default function PdfPageView({
 
   function TextBoxToolbar({ o }: { o: TextBoxOp }) {
     if (selectedOpId !== o.id) return null;
-    const bold = isBoldFont(o.font);
-    const italic = isItalicFont(o.font);
     const btnStyle = (active: boolean): React.CSSProperties => ({
       width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer",
       background: active ? "#1e293b" : "#f1f5f9", color: active ? "white" : "#334155",
       fontSize: 12, lineHeight: "22px", padding: 0,
     });
+    // If part of the text is selected, the format toggle only applies to that
+    // slice; otherwise it applies to the whole box (matches common word-processor
+    // behavior: format the selection if there is one, else format everything).
+    const applyFormat = (key: "bold" | "italic" | "underline") => {
+      const container = textBoxRefs.current[o.id];
+      const sel = container ? getSelectionOffsetsWithin(container) : null;
+      if (sel) {
+        const allSet = runsSliceAllTrue(o.runs, sel.start, sel.end, key);
+        onUpdateOp(o.id, { runs: splitAndPatchRuns(o.runs, sel.start, sel.end, { [key]: !allSet }) });
+      } else {
+        const allSet = o.runs.every((r) => r[key]);
+        onUpdateOp(o.id, { runs: o.runs.map((r) => ({ ...r, [key]: !allSet })) });
+      }
+    };
+    const bold = o.runs.every((r) => r.bold);
+    const italic = o.runs.every((r) => r.italic);
+    const underline = o.runs.every((r) => r.underline);
     return (
       <div
         onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
         style={{
-          position: "absolute", left: 0, top: -30, display: "flex", gap: 3,
+          position: "absolute", left: 0, top: -30, display: "flex", gap: 3, alignItems: "center",
           background: "white", padding: 3, borderRadius: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
         }}
       >
-        <button title="Bold" style={{ ...btnStyle(bold), fontWeight: 700 }} onClick={() => onUpdateOp(o.id, { font: withBoldItalic(o.font, !bold, italic) })}>B</button>
-        <button title="Italic" style={{ ...btnStyle(italic), fontStyle: "italic" }} onClick={() => onUpdateOp(o.id, { font: withBoldItalic(o.font, bold, !italic) })}>I</button>
-        <button title="Underline" style={{ ...btnStyle(o.underline), textDecoration: "underline" }} onClick={() => onUpdateOp(o.id, { underline: !o.underline })}>U</button>
+        <button title="Bold" style={{ ...btnStyle(bold), fontWeight: 700 }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("bold")}>B</button>
+        <button title="Italic" style={{ ...btnStyle(italic), fontStyle: "italic" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("italic")}>I</button>
+        <button title="Underline" style={{ ...btnStyle(underline), textDecoration: "underline" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("underline")}>U</button>
+        <input
+          type="number" min={6} max={96} title="Font size"
+          value={Math.round(resizePreview?.id === o.id ? resizePreview.fontSize : o.fontSize)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (!isNaN(v)) onUpdateOp(o.id, { fontSize: Math.min(96, Math.max(6, v)) });
+          }}
+          style={{ width: 36, height: 22, borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11, textAlign: "center", padding: 0, marginLeft: 2 }}
+        />
       </div>
     );
   }
@@ -214,9 +338,13 @@ export default function PdfPageView({
   const activeToolRef = useRef(activeTool);
   const opsRef = useRef(ops);
   const onAddOpRef = useRef(onAddOp);
+  const onDeleteOpRef = useRef(onDeleteOp);
+  const onUpdateOpRef = useRef(onUpdateOp);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
   useEffect(() => { opsRef.current = ops; }, [ops]);
   useEffect(() => { onAddOpRef.current = onAddOp; }, [onAddOp]);
+  useEffect(() => { onDeleteOpRef.current = onDeleteOp; }, [onDeleteOp]);
+  useEffect(() => { onUpdateOpRef.current = onUpdateOp; }, [onUpdateOp]);
 
   const viewport = useMemo(() => pdfPage.getViewport({ scale }), [pdfPage, scale]);
   const pageOps = useMemo(() => ops.filter((o) => o.page === pageIndex), [ops, pageIndex]);
@@ -261,10 +389,12 @@ export default function PdfPageView({
           const item = textItems[i];
           if (!item) return;
           span.dataset.originalText = item.str;
-          span.style.cursor = "text";
+          const checkbox = isCheckboxGlyph(item.str);
+          span.style.cursor = checkbox ? "pointer" : "text";
           span.addEventListener("click", () => {
             if (activeToolRef.current !== "select") return;
-            openRunEditor(i);
+            if (checkbox) toggleCheckbox(i);
+            else openRunEditor(i);
           });
           span.addEventListener("mouseenter", () => {
             if (activeToolRef.current !== "select" || editingRunRef.current?.index === i) return;
@@ -295,57 +425,28 @@ export default function PdfPageView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfPage, viewport]);
 
-  // ── Keep span visuals in sync with committed text-edit ops (incl. undo) ──
-  // Only re-runs when *which* run is being edited changes (not on every
-  // keystroke) since it keys off editingRun?.index rather than editingRun itself.
+  // ── Keep pdf.js's own spans in sync: hide any run that's edited or being
+  // edited, since edited runs are rendered by our own overlay/input below
+  // instead. Reusing the pdf.js span for edited text doesn't work well: its
+  // CSS scale/position is calibrated for the *original* text's measured
+  // width, so swapping in different text visually snaps to that old geometry.
   useEffect(() => {
     if (!ready) return;
-    const textEdits = new Map<number, PdfEditOp & { type: "text-edit" }>();
-    for (const op of pageOps) if (op.type === "text-edit") textEdits.set(op.itemIndex, op);
+    const editedIndices = new Set<number>();
+    for (const op of pageOps) if (op.type === "text-edit" || op.type === "checkbox") editedIndices.add(op.itemIndex);
 
     textDivsRef.current.forEach((span, i) => {
-      if (editingRun?.index === i) {
-        span.style.opacity = "0"; // hidden — the floating <input> stands in for it
+      if (editingRun?.index === i || editedIndices.has(i)) {
+        span.style.opacity = "0";
         return;
       }
       span.style.opacity = "";
-      const op = textEdits.get(i);
-      if (op) {
-        span.textContent = op.text;
-        span.style.color = "#0f172a";
-        span.style.backgroundColor = "#ffffff";
-      } else {
-        span.textContent = span.dataset.originalText || "";
-        span.style.color = "";
-        span.style.backgroundColor = "";
-      }
+      span.textContent = span.dataset.originalText || "";
+      span.style.color = "";
+      span.style.backgroundColor = "";
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, pageOps, editingRun?.index]);
-
-  // Force-commit an in-progress edit if the user switches tools mid-edit.
-  useEffect(() => {
-    if (activeTool !== "select" && editingRunRef.current) commitRunEdit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool]);
-
-  function openRunEditor(i: number) {
-    const item = textItemsRef.current[i];
-    const span = textDivsRef.current[i];
-    if (!item || !span) return;
-    if (editingRunRef.current && editingRunRef.current.index !== i) commitRunEdit();
-
-    const existingEdit = opsRef.current.find((o) => o.type === "text-edit" && o.page === pageIndex && o.itemIndex === i);
-    const currentText = existingEdit && existingEdit.type === "text-edit" ? existingEdit.text : (span.dataset.originalText || item.str);
-
-    const [sx, sy] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
-    const fontSizePdf = Math.abs(item.transform[3]) || Math.abs(item.transform[0]) || 12;
-    const fontSizePx = fontSizePdf * scale;
-    const fontFamily = contentRef.current?.styles?.[item.fontName]?.fontFamily || "sans-serif";
-    const minWidth = Math.max(item.width * scale, 40);
-
-    setEditingRun({ index: i, value: currentText, left: sx, top: sy - fontSizePx, fontSizePx, fontFamily, minWidth });
-  }
 
   function commitRunEdit() {
     const er = editingRunRef.current;
@@ -356,7 +457,15 @@ export default function PdfPageView({
     if (!item) return;
 
     const original = span?.dataset.originalText || item.str;
-    if (er.value === original) return; // unchanged (or reverted) — nothing to add; a prior op, if any, is left for Undo to remove
+    if (er.value === original) {
+      // Reverted back to the original text (e.g. typed a letter, then deleted
+      // it) — actively remove any existing edit for this run instead of
+      // leaving it in place; otherwise the revert is silently ignored and the
+      // stale prior edit keeps getting saved.
+      const existing = opsRef.current.find((o) => o.type === "text-edit" && o.page === pageIndex && o.itemIndex === er.index);
+      if (existing) onDeleteOpRef.current(existing.id);
+      return;
+    }
 
     const fontSize = Math.abs(item.transform[3]) || Math.abs(item.transform[0]) || 12;
     const fontFamily = contentRef.current?.styles?.[item.fontName]?.fontFamily;
@@ -370,10 +479,66 @@ export default function PdfPageView({
       width: item.width,
       height: item.height,
       fontSize,
-      font: matchStandardFont(fontFamily),
+      font: matchStandardFont(fontFamily, item.transform),
       text: er.value,
       color: [0, 0, 0],
     });
+  }
+
+  // Force-commit an in-progress edit if the user switches tools mid-edit.
+  useEffect(() => {
+    if (activeTool !== "select" && editingRunRef.current) commitRunEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
+
+  // Checkbox glyphs toggle directly (no floating input). The first click on a
+  // fresh glyph flips from whatever the ORIGINAL glyph showed (empty → checked,
+  // already-checked → unchecked); every click after that just flips the
+  // existing CheckboxOp. Drawn as a hollow square + optional "X" rather than a
+  // substituted text glyph — see CheckboxOp's doc comment for why.
+  function toggleCheckbox(i: number) {
+    const item = textItemsRef.current[i];
+    const span = textDivsRef.current[i];
+    if (!item || !span) return;
+
+    const existing = opsRef.current.find((o) => o.type === "checkbox" && o.page === pageIndex && o.itemIndex === i);
+    if (existing) {
+      onUpdateOpRef.current(existing.id, { checked: !(existing as PdfEditOp & { type: "checkbox" }).checked });
+      return;
+    }
+    const wasChecked = isCheckedGlyph(span.dataset.originalText || item.str);
+    onAddOpRef.current({
+      id: crypto.randomUUID(),
+      type: "checkbox",
+      page: pageIndex,
+      itemIndex: i,
+      x: item.transform[4],
+      y: item.transform[5],
+      width: item.width,
+      height: item.height,
+      checked: !wasChecked,
+    });
+  }
+
+  function openRunEditor(i: number) {
+    const item = textItemsRef.current[i];
+    const span = textDivsRef.current[i];
+    if (!item || !span) return;
+    if (editingRunRef.current && editingRunRef.current.index !== i) commitRunEdit();
+
+    const existingEdit = opsRef.current.find((o) => o.type === "text-edit" && o.page === pageIndex && o.itemIndex === i);
+    const currentText = existingEdit && existingEdit.type === "text-edit" ? existingEdit.text : (span.dataset.originalText || item.str);
+
+    const [sx, sy] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+    const fontSizePdf = Math.abs(item.transform[3]) || Math.abs(item.transform[0]) || 12;
+    const fontSizePx = fontSizePdf * scale;
+    // Use the same Standard-14 CSS approximation the committed overlay renders with
+    // (rather than the raw pdf.js font-family string) so nothing visually jumps on commit.
+    const rawFamily = contentRef.current?.styles?.[item.fontName]?.fontFamily;
+    const fontFamily = standardFontCss(matchStandardFont(rawFamily, item.transform)).fontFamily;
+    const minWidth = Math.max(item.width * scale, 40);
+
+    setEditingRun({ index: i, value: currentText, left: sx, top: sy - fontSizePx, fontSizePx, fontFamily, minWidth });
   }
 
   // ── Interaction layer: highlight drag / freehand draw / textbox & signature placement ──
@@ -382,8 +547,10 @@ export default function PdfPageView({
   const [livePreview, setLivePreview] = useState<{ kind: "rect" | "path"; rect?: any; points?: { x: number; y: number }[] } | null>(null);
   const [textBoxDraft, setTextBoxDraft] = useState<{ screenX: number; screenY: number; pdfX: number; pdfY: number } | null>(null);
   const [textBoxValue, setTextBoxValue] = useState("");
-  const [draftFont, setDraftFont] = useState<StandardFontKey>("Helvetica");
+  const [draftBold, setDraftBold] = useState(false);
+  const [draftItalic, setDraftItalic] = useState(false);
   const [draftUnderline, setDraftUnderline] = useState(false);
+  const textBoxRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const overlayPos = (e: React.PointerEvent) => {
     const rect = overlayRef.current!.getBoundingClientRect();
@@ -461,13 +628,15 @@ export default function PdfPageView({
       const op: TextBoxOp = {
         id: crypto.randomUUID(), type: "textbox", page: pageIndex,
         x: textBoxDraft.pdfX, y: textBoxDraft.pdfY - fontSize, fontSize,
-        font: draftFont, underline: draftUnderline, text: textBoxValue, color: [0, 0, 0],
+        runs: [{ text: textBoxValue, bold: draftBold, italic: draftItalic, underline: draftUnderline }],
+        color: [0, 0, 0],
       };
       onAddOp(op);
     }
     setTextBoxDraft(null);
     setTextBoxValue("");
-    setDraftFont("Helvetica");
+    setDraftBold(false);
+    setDraftItalic(false);
     setDraftUnderline(false);
     onPlacementComplete();
   };
@@ -476,7 +645,7 @@ export default function PdfPageView({
     <div
       className="relative bg-white shadow-md"
       style={{ width: viewport.width, height: viewport.height }}
-      onClick={() => { if (activeTool === "select") setSelectedOpId(null); }}
+      onClick={() => { if (activeTool === "select") { setSelectedOpId(null); setTextSelectId(null); } }}
     >
       <canvas ref={canvasRef} className="absolute inset-0" />
 
@@ -505,33 +674,102 @@ export default function PdfPageView({
 
       <div ref={textLayerRef} className="textLayer" style={{ zIndex: 2, pointerEvents: activeTool === "select" ? "auto" : "none", ["--total-scale-factor" as any]: scale, ["--scale-factor" as any]: scale }} />
 
+      {/* Committed inline text-run edits — rendered independently of pdf.js's own
+          span (whose geometry is calibrated for the original text) so the visual
+          position matches the live editing input exactly, with no jump on commit. */}
+      <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 2 }}>
+        {pageOps.filter((o): o is PdfEditOp & { type: "text-edit" } => o.type === "text-edit").map((o) => {
+          if (editingRun?.index === o.itemIndex) return null; // the floating input covers this one
+          const [sx, sy] = viewport.convertToViewportPoint(o.x, o.y);
+          const fontSizePx = o.fontSize * scale;
+          const css = standardFontCss(o.font);
+          // Cover at least the original glyph's width — otherwise a shorter
+          // replacement leaves the old glyph's edges peeking out from behind it.
+          const width = Math.max(o.width * scale, measureTextWidth(o.text, fontSizePx, css.fontFamily)) + 4;
+          return (
+            <div key={o.id} style={{
+              position: "absolute", left: sx - 1, top: sy - fontSizePx, width, height: fontSizePx * 1.2,
+              fontSize: fontSizePx, lineHeight: 1.2, whiteSpace: "pre", background: "white",
+              color: rgbCss(o.color), fontFamily: css.fontFamily, fontWeight: css.fontWeight, fontStyle: css.fontStyle,
+            }}>
+              {o.text}
+            </div>
+          );
+        })}
+
+        {/* Committed checkbox toggles — a drawn box (not a substituted glyph, since
+            Unicode box characters aren't in the Standard-14/WinAnsi encoding) with
+            the "X" precisely centered, matching applyEdits.ts's save-time geometry. */}
+        {pageOps.filter((o): o is PdfEditOp & { type: "checkbox" } => o.type === "checkbox").map((o) => {
+          // Same box geometry as applyEdits.ts's checkbox branch, so the live
+          // preview lines up exactly with what gets saved.
+          const boxSizePdf = Math.min(o.width, o.height * 1.1);
+          const boxXPdf = o.x + (o.width - boxSizePdf) / 2;
+          const boxYPdf = o.y - o.height * 0.2;
+          const r = pdfRectToScreen(viewport, boxXPdf, boxYPdf, boxSizePdf, boxSizePdf);
+          return (
+            <div key={o.id} style={{
+              position: "absolute", left: r.left - 1, top: r.top - 1, width: r.width + 2, height: r.height + 2, background: "white",
+            }}>
+              <div style={{
+                position: "absolute", left: 1, top: 1, width: r.width, height: r.height,
+                border: `${Math.max(1, r.width * 0.06)}px solid #0f172a`, boxSizing: "border-box",
+              }}>
+                {o.checked && (() => {
+                  // Two diagonal lines, not an "X" glyph — precisely sizable via
+                  // the inset below (a glyph's side-bearing makes that unreliable).
+                  const inset = r.width * 0.28;
+                  const thickness = Math.max(1, r.width * 0.08);
+                  return (
+                    <svg width={r.width} height={r.height} style={{ position: "absolute", inset: 0 }}>
+                      <line x1={inset} y1={inset} x2={r.width - inset} y2={r.height - inset} stroke="#0f172a" strokeWidth={thickness} strokeLinecap="round" />
+                      <line x1={inset} y1={r.height - inset} x2={r.width - inset} y2={inset} stroke="#0f172a" strokeWidth={thickness} strokeLinecap="round" />
+                    </svg>
+                  );
+                })()}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Text boxes, freehand drawing, and placed signatures render above the text */}
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 3 }}>
         {pageOps.filter((o): o is TextBoxOp => o.type === "textbox").map((o) => {
           const [sx, sy] = viewport.convertToViewportPoint(o.x, o.y);
           const offset = dragOffset?.id === o.id ? dragOffset : null;
           const selected = selectedOpId === o.id;
+          const textSelecting = textSelectId === o.id;
           const fontSizePx = (resizePreview?.id === o.id ? resizePreview.fontSize : o.fontSize) * scale;
           return (
             <div
               key={o.id}
+              ref={(el) => { textBoxRefs.current[o.id] = el; }}
               onPointerDown={(e) => beginDrag(o.id, o.x, o.y, e)}
               onPointerMove={onDragMove}
               onPointerUp={onDragEnd}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); if (activeTool === "select") setSelectedOpId(o.id); }}
+              onDoubleClick={(e) => { e.stopPropagation(); if (activeTool === "select") { setSelectedOpId(o.id); setTextSelectId(o.id); } }}
+              title={activeTool === "select" && !textSelecting ? "Drag to move — double-click to select text for formatting" : undefined}
               style={{
                 position: "absolute", left: sx, top: sy - fontSizePx,
                 fontSize: fontSizePx, color: rgbCss(o.color), fontFamily: "Helvetica, Arial, sans-serif", whiteSpace: "pre",
-                fontWeight: isBoldFont(o.font) ? 700 : 400,
-                fontStyle: isItalicFont(o.font) ? "italic" : "normal",
-                textDecoration: o.underline ? "underline" : "none",
                 pointerEvents: activeTool === "select" ? "auto" : "none",
-                cursor: activeTool === "select" ? "grab" : undefined,
+                // Default gesture is drag-to-move (like every other annotation). Double-click
+                // switches to text-select mode instead, where dragging over the words selects
+                // a substring to format — the two can't be active at once (beginDrag no-ops
+                // while textSelecting, see above), so there's no gesture conflict.
+                userSelect: textSelecting ? "text" : "none",
+                cursor: activeTool === "select" ? (textSelecting ? "text" : "grab") : undefined,
                 transform: offset ? `translate(${offset.dx}px, ${offset.dy}px)` : undefined,
                 outline: selected ? "1.5px dashed #3b82f6" : undefined, outlineOffset: 3,
               }}
             >
-              {o.text}
+              {o.runs.map((r, i) => (
+                <span key={i} style={{ fontWeight: r.bold ? 700 : 400, fontStyle: r.italic ? "italic" : "normal", textDecoration: r.underline ? "underline" : "none" }}>
+                  {r.text}
+                </span>
+              ))}
               <DeleteBadge id={o.id} />
               <TextBoxToolbar o={o} />
               {selected && (
@@ -622,7 +860,10 @@ export default function PdfPageView({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: "absolute", left: editingRun.left, top: editingRun.top, minWidth: editingRun.minWidth,
+            // Grows with what's typed (canvas-measured) rather than staying a fixed
+            // width — otherwise typed text scrolls out of view inside a cramped box.
+            position: "absolute", left: editingRun.left, top: editingRun.top,
+            width: Math.max(editingRun.minWidth, measureTextWidth(editingRun.value, editingRun.fontSizePx, editingRun.fontFamily) + 10),
             fontSize: editingRun.fontSizePx, fontFamily: editingRun.fontFamily, color: "#0f172a",
             border: "1.5px solid #3b82f6", background: "white", padding: "0 2px", outline: "none", zIndex: 6,
           }}
@@ -651,12 +892,12 @@ export default function PdfPageView({
                 display: "flex", gap: 3, background: "white", padding: 3, borderRadius: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
               }}
             >
-              <button title="Bold" onClick={() => setDraftFont(withBoldItalic(draftFont, !isBoldFont(draftFont), isItalicFont(draftFont)))}
+              <button title="Bold" onClick={() => setDraftBold((b) => !b)}
                 style={{ width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer", fontWeight: 700,
-                  background: isBoldFont(draftFont) ? "#1e293b" : "#f1f5f9", color: isBoldFont(draftFont) ? "white" : "#334155" }}>B</button>
-              <button title="Italic" onClick={() => setDraftFont(withBoldItalic(draftFont, isBoldFont(draftFont), !isItalicFont(draftFont)))}
+                  background: draftBold ? "#1e293b" : "#f1f5f9", color: draftBold ? "white" : "#334155" }}>B</button>
+              <button title="Italic" onClick={() => setDraftItalic((i) => !i)}
                 style={{ width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer", fontStyle: "italic",
-                  background: isItalicFont(draftFont) ? "#1e293b" : "#f1f5f9", color: isItalicFont(draftFont) ? "white" : "#334155" }}>I</button>
+                  background: draftItalic ? "#1e293b" : "#f1f5f9", color: draftItalic ? "white" : "#334155" }}>I</button>
               <button title="Underline" onClick={() => setDraftUnderline((u) => !u)}
                 style={{ width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer", textDecoration: "underline",
                   background: draftUnderline ? "#1e293b" : "#f1f5f9", color: draftUnderline ? "white" : "#334155" }}>U</button>
@@ -670,8 +911,8 @@ export default function PdfPageView({
               style={{
                 position: "absolute", left: textBoxDraft.screenX, top: textBoxDraft.screenY - 14 * scale,
                 fontSize: 12 * scale, border: "1px solid #3b82f6", background: "white", padding: "1px 3px", minWidth: 120,
-                fontWeight: isBoldFont(draftFont) ? 700 : 400,
-                fontStyle: isItalicFont(draftFont) ? "italic" : "normal",
+                fontWeight: draftBold ? 700 : 400,
+                fontStyle: draftItalic ? "italic" : "normal",
                 textDecoration: draftUnderline ? "underline" : "none",
               }}
             />

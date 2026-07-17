@@ -24,9 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   if (auth.error) return auth.error;
   const { page, targetUserIds, isAdmin, scopeName } = auth;
 
-  const { data: rawTasks } = await admin
-    .from("tasks")
-    .select(`
+  const TASK_SELECT = `
       id, name, due_date, due_time, is_completed, completed_at, estimated_cost, date_entered, assignee_id, project_id,
       status_id, assigned_team_id, is_monetary, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id,
       source_email_subject, source_email_body,
@@ -35,7 +33,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       project:project_id(id, name),
       task_statuses:status_id(label, color_hex),
       teams:assigned_team_id(team_name)
-    `)
+    `;
+
+  const { data: rawTasks } = await admin
+    .from("tasks")
+    .select(TASK_SELECT)
     .in("assignee_id", targetUserIds.length ? targetUserIds : ["00000000-0000-0000-0000-000000000000"])
     .eq("company_id", page.company_id)
     .is("deleted_at", null)
@@ -45,7 +47,35 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   // that's restricted to specific teams/members — filter those out for
   // whoever is actually viewing the page (not the task's assignee).
   // Admins can already see everything else in the app, so they're exempt.
-  const tasks = isAdmin ? rawTasks : await filterTasksByProjectAccess(admin, user.id, rawTasks || []);
+  const assignedTasks = isAdmin ? rawTasks : await filterTasksByProjectAccess(admin, user.id, rawTasks || []);
+
+  // ── Watched tasks ─────────────────────────────────────────────────
+  // A task a target user is watching (but isn't the assignee of) should
+  // also show up under their tab — fetch those separately since the query
+  // above is scoped to assignee_id.
+  const { data: watcherRows } = await admin
+    .from("task_watchers")
+    .select("task_id, profile_id")
+    .in("profile_id", targetUserIds.length ? targetUserIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  const watchersByTask: Record<string, string[]> = {};
+  for (const w of watcherRows || []) (watchersByTask[w.task_id] ||= []).push(w.profile_id);
+
+  const assignedTaskIds = new Set((assignedTasks || []).map((t: any) => t.id));
+  const extraWatchedIds = [...new Set(Object.keys(watchersByTask))].filter(id => !assignedTaskIds.has(id));
+
+  let watchedTasks: any[] = [];
+  if (extraWatchedIds.length) {
+    const { data: rawWatched } = await admin
+      .from("tasks")
+      .select(TASK_SELECT)
+      .in("id", extraWatchedIds)
+      .eq("company_id", page.company_id)
+      .is("deleted_at", null);
+    watchedTasks = isAdmin ? (rawWatched || []) : await filterTasksByProjectAccess(admin, user.id, rawWatched || []);
+  }
+
+  const tasks = [...(assignedTasks || []), ...watchedTasks];
 
   // ── Follow-up log, grouped per task ──────────────────────────────
   let followUpsByTask: Record<string, { id: string; followedUpAt: string }[]> = {};
@@ -82,7 +112,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       userId: p.id,
       userName: p.full_name || p.email || "Unknown",
       tasks: (tasks || [])
-        .filter((t: any) => t.assignee_id === p.id)
+        .filter((t: any) => t.assignee_id === p.id || (watchersByTask[t.id] || []).includes(p.id))
         .map((t: any) => ({
           id: t.id, name: t.name, isCompleted: t.is_completed, completedAt: t.completed_at,
           dueDate: t.due_date ? String(t.due_date).slice(0, 10) : null,
@@ -106,6 +136,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
           sourceEmailSubject: t.source_email_subject,
           sourceEmailBody: t.source_email_body,
           followUps: followUpsByTask[t.id] || [],
+          isWatcher: t.assignee_id !== p.id,
+          watcherIds: watchersByTask[t.id] || [],
         })),
     }))
     .sort((a: any, b: any) => a.userName.localeCompare(b.userName));
@@ -169,7 +201,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const { name, projectId, dueDate, dueTime, statusId, teamId, assigneeId, notes } = body;
+  const { name, projectId, dueDate, dueTime, statusId, teamId, assigneeId, notes, watcherIds } = body;
   if (!name?.trim()) return NextResponse.json({ error: "Task name is required" }, { status: 400 });
   if (!projectId) return NextResponse.json({ error: "Project is required" }, { status: 400 });
 
@@ -202,6 +234,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await logTaskActivity(admin, { taskId: task.id, companyId: page.company_id, actorId: user.id, action: "created" });
+
+  if (Array.isArray(watcherIds) && watcherIds.length) {
+    await admin.from("task_watchers").insert(watcherIds.map((profile_id: string) => ({ task_id: task.id, company_id: page.company_id, profile_id, created_by: user.id })));
+  }
 
   return NextResponse.json({ ok: true, task });
 }

@@ -26,7 +26,7 @@ export default function GmailHeader({
   gmailEmail, loading, syncing, lastSynced, activeFilter,
   search, showActivityLog,
   onSearch, onFilter, onRefresh, onSync, onCompose,
-  onLabelSettings, onToggleActivityLog, onDisconnect
+  onLabelSettings, onToggleActivityLog, onDisconnect,
 }: Props) {
   return (
     <header className="bg-white border-b border-slate-100 shrink-0 px-8 pt-8 pb-4">

@@ -3,6 +3,7 @@
 // entirely client-side right before the "Save" upload.
 import { PDFDocument, PDFFont, StandardFonts, rgb } from "pdf-lib";
 import type { PdfEditOp, StandardFontKey } from "./types";
+import { withBoldItalic } from "./fontMatch";
 
 const FONT_MAP: Record<StandardFontKey, StandardFonts> = {
   Helvetica: StandardFonts.Helvetica,
@@ -57,23 +58,64 @@ export async function applyEdits(originalBytes: Uint8Array, ops: PdfEditOp[]): P
         color: rgb(1, 1, 1),
       });
       page.drawText(op.text, { x: op.x, y: op.y, size: op.fontSize, font, color: rgb(...op.color) });
+    } else if (op.type === "checkbox") {
+      // Whiteout the original glyph (same vertical convention as text-edit above),
+      // then draw a hollow square + centered "X" — not a substituted text glyph,
+      // since Unicode box characters (☐/☑/☒) aren't in the Standard-14/WinAnsi
+      // encoding pdf-lib embeds, and this gives exact control over centering.
+      page.drawRectangle({
+        x: op.x - 1,
+        y: op.y - op.height * 0.25,
+        width: op.width + 2,
+        height: op.height * 1.3,
+        color: rgb(1, 1, 1),
+      });
+      const boxSize = Math.min(op.width, op.height * 1.1);
+      const boxX = op.x + (op.width - boxSize) / 2;
+      const boxY = op.y - op.height * 0.2;
+      page.drawRectangle({
+        x: boxX, y: boxY, width: boxSize, height: boxSize,
+        borderColor: rgb(0, 0, 0), borderWidth: Math.max(0.75, boxSize * 0.06),
+      });
+      if (op.checked) {
+        // Drawn as two literal diagonal lines rather than an "X" glyph, so the
+        // mark's size is precisely controllable via the inset below (a glyph's
+        // side-bearing makes that unreliable at any font size).
+        const inset = boxSize * 0.28;
+        const thickness = Math.max(1, boxSize * 0.08);
+        page.drawLine({
+          start: { x: boxX + inset, y: boxY + inset },
+          end: { x: boxX + boxSize - inset, y: boxY + boxSize - inset },
+          thickness, color: rgb(0, 0, 0),
+        });
+        page.drawLine({
+          start: { x: boxX + inset, y: boxY + boxSize - inset },
+          end: { x: boxX + boxSize - inset, y: boxY + inset },
+          thickness, color: rgb(0, 0, 0),
+        });
+      }
     } else if (op.type === "highlight") {
       page.drawRectangle({
         x: op.x, y: op.y, width: op.width, height: op.height,
         color: rgb(...op.color), opacity: op.opacity,
       });
     } else if (op.type === "textbox") {
-      const font = await getFont(op.font);
-      page.drawText(op.text, { x: op.x, y: op.y, size: op.fontSize, font, color: rgb(...op.color) });
-      if (op.underline) {
-        const width = font.widthOfTextAtSize(op.text, op.fontSize);
-        const underlineY = op.y - op.fontSize * 0.12;
-        page.drawLine({
-          start: { x: op.x, y: underlineY },
-          end: { x: op.x + width, y: underlineY },
-          thickness: Math.max(0.5, op.fontSize * 0.05),
-          color: rgb(...op.color),
-        });
+      let x = op.x;
+      for (const run of op.runs) {
+        if (!run.text) continue;
+        const font = await getFont(withBoldItalic("Helvetica", run.bold, run.italic));
+        page.drawText(run.text, { x, y: op.y, size: op.fontSize, font, color: rgb(...op.color) });
+        const width = font.widthOfTextAtSize(run.text, op.fontSize);
+        if (run.underline) {
+          const underlineY = op.y - op.fontSize * 0.12;
+          page.drawLine({
+            start: { x, y: underlineY },
+            end: { x: x + width, y: underlineY },
+            thickness: Math.max(0.5, op.fontSize * 0.05),
+            color: rgb(...op.color),
+          });
+        }
+        x += width;
       }
     } else if (op.type === "draw") {
       for (let i = 1; i < op.points.length; i++) {

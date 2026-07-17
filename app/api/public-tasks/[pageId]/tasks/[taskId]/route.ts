@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { createClient } from "@supabase/supabase-js";
 import { loadPageAndAuthorize } from "@/lib/publicTaskPageAuth";
 import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
+import { saveTaskWatchers } from "@/lib/taskWatchers";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pageId: string; taskId: string }> }) {
   const { pageId, taskId } = await params;
@@ -55,10 +56,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
     update.assignee_id = body.assigneeId || null;
   }
 
-  if (Object.keys(update).length === 0) return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  if (Object.keys(update).length === 0 && body.watcherIds === undefined) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
 
-  const { error } = await admin.from("tasks").update(update).eq("id", taskId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (Object.keys(update).length > 0) {
+    const { error } = await admin.from("tasks").update(update).eq("id", taskId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (Array.isArray(body.watcherIds)) {
+    await saveTaskWatchers(admin, { taskId, companyId: page.company_id, newIds: body.watcherIds, actorId: user.id });
+  }
 
   const bodyKeys = Object.keys(body);
   if (bodyKeys.length === 1 && body.isCompleted !== undefined) {

@@ -41,13 +41,17 @@ interface Template { id: string; name: string; items: TemplateItem[]; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
   const creator = profiles.find((p: any) => p.id === task.created_by);
   const completedSubtasks = subtasks.filter((s: any) => s.is_completed).length;
   const followUps: FollowUpEntry[] = followUpsByTask[task.id] || [];
+  const watchers = ((watchersByTask?.[task.id] || []) as string[])
+    .filter(id => id !== task.assignee_id)
+    .map(id => profiles.find((p: any) => p.id === id))
+    .filter(Boolean);
   return (
     <div className={depth > 0 ? 'ml-6 border-l-2 border-slate-100 pl-4' : ''}>
       <div className={`group flex items-start gap-3 py-2.5 px-3 rounded-2xl transition-all hover:bg-slate-50 ${task.is_completed ? 'opacity-60' : ''}`}>
@@ -74,6 +78,9 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             {task.due_date && <span className={`flex items-center gap-1 text-[10px] font-medium ${!task.is_completed && new Date(task.due_date) < new Date() ? 'text-red-500' : 'text-slate-400'}`}><Calendar size={10} />{new Date(task.due_date).toLocaleDateString('en-AU')}{task.due_time && ` ${task.due_time.slice(0,5)}`}</span>}
             {(() => { const dl = getDaysLeft(task.due_date, task.is_completed); return dl ? <span className={`text-[10px] font-bold ${dl.colorClass}`}>{dl.text}</span> : null; })()}
             {assignee && <span className="flex items-center gap-1 text-[10px] text-slate-400"><User size={10} />{assignee.full_name || assignee.email}</span>}
+            {watchers.map((w: any) => (
+              <span key={w.id} className="flex items-center gap-1 text-[10px] text-violet-500" title="Watcher"><User size={10} />{w.full_name || w.email}</span>
+            ))}
             {team && <span className="flex items-center gap-1 text-[10px] text-slate-400"><Users size={10} />{team.team_name}</span>}
             {task.is_monetary && task.estimated_cost > 0 && <span className="flex items-center gap-1 text-[10px] text-slate-400"><DollarSign size={10} />${Number(task.estimated_cost).toLocaleString()}</span>}
             {followUps.length > 0 && (
@@ -105,7 +112,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
         <div className="mt-1">
           {subtasks.map((sub: any) => (
             <TaskRow key={sub.id} task={sub} subtasks={allTasks.filter((t: any) => t.parent_task_id === sub.id)} allTasks={allTasks}
-              profiles={profiles} teams={teams} depth={depth + 1} followUpsByTask={followUpsByTask}
+              profiles={profiles} teams={teams} depth={depth + 1} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit}
               onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} />
           ))}
@@ -116,12 +123,14 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
 }
 
 // ── TaskEditModal ─────────────────────────────────────────────────
-function TaskEditModal({ task, profiles, teams, followUps, onAddFollowUp, onRemoveFollowUp, onSave, onClose }: any) {
+function TaskEditModal({ task, profiles, teams, followUps, watcherIds: initWatcherIds, onAddFollowUp, onRemoveFollowUp, onSave, onClose }: any) {
   const [draft, setDraft] = useState<Partial<Task>>({ ...task });
+  const [watcherIds, setWatcherIds] = useState<string[]>(initWatcherIds || []);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<'details' | 'history'>('details');
   const set = (patch: Partial<Task>) => setDraft(p => ({ ...p, ...patch }));
-  const handleSave = async () => { setSaving(true); await onSave(draft); setSaving(false); onClose(); };
+  const toggleWatcher = (id: string) => setWatcherIds(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id]);
+  const handleSave = async () => { setSaving(true); await onSave(draft, watcherIds); setSaving(false); onClose(); };
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
@@ -188,6 +197,20 @@ function TaskEditModal({ task, profiles, teams, followUps, onAddFollowUp, onRemo
               <option value="">— No team —</option>
               {teams.map((t: any) => <option key={t.id} value={t.id}>{t.team_name}</option>)}
             </select>
+          </div>
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Watchers <span className="text-slate-300 font-normal normal-case">— also notified, shown on their task list</span></p>
+            <div className="flex flex-wrap gap-1.5">
+              {profiles.map((p: any) => {
+                const active = watcherIds.includes(p.id);
+                return (
+                  <button key={p.id} type="button" onClick={() => toggleWatcher(p.id)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all ${active ? 'bg-violet-100 border-violet-300 text-violet-700' : 'bg-white border-slate-200 text-slate-500 hover:border-violet-300'}`}>
+                    {p.full_name || p.email}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div>
             <label className="flex items-center gap-3 cursor-pointer">
@@ -717,6 +740,7 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
 export default function ChecklistTab({ recordId, companyId }: Props) {
   const [tasks, setTasks]               = useState<Task[]>([]);
   const [followUpsByTask, setFollowUpsByTask] = useState<Record<string, FollowUpEntry[]>>({});
+  const [watchersByTask, setWatchersByTask] = useState<Record<string, string[]>>({});
   const [profiles, setProfiles]         = useState<Profile[]>([]);
   const [teams, setTeams]               = useState<Team[]>([]);
   const [templates, setTemplates]       = useState<Template[]>([]);
@@ -749,15 +773,23 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
 
     const taskIds = (taskData || []).map((t: any) => t.id);
     if (taskIds.length) {
-      const { data: followUpData } = await supabase
-        .from('task_follow_ups').select('id, task_id, followed_up_at').in('task_id', taskIds);
+      const [{ data: followUpData }, { data: watcherData }] = await Promise.all([
+        supabase.from('task_follow_ups').select('id, task_id, followed_up_at').in('task_id', taskIds),
+        supabase.from('task_watchers').select('task_id, profile_id').in('task_id', taskIds),
+      ]);
       const grouped: Record<string, FollowUpEntry[]> = {};
       for (const f of followUpData || []) {
         (grouped[f.task_id] ||= []).push({ id: f.id, followedUpAt: f.followed_up_at });
       }
       setFollowUpsByTask(grouped);
+      const watcherGroups: Record<string, string[]> = {};
+      for (const w of watcherData || []) {
+        (watcherGroups[w.task_id] ||= []).push(w.profile_id);
+      }
+      setWatchersByTask(watcherGroups);
     } else {
       setFollowUpsByTask({});
+      setWatchersByTask({});
     }
 
     setLoading(false);
@@ -769,7 +801,26 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     setEditingTask({ project_id: recordId, company_id: companyId, parent_task_id: parentId || null, is_completed: false, is_monetary: false, estimated_cost: 0, due_time: '09:00', reminder_settings: { days: 0, time: '09:00' } });
   };
 
-  const handleSaveTask = async (draft: Partial<Task>) => {
+  const saveWatchers = async (taskId: string, newIds: string[], oldIds: string[], actorId: string | null) => {
+    const added = newIds.filter(id => !oldIds.includes(id));
+    const removed = oldIds.filter(id => !newIds.includes(id));
+    if (!added.length && !removed.length) return;
+    if (removed.length) {
+      await supabase.from('task_watchers').delete().eq('task_id', taskId).in('profile_id', removed);
+    }
+    if (added.length) {
+      await supabase.from('task_watchers').insert(added.map(profile_id => ({ task_id: taskId, company_id: companyId, profile_id, created_by: actorId })));
+    }
+    setWatchersByTask(prev => ({ ...prev, [taskId]: newIds }));
+    const nameFor = (id: string) => profiles.find(p => p.id === id)?.full_name || profiles.find(p => p.id === id)?.email || 'someone';
+    const detail = [
+      added.length ? `+watcher ${added.map(nameFor).join(', ')}` : null,
+      removed.length ? `-watcher ${removed.map(nameFor).join(', ')}` : null,
+    ].filter(Boolean).join(', ');
+    if (detail) logTaskActivity(supabase, { taskId, companyId, actorId, action: 'updated', detail });
+  };
+
+  const handleSaveTask = async (draft: Partial<Task>, watcherIds: string[]) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (draft.id) {
       const { id, ...rest } = draft;
@@ -779,6 +830,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       if (changes.length) {
         logTaskActivity(supabase, { taskId: id, companyId, actorId: user?.id || null, action: 'updated', detail: changes.join(', ') });
       }
+      await saveWatchers(id, watcherIds, watchersByTask[id] || [], user?.id || null);
     } else {
       const { data } = await supabase.from('tasks').insert({
         ...draft,
@@ -788,6 +840,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       if (data) {
         setTasks(prev => [...prev, data]);
         logTaskActivity(supabase, { taskId: data.id, companyId, actorId: user?.id || null, action: 'created' });
+        await saveWatchers(data.id, watcherIds, [], user?.id || null);
       }
     }
   };
@@ -956,7 +1009,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
         <div className="space-y-1">
           {activeTasks.map(task => (
             <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
-              allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask}
+              allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
               onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
           ))}
@@ -973,7 +1026,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
             <div className="space-y-1 opacity-70">
               {completedThisWeek.map(task => (
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
-                  allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask}
+                  allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
               ))}
@@ -992,7 +1045,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
             <div className="space-y-1 opacity-70">
               {completedOlder.map(task => (
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
-                  allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask}
+                  allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
               ))}
@@ -1005,6 +1058,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       {editingTask && (
         <TaskEditModal task={editingTask} profiles={profiles} teams={teams}
           followUps={editingTask.id ? (followUpsByTask[editingTask.id] || []) : []}
+          watcherIds={editingTask.id ? (watchersByTask[editingTask.id] || []) : []}
           onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp}
           companyId={companyId} projectId={recordId} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
       )}

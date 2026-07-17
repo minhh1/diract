@@ -944,6 +944,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       sub += 'Due: ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
     }
     if (t.assignee) sub += (sub ? ' · ' : '') + '👤 ' + t.assignee;
+    if (t.watchers && t.watchers.length) sub += (sub ? ' · ' : '') + '👀 ' + t.watchers.map(function(w) { return w.name; }).join(', ');
     if (t.assignedTeam) sub += (sub ? ' · ' : '') + '👥 ' + t.assignedTeam;
     sub += (sub ? ' · ' : '') + getTaskStatusLabel(t.isCompleted, t.awaitingFollowUp);
     if (t.createdBy) sub += (sub ? ' · ' : '') + 'Added by ' + t.createdBy;
@@ -973,6 +974,8 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       taskSourceMessageId: t.sourceMessageId || '',
       taskSourceEmailSubject: t.sourceEmailSubject || '',
       taskSourceEmailBody: t.sourceEmailBody || '',
+      taskWatcherIds: (t.watchers || []).map(function(w) { return w.id; }).join(','),
+      taskCalendarTarget: t.calendarTarget || 'tasks_calendar',
       projectId: projectId,
       projectName: projectName,
       labelCode: labelCode,
@@ -1184,6 +1187,20 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     addSection.addWidget(assigneeSelect);
   }
 
+  // Watchers — extra people who see this task and get notified, without
+  // being responsible for it.
+  if (profiles.length) {
+    var newWatcherSelect = CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.MULTI_SELECT)
+      .setFieldName('newTaskWatchers')
+      .setTitle('Watchers');
+    for (var wi = 0; wi < profiles.length; wi++) {
+      var wp = profiles[wi];
+      newWatcherSelect.addItem(wp.full_name || wp.email || 'Unknown', wp.id, false);
+    }
+    addSection.addWidget(newWatcherSelect);
+  }
+
   // Assigned team
   if (teams.length) {
     var teamSelect = CardService.newSelectionInput()
@@ -1221,6 +1238,14 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     .setFieldName('newTaskCost')
     .setTitle('Estimated cost ($)')
     );
+
+  // Calendar target — most tasks go on the shared "Tasks" calendar; this
+  // opts a single task into the organizer's own main calendar instead.
+  addSection.addWidget(CardService.newSelectionInput()
+    .setType(CardService.SelectionInputType.CHECK_BOX)
+    .setFieldName('newTaskCalendarTarget')
+    .setTitle('')
+    .addItem('📅 Add to my main calendar instead of the Tasks calendar', 'main_calendar', false));
 
   // Submit button
   addSection.addWidget(CardService.newButtonSet()
@@ -1796,6 +1821,21 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     section.addWidget(assigneeSelect);
   }
 
+  // Watchers — extra people who see this task and get notified, without
+  // being responsible for it.
+  if (profiles.length) {
+    var editWatcherIds = params.taskWatcherIds ? params.taskWatcherIds.split(',') : [];
+    var editWatcherSelect = CardService.newSelectionInput()
+      .setType(CardService.SelectionInputType.MULTI_SELECT)
+      .setFieldName('editTaskWatchers')
+      .setTitle('Watchers');
+    for (var wi = 0; wi < profiles.length; wi++) {
+      var wp = profiles[wi];
+      editWatcherSelect.addItem(wp.full_name || wp.email || 'Unknown', wp.id, editWatcherIds.indexOf(wp.id) !== -1);
+    }
+    section.addWidget(editWatcherSelect);
+  }
+
   // Team
   if (teams.length) {
     var teamSelect = CardService.newSelectionInput()
@@ -1821,6 +1861,14 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     .setFieldName('editTaskCost')
     .setTitle('Estimated cost ($)')
     .setValue(params.taskCost || ''));
+
+  // Calendar target — most tasks go on the shared "Tasks" calendar; this
+  // opts this task into the organizer's own main calendar instead.
+  section.addWidget(CardService.newSelectionInput()
+    .setType(CardService.SelectionInputType.CHECK_BOX)
+    .setFieldName('editTaskCalendarTarget')
+    .setTitle('')
+    .addItem('📅 Add to my main calendar instead of the Tasks calendar', 'main_calendar', params.taskCalendarTarget === 'main_calendar'));
 
   // Follow-ups — a task can be followed up more than once, so this opens
   // the same dated log/manage card used from the task list row.
@@ -1964,10 +2012,12 @@ function onChangeEditTaskDueMode(e) {
     taskDaysFromState: (fi.editTaskDaysFromState || ['NSW'])[0] || 'NSW',
     taskStatus: (fi.editTaskStatus || [e.parameters.taskStatus || ''])[0] || '',
     taskAssignee: (fi.editTaskAssignee || [e.parameters.taskAssignee || ''])[0] || '',
+    taskWatcherIds: (fi.editTaskWatchers || (e.parameters.taskWatcherIds ? e.parameters.taskWatcherIds.split(',') : [])).join(','),
     taskTeam: (fi.editTaskTeam || [e.parameters.taskTeam || ''])[0] || '',
     taskMonetary: (fi.editTaskMonetary || []).indexOf('true') !== -1 ? 'true' : 'false',
     taskCost: (fi.editTaskCost || [e.parameters.taskCost || ''])[0] || '',
     taskNotes: (fi.editTaskNotes || [e.parameters.taskNotes || ''])[0] || '',
+    taskCalendarTarget: (fi.editTaskCalendarTarget || []).indexOf('main_calendar') !== -1 ? 'main_calendar' : 'tasks_calendar',
   });
 
   var ctxRes = apiGet('/task-context?companyId=' + params.companyId, params.accessToken || getToken());
@@ -1990,6 +2040,8 @@ function onUpdateTask(e) {
   var costRaw = ((e.formInputs.editTaskCost || [''])[0] || '').trim();
   var estimatedCost = costRaw ? parseFloat(costRaw.replace(/,/g, '')) : null;
   var notes = ((e.formInputs.editTaskNotes || [''])[0] || '').trim();
+  var watcherIds = e.formInputs.editTaskWatchers || [];
+  var calendarTarget = (e.formInputs.editTaskCalendarTarget || []).indexOf('main_calendar') !== -1 ? 'main_calendar' : 'tasks_calendar';
 
   if (!name) return errorNotification('Task name is required');
 
@@ -2032,6 +2084,8 @@ function onUpdateTask(e) {
     isMonetary: isMonetary,
     estimatedCost: estimatedCost,
     notes: notes || null,
+    watcherIds: watcherIds,
+    calendarTarget: calendarTarget,
   }, token);
 
   if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
@@ -2117,6 +2171,8 @@ function onCreateTask(e) {
 
   var linkEmail = (e.formInputs.newTaskLinkEmail || []).indexOf('true') !== -1;
   var emailContent = linkEmail ? fetchMessageContent(token, e.parameters.messageId) : null;
+  var watcherIds = e.formInputs.newTaskWatchers || [];
+  var calendarTarget = (e.formInputs.newTaskCalendarTarget || []).indexOf('main_calendar') !== -1 ? 'main_calendar' : 'tasks_calendar';
 
   var result = apiPost('/create-task', {
     projectId: e.parameters.projectId,
@@ -2133,6 +2189,8 @@ function onCreateTask(e) {
     messageId: linkEmail ? (e.parameters.messageId || null) : null,
     emailSubject: emailContent ? emailContent.subject : null,
     emailBody: emailContent ? emailContent.body : null,
+    watcherIds: watcherIds,
+    calendarTarget: calendarTarget,
   }, token);
 
   if (!result.ok || !result.data.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
