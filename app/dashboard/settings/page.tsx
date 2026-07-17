@@ -1,18 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import {
   Database, Clock, Copy, ArrowLeft, Loader2,
   CheckCircle2, ChevronRight, AlertCircle,
-  Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp, Share2
+  Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2
 } from "lucide-react";
 import ImportModal from "@/components/ImportModal";
 import DataFormattingTool from "@/components/DataFormattingTool";
 import SchemaVisualisation from "@/components/SchemaVisualisation";
 import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import CustomTableBuilder from "@/components/CustomTableBuilder";
-import SchemaMap from "@/components/SchemaMap";
 import PublicTaskPagesTab from "@/components/settings/PublicTaskPagesTab";
 
 
@@ -257,7 +257,17 @@ export default function SettingsPage() {
           {view === 'schema' && (
             <div className="space-y-8">
               <CustomTableBuilder />
-              <SchemaMap />
+              <Link href="/dashboard/schema"
+                className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
+                <div className="flex items-center gap-5">
+                  <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors"><Maximize2 size={20} /></div>
+                  <div>
+                    <span className="text-[15px] font-medium text-slate-700">Open full schema map</span>
+                    <p className="text-[11px] text-slate-400 mt-0.5">View all tables and their relations at full size</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
+              </Link>
               <SchemaVisualisation />
             </div>
           )}

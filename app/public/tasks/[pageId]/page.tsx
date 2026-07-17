@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail } from "lucide-react";
+import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
 import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker";
@@ -53,6 +53,7 @@ export default function PublicTaskPage() {
   const [data, setData] = useState<PageData | null>(null);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -239,8 +240,66 @@ export default function PublicTaskPage() {
 
   if (!data) return null;
 
-  const activeTasks = data.tabs.find(t => t.userId === activeTab)?.tasks || [];
+  const allTasks = data.tabs.find(t => t.userId === activeTab)?.tasks || [];
+  const activeTasks = allTasks.filter(t => !t.isCompleted);
+  const completedTasks = allTasks.filter(t => t.isCompleted);
   const columns = PUBLIC_TASK_COLUMNS.filter(c => data.columns.includes(c.key));
+
+  const renderRow = (t: Task) => {
+    const dl = getDaysLeft(t.dueDate, t.isCompleted);
+    return (
+      <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 group">
+        <td className="px-4 py-4">
+          <div className="flex items-center gap-2">
+            <button onClick={() => toggleComplete(t)}
+              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${t.isCompleted ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-indigo-400"}`}>
+              {t.isCompleted && <Check size={11} className="text-white" />}
+            </button>
+            <FollowUpToggle
+              entries={t.followUps}
+              onAdd={date => addFollowUp(t, date)}
+              onRemove={id => removeFollowUp(t, id)}
+            />
+          </div>
+        </td>
+        <td className={`px-4 py-4 font-medium cursor-pointer leading-snug ${t.isCompleted ? "line-through text-slate-400" : "text-slate-800"}`}
+          onClick={() => setEditingTask(t)}>
+          <div>{t.name}</div>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            {dl && <span className={`text-[10px] font-bold ${dl.colorClass}`}>{dl.text}</span>}
+            {t.followUps.length > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
+                <Flag size={9} /> Followed up {t.followUps.length}x{t.followUpDate ? ` · last ${getRelativeDateLabel(t.followUpDate)}` : ""}
+              </span>
+            )}
+            {t.notes && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium italic">
+                <StickyNote size={9} /> {t.notes}
+              </span>
+            )}
+            {t.sourceMessageId && (
+              <a href={`https://mail.google.com/mail/u/0/#all/${t.sourceMessageId}`} target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 font-medium">
+                <Mail size={9} /> Open email
+              </a>
+            )}
+          </div>
+        </td>
+        {columns.map(c => (
+          <td key={c.key} className={`px-4 py-4 text-slate-600 leading-snug ${WRAP_COLUMNS.has(c.key) ? "max-w-[220px]" : "whitespace-nowrap"}`}>
+            {renderCell(c.key, t)}
+          </td>
+        ))}
+        <td className="px-4 py-4">
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => setEditingTask(t)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600"><Pencil size={13} /></button>
+            <button onClick={() => deleteTask(t)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
@@ -291,66 +350,32 @@ export default function PublicTaskPage() {
               </tr>
             </thead>
             <tbody>
-              {activeTasks.length === 0 && (
+              {activeTasks.length === 0 && completedTasks.length === 0 && (
                 <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No tasks</td></tr>
               )}
-              {activeTasks.map(t => {
-                const dl = getDaysLeft(t.dueDate, t.isCompleted);
-                return (
-                <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 group">
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => toggleComplete(t)}
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${t.isCompleted ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-indigo-400"}`}>
-                        {t.isCompleted && <Check size={11} className="text-white" />}
-                      </button>
-                      <FollowUpToggle
-                        entries={t.followUps}
-                        onAdd={date => addFollowUp(t, date)}
-                        onRemove={id => removeFollowUp(t, id)}
-                      />
-                    </div>
-                  </td>
-                  <td className={`px-4 py-4 font-medium cursor-pointer leading-snug ${t.isCompleted ? "line-through text-slate-400" : "text-slate-800"}`}
-                    onClick={() => setEditingTask(t)}>
-                    <div>{t.name}</div>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {dl && <span className={`text-[10px] font-bold ${dl.colorClass}`}>{dl.text}</span>}
-                      {t.followUps.length > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
-                          <Flag size={9} /> Followed up {t.followUps.length}x{t.followUpDate ? ` · last ${getRelativeDateLabel(t.followUpDate)}` : ""}
-                        </span>
-                      )}
-                      {t.notes && (
-                        <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium italic">
-                          <StickyNote size={9} /> {t.notes}
-                        </span>
-                      )}
-                      {t.sourceMessageId && (
-                        <a href={`https://mail.google.com/mail/u/0/#all/${t.sourceMessageId}`} target="_blank" rel="noopener noreferrer"
-                          onClick={e => e.stopPropagation()}
-                          className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-700 font-medium">
-                          <Mail size={9} /> Open email
-                        </a>
-                      )}
-                    </div>
-                  </td>
-                  {columns.map(c => (
-                    <td key={c.key} className={`px-4 py-4 text-slate-600 leading-snug ${WRAP_COLUMNS.has(c.key) ? "max-w-[220px]" : "whitespace-nowrap"}`}>
-                      {renderCell(c.key, t)}
-                    </td>
-                  ))}
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setEditingTask(t)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600"><Pencil size={13} /></button>
-                      <button onClick={() => deleteTask(t)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
-                    </div>
-                  </td>
-                </tr>
-              );})}
+              {activeTasks.map(renderRow)}
             </tbody>
           </table>
         </div>
+
+        {completedTasks.length > 0 && (
+          <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden">
+            <button onClick={() => setShowCompleted(v => !v)}
+              className="w-full flex items-center gap-2 px-5 py-3.5 text-[11px] font-bold text-slate-500 hover:text-slate-700 transition-colors">
+              {showCompleted ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              Completed ({completedTasks.length})
+            </button>
+            {showCompleted && (
+              <div className="overflow-x-auto border-t border-slate-100">
+                <table className="w-full min-w-[760px] text-[13px]">
+                  <tbody>
+                    {completedTasks.map(renderRow)}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {showAddForm && (

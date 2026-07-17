@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   X, FileText, ListChecks, Calendar, Mail,
-  FolderKanban, Table2, Loader2, Plus
+  FolderKanban, Table2, Loader2, Plus, FileSignature
 } from "lucide-react";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
@@ -56,6 +56,14 @@ const TEMPLATES: TabTemplate[] = [
     description: 'Emails assigned to this project',
     color: 'bg-red-50 text-red-600',
     iconComponent: Mail,
+  },
+  {
+    type: 'document_templates',
+    title: 'Document templates',
+    icon: 'FileSignature',
+    description: 'Upload Word mail-merge docs and share client fill-in links',
+    color: 'bg-violet-50 text-violet-600',
+    iconComponent: FileSignature,
   },
 ];
 

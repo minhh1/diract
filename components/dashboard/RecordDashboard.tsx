@@ -16,6 +16,8 @@ import SubProjectsTab from "./tabs/SubProjectsTab";
 import ChecklistTab from "./tabs/ChecklistTab";
 import CalendarTab from "./tabs/CalendarTab";
 import EmailsTab from "./tabs/EmailsTab";
+import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
+import GridTabEditor from "./GridTabEditor";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { getCompanyId } from "@/lib/services/schemaService";
 
@@ -748,10 +750,17 @@ export default function RecordDashboard({
       {activeTab?.tab_type === 'emails' && (
         <EmailsTab recordId={recordId} />
       )}
+      {activeTab?.tab_type === 'document_templates' && (
+        <DocumentTemplatesTab recordId={recordId} companyId={companyId} />
+      )}
       {activeTab?.tab_type === 'custom_table' && activeTab.linked_table_id && (
-        <div className="text-center py-20 text-slate-300 text-[11px] font-bold uppercase tracking-widest">
-          Custom table view — coming soon
-        </div>
+        <GridTabEditor
+          tabId={activeTab.id}
+          linkedTableId={activeTab.linked_table_id}
+          recordId={recordId}
+          companyId={companyId}
+          isEditing={isEditingLayout}
+        />
       )}
       {activeTabId === '__access__' && systemTable === 'projects' && (
         <ProjectAccessPanel
@@ -883,7 +892,7 @@ export default function RecordDashboard({
               {primaryValue}
             </h2>
             <div className="flex items-center gap-2">
-              {activeTab?.tab_type === 'fields' && (
+              {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_table') && (
                 <button
                   onClick={() => setIsEditingLayout(p => !p)}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
@@ -957,7 +966,7 @@ export default function RecordDashboard({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {activeTab?.tab_type === 'fields' && (
+            {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_table') && (
               <button
                 onClick={() => setIsEditingLayout(p => !p)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
