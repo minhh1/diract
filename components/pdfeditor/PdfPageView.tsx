@@ -67,7 +67,7 @@ function pdfRectToScreen(viewport: any, x: number, y: number, width: number, hei
 const rgbCss = (c: [number, number, number]) => `rgb(${c[0] * 255}, ${c[1] * 255}, ${c[2] * 255})`;
 
 export default function PdfPageView({
-  pdfPage, pageIndex, scale, ops, activeTool, pendingSignature, onAddOp, onMoveOp, onDeleteOp, onPlacementComplete,
+  pdfPage, pageIndex, scale, ops, activeTool, pendingSignature, onAddOp, onUpdateOp, onDeleteOp, onPlacementComplete,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -122,8 +122,59 @@ export default function PdfPageView({
     const dy = e.clientY - ds.startClientY;
     const [origSx, origSy] = viewport.convertToViewportPoint(ds.startX, ds.startY);
     const [newX, newY] = viewport.convertToPdfPoint(origSx + dx, origSy + dy);
-    onMoveOp(ds.id, newX, newY);
+    onUpdateOp(ds.id, { x: newX, y: newY });
   };
+
+  // ── Text box resize (drag a handle to scale font size) ──────────────────
+  const resizeStateRef = useRef<{ id: string; startClientY: number; startFontSize: number } | null>(null);
+  const [resizePreview, setResizePreview] = useState<{ id: string; fontSize: number } | null>(null);
+
+  const beginResize = (o: TextBoxOp, e: React.PointerEvent) => {
+    e.stopPropagation();
+    resizeStateRef.current = { id: o.id, startClientY: e.clientY, startFontSize: o.fontSize };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onResizeMove = (e: React.PointerEvent) => {
+    const rs = resizeStateRef.current;
+    if (!rs) return;
+    const dy = e.clientY - rs.startClientY;
+    const fontSize = Math.min(96, Math.max(6, rs.startFontSize + dy / scale));
+    setResizePreview({ id: rs.id, fontSize });
+  };
+  const onResizeEnd = (e: React.PointerEvent) => {
+    const rs = resizeStateRef.current;
+    if (!rs) return;
+    resizeStateRef.current = null;
+    const dy = e.clientY - rs.startClientY;
+    const fontSize = Math.min(96, Math.max(6, rs.startFontSize + dy / scale));
+    setResizePreview(null);
+    onUpdateOp(rs.id, { fontSize });
+  };
+
+  function TextBoxToolbar({ o }: { o: TextBoxOp }) {
+    if (selectedOpId !== o.id) return null;
+    const bold = isBoldFont(o.font);
+    const italic = isItalicFont(o.font);
+    const btnStyle = (active: boolean): React.CSSProperties => ({
+      width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer",
+      background: active ? "#1e293b" : "#f1f5f9", color: active ? "white" : "#334155",
+      fontSize: 12, lineHeight: "22px", padding: 0,
+    });
+    return (
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "absolute", left: 0, top: -30, display: "flex", gap: 3,
+          background: "white", padding: 3, borderRadius: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+        }}
+      >
+        <button title="Bold" style={{ ...btnStyle(bold), fontWeight: 700 }} onClick={() => onUpdateOp(o.id, { font: withBoldItalic(o.font, !bold, italic) })}>B</button>
+        <button title="Italic" style={{ ...btnStyle(italic), fontStyle: "italic" }} onClick={() => onUpdateOp(o.id, { font: withBoldItalic(o.font, bold, !italic) })}>I</button>
+        <button title="Underline" style={{ ...btnStyle(o.underline), textDecoration: "underline" }} onClick={() => onUpdateOp(o.id, { underline: !o.underline })}>U</button>
+      </div>
+    );
+  }
 
   function DeleteBadge({ id }: { id: string }) {
     if (selectedOpId !== id) return null;
@@ -146,7 +197,18 @@ export default function PdfPageView({
   const contentRef = useRef<PdfTextContent | null>(null);
   const textDivsRef = useRef<HTMLElement[]>([]);
   const textItemsRef = useRef<PdfTextItem[]>([]);
-  const editingIndexRef = useRef<number | null>(null);
+
+  // Inline text-run editing: a floating <input> overlaid on the clicked run
+  // (the underlying span is hidden while it's open) rather than making
+  // pdf.js's own transform-scaled span directly contentEditable — that combo
+  // (CSS transform + contentEditable) is a known source of broken caret/focus
+  // behavior across browsers, which is why the plain-input version below is
+  // used instead.
+  const [editingRun, setEditingRun] = useState<{
+    index: number; value: string; left: number; top: number; fontSizePx: number; fontFamily: string; minWidth: number;
+  } | null>(null);
+  const editingRunRef = useRef(editingRun);
+  useEffect(() => { editingRunRef.current = editingRun; }, [editingRun]);
 
   // Read via refs inside long-lived span click handlers to avoid stale closures.
   const activeToolRef = useRef(activeTool);
@@ -202,15 +264,15 @@ export default function PdfPageView({
           span.style.cursor = "text";
           span.addEventListener("click", () => {
             if (activeToolRef.current !== "select") return;
-            startEdit(i);
+            openRunEditor(i);
           });
           span.addEventListener("mouseenter", () => {
-            if (activeToolRef.current !== "select" || editingIndexRef.current === i) return;
+            if (activeToolRef.current !== "select" || editingRunRef.current?.index === i) return;
             span.style.outline = "1px dashed #94a3b8";
             span.style.outlineOffset = "1px";
           });
           span.addEventListener("mouseleave", () => {
-            if (editingIndexRef.current === i) return;
+            if (editingRunRef.current?.index === i) return;
             span.style.outline = "";
           });
         });
@@ -234,13 +296,19 @@ export default function PdfPageView({
   }, [pdfPage, viewport]);
 
   // ── Keep span visuals in sync with committed text-edit ops (incl. undo) ──
+  // Only re-runs when *which* run is being edited changes (not on every
+  // keystroke) since it keys off editingRun?.index rather than editingRun itself.
   useEffect(() => {
     if (!ready) return;
     const textEdits = new Map<number, PdfEditOp & { type: "text-edit" }>();
     for (const op of pageOps) if (op.type === "text-edit") textEdits.set(op.itemIndex, op);
 
     textDivsRef.current.forEach((span, i) => {
-      if (editingIndexRef.current === i) return; // don't clobber an in-progress edit
+      if (editingRun?.index === i) {
+        span.style.opacity = "0"; // hidden — the floating <input> stands in for it
+        return;
+      }
+      span.style.opacity = "";
       const op = textEdits.get(i);
       if (op) {
         span.textContent = op.text;
@@ -252,76 +320,60 @@ export default function PdfPageView({
         span.style.backgroundColor = "";
       }
     });
-  }, [ready, pageOps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, pageOps, editingRun?.index]);
 
   // Force-commit an in-progress edit if the user switches tools mid-edit.
   useEffect(() => {
-    if (activeTool !== "select" && editingIndexRef.current !== null) {
-      textDivsRef.current[editingIndexRef.current]?.blur();
-    }
+    if (activeTool !== "select" && editingRunRef.current) commitRunEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
-  function startEdit(i: number) {
-    const span = textDivsRef.current[i];
+  function openRunEditor(i: number) {
     const item = textItemsRef.current[i];
-    if (!span || !item) return;
-    if (editingIndexRef.current !== null) textDivsRef.current[editingIndexRef.current]?.blur();
+    const span = textDivsRef.current[i];
+    if (!item || !span) return;
+    if (editingRunRef.current && editingRunRef.current.index !== i) commitRunEdit();
 
-    editingIndexRef.current = i;
-    span.contentEditable = "true";
-    span.style.color = "#0f172a";
-    span.style.backgroundColor = "#ffffff";
-    span.style.outline = "1.5px solid #3b82f6";
-    span.style.zIndex = "5";
-    // Focusing a contentEditable element synchronously right after setting the
-    // attribute is unreliable in some browsers (notably Safari) — it silently
-    // no-ops before the DOM has processed the attribute change. Deferring to
-    // the next frame makes focus (and the caret) reliable everywhere.
-    requestAnimationFrame(() => {
-      if (editingIndexRef.current !== i) return; // user already moved on
-      span.focus();
-      const range = document.createRange();
-      range.selectNodeContents(span);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
+    const existingEdit = opsRef.current.find((o) => o.type === "text-edit" && o.page === pageIndex && o.itemIndex === i);
+    const currentText = existingEdit && existingEdit.type === "text-edit" ? existingEdit.text : (span.dataset.originalText || item.str);
+
+    const [sx, sy] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+    const fontSizePdf = Math.abs(item.transform[3]) || Math.abs(item.transform[0]) || 12;
+    const fontSizePx = fontSizePdf * scale;
+    const fontFamily = contentRef.current?.styles?.[item.fontName]?.fontFamily || "sans-serif";
+    const minWidth = Math.max(item.width * scale, 40);
+
+    setEditingRun({ index: i, value: currentText, left: sx, top: sy - fontSizePx, fontSizePx, fontFamily, minWidth });
+  }
+
+  function commitRunEdit() {
+    const er = editingRunRef.current;
+    if (!er) return;
+    setEditingRun(null);
+    const item = textItemsRef.current[er.index];
+    const span = textDivsRef.current[er.index];
+    if (!item) return;
+
+    const original = span?.dataset.originalText || item.str;
+    if (er.value === original) return; // unchanged (or reverted) — nothing to add; a prior op, if any, is left for Undo to remove
+
+    const fontSize = Math.abs(item.transform[3]) || Math.abs(item.transform[0]) || 12;
+    const fontFamily = contentRef.current?.styles?.[item.fontName]?.fontFamily;
+    onAddOpRef.current({
+      id: crypto.randomUUID(),
+      type: "text-edit",
+      page: pageIndex,
+      itemIndex: er.index,
+      x: item.transform[4],
+      y: item.transform[5],
+      width: item.width,
+      height: item.height,
+      fontSize,
+      font: matchStandardFont(fontFamily),
+      text: er.value,
+      color: [0, 0, 0],
     });
-
-    const commit = () => {
-      span.removeEventListener("blur", commit);
-      span.contentEditable = "false";
-      span.style.outline = "";
-      span.style.zIndex = "";
-      editingIndexRef.current = null;
-
-      const newText = span.textContent || "";
-      const original = span.dataset.originalText || "";
-      const hasExistingEdit = opsRef.current.some((o) => o.type === "text-edit" && o.page === pageIndex && o.itemIndex === i);
-      if (newText === original && !hasExistingEdit) {
-        span.style.color = "";
-        span.style.backgroundColor = "";
-        return;
-      }
-      if (newText === original) return; // reverted back to original text; leave existing op/undo to remove it
-
-      const fontSize = Math.abs(item.transform[3]) || Math.abs(item.transform[0]) || 12;
-      const fontFamily = contentRef.current?.styles?.[item.fontName]?.fontFamily;
-      onAddOpRef.current({
-        id: crypto.randomUUID(),
-        type: "text-edit",
-        page: pageIndex,
-        itemIndex: i,
-        x: item.transform[4],
-        y: item.transform[5],
-        width: item.width,
-        height: item.height,
-        fontSize,
-        font: matchStandardFont(fontFamily),
-        text: newText,
-        color: [0, 0, 0],
-      });
-    };
-    span.addEventListener("blur", commit);
   }
 
   // ── Interaction layer: highlight drag / freehand draw / textbox & signature placement ──
@@ -330,6 +382,8 @@ export default function PdfPageView({
   const [livePreview, setLivePreview] = useState<{ kind: "rect" | "path"; rect?: any; points?: { x: number; y: number }[] } | null>(null);
   const [textBoxDraft, setTextBoxDraft] = useState<{ screenX: number; screenY: number; pdfX: number; pdfY: number } | null>(null);
   const [textBoxValue, setTextBoxValue] = useState("");
+  const [draftFont, setDraftFont] = useState<StandardFontKey>("Helvetica");
+  const [draftUnderline, setDraftUnderline] = useState(false);
 
   const overlayPos = (e: React.PointerEvent) => {
     const rect = overlayRef.current!.getBoundingClientRect();
@@ -407,12 +461,14 @@ export default function PdfPageView({
       const op: TextBoxOp = {
         id: crypto.randomUUID(), type: "textbox", page: pageIndex,
         x: textBoxDraft.pdfX, y: textBoxDraft.pdfY - fontSize, fontSize,
-        font: "Helvetica", text: textBoxValue, color: [0, 0, 0],
+        font: draftFont, underline: draftUnderline, text: textBoxValue, color: [0, 0, 0],
       };
       onAddOp(op);
     }
     setTextBoxDraft(null);
     setTextBoxValue("");
+    setDraftFont("Helvetica");
+    setDraftUnderline(false);
     onPlacementComplete();
   };
 
@@ -455,6 +511,7 @@ export default function PdfPageView({
           const [sx, sy] = viewport.convertToViewportPoint(o.x, o.y);
           const offset = dragOffset?.id === o.id ? dragOffset : null;
           const selected = selectedOpId === o.id;
+          const fontSizePx = (resizePreview?.id === o.id ? resizePreview.fontSize : o.fontSize) * scale;
           return (
             <div
               key={o.id}
@@ -463,8 +520,11 @@ export default function PdfPageView({
               onPointerUp={onDragEnd}
               onClick={(e) => e.stopPropagation()}
               style={{
-                position: "absolute", left: sx, top: sy - o.fontSize * scale,
-                fontSize: o.fontSize * scale, color: rgbCss(o.color), fontFamily: "Helvetica, Arial, sans-serif", whiteSpace: "pre",
+                position: "absolute", left: sx, top: sy - fontSizePx,
+                fontSize: fontSizePx, color: rgbCss(o.color), fontFamily: "Helvetica, Arial, sans-serif", whiteSpace: "pre",
+                fontWeight: isBoldFont(o.font) ? 700 : 400,
+                fontStyle: isItalicFont(o.font) ? "italic" : "normal",
+                textDecoration: o.underline ? "underline" : "none",
                 pointerEvents: activeTool === "select" ? "auto" : "none",
                 cursor: activeTool === "select" ? "grab" : undefined,
                 transform: offset ? `translate(${offset.dx}px, ${offset.dy}px)` : undefined,
@@ -473,6 +533,19 @@ export default function PdfPageView({
             >
               {o.text}
               <DeleteBadge id={o.id} />
+              <TextBoxToolbar o={o} />
+              {selected && (
+                <div
+                  onPointerDown={(e) => beginResize(o, e)}
+                  onPointerMove={onResizeMove}
+                  onPointerUp={onResizeEnd}
+                  title="Drag to resize"
+                  style={{
+                    position: "absolute", right: -6, bottom: -6, width: 10, height: 10, borderRadius: 9999,
+                    background: "#3b82f6", border: "1.5px solid white", cursor: "ns-resize", boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                  }}
+                />
+              )}
             </div>
           );
         })}
@@ -534,6 +607,28 @@ export default function PdfPageView({
         })}
       </div>
 
+      {/* Inline text-run editor: a plain floating input standing in for the clicked run */}
+      {editingRun && (
+        <input
+          autoFocus
+          value={editingRun.value}
+          onChange={(e) => setEditingRun({ ...editingRun, value: e.target.value })}
+          onBlur={commitRunEdit}
+          onKeyDown={(e) => {
+            e.stopPropagation(); // don't let Backspace/Delete here reach the annotation-delete shortcut
+            if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+            if (e.key === "Escape") setEditingRun(null);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute", left: editingRun.left, top: editingRun.top, minWidth: editingRun.minWidth,
+            fontSize: editingRun.fontSizePx, fontFamily: editingRun.fontFamily, color: "#0f172a",
+            border: "1.5px solid #3b82f6", background: "white", padding: "0 2px", outline: "none", zIndex: 6,
+          }}
+        />
+      )}
+
       {/* Interaction layer for drag/click-based tools */}
       <div
         ref={overlayRef}
@@ -547,14 +642,40 @@ export default function PdfPageView({
           <div style={{ position: "absolute", left: livePreview.rect.left, top: livePreview.rect.top, width: livePreview.rect.width, height: livePreview.rect.height, backgroundColor: "rgba(250, 204, 21, 0.4)" }} />
         )}
         {textBoxDraft && (
-          <input
-            autoFocus
-            value={textBoxValue}
-            onChange={(e) => setTextBoxValue(e.target.value)}
-            onBlur={commitTextBox}
-            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setTextBoxDraft(null); setTextBoxValue(""); onPlacementComplete(); } }}
-            style={{ position: "absolute", left: textBoxDraft.screenX, top: textBoxDraft.screenY - 14 * scale, fontSize: 12 * scale, border: "1px solid #3b82f6", background: "white", padding: "1px 3px", minWidth: 120 }}
-          />
+          <>
+            <div
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute", left: textBoxDraft.screenX, top: textBoxDraft.screenY - 14 * scale - 30,
+                display: "flex", gap: 3, background: "white", padding: 3, borderRadius: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+              }}
+            >
+              <button title="Bold" onClick={() => setDraftFont(withBoldItalic(draftFont, !isBoldFont(draftFont), isItalicFont(draftFont)))}
+                style={{ width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer", fontWeight: 700,
+                  background: isBoldFont(draftFont) ? "#1e293b" : "#f1f5f9", color: isBoldFont(draftFont) ? "white" : "#334155" }}>B</button>
+              <button title="Italic" onClick={() => setDraftFont(withBoldItalic(draftFont, isBoldFont(draftFont), !isItalicFont(draftFont)))}
+                style={{ width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer", fontStyle: "italic",
+                  background: isItalicFont(draftFont) ? "#1e293b" : "#f1f5f9", color: isItalicFont(draftFont) ? "white" : "#334155" }}>I</button>
+              <button title="Underline" onClick={() => setDraftUnderline((u) => !u)}
+                style={{ width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer", textDecoration: "underline",
+                  background: draftUnderline ? "#1e293b" : "#f1f5f9", color: draftUnderline ? "white" : "#334155" }}>U</button>
+            </div>
+            <input
+              autoFocus
+              value={textBoxValue}
+              onChange={(e) => setTextBoxValue(e.target.value)}
+              onBlur={commitTextBox}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setTextBoxDraft(null); setTextBoxValue(""); onPlacementComplete(); } }}
+              style={{
+                position: "absolute", left: textBoxDraft.screenX, top: textBoxDraft.screenY - 14 * scale,
+                fontSize: 12 * scale, border: "1px solid #3b82f6", background: "white", padding: "1px 3px", minWidth: 120,
+                fontWeight: isBoldFont(draftFont) ? 700 : 400,
+                fontStyle: isItalicFont(draftFont) ? "italic" : "normal",
+                textDecoration: draftUnderline ? "underline" : "none",
+              }}
+            />
+          </>
         )}
       </div>
     </div>
