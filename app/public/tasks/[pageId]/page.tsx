@@ -14,10 +14,11 @@ import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker"
 import FollowUpToggle, { FollowUpEntry } from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
+import { splitCompletedByRecency } from "@/lib/completedBucket";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
 
 interface Task {
-  id: string; name: string; isCompleted: boolean;
+  id: string; name: string; isCompleted: boolean; completedAt: string | null;
   dueDate: string | null; dueTime: string | null;
   projectId: string | null; projectName: string | null; matterNumber: string | null;
   statusId: string | null; status: string | null; statusColor: string | null;
@@ -54,7 +55,8 @@ export default function PublicTaskPage() {
   const [data, setData] = useState<PageData | null>(null);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [showCompletedThisWeek, setShowCompletedThisWeek] = useState(false);
+  const [showCompletedOlder, setShowCompletedOlder] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -117,7 +119,7 @@ export default function PublicTaskPage() {
       ...prev,
       tabs: prev.tabs.map(tab => ({
         ...tab,
-        tasks: tab.tasks.map(t => t.id === task.id ? { ...t, isCompleted: !t.isCompleted } : t),
+        tasks: tab.tasks.map(t => t.id === task.id ? { ...t, isCompleted: !t.isCompleted, completedAt: !t.isCompleted ? new Date().toISOString() : null } : t),
       })),
     } : prev);
     const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, {
@@ -250,6 +252,7 @@ export default function PublicTaskPage() {
   const allTasks = data.tabs.find(t => t.userId === activeTab)?.tasks || [];
   const activeTasks = allTasks.filter(t => !t.isCompleted);
   const completedTasks = allTasks.filter(t => t.isCompleted);
+  const { thisWeek: completedThisWeek, older: completedOlder } = splitCompletedByRecency(completedTasks, t => t.completedAt);
   const columns = PUBLIC_TASK_COLUMNS.filter(c => data.columns.includes(c.key));
 
   const renderRow = (t: Task) => {
@@ -364,18 +367,37 @@ export default function PublicTaskPage() {
           </table>
         </div>
 
-        {completedTasks.length > 0 && (
+        {completedThisWeek.length > 0 && (
           <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden">
-            <button onClick={() => setShowCompleted(v => !v)}
+            <button onClick={() => setShowCompletedThisWeek(v => !v)}
               className="w-full flex items-center gap-2 px-5 py-3.5 text-[11px] font-bold text-slate-500 hover:text-slate-700 transition-colors">
-              {showCompleted ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              Completed ({completedTasks.length})
+              {showCompletedThisWeek ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              Completed this week ({completedThisWeek.length})
             </button>
-            {showCompleted && (
+            {showCompletedThisWeek && (
               <div className="overflow-x-auto border-t border-slate-100">
                 <table className="w-full min-w-[760px] text-[13px]">
                   <tbody>
-                    {completedTasks.map(renderRow)}
+                    {completedThisWeek.map(renderRow)}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {completedOlder.length > 0 && (
+          <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden">
+            <button onClick={() => setShowCompletedOlder(v => !v)}
+              className="w-full flex items-center gap-2 px-5 py-3.5 text-[11px] font-bold text-slate-500 hover:text-slate-700 transition-colors">
+              {showCompletedOlder ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              Completed older ({completedOlder.length})
+            </button>
+            {showCompletedOlder && (
+              <div className="overflow-x-auto border-t border-slate-100">
+                <table className="w-full min-w-[760px] text-[13px]">
+                  <tbody>
+                    {completedOlder.map(renderRow)}
                   </tbody>
                 </table>
               </div>

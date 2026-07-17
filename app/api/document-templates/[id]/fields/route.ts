@@ -37,7 +37,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .from("document_template_fields").select("id").eq("template_id", templateId);
   const ownIds = new Set((existing || []).map((f: any) => f.id));
 
-  for (const f of fields) {
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
     if (!ownIds.has(f.id)) continue;
     const fieldType = VALID_TYPES.has(f.field_type) ? f.field_type : "text";
     const { error } = await admin.from("document_template_fields").update({
@@ -47,13 +48,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       is_required: !!f.is_required,
       auto_fill_field_id: f.auto_fill_field_id || null,
       default_value: String(f.default_value || "").trim() || null,
+      // Persist the order the admin arranged fields into client-side —
+      // display_order was previously read-only (only ever set once at
+      // upload time from tag-discovery order).
+      display_order: i,
     }).eq("id", f.id).eq("template_id", templateId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   const { data: updated } = await admin
     .from("document_template_fields")
-    .select("id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, default_value, display_order")
+    .select("id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, default_value, joined_to_field_id, display_order")
     .eq("template_id", templateId)
     .order("display_order");
 

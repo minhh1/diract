@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const { data: rawTasks } = await admin
     .from("tasks")
     .select(`
-      id, name, due_date, due_time, is_completed, estimated_cost, date_entered, assignee_id, project_id,
+      id, name, due_date, due_time, is_completed, completed_at, estimated_cost, date_entered, assignee_id, project_id,
       status_id, assigned_team_id, is_monetary, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id,
       source_email_subject, source_email_body,
       assignee:assignee_id(id, full_name, email),
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       tasks: (tasks || [])
         .filter((t: any) => t.assignee_id === p.id)
         .map((t: any) => ({
-          id: t.id, name: t.name, isCompleted: t.is_completed,
+          id: t.id, name: t.name, isCompleted: t.is_completed, completedAt: t.completed_at,
           dueDate: t.due_date ? String(t.due_date).slice(0, 10) : null,
           dueTime: t.due_time,
           projectId: t.project_id,

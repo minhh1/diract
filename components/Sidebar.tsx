@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
-  Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network,
+  Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -919,6 +919,19 @@ export default function Sidebar() {
         >
           <Mail size={16} className="shrink-0" />
           Gmail
+        </Link>
+
+        {/* PDF editor */}
+        <Link
+          href="/dashboard/pdf-editor"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+            pathname.includes('/pdf-editor')
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+          }`}
+        >
+          <PenSquare size={16} className="shrink-0" />
+          PDF editor
         </Link>
 
         {/* Schema map */}

@@ -12,6 +12,7 @@ import FollowUpToggle, { FollowUpEntry } from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
 import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
+import { splitCompletedByRecency } from "@/lib/completedBucket";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
 
 interface Task {
@@ -23,6 +24,7 @@ interface Task {
   awaiting_follow_up: boolean; follow_up_date: string | null;
   notes: string | null; source_message_id: string | null;
   source_email_subject: string | null; source_email_body: string | null;
+  completed_at: string | null;
 }
 interface Profile { id: string; full_name: string | null; email: string | null; }
 interface Team { id: string; team_name: string; }
@@ -722,7 +724,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   const [loading, setLoading]           = useState(true);
   const [editingTask, setEditingTask]   = useState<Partial<Task> | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [showCompletedThisWeek, setShowCompletedThisWeek] = useState(false);
+  const [showCompletedOlder, setShowCompletedOlder] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -790,8 +793,14 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   };
 
   const handleUpdate = async (id: string, patch: Partial<Task>) => {
+    // completed_at is set server-side by a DB trigger keyed off is_completed —
+    // mirror that locally so the completed-this-week/older split is correct
+    // immediately, without waiting for a refetch.
+    const localPatch = 'is_completed' in patch
+      ? { ...patch, completed_at: patch.is_completed ? new Date().toISOString() : null }
+      : patch;
     await supabase.from('tasks').update(patch).eq('id', id);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...localPatch } : t));
     const { data: { user } } = await supabase.auth.getUser();
     const actorId = user?.id || null;
     if ('is_completed' in patch) {
@@ -896,6 +905,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   const rootTasks = tasks.filter(t => !t.parent_task_id);
   const activeTasks = rootTasks.filter(t => !t.is_completed);
   const completedTasks = rootTasks.filter(t => t.is_completed);
+  const { thisWeek: completedThisWeek, older: completedOlder } = splitCompletedByRecency(completedTasks, t => t.completed_at);
   const totalCost = tasks.filter(t => t.is_monetary).reduce((s, t) => s + (t.estimated_cost || 0), 0);
   const completedCount = tasks.filter(t => t.is_completed).length;
   const progress = tasks.length ? Math.round(completedCount / tasks.length * 100) : 0;
@@ -953,15 +963,34 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
         </div>
       )}
 
-      {/* Completed */}
-      {completedTasks.length > 0 && (
+      {/* Completed this week */}
+      {completedThisWeek.length > 0 && (
         <div>
-          <button onClick={() => setShowCompleted(p => !p)} className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-            {showCompleted ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Completed ({completedTasks.length})
+          <button onClick={() => setShowCompletedThisWeek(p => !p)} className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            {showCompletedThisWeek ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Completed this week ({completedThisWeek.length})
           </button>
-          {showCompleted && (
+          {showCompletedThisWeek && (
             <div className="space-y-1 opacity-70">
-              {completedTasks.map(task => (
+              {completedThisWeek.map(task => (
+                <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
+                  allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask}
+                  onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
+                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Completed older */}
+      {completedOlder.length > 0 && (
+        <div>
+          <button onClick={() => setShowCompletedOlder(p => !p)} className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            {showCompletedOlder ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Completed older ({completedOlder.length})
+          </button>
+          {showCompletedOlder && (
+            <div className="space-y-1 opacity-70">
+              {completedOlder.map(task => (
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
                   allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
