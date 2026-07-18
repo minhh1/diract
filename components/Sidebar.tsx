@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
-  Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare,
+  Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -934,6 +934,19 @@ export default function Sidebar() {
           PDF editor
         </Link>
 
+        {/* Virtual computers */}
+        <Link
+          href="/dashboard/virtual-computers"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+            pathname.includes('/virtual-computers')
+              ? 'bg-slate-900 text-white'
+              : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+          }`}
+        >
+          <Monitor size={16} className="shrink-0" />
+          Virtual computers
+        </Link>
+
         {/* Schema map */}
         <Link
           href="/dashboard/schema"
@@ -972,6 +985,21 @@ export default function Sidebar() {
           >
             <Shield size={16} className="shrink-0" />
             Admin
+          </Link>
+        )}
+
+        {/* Billing */}
+        {isAdmin && (
+          <Link
+            href="/dashboard/billing"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+              pathname.includes('/billing')
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <CreditCard size={16} className="shrink-0" />
+            Billing
           </Link>
         )}
 

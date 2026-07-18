@@ -1,0 +1,33 @@
+# Apache Guacamole gateway for the virtual computers feature (see
+# ../lib/guacamole.ts). Vercel can't run this (needs a persistent guacd
+# process) -- deploy this compose stack to a host you control (Fly.io,
+# Railway, a small VPS), same as ../docservice/. Then set GUACAMOLE_URL /
+# NEXT_PUBLIC_GUACAMOLE_URL on the Next.js app to this host's reachable
+# address.
+#
+# Uses the official guacamole/guacamole image directly -- no custom Dockerfile
+# needed. It already bundles the JSON auth extension and wires it up (and
+# guacd) purely from env vars (JSON_SECRET_KEY, GUACD_HOSTNAME), so no
+# Postgres/MySQL and no Guacamole user accounts are needed either. See
+# README.md for how the JSON auth flow works.
+#
+# Local dev:
+#   cp guacamole/.env.example guacamole/.env   # set GUACAMOLE_JSON_SECRET_KEY
+#   docker compose -f guacamole/docker-compose.yml --env-file guacamole/.env up -d
+#   open http://localhost:8080/guacamole
+
+services:
+  guacd:
+    image: guacamole/guacd:1.5.5
+    restart: unless-stopped
+
+  guacamole:
+    image: guacamole/guacamole:1.5.5
+    restart: unless-stopped
+    depends_on:
+      - guacd
+    environment:
+      JSON_SECRET_KEY: ${GUACAMOLE_JSON_SECRET_KEY:?set GUACAMOLE_JSON_SECRET_KEY (see guacamole/.env.example)}
+      GUACD_HOSTNAME: guacd
+    ports:
+      - "8080:8080"

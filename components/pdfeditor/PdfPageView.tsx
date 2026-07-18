@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PDFPageProxy } from "pdfjs-dist";
+import { TextCursor } from "lucide-react";
 import type { DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, TextRun, ToolId } from "@/lib/pdfeditor/types";
 import { matchStandardFont, standardFontCss } from "@/lib/pdfeditor/fontMatch";
 
@@ -164,10 +165,14 @@ export default function PdfPageView({
 
   // ── Annotation selection / drag / delete (select tool only) ─────────────
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
-  // Text boxes default to drag-to-move (like every other annotation); double-click
-  // one to switch to a text-select mode instead, where dragging over its words
-  // selects a substring to bold/italicize/underline via TextBoxToolbar. The two
-  // gestures both start with pointerdown-and-drag so they can't be active at once.
+  // Text boxes default to drag-to-move (like every other annotation); the
+  // toolbar's cursor button switches a box into a text-select mode instead,
+  // where dragging over its words selects a substring to bold/italicize/
+  // underline via TextBoxToolbar. The two gestures both start with
+  // pointerdown-and-drag so they can't be active at once. (Deliberately not a
+  // double-click gesture: two ordinary clicks in quick succession — e.g.
+  // reselecting a box to drag it again — reads as a double-click too, which
+  // made the box seem to randomly get "stuck" unable to move.)
   const [textSelectId, setTextSelectId] = useState<string | null>(null);
   const dragStateRef = useRef<{ id: string; startClientX: number; startClientY: number; startX: number; startY: number; moved: boolean } | null>(null);
   const [dragOffset, setDragOffset] = useState<{ id: string; dx: number; dy: number } | null>(null);
@@ -285,6 +290,14 @@ export default function PdfPageView({
         <button title="Bold" style={{ ...btnStyle(bold), fontWeight: 700 }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("bold")}>B</button>
         <button title="Italic" style={{ ...btnStyle(italic), fontStyle: "italic" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("italic")}>I</button>
         <button title="Underline" style={{ ...btnStyle(underline), textDecoration: "underline" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("underline")}>U</button>
+        <button
+          title={textSelectId === o.id ? "Done selecting text — box is draggable again" : "Select part of the text to format"}
+          style={btnStyle(textSelectId === o.id)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setTextSelectId((prev) => (prev === o.id ? null : o.id))}
+        >
+          <TextCursor size={13} />
+        </button>
         <input
           type="number" min={6} max={96} title="Font size"
           value={Math.round(resizePreview?.id === o.id ? resizePreview.fontSize : o.fontSize)}
@@ -749,16 +762,15 @@ export default function PdfPageView({
               onPointerMove={onDragMove}
               onPointerUp={onDragEnd}
               onClick={(e) => { e.stopPropagation(); if (activeTool === "select") setSelectedOpId(o.id); }}
-              onDoubleClick={(e) => { e.stopPropagation(); if (activeTool === "select") { setSelectedOpId(o.id); setTextSelectId(o.id); } }}
-              title={activeTool === "select" && !textSelecting ? "Drag to move — double-click to select text for formatting" : undefined}
+              title={activeTool === "select" && !textSelecting ? "Drag to move — use the toolbar's cursor button to select text for formatting" : undefined}
               style={{
                 position: "absolute", left: sx, top: sy - fontSizePx,
                 fontSize: fontSizePx, color: rgbCss(o.color), fontFamily: "Helvetica, Arial, sans-serif", whiteSpace: "pre",
                 pointerEvents: activeTool === "select" ? "auto" : "none",
-                // Default gesture is drag-to-move (like every other annotation). Double-click
-                // switches to text-select mode instead, where dragging over the words selects
-                // a substring to format — the two can't be active at once (beginDrag no-ops
-                // while textSelecting, see above), so there's no gesture conflict.
+                // Default gesture is drag-to-move (like every other annotation). The toolbar's
+                // cursor button switches to text-select mode instead, where dragging over the
+                // words selects a substring to format — the two can't be active at once
+                // (beginDrag no-ops while textSelecting, see above), so no gesture conflict.
                 userSelect: textSelecting ? "text" : "none",
                 cursor: activeTool === "select" ? (textSelecting ? "text" : "grab") : undefined,
                 transform: offset ? `translate(${offset.dx}px, ${offset.dy}px)` : undefined,

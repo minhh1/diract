@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   Loader2, Users, Settings, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor,
 } from "lucide-react";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
 import AdminDefaultViewsTab from "@/components/admin/AdminDefaultViewsTab";
+import AdminVirtualComputersTab from "@/components/admin/AdminVirtualComputersTab";
 
 interface Member {
   id: string;
@@ -95,7 +96,7 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'virtualComputers'>('members');
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -433,6 +434,7 @@ export default function AdminPage() {
     { id: 'views'   as const,  label: 'Default views', icon: Settings },
     { id: 'invites' as const,  label: 'Invite links', icon: Link },
     { id: 'gmail'   as const,  label: 'Gmail',        icon: Mail },
+    { id: 'virtualComputers' as const, label: 'Virtual computers', icon: Monitor },
     { id: 'company' as const,  label: 'Company',      icon: Settings },
   ];
 
@@ -769,6 +771,11 @@ export default function AdminPage() {
                 onChange={handleSourceEmailsChange}
               />
             </div>
+          )}
+
+          {/* ── Virtual computers ── */}
+          {activeTab === 'virtualComputers' && company?.id && (
+            <AdminVirtualComputersTab companyId={company.id} />
           )}
 
           {/* ── Team access defaults ── */}

@@ -1,0 +1,23 @@
+# Guacamole HTML5 web client -- the official image directly, configured
+# entirely via env vars (it bundles the JSON auth extension already). Set the
+# secret with `fly secrets set -a niksenflow-guacamole JSON_SECRET_KEY=...`
+# before first deploy -- see README.md.
+app = "niksenflow-guacamole"
+primary_region = "syd"
+
+[build]
+  image = "guacamole/guacamole:1.5.5"
+
+[env]
+  GUACD_HOSTNAME = "niksenflow-guacd.internal"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
