@@ -11,6 +11,7 @@ export default function GuacamoleViewer({ vmId }: { vmId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
@@ -49,6 +50,24 @@ export default function GuacamoleViewer({ vmId }: { vmId: string }) {
     };
   }, [vmId]);
 
+  // Clicking inside a cross-origin iframe's rendered content never bubbles a
+  // mousedown/click up to this page -- confirmed directly (window focus/blur
+  // and document focusin/focusout never fire, document.activeElement stays
+  // <body>) -- because the event is handled entirely within the iframe's own
+  // browsing context. mouseenter/mousemove, by contrast, are geometric
+  // hit-testing at the compositor level and fire on ancestors regardless of
+  // what's inside, so they're the reliable way to know the pointer has
+  // reached the VM and force real focus onto the iframe element -- from
+  // there Guacamole's own client takes over focus management internally.
+  useEffect(() => {
+    if (!src) return;
+    iframeRef.current?.focus();
+  }, [src]);
+
+  function focusIframe() {
+    if (document.activeElement !== iframeRef.current) iframeRef.current?.focus();
+  }
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-[13px] text-red-600 bg-red-50 m-6 rounded-2xl p-6">
@@ -66,8 +85,15 @@ export default function GuacamoleViewer({ vmId }: { vmId: string }) {
   }
 
   return (
-    <div ref={containerRef} className="relative w-full h-full bg-black">
+    <div
+      ref={containerRef}
+      className="relative w-full h-full bg-black"
+      onMouseEnter={focusIframe}
+      onMouseMove={focusIframe}
+      onMouseDown={focusIframe}
+    >
       <iframe
+        ref={iframeRef}
         src={src}
         className="w-full h-full border-0"
         // No sandbox: Guacamole needs to be able to take real keyboard focus
