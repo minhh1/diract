@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { Monitor, Plus, X, KeyRound, Trash2, CreditCard } from "lucide-react";
 import CostComparisonTable from "@/components/virtualcomputers/CostComparisonTable";
 import VmStatusBadge from "@/components/virtualcomputers/VmStatusBadge";
+import { REGIONS } from "@/lib/vmProviders/regions";
 import type { CloudProviderId, VmProtocol, VmSizeOption } from "@/lib/vmProviders/types";
 
 interface Props {
@@ -423,6 +424,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                   setVmProvider(e.target.value as CloudProviderId);
                   setVmSizeSlug("");
                   setVmCredentialId("");
+                  setVmRegion("");
                 }}
                 className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
               >
@@ -454,12 +456,18 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                   </option>
                 ))}
               </select>
-              <input
+              <select
                 value={vmRegion}
                 onChange={(e) => setVmRegion(e.target.value)}
-                placeholder="Region (e.g. nyc3)"
-                className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
-              />
+                className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+              >
+                <option value="">Region...</option>
+                {(REGIONS[vmProvider] || []).map((r) => (
+                  <option key={r.slug} value={r.slug}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className={vmBillingMode === "byo" ? "grid grid-cols-2 gap-3" : ""}>
               {vmBillingMode === "byo" && (

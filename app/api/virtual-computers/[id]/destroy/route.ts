@@ -20,22 +20,25 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   await admin.from("virtual_computers").update({ status: "destroying", updated_at: new Date().toISOString() }).eq("id", id);
 
   if (vm.provider_instance_id) {
-    const credentials = await resolveCredentials(admin, vm);
-    if (credentials) {
-      try {
+    try {
+      const credentials = await resolveCredentials(admin, vm);
+      if (credentials) {
         const adapter = getProvider(vm.provider as CloudProviderId);
         await adapter.destroyInstance(credentials, vm.provider_instance_id);
-      } catch (err) {
-        await admin
-          .from("virtual_computers")
-          .update({
-            status: "error",
-            error_message: err instanceof Error ? err.message : "Destroy failed",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", id);
-        return NextResponse.json({ error: err instanceof Error ? err.message : "Destroy failed" }, { status: 502 });
       }
+    } catch (err) {
+      // Don't fall through to marking the row destroyed -- if we can't
+      // resolve credentials (e.g. a missing platform env var) or the
+      // provider call fails, the underlying instance is still out there.
+      await admin
+        .from("virtual_computers")
+        .update({
+          status: "error",
+          error_message: err instanceof Error ? err.message : "Destroy failed",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Destroy failed" }, { status: 502 });
     }
   }
 

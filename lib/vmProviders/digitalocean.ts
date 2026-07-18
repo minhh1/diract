@@ -21,6 +21,16 @@ const DROPLET_IMAGE = "ubuntu-22-04-x64";
 // desktop shell. guacd connects straight to the VM's VNC/RDP port over
 // TCP -- no websocket proxy needed on the VM side, Guacamole handles that.
 //
+// Ordering matters here: our status polling marks a VM "running" as soon
+// as the provider's hypervisor reports the droplet booted (tens of
+// seconds), not when cloud-init actually finishes. So the desktop + VNC/RDP
+// server MUST be installed and started first -- if the browser/office apps
+// install first, a user hitting Connect right after "running" gets nothing
+// listening on the VNC/RDP port yet, which Guacamole reports as "An
+// internal error has occurred ... connection has been terminated" (this
+// was a real regression the first time these apps were added). The extra
+// apps install afterwards, in the background, once the session is usable.
+//
 // Firefox is installed from Mozilla's own APT repo rather than `apt-get
 // install firefox` -- as of Ubuntu 22.04, the archive package is a
 // transitional snap stub, and installing snaps from cloud-init is slow and
@@ -37,8 +47,9 @@ users:
     lock_passwd: false
 runcmd:
   - echo '${escapedUsername}:${escapedPassword}' | chpasswd
-  - apt-get update
-  - install -d -m 0755 /etc/apt/keyrings
+  - apt-get update`;
+
+  const extraApps = `  - install -d -m 0755 /etc/apt/keyrings
   - wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O /etc/apt/keyrings/packages.mozilla.org.asc
   - sh -c 'echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" > /etc/apt/sources.list.d/mozilla.list'
   - sh -c 'printf "Package: *\\nPin: origin packages.mozilla.org\\nPin-Priority: 1000\\n" > /etc/apt/preferences.d/mozilla'
@@ -54,6 +65,7 @@ runcmd:
   - su - ${escapedUsername} -c "printf '#!/bin/sh\\nstartxfce4 &\\n' > ~/.vnc/xstartup"
   - su - ${escapedUsername} -c "chmod +x ~/.vnc/xstartup"
   - su - ${escapedUsername} -c "vncserver -localhost no :1"
+${extraApps}
 `;
   }
 
@@ -63,6 +75,7 @@ runcmd:
   - chown ${escapedUsername}:${escapedUsername} /home/${escapedUsername}/.xsession
   - adduser xrdp ssl-cert
   - systemctl enable --now xrdp
+${extraApps}
 `;
 }
 
@@ -89,6 +102,20 @@ async function throwIfNotOk(res: Response, action: string): Promise<void> {
   throw new Error(`DigitalOcean ${action} failed (${res.status}): ${text.slice(0, 200) || "unknown error"}`);
 }
 
+// DigitalOcean's droplet `name` must be a valid hostname (letters, digits,
+// `.` and `-` only) -- our own `name` field is an arbitrary display name
+// (e.g. "Minh's Virtual Computer") that admins type freely, so it has to be
+// slugified before being sent, not passed through as-is (this previously
+// caused real 422s: "Only valid hostname characters are allowed").
+function toDropletHostname(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
+  return slug || `vm-${Date.now()}`;
+}
+
 export const digitalOceanProvider: VmProvider = {
   id: "digitalocean",
 
@@ -96,7 +123,7 @@ export const digitalOceanProvider: VmProvider = {
     const res = await doFetch(params.credentials, "/droplets", {
       method: "POST",
       body: JSON.stringify({
-        name: params.name,
+        name: toDropletHostname(params.name),
         region: params.region,
         size: params.sizeSlug,
         image: DROPLET_IMAGE,

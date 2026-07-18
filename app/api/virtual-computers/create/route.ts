@@ -88,7 +88,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    credentials = getPlatformCredentials(provider as CloudProviderId);
+    try {
+      credentials = getPlatformCredentials(provider as CloudProviderId);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Platform billing is not fully configured yet" },
+        { status: 500 }
+      );
+    }
   } else {
     const { data: credential } = await admin
       .from("company_cloud_credentials")
