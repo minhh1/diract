@@ -24,37 +24,100 @@ const DROPLET_IMAGE = "ubuntu-22-04-x64";
 // Ordering matters here: our status polling marks a VM "running" as soon
 // as the provider's hypervisor reports the droplet booted (tens of
 // seconds), not when cloud-init actually finishes. So the desktop + VNC/RDP
-// server MUST be installed and started first -- if the browser/office apps
-// install first, a user hitting Connect right after "running" gets nothing
-// listening on the VNC/RDP port yet, which Guacamole reports as "An
-// internal error has occurred ... connection has been terminated" (this
-// was a real regression the first time these apps were added). The extra
-// apps install afterwards, in the background, once the session is usable.
+// server must be installed and started first, and the extra apps
+// (Firefox/LibreOffice/Mousepad) must run as a genuinely DETACHED systemd
+// unit (`systemctl start --no-block`), not a synchronous runcmd step.
+// Repeated real-droplet testing (SSH in, watch it happen) showed that
+// running the extra-apps install as a *synchronous* runcmd step -- even
+// after the VNC/SSH setup steps that precede it -- reliably broke both SSH
+// key auth and the VNC port for the rest of boot, root cause not fully
+// isolated (ruled out: script ordering, write_files/systemd for the VNC
+// unit itself, and comment lines in the generated YAML). Since VNC/SSH
+// setup completes and is verified working *before* this step ever starts,
+// running it fully detached removes any chance of it affecting the parts
+// that matter, regardless of the exact mechanism.
 //
 // Firefox is installed from Mozilla's own APT repo rather than `apt-get
 // install firefox` -- as of Ubuntu 22.04, the archive package is a
 // transitional snap stub, and installing snaps from cloud-init is slow and
 // flaky (snapd needs to initialize first). The pinning step ensures our
 // repo's Firefox wins over any Ubuntu-provided package of the same name.
+//
+// The VNC server runs as a proper systemd unit (written via write_files
+// below), not an ad-hoc `su - user -c "vncserver ..."` in runcmd. The
+// latter looked fine in vncserver's own startup log (it prints "VNC
+// extension running" etc.) but Xvnc reliably died within moments of the
+// `su -c` invocation's session ending -- confirmed repeatedly by SSHing
+// into real droplets, watching the process disappear, and finding nothing
+// listening on the VNC port shortly after. A `Type=simple` systemd service
+// running `vncserver -fg` (foreground, so systemd supervises the real
+// process directly instead of a forking wrapper) avoids that whole class of
+// session-lifecycle problem, and is the standard robust pattern for this.
+//
+// Do NOT add explanatory `#` comments inside the generated cloud-config
+// string itself (the `#cloud-config`/`runcmd` YAML below) -- that was tried
+// once and broke cloud-init's parsing of the whole document; keep
+// explanations here, in the surrounding TypeScript, instead.
 function cloudInitScript(protocol: VmProtocol, username: string, password: string): string {
   const escapedPassword = password.replace(/'/g, "'\\''");
   const escapedUsername = username.replace(/'/g, "'\\''");
+
+  const vncSystemdUnit = `  - path: /etc/systemd/system/vncserver@.service
+    content: |
+      [Unit]
+      Description=TigerVNC server (display :%i)
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=${escapedUsername}
+      WorkingDirectory=/home/${escapedUsername}
+      ExecStart=/usr/bin/vncserver -fg -localhost no :%i
+      Restart=on-failure
+
+      [Install]
+      WantedBy=multi-user.target
+`;
+
+  // Runs fully detached from cloud-init via `systemctl start --no-block`
+  // (see the function-level comment for why this must not be a synchronous
+  // runcmd step).
+  const extraAppsFiles = `  - path: /usr/local/bin/install-extra-apps.sh
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      set -e
+      install -d -m 0755 /etc/apt/keyrings
+      wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O /etc/apt/keyrings/packages.mozilla.org.asc
+      echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" > /etc/apt/sources.list.d/mozilla.list
+      printf "Package: *\\nPin: origin packages.mozilla.org\\nPin-Priority: 1000\\n" > /etc/apt/preferences.d/mozilla
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y firefox libreoffice-writer libreoffice-calc libreoffice-impress mousepad
+  - path: /etc/systemd/system/extra-apps.service
+    content: |
+      [Unit]
+      Description=Install extra desktop apps (Firefox, LibreOffice, Mousepad)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/install-extra-apps.sh
+`;
+
+  const writeFiles = `write_files:
+${protocol === "vnc" ? vncSystemdUnit : ""}${extraAppsFiles}`;
+
   const userSetup = `#cloud-config
 users:
   - name: ${escapedUsername}
     groups: sudo
     shell: /bin/bash
     lock_passwd: false
-runcmd:
+${writeFiles}runcmd:
   - echo '${escapedUsername}:${escapedPassword}' | chpasswd
-  - apt-get update`;
-
-  const extraApps = `  - install -d -m 0755 /etc/apt/keyrings
-  - wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O /etc/apt/keyrings/packages.mozilla.org.asc
-  - sh -c 'echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" > /etc/apt/sources.list.d/mozilla.list'
-  - sh -c 'printf "Package: *\\nPin: origin packages.mozilla.org\\nPin-Priority: 1000\\n" > /etc/apt/preferences.d/mozilla'
   - apt-get update
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y firefox libreoffice-writer libreoffice-calc libreoffice-impress mousepad`;
+  - systemctl daemon-reload`;
 
   if (protocol === "vnc") {
     return `${userSetup}
@@ -62,10 +125,10 @@ runcmd:
   - su - ${escapedUsername} -c "mkdir -p ~/.vnc"
   - su - ${escapedUsername} -c "echo '${escapedPassword}' | vncpasswd -f > ~/.vnc/passwd"
   - su - ${escapedUsername} -c "chmod 600 ~/.vnc/passwd"
-  - su - ${escapedUsername} -c "printf '#!/bin/sh\\nstartxfce4 &\\n' > ~/.vnc/xstartup"
+  - su - ${escapedUsername} -c "printf '#!/bin/sh\\nstartxfce4\\n' > ~/.vnc/xstartup"
   - su - ${escapedUsername} -c "chmod +x ~/.vnc/xstartup"
-  - su - ${escapedUsername} -c "vncserver -localhost no :1"
-${extraApps}
+  - systemctl enable --now vncserver@1.service
+  - systemctl start --no-block extra-apps.service
 `;
   }
 
@@ -75,7 +138,7 @@ ${extraApps}
   - chown ${escapedUsername}:${escapedUsername} /home/${escapedUsername}/.xsession
   - adduser xrdp ssl-cert
   - systemctl enable --now xrdp
-${extraApps}
+  - systemctl start --no-block extra-apps.service
 `;
 }
 
