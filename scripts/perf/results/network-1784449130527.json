@@ -1,0 +1,61 @@
+{
+  "label": "aws-us-east-1-far-baseline",
+  "timestamp": "2026-07-19T08:18:48.882Z",
+  "measurements": [
+    {
+      "name": "guacamole-gateway",
+      "host": "niksenflow-guacamole.fly.dev",
+      "port": 443,
+      "samplesMs": [
+        34.45,
+        16.54,
+        23.77
+      ],
+      "medianMs": 23.77
+    },
+    {
+      "name": "digitalocean-api",
+      "host": "api.digitalocean.com",
+      "port": 443,
+      "samplesMs": [
+        30.78,
+        19.29,
+        14.95
+      ],
+      "medianMs": 19.29
+    },
+    {
+      "name": "aws-us-east-1",
+      "host": "ec2.us-east-1.amazonaws.com",
+      "port": 443,
+      "samplesMs": [
+        239.78,
+        235.86,
+        236.36
+      ],
+      "medianMs": 236.36
+    },
+    {
+      "name": "aws-ap-southeast-2",
+      "host": "ec2.ap-southeast-2.amazonaws.com",
+      "port": 443,
+      "samplesMs": [
+        44.61,
+        16.38,
+        16.25
+      ],
+      "medianMs": 16.38
+    },
+    {
+      "name": "vm-remote-desktop-port",
+      "host": "100.55.38.31",
+      "port": 3389,
+      "samplesMs": [
+        242.38,
+        233.24,
+        234.6
+      ],
+      "medianMs": 234.6
+    }
+  ]
+}

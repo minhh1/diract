@@ -40,6 +40,9 @@ yarn-error.log*
 # playwright mcp debug artifacts
 .playwright-mcp/
 
+# perf test suite -- real session cookies/tokens, never commit
+scripts/perf/auth-state.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

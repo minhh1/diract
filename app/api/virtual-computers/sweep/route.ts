@@ -8,9 +8,9 @@
 // Three passes, matching the plan's detection layers:
 // 1. Resolve any in-progress snapshot ('snapshotting' VMs) and destroy the
 //    source instance once it's durable.
-// 2. Evaluate 'running' VMs against the midnight backstop, the evening-only
-//    heartbeat fallback, and (if a company opted in) strict schedule
-//    end-of-day enforcement.
+// 2. Evaluate 'running' VMs against the midnight backstop, the inactivity
+//    rule (deliberately lenient -- see below), and (if a company opted in)
+//    strict schedule end-of-day enforcement.
 // 3. Wake-ahead any 'hibernated' VM whose company schedule's start_time is
 //    coming up, with enough lead time to be fully running by then.
 import { NextResponse } from "next/server";
@@ -21,8 +21,8 @@ import { hourInTimezone, todayAtLocalTime, dayOfWeekInTimezone } from "@/lib/vmP
 import { reportUsageForCustomer } from "@/lib/billing/usageReporting";
 import type { CloudProviderId } from "@/lib/vmProviders/types";
 
-const HEARTBEAT_FALLBACK_HOUR = 19; // 7pm -- before this, inactivity means nothing.
-const HEARTBEAT_STALE_MS = 65 * 60 * 1000; // ~2 missed 30-min heartbeats.
+const EVENING_HOUR = 19; // 7pm
+const INACTIVITY_HIBERNATE_MS = 60 * 60 * 1000; // wait at least 1 hour of no activity before hibernating.
 const WAKE_LEAD_MS: Record<string, number> = {
   linux: 10 * 60 * 1000, // DigitalOcean restore is the faster path.
   windows: 20 * 60 * 1000, // AWS Windows restore is the slower path.
@@ -100,10 +100,18 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Evening-only heartbeat fallback -- a quiet VM during the workday is
-    // normal, not a signal; only treat staleness as "logged off" after 7pm.
+    // Inactivity rule -- deliberately lenient. Never hibernate a VM for
+    // being idle on a weekday before 7pm, no matter how stale -- a quiet
+    // VM during the workday is normal (stepped away, closed the tab
+    // browsing something else), not a signal that someone's actually done
+    // for the day. Only once it's a weekend or past 7pm on a weekday does
+    // staleness start to matter, and even then only after a full hour of
+    // no activity -- closing the tab/window isn't an instant trigger.
+    const dow = dayOfWeekInTimezone(now, tz);
+    const isWeekend = dow === 0 || dow === 6;
+    const isEveningWeekday = !isWeekend && hourInTimezone(now, tz) >= EVENING_HOUR;
     const lastSeenMs = vm.last_seen_at ? new Date(vm.last_seen_at).getTime() : new Date(vm.created_at).getTime();
-    if (hourInTimezone(now, tz) >= HEARTBEAT_FALLBACK_HOUR && now.getTime() - lastSeenMs >= HEARTBEAT_STALE_MS) {
+    if ((isWeekend || isEveningWeekday) && now.getTime() - lastSeenMs >= INACTIVITY_HIBERNATE_MS) {
       await startHibernate(admin, vm);
       continue;
     }

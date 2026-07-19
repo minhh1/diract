@@ -2,12 +2,14 @@
 // Full-screen session view. The API layer (app/api/virtual-computers/[id]/*)
 // guards that only the assigned member or an admin can reach this VM.
 //
-// This page is also where the app's primary disconnect-detection signal
-// lives: while mounted, it marks the shared VmSessionContext active so
-// Sidebar.tsx blocks navigation elsewhere in the app -- the back button
-// here is the one sanctioned exit, and it explicitly logs the session off
-// (see the plan's disconnect-detection design) rather than just navigating
-// away silently.
+// Disconnect detection is entirely passive here -- there's no "explicit
+// logoff" action tied to leaving this page (that coupling used to live on
+// the back button plus an app-wide navigation guard, but it made leaving
+// the page feel fiddly and could get stuck asking to "log off" a VM that
+// was already mid-hibernate). Just bump last_seen_at while the tab is open
+// and let the sweep route's own inactivity rule (see
+// app/api/virtual-computers/sweep/route.ts) decide, whenever this page
+// happens to be closed.
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
@@ -15,7 +17,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import GuacamoleViewer from "@/components/virtualcomputers/GuacamoleViewer";
 import VmStatusBadge from "@/components/virtualcomputers/VmStatusBadge";
-import { useVmSession } from "@/components/VmSessionContext";
 
 interface VmStatus {
   id: string;
@@ -49,10 +50,8 @@ const EXTEND_PROMPT_LEAD_MS = 15 * 60 * 1000;
 export default function VirtualComputerSessionPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const vmSession = useVmSession();
   const [status, setStatus] = useState<VmStatus | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [loggingOff, setLoggingOff] = useState(false);
   const [showExtendPrompt, setShowExtendPrompt] = useState(false);
   const wakeRequested = useRef(false);
 
@@ -69,14 +68,6 @@ export default function VirtualComputerSessionPage() {
   useEffect(() => {
     poll();
   }, [poll]);
-
-  // Primary disconnect signal: mark the session active for as long as this
-  // page is mounted; Sidebar.tsx blocks navigation elsewhere while it is.
-  useEffect(() => {
-    vmSession.setActive(true);
-    return () => vmSession.setActive(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const isWaiting = status?.status === "provisioning" || status?.status === "snapshotting" || status?.status === "hibernated";
 
@@ -102,10 +93,10 @@ export default function VirtualComputerSessionPage() {
     fetch(`/api/virtual-computers/${id}/wake`, { method: "POST" }).finally(poll);
   }, [status, id, poll]);
 
-  // Evening-only heartbeat fallback -- deliberately coarse (every 30 min),
-  // just bumps last_seen_at so the sweep cron can tell whether the last
-  // couple of pings showed any activity. Whether that staleness actually
-  // matters is decided server-side (only after 7pm company time).
+  // Deliberately coarse (every 30 min), just bumps last_seen_at. Runs any
+  // time the tab is open with the VM running -- whether that staleness
+  // actually matters (and how stale is stale enough) is entirely decided
+  // server-side by the sweep route's inactivity rule.
   useEffect(() => {
     if (status?.status !== "running") return;
     const interval = setInterval(() => {
@@ -145,24 +136,14 @@ export default function VirtualComputerSessionPage() {
     poll();
   };
 
-  const logOffAndLeave = async () => {
-    if (status?.status === "running") {
-      setLoggingOff(true);
-      await fetch(`/api/virtual-computers/${id}/logoff`, { method: "POST" });
-    }
-    vmSession.setActive(false);
-    router.push("/dashboard/virtual-computers");
-  };
-
   return (
     <div className="flex flex-col h-screen">
       <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-white shrink-0">
         <button
-          onClick={logOffAndLeave}
-          disabled={loggingOff}
-          className="p-1.5 text-slate-400 hover:text-slate-700 disabled:opacity-40"
+          onClick={() => router.push("/dashboard/virtual-computers")}
+          className="p-1.5 text-slate-400 hover:text-slate-700"
         >
-          {loggingOff ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />}
+          <ArrowLeft size={16} />
         </button>
         <p className="text-[13px] font-bold text-slate-800 flex-1">Virtual Computer</p>
         {status && (
@@ -210,7 +191,7 @@ export default function VirtualComputerSessionPage() {
               {status.status === "hibernated"
                 ? "Waking up your virtual computer..."
                 : status.status === "snapshotting"
-                ? "Saving a snapshot and logging off..."
+                ? "Saving a snapshot before shutting down..."
                 : "Setting up your virtual computer..."}
               {status.createdAt && ` (${elapsedLabel(status.createdAt, now)})`}
             </p>

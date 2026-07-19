@@ -129,12 +129,12 @@ export async function closeUsageEvent(admin: any, vmId: string): Promise<void> {
     .is("ended_at", null);
 }
 
-// Shared by the explicit logoff route and the sweep cron's inferred-disconnect
-// paths (evening heartbeat fallback, midnight backstop, schedule end-of-day)
-// -- starts (but doesn't wait out) the snapshot, since it can take far
-// longer than one request should block for. The sweep route's own
-// 'snapshotting' pass is what polls this to completion and destroys the
-// instance once the snapshot is durable.
+// Called from the sweep cron's inferred-disconnect paths (inactivity rule,
+// midnight backstop, opt-in schedule end-of-day enforcement -- see
+// app/api/virtual-computers/sweep/route.ts) -- starts (but doesn't wait
+// out) the snapshot, since it can take far longer than one request should
+// block for. The sweep route's own 'snapshotting' pass is what polls this
+// to completion and destroys the instance once the snapshot is durable.
 export async function startHibernate(admin: any, vm: { id: string; provider: string; provider_instance_id: string; region: string; billing_mode: string; credential_id: string | null }): Promise<void> {
   try {
     const credentials = await resolveCredentials(admin, vm);
