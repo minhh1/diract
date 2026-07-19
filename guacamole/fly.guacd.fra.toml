@@ -20,5 +20,5 @@ primary_region = "fra"
   app = "/opt/guacamole/sbin/guacd -b :: -L info -f"
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = "shared-cpu-2x"
+  memory = "1024mb"

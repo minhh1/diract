@@ -190,6 +190,16 @@ export const awsProvider: VmProvider = {
           ? windowsRestoreUserData(params.remotePassword)
           : windowsUserData(params.remotePassword),
         TagSpecifications: [{ ResourceType: "instance", Tags: [{ Key: "Name", Value: params.name }] }],
+        // T-family sizes (the only ones this repo offers, see pricing.ts)
+        // are burstable -- CPU performance above a per-size baseline draws
+        // down a credit balance, and sustained interactive desktop use
+        // (typing, video, Office) can exhaust it, hard-throttling the
+        // instance back to baseline mid-session. "unlimited" lets it burst
+        // past that baseline indefinitely (billed only for the extra
+        // vCPU-hours actually used beyond baseline) instead of throttling.
+        // Only valid for T-family instances -- AWS rejects this parameter
+        // outright for non-burstable types like m5.2xlarge.
+        ...(/^t\d/i.test(params.sizeSlug) ? { CreditSpecification: { CpuCredits: "unlimited" as const } } : {}),
       })
     );
     const instance = res.Instances?.[0];
