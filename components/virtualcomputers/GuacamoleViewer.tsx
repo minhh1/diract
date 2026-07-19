@@ -11,8 +11,6 @@
 import { useState, useRef } from "react";
 import { Loader2, ExternalLink } from "lucide-react";
 
-const GUACAMOLE_URL = process.env.NEXT_PUBLIC_GUACAMOLE_URL || "http://localhost:8080/guacamole";
-
 export default function GuacamoleViewer({ vmId }: { vmId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
@@ -71,10 +69,13 @@ export default function GuacamoleViewer({ vmId }: { vmId: string }) {
       setError(json.error || "Could not start session");
       return;
     }
-    // Same hashbang-mode token quirk as before: token must come after
-    // `#/client/...`, not before it (confirmed against the deployed
-    // Guacamole bundle, not guessed).
-    win.location.href = `${GUACAMOLE_URL}/#/client/${json.clientIdentifier}?token=${json.authToken}`;
+    // guacamoleUrl points at whichever region's gateway is actually closest
+    // to this VM (see app/api/virtual-computers/[id]/session/route.ts) --
+    // there's no single build-time URL anymore now that the gateway is
+    // deployed per-region. Same hashbang-mode token quirk as before: token
+    // must come after `#/client/...`, not before it (confirmed against the
+    // deployed Guacamole bundle, not guessed).
+    win.location.href = `${json.guacamoleUrl}/#/client/${json.clientIdentifier}?token=${json.authToken}`;
     openedWindowRef.current = win;
     setOpened(true);
   }

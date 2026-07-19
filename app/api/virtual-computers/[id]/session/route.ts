@@ -3,9 +3,10 @@
 // member or admin only.
 import { NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { getGuacamoleSession } from "@/lib/guacamole";
+import { getGuacamoleSession, resolveGuacamoleUrl } from "@/lib/guacamole";
 import { loadVm } from "../../_lib";
-import type { VmProtocol } from "@/lib/vmProviders/types";
+import type { VmProtocol, CloudProviderId } from "@/lib/vmProviders/types";
+import { resolveFlyRegion } from "@/lib/vmProviders/regions";
 
 // Fallback when a VM has no fixed resolution preset (resolution_width/height
 // null) and the browser didn't report its own screen size -- shouldn't
@@ -39,6 +40,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const height = vm.resolution_height || Number(body?.screenHeight) || DEFAULT_HEIGHT;
   const dpi = usingPreset ? 96 : Math.round(96 * (Number(body?.devicePixelRatio) || 1));
 
+  // Mint the token against (and hand the browser back) whichever region's
+  // gateway is actually closest to this VM -- see lib/vmProviders/regions.ts.
+  const guacamoleUrl = resolveGuacamoleUrl(resolveFlyRegion(vm.provider as CloudProviderId, vm.region));
+
   try {
     const session = await getGuacamoleSession({
       connectionLabel: vm.id,
@@ -46,11 +51,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       hostname: vm.ip_address,
       username: vm.remote_username,
       password: vm.remote_password,
+      guacamoleUrl,
       width,
       height,
       dpi,
     });
-    return NextResponse.json(session);
+    return NextResponse.json({ ...session, guacamoleUrl });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Could not start session" }, { status: 502 });
   }

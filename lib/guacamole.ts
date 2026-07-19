@@ -9,9 +9,30 @@
 // lib/gotenberg.ts (try/catch, res.ok check, truncated error body).
 import crypto from "crypto";
 import type { VmProtocol } from "./vmProviders/types";
+import type { FlyRegion } from "./vmProviders/regions";
 
-const GUACAMOLE_URL = process.env.GUACAMOLE_URL || "http://localhost:8080/guacamole";
 const TOKEN_TTL_MS = 5 * 60 * 1000; // only needs to live long enough for the browser to open the client iframe
+
+// One guacd+guacamole app-pair per Fly region (see guacamole/README.md) --
+// each region's URL is its own env var since there's no way to derive one
+// from another (different Fly app hostnames). GUACAMOLE_URL alone remains
+// the local-dev / single-region fallback for any region without its own
+// var set, so a fresh checkout or a region added to regions.ts before its
+// gateway is deployed doesn't hard-fail.
+const REGION_URL_ENV: Record<FlyRegion, string> = {
+  syd: "GUACAMOLE_URL_SYD",
+  iad: "GUACAMOLE_URL_IAD",
+  fra: "GUACAMOLE_URL_FRA",
+  sin: "GUACAMOLE_URL_SIN",
+};
+
+export function resolveGuacamoleUrl(flyRegion: FlyRegion): string {
+  return (
+    process.env[REGION_URL_ENV[flyRegion]] ||
+    process.env.GUACAMOLE_URL ||
+    "http://localhost:8080/guacamole"
+  );
+}
 
 function secretKey(): Buffer {
   const hex = process.env.GUACAMOLE_JSON_SECRET_KEY;
@@ -45,6 +66,11 @@ export interface GuacamoleConnectionParams {
   hostname: string;
   username: string;
   password: string;
+  // Base URL of the gateway to mint the token against -- resolve with
+  // resolveGuacamoleUrl(resolveFlyRegion(vm.provider, vm.region)) so the
+  // token is minted on (and later served from) whichever region's guacd is
+  // actually closest to this VM.
+  guacamoleUrl: string;
   // Display size in pixels. Both required together -- callers resolve
   // "auto" (null stored resolution) to the connecting browser's own
   // screen size before calling this, so this function never has to guess.
@@ -65,7 +91,7 @@ export interface GuacamoleSession {
 }
 
 export async function getGuacamoleSession(params: GuacamoleConnectionParams): Promise<GuacamoleSession> {
-  const { connectionLabel, protocol, hostname, username, password, width, height, dpi } = params;
+  const { connectionLabel, protocol, hostname, username, password, width, height, dpi, guacamoleUrl } = params;
   const port = protocol === "vnc" ? "5901" : "3389";
 
   const payload = {
@@ -113,13 +139,13 @@ export async function getGuacamoleSession(params: GuacamoleConnectionParams): Pr
 
   let res: Response;
   try {
-    res = await fetch(`${GUACAMOLE_URL}/api/tokens`, {
+    res = await fetch(`${guacamoleUrl}/api/tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ data }),
     });
   } catch {
-    throw new Error(`Could not reach the Guacamole gateway at ${GUACAMOLE_URL}. Is it running? (see guacamole/README.md)`);
+    throw new Error(`Could not reach the Guacamole gateway at ${guacamoleUrl}. Is it running? (see guacamole/README.md)`);
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");

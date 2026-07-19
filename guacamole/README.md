@@ -7,9 +7,20 @@ entirely via env vars. `guacamole` already bundles the JSON auth extension,
 which is what lets the Next.js server mint signed, short-lived connection
 tokens without a separate Guacamole user database -- see `../lib/guacamole.ts`.
 
-Deployed to Fly.io as two apps (`niksenflow-guacd`, `niksenflow-guacamole`)
-in the same org, reachable from each other over Fly's private 6PN network --
-see `fly.guacd.toml` / `fly.guacamole.toml`.
+Deployed to Fly.io as one `guacd`+`guacamole` app **pair per region**
+(`syd`, `iad`, `fra`, `sin`), not one multi-region app -- the official
+`guacamole` image only supports a single, fixed `GUACD_HOSTNAME` per
+deployment, so there's no way for one running instance to pick a different
+`guacd` at request time. Each pair is otherwise identical, reachable from
+each other over Fly's private 6PN network -- see `fly.guacd.<region>.toml` /
+`fly.guacamole.<region>.toml`.
+
+`lib/vmProviders/regions.ts` maps every VM region to whichever pair is
+geographically closest (`resolveFlyRegion`), and
+`app/api/virtual-computers/[id]/session/route.ts` mints each session's token
+against that pair and hands its URL back to the browser -- see
+`resolveGuacamoleUrl` in `../lib/guacamole.ts`. That's what makes "closest
+gateway to the VM" real instead of everything routing through Sydney.
 
 ## Local dev
 
@@ -31,24 +42,33 @@ GUACAMOLE_JSON_SECRET_KEY=<same value as guacamole/.env>
 ## Production (Fly.io)
 
 Vercel can't run this (needs a persistent `guacd` process, not a serverless
-function).
+function). Repeat per region (`syd`, `iad`, `fra`, `sin`) -- shown here for
+one new region, `<region>`:
 
 ```bash
-fly apps create niksenflow-guacd
-fly deploy -c guacamole/fly.guacd.toml -a niksenflow-guacd
+fly apps create niksenflow-guacd-<region>
+fly deploy -c guacamole/fly.guacd.<region>.toml -a niksenflow-guacd-<region>
 
-fly apps create niksenflow-guacamole
-fly secrets set -a niksenflow-guacamole JSON_SECRET_KEY=$(openssl rand -hex 16)
-fly deploy -c guacamole/fly.guacamole.toml -a niksenflow-guacamole
+fly apps create niksenflow-guacamole-<region>
+# Same JSON_SECRET_KEY value across every region -- it's just the HMAC/AES
+# key lib/guacamole.ts signs tokens with, not a per-instance credential.
+fly secrets set -a niksenflow-guacamole-<region> JSON_SECRET_KEY=<same value everywhere>
+fly deploy -c guacamole/fly.guacamole.<region>.toml -a niksenflow-guacamole-<region>
 ```
 
-Then on the Next.js app (Vercel), set:
+Then on the Next.js app (Vercel), set one URL var per region plus the shared
+secret (see `lib/guacamole.ts`'s `REGION_URL_ENV` for the exact var names):
 
 ```
-GUACAMOLE_URL=https://niksenflow-guacamole.fly.dev/guacamole
-NEXT_PUBLIC_GUACAMOLE_URL=https://niksenflow-guacamole.fly.dev/guacamole
+GUACAMOLE_URL_SYD=https://niksenflow-guacamole.fly.dev/guacamole
+GUACAMOLE_URL_IAD=https://niksenflow-guacamole-iad.fly.dev/guacamole
+GUACAMOLE_URL_FRA=https://niksenflow-guacamole-fra.fly.dev/guacamole
+GUACAMOLE_URL_SIN=https://niksenflow-guacamole-sin.fly.dev/guacamole
 GUACAMOLE_JSON_SECRET_KEY=<same value passed to JSON_SECRET_KEY above>
 ```
+
+`GUACAMOLE_URL` (no region suffix) still works as the local-dev /
+single-region fallback for any region without its own var set.
 
 Deploying to a different host (Railway, a VPS)? Same two containers,
 `guacamole/docker-compose.yml` is the reference -- just make sure `guacd` is

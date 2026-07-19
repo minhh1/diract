@@ -11,7 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { Monitor, Plus, X, KeyRound, Trash2, CreditCard, Loader2 } from "lucide-react";
 import CostComparisonTable from "@/components/virtualcomputers/CostComparisonTable";
 import VmStatusBadge from "@/components/virtualcomputers/VmStatusBadge";
-import { REGIONS } from "@/lib/vmProviders/regions";
+import { REGIONS, FLY_REGION_LABELS } from "@/lib/vmProviders/regions";
 import type { CloudProviderId, VmProtocol, VmSizeOption } from "@/lib/vmProviders/types";
 
 interface Props {
@@ -107,7 +107,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
   const [vmName, setVmName] = useState("");
   const [vmProvider, setVmProvider] = useState<CloudProviderId>("digitalocean");
   const [vmSizeSlug, setVmSizeSlug] = useState("");
-  const [vmRegion, setVmRegion] = useState(() => REGIONS.digitalocean?.find((r) => r.latencyTier === "near")?.slug || "");
+  const [vmRegion, setVmRegion] = useState(() => REGIONS.digitalocean?.[0]?.slug || "");
   const [vmProtocol, setVmProtocol] = useState<VmProtocol>("vnc");
   const [vmBillingMode, setVmBillingMode] = useState<"byo" | "platform">("byo");
   const [vmCredentialId, setVmCredentialId] = useState("");
@@ -615,12 +615,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                   setVmProvider(nextProvider);
                   setVmSizeSlug("");
                   setVmCredentialId("");
-                  // Default to the nearest-latency region for this provider
-                  // (the streaming gateway is single-region -- see
-                  // lib/vmProviders/regions.ts) rather than blank, so
-                  // admins don't have to know to look for it.
-                  const nearest = (REGIONS[nextProvider] || []).find((r) => r.latencyTier === "near");
-                  setVmRegion(nearest?.slug || "");
+                  setVmRegion(REGIONS[nextProvider]?.[0]?.slug || "");
                   if (nextProvider === "aws") setVmProtocol("rdp");
                 }}
                 className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
@@ -670,11 +665,15 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                 ))}
               </select>
             </div>
-            {(REGIONS[vmProvider] || []).find((r) => r.slug === vmRegion)?.latencyTier === "far" && (
-              <p className="text-[11px] text-amber-600 bg-amber-50 rounded-2xl px-4 py-2">
-                Regions outside Australia will feel slower to use -- the remote-desktop streaming gateway runs in Sydney.
-              </p>
-            )}
+            {(() => {
+              const region = (REGIONS[vmProvider] || []).find((r) => r.slug === vmRegion);
+              if (!region) return null;
+              return (
+                <p className="text-[11px] text-slate-500 bg-slate-50 rounded-2xl px-4 py-2">
+                  Streams through our {FLY_REGION_LABELS[region.flyRegion]} gateway -- the nearest one to this region.
+                </p>
+              );
+            })()}
             <div className={vmBillingMode === "byo" ? "grid grid-cols-2 gap-3" : ""}>
               {vmBillingMode === "byo" && (
                 <select
