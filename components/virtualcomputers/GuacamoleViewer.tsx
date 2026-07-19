@@ -1,117 +1,114 @@
 // components/virtualcomputers/GuacamoleViewer.tsx
+// Opens the Guacamole client in a real new browser tab instead of an
+// embedded iframe. The previous iframe approach had a documented, real
+// limitation: clicks inside a cross-origin iframe never bubble focus to
+// the parent page, so every mouseenter/mousemove/mousedown had to force
+// re-focus onto the iframe by hand -- a plausible source of felt input
+// lag fully separate from any actual network latency. A dedicated tab has
+// native focus/keyboard capture with none of that.
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Minimize2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Loader2, ExternalLink } from "lucide-react";
 
 const GUACAMOLE_URL = process.env.NEXT_PUBLIC_GUACAMOLE_URL || "http://localhost:8080/guacamole";
 
 export default function GuacamoleViewer({ vmId }: { vmId: string }) {
-  const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [opening, setOpening] = useState(false);
+  const [opened, setOpened] = useState(false);
+  const openedWindowRef = useRef<Window | null>(null);
 
-  useEffect(() => {
-    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === containerRef.current);
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, []);
-
-  function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      containerRef.current?.requestFullscreen();
+  async function openSession() {
+    setError(null);
+    setOpening(true);
+    // Open the tab synchronously, inside this click handler -- browsers
+    // only allow window.open without a popup-blocker prompt when it's a
+    // direct result of a user gesture. Navigating this already-open blank
+    // tab later (once we actually have the session URL, after an async
+    // fetch) doesn't need a fresh gesture.
+    //
+    // Deliberately no "noopener" here: per spec, window.open always
+    // returns null when noopener is set, regardless of whether the popup
+    // was actually allowed -- which would make every successful open look
+    // identical to a blocked one. We need the live window reference anyway
+    // to navigate it once the session URL resolves. This is our own
+    // trusted Guacamole origin, not third-party content, so skipping
+    // noopener isn't giving up any real isolation (same reasoning the
+    // previous iframe implementation used for skipping its own sandbox).
+    const win = window.open("", "_blank");
+    if (!win) {
+      setOpening(false);
+      setError("Your browser blocked the popup -- allow popups for this site and try again.");
+      return;
     }
+    const res = await fetch(`/api/virtual-computers/${vmId}/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Only used if the VM has no fixed resolution preset -- see
+      // app/api/virtual-computers/[id]/session/route.ts.
+      body: JSON.stringify({ screenWidth: window.screen.width, screenHeight: window.screen.height }),
+    });
+    const json = await res.json();
+    setOpening(false);
+    if (!res.ok) {
+      win.close();
+      setError(json.error || "Could not start session");
+      return;
+    }
+    // Same hashbang-mode token quirk as before: token must come after
+    // `#/client/...`, not before it (confirmed against the deployed
+    // Guacamole bundle, not guessed).
+    win.location.href = `${GUACAMOLE_URL}/#/client/${json.clientIdentifier}?token=${json.authToken}`;
+    openedWindowRef.current = win;
+    setOpened(true);
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const res = await fetch(`/api/virtual-computers/${vmId}/session`, { method: "POST" });
-      const json = await res.json();
-      if (cancelled) return;
-      if (!res.ok) {
-        setError(json.error || "Could not start session");
-        return;
-      }
-      // This Guacamole deployment runs Angular in hashbang mode
-      // (html5Mode(false)), so $location.search() -- which is what reads
-      // the auto-login `token` param -- parses the query string INSIDE the
-      // hash fragment, not window.location.search. token must come after
-      // the `#/client/...` route, not before it (confirmed by inspecting
-      // the deployed app's own bundle, not guessed).
-      setSrc(`${GUACAMOLE_URL}/#/client/${json.clientIdentifier}?token=${json.authToken}`);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [vmId]);
-
-  // Clicking inside a cross-origin iframe's rendered content never bubbles a
-  // mousedown/click up to this page -- confirmed directly (window focus/blur
-  // and document focusin/focusout never fire, document.activeElement stays
-  // <body>) -- because the event is handled entirely within the iframe's own
-  // browsing context. mouseenter/mousemove, by contrast, are geometric
-  // hit-testing at the compositor level and fire on ancestors regardless of
-  // what's inside, so they're the reliable way to know the pointer has
-  // reached the VM and force real focus onto the iframe element -- from
-  // there Guacamole's own client takes over focus management internally.
-  useEffect(() => {
-    if (!src) return;
-    iframeRef.current?.focus();
-  }, [src]);
-
-  function focusIframe() {
-    if (document.activeElement !== iframeRef.current) iframeRef.current?.focus();
+  function reopen() {
+    if (openedWindowRef.current && !openedWindowRef.current.closed) {
+      openedWindowRef.current.focus();
+      return;
+    }
+    openSession();
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-[13px] text-red-600 bg-red-50 m-6 rounded-2xl p-6">
-        {error}
-      </div>
-    );
-  }
-
-  if (!src) {
-    return (
-      <div className="flex items-center justify-center h-full gap-2 text-[13px] text-slate-400">
-        <Loader2 size={16} className="animate-spin" /> Connecting...
+      <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+        <p className="text-[13px] text-red-600 bg-red-50 rounded-2xl p-6">{error}</p>
+        <button
+          onClick={openSession}
+          className="px-5 py-2 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 transition-colors"
+        >
+          Try again
+        </button>
       </div>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-full bg-black"
-      onMouseEnter={focusIframe}
-      onMouseMove={focusIframe}
-      onMouseDown={focusIframe}
-    >
-      <iframe
-        ref={iframeRef}
-        src={src}
-        className="w-full h-full border-0"
-        // No sandbox: Guacamole needs to be able to take real keyboard focus
-        // on click (its remote-input capture relies on focusing a hidden
-        // textarea) -- sandboxing this iframe left focus stuck on <body>,
-        // so mouse input reached the VM but keystrokes never did. This is
-        // our own trusted backend, not third-party content, so sandboxing
-        // it isn't buying any real isolation anyway.
-        allow="clipboard-read; clipboard-write; fullscreen"
-        title="Virtual computer session"
-      />
-      <button
-        onClick={toggleFullscreen}
-        title={isFullscreen ? "Exit full screen" : "Enter full screen"}
-        className="absolute top-3 right-3 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white transition-colors"
-      >
-        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-      </button>
+    <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+      {opened ? (
+        <>
+          <p className="text-[13px] text-slate-600 font-medium">Session opened in a new tab.</p>
+          <button
+            onClick={reopen}
+            className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 transition-colors"
+          >
+            <ExternalLink size={14} />
+            Reopen
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={openSession}
+          disabled={opening}
+          className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+        >
+          {opening ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+          {opening ? "Opening..." : "Open virtual computer"}
+        </button>
+      )}
     </div>
   );
 }

@@ -24,7 +24,18 @@ interface VmStatus {
   os: "linux" | "windows";
   createdAt: string;
   hibernateDeadline: string | null;
+  resolutionWidth: number | null;
+  resolutionHeight: number | null;
 }
+
+// "Ultra-wide" is an honest single wide desktop, not real multi-monitor --
+// Guacamole's RDP support doesn't have confirmed multi-monitor capability.
+const RESOLUTION_PRESETS: { label: string; width: number | null; height: number | null }[] = [
+  { label: "Match my screen", width: null, height: null },
+  { label: "1920 x 1080", width: 1920, height: 1080 },
+  { label: "2560 x 1440", width: 2560, height: 1440 },
+  { label: "3840 x 1080 (ultra-wide)", width: 3840, height: 1080 },
+];
 
 function elapsedLabel(createdAt: string, now: number): string {
   const seconds = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 1000));
@@ -125,6 +136,15 @@ export default function VirtualComputerSessionPage() {
     poll();
   };
 
+  const setResolution = async (width: number | null, height: number | null) => {
+    await fetch(`/api/virtual-computers/${id}/resolution`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ width, height }),
+    });
+    poll();
+  };
+
   const logOffAndLeave = async () => {
     if (status?.status === "running") {
       setLoggingOff(true);
@@ -145,6 +165,25 @@ export default function VirtualComputerSessionPage() {
           {loggingOff ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />}
         </button>
         <p className="text-[13px] font-bold text-slate-800 flex-1">Virtual Computer</p>
+        {status && (
+          <select
+            value={RESOLUTION_PRESETS.findIndex(
+              (p) => p.width === status.resolutionWidth && p.height === status.resolutionHeight
+            )}
+            onChange={(e) => {
+              const preset = RESOLUTION_PRESETS[Number(e.target.value)];
+              setResolution(preset.width, preset.height);
+            }}
+            title="Display size (takes effect next connect)"
+            className="px-2 py-1 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400"
+          >
+            {RESOLUTION_PRESETS.map((p, i) => (
+              <option key={p.label} value={i}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        )}
         {status && <VmStatusBadge status={status.status} />}
       </div>
 

@@ -187,7 +187,18 @@ export async function wakeVm(
     hourly_usd_at_creation: number | null;
   }
 ): Promise<void> {
-  await admin.from("virtual_computers").update({ status: "provisioning", updated_at: new Date().toISOString() }).eq("id", vm.id);
+  // Clear provider_instance_id along with the status flip -- otherwise it
+  // briefly still points at the just-terminated source instance while
+  // createInstance() below is in flight, and a concurrent status poll
+  // (app/api/virtual-computers/[id]/status/route.ts, which polls whenever
+  // status is "provisioning" AND provider_instance_id is set) would query
+  // that stale, now-gone instance and incorrectly stomp status to "error".
+  // Setting it null makes that poll's guard skip until the real new
+  // instance ID is written below.
+  await admin
+    .from("virtual_computers")
+    .update({ status: "provisioning", provider_instance_id: null, updated_at: new Date().toISOString() })
+    .eq("id", vm.id);
   try {
     const credentials = await resolveCredentials(admin, vm);
     if (!credentials) throw new Error("Missing credentials for this virtual computer.");

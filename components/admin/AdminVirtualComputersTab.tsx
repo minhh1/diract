@@ -107,7 +107,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
   const [vmName, setVmName] = useState("");
   const [vmProvider, setVmProvider] = useState<CloudProviderId>("digitalocean");
   const [vmSizeSlug, setVmSizeSlug] = useState("");
-  const [vmRegion, setVmRegion] = useState("");
+  const [vmRegion, setVmRegion] = useState(() => REGIONS.digitalocean?.find((r) => r.latencyTier === "near")?.slug || "");
   const [vmProtocol, setVmProtocol] = useState<VmProtocol>("vnc");
   const [vmBillingMode, setVmBillingMode] = useState<"byo" | "platform">("byo");
   const [vmCredentialId, setVmCredentialId] = useState("");
@@ -615,7 +615,12 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                   setVmProvider(nextProvider);
                   setVmSizeSlug("");
                   setVmCredentialId("");
-                  setVmRegion("");
+                  // Default to the nearest-latency region for this provider
+                  // (the streaming gateway is single-region -- see
+                  // lib/vmProviders/regions.ts) rather than blank, so
+                  // admins don't have to know to look for it.
+                  const nearest = (REGIONS[nextProvider] || []).find((r) => r.latencyTier === "near");
+                  setVmRegion(nearest?.slug || "");
                   if (nextProvider === "aws") setVmProtocol("rdp");
                 }}
                 className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
@@ -665,6 +670,11 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                 ))}
               </select>
             </div>
+            {(REGIONS[vmProvider] || []).find((r) => r.slug === vmRegion)?.latencyTier === "far" && (
+              <p className="text-[11px] text-amber-600 bg-amber-50 rounded-2xl px-4 py-2">
+                Regions outside Australia will feel slower to use -- the remote-desktop streaming gateway runs in Sydney.
+              </p>
+            )}
             <div className={vmBillingMode === "byo" ? "grid grid-cols-2 gap-3" : ""}>
               {vmBillingMode === "byo" && (
                 <select

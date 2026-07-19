@@ -45,6 +45,11 @@ export interface GuacamoleConnectionParams {
   hostname: string;
   username: string;
   password: string;
+  // Display size in pixels. Both required together -- callers resolve
+  // "auto" (null stored resolution) to the connecting browser's own
+  // screen size before calling this, so this function never has to guess.
+  width: number;
+  height: number;
 }
 
 export interface GuacamoleSession {
@@ -55,7 +60,7 @@ export interface GuacamoleSession {
 }
 
 export async function getGuacamoleSession(params: GuacamoleConnectionParams): Promise<GuacamoleSession> {
-  const { connectionLabel, protocol, hostname, username, password } = params;
+  const { connectionLabel, protocol, hostname, username, password, width, height } = params;
   const port = protocol === "vnc" ? "5901" : "3389";
 
   const payload = {
@@ -69,7 +74,29 @@ export async function getGuacamoleSession(params: GuacamoleConnectionParams): Pr
           port,
           username,
           password,
-          ...(protocol === "rdp" ? { "ignore-cert": "true" } : {}),
+          width: String(width),
+          height: String(height),
+          dpi: "96",
+          // Lets an already-open session adapt if the browser window
+          // resizes, instead of requiring a full reconnect to change size.
+          "resize-method": "display-update",
+          // Defaults chosen for responsiveness over visual fidelity --
+          // reduced color depth is the single biggest bandwidth/encode-time
+          // lever, and disabling desktop-effects toggles is the standard
+          // "performance mode" RDP config. VNC has no equivalent toggle set
+          // (raw framebuffer protocol), so nothing extra applies there.
+          ...(protocol === "rdp"
+            ? {
+                "ignore-cert": "true",
+                "color-depth": "16",
+                "enable-wallpaper": "false",
+                "enable-theming": "false",
+                "enable-font-smoothing": "false",
+                "enable-full-window-drag": "false",
+                "enable-desktop-composition": "false",
+                "enable-menu-animations": "false",
+              }
+            : {}),
         },
       },
     },

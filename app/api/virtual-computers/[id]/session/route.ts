@@ -7,7 +7,14 @@ import { getGuacamoleSession } from "@/lib/guacamole";
 import { loadVm } from "../../_lib";
 import type { VmProtocol } from "@/lib/vmProviders/types";
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+// Fallback when a VM has no fixed resolution preset (resolution_width/height
+// null) and the browser didn't report its own screen size -- shouldn't
+// normally happen since GuacamoleViewer always sends it, but keeps this
+// route from ever failing outright over a missing display size.
+const DEFAULT_WIDTH = 1920;
+const DEFAULT_HEIGHT = 1080;
+
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
@@ -20,6 +27,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Virtual computer is not ready yet" }, { status: 409 });
   }
 
+  const body = await req.json().catch(() => ({}));
+  // A fixed preset on the row always wins; otherwise use whatever screen
+  // size the connecting browser reported, falling back to a sane default.
+  const width = vm.resolution_width || Number(body?.screenWidth) || DEFAULT_WIDTH;
+  const height = vm.resolution_height || Number(body?.screenHeight) || DEFAULT_HEIGHT;
+
   try {
     const session = await getGuacamoleSession({
       connectionLabel: vm.id,
@@ -27,6 +40,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       hostname: vm.ip_address,
       username: vm.remote_username,
       password: vm.remote_password,
+      width,
+      height,
     });
     return NextResponse.json(session);
   } catch (err) {

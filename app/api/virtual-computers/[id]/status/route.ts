@@ -43,5 +43,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     os: vm.os,
     createdAt: vm.created_at,
     hibernateDeadline: vm.hibernate_deadline,
+    resolutionWidth: vm.resolution_width,
+    resolutionHeight: vm.resolution_height,
   });
 }
