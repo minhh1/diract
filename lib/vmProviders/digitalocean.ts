@@ -15,7 +15,35 @@ import type {
 } from "./types";
 
 const DO_API_URL = "https://api.digitalocean.com/v2";
-const DROPLET_IMAGE = "ubuntu-22-04-x64";
+
+interface UbuntuImage {
+  slug: string;
+  // e.g. "26.04" -- used for provider repos that key by Ubuntu version
+  // (OneDrive's openSUSE Build Service repo below needs an exact
+  // "xUbuntu_XX.XX" path, so the resolved version has to flow all the way
+  // through to the cloud-init script, not just the droplet's own image slug).
+  versionDots: string;
+}
+
+// DigitalOcean has no "latest" alias the way AWS SSM does for Windows AMIs
+// (see resolveWindowsAmiId in lib/vmProviders/aws.ts) -- resolve it by
+// listing distribution images and picking the highest-numbered Ubuntu LTS
+// slug. LTS releases are always April of even years, so filtering for the
+// "-04-" pattern naturally excludes interim non-LTS releases (e.g. 25.10).
+async function resolveLatestUbuntuLts(credentials: ProviderCredentials): Promise<UbuntuImage> {
+  const res = await doFetch(credentials, "/images?type=distribution&per_page=200");
+  await throwIfNotOk(res, "image lookup");
+  const data = await res.json();
+  const images: Array<{ slug: string | null }> = data.images ?? [];
+  const ltsSlugs = images
+    .map((img) => img.slug)
+    .filter((slug): slug is string => !!slug && /^ubuntu-\d+-04-x64$/.test(slug));
+  if (ltsSlugs.length === 0) throw new Error("Could not resolve a current Ubuntu LTS image from DigitalOcean.");
+  ltsSlugs.sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+  const slug = ltsSlugs[0];
+  const major = slug.split("-")[1];
+  return { slug, versionDots: `${major}.04` };
+}
 
 // cloud-init user_data that installs a desktop + the requested remote
 // protocol's server, plus a baseline of everyday apps (browser, office
@@ -60,7 +88,7 @@ const DROPLET_IMAGE = "ubuntu-22-04-x64";
 // string itself (the `#cloud-config`/`runcmd` YAML below) -- that was tried
 // once and broke cloud-init's parsing of the whole document; keep
 // explanations here, in the surrounding TypeScript, instead.
-function cloudInitScript(protocol: VmProtocol, username: string, password: string): string {
+function cloudInitScript(protocol: VmProtocol, username: string, password: string, ubuntuVersionDots: string): string {
   const escapedPassword = password.replace(/'/g, "'\\''");
   const escapedUsername = username.replace(/'/g, "'\\''");
 
@@ -84,21 +112,37 @@ function cloudInitScript(protocol: VmProtocol, username: string, password: strin
   // Runs fully detached from cloud-init via `systemctl start --no-block`
   // (see the function-level comment for why this must not be a synchronous
   // runcmd step).
+  // Teams and OneDrive are both unofficial/community clients -- Microsoft
+  // discontinued the official Linux Teams app in Dec 2022 and has never
+  // shipped an official Linux OneDrive client. teams-for-linux (an
+  // Electron wrapper around Teams' own web app) and abraunegg/onedrive
+  // (the de facto standard open-source sync client, distributed via the
+  // openSUSE Build Service since the old community PPA went defunct) are
+  // the closest real equivalents. OneDrive's repo path is keyed by exact
+  // Ubuntu version ("xUbuntu_XX.XX"), hence threading ubuntuVersionDots
+  // in from the resolved-latest-LTS lookup rather than hardcoding it.
   const extraAppsFiles = `  - path: /usr/local/bin/install-extra-apps.sh
     permissions: '0755'
     content: |
       #!/bin/sh
       set -e
+      DEBIAN_FRONTEND=noninteractive apt-get install -y gnupg wget
       install -d -m 0755 /etc/apt/keyrings
       wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O /etc/apt/keyrings/packages.mozilla.org.asc
       echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" > /etc/apt/sources.list.d/mozilla.list
       printf "Package: *\\nPin: origin packages.mozilla.org\\nPin-Priority: 1000\\n" > /etc/apt/preferences.d/mozilla
+      wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+      wget -q -O /etc/apt/keyrings/teams-for-linux.asc https://repo.teamsforlinux.de/teams-for-linux.asc
+      printf "Types: deb\\nURIs: https://repo.teamsforlinux.de/debian/\\nSuites: stable\\nComponents: main\\nArchitectures: amd64 arm64\\nSigned-By: /etc/apt/keyrings/teams-for-linux.asc\\n" > /etc/apt/sources.list.d/teams-for-linux.sources
+      wget -q -O - "https://download.opensuse.org/repositories/home:/npreining:/debian-ubuntu-onedrive/xUbuntu_${ubuntuVersionDots}/Release.key" | gpg --dearmor -o /etc/apt/keyrings/obs-onedrive.gpg
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/obs-onedrive.gpg] https://download.opensuse.org/repositories/home:/npreining:/debian-ubuntu-onedrive/xUbuntu_${ubuntuVersionDots}/ ./" > /etc/apt/sources.list.d/onedrive.list
       apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y firefox libreoffice-writer libreoffice-calc libreoffice-impress mousepad
+      DEBIAN_FRONTEND=noninteractive apt-get install -y firefox google-chrome-stable teams-for-linux onedrive libreoffice-writer libreoffice-calc libreoffice-impress mousepad
   - path: /etc/systemd/system/extra-apps.service
     content: |
       [Unit]
-      Description=Install extra desktop apps (Firefox, LibreOffice, Mousepad)
+      Description=Install extra desktop apps (Firefox, Chrome, Teams, OneDrive, LibreOffice, Mousepad)
       After=network-online.target
       Wants=network-online.target
 
@@ -193,9 +237,16 @@ export const digitalOceanProvider: VmProvider = {
     // gotchas documented above, has a history of subtly breaking things
     // when run more than once). Just re-set the password so the stored
     // remote_password still works, nothing else.
-    const userData = params.fromSnapshotId
-      ? `#cloud-config\nruncmd:\n  - echo '${params.remoteUsername.replace(/'/g, "'\\''")}:${params.remotePassword.replace(/'/g, "'\\''")}' | chpasswd\n`
-      : cloudInitScript(params.protocol, params.remoteUsername, params.remotePassword);
+    let image: string;
+    let userData: string;
+    if (params.fromSnapshotId) {
+      image = params.fromSnapshotId;
+      userData = `#cloud-config\nruncmd:\n  - echo '${params.remoteUsername.replace(/'/g, "'\\''")}:${params.remotePassword.replace(/'/g, "'\\''")}' | chpasswd\n`;
+    } else {
+      const ubuntu = await resolveLatestUbuntuLts(params.credentials);
+      image = ubuntu.slug;
+      userData = cloudInitScript(params.protocol, params.remoteUsername, params.remotePassword, ubuntu.versionDots);
+    }
 
     const res = await doFetch(params.credentials, "/droplets", {
       method: "POST",
@@ -203,7 +254,7 @@ export const digitalOceanProvider: VmProvider = {
         name: toDropletHostname(params.name),
         region: params.region,
         size: params.sizeSlug,
-        image: params.fromSnapshotId || DROPLET_IMAGE,
+        image,
         user_data: userData,
         ipv6: false,
       }),
@@ -267,5 +318,13 @@ export const digitalOceanProvider: VmProvider = {
     const newest = snapshotIds[snapshotIds.length - 1];
     if (!newest) return { status: "pending", snapshotId: null };
     return { status: "completed", snapshotId: String(newest) };
+  },
+
+  // A droplet snapshot is represented as a custom/snapshot-type Image --
+  // deleted via the Images resource's own DELETE endpoint.
+  async deleteSnapshot(credentials: ProviderCredentials, snapshotId: string, _region: string): Promise<void> {
+    const res = await doFetch(credentials, `/images/${snapshotId}`, { method: "DELETE" });
+    if (res.status === 404) return;
+    await throwIfNotOk(res, "snapshot deletion");
   },
 };

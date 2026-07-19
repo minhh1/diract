@@ -65,6 +65,15 @@ export async function GET(req: Request) {
       // durable -- destroying earlier risks losing data still being copied.
       await adapter.destroyInstance(credentials, vm.provider_instance_id, vm.region);
       await closeUsageEvent(admin, vm.id);
+      // Only one snapshot is ever kept per VM -- delete the previous one
+      // now that the new one is confirmed durable (safe: the fresh
+      // snapshot already exists as the fallback if this delete fails).
+      if (vm.snapshot_id) {
+        await adapter.deleteSnapshot(credentials, vm.snapshot_id, vm.region).catch(() => {
+          // Best-effort -- a lingering old snapshot is a cost annoyance,
+          // not worth failing the hibernate over.
+        });
+      }
       await admin
         .from("virtual_computers")
         .update({

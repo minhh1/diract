@@ -48,8 +48,13 @@ export interface GuacamoleConnectionParams {
   // Display size in pixels. Both required together -- callers resolve
   // "auto" (null stored resolution) to the connecting browser's own
   // screen size before calling this, so this function never has to guess.
+  // Both should already be scaled by the connecting device's
+  // devicePixelRatio (see GuacamoleViewer.tsx) -- otherwise a HiDPI
+  // display renders the remote desktop at less than its native pixel
+  // density and the browser stretches it to fit, which looks blurry.
   width: number;
   height: number;
+  dpi: number;
 }
 
 export interface GuacamoleSession {
@@ -60,7 +65,7 @@ export interface GuacamoleSession {
 }
 
 export async function getGuacamoleSession(params: GuacamoleConnectionParams): Promise<GuacamoleSession> {
-  const { connectionLabel, protocol, hostname, username, password, width, height } = params;
+  const { connectionLabel, protocol, hostname, username, password, width, height, dpi } = params;
   const port = protocol === "vnc" ? "5901" : "3389";
 
   const payload = {
@@ -76,7 +81,7 @@ export async function getGuacamoleSession(params: GuacamoleConnectionParams): Pr
           password,
           width: String(width),
           height: String(height),
-          dpi: "96",
+          dpi: String(dpi),
           // Lets an already-open session adapt if the browser window
           // resizes, instead of requiring a full reconnect to change size.
           "resize-method": "display-update",

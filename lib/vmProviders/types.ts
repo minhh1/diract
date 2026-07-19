@@ -88,4 +88,10 @@ export interface VmProvider {
     region: string,
     snapshotTaskId: string
   ): Promise<SnapshotStatus>;
+  // Only one snapshot is ever kept per VM (a fresh one on each hibernate
+  // replaces the last), and a permanently-destroyed VM's snapshot is
+  // deleted too -- otherwise every hibernate cycle leaves the previous
+  // snapshot's storage billing behind it forever. Tolerates the snapshot
+  // already being gone (already deleted, or never existed).
+  deleteSnapshot(credentials: ProviderCredentials, snapshotId: string, region: string): Promise<void>;
 }

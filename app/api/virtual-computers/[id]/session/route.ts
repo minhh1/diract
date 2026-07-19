@@ -29,9 +29,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const body = await req.json().catch(() => ({}));
   // A fixed preset on the row always wins; otherwise use whatever screen
-  // size the connecting browser reported, falling back to a sane default.
+  // size the connecting browser reported (already scaled by its own
+  // devicePixelRatio -- see GuacamoleViewer.tsx), falling back to a sane
+  // default. DPI is scaled the same way, but only for the auto-detect
+  // path -- a fixed preset is an explicit "this many pixels" choice
+  // independent of whatever device happens to be viewing it.
+  const usingPreset = !!(vm.resolution_width && vm.resolution_height);
   const width = vm.resolution_width || Number(body?.screenWidth) || DEFAULT_WIDTH;
   const height = vm.resolution_height || Number(body?.screenHeight) || DEFAULT_HEIGHT;
+  const dpi = usingPreset ? 96 : Math.round(96 * (Number(body?.devicePixelRatio) || 1));
 
   try {
     const session = await getGuacamoleSession({
@@ -42,6 +48,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       password: vm.remote_password,
       width,
       height,
+      dpi,
     });
     return NextResponse.json(session);
   } catch (err) {

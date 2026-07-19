@@ -18,6 +18,8 @@ import {
   AuthorizeSecurityGroupIngressCommand,
   CreateImageCommand,
   DescribeImagesCommand,
+  DeregisterImageCommand,
+  DeleteSnapshotCommand,
   type _InstanceType as InstanceType,
 } from "@aws-sdk/client-ec2";
 import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
@@ -238,5 +240,28 @@ export const awsProvider: VmProvider = {
     if (image.State === "available") return { status: "completed", snapshotId: snapshotTaskId };
     if (image.State === "failed" || image.State === "error") return { status: "error", snapshotId: null };
     return { status: "pending", snapshotId: null };
+  },
+
+  // An AMI has its own backing EBS snapshot(s), which keep costing storage
+  // even after the AMI itself is deregistered -- both have to be deleted.
+  // Tolerates the AMI already being gone (DescribeImages just returns no
+  // match rather than throwing).
+  async deleteSnapshot(credentials: ProviderCredentials, snapshotId: string, region: string): Promise<void> {
+    const client = ec2Client(credentials, region);
+    const described = await client.send(new DescribeImagesCommand({ ImageIds: [snapshotId] })).catch(() => null);
+    const image = described?.Images?.[0];
+    if (!image) return;
+
+    const ebsSnapshotIds = (image.BlockDeviceMappings ?? [])
+      .map((m) => m.Ebs?.SnapshotId)
+      .filter((id): id is string => !!id);
+
+    await client.send(new DeregisterImageCommand({ ImageId: snapshotId }));
+    for (const ebsSnapshotId of ebsSnapshotIds) {
+      await client.send(new DeleteSnapshotCommand({ SnapshotId: ebsSnapshotId })).catch(() => {
+        // Best-effort -- a lingering EBS snapshot is a cost annoyance, not
+        // worth failing the whole VM-destroy flow over.
+      });
+    }
   },
 };

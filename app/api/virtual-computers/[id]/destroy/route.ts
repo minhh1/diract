@@ -19,12 +19,19 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   await admin.from("virtual_computers").update({ status: "destroying", updated_at: new Date().toISOString() }).eq("id", id);
 
-  if (vm.provider_instance_id) {
+  if (vm.provider_instance_id || vm.snapshot_id) {
     try {
       const credentials = await resolveCredentials(admin, vm);
       if (credentials) {
         const adapter = getProvider(vm.provider as CloudProviderId);
-        await adapter.destroyInstance(credentials, vm.provider_instance_id, vm.region);
+        // A hibernated VM's provider_instance_id is stale (already
+        // terminated when it hibernated) -- both adapters tolerate
+        // "already gone" gracefully, so calling this unconditionally is
+        // harmless.
+        if (vm.provider_instance_id) await adapter.destroyInstance(credentials, vm.provider_instance_id, vm.region);
+        // A permanently-destroyed VM shouldn't leave its snapshot behind
+        // racking up storage cost forever.
+        if (vm.snapshot_id) await adapter.deleteSnapshot(credentials, vm.snapshot_id, vm.region);
       }
     } catch (err) {
       // Don't fall through to marking the row destroyed -- if we can't

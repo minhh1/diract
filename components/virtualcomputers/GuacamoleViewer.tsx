@@ -42,12 +42,27 @@ export default function GuacamoleViewer({ vmId }: { vmId: string }) {
       setError("Your browser blocked the popup -- allow popups for this site and try again.");
       return;
     }
+    // window.screen.width/height are CSS pixels, not physical pixels -- on
+    // a Retina/HiDPI display, sending those raw would tell the remote
+    // desktop to render at half (or less) the display's real pixel
+    // density, and the browser tab then stretches that lower-resolution
+    // canvas to fill the same CSS-pixel area, which looks blurry (this
+    // was a second, independent cause of blurry text alongside the RDP
+    // color-depth/font-smoothing settings already fixed in lib/guacamole.ts
+    // -- confirmed directly, since fixing those alone didn't resolve it).
+    // Scaling both the reported screen size and dpi by devicePixelRatio
+    // makes the remote desktop render at native resolution instead.
+    const dpr = window.devicePixelRatio || 1;
     const res = await fetch(`/api/virtual-computers/${vmId}/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // Only used if the VM has no fixed resolution preset -- see
       // app/api/virtual-computers/[id]/session/route.ts.
-      body: JSON.stringify({ screenWidth: window.screen.width, screenHeight: window.screen.height }),
+      body: JSON.stringify({
+        screenWidth: Math.round(window.screen.width * dpr),
+        screenHeight: Math.round(window.screen.height * dpr),
+        devicePixelRatio: dpr,
+      }),
     });
     const json = await res.json();
     setOpening(false);
