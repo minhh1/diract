@@ -19,7 +19,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   await admin.from("virtual_computers").update({ status: "destroying", updated_at: new Date().toISOString() }).eq("id", id);
 
-  if (vm.provider_instance_id || vm.snapshot_id) {
+  if (vm.provider_instance_id) {
     try {
       const credentials = await resolveCredentials(admin, vm);
       if (credentials) {
@@ -28,15 +28,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         // terminated when it hibernated) -- both adapters tolerate
         // "already gone" gracefully, so calling this unconditionally is
         // harmless.
-        if (vm.provider_instance_id) await adapter.destroyInstance(credentials, vm.provider_instance_id, vm.region);
-        // A permanently-destroyed VM shouldn't leave its snapshot behind
-        // racking up storage cost forever.
-        if (vm.snapshot_id) await adapter.deleteSnapshot(credentials, vm.snapshot_id, vm.region);
+        await adapter.destroyInstance(credentials, vm.provider_instance_id, vm.region);
       }
     } catch (err) {
       // Don't fall through to marking the row destroyed -- if we can't
       // resolve credentials (e.g. a missing platform env var) or the
-      // provider call fails, the underlying instance is still out there.
+      // provider call fails, the underlying instance is still out there
+      // and this IS the expensive resource (compute), unlike the snapshot
+      // cleanup below.
       await admin
         .from("virtual_computers")
         .update({
@@ -46,6 +45,27 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         })
         .eq("id", id);
       return NextResponse.json({ error: err instanceof Error ? err.message : "Destroy failed" }, { status: 502 });
+    }
+  }
+
+  if (vm.snapshot_id) {
+    // Best-effort, same as the sweep route's post-hibernate cleanup -- a
+    // permanently-destroyed VM shouldn't leave its snapshot behind racking
+    // up storage cost forever, but a failure here (e.g. a missing
+    // ec2:DeregisterImage permission -- confirmed directly: this silently
+    // left 3 VMs stuck in "error" with their compute already terminated,
+    // just because the much cheaper snapshot cleanup afterward failed)
+    // must never block marking the VM destroyed, since the instance is
+    // already gone by this point regardless.
+    try {
+      const credentials = await resolveCredentials(admin, vm);
+      if (credentials) {
+        const adapter = getProvider(vm.provider as CloudProviderId);
+        await adapter.deleteSnapshot(credentials, vm.snapshot_id, vm.region);
+      }
+    } catch {
+      // Leave the snapshot behind -- a lingering storage cost, not worth
+      // failing the destroy over.
     }
   }
 
