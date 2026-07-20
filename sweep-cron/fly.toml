@@ -1,0 +1,12 @@
+# Reliable replacement for GitHub Actions' */5 cron for the VM hibernate
+# sweep (.github/workflows/vm-sweep.yml) -- confirmed unreliable in
+# practice (1 scheduled run in 50 minutes, then 1 more in the next 30).
+# No public service -- just an always-on background loop.
+app = "niksenflow-sweep-cron"
+primary_region = "syd"
+
+[build]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

@@ -3,7 +3,8 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X, AlertTriangle, Mail, ShieldCheck } from "lucide-react";
+import { X, AlertTriangle, ShieldCheck } from "lucide-react";
+import EmailPicker from "./EmailPicker";
 
 interface Props {
   sourceEmails: string[];
@@ -86,34 +87,17 @@ export default function SourceEmailManager({ sourceEmails, connectedEmails, onCh
       </div>
 
       {/* Add from connected emails */}
-      {available.length > 0 && (
-        <div>
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-            Connected Gmail accounts
-          </p>
-          <div className="space-y-1.5">
-            {available.map(email => (
-              <button
-                key={email}
-                onClick={() => handleAdd(email)}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-2xl hover:border-indigo-300 hover:bg-indigo-50 transition-all text-left group"
-              >
-                <Mail size={13} className="text-slate-400 group-hover:text-indigo-500 shrink-0" />
-                <span className="text-[12px] font-medium text-slate-600 group-hover:text-indigo-700 flex-1 truncate">
-                  {email}
-                </span>
-                <Plus size={13} className="text-slate-300 group-hover:text-indigo-500 shrink-0" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {available.length === 0 && connectedEmails.length === 0 && (
-        <p className="text-[11px] text-slate-400 italic px-1">
-          No Gmail accounts connected by company members yet.
-        </p>
-      )}
+      <EmailPicker
+        label="Connected Gmail accounts"
+        options={available}
+        onSelect={handleAdd}
+        placeholder="Search connected accounts..."
+        emptyText={
+          connectedEmails.length === 0
+            ? "No Gmail accounts connected by company members yet."
+            : "All connected accounts are already nominated."
+        }
+      />
     </div>
   );
 }

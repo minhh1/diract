@@ -680,6 +680,34 @@ Deno.serve(async (req) => {
       return json({ ok: true, removedFromUsers: 1 }, 200, headers);
     }
 
+    // ── POST /request-archive ────────────────────────────────────
+    // Submits a closed-matter archive request for admin approval — never
+    // archives directly. An admin approves/rejects from the admin "Gmail
+    // sync" tab, which is what actually enqueues gmail_sync_jobs.
+    if (req.method === 'POST' && path === '/request-archive') {
+      const body = await req.json();
+      const { projectId, companyId } = body;
+      if (!projectId || !companyId) return json({ error: 'Missing projectId or companyId' }, 400, headers);
+
+      const requesterId = await getProfileId(userEmail);
+      if (!requesterId) return json({ error: 'User not found' }, 404, headers);
+
+      const { data: existing } = await db.from('gmail_archive_requests')
+        .select('id').eq('project_id', projectId).eq('company_id', companyId)
+        .eq('status', 'pending').maybeSingle();
+      if (existing) return json({ ok: true, alreadyRequested: true }, 200, headers);
+
+      const { error: insertErr } = await db.from('gmail_archive_requests').insert({
+        company_id: companyId,
+        project_id: projectId,
+        requested_by: requesterId,
+        status: 'pending',
+      });
+      if (insertErr) return json({ error: insertErr.message }, 500, headers);
+
+      return json({ ok: true }, 200, headers);
+    }
+
     // ── POST /create-labels-batch ────────────────────────────────
     // Creates label DB rows for multiple projects at once.
     // Actual Gmail label creation is handled by the cron (scalable).

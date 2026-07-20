@@ -259,6 +259,19 @@ function respond(data: any, status = 200): Response {
   });
 }
 
+async function logActivity(row: Record<string, unknown>): Promise<void> {
+  try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break sync over logging */ }
+}
+
+async function heartbeat(name: string, durationMs: number, result: unknown): Promise<void> {
+  try {
+    await db.from("cron_heartbeats").upsert(
+      { name, last_run_at: new Date().toISOString(), last_duration_ms: durationMs, last_result: result },
+      { onConflict: "name" }
+    );
+  } catch (_) { /* never break sync */ }
+}
+
 // ── Function ──────────────────────────────────────────────────────
 
 // supabase/functions/gmail-email-sync-worker/index.ts
@@ -313,6 +326,7 @@ Deno.serve(async (_req) => {
       const { data: dbEmails } = await db.from("project_emails")
         .select("gmail_message_id, subject").eq("project_id", projectId).eq("company_id", companyId);
       const msgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
+      const subjectByMsgId = new Map((dbEmails || []).map((e: any) => [e.gmail_message_id, e.subject]));
       const nullSubjectIds = new Set((dbEmails || []).filter((e: any) => !e.subject).map((e: any) => e.gmail_message_id));
       if (!msgIds.length) {
         await db.from("gmail_sync_jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", jobId);
@@ -373,10 +387,24 @@ Deno.serve(async (_req) => {
           const hasMsg = await userHasMessage(token, msgId);
           if (hasMsg) {
             const ok = await applyLabel(token, msgId, labelId);
-            if (ok) applied++;
+            if (ok) {
+              applied++;
+              await logActivity({
+                company_id: companyId, triggered_by: null, action: "sync_to_user",
+                project_id: projectId, gmail_message_id: msgId, gmail_label_name: gmailLabelName,
+                target_user_id: userId, details: { label_code: labelCode, subject: subjectByMsgId.get(msgId) || null },
+              });
+            }
           } else if (sourceToken && userId !== sourceUserId) {
             const ok = await importMessage(sourceToken, token, msgId, labelId);
-            if (ok) imported++;
+            if (ok) {
+              imported++;
+              await logActivity({
+                company_id: companyId, triggered_by: null, action: "sync_to_user",
+                project_id: projectId, gmail_message_id: msgId, gmail_label_name: gmailLabelName,
+                target_user_id: userId, details: { label_code: labelCode, subject: subjectByMsgId.get(msgId) || null },
+              });
+            }
           }
         }
 
@@ -405,5 +433,6 @@ Deno.serve(async (_req) => {
     .select("*", { count: "exact", head: true }).eq("job_type", "email_sync").eq("status", "pending");
 
   console.log(`[email-sync-worker] DONE in ${Date.now() - t0}ms — processed=${processed} remaining=${remaining}`);
+  await heartbeat("gmail-email-sync-worker", Date.now() - t0, { processed, remaining });
   return new Response(JSON.stringify({ ok: true, processed, remaining }), { headers: { "Content-Type": "application/json" } });
 });

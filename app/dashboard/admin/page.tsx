@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   Loader2, Users, Settings, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor, Activity,
 } from "lucide-react";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
+import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
 import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
 import AdminDefaultViewsTab from "@/components/admin/AdminDefaultViewsTab";
 import AdminVirtualComputersTab from "@/components/admin/AdminVirtualComputersTab";
+import AdminGmailSyncTab from "@/components/admin/AdminGmailSyncTab";
 
 interface Member {
   id: string;
@@ -96,7 +98,7 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'virtualComputers'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers'>('members');
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -113,6 +115,11 @@ export default function AdminPage() {
   // Source of truth emails
   const [sourceEmails, setSourceEmails] = useState<string[]>([]);
   const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
+
+  // Closed-matter archiving
+  const [archiveEmails, setArchiveEmails] = useState<string[]>([]);
+  const [archiveLabel, setArchiveLabel] = useState('');
+  const [autoArchiveOnClose, setAutoArchiveOnClose] = useState(false);
 
   // Calendar settings
   const [calendarTokens, setCalendarTokens] = useState<string[]>(['matter_number', 'task_name']);
@@ -204,6 +211,9 @@ export default function AdminPage() {
 
     // Load source emails from company
     setSourceEmails(comp?.gmail_source_emails || []);
+    setArchiveEmails(comp?.gmail_archive_emails || []);
+    setArchiveLabel(comp?.gmail_archive_label || '');
+    setAutoArchiveOnClose(!!comp?.gmail_auto_archive_on_close);
     const knownTokenIds = [...CALENDAR_BASE_TOKENS.map(t => t.id), ...(customFieldData || []).map(f => f.field_key)];
     const parsedFormat = parseCalendarFormat(comp?.calendar_event_title_format || '{task_name}', knownTokenIds);
     setCalendarTokens(parsedFormat.tokens);
@@ -223,12 +233,14 @@ export default function AdminPage() {
         .select('id, full_name, email, is_active')
         .in('id', userIds);
 
-      // Load connected Gmail emails for source-of-truth picker
-      const memberUserIds = memberships.map((m: any) => m.user_id);
+      // Load connected Gmail emails for source-of-truth / archive pickers.
+      // Queries the company_gmail_connections view, not user_gmail_tokens
+      // directly — that table's RLS (user_id = auth.uid()) only ever
+      // returns your own row, so this is the only way to see who else in
+      // the company is connected without exposing anyone's OAuth tokens.
       const { data: gmailTokens } = await supabase
-        .from('user_gmail_tokens')
-        .select('email')
-        .in('user_id', memberUserIds);
+        .from('company_gmail_connections')
+        .select('email');
       setConnectedEmails((gmailTokens || []).map((t: any) => t.email).filter(Boolean));
 
       setMembers(memberships.map((m: any) => {
@@ -347,6 +359,17 @@ export default function AdminPage() {
       .eq('id', company.id);
   };
 
+  const handleArchiveSettingsChange = async (next: {
+    archiveEmails?: string[]; archiveLabel?: string; autoArchiveOnClose?: boolean;
+  }) => {
+    if (!company) return;
+    const update: Record<string, unknown> = {};
+    if (next.archiveEmails !== undefined) { setArchiveEmails(next.archiveEmails); update.gmail_archive_emails = next.archiveEmails; }
+    if (next.archiveLabel !== undefined) { setArchiveLabel(next.archiveLabel); update.gmail_archive_label = next.archiveLabel || null; }
+    if (next.autoArchiveOnClose !== undefined) { setAutoArchiveOnClose(next.autoArchiveOnClose); update.gmail_auto_archive_on_close = next.autoArchiveOnClose; }
+    await supabase.from('companies').update(update).eq('id', company.id);
+  };
+
   const handleGenerateToken = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user || !company) return;
@@ -434,6 +457,7 @@ export default function AdminPage() {
     { id: 'views'   as const,  label: 'Default views', icon: Settings },
     { id: 'invites' as const,  label: 'Invite links', icon: Link },
     { id: 'gmail'   as const,  label: 'Gmail',        icon: Mail },
+    { id: 'gmailSync' as const, label: 'Gmail sync',  icon: Activity },
     { id: 'virtualComputers' as const, label: 'Virtual computers', icon: Monitor },
     { id: 'company' as const,  label: 'Company',      icon: Settings },
   ];
@@ -770,7 +794,20 @@ export default function AdminPage() {
                 connectedEmails={connectedEmails}
                 onChange={handleSourceEmailsChange}
               />
+              <ArchiveSettingsManager
+                archiveEmails={archiveEmails}
+                archiveLabel={archiveLabel}
+                archiveLabelPlaceholder={`${company?.name || 'Company'} Archive`}
+                autoArchiveOnClose={autoArchiveOnClose}
+                connectedEmails={connectedEmails}
+                onChange={handleArchiveSettingsChange}
+              />
             </div>
+          )}
+
+          {/* ── Gmail sync activity & health ── */}
+          {activeTab === 'gmailSync' && company?.id && (
+            <AdminGmailSyncTab companyId={company.id} />
           )}
 
           {/* ── Virtual computers ── */}

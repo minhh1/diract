@@ -259,6 +259,15 @@ function respond(data: any, status = 200): Response {
   });
 }
 
+async function heartbeat(name: string, durationMs: number, result: unknown): Promise<void> {
+  try {
+    await db.from("cron_heartbeats").upsert(
+      { name, last_run_at: new Date().toISOString(), last_duration_ms: durationMs, last_result: result },
+      { onConflict: "name" }
+    );
+  } catch (_) { /* never break sync over a heartbeat write */ }
+}
+
 // ── Function ──────────────────────────────────────────────────────
 
 // supabase/functions/gmail-email-sync-cron/index.ts
@@ -300,9 +309,10 @@ Deno.serve(async (_req) => {
     if (notConnected.length) console.log(`[email-sync-cron] ✗ no token for ${notConnected.length} users: ${notConnected.join(', ')}`);
     if (!connectedUserIds.length) { console.log(`[email-sync-cron] No connected users — skipping`); continue; }
 
-    // Get active labels
+    // Get active labels — archived projects are owned exclusively by gmail-archive-worker
     const { data: labels, error: labelsErr } = await db.from("project_gmail_labels")
-      .select("project_id, label_code, gmail_label_name").eq("company_id", companyId).is("removed_at", null);
+      .select("project_id, label_code, gmail_label_name").eq("company_id", companyId)
+      .is("removed_at", null).is("archived_at", null);
     console.log(`[email-sync-cron] activeLabels=${labels?.length || 0}${labelsErr ? ' error=' + labelsErr.message : ''}`);
     if (!labels?.length) { console.log(`[email-sync-cron] No active labels — skipping`); continue; }
 
@@ -382,5 +392,6 @@ Deno.serve(async (_req) => {
   }
 
   console.log(`[email-sync-cron] DONE in ${Date.now() - t0}ms — totalQueued=${queued}`);
+  await heartbeat("gmail-email-sync-cron", Date.now() - t0, { queued });
   return new Response(JSON.stringify({ ok: true, queued }), { headers: { "Content-Type": "application/json" } });
 });

@@ -15,6 +15,10 @@ const db = createClient(supabaseUrl, serviceKey, {
   auth: { persistSession: false },
 });
 
+async function logActivity(row: Record<string, unknown>): Promise<void> {
+  try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break sync over logging */ }
+}
+
 // ── Helpers ────────────────────────────────────────────────────────
 
 async function getAccessToken(userId: string): Promise<string | null> {
@@ -96,6 +100,7 @@ async function getMessageHistory(token: string, startHistoryId: string): Promise
   const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/history");
   url.searchParams.set("startHistoryId", startHistoryId);
   url.searchParams.append("historyTypes", "messageAdded");
+  url.searchParams.append("historyTypes", "messageDeleted");
   url.searchParams.append("historyTypes", "labelAdded");
   url.searchParams.append("historyTypes", "labelRemoved");
   const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
@@ -298,7 +303,14 @@ Deno.serve(async (req) => {
             date: meta1.date, snippet: meta1.snippet, gmail_label_applied: true,
           }, { onConflict: "user_id,gmail_message_id", ignoreDuplicates: true });
           if (e1) console.error(`[push] project_emails error:`, e1.message);
-          else console.log(`[push] ✓ Saved msg=${msgId} subject="${meta1.subject}"`);
+          else {
+            console.log(`[push] ✓ Saved msg=${msgId} subject="${meta1.subject}"`);
+            await logActivity({
+              company_id: companyId, triggered_by: null, action: "sync_to_user",
+              project_id: dbLabel.project_id, gmail_message_id: msgId, gmail_label_name: gmailLabel.name,
+              target_user_id: userId, details: { label_code: codeMatch[1], subject: meta1.subject, snippet: meta1.snippet },
+            });
+          }
           if (meta1.subject) {
             const ns = normaliseSubject(meta1.subject);
             if (ns) await db.from("project_email_subjects").upsert({
@@ -325,6 +337,11 @@ Deno.serve(async (req) => {
             console.log(`[push] Re-adding label "${gmailLabel.name}" to ${msgId}`);
             await applyLabel(token, msgId, removedLabelId);
             await invalidateSyncJob(companyId, dbLabel.project_id, userId);
+            await logActivity({
+              company_id: companyId, triggered_by: null, action: "label_removed",
+              project_id: dbLabel.project_id, gmail_message_id: msgId, gmail_label_name: gmailLabel.name,
+              target_user_id: userId, details: { label_code: codeMatch[1], reapplied: true },
+            });
           }
         }
       }
@@ -360,6 +377,11 @@ Deno.serve(async (req) => {
             if (e2) console.error(`[push] upsert error:`, e2.message);
             else console.log(`[push] ✓ Saved labelled email ${msgId} [${matchedCode}]`);
             const meta2 = extractEmailMeta(md2);
+            await logActivity({
+              company_id: matchedCompanyId, triggered_by: null, action: "sync_to_user",
+              project_id: dbLabel.project_id, gmail_message_id: msgId, gmail_label_name: dbLabel.gmail_label_name,
+              target_user_id: userId, details: { label_code: matchedCode, subject: meta2.subject, snippet: meta2.snippet },
+            });
             await db.from("project_emails").update({
               subject: meta2.subject, from_address: meta2.from_address, from_name: meta2.from_name,
               date: meta2.date, snippet: meta2.snippet,
@@ -420,7 +442,27 @@ Deno.serve(async (req) => {
             project_id: subjectMatch.project_id, company_id: subjectMatch.company_id,
             gmail_message_id: msgId, subject_normalised: normSubject,
           }, { onConflict: "project_id,gmail_message_id", ignoreDuplicates: true });
+          await logActivity({
+            company_id: subjectMatch.company_id, triggered_by: null, action: "sync_to_user",
+            project_id: subjectMatch.project_id, gmail_message_id: msgId, gmail_label_name: dbLabel.gmail_label_name,
+            target_user_id: userId, details: { label_code: dbLabel.label_code, subject: meta3.subject, snippet: meta3.snippet },
+          });
         }
+      }
+
+      // ── Messages deleted: log for the activity feed ───────────────
+      for (const item of (event.messagesDeleted || [])) {
+        const msgId = item.message?.id;
+        if (!msgId) continue;
+        const { data: existing } = await db.from("project_emails")
+          .select("project_id, company_id, subject")
+          .eq("user_id", userId).eq("gmail_message_id", msgId).maybeSingle();
+        console.log(`[push] Message deleted ${msgId}`);
+        await logActivity({
+          company_id: existing?.company_id || allCompanyIds[0] || null, triggered_by: null,
+          action: "message_deleted", project_id: existing?.project_id || null,
+          gmail_message_id: msgId, target_user_id: userId, details: { subject: existing?.subject || null },
+        });
       }
     }
 

@@ -259,6 +259,19 @@ function respond(data: any, status = 200): Response {
   });
 }
 
+async function logActivity(row: Record<string, unknown>): Promise<void> {
+  try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break sync over logging */ }
+}
+
+async function heartbeat(name: string, durationMs: number, result: unknown): Promise<void> {
+  try {
+    await db.from("cron_heartbeats").upsert(
+      { name, last_run_at: new Date().toISOString(), last_duration_ms: durationMs, last_result: result },
+      { onConflict: "name" }
+    );
+  } catch (_) { /* never break sync */ }
+}
+
 // ── Function ──────────────────────────────────────────────────────
 
 // supabase/functions/gmail-label-sync-worker/index.ts
@@ -409,6 +422,11 @@ Deno.serve(async (_req) => {
             console.log(`[label-sync-worker] Removing "${gmailLabelName}" from user ${userId}`);
             await deleteGmailLabel(token, existingLabelId);
             console.log(`[label-sync-worker] ✓ Removed`);
+            await logActivity({
+              company_id: companyId, triggered_by: null, action: "label_removed",
+              project_id: projectId, gmail_label_name: gmailLabelName,
+              target_user_id: userId, details: { label_code: labelCode },
+            });
           } else {
             console.log(`[label-sync-worker] Label already absent for user ${userId}`);
           }
@@ -418,6 +436,13 @@ Deno.serve(async (_req) => {
             console.log(`[label-sync-worker] Fast path: Creating "${gmailLabelName}" for user ${userId}`);
             const newId = await createLabelHierarchy(token, gmailLabelName, gmailLabels);
             console.log(`[label-sync-worker] Fast path: Created=${newId || 'FAILED'}`);
+            if (newId) {
+              await logActivity({
+                company_id: companyId, triggered_by: null, action: "label_applied",
+                project_id: projectId, gmail_label_name: gmailLabelName,
+                target_user_id: userId, details: { label_code: labelCode },
+              });
+            }
           } else {
             console.log(`[label-sync-worker] Fast path: Label exists ${existingLabelId}`);
           }
@@ -427,6 +452,13 @@ Deno.serve(async (_req) => {
             console.log(`[label-sync-worker] Creating "${gmailLabelName}" for user ${userId}`);
             labelId = await createLabelHierarchy(token, gmailLabelName, gmailLabels);
             console.log(`[label-sync-worker] Created labelId=${labelId || 'FAILED'}`);
+            if (labelId) {
+              await logActivity({
+                company_id: companyId, triggered_by: null, action: "label_applied",
+                project_id: projectId, gmail_label_name: gmailLabelName,
+                target_user_id: userId, details: { label_code: labelCode },
+              });
+            }
           } else {
             console.log(`[label-sync-worker] Label already exists: ${labelId}`);
           }
@@ -474,5 +506,6 @@ Deno.serve(async (_req) => {
     .select("*", { count: "exact", head: true }).eq("job_type", "label_sync").eq("status", "pending");
 
   console.log(`[label-sync-worker] DONE in ${Date.now() - t0}ms — processed=${processed} remaining=${remaining}`);
+  await heartbeat("gmail-label-sync-worker", Date.now() - t0, { processed, remaining });
   return new Response(JSON.stringify({ ok: true, processed, remaining }), { headers: { "Content-Type": "application/json" } });
 });

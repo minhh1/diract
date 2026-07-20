@@ -96,6 +96,17 @@ async function sendAdminEmail(
   });
 }
 
+// ── Heartbeat ──────────────────────────────────────────────────────
+
+async function heartbeat(name: string, durationMs: number, result: unknown): Promise<void> {
+  try {
+    await db.from("cron_heartbeats").upsert(
+      { name, last_run_at: new Date().toISOString(), last_duration_ms: durationMs, last_result: result },
+      { onConflict: "name" }
+    );
+  } catch (_) { /* never break the check over a heartbeat write */ }
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 Deno.serve(async (_req) => {
@@ -243,6 +254,11 @@ Deno.serve(async (_req) => {
   }
 
   console.log(`[watch-renewal] DONE in ${Date.now() - t0}ms`);
+  await heartbeat("gmail-watch-renewal", Date.now() - t0, {
+    companies: results.length,
+    stalled: results.reduce((n, r) => n + r.stalled.length, 0),
+    failed: results.reduce((n, r) => n + r.failed.length, 0),
+  });
   return new Response(JSON.stringify({ ok: true, results }), {
     headers: { "Content-Type": "application/json" },
   });

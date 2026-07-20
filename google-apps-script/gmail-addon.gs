@@ -546,6 +546,21 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
             projectName: existingProject.projectName,
           })) : CardService.newTextButton().setText('').setDisabled(true)));
 
+    // Closed-matter archiving — always goes to an admin for approval,
+    // regardless of who requests it (see /request-archive).
+    currentSection.addWidget(CardService.newButtonSet()
+      .addButton(CardService.newTextButton()
+        .setText('🗄️ Request archive')
+        .setTextButtonStyle(CardService.TextButtonStyle.OUTLINED)
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onRequestArchive')
+          .setParameters({
+            projectId: existingProject.projectId,
+            projectName: existingProject.projectName,
+            companyId: activeCompanyId,
+            accessToken: token,
+          }))));
+
     card.addSection(currentSection);
   }
 
@@ -880,6 +895,23 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       .setTitle(projectName)
       .setSubtitle(tasks.length + ' task(s) · Flow Task Manager'));
 
+  // Closed-matter archiving — always goes to an admin for approval,
+  // regardless of who requests it (see /request-archive).
+  var archiveSection = CardService.newCardSection();
+  archiveSection.addWidget(CardService.newButtonSet()
+    .addButton(CardService.newTextButton()
+      .setText('🗄️ Request archive')
+      .setTextButtonStyle(CardService.TextButtonStyle.OUTLINED)
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onRequestArchive')
+        .setParameters({
+          projectId: projectId,
+          projectName: projectName,
+          companyId: companyId,
+          accessToken: token,
+        }))));
+  card.addSection(archiveSection);
+
   var taskSection = CardService.newCardSection().setHeader('Tasks');
   if (!tasks.length) {
     taskSection.addWidget(CardService.newTextParagraph().setText('No tasks yet. Add one below.'));
@@ -975,7 +1007,6 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       taskSourceEmailSubject: t.sourceEmailSubject || '',
       taskSourceEmailBody: t.sourceEmailBody || '',
       taskWatcherIds: (t.watchers || []).map(function(w) { return w.id; }).join(','),
-      taskCalendarTarget: t.calendarTarget || 'tasks_calendar',
       projectId: projectId,
       projectName: projectName,
       labelCode: labelCode,
@@ -1238,14 +1269,6 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
     .setFieldName('newTaskCost')
     .setTitle('Estimated cost ($)')
     );
-
-  // Calendar target — most tasks go on the shared "Tasks" calendar; this
-  // opts a single task into the organizer's own main calendar instead.
-  addSection.addWidget(CardService.newSelectionInput()
-    .setType(CardService.SelectionInputType.CHECK_BOX)
-    .setFieldName('newTaskCalendarTarget')
-    .setTitle('')
-    .addItem('📅 Add to my main calendar instead of the Tasks calendar', 'main_calendar', false));
 
   // Submit button
   addSection.addWidget(CardService.newButtonSet()
@@ -1862,14 +1885,6 @@ function buildEditTaskCard(params, statuses, profiles, teams) {
     .setTitle('Estimated cost ($)')
     .setValue(params.taskCost || ''));
 
-  // Calendar target — most tasks go on the shared "Tasks" calendar; this
-  // opts this task into the organizer's own main calendar instead.
-  section.addWidget(CardService.newSelectionInput()
-    .setType(CardService.SelectionInputType.CHECK_BOX)
-    .setFieldName('editTaskCalendarTarget')
-    .setTitle('')
-    .addItem('📅 Add to my main calendar instead of the Tasks calendar', 'main_calendar', params.taskCalendarTarget === 'main_calendar'));
-
   // Follow-ups — a task can be followed up more than once, so this opens
   // the same dated log/manage card used from the task list row.
   section.addWidget(CardService.newDecoratedText()
@@ -2017,7 +2032,6 @@ function onChangeEditTaskDueMode(e) {
     taskMonetary: (fi.editTaskMonetary || []).indexOf('true') !== -1 ? 'true' : 'false',
     taskCost: (fi.editTaskCost || [e.parameters.taskCost || ''])[0] || '',
     taskNotes: (fi.editTaskNotes || [e.parameters.taskNotes || ''])[0] || '',
-    taskCalendarTarget: (fi.editTaskCalendarTarget || []).indexOf('main_calendar') !== -1 ? 'main_calendar' : 'tasks_calendar',
   });
 
   var ctxRes = apiGet('/task-context?companyId=' + params.companyId, params.accessToken || getToken());
@@ -2041,7 +2055,6 @@ function onUpdateTask(e) {
   var estimatedCost = costRaw ? parseFloat(costRaw.replace(/,/g, '')) : null;
   var notes = ((e.formInputs.editTaskNotes || [''])[0] || '').trim();
   var watcherIds = e.formInputs.editTaskWatchers || [];
-  var calendarTarget = (e.formInputs.editTaskCalendarTarget || []).indexOf('main_calendar') !== -1 ? 'main_calendar' : 'tasks_calendar';
 
   if (!name) return errorNotification('Task name is required');
 
@@ -2085,7 +2098,6 @@ function onUpdateTask(e) {
     estimatedCost: estimatedCost,
     notes: notes || null,
     watcherIds: watcherIds,
-    calendarTarget: calendarTarget,
   }, token);
 
   if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
@@ -2172,7 +2184,6 @@ function onCreateTask(e) {
   var linkEmail = (e.formInputs.newTaskLinkEmail || []).indexOf('true') !== -1;
   var emailContent = linkEmail ? fetchMessageContent(token, e.parameters.messageId) : null;
   var watcherIds = e.formInputs.newTaskWatchers || [];
-  var calendarTarget = (e.formInputs.newTaskCalendarTarget || []).indexOf('main_calendar') !== -1 ? 'main_calendar' : 'tasks_calendar';
 
   var result = apiPost('/create-task', {
     projectId: e.parameters.projectId,
@@ -2190,7 +2201,6 @@ function onCreateTask(e) {
     emailSubject: emailContent ? emailContent.subject : null,
     emailBody: emailContent ? emailContent.body : null,
     watcherIds: watcherIds,
-    calendarTarget: calendarTarget,
   }, token);
 
   if (!result.ok || !result.data.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
@@ -2683,6 +2693,20 @@ function onRemoveLabel(e) {
   var result = apiPost('/remove-label', { messageId: params.messageId }, token);
   if (!result.ok || !result.data.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
   return successNotification('✓ Label removed');
+}
+
+// Always submits for admin approval — never archives directly, regardless
+// of who clicks it. An admin approves/rejects from the admin "Gmail sync" tab.
+function onRequestArchive(e) {
+  var params = e.parameters;
+  var token = params.accessToken || getToken();
+  var result = apiPost('/request-archive', {
+    projectId: params.projectId,
+    companyId: params.companyId,
+  }, token);
+  if (!result.ok || !result.data.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
+  if (result.data.alreadyRequested) return successNotification('Already requested — awaiting admin approval');
+  return successNotification('✓ Archive requested for "' + params.projectName + '" — awaiting admin approval');
 }
 
 // ── Addon config — display fields ──────────────────────────────────
