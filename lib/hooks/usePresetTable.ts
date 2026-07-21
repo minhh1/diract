@@ -1,10 +1,25 @@
 // lib/hooks/usePresetTable.ts
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 
 const DEFAULT_PRESET_NAME = "Default view";
+
+// Crude but effective stand-in for the real column label — this hook has no
+// access to schema/relation metadata, so it estimates from the column id
+// itself (roughly tracks label length: underscores/dots become spaces).
+// Used only until an admin explicitly resizes a column, at which point the
+// real width is persisted and this estimate is never consulted again.
+function estimateDefaultWidth(colId: string): number {
+  const label = colId
+    .replace(/^custom_field:/, '')
+    .replace(/\./g, ' ')
+    .replace(/_id$/, '')
+    .replace(/_/g, ' ');
+  const base = Math.round(label.length * 7.5) + 72; // ~char width + icon/padding allowance
+  return Math.min(320, Math.max(130, base));
+}
 
 export type SortDirection = 'asc' | 'desc';
 export type SortMode = 'name' | 'number';
@@ -13,6 +28,53 @@ export interface SortState {
   colId: string;
   direction: SortDirection;
   mode?: SortMode;
+}
+
+interface CachedColumnConfig {
+  tableCols: string[];
+  expandCols: string[];
+  colWidths: Record<string, number>;
+  presetName: string;
+  sort: SortState | null;
+}
+
+function rowsCacheKey(companyId: string, tableSlug: string): string {
+  return `nk_cache_rows_${companyId}_${tableSlug}`;
+}
+
+function columnsCacheKey(companyId: string, tableSlug: string): string {
+  return `nk_cache_columns_${companyId}_${tableSlug}`;
+}
+
+// Synchronous reads for useState lazy initializers — see the matching
+// comment in useTableSchema.ts for why this matters (avoids a one-frame
+// "loading" flash when remounting on an already-visited table/company).
+function readCachedRows(companyId: string | null | undefined, tableSlug: string): any[] | null {
+  if (!companyId) return null;
+  try {
+    const raw = localStorage.getItem(rowsCacheKey(companyId, tableSlug));
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    return entry?.data?.length ? entry.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function readCachedColumns(companyId: string | null | undefined, tableSlug: string): CachedColumnConfig | null {
+  if (!companyId) return null;
+  try {
+    const raw = localStorage.getItem(columnsCacheKey(companyId, tableSlug));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedColumns(companyId: string, tableSlug: string, config: CachedColumnConfig): void {
+  try {
+    localStorage.setItem(columnsCacheKey(companyId, tableSlug), JSON.stringify(config));
+  } catch {}
 }
 
 interface UsePresetTableOptions {
@@ -38,18 +100,35 @@ export function usePresetTable({
   schemaReady = true,
   fetchItems,
 }: UsePresetTableOptions) {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Lazy initializers run synchronously on first render — a table already
+  // visited this session (e.g. switching Properties → Entities → back)
+  // renders with its last-known rows/columns immediately instead of
+  // blanking to a skeleton for a frame while init() re-fetches in the
+  // background. See the matching comment in useTableSchema.ts.
+  const [items, setItems] = useState<any[]>(() => readCachedRows(companyId, tableSlug) ?? []);
+  const [loading, setLoading] = useState(() => readCachedRows(companyId, tableSlug) === null);
 
-  const [tableCols, setTableCols] = useState<string[]>(defaultCols);
-  const [expandCols, setExpandCols] = useState<string[]>(defaultExpandCols);
-  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  const cachedColumnsAtMount = useMemo(() => readCachedColumns(companyId, tableSlug), []); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally only read once, at mount
+  const [tableCols, setTableCols] = useState<string[]>(() => cachedColumnsAtMount?.tableCols ?? defaultCols);
+  const [expandCols, setExpandCols] = useState<string[]>(() => cachedColumnsAtMount?.expandCols ?? defaultExpandCols);
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => cachedColumnsAtMount?.colWidths ?? {});
   const [expandRelations, setExpandRelations] = useState<string[]>(defaultExpandRelations);
-  const [activePreset, setActivePreset] = useState(DEFAULT_PRESET_NAME);
-  const [sort, setSort] = useState<SortState | null>(null);
+  const [activePreset, setActivePreset] = useState(() => cachedColumnsAtMount?.presetName ?? DEFAULT_PRESET_NAME);
+  const [sort, setSort] = useState<SortState | null>(() => cachedColumnsAtMount?.sort ?? null);
 
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  // colWidths only stores columns an admin has explicitly resized — everything
+  // else falls back to a size estimate here rather than one flat default, so
+  // newly-added or never-resized columns don't all render at the same width.
+  const effectiveColWidths = useMemo(() => {
+    const merged: Record<string, number> = { ...colWidths };
+    for (const colId of [...tableCols, ...expandCols]) {
+      if (merged[colId] == null) merged[colId] = estimateDefaultWidth(colId);
+    }
+    return merged;
+  }, [colWidths, tableCols, expandCols]);
 
   const fetchItemsRef = useRef(fetchItems);
   fetchItemsRef.current = fetchItems; // always latest without being a dep
@@ -67,22 +146,26 @@ export function usePresetTable({
   // don't duplicate the identity fetch GenericMasterTable already does.
   const init = useCallback(async () => {
     if (!companyId || !schemaReady) return;
-    setLoading(true);
 
     // ── Step 1: show cached rows immediately ─────────────────────
-    const companyScopedKey = `nk_cache_rows_${companyId}_${tableSlug}`;
-    let hasCachedData = false;
-    try {
-      const raw = localStorage.getItem(companyScopedKey);
-      if (raw) {
-        const entry = JSON.parse(raw);
-        if (entry?.data?.length) {
-          setItems(entry.data);
-          setLoading(false);
-          hasCachedData = true;
-        }
-      }
-    } catch {}
+    // (Already seeded synchronously via the lazy initializer above when
+    // possible — this re-check just decides whether we can skip blocking
+    // the UI on this run. Only flip loading on when there's truly no
+    // cache, so a lazily-seeded "not loading" state isn't clobbered.)
+    const cachedRows = readCachedRows(companyId, tableSlug);
+    const hasCachedData = !!cachedRows;
+    if (hasCachedData) {
+      setItems(cachedRows);
+      // companyId often resolves a tick after mount, so the lazy initializer
+      // above may have seeded loading=true (it read with companyId still
+      // null, before any cache was visible). Reconcile it here now that we
+      // actually know there's cached data to show — otherwise this branch
+      // never touches setLoading again (it only refreshes in the background)
+      // and the skeleton stays up forever.
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
     // ── Step 2: load the company's column layout (single source of truth) ──
     let resolvedTableCols = defaultCols;
@@ -106,6 +189,10 @@ export function usePresetTable({
       resolvedSort = companyView.sort || null;
     }
 
+    writeCachedColumns(companyId, tableSlug, {
+      tableCols: resolvedTableCols, expandCols: resolvedExpandCols,
+      colWidths: resolvedWidths, presetName: resolvedPresetName, sort: resolvedSort,
+    });
     setTableCols(resolvedTableCols);
     setExpandCols(resolvedExpandCols);
     setColWidths(resolvedWidths);
@@ -154,7 +241,9 @@ export function usePresetTable({
   const startResizing = (colId: string, e: React.MouseEvent) => {
     if (!isAdmin) return;
     const startX = e.pageX;
-    const startWidth = colWidths[colId] || 250;
+    // Start from the visible (possibly estimated) width, not raw state, so
+    // the column doesn't visually jump to a flat default the moment a drag begins.
+    const startWidth = effectiveColWidths[colId] || 250;
     // Track the latest widths outside React state so the save-on-mouseup
     // call is a plain statement, not a side effect inside a setState
     // updater — React (Strict Mode) may invoke updater functions twice.
@@ -211,7 +300,7 @@ export function usePresetTable({
 
   return {
     items, setItems, loading, refresh: init,
-    tableCols, expandCols, colWidths,
+    tableCols, expandCols, colWidths: effectiveColWidths,
     expandRelations, setExpandRelations,
     draggedIdx, setDraggedIdx, expandedRow, toggleExpandRow,
     activePreset, sort, handleSort,

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   Loader2, Users, Settings, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor, Activity,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor, Activity, MessageCircle, Users2, Sparkles,
 } from "lucide-react";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
@@ -14,6 +14,9 @@ import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
 import AdminDefaultViewsTab from "@/components/admin/AdminDefaultViewsTab";
 import AdminVirtualComputersTab from "@/components/admin/AdminVirtualComputersTab";
 import AdminGmailSyncTab from "@/components/admin/AdminGmailSyncTab";
+import AdminWhatsAppTab from "@/components/admin/AdminWhatsAppTab";
+import AdminMsTeamsTab from "@/components/admin/AdminMsTeamsTab";
+import AdminAiAssistantTab from "@/components/admin/AdminAiAssistantTab";
 
 interface Member {
   id: string;
@@ -98,7 +101,7 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'aiAssistant'>('members');
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -458,6 +461,9 @@ export default function AdminPage() {
     { id: 'invites' as const,  label: 'Invite links', icon: Link },
     { id: 'gmail'   as const,  label: 'Gmail',        icon: Mail },
     { id: 'gmailSync' as const, label: 'Gmail sync',  icon: Activity },
+    { id: 'whatsapp' as const, label: 'WhatsApp', icon: MessageCircle },
+    { id: 'msTeams' as const, label: 'Microsoft Teams', icon: Users2 },
+    { id: 'aiAssistant' as const, label: 'AI Assistant', icon: Sparkles },
     { id: 'virtualComputers' as const, label: 'Virtual computers', icon: Monitor },
     { id: 'company' as const,  label: 'Company',      icon: Settings },
   ];
@@ -808,6 +814,21 @@ export default function AdminPage() {
           {/* ── Gmail sync activity & health ── */}
           {activeTab === 'gmailSync' && company?.id && (
             <AdminGmailSyncTab companyId={company.id} />
+          )}
+
+          {/* ── WhatsApp ── */}
+          {activeTab === 'whatsapp' && company?.id && (
+            <AdminWhatsAppTab companyId={company.id} />
+          )}
+
+          {/* ── Microsoft Teams ── */}
+          {activeTab === 'msTeams' && company?.id && (
+            <AdminMsTeamsTab companyId={company.id} />
+          )}
+
+          {/* ── AI Assistant ── */}
+          {activeTab === 'aiAssistant' && company?.id && (
+            <AdminAiAssistantTab companyId={company.id} />
           )}
 
           {/* ── Virtual computers ── */}

@@ -1049,9 +1049,24 @@ Deno.serve(async (req) => {
         .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
         .eq('project_id', projectId)
         .is('deleted_at', null)
-        .order('date_entered', { ascending: true });
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('due_time', { ascending: true, nullsFirst: false });
 
       if (tasksErr) console.error('[project-tasks] error:', tasksErr.message);
+
+      // Matter number — a project-level custom field, same for every task
+      // in this list, used by the simplified task-row view.
+      let matterNumber: string | null = null;
+      const { data: projectRow } = await db.from('projects').select('company_id').eq('id', projectId).maybeSingle();
+      if (projectRow?.company_id) {
+        const { data: matterField } = await db.from('company_custom_fields')
+          .select('id').eq('company_id', projectRow.company_id).eq('table_name', 'projects').eq('field_key', 'matter_number').maybeSingle();
+        if (matterField) {
+          const { data: matterValue } = await db.from('company_custom_field_values')
+            .select('value_text').eq('field_id', matterField.id).eq('record_id', projectId).maybeSingle();
+          matterNumber = matterValue?.value_text || null;
+        }
+      }
       console.log(`[project-tasks] projectId=${projectId} count=${tasks?.length}`);
       if (tasks?.length) {
         const sample = tasks[0] as any;
@@ -1100,6 +1115,7 @@ Deno.serve(async (req) => {
           watchers: watchersByTask[t.id] || [],
         })),
         statuses: statuses || [],
+        matterNumber,
       }, 200, headers);
     }
 
@@ -1755,6 +1771,7 @@ Deno.serve(async (req) => {
         .eq('is_completed', false)
         .is('deleted_at', null)
         .order('due_date', { ascending: true, nullsFirst: false })
+        .order('due_time', { ascending: true, nullsFirst: false })
         .range(offset, offset + limit - 1);
 
       if (tasksErr) return json({ error: tasksErr.message }, 500, headers);
@@ -1772,6 +1789,19 @@ Deno.serve(async (req) => {
 
       const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
 
+      // Matter number per project, for the simplified task-row view.
+      let matterByProject: Record<string, string> = {};
+      const projectIds = [...new Set((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
+      if (projectIds.length) {
+        const { data: matterField } = await db.from('company_custom_fields')
+          .select('id').eq('company_id', companyId).eq('table_name', 'projects').eq('field_key', 'matter_number').maybeSingle();
+        if (matterField) {
+          const { data: values } = await db.from('company_custom_field_values')
+            .select('record_id, value_text').eq('field_id', matterField.id).in('record_id', projectIds);
+          matterByProject = Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || '']));
+        }
+      }
+
       return json({
         tasks: (tasks || []).map((t: any) => ({
           id: t.id,
@@ -1781,6 +1811,7 @@ Deno.serve(async (req) => {
           dueTime: t.due_time,
           projectId: t.project_id,
           projectName: t.projects?.name || null,
+          matterNumber: t.project_id ? matterByProject[t.project_id] || null : null,
           labelName: t.projects?.project_gmail_labels?.[0]?.gmail_label_name || null,
           labelCode: t.projects?.project_gmail_labels?.[0]?.label_code || null,
           assigneeId: t.assignee_id,

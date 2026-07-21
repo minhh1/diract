@@ -215,7 +215,7 @@ function getRelativeDateLabel(dateStr) {
 }
 
 // "Due" label for a task's own due date — mirrors the inline logic in
-// buildTaskCardById's task-row rendering ("⚠ overdue N days", "🔴 due
+// buildTaskCardById's task-row rendering ("⚠ overdue N days", "🟠 due
 // today", etc), factored out so the Home card's All-tasks list can use the
 // same wording without duplicating the dot/urgency thresholds.
 function getRelativeDueLabel(dueDate, isCompleted) {
@@ -223,12 +223,12 @@ function getRelativeDueLabel(dueDate, isCompleted) {
   var diffDays = daysFromToday(dueDate);
   if (diffDays < 0) {
     var n = Math.abs(diffDays);
-    return '🔴 overdue ' + n + (n !== 1 ? ' days' : ' day');
+    return '🟠 overdue ' + n + (n !== 1 ? ' days' : ' day');
   }
-  if (diffDays === 0) return '🔴 due today';
+  if (diffDays === 0) return '🟠 due today';
   if (diffDays === 1) return '🟠 due tomorrow';
   if (diffDays <= 3) return '🟠 due in ' + diffDays + ' days';
-  if (diffDays <= 7) return '🟡 due in ' + diffDays + ' days';
+  if (diffDays <= 7) return '🔵 due in ' + diffDays + ' days';
   if (diffDays <= 14) return '🟢 due in ' + diffDays + ' days';
   var weeks = Math.floor(diffDays / 7);
   return '🟢 due in ' + weeks + (weeks !== 1 ? ' weeks' : ' week');
@@ -240,6 +240,29 @@ function getTaskStatusLabel(isCompleted, awaitingFollowUp) {
   if (isCompleted) return 'Complete';
   if (awaitingFollowUp) return 'Follow Up';
   return 'Pending';
+}
+
+// Simplified task-row view — shows only task name, matter number, project
+// name, and due date instead of every field. Persisted per-user so it
+// sticks across sessions; applies to both the Home card's "All My Tasks"
+// and a project's task list.
+function isSimplifiedTaskView() {
+  return PropertiesService.getUserProperties().getProperty('simplifiedTaskView') === 'true';
+}
+function setSimplifiedTaskView(value) {
+  PropertiesService.getUserProperties().setProperty('simplifiedTaskView', value ? 'true' : 'false');
+}
+
+// Short due-date string for the simplified view — date only (no relative
+// urgency wording/emoji), with the time appended if the task has one.
+function formatSimpleDueDate(dueDate, dueTime) {
+  if (!dueDate) return 'No due date';
+  var dateStr = String(dueDate).substring(0, 10);
+  var d = new Date(dateStr + 'T00:00:00');
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var out = 'Due ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+  if (dueTime) out += ' ' + String(dueTime).substring(0, 5);
+  return out;
 }
 
 // Gmail web URL for a message, given its hex message ID (the same format
@@ -719,10 +742,18 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
     : { ok: false };
   var allTasksData = allTasksRes.ok ? allTasksRes.data : null;
 
+  var allTasksSimplified = isSimplifiedTaskView();
   var allTasksSection = CardService.newCardSection()
     .setHeader('All My Tasks')
     .setCollapsible(true)
     .setNumUncollapsibleWidgets(0);
+
+  allTasksSection.addWidget(CardService.newButtonSet()
+    .addButton(CardService.newTextButton()
+      .setText(allTasksSimplified ? '☰ Full view' : '☰ Simplify view')
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onToggleTaskViewMode')
+        .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset) }))));
 
   if (allTasksData && allTasksData.tasks && allTasksData.tasks.length) {
     var atTasks = allTasksData.tasks;
@@ -731,18 +762,24 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
 
       var atLabel = at.labelName || 'No label';
       var atTitle = at.name;
-
       var atSub = '';
-      if (at.projectName) atSub += at.projectName;
-      var atDaysLeft = getRelativeDueLabel(at.dueDate, at.isCompleted);
-      if (atDaysLeft) atSub += (atSub ? ' · ' : '') + atDaysLeft;
-      if (at.assignedTeam) atSub += (atSub ? ' · ' : '') + '👥 ' + at.assignedTeam;
-      atSub += (atSub ? ' · ' : '') + getTaskStatusLabel(at.isCompleted, at.awaitingFollowUp);
-      if (at.isMonetary && at.estimatedCost) atSub += (atSub ? ' · ' : '') + '$' + at.estimatedCost;
-      if (at.createdBy) atSub += (atSub ? ' · ' : '') + 'Added by ' + at.createdBy;
-      if (at.followUpCount) atSub += (atSub ? ' · ' : '') + '🚩 Followed up ' + at.followUpCount + 'x' + (at.followUpDate ? ' · last ' + getRelativeDateLabel(at.followUpDate) : '');
-      if (at.notes) atSub += (atSub ? ' · ' : '') + '📝 ' + at.notes;
-      if (at.sourceEmailSubject) atSub += (atSub ? ' · ' : '') + '📧 ' + at.sourceEmailSubject;
+
+      if (allTasksSimplified) {
+        atLabel = at.projectName || 'No project';
+        if (at.matterNumber) atSub += at.matterNumber;
+        atSub += (atSub ? ' · ' : '') + formatSimpleDueDate(at.dueDate, at.dueTime);
+      } else {
+        if (at.projectName) atSub += at.projectName;
+        var atDaysLeft = getRelativeDueLabel(at.dueDate, at.isCompleted);
+        if (atDaysLeft) atSub += (atSub ? ' · ' : '') + atDaysLeft;
+        if (at.assignedTeam) atSub += (atSub ? ' · ' : '') + '👥 ' + at.assignedTeam;
+        atSub += (atSub ? ' · ' : '') + getTaskStatusLabel(at.isCompleted, at.awaitingFollowUp);
+        if (at.isMonetary && at.estimatedCost) atSub += (atSub ? ' · ' : '') + '$' + at.estimatedCost;
+        if (at.createdBy) atSub += (atSub ? ' · ' : '') + 'Added by ' + at.createdBy;
+        if (at.followUpCount) atSub += (atSub ? ' · ' : '') + '🚩 Followed up ' + at.followUpCount + 'x' + (at.followUpDate ? ' · last ' + getRelativeDateLabel(at.followUpDate) : '');
+        if (at.notes) atSub += (atSub ? ' · ' : '') + '📝 ' + at.notes;
+        if (at.sourceEmailSubject) atSub += (atSub ? ' · ' : '') + '📧 ' + at.sourceEmailSubject;
+      }
 
       var atRow = CardService.newDecoratedText()
         .setTopLabel(atLabel)
@@ -826,6 +863,30 @@ function onChangeAllTasksPage(e) {
     .build();
 }
 
+// Flips the simplified/full view preference and re-renders the Home card.
+function onToggleTaskViewMode(e) {
+  var token = e.parameters.accessToken || getToken();
+  setSimplifiedTaskView(!isSimplifiedTaskView());
+
+  // Shared by the Home card's "All My Tasks" and a project's task list —
+  // projectId is only present when toggled from the latter.
+  if (e.parameters.projectId) {
+    return CardService.newActionResponseBuilder()
+      .setNavigation(CardService.newNavigation()
+        .updateCard(buildTaskCardById(
+          e.parameters.projectId, e.parameters.projectName,
+          e.parameters.labelCode, e.parameters.companyId,
+          token, e.parameters.messageId || null)))
+      .build();
+  }
+
+  var offset = parseInt(e.parameters.offset || '0') || 0;
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .updateCard(buildMainCard(e.parameters.messageId || null, token, offset)))
+    .build();
+}
+
 // ── Switch company ─────────────────────────────────────────────────
 
 function onSwitchCompany(e) {
@@ -886,6 +947,8 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
   // ── Fetch tasks (always fresh) ────────────────────────────────────
   var tasksRes = apiGet('/project-tasks?projectId=' + projectId, token);
   var tasks = tasksRes.ok ? (tasksRes.data.tasks || []) : [];
+  var projectMatterNumber = tasksRes.ok ? (tasksRes.data.matterNumber || null) : null;
+  var tasksSimplified = isSimplifiedTaskView();
   Logger.log('[buildTaskCardById] tasks=' + tasks.length + ' profiles=' + profiles.length + ' teams=' + teams.length);
 
 
@@ -913,6 +976,15 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
   card.addSection(archiveSection);
 
   var taskSection = CardService.newCardSection().setHeader('Tasks');
+  taskSection.addWidget(CardService.newButtonSet()
+    .addButton(CardService.newTextButton()
+      .setText(tasksSimplified ? '☰ Full view' : '☰ Simplify view')
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onToggleTaskViewMode')
+        .setParameters({
+          accessToken: token, projectId: projectId, projectName: projectName,
+          labelCode: labelCode, companyId: companyId, messageId: messageId || '',
+        }))));
   if (!tasks.length) {
     taskSection.addWidget(CardService.newTextParagraph().setText('No tasks yet. Add one below.'));
   }
@@ -934,56 +1006,63 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
 
     var prefix = t.isCompleted ? '✓ ' : (overdue ? '⚠ ' : '○ ');
     var label = prefix + taskName;
-
-    // Time remaining indicator (same line as task name)
-    if (t.dueDate && !t.isCompleted) {
-      var diffDays = daysFromToday(t.dueDate);
-      var timeStr = '';
-      var dot = '';
-      if (diffDays < 0) {
-        // Overdue
-        var overdueDays = Math.abs(diffDays);
-        dot = '🔴';
-        timeStr = overdueDays === 1 ? 'overdue 1 day' : 'overdue ' + overdueDays + ' days';
-      } else if (diffDays === 0) {
-        dot = '🔴';
-        timeStr = 'due today';
-      } else if (diffDays === 1) {
-        dot = '🟠';
-        timeStr = 'due tomorrow';
-      } else if (diffDays <= 3) {
-        dot = '🟠';
-        timeStr = 'due in ' + diffDays + ' days';
-      } else if (diffDays <= 7) {
-        dot = '🟡';
-        timeStr = 'due in ' + diffDays + ' days';
-      } else if (diffDays <= 14) {
-        dot = '🟢';
-        timeStr = 'due in ' + diffDays + ' days';
-      } else {
-        dot = '🟢';
-        var diffWeeks = Math.floor(diffDays / 7);
-        timeStr = 'due in ' + diffWeeks + ' week' + (diffWeeks > 1 ? 's' : '');
-      }
-      label = prefix + taskName + '   ' + dot + ' ' + timeStr;
-    }
-
     var sub = '';
-    if (t.dueDate) {
-      var dateStr = String(t.dueDate).substring(0, 10); // strip to YYYY-MM-DD
-      var d = new Date(dateStr + 'T00:00:00');
-      var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      sub += 'Due: ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+
+    if (tasksSimplified) {
+      // Task name, matter number, project name, due date — nothing else.
+      if (projectMatterNumber) sub += projectMatterNumber;
+      sub += (sub ? ' · ' : '') + (projectName || '');
+      sub += (sub ? ' · ' : '') + formatSimpleDueDate(t.dueDate, t.dueTime);
+    } else {
+      // Time remaining indicator (same line as task name)
+      if (t.dueDate && !t.isCompleted) {
+        var diffDays = daysFromToday(t.dueDate);
+        var timeStr = '';
+        var dot = '';
+        if (diffDays < 0) {
+          // Overdue
+          var overdueDays = Math.abs(diffDays);
+          dot = '🟠';
+          timeStr = overdueDays === 1 ? 'overdue 1 day' : 'overdue ' + overdueDays + ' days';
+        } else if (diffDays === 0) {
+          dot = '🟠';
+          timeStr = 'due today';
+        } else if (diffDays === 1) {
+          dot = '🟠';
+          timeStr = 'due tomorrow';
+        } else if (diffDays <= 3) {
+          dot = '🟠';
+          timeStr = 'due in ' + diffDays + ' days';
+        } else if (diffDays <= 7) {
+          dot = '🔵';
+          timeStr = 'due in ' + diffDays + ' days';
+        } else if (diffDays <= 14) {
+          dot = '🟢';
+          timeStr = 'due in ' + diffDays + ' days';
+        } else {
+          dot = '🟢';
+          var diffWeeks = Math.floor(diffDays / 7);
+          timeStr = 'due in ' + diffWeeks + ' week' + (diffWeeks > 1 ? 's' : '');
+        }
+        label = prefix + taskName + '   ' + dot + ' ' + timeStr;
+      }
+
+      if (t.dueDate) {
+        var dateStr = String(t.dueDate).substring(0, 10); // strip to YYYY-MM-DD
+        var d = new Date(dateStr + 'T00:00:00');
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        sub += 'Due: ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+      }
+      if (t.assignee) sub += (sub ? ' · ' : '') + '👤 ' + t.assignee;
+      if (t.watchers && t.watchers.length) sub += (sub ? ' · ' : '') + '👀 ' + t.watchers.map(function(w) { return w.name; }).join(', ');
+      if (t.assignedTeam) sub += (sub ? ' · ' : '') + '👥 ' + t.assignedTeam;
+      sub += (sub ? ' · ' : '') + getTaskStatusLabel(t.isCompleted, t.awaitingFollowUp);
+      if (t.createdBy) sub += (sub ? ' · ' : '') + 'Added by ' + t.createdBy;
+      if (t.followUpCount) {
+        sub += (sub ? ' · ' : '') + '🚩 Followed up ' + t.followUpCount + 'x' + (t.followUpDate ? ' · last ' + getRelativeDateLabel(t.followUpDate) : '');
+      }
+      if (t.notes) sub += (sub ? ' · ' : '') + '📝 ' + t.notes;
     }
-    if (t.assignee) sub += (sub ? ' · ' : '') + '👤 ' + t.assignee;
-    if (t.watchers && t.watchers.length) sub += (sub ? ' · ' : '') + '👀 ' + t.watchers.map(function(w) { return w.name; }).join(', ');
-    if (t.assignedTeam) sub += (sub ? ' · ' : '') + '👥 ' + t.assignedTeam;
-    sub += (sub ? ' · ' : '') + getTaskStatusLabel(t.isCompleted, t.awaitingFollowUp);
-    if (t.createdBy) sub += (sub ? ' · ' : '') + 'Added by ' + t.createdBy;
-    if (t.followUpCount) {
-      sub += (sub ? ' · ' : '') + '🚩 Followed up ' + t.followUpCount + 'x' + (t.followUpDate ? ' · last ' + getRelativeDateLabel(t.followUpDate) : '');
-    }
-    if (t.notes) sub += (sub ? ' · ' : '') + '📝 ' + t.notes;
 
     var dt = CardService.newDecoratedText().setText(label).setWrapText(true);
     if (sub) dt.setBottomLabel(sub);
@@ -1033,40 +1112,42 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
 
     taskSection.addWidget(dt);
 
-    // Reference email — the subject/body text is stored on the task itself
-    // (message IDs don't resolve across different users' mailboxes, so a
-    // deep link back to the original email only ever works for whoever
-    // linked it — plain text works for everyone).
-    if (t.sourceEmailSubject) {
-      taskSection.addWidget(CardService.newTextParagraph()
-        .setText('📧 <b>' + escapeCardHtml(t.sourceEmailSubject) + '</b>'));
+    if (!tasksSimplified) {
+      // Reference email — the subject/body text is stored on the task itself
+      // (message IDs don't resolve across different users' mailboxes, so a
+      // deep link back to the original email only ever works for whoever
+      // linked it — plain text works for everyone).
+      if (t.sourceEmailSubject) {
+        taskSection.addWidget(CardService.newTextParagraph()
+          .setText('📧 <b>' + escapeCardHtml(t.sourceEmailSubject) + '</b>'));
+      }
+
+      // Second tick — "done on our end, awaiting follow-up" — and a note button,
+      // shown on the same row.
+      var taskButtonRow = CardService.newButtonSet()
+        .addButton(CardService.newTextButton()
+          .setText(t.followUpCount ? '🚩 Followed up ' + t.followUpCount + 'x — manage' : '🏳️ Log follow-up')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onOpenFollowUpsCard')
+            .setParameters(taskParams)))
+        .addButton(CardService.newTextButton()
+          .setText(t.notes ? '📝 Edit note' : '📝 Add note')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onOpenNoteCard')
+            .setParameters(taskParams)));
+
+      // Capture the email currently open in Gmail as this task's reference —
+      // offer to replace it if one's already linked, or link it fresh.
+      if (messageId && messageId !== t.sourceMessageId) {
+        taskButtonRow.addButton(CardService.newTextButton()
+          .setText(t.sourceEmailSubject ? '🔄 Replace with this email' : '📎 Link this email')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onLinkEmail')
+            .setParameters(taskParams)));
+      }
+
+      taskSection.addWidget(taskButtonRow);
     }
-
-    // Second tick — "done on our end, awaiting follow-up" — and a note button,
-    // shown on the same row.
-    var taskButtonRow = CardService.newButtonSet()
-      .addButton(CardService.newTextButton()
-        .setText(t.followUpCount ? '🚩 Followed up ' + t.followUpCount + 'x — manage' : '🏳️ Log follow-up')
-        .setOnClickAction(CardService.newAction()
-          .setFunctionName('onOpenFollowUpsCard')
-          .setParameters(taskParams)))
-      .addButton(CardService.newTextButton()
-        .setText(t.notes ? '📝 Edit note' : '📝 Add note')
-        .setOnClickAction(CardService.newAction()
-          .setFunctionName('onOpenNoteCard')
-          .setParameters(taskParams)));
-
-    // Capture the email currently open in Gmail as this task's reference —
-    // offer to replace it if one's already linked, or link it fresh.
-    if (messageId && messageId !== t.sourceMessageId) {
-      taskButtonRow.addButton(CardService.newTextButton()
-        .setText(t.sourceEmailSubject ? '🔄 Replace with this email' : '📎 Link this email')
-        .setOnClickAction(CardService.newAction()
-          .setFunctionName('onLinkEmail')
-          .setParameters(taskParams)));
-    }
-
-    taskSection.addWidget(taskButtonRow);
   }
   card.addSection(taskSection);
 

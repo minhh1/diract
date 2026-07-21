@@ -118,7 +118,7 @@ function buildRelationDef(r: ReverseRelation, parentTable: string): RelationDef 
 // In-memory cache so we don't re-fetch on every render or navigation
 const cache = new Map<string, RelationDef[]>();
 
-export function useTableRelations(tableName: string): {
+export function useTableRelations(tableName: string, enabled: boolean = true): {
   relations: RelationDef[];
   loading: boolean;
 } {
@@ -129,7 +129,11 @@ export function useTableRelations(tableName: string): {
 
   useEffect(() => {
     if (!tableName || tableName === '__skip__') { setLoading(false); return; }
-    if (cache.has(tableName)) return;
+    if (cache.has(tableName)) { setRelations(cache.get(tableName)!); setLoading(false); return; }
+    // get_reverse_relations/get_self_relations are expensive server-side —
+    // only fetch once actually needed (Setup drawer open, or a relation is
+    // already expanded) rather than on every page mount.
+    if (!enabled) return;
     let active = true;
 
     (async () => {
@@ -157,7 +161,7 @@ export function useTableRelations(tableName: string): {
     })();
 
     return () => { active = false; };
-  }, [tableName]);
+  }, [tableName, enabled]);
 
   return { relations, loading };
 }

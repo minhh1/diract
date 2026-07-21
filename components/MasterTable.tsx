@@ -54,6 +54,7 @@ export interface MasterTableProps {
   addressSortOpen?: boolean;
   onAddressSortOpenChange?: (open: boolean) => void;
   resolveColLabel?: (colId: string) => string;
+  resolveColTooltip?: (colId: string) => string;
 }
 
 function errorMessage(code: string): string {
@@ -73,7 +74,7 @@ export default function MasterTable({
   relations = [], expandRelations = [],
   minWidth = 1200, rowKey = (item) => item.id,
   baseTable, parentType, companyId, isAdmin = false, editableCols, relationalEditCols, onRowMutated,
-  sort, onSort, addressSortOpen, onAddressSortOpenChange, resolveColLabel,
+  sort, onSort, addressSortOpen, onAddressSortOpenChange, resolveColLabel, resolveColTooltip,
 }: MasterTableProps) {
   const router = useRouter();
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
@@ -216,7 +217,10 @@ export default function MasterTable({
                       </div>
                     )}
 
-                    <div className={`flex-1 py-5 px-2 uppercase text-[10px] font-bold tracking-widest truncate ${isActiveSortCol ? 'text-indigo-600' : ''}`}>
+                    <div
+                      title={resolveColTooltip ? resolveColTooltip(colId) : resolveColLabel ? resolveColLabel(colId) : undefined}
+                      className={`flex-1 py-5 px-2 uppercase text-[10px] font-bold tracking-widest truncate ${isActiveSortCol ? 'text-indigo-600' : ''}`}
+                    >
                       {resolveColLabel ? resolveColLabel(colId) : colId.replace('_id', '').replace('.', ' ')}
                     </div>
 
@@ -328,7 +332,11 @@ export default function MasterTable({
                     };
 
                     return (
-                      <td key={colId} className="p-6 border-r border-slate-50 truncate font-medium text-slate-700">
+                      <td
+                        key={colId}
+                        title={!isEditing && rawValue != null && rawValue !== '' ? String(rawValue) : undefined}
+                        className="p-6 border-r border-slate-50 truncate font-medium text-slate-700"
+                      >
                         {isEditing && !relationalConfig ? (
                           <input
                             autoFocus
@@ -405,16 +413,25 @@ export default function MasterTable({
                     <td colSpan={tableCols.length + 1} className="p-8 space-y-8">
                       {expandCols.length > 0 && (
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                          {expandCols.map(colId => (
-                            <div key={colId}>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                {resolveColLabel ? resolveColLabel(colId) : colId.replace('_id', '').replace('.', ' ')}
-                              </p>
-                              <p className="text-[13px] font-medium text-slate-800 truncate">
-                                {String(resolveValue(item, colId) || '—')}
-                              </p>
-                            </div>
-                          ))}
+                          {expandCols.map(colId => {
+                            const expandValue = resolveValue(item, colId);
+                            return (
+                              <div key={colId}>
+                                <p
+                                  title={resolveColTooltip ? resolveColTooltip(colId) : undefined}
+                                  className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 truncate"
+                                >
+                                  {resolveColLabel ? resolveColLabel(colId) : colId.replace('_id', '').replace('.', ' ')}
+                                </p>
+                                <p
+                                  title={expandValue ? String(expandValue) : undefined}
+                                  className="text-[13px] font-medium text-slate-800 truncate"
+                                >
+                                  {String(expandValue || '—')}
+                                </p>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
 

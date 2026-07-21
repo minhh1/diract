@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, Check, X, ClipboardCheck,
+  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, Check, X, ClipboardCheck, ArrowUpDown, Clock,
 } from "lucide-react";
 
 interface AdminGmailSyncTabProps {
@@ -30,16 +30,47 @@ interface QueueJob {
   total_users: number;
   updated_at: string;
   position: number;
+  doneNames: string[];
+  pendingNames: string[];
+  emailCount: number;
 }
 
 interface ActivityRow {
   id: string;
   action: string;
+  project_name: string | null;
   gmail_label_name: string | null;
+  label_code: string | null;
   email_subject: string | null;
   email_snippet: string | null;
   user_name: string;
+  reapplied: boolean;
   created_at: string;
+}
+
+type ActivityRange = "all" | "1h" | "24h" | "7d" | "30d" | "custom";
+
+const ACTIVITY_RANGE_OPTIONS: { id: ActivityRange; label: string }[] = [
+  { id: "all", label: "All time" },
+  { id: "1h", label: "Last hour" },
+  { id: "24h", label: "Last 24 hours" },
+  { id: "7d", label: "Last 7 days" },
+  { id: "30d", label: "Last 30 days" },
+  { id: "custom", label: "Custom range" },
+];
+
+function describeActivity(row: ActivityRow): string {
+  switch (row.action) {
+    case "sync_to_user": return `Synced to ${row.user_name}`;
+    case "label_applied": return `Label applied for ${row.user_name}`;
+    case "label_removed": return row.reapplied
+      ? `${row.user_name} removed the label — auto re-applied`
+      : `Label removed for ${row.user_name}`;
+    case "message_deleted": return `Message deleted by ${row.user_name}`;
+    case "archived": return `Archived to ${row.user_name}`;
+    case "email_trashed": return `Deleted from ${row.user_name}'s mailbox (archived)`;
+    default: return row.user_name;
+  }
 }
 
 interface HeartbeatRow {
@@ -107,17 +138,23 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
   const [reviewingRequests, setReviewingRequests] = useState(false);
 
   const [queue, setQueue] = useState<QueueJob[]>([]);
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
+  const [activityRange, setActivityRange] = useState<ActivityRange>("all");
+  const [activityCustomFrom, setActivityCustomFrom] = useState("");
+  const [activityCustomTo, setActivityCustomTo] = useState("");
+  const [activitySortAsc, setActivitySortAsc] = useState(false);
   const [activityOffset, setActivityOffset] = useState(0);
   const [activityHasMore, setActivityHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [projectNameById, setProjectNameById] = useState<Map<string, string>>(new Map());
 
   const [heartbeats, setHeartbeats] = useState<HeartbeatRow[]>([]);
 
   useEffect(() => { load(); }, [companyId]);
-  useEffect(() => { loadActivity(true); }, [companyId, activityFilter]);
+  useEffect(() => { loadActivity(true); }, [companyId, activityFilter, activityRange, activityCustomFrom, activityCustomTo, activitySortAsc]);
 
   const load = async () => {
     setLoading(true);
@@ -155,14 +192,20 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     // Resolve "shared with" — every connected user in the company shares in every label.
     // Queries company_gmail_connections (a view), not user_gmail_tokens directly — that
     // table's RLS only ever returns your own row to a browser client.
-    const { data: tokens } = await supabase.from("company_gmail_connections").select("user_id");
+    const { data: tokens } = await supabase.from("company_gmail_connections").select("user_id, email");
     const connectedIds = (tokens || []).map((t: any) => t.user_id);
     let connectedNames: string[] = [];
+    let nameByUserId = new Map<string, string>();
     if (connectedIds.length) {
       const { data: profiles } = await supabase.from("profiles").select("id, full_name, email").in("id", connectedIds);
-      connectedNames = (profiles || []).map((p: any) => p.full_name || p.email || "Unknown");
+      nameByUserId = new Map((profiles || []).map((p: any) => [p.id, p.full_name || p.email || "Unknown"]));
+      connectedNames = connectedIds.map((id: string) => nameByUserId.get(id) || "Unknown");
     }
     setSharedWithNames(connectedNames);
+
+    // Archive jobs exclude the nominated archive account(s) from the "still to do" set
+    const archiveEmailSet = new Set(comp?.gmail_archive_emails || []);
+    const archiveUserIdSet = new Set((tokens || []).filter((t: any) => archiveEmailSet.has(t.email)).map((t: any) => t.user_id));
 
     // Resolve project names for labels + queue jobs + archived projects
     const projectIds = Array.from(new Set([
@@ -175,6 +218,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     if (projectIds.length) {
       const { data: projects } = await supabase.from("projects").select("id, name").in("id", projectIds);
       projectNameById = new Map((projects || []).map((p: any) => [p.id, p.name]));
+      setProjectNameById(prev => new Map([...prev, ...projectNameById]));
     }
 
     setSharedLabels((labels || []).map((l: any) => ({
@@ -184,10 +228,35 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
       label_code: l.label_code,
     })));
 
-    setQueue(computeQueuePositions(jobs || []).map((j: any) => ({
-      ...j,
-      project_name: projectNameById.get(j.project_id) || j.project_id,
-    })));
+    // Distinct email count per project, for the jobs currently in the queue
+    const queueProjectIds = Array.from(new Set((jobs || []).map((j: any) => j.project_id)));
+    const emailCountByProject = new Map<string, number>();
+    if (queueProjectIds.length) {
+      const { data: emailRows } = await supabase.from("project_emails")
+        .select("project_id, gmail_message_id").in("project_id", queueProjectIds);
+      const seenByProject = new Map<string, Set<string>>();
+      for (const e of (emailRows || [])) {
+        if (!seenByProject.has(e.project_id)) seenByProject.set(e.project_id, new Set());
+        seenByProject.get(e.project_id)!.add(e.gmail_message_id);
+      }
+      for (const [pid, set] of seenByProject) emailCountByProject.set(pid, set.size);
+    }
+
+    setQueue(computeQueuePositions(jobs || []).map((j: any) => {
+      const relevantIds = j.job_type === "archive"
+        ? connectedIds.filter((id: string) => !archiveUserIdSet.has(id))
+        : connectedIds;
+      const completedSet = new Set(j.completed_users || []);
+      const doneNames = (j.completed_users || []).map((id: string) => nameByUserId.get(id) || "Unknown");
+      const pendingNames = relevantIds.filter((id: string) => !completedSet.has(id)).map((id: string) => nameByUserId.get(id) || "Unknown");
+      return {
+        ...j,
+        project_name: projectNameById.get(j.project_id) || j.project_id,
+        doneNames,
+        pendingNames,
+        emailCount: emailCountByProject.get(j.project_id) || 0,
+      };
+    }));
 
     // Most recent archive job status per project (archiveJobs already ordered newest-first)
     const latestJobStatusByProject = new Map<string, string>();
@@ -295,16 +364,34 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     load();
   };
 
+  const activityDateBounds = (): { from: string | null; to: string | null } => {
+    const now = Date.now();
+    switch (activityRange) {
+      case "1h": return { from: new Date(now - 60 * 60 * 1000).toISOString(), to: null };
+      case "24h": return { from: new Date(now - 24 * 60 * 60 * 1000).toISOString(), to: null };
+      case "7d": return { from: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(), to: null };
+      case "30d": return { from: new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString(), to: null };
+      case "custom": return {
+        from: activityCustomFrom ? new Date(activityCustomFrom + "T00:00:00").toISOString() : null,
+        to: activityCustomTo ? new Date(activityCustomTo + "T23:59:59.999").toISOString() : null,
+      };
+      default: return { from: null, to: null };
+    }
+  };
+
   const loadActivity = async (reset: boolean) => {
     setLoadingMore(true);
     const offset = reset ? 0 : activityOffset;
 
     let query = supabase.from("gmail_sync_log")
-      .select("id, action, gmail_label_name, target_user_id, details, created_at")
+      .select("id, action, project_id, gmail_label_name, target_user_id, details, created_at")
       .eq("company_id", companyId)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: activitySortAsc })
       .range(offset, offset + ACTIVITY_PAGE_SIZE - 1);
     if (activityFilter) query = query.eq("action", activityFilter);
+    const { from, to } = activityDateBounds();
+    if (from) query = query.gte("created_at", from);
+    if (to) query = query.lte("created_at", to);
 
     const { data: rows } = await query;
 
@@ -315,13 +402,28 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
       nameById = new Map((profiles || []).map((p: any) => [p.id, p.full_name || p.email || "Unknown"]));
     }
 
+    // Resolve any project names not already known from the other sections' loads
+    const projectIds = Array.from(new Set((rows || []).map((r: any) => r.project_id).filter(Boolean)));
+    const missingIds = projectIds.filter(id => !projectNameById.has(id));
+    let namesById = projectNameById;
+    if (missingIds.length) {
+      const { data: projects } = await supabase.from("projects").select("id, name").in("id", missingIds);
+      const merged = new Map(namesById);
+      for (const p of (projects || [])) merged.set(p.id, p.name);
+      namesById = merged;
+      setProjectNameById(merged);
+    }
+
     const mapped: ActivityRow[] = (rows || []).map((r: any) => ({
       id: r.id,
       action: r.action,
+      project_name: r.project_id ? (namesById.get(r.project_id) || null) : null,
       gmail_label_name: r.gmail_label_name,
+      label_code: r.details?.label_code || null,
       email_subject: r.details?.subject || null,
       email_snippet: r.details?.snippet || null,
       user_name: r.target_user_id ? (nameById.get(r.target_user_id) || "Unknown") : "System",
+      reapplied: !!r.details?.reapplied,
       created_at: r.created_at,
     }));
 
@@ -524,9 +626,10 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
             queue.map(job => {
               const done = job.completed_users?.length || 0;
               const total = job.total_users || 0;
+              const expanded = expandedJobId === job.id;
               return (
                 <div key={job.id} className="bg-white border border-slate-100 rounded-[28px] p-5">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-3 mb-2 flex-wrap">
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-100 text-slate-500">
                       #{job.position}
                     </span>
@@ -535,6 +638,9 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                     </span>
                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${JOB_STATUS_STYLES[job.status] || "bg-slate-100 text-slate-500"}`}>
                       {job.status}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-100 text-slate-500">
+                      {job.emailCount} email{job.emailCount !== 1 ? "s" : ""}
                     </span>
                   </div>
                   <p className="text-[13px] font-bold text-slate-800 truncate">{job.gmail_label_name}</p>
@@ -546,8 +652,47 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                         style={{ width: `${total ? Math.round((done / total) * 100) : 0}%` }}
                       />
                     </div>
-                    <span className="text-[10px] font-bold text-slate-400 shrink-0">{done}/{total} users</span>
+                    <button
+                      onClick={() => setExpandedJobId(expanded ? null : job.id)}
+                      className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 shrink-0"
+                    >
+                      {done}/{total} users {expanded ? "▲" : "▼"}
+                    </button>
                   </div>
+                  {expanded && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                      <div>
+                        <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest mb-1">
+                          Done ({job.doneNames.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {job.doneNames.length === 0
+                            ? <span className="text-[11px] text-slate-300 italic">None yet</span>
+                            : job.doneNames.map((name, i) => (
+                                <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700">
+                                  {name}
+                                </span>
+                              ))
+                          }
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest mb-1">
+                          Pending ({job.pendingNames.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {job.pendingNames.length === 0
+                            ? <span className="text-[11px] text-slate-300 italic">None — all done</span>
+                            : job.pendingNames.map((name, i) => (
+                                <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">
+                                  {name}
+                                </span>
+                              ))
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -557,27 +702,57 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
       {section === "activity" && (
         <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setActivityFilter(null)}
-              className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all ${
-                !activityFilter ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-500 border-slate-200"
-              }`}
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={activityFilter || "all"}
+              onChange={e => setActivityFilter(e.target.value === "all" ? null : e.target.value)}
+              className="min-w-0 flex-1 sm:flex-none bg-white border border-slate-200 rounded-full py-1.5 px-3 text-[11px] font-bold text-slate-600 outline-none focus:ring-4 focus:ring-slate-100"
             >
-              All
-            </button>
-            {Object.entries(ACTION_META).map(([key, meta]) => (
-              <button
-                key={key}
-                onClick={() => setActivityFilter(key)}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all ${
-                  activityFilter === key ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-500 border-slate-200"
-                }`}
+              <option value="all">All actions</option>
+              {Object.entries(ACTION_META).map(([key, meta]) => (
+                <option key={key} value={key}>{meta.label}</option>
+              ))}
+            </select>
+
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 sm:flex-none">
+              <Clock size={13} className="text-slate-300 shrink-0" />
+              <select
+                value={activityRange}
+                onChange={e => setActivityRange(e.target.value as ActivityRange)}
+                className="min-w-0 flex-1 sm:flex-none bg-white border border-slate-200 rounded-full py-1.5 px-3 text-[11px] font-bold text-slate-600 outline-none focus:ring-4 focus:ring-indigo-100"
               >
-                {meta.label}
-              </button>
-            ))}
+                {ACTIVITY_RANGE_OPTIONS.map(opt => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => setActivitySortAsc(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border border-slate-200 bg-white text-slate-500 hover:border-slate-400 transition-all sm:ml-auto"
+            >
+              <ArrowUpDown size={11} className="shrink-0" />
+              <span className="hidden sm:inline">{activitySortAsc ? "Oldest first" : "Newest first"}</span>
+            </button>
           </div>
+
+          {activityRange === "custom" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={activityCustomFrom}
+                onChange={e => setActivityCustomFrom(e.target.value)}
+                className="bg-white border border-slate-200 rounded-full py-1.5 px-3 text-[11px] font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+              />
+              <span className="text-[11px] text-slate-400">to</span>
+              <input
+                type="date"
+                value={activityCustomTo}
+                onChange={e => setActivityCustomTo(e.target.value)}
+                className="bg-white border border-slate-200 rounded-full py-1.5 px-3 text-[11px] font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+              />
+            </div>
+          )}
 
           {activity.length === 0 ? (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
@@ -598,8 +773,13 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${meta.style}`}>
                           {meta.label}
                         </span>
+                        {row.project_name && (
+                          <span className="text-[11px] font-bold text-slate-500 truncate">{row.project_name}</span>
+                        )}
                         {row.gmail_label_name && (
-                          <span className="text-[11px] text-slate-400 truncate">{row.gmail_label_name}</span>
+                          <span className="text-[11px] text-slate-400 truncate">
+                            {row.gmail_label_name}{row.label_code && ` [${row.label_code}]`}
+                          </span>
                         )}
                       </div>
                       {row.email_subject && (
@@ -608,8 +788,11 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                       {row.email_snippet && (
                         <p className="text-[11px] text-slate-400 truncate mt-0.5">{row.email_snippet}</p>
                       )}
-                      <p className="text-[10px] text-slate-300 mt-1.5">
-                        {row.user_name} — {new Date(row.created_at).toLocaleString()}
+                      <p className="text-[11px] text-slate-500 font-medium mt-1.5">
+                        {describeActivity(row)}
+                      </p>
+                      <p className="text-[10px] text-slate-300 mt-0.5">
+                        {new Date(row.created_at).toLocaleString()}
                       </p>
                     </div>
                   </div>

@@ -75,7 +75,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             {subtasks.length > 0 && <span className="text-[10px] text-slate-400 font-medium">{completedSubtasks}/{subtasks.length}</span>}
           </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
-            {task.due_date && <span className={`flex items-center gap-1 text-[10px] font-medium ${!task.is_completed && new Date(task.due_date) < new Date() ? 'text-red-500' : 'text-slate-400'}`}><Calendar size={10} />{new Date(task.due_date).toLocaleDateString('en-AU')}{task.due_time && ` ${task.due_time.slice(0,5)}`}</span>}
+            {task.due_date && <span className={`flex items-center gap-1 text-[10px] font-medium ${!task.is_completed && new Date(task.due_date) < new Date() ? 'text-orange-600' : 'text-slate-400'}`}><Calendar size={10} />{new Date(task.due_date).toLocaleDateString('en-AU')}{task.due_time && ` ${task.due_time.slice(0,5)}`}</span>}
             {(() => { const dl = getDaysLeft(task.due_date, task.is_completed); return dl ? <span className={`text-[10px] font-bold ${dl.colorClass}`}>{dl.text}</span> : null; })()}
             {assignee && <span className="flex items-center gap-1 text-[10px] text-slate-400"><User size={10} />{assignee.full_name || assignee.email}</span>}
             {watchers.map((w: any) => (

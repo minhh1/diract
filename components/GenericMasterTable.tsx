@@ -15,7 +15,7 @@ import { useTableSchema } from "@/lib/hooks/useTableSchema";
 import { useRelationalEditFields } from "@/lib/hooks/useRelationalEditFields";
 import { useTableRealtime } from "@/lib/hooks/useTableRealtime";
 import { useTableRelations } from "@/lib/hooks/useTableRelations";
-import { useRelatedFields } from "@/lib/hooks/useRelatedFields";
+import { useRelatedFields, cleanLabel } from "@/lib/hooks/useRelatedFields";
 import { useRelationSections } from "@/lib/hooks/useRelationSections";
 import { deriveLabel } from "@/lib/services/schemaService";
 import { propertyService } from "@/lib/services/propertyService";
@@ -27,6 +27,7 @@ import { useInvalidateRows } from "@/lib/hooks/useTableRows";
 import { swr, clearCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
 import { savedViewsService } from "@/lib/services/savedViewsService";
+import { useProgressBar } from "@/components/TopProgressBar";
 
 
 interface GenericMasterTableProps {
@@ -46,6 +47,12 @@ function getCategoryKeyForColumn(colId: string): string | null {
 }
 
 const TABLE_AREA_CLASS = "bg-[#F9FAFB] p-8";
+
+// Module-level cache (same pattern as schemaService's schema cache) so a
+// table already visited this session has its custom field labels available
+// synchronously on remount, instead of the raw "custom_field:<uuid>" column
+// id briefly rendering while a fresh useEffect fetch is in flight.
+const customFieldsCache = new Map<string, any[]>();
 
 function buildDynamicSelectQuery(
   schemaColumns: any[],
@@ -132,6 +139,7 @@ function GenericMasterTableInner({
 
   // Use shared company context — avoids duplicate auth call with Sidebar
   const { companyId: ctxCompanyId, isAdmin: ctxIsAdmin, userId: ctxUserId } = useCompany();
+  const { start: startProgress, done: doneProgress } = useProgressBar();
 
   const [search, setSearch] = useState("");
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -157,25 +165,38 @@ function GenericMasterTableInner({
     [[...relatedFields.byPath.keys()].join(',')] // eslint-disable-line
   );
   const fetchedCategoriesRef = useRef<Set<string>>(new Set());
-  const [customFieldCols, setCustomFieldCols] = useState<any[]>([]);
+  const [customFieldCols, setCustomFieldCols] = useState<any[]>(() => customFieldsCache.get(tableName) ?? []);
+  const [customFieldsLoading, setCustomFieldsLoading] = useState(() => !customFieldsCache.has(tableName));
   const filtersReadyToSave = useRef(false);
 
   useEffect(() => {
+    if (customFieldsCache.has(tableName)) return; // already cached — lazy initializer above already picked it up
+    let active = true;
     const loadCustomFields = async () => {
       const { data } = await supabase
         .from('company_custom_fields')
         .select('id, field_key, label, field_type, show_in_table, select_options')
         .eq('table_name', tableName)
         .order('display_order');
-      setCustomFieldCols(data || []);
+      const result = data || [];
+      customFieldsCache.set(tableName, result);
+      if (active) {
+        setCustomFieldCols(result);
+        setCustomFieldsLoading(false);
+      }
     };
     loadCustomFields();
+    return () => { active = false; };
   }, [tableName]);
 
   
 
+  // get_reverse_relations is expensive server-side and its result is only
+  // used by the Setup drawer and expand-row sub-tables — only fetch once
+  // the drawer's actually been opened, rather than on every page mount.
   const { relations: projectRelations } = useTableRelations(
-    tableName === 'projects' ? 'projects' : '__skip__'
+    tableName === 'projects' ? 'projects' : '__skip__',
+    isConfigOpen
   );
 
   const relations = useMemo(() => {
@@ -346,37 +367,66 @@ function GenericMasterTableInner({
     fetchItems,
   });
 
-  // ── Filter persistence (saved views) ────────────────────────────────
-  // Filters live on the selected saved view (?view=<id>, created from the
-  // Sidebar) rather than an implicit per-table default. With no view
-  // selected, filters are session-only — nothing to persist into.
+  // ── Top progress bar ───────────────────────────────────────────────────
+  // Reflects real data-loading state (not just the route) so switching
+  // tables/views shows progress without tearing down the current view.
+  const wasLoadingRef = useRef(false);
+  useEffect(() => {
+    const isLoading = schema.loading || t.loading || customFieldsLoading;
+    if (isLoading && !wasLoadingRef.current) {
+      wasLoadingRef.current = true;
+      startProgress();
+    } else if (!isLoading && wasLoadingRef.current) {
+      wasLoadingRef.current = false;
+      doneProgress();
+    }
+  }, [schema.loading, t.loading, customFieldsLoading, startProgress, doneProgress]);
+  useEffect(() => () => { if (wasLoadingRef.current) doneProgress(); }, [doneProgress]);
+
+  // ── Filter persistence ───────────────────────────────────────────────
+  // Filters always auto-save — either onto the selected named view
+  // (?view=<id>, created from the Sidebar) or, with no view selected, onto
+  // an implicit per-user/per-table default slot. No "create a view first"
+  // step required either way.
 
   useEffect(() => {
-    const loadView = async () => {
+    const loadFilters = async () => {
       filtersReadyToSave.current = false;  // ← block saves during load
+      startProgress(); // covers view switches — data stays visible while this resolves
 
-      if (!viewId) {
-        setFilters([]);
-        setActiveViewName(null);
-        filtersReadyToSave.current = true;
-        return;
+      try {
+        if (!viewId) {
+          setActiveViewName(null);
+          if (ctxUserId && ctxCompanyId) {
+            const defaultFilters = await savedViewsService.getDefaultFilters(ctxUserId, ctxCompanyId, tableName);
+            setFilters(defaultFilters);
+          } else {
+            setFilters([]);
+          }
+          return;
+        }
+
+        const view = await savedViewsService.get(viewId);
+        setFilters(view?.filters || []);
+        setActiveViewName(view?.view_name || null);
+      } finally {
+        // Only allow saves after state has settled
+        setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+        doneProgress();
       }
-
-      const view = await savedViewsService.get(viewId);
-      setFilters(view?.filters || []);
-      setActiveViewName(view?.view_name || null);
-      // Only allow saves after state has settled
-      setTimeout(() => { filtersReadyToSave.current = true; }, 100);
     };
-    loadView();
-  }, [viewId]);
+    loadFilters();
+  }, [viewId, ctxUserId, ctxCompanyId, tableName, startProgress, doneProgress]);
 
   useEffect(() => {
-    if (!viewId) return;
     if (!filtersReadyToSave.current) return;  // ← skip saves during load
 
-    savedViewsService.updateFilters(viewId, filters);
-  }, [filters, viewId]);
+    if (viewId) {
+      savedViewsService.updateFilters(viewId, filters);
+    } else if (ctxUserId && ctxCompanyId) {
+      savedViewsService.saveDefaultFilters(ctxUserId, ctxCompanyId, tableName, filters);
+    }
+  }, [filters, viewId, ctxUserId, ctxCompanyId, tableName]);
 
   // ── Realtime ───────────────────────────────────────────────────────
 
@@ -492,19 +542,49 @@ function GenericMasterTableInner({
     return typeof value === 'object' ? '' : (value ?? '');
   }, [schema.all, customFieldCols]);
 
+  // Related fields already carry a clean "Section — Field" label (e.g.
+  // "Holding Entity — Entity Type") from the RPC — use it instead of
+  // mangling the raw dotted path, which produced redundant headers like
+  // "Holding Entity Entity Type".
+  const relationPathLabel = useCallback((colId: string): string | null => {
+    const related = relatedFields.byPath.get(colId);
+    if (!related) return null;
+    return cleanLabel(related.label);
+  }, [relatedFields.byPath]);
+
   const resolveColLabel = useCallback((colId: string): string => {
     if (colId.startsWith('custom_field:')) {
       const fieldId = colId.replace('custom_field:', '');
       const field = customFieldCols.find(f => f.id === fieldId);
-      return field?.label || fieldId;
+      // customFieldsLoading is gated above the table's first render, so a
+      // miss here means the field was deleted after being added to the
+      // column layout — show that rather than the raw uuid fragment.
+      return field?.label || 'Deleted field';
     }
     if (colId.includes('.')) {
+      const full = relationPathLabel(colId);
+      if (full) {
+        // Column header shows just the field — the section stays visible
+        // via the tooltip (resolveColTooltip) to avoid repeating it twice.
+        const parts = full.split(' — ');
+        return parts.length === 2 ? parts[1] : full;
+      }
       return colId.replace('.', ' ').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
     const col = schema.all.find(c => c.column_name === colId);
     if (col?.label) return col.label;
     return colId.replace(/_id$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-  }, [customFieldCols, schema.all]);
+  }, [customFieldCols, schema.all, relationPathLabel]);
+
+  // Fuller label for hover tooltips — includes the relation section for
+  // paths where the header itself was shortened above.
+  const resolveColTooltip = useCallback((colId: string): string => {
+    if (colId.includes('.') && !colId.startsWith('custom_field:')) {
+      const full = relationPathLabel(colId);
+      if (full) return full;
+    }
+    return resolveColLabel(colId);
+  }, [relationPathLabel, resolveColLabel]);
 
   const getLinkTarget = useCallback((colId: string, item: any, firstVisibleColId?: string): string | null => {
     const primaryCol = tableName === 'properties' ? 'street_address' : 'name';
@@ -668,7 +748,15 @@ function GenericMasterTableInner({
     }, initialRecord)}</>;
   }
 
-  if (schema.loading || t.loading) {
+  // Wait for schema (labels/columns metadata), rows, AND custom fields
+  // together — a table visited before this session has all three
+  // synchronously seeded from cache (see the lazy initializers in
+  // useTableSchema/usePresetTable/customFieldsCache above) so this resolves
+  // to false immediately with nothing to show here. Gating on rows/schema
+  // alone let custom_field columns render their raw "custom_field:<uuid>"
+  // id for a frame before customFieldCols caught up — showing a half-ready
+  // view instead of a complete one.
+  if (schema.loading || t.loading || customFieldsLoading) {
     return (
       <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased overflow-hidden">
         {/* Header skeleton */}
@@ -834,6 +922,7 @@ function GenericMasterTableInner({
             t.tableCols[0] ?? (tableName === 'properties' ? 'street_address' : 'name')
           )}
           resolveColLabel={resolveColLabel}
+          resolveColTooltip={resolveColTooltip}
           relations={relations}
           expandRelations={t.expandRelations}
           minWidth={tableContentWidth}

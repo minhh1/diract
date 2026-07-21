@@ -7,6 +7,13 @@ import type { CloudProviderId } from "@/lib/vmProviders/types";
 
 export type PlanId = "starter" | "standard" | "pro" | "payg";
 
+// Flat fee charged per 1K tokens on self-hosted AI assistant usage (see
+// ai_usage_events.sql) -- there's no real per-token provider cost to pass
+// through since the company runs its own Ollama, but usage is still
+// metered and billed, same shape as PAYG VMs' meteredServiceFeeUsdPerHour
+// stacking on top of a real cost that can itself be zero.
+export const PLATFORM_AI_SERVICE_FEE_USD_PER_1K_TOKENS = 0.0005;
+
 export interface PlanConfig {
   id: PlanId;
   name: string;

@@ -45,6 +45,15 @@ export async function getSchemaMetadata(
   return result;
 }
 
+// Synchronous accessor for use in useState lazy initializers — a component
+// remounting for a table already visited this session (e.g. switching
+// between Properties/Entities/Projects) can read the cache instantly on
+// first render, instead of waiting a tick for the async version to resolve
+// and flash a loading state in between.
+export function getCachedSchemaMetadata(tableName: string, companyId?: string | null): ColumnMeta[] | null {
+  return cache.get(cacheKey(tableName, companyId)) ?? null;
+}
+
 export function invalidateSchemaCache(tableName?: string, companyId?: string) {
   if (tableName) {
     cache.delete(cacheKey(tableName, companyId));
@@ -84,4 +93,10 @@ export async function getCompanyId(): Promise<string | null> {
 export function clearCompanyIdCache() {
   companyCacheResolved = false;
   cachedCompanyId = null;
+}
+
+// Synchronous companion to getCompanyId() — same rationale as
+// getCachedSchemaMetadata above.
+export function getCachedCompanyIdSync(): { resolved: boolean; companyId: string | null } {
+  return { resolved: companyCacheResolved, companyId: cachedCompanyId };
 }

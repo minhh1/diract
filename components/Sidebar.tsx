@@ -6,7 +6,7 @@ import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
-  ChevronsLeft, ChevronsRight, ChevronRight,
+  ChevronsLeft, ChevronsRight, ChevronRight, Sparkles,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -17,7 +17,8 @@ import NewEntityModal from "./NewEntityModal";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { useCompany } from "@/components/CompanyContext";
 import type { ActiveFilter } from "@/lib/types/filters";
-import { savedViewsService, type SavedView } from "@/lib/services/savedViewsService";
+import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
+import { useProgressBar } from "@/components/TopProgressBar";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -523,9 +524,11 @@ function SidebarNavLink({
   activeClassName?: string;
   idleClassName?: string;
 }) {
+  const { startNavigation } = useProgressBar();
   return (
     <Link
       href={href}
+      onClick={() => { if (!active) startNavigation(); }}
       title={collapsed ? label : undefined}
       aria-label={label}
       className={`flex items-center rounded-2xl text-[13px] font-medium transition-all ${
@@ -544,6 +547,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { startNavigation } = useProgressBar();
   const currentId = searchParams.get("id");
   const activeViewId = searchParams.get("view");
 
@@ -569,6 +573,7 @@ export default function Sidebar() {
   const [customFieldCols, setCustomFieldCols] = useState<any[]>([]);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [collapsed, setCollapsed] = useState(false);
+  const [peeking, setPeeking] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
   const { tables: customTables } = useCustomTables();
 
@@ -584,6 +589,7 @@ export default function Sidebar() {
   }, []);
 
   const toggleCollapsed = () => {
+    setPeeking(false); // clicking the pin should always give a deterministic result
     setCollapsed(prev => {
       const next = !prev;
       try { localStorage.setItem('nk_sidebar_collapsed', next ? '1' : '0'); } catch {}
@@ -607,7 +613,9 @@ export default function Sidebar() {
   // ── Load saved views for the active table ───────────────────────
   useEffect(() => {
     if (!ctxUserId || !ctxCompanyId) return;
-    savedViewsService.listByTable(ctxUserId, ctxCompanyId, mode).then(setSavedViews);
+    savedViewsService.listByTable(ctxUserId, ctxCompanyId, mode).then(views =>
+      setSavedViews(views.filter(v => v.view_name !== DEFAULT_VIEW_NAME))
+    );
   }, [mode, ctxUserId, ctxCompanyId]);
 
   // ── Load custom fields for current mode ────────────────────────
@@ -834,6 +842,7 @@ export default function Sidebar() {
     });
     if (!created) return;
     setSavedViews(prev => [...prev, created].sort((a, b) => a.view_name.localeCompare(b.view_name)));
+    startNavigation();
     router.push(`/dashboard/${mode}?view=${created.id}`);
   };
 
@@ -843,7 +852,7 @@ export default function Sidebar() {
     if (!window.confirm(`Delete the saved view "${view.view_name}"? This can't be undone.`)) return;
     await savedViewsService.remove(view.id);
     setSavedViews(prev => prev.filter(v => v.id !== view.id));
-    if (activeViewId === view.id) router.push(`/dashboard/${mode}`);
+    if (activeViewId === view.id) { startNavigation(); router.push(`/dashboard/${mode}`); }
   };
 
   const handleSwitchCompany = async (companyId: string) => {
@@ -870,19 +879,32 @@ export default function Sidebar() {
 
   const availableFields = SYSTEM_TABLE_FIELDS[mode] || SYSTEM_TABLE_FIELDS.projects;
   const hasActiveFilters = treeConfig.filters.length > 0;
+  // Pinned open, or temporarily peeking out on hover while collapsed —
+  // everything below renders full-width content in either case.
+  const expanded = !collapsed || peeking;
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <div className={`flex flex-col h-screen bg-white border-r border-slate-100 font-sans select-none antialiased text-slate-600 overflow-hidden transition-[width] duration-200 ${collapsed ? 'w-16' : 'w-72'}`}>
+    <>
+      {/* Reserves the pinned width in the page's flex layout — the actual
+          panel below is fixed-position and floats over content while peeking,
+          so this keeps the main content area from jumping/reflowing. */}
+      <div className={collapsed ? 'w-16 shrink-0' : 'w-72 shrink-0'} aria-hidden="true" />
+
+      <div
+        onMouseEnter={() => { if (collapsed) setPeeking(true); }}
+        onMouseLeave={() => setPeeking(false)}
+        className={`fixed left-0 top-0 z-40 flex flex-col h-screen bg-white border-r border-slate-100 font-sans select-none antialiased text-slate-600 overflow-hidden transition-[width] duration-200 ${expanded ? 'w-72' : 'w-16'} ${collapsed && peeking ? 'shadow-2xl' : ''}`}
+      >
 
       {/* Logo */}
-      <div className={`flex items-center border-b border-slate-100 shrink-0 ${collapsed ? 'flex-col gap-2 px-2 py-4' : 'gap-3 px-6 py-6'}`}>
+      <div className={`flex items-center border-b border-slate-100 shrink-0 ${expanded ? 'gap-3 px-6 py-6' : 'flex-col gap-2 px-2 py-4'}`}>
         <div className="h-9 w-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-sm shrink-0">
           <div className="h-3.5 w-3.5 rounded-full border-2 border-white" />
         </div>
-        {!collapsed && (
+        {expanded && (
           <span className="font-bold text-[15px] tracking-tighter text-slate-900 uppercase flex-1">
-            niksen
+            diract
           </span>
         )}
         <button
@@ -896,11 +918,11 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className={`flex-1 overflow-y-auto py-4 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
+      <nav className={`flex-1 overflow-y-auto py-4 space-y-0.5 ${expanded ? 'px-3' : 'px-2'}`}>
 
         {/* Tables */}
         <div className="mb-2">
-          {!collapsed && (
+          {expanded && (
             <div className="flex items-center justify-between px-3 mb-1">
               <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Tables</p>
               <button
@@ -916,15 +938,15 @@ export default function Sidebar() {
 
           {profileLoading ? (
             // Skeleton for table nav items
-            <div className={collapsed ? 'space-y-1 flex flex-col items-center' : 'space-y-1 px-1'}>
+            <div className={expanded ? 'space-y-1 px-1' : 'space-y-1 flex flex-col items-center'}>
               {[1,2,3].map(i => (
-                collapsed ? (
-                  <div key={i} className="h-9 w-9 rounded-2xl bg-slate-100 animate-pulse" />
-                ) : (
+                expanded ? (
                   <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-2xl">
                     <div className="h-4 w-4 rounded bg-slate-100 animate-pulse shrink-0" />
                     <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${i === 1 ? 'w-20' : i === 2 ? 'w-16' : 'w-24'}`} />
                   </div>
+                ) : (
+                  <div key={i} className="h-9 w-9 rounded-2xl bg-slate-100 animate-pulse" />
                 )
               ))}
             </div>
@@ -933,11 +955,11 @@ export default function Sidebar() {
           {visibleSystemTables.map(({ slug, label, icon: Icon }) => (
             <button
               key={slug}
-              onClick={() => router.push(`/dashboard/${slug}`)}
-              title={collapsed ? label : undefined}
+              onClick={() => { if (!isTableActive(slug)) { startNavigation(); router.push(`/dashboard/${slug}`); } }}
+              title={expanded ? undefined : label}
               aria-label={label}
               className={`flex items-center rounded-2xl text-[13px] font-medium transition-all ${
-                collapsed ? 'w-9 h-9 mx-auto justify-center mb-1' : 'w-full gap-3 px-3 py-2.5'
+                expanded ? 'w-full gap-3 px-3 py-2.5' : 'w-9 h-9 mx-auto justify-center mb-1'
               } ${
                 isTableActive(slug)
                   ? 'bg-slate-900 text-white'
@@ -945,7 +967,7 @@ export default function Sidebar() {
               }`}
             >
               <Icon size={16} className="shrink-0" />
-              {!collapsed && <span className="truncate">{label}</span>}
+              {expanded && <span className="truncate">{label}</span>}
             </button>
           ))}
 
@@ -954,11 +976,11 @@ export default function Sidebar() {
             return (
               <button
                 key={table.id}
-                onClick={() => router.push(`/dashboard/${table.slug}`)}
-                title={collapsed ? table.name : undefined}
+                onClick={() => { if (!isTableActive(table.slug)) { startNavigation(); router.push(`/dashboard/${table.slug}`); } }}
+                title={expanded ? undefined : table.name}
                 aria-label={table.name}
                 className={`flex items-center rounded-2xl text-[13px] font-medium transition-all ${
-                  collapsed ? 'w-9 h-9 mx-auto justify-center mb-1' : 'w-full gap-3 px-3 py-2.5'
+                  expanded ? 'w-full gap-3 px-3 py-2.5' : 'w-9 h-9 mx-auto justify-center mb-1'
                 } ${
                   isTableActive(table.slug)
                     ? 'bg-slate-900 text-white'
@@ -966,14 +988,14 @@ export default function Sidebar() {
                 }`}
               >
                 <Icon size={16} className="shrink-0" />
-                {!collapsed && <span className="truncate">{table.name}</span>}
+                {expanded && <span className="truncate">{table.name}</span>}
               </button>
             );
           })}
             </>
           )}
 
-          {!collapsed && !profileLoading && visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
+          {expanded && !profileLoading && visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
             <button
               onClick={() => setShowTableSettings(true)}
               className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
@@ -984,7 +1006,7 @@ export default function Sidebar() {
         </div>
 
         {/* Saved views — for the currently active table */}
-        {!collapsed && isTableActive(mode) && (
+        {expanded && isTableActive(mode) && (
           <div className="mb-2">
             <div className="flex items-center justify-between px-3 mb-1">
               <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Saved views</p>
@@ -997,7 +1019,7 @@ export default function Sidebar() {
               </button>
             </div>
             <button
-              onClick={() => router.push(`/dashboard/${mode}`)}
+              onClick={() => { if (activeViewId) { startNavigation(); router.push(`/dashboard/${mode}`); } }}
               className={`w-full flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all ${
                 !activeViewId
                   ? 'bg-indigo-50 text-indigo-700 font-bold'
@@ -1009,7 +1031,7 @@ export default function Sidebar() {
             {savedViews.map(view => (
               <div key={view.id} className="group/view flex items-center">
                 <button
-                  onClick={() => router.push(`/dashboard/${mode}?view=${view.id}`)}
+                  onClick={() => { if (activeViewId !== view.id) { startNavigation(); router.push(`/dashboard/${mode}?view=${view.id}`); } }}
                   className={`flex-1 min-w-0 flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all text-left ${
                     activeViewId === view.id
                       ? 'bg-indigo-50 text-indigo-700 font-bold'
@@ -1034,17 +1056,18 @@ export default function Sidebar() {
         )}
 
         {/* Divider */}
-        <div className={`h-px bg-slate-100 my-2 ${collapsed ? 'mx-2' : 'mx-3'}`} />
+        <div className={`h-px bg-slate-100 my-2 ${expanded ? 'mx-3' : 'mx-2'}`} />
 
-        <SidebarNavLink href="/dashboard/gmail" icon={Mail} label="Gmail" active={pathname.includes('/gmail')} collapsed={collapsed} />
-        <SidebarNavLink href="/dashboard/pdf-editor" icon={PenSquare} label="PDF editor" active={pathname.includes('/pdf-editor')} collapsed={collapsed} />
-        <SidebarNavLink href="/dashboard/virtual-computers" icon={Monitor} label="Virtual computers" active={pathname.includes('/virtual-computers')} collapsed={collapsed} />
-        <SidebarNavLink href="/dashboard/schema" icon={Network} label="Schema map" active={pathname.includes('/schema')} collapsed={collapsed} />
-        <SidebarNavLink href="/dashboard/settings" icon={Settings} label="Settings" active={pathname.includes('/settings')} collapsed={collapsed} />
+        <SidebarNavLink href="/dashboard/ai" icon={Sparkles} label="Ask AI" active={pathname.includes('/dashboard/ai')} collapsed={!expanded} />
+        <SidebarNavLink href="/dashboard/gmail" icon={Mail} label="Gmail" active={pathname.includes('/gmail')} collapsed={!expanded} />
+        <SidebarNavLink href="/dashboard/pdf-editor" icon={PenSquare} label="PDF editor" active={pathname.includes('/pdf-editor')} collapsed={!expanded} />
+        <SidebarNavLink href="/dashboard/virtual-computers" icon={Monitor} label="Virtual computers" active={pathname.includes('/virtual-computers')} collapsed={!expanded} />
+        <SidebarNavLink href="/dashboard/schema" icon={Network} label="Schema map" active={pathname.includes('/schema')} collapsed={!expanded} />
+        <SidebarNavLink href="/dashboard/settings" icon={Settings} label="Settings" active={pathname.includes('/settings')} collapsed={!expanded} />
 
         {ctxIsAdmin && (
           <SidebarNavLink
-            href="/dashboard/admin" icon={Shield} label="Admin" collapsed={collapsed}
+            href="/dashboard/admin" icon={Shield} label="Admin" collapsed={!expanded}
             active={pathname.includes('/admin')}
             activeClassName="bg-amber-600 text-white"
             idleClassName="text-amber-600 hover:bg-amber-50"
@@ -1052,14 +1075,14 @@ export default function Sidebar() {
         )}
 
         {ctxIsAdmin && (
-          <SidebarNavLink href="/dashboard/billing" icon={CreditCard} label="Billing" active={pathname.includes('/billing')} collapsed={collapsed} />
+          <SidebarNavLink href="/dashboard/billing" icon={CreditCard} label="Billing" active={pathname.includes('/billing')} collapsed={!expanded} />
         )}
 
         {/* Divider */}
-        <div className={`h-px bg-slate-100 my-2 ${collapsed ? 'mx-2' : 'mx-3'}`} />
+        <div className={`h-px bg-slate-100 my-2 ${expanded ? 'mx-3' : 'mx-2'}`} />
 
         {/* Tree nav — record list is collapsed by default, opt-in via the disclosure toggle */}
-        {!collapsed && (
+        {expanded && (
         <div>
           <div className="flex items-center justify-between px-3 mb-1">
             <button
@@ -1168,7 +1191,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className={`border-t border-slate-100 space-y-1 py-4 ${collapsed ? 'px-2' : 'px-3'}`}>
+      <div className={`border-t border-slate-100 space-y-1 py-4 ${expanded ? 'px-3' : 'px-2'}`}>
         <div className="relative" onClick={e => e.stopPropagation()}>
 
           {/* Table visibility panel */}
@@ -1195,9 +1218,7 @@ export default function Sidebar() {
 
           {/* Profile card */}
           {profileLoading ? (
-            collapsed ? (
-              <div className="h-9 w-9 rounded-full bg-slate-200 animate-pulse mx-auto" />
-            ) : (
+            expanded ? (
               <div className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl">
                 <div className="h-8 w-8 rounded-full bg-slate-200 animate-pulse shrink-0" />
                 <div className="flex flex-col gap-1.5 flex-1">
@@ -1205,20 +1226,22 @@ export default function Sidebar() {
                   <div className="h-2.5 w-16 bg-slate-100 animate-pulse rounded-full" />
                 </div>
               </div>
+            ) : (
+              <div className="h-9 w-9 rounded-full bg-slate-200 animate-pulse mx-auto" />
             )
           ) : (
           <button
             onClick={() => setShowCompanySwitcher(p => !p)}
-            title={collapsed ? (profile?.full_name || 'Account') : undefined}
+            title={expanded ? undefined : (profile?.full_name || 'Account')}
             aria-label="Account menu"
             className={`flex items-center rounded-2xl hover:bg-slate-50 transition-all ${
-              collapsed ? 'w-9 h-9 mx-auto justify-center' : 'w-full gap-3 px-3 py-3 text-left'
+              expanded ? 'w-full gap-3 px-3 py-3 text-left' : 'w-9 h-9 mx-auto justify-center'
             }`}
           >
             <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[10px] font-bold text-white uppercase shrink-0">
               {profile?.full_name?.substring(0, 2) || 'AD'}
             </div>
-            {!collapsed && (
+            {expanded && (
               <>
                 <div className="flex flex-col min-w-0 flex-1">
                   <p className="text-[12px] font-bold text-slate-900 truncate">
@@ -1284,14 +1307,14 @@ export default function Sidebar() {
         {/* Sign out */}
         <button
           onClick={() => supabase.auth.signOut().then(() => window.location.replace("/login"))}
-          title={collapsed ? 'Sign out' : undefined}
+          title={expanded ? undefined : 'Sign out'}
           aria-label="Sign out"
           className={`flex items-center rounded-2xl text-[12px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all ${
-            collapsed ? 'w-9 h-9 mx-auto justify-center' : 'w-full gap-3 px-3 py-2.5'
+            expanded ? 'w-full gap-3 px-3 py-2.5' : 'w-9 h-9 mx-auto justify-center'
           }`}
         >
           <LogOut size={15} className="shrink-0" />
-          {!collapsed && 'Sign out'}
+          {expanded && 'Sign out'}
         </button>
       </div>
 
@@ -1305,6 +1328,7 @@ export default function Sidebar() {
         onClose={() => setIsEntOpen(false)}
         onRefresh={fetchTreeData}
       />
-    </div>
+      </div>
+    </>
   );
 }

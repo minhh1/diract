@@ -89,9 +89,7 @@ export default function ColumnConfigDrawer({
             </h2>
             {activeTab === 'filters' && (
               <p className="text-[10px] text-slate-400 mt-0.5">
-                {activePresetName
-                  ? `View: ${activePresetName}`
-                  : 'No view selected — filters apply now but won’t be saved'}
+                {activePresetName ? `View: ${activePresetName}` : 'Filters save automatically for this table'}
               </p>
             )}
           </div>

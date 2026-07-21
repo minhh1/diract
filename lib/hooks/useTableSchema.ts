@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { getSchemaMetadata, getCompanyId, deriveLabel, type ColumnMeta } from "@/lib/services/schemaService";
+import {
+  getSchemaMetadata, getCompanyId, deriveLabel,
+  getCachedSchemaMetadata, getCachedCompanyIdSync,
+  type ColumnMeta,
+} from "@/lib/services/schemaService";
 import type { FieldConfig } from "@/components/RecordEditModal";
 import type { RelationalEditConfig } from "@/components/MasterTable";
 import type { LogParentType } from "@/lib/logging";
@@ -47,14 +51,26 @@ function deriveFieldType(col: ColumnMeta): FieldConfig['type'] {
 }
 
 export function useTableSchema(tableName: string): TableSchema {
-  const [all, setAll] = useState<ColumnMeta[]>([]);
-  const [companyId, setCompanyId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Lazy initializers run synchronously on first render (unlike useEffect,
+  // which always waits a tick) — so a table already visited this session
+  // renders with its real schema immediately instead of flashing "loading"
+  // for one frame on every remount (e.g. switching Properties → Entities).
+  const [all, setAll] = useState<ColumnMeta[]>(() => {
+    const { resolved, companyId: cid } = getCachedCompanyIdSync();
+    return resolved ? (getCachedSchemaMetadata(tableName, cid) ?? []) : [];
+  });
+  const [companyId, setCompanyId] = useState<string | null>(() => {
+    const { resolved, companyId: cid } = getCachedCompanyIdSync();
+    return resolved ? cid : null;
+  });
+  const [loading, setLoading] = useState(() => {
+    const { resolved, companyId: cid } = getCachedCompanyIdSync();
+    return !resolved || getCachedSchemaMetadata(tableName, cid) === null;
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
 
     (async () => {
       try {

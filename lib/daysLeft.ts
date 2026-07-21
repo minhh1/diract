@@ -18,12 +18,12 @@ export function getDaysLeft(dueDate: string | null, isCompleted: boolean): DaysL
 
   if (diffDays < 0) {
     const n = Math.abs(diffDays);
-    return { text: `${n} day${n !== 1 ? "s" : ""} overdue`, colorClass: "text-red-500" };
+    return { text: `${n} day${n !== 1 ? "s" : ""} overdue`, colorClass: "text-orange-700" };
   }
-  if (diffDays === 0) return { text: "Due today", colorClass: "text-red-500" };
-  if (diffDays === 1) return { text: "Due tomorrow", colorClass: "text-orange-500" };
-  if (diffDays <= 3) return { text: `Due in ${diffDays} days`, colorClass: "text-orange-500" };
-  if (diffDays <= 7) return { text: `Due in ${diffDays} days`, colorClass: "text-amber-500" };
+  if (diffDays === 0) return { text: "Due today", colorClass: "text-orange-600" };
+  if (diffDays === 1) return { text: "Due tomorrow", colorClass: "text-orange-400" };
+  if (diffDays <= 3) return { text: `Due in ${diffDays} days`, colorClass: "text-orange-400" };
+  if (diffDays <= 7) return { text: `Due in ${diffDays} days`, colorClass: "text-sky-500" };
   if (diffDays <= 14) return { text: `Due in ${diffDays} days`, colorClass: "text-emerald-600" };
   const weeks = Math.floor(diffDays / 7);
   return { text: `Due in ${weeks} week${weeks !== 1 ? "s" : ""}`, colorClass: "text-emerald-600" };
