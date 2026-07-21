@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Monitor, Plus, X, KeyRound, Trash2, CreditCard, Loader2 } from "lucide-react";
+import { Monitor, Plus, X, KeyRound, Trash2, CreditCard, Loader2, AlertTriangle } from "lucide-react";
 import CostComparisonTable from "@/components/virtualcomputers/CostComparisonTable";
 import VmStatusBadge from "@/components/virtualcomputers/VmStatusBadge";
 import { REGIONS, FLY_REGION_LABELS } from "@/lib/vmProviders/regions";
@@ -75,6 +75,11 @@ interface Schedule {
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Mirrors the server-side check in app/api/virtual-computers/create/route.ts
+// -- dockur/windows (a real Windows 11 install inside nested KVM) needs
+// meaningfully more resources than DigitalOcean's smallest tier.
+const WINDOWS_CAPABLE_DO_SIZES = ["s-4vcpu-8gb", "s-8vcpu-16gb"];
+
 const PROVIDER_CREDENTIAL_FIELDS: Record<CloudProviderId, { key: string; label: string; type?: string }[]> = {
   digitalocean: [{ key: "api_token", label: "API token", type: "password" }],
   aws: [
@@ -106,6 +111,9 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [vmName, setVmName] = useState("");
   const [vmProvider, setVmProvider] = useState<CloudProviderId>("digitalocean");
+  // Only meaningful for provider "digitalocean" -- AWS is always "windows"
+  // server-side regardless of what's sent (see create/route.ts).
+  const [vmOs, setVmOs] = useState<"linux" | "windows">("linux");
   const [vmSizeSlug, setVmSizeSlug] = useState("");
   const [vmRegion, setVmRegion] = useState(() => REGIONS.digitalocean?.[0]?.slug || "");
   const [vmProtocol, setVmProtocol] = useState<VmProtocol>("vnc");
@@ -219,7 +227,11 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
     notify(
       "info",
       `Creating "${trimmedName}"... ${
-        vmProvider === "aws" ? "Windows + Office setup can take 10-15 minutes." : "This usually takes about a minute."
+        vmProvider === "aws"
+          ? "Windows + Office setup can take 10-15 minutes."
+          : windowsOnDo
+          ? "Windows 11 installs from scratch inside the VM -- this can take 75-90 minutes."
+          : "This usually takes about a minute."
       }`,
       0
     );
@@ -229,6 +241,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
       body: JSON.stringify({
         name: trimmedName,
         provider: vmProvider,
+        os: vmProvider === "digitalocean" ? vmOs : undefined,
         sizeSlug: vmSizeSlug,
         region: vmRegion.trim(),
         protocol: vmProtocol,
@@ -247,6 +260,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
     }
     notify("success", `"${trimmedName}" is being set up now -- watch its status below.`);
     setVmName("");
+    setVmOs("linux");
     setVmSizeSlug("");
     setVmRegion("");
     setVmCredentialId("");
@@ -333,10 +347,12 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
   const platformSlotsUsed = vms.filter((vm) => vm.billing_mode === "platform").length;
   const platformSlotsAvailable = activePlan ? activePlan.includedVmSlots - platformSlotsUsed : 0;
   const platformAllowedSizeSlugs = activePlan?.allowedSizes[vmProvider] || [];
-  const sizesForProvider =
+  const windowsOnDo = vmProvider === "digitalocean" && vmOs === "windows";
+  const sizesForProvider = (
     vmBillingMode === "platform"
       ? (pricingData?.pricing[vmProvider] || []).filter((s) => platformAllowedSizeSlugs.includes(s.slug))
-      : pricingData?.pricing[vmProvider] || [];
+      : pricingData?.pricing[vmProvider] || []
+  ).filter((s) => !windowsOnDo || WINDOWS_CAPABLE_DO_SIZES.includes(s.slug));
   const platformBillingBlocked = vmBillingMode === "platform" && (!activePlan || platformSlotsAvailable <= 0);
 
   return (
@@ -435,7 +451,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
       {schedule && (
         <div className="bg-white border border-slate-200 rounded-[32px] p-6">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Business hours</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Computer awake time</p>
             <button
               type="button"
               onClick={() => saveSchedule({ ...schedule, enabled: !schedule.enabled })}
@@ -447,9 +463,15 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
             </button>
           </div>
 
+          <p className="text-[11px] text-slate-400 mb-3">
+            This is when computers should be awake and ready -- not when your team actually starts work. Set it at
+            least 2 hours earlier than that (e.g. 6am if staff start at 8am) so nobody's waiting on a still-booting
+            computer, especially for Windows VMs, which can take longer to wake.
+          </p>
+
           {activePlan && activePlan.id !== "payg" && !schedule.enabled && (
             <p className="text-[12px] text-amber-700 bg-amber-50 rounded-2xl px-4 py-3 mb-4">
-              {`The ${activePlan.name} plan is priced assuming bounded business-hours usage -- turn this on so idle hours outside your team's schedule don't run up cost. Pay-as-you-go plans can leave this off.`}
+              {`The ${activePlan.name} plan is priced assuming bounded usage hours -- turn this on so idle time outside your team's schedule doesn't run up cost. Pay-as-you-go plans can leave this off.`}
             </p>
           )}
 
@@ -478,24 +500,33 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
             </div>
 
             <div className="grid grid-cols-3 gap-3">
-              <input
-                type="time"
-                value={schedule.start_time}
-                onChange={(e) => saveSchedule({ ...schedule, start_time: e.target.value })}
-                className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
-              />
-              <input
-                type="time"
-                value={schedule.end_time}
-                onChange={(e) => saveSchedule({ ...schedule, end_time: e.target.value })}
-                className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
-              />
-              <input
-                value={schedule.timezone}
-                onChange={(e) => saveSchedule({ ...schedule, timezone: e.target.value })}
-                placeholder="Timezone (e.g. Australia/Sydney)"
-                className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
-              />
+              <label className="space-y-1">
+                <span className="block text-[10px] text-slate-400 pl-1">Wake up at</span>
+                <input
+                  type="time"
+                  value={schedule.start_time}
+                  onChange={(e) => saveSchedule({ ...schedule, start_time: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="block text-[10px] text-slate-400 pl-1">Sleep at</span>
+                <input
+                  type="time"
+                  value={schedule.end_time}
+                  onChange={(e) => saveSchedule({ ...schedule, end_time: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="block text-[10px] text-slate-400 pl-1">Timezone</span>
+                <input
+                  value={schedule.timezone}
+                  onChange={(e) => saveSchedule({ ...schedule, timezone: e.target.value })}
+                  placeholder="e.g. Australia/Sydney"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+                />
+              </label>
             </div>
 
             <label className="flex items-center gap-2 text-[12px] text-slate-500">
@@ -613,10 +644,12 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                 onChange={(e) => {
                   const nextProvider = e.target.value as CloudProviderId;
                   setVmProvider(nextProvider);
+                  setVmOs("linux");
                   setVmSizeSlug("");
                   setVmCredentialId("");
                   setVmRegion(REGIONS[nextProvider]?.[0]?.slug || "");
                   if (nextProvider === "aws") setVmProtocol("rdp");
+                  else setVmProtocol("vnc");
                 }}
                 className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
               >
@@ -626,7 +659,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                   </option>
                 ))}
               </select>
-              {vmProvider === "aws" ? (
+              {vmProvider === "aws" || (vmProvider === "digitalocean" && vmOs === "windows") ? (
                 <div className="px-3 py-2 border border-slate-200 rounded-full text-[12px] text-slate-500">RDP</div>
               ) : (
                 <select
@@ -639,6 +672,33 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                 </select>
               )}
             </div>
+            {vmProvider === "digitalocean" && (
+              <select
+                value={vmOs}
+                onChange={(e) => {
+                  const nextOs = e.target.value as "linux" | "windows";
+                  setVmOs(nextOs);
+                  setVmSizeSlug("");
+                  setVmProtocol(nextOs === "windows" ? "rdp" : "vnc");
+                }}
+                className="w-full px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+              >
+                <option value="linux">Ubuntu Desktop</option>
+                <option value="windows">Windows 11 (Beta -- nested virtualization)</option>
+              </select>
+            )}
+            {vmProvider === "digitalocean" && vmOs === "windows" && (
+              <p className="flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 rounded-2xl px-4 py-3">
+                <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                <span>
+                  First boot takes ~75-90 minutes -- Windows 11 installs from scratch, much longer than any other
+                  option here. It starts on Microsoft&rsquo;s free evaluation license; whoever&rsquo;s assigned needs
+                  to activate it with their own Windows 11 product key inside the VM for continued/production use.
+                  This relies on nested virtualization, which DigitalOcean doesn&rsquo;t officially support (verified
+                  working directly, but not guaranteed by DO).
+                </span>
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={vmSizeSlug}
@@ -744,7 +804,9 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                   </p>
                   {vm.status === "provisioning" && !destroyingIds.has(vm.id) && (
                     <p className="text-[10px] text-indigo-400 truncate mt-0.5">
-                      {vm.os === "windows"
+                      {vm.os === "windows" && vm.provider === "digitalocean"
+                        ? "Installing Windows 11 from scratch -- can take 75-90 minutes."
+                        : vm.os === "windows"
                         ? "Booting instance and installing Office -- can take 10-15 minutes."
                         : "Booting instance -- usually ready within a minute."}
                     </p>

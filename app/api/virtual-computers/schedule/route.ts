@@ -11,10 +11,14 @@ export async function GET() {
 
   const { data } = await admin.from("company_vm_schedules").select("*").eq("company_id", companyId).maybeSingle();
   return NextResponse.json({
+    // start_time is when computers should be awake and ready, not when
+    // staff actually start -- 6am default gives real buffer (see
+    // app/api/virtual-computers/_lib.ts's DEFAULT_SCHEDULE for the same
+    // reasoning applied elsewhere).
     schedule: data || {
       enabled: false,
       days: [1, 2, 3, 4, 5],
-      start_time: "09:00",
+      start_time: "06:00",
       end_time: "17:00",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       enforce_end_time: false,

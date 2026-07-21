@@ -57,10 +57,15 @@ export interface CompanyVmSchedule {
   enforce_end_time: boolean;
 }
 
+// start_time is when computers should be *awake and ready*, not when staff
+// actually start work -- default to 6am so there's a real buffer (Windows
+// VMs in particular can take a while to wake from a snapshot) rather than
+// staff arriving to a still-booting computer. Admins should set this to at
+// least 2 hours before their team's actual start time.
 const DEFAULT_SCHEDULE: CompanyVmSchedule = {
   enabled: false,
   days: [1, 2, 3, 4, 5],
-  start_time: "09:00",
+  start_time: "06:00",
   end_time: "17:00",
   timezone: "UTC",
   enforce_end_time: false,
