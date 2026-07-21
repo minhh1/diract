@@ -66,13 +66,27 @@ export async function POST(req: NextRequest) {
   // supabase/ai_conversations.sql, supabase/ai_messages.sql) -- the id is
   // client-generated, so the first message in a new chat creates the
   // conversation row here rather than needing a separate create call.
+  //
+  // Never blindly upserts company_id/user_id onto an existing row -- a
+  // user who belongs to more than one company and switches between them
+  // (see components/Sidebar.tsx's handleSwitchCompany) gets a fresh page
+  // load, but a stale conversationId reused across that switch (e.g. a
+  // replayed/retried request) must not silently reassign an existing
+  // conversation from one company to another. Reject instead.
   if (conversationId) {
-    await admin
+    const { data: existing } = await admin
       .from("ai_conversations")
-      .upsert(
-        { id: conversationId, company_id: companyId, user_id: user.id, updated_at: new Date().toISOString() },
-        { onConflict: "id", ignoreDuplicates: false }
-      );
+      .select("company_id, user_id")
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (existing && (existing.company_id !== companyId || existing.user_id !== user.id)) {
+      return new Response(JSON.stringify({ error: "This conversation belongs to a different company or user" }), { status: 403 });
+    }
+    if (existing) {
+      await admin.from("ai_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+    } else {
+      await admin.from("ai_conversations").insert({ id: conversationId, company_id: companyId, user_id: user.id });
+    }
     await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "user", content: question });
   }
 
@@ -128,7 +142,7 @@ export async function POST(req: NextRequest) {
           p_company_id: companyId,
           p_source_types: sourceTypes,
           p_query_embedding: queryEmbedding,
-          p_match_count: 8,
+          p_match_count_per_type: 3,
         });
         if (rpcError) throw new Error(rpcError.message);
         citations = (matches ?? []).map((m: MatchedChunk) => ({

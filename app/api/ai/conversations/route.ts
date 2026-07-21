@@ -10,16 +10,21 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 export async function GET() {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin } = auth;
+  const { admin, companyId } = auth;
 
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
+  // Scoped to the currently active company as well as the user -- a user
+  // who's a member of more than one company (and switches between them)
+  // must only see this company's threads, not every thread they've ever
+  // started anywhere.
   const { data: conversations, error } = await admin
     .from("ai_conversations")
     .select("id, created_at, updated_at")
     .eq("user_id", user.id)
+    .eq("company_id", companyId)
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!conversations || conversations.length === 0) return NextResponse.json({ conversations: [] });
