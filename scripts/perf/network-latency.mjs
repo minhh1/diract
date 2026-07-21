@@ -13,7 +13,7 @@ import { join } from "path";
 
 const GUACAMOLE_HOST = process.env.NEXT_PUBLIC_GUACAMOLE_URL
   ? new URL(process.env.NEXT_PUBLIC_GUACAMOLE_URL).hostname
-  : "niksenflow-guacamole.fly.dev";
+  : "diract-guacamole-syd.fly.dev";
 
 function tcpConnectMs(host, port, timeoutMs = 5000) {
   return new Promise((resolve) => {
