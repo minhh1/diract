@@ -6,7 +6,9 @@ import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
-  ChevronsLeft, ChevronsRight, ChevronRight, Sparkles,
+  ChevronRight, Sparkles, Wrench,
+  Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
+  Link as LinkIcon,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -73,6 +75,47 @@ const SEPARATORS = [
   { value: ' ',   label: 'Space' },
   { value: ', ',  label: 'Comma' },
 ];
+
+// ── Rail sections ──────────────────────────────────────────────────
+// Four top-level categories on the always-visible icon rail. Each opens a
+// second-level panel listing its own destinations, replacing what used to
+// be a flat list of nav links (Tools) and, for Admin, a 12-item horizontal
+// tab bar that had gotten too crowded to fit on one row.
+
+type RailSection = 'tables' | 'tools' | 'settings' | 'admin';
+
+const TOOLS_LINKS = [
+  { href: '/dashboard/ai', icon: Sparkles, label: 'Ask AI' },
+  { href: '/dashboard/gmail', icon: Mail, label: 'Gmail' },
+  { href: '/dashboard/pdf-editor', icon: PenSquare, label: 'PDF editor' },
+  { href: '/dashboard/virtual-computers', icon: Monitor, label: 'Virtual computers' },
+  { href: '/dashboard/schema', icon: Network, label: 'Schema map' },
+];
+
+const SETTINGS_LINKS = [
+  { href: '/dashboard/settings', icon: Settings, label: 'All settings', matchExact: true },
+  { href: '/dashboard/billing', icon: CreditCard, label: 'Billing' },
+  { href: '/dashboard/settings?view=history', icon: Clock, label: 'Import history' },
+  { href: '/dashboard/settings?view=schema', icon: Database, label: 'Schema configuration' },
+  { href: '/dashboard/settings?view=duplicates_menu', icon: Copy, label: 'Reconciliation tool' },
+  { href: '/dashboard/settings?view=public_pages', icon: Share2, label: 'Public task pages' },
+];
+
+const ADMIN_LINKS = [
+  { tab: 'members', icon: Users, label: 'Members' },
+  { tab: 'teams', icon: Users, label: 'Teams' },
+  { tab: 'views', icon: Settings, label: 'Default views' },
+  { tab: 'invites', icon: LinkIcon, label: 'Invite links' },
+  { tab: 'gmail', icon: Mail, label: 'Gmail' },
+  { tab: 'gmailSync', icon: Activity, label: 'Gmail sync' },
+  { tab: 'whatsapp', icon: MessageCircle, label: 'WhatsApp' },
+  { tab: 'msTeams', icon: Users2, label: 'Microsoft Teams' },
+  { tab: 'aiAssistant', icon: Sparkles, label: 'AI Assistant' },
+  { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },
+  { tab: 'company', icon: Settings, label: 'Company' },
+] as const;
+
+const PERF_TAB_ALLOWED_EMAIL = "minh@huynhco.com";
 
 // ── DB helpers ─────────────────────────────────────────────────────
 
@@ -152,7 +195,7 @@ function TableVisibilityPanel({
   };
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-3xl border border-slate-200 shadow-xl z-50 p-4">
+    <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-3xl border border-slate-200 shadow-xl z-50 p-4">
       <div className="flex items-center justify-between mb-3">
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
           Visible tables
@@ -226,7 +269,7 @@ function TreeConfigPanel({
   ];
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-3xl border border-slate-200 shadow-2xl z-50 overflow-hidden">
+    <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-3xl border border-slate-200 shadow-2xl z-50 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">
@@ -554,7 +597,7 @@ export default function Sidebar() {
   const activeViewId = searchParams.get("view");
 
   // Use shared company context — avoids duplicate auth call with GenericMasterTable
-  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, isAdmin: ctxIsAdmin, loading: ctxLoading } = useCompany();
+  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, userEmail: ctxUserEmail, isAdmin: ctxIsAdmin, loading: ctxLoading } = useCompany();
 
   const [profile, setProfile] = useState<any>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -587,12 +630,7 @@ export default function Sidebar() {
   const [treeConfig, setTreeConfig] = useState<TreeConfig>(() =>
     DEFAULT_TREE_CONFIG[treeTableSlug] || DEFAULT_TREE_CONFIG.projects
   );
-  // Shared with GenericMasterTable via useCompanyCustomFields' module cache —
-  // when the tree's table matches the active page's table, this fires once.
-  const { fields: customFieldCols } = useCompanyCustomFields(treeTableSlug);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
-  const [collapsed, setCollapsed] = useState(false);
-  const [peeking, setPeeking] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
   const { tables: customTables } = useCustomTables();
 
@@ -600,28 +638,39 @@ export default function Sidebar() {
     : pathname.includes("properties") ? "properties"
     : "entities";
 
-  // ── Restore collapsed state ──────────────────────────────────────
-  useEffect(() => {
-    try {
-      if (localStorage.getItem('nk_sidebar_collapsed') === '1') setCollapsed(true);
-    } catch {}
-  }, []);
-
-  const toggleCollapsed = () => {
-    setPeeking(false); // clicking the pin should always give a deterministic result
-    setCollapsed(prev => {
-      const next = !prev;
-      try { localStorage.setItem('nk_sidebar_collapsed', next ? '1' : '0'); } catch {}
-      return next;
-    });
+  // Which second-level panel is open, if any — independent of the current
+  // page after mount (e.g. opening Tools while browsing Projects doesn't
+  // navigate anywhere, it just shows Tools' destinations to pick from).
+  // Seeded from the current page so landing on e.g. /dashboard/admin opens
+  // straight to the Admin panel rather than defaulting to Tables.
+  const [activeRailSection, setActiveRailSection] = useState<RailSection | null>(() => {
+    if (pathname.includes('/admin')) return 'admin';
+    if (pathname.includes('/settings') || pathname.includes('/billing')) return 'settings';
+    if (
+      pathname.includes('/dashboard/ai') || pathname.includes('/gmail') ||
+      pathname.includes('/pdf-editor') || pathname.includes('/virtual-computers') ||
+      pathname.includes('/schema')
+    ) return 'tools';
+    return 'tables';
+  });
+  const toggleRailSection = (section: RailSection) => {
+    setActiveRailSection(prev => prev === section ? null : section);
   };
+  const tablesPanelOpen = activeRailSection === 'tables';
+
+  // Shared with GenericMasterTable via useCompanyCustomFields' module cache —
+  // when the tree's table matches the active page's table, this fires once.
+  // Skipped while the Tables panel itself isn't showing (e.g. browsing a
+  // Tools/Settings/Admin page) — no point fetching data for a panel the
+  // user hasn't opened.
+  const { fields: customFieldCols } = useCompanyCustomFields(treeTableSlug, tablesPanelOpen);
 
   // Record list is opt-in — collapse it again whenever the tree's table changes
   useEffect(() => { setTreeOpen(false); }, [treeTableSlug]);
 
   // ── Load tree config from DB when the tree's table changes ──────
   useEffect(() => {
-    if (!ctxUserId) return;
+    if (!ctxUserId || !tablesPanelOpen) return;
     const load = async () => {
       perfLog(`Sidebar(${treeTableSlug}): treeConfig start`);
       const config = await loadTreeConfigFromDB(treeTableSlug, ctxUserId);
@@ -629,17 +678,17 @@ export default function Sidebar() {
       setTreeConfig(config);
     };
     load();
-  }, [treeTableSlug, ctxUserId]);
+  }, [treeTableSlug, ctxUserId, tablesPanelOpen]);
 
   // ── Load saved views for the active table ───────────────────────
   useEffect(() => {
-    if (!ctxUserId || !ctxCompanyId) return;
+    if (!ctxUserId || !ctxCompanyId || !tablesPanelOpen) return;
     perfLog(`Sidebar(${mode}): savedViews start`);
     savedViewsService.listByTable(ctxUserId, ctxCompanyId, mode).then(views => {
       perfLog(`Sidebar(${mode}): savedViews resolved`, `${views.length} views`);
       setSavedViews(views.filter(v => v.view_name !== DEFAULT_VIEW_NAME));
     });
-  }, [mode, ctxUserId, ctxCompanyId]);
+  }, [mode, ctxUserId, ctxCompanyId, tablesPanelOpen]);
 
   // Deferred until the tree is actually expanded — this used to run
   // unconditionally on every mount/table-switch (rows + custom field values,
@@ -899,399 +948,81 @@ export default function Sidebar() {
 
   const availableFields = SYSTEM_TABLE_FIELDS[treeTableSlug] || SYSTEM_TABLE_FIELDS.projects;
   const hasActiveFilters = treeConfig.filters.length > 0;
-  // Pinned open, or temporarily peeking out on hover while collapsed —
-  // everything below renders full-width content in either case.
-  const expanded = !collapsed || peeking;
+  const currentAdminTab = searchParams.get('tab') || 'members';
+  const currentSettingsView = searchParams.get('view');
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <>
-      {/* Reserves the pinned width in the page's flex layout — the actual
-          panel below is fixed-position and floats over content while peeking,
-          so this keeps the main content area from jumping/reflowing. */}
-      <div className={collapsed ? 'w-16 shrink-0' : 'w-72 shrink-0'} aria-hidden="true" />
+    <div className="flex h-screen shrink-0 font-sans select-none antialiased text-slate-600">
 
-      <div
-        onMouseEnter={() => { if (collapsed) setPeeking(true); }}
-        onMouseLeave={() => setPeeking(false)}
-        className={`fixed left-0 top-0 z-40 flex flex-col h-screen bg-white border-r border-slate-100 font-sans select-none antialiased text-slate-600 overflow-hidden transition-[width] duration-200 ${expanded ? 'w-72' : 'w-16'} ${collapsed && peeking ? 'shadow-2xl' : ''}`}
-      >
-
-      {/* Logo */}
-      <div className={`flex items-center border-b border-slate-100 shrink-0 ${expanded ? 'gap-3 px-6 py-6' : 'flex-col gap-2 px-2 py-4'}`}>
-        <div className="h-9 w-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-sm shrink-0">
+      {/* ── Rail (always visible, icon-only) ── */}
+      <div className="w-16 shrink-0 flex flex-col h-screen bg-white border-r border-slate-100 items-center py-4">
+        <div className="h-9 w-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-sm shrink-0 mb-4">
           <div className="h-3.5 w-3.5 rounded-full border-2 border-white" />
         </div>
-        {expanded && (
-          <span className="font-bold text-[15px] tracking-tighter text-slate-900 uppercase flex-1">
-            diract
-          </span>
-        )}
-        <button
-          onClick={toggleCollapsed}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-all shrink-0"
-        >
-          {collapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
-        </button>
-      </div>
 
-      {/* Nav */}
-      <nav className={`flex-1 overflow-y-auto py-4 space-y-0.5 ${expanded ? 'px-3' : 'px-2'}`}>
-
-        {/* Tables */}
-        <div className="mb-2">
-          {expanded && (
-            <div className="flex items-center justify-between px-3 mb-1">
-              <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Tables</p>
-              <button
-                onClick={() => setShowTableSettings(p => !p)}
-                className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
-                title="Configure visible tables"
-                aria-label="Configure visible tables"
-              >
-                <Eye size={12} />
-              </button>
-            </div>
-          )}
-
-          {profileLoading ? (
-            // Skeleton for table nav items
-            <div className={expanded ? 'space-y-1 px-1' : 'space-y-1 flex flex-col items-center'}>
-              {[1,2,3].map(i => (
-                expanded ? (
-                  <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-2xl">
-                    <div className="h-4 w-4 rounded bg-slate-100 animate-pulse shrink-0" />
-                    <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${i === 1 ? 'w-20' : i === 2 ? 'w-16' : 'w-24'}`} />
-                  </div>
-                ) : (
-                  <div key={i} className="h-9 w-9 rounded-2xl bg-slate-100 animate-pulse" />
-                )
-              ))}
-            </div>
-          ) : (
-            <>
-          {visibleSystemTables.map(({ slug, label, icon: Icon }) => (
-            <button
-              key={slug}
-              onClick={() => { if (!isTableActive(slug)) { startNavigation(); router.push(`/dashboard/${slug}`); } }}
-              title={expanded ? undefined : label}
-              aria-label={label}
-              className={`flex items-center rounded-2xl text-[13px] font-medium transition-all ${
-                expanded ? 'w-full gap-3 px-3 py-2.5' : 'w-9 h-9 mx-auto justify-center mb-1'
-              } ${
-                isTableActive(slug)
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <Icon size={16} className="shrink-0" />
-              {expanded && <span className="truncate">{label}</span>}
-            </button>
-          ))}
-
-          {visibleCustomTables.map(table => {
-            const Icon = (LucideIcons as any)[table.icon] || Table2;
-            return (
-              <button
-                key={table.id}
-                onClick={() => { if (!isTableActive(table.slug)) { startNavigation(); router.push(`/dashboard/${table.slug}`); } }}
-                title={expanded ? undefined : table.name}
-                aria-label={table.name}
-                className={`flex items-center rounded-2xl text-[13px] font-medium transition-all ${
-                  expanded ? 'w-full gap-3 px-3 py-2.5' : 'w-9 h-9 mx-auto justify-center mb-1'
-                } ${
-                  isTableActive(table.slug)
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                <Icon size={16} className="shrink-0" />
-                {expanded && <span className="truncate">{table.name}</span>}
-              </button>
-            );
-          })}
-            </>
-          )}
-
-          {expanded && !profileLoading && visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
-            <button
-              onClick={() => setShowTableSettings(true)}
-              className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
-            >
-              No tables visible — click eye to configure
-            </button>
-          )}
-        </div>
-
-        {/* Saved views — for the currently active table */}
-        {expanded && isTableActive(mode) && (
-          <div className="mb-2">
-            <div className="flex items-center justify-between px-3 mb-1">
-              <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Saved views</p>
-              <button
-                onClick={handleNewView}
-                className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
-                title="New saved view"
-              >
-                <Plus size={12} strokeWidth={3} />
-              </button>
-            </div>
-            <button
-              onClick={() => { if (activeViewId) { startNavigation(); router.push(`/dashboard/${mode}`); } }}
-              className={`w-full flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all ${
-                !activeViewId
-                  ? 'bg-indigo-50 text-indigo-700 font-bold'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
-              }`}
-            >
-              All (no filter)
-            </button>
-            {savedViews.map(view => (
-              <div key={view.id} className="group/view flex items-center">
-                <button
-                  onClick={() => { if (activeViewId !== view.id) { startNavigation(); router.push(`/dashboard/${mode}?view=${view.id}`); } }}
-                  className={`flex-1 min-w-0 flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all text-left ${
-                    activeViewId === view.id
-                      ? 'bg-indigo-50 text-indigo-700 font-bold'
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
-                  }`}
-                >
-                  <span className="truncate">{view.view_name}</span>
-                  {view.filters.length > 0 && (
-                    <span className="ml-1.5 text-[9px] text-slate-300 shrink-0">({view.filters.length})</span>
-                  )}
-                </button>
-                <button
-                  onClick={(e) => handleDeleteView(view, e)}
-                  title={`Delete "${view.view_name}"`}
-                  className="p-1 mr-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/view:opacity-100 transition-all shrink-0"
-                >
-                  <X size={11} strokeWidth={3} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Divider */}
-        <div className={`h-px bg-slate-100 my-2 ${expanded ? 'mx-3' : 'mx-2'}`} />
-
-        <SidebarNavLink href="/dashboard/ai" icon={Sparkles} label="Ask AI" active={pathname.includes('/dashboard/ai')} collapsed={!expanded} />
-        <SidebarNavLink href="/dashboard/gmail" icon={Mail} label="Gmail" active={pathname.includes('/gmail')} collapsed={!expanded} />
-        <SidebarNavLink href="/dashboard/pdf-editor" icon={PenSquare} label="PDF editor" active={pathname.includes('/pdf-editor')} collapsed={!expanded} />
-        <SidebarNavLink href="/dashboard/virtual-computers" icon={Monitor} label="Virtual computers" active={pathname.includes('/virtual-computers')} collapsed={!expanded} />
-        <SidebarNavLink href="/dashboard/schema" icon={Network} label="Schema map" active={pathname.includes('/schema')} collapsed={!expanded} />
-        <SidebarNavLink href="/dashboard/settings" icon={Settings} label="Settings" active={pathname.includes('/settings')} collapsed={!expanded} />
-
-        {ctxIsAdmin && (
-          <SidebarNavLink
-            href="/dashboard/admin" icon={Shield} label="Admin" collapsed={!expanded}
-            active={pathname.includes('/admin')}
-            activeClassName="bg-amber-600 text-white"
-            idleClassName="text-amber-600 hover:bg-amber-50"
-          />
-        )}
-
-        {ctxIsAdmin && (
-          <SidebarNavLink href="/dashboard/billing" icon={CreditCard} label="Billing" active={pathname.includes('/billing')} collapsed={!expanded} />
-        )}
-
-        {/* Divider */}
-        <div className={`h-px bg-slate-100 my-2 ${expanded ? 'mx-3' : 'mx-2'}`} />
-
-        {/* Tree nav — record list is collapsed by default, opt-in via the disclosure toggle */}
-        {expanded && (
-        <div>
-          <div className="flex items-center justify-between px-3 mb-1">
-            <div className="flex items-center gap-1 -ml-1 pl-1 pr-2 py-1 rounded-lg hover:bg-slate-50 transition-all">
-              <button
-                onClick={() => setTreeOpen(p => !p)}
-                aria-expanded={treeOpen}
-                aria-label={treeOpen ? `Collapse ${treeTableSlug} list` : `Expand ${treeTableSlug} list`}
-                className="p-0.5 rounded hover:bg-slate-100 transition-all shrink-0"
-              >
-                <ChevronRight size={10} className={`text-slate-300 transition-transform ${treeOpen ? 'rotate-90' : ''}`} />
-              </button>
-              <select
-                value={treeTableSlug}
-                onChange={e => setTreeTableSlug(e.target.value)}
-                aria-label="Choose which table's records to browse"
-                title="Choose which table's records to browse"
-                className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-transparent border-none outline-none cursor-pointer hover:text-slate-600 transition-all"
-              >
-                {visibleSystemTables.map(t => (
-                  <option key={t.slug} value={t.slug}>{t.label}</option>
-                ))}
-              </select>
-              {hasActiveFilters && (
-                <span className="px-1.5 py-0.5 bg-indigo-600 text-white rounded-full text-[8px] font-bold">
-                  {treeConfig.filters.length}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => treeTableSlug === 'entities' ? setIsEntOpen(true) : setIsProjOpen(true)}
-                className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
-                title="New record"
-                aria-label="New record"
-              >
-                <Plus size={12} strokeWidth={3} />
-              </button>
-              <button
-                onClick={() => setShowTreeConfig(p => !p)}
-                title="Tree settings"
-                aria-label="Tree settings"
-                className={`p-1 rounded-lg transition-all ${
-                  showTreeConfig || hasActiveFilters
-                    ? 'text-indigo-600 bg-indigo-50'
-                    : 'text-slate-300 hover:text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <SlidersHorizontal size={12} />
-              </button>
-            </div>
-          </div>
-
-          {treeOpen && (
-            <>
-          {/* Active config hints */}
-          {(treeConfig.displayFields.length > 1 ||
-            treeConfig.sortField !== availableFields[0]?.key) && (
-            <div className="px-3 mb-1.5 flex items-center justify-between gap-2">
-              <span className="text-[9px] text-slate-400 truncate">
-                {treeConfig.displayFields.map(f => {
-                  const all = [
-                    ...availableFields,
-                    ...customFieldCols.map(cf => ({ key: `cf:${cf.id}`, label: cf.label })),
-                  ];
-                  return all.find(af => af.key === f)?.label || f;
-                }).join(treeConfig.separator)}
-              </span>
-              <span className="text-[9px] text-slate-400 shrink-0">
-                ↕ {[
-                  ...availableFields,
-                  ...customFieldCols.map(cf => ({ key: `cf:${cf.id}`, label: cf.label })),
-                ].find(f => f.key === treeConfig.sortField)?.label || treeConfig.sortField}
-              </span>
-            </div>
-          )}
-
-          {/* Tree items */}
-          {itemsLoading ? (
-            <div className="space-y-0.5 px-1">
-              {[1,2,3,4,5].map(i => (
-                <div key={i} className="flex items-center px-3 py-2 rounded-2xl">
-                  <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${
-                    i % 3 === 0 ? 'w-32' : i % 3 === 1 ? 'w-40' : 'w-28'
-                  }`} />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <>
-          {items.map((item: any) => (
-            <Link
-              key={item.id}
-              href={`/dashboard/${treeTableSlug}?id=${item.id}`}
-              className={`flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all ${
-                treeTableSlug === mode && currentId === item.id
-                  ? 'bg-indigo-600 text-white font-bold'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
-              }`}
-            >
-              <span className="truncate">{getItemLabel(item)}</span>
-            </Link>
-          ))}
-
-          {!itemsLoading && items.length === 0 && (
-            <p className="px-3 py-2 text-[11px] text-slate-300 italic">
-              No records
-              {hasActiveFilters && ' — filters active'}
-            </p>
-          )}
-            </>
-          )}
-            </>
-          )}
-        </div>
-        )}
-      </nav>
-
-      {/* Footer */}
-      <div className={`border-t border-slate-100 space-y-1 py-4 ${expanded ? 'px-3' : 'px-2'}`}>
-        <div className="relative" onClick={e => e.stopPropagation()}>
-
-          {/* Table visibility panel */}
-          {showTableSettings && (
-            <TableVisibilityPanel
-              visible={visibleTables}
-              systemTables={ALL_SYSTEM_TABLES}
-              customTables={customTables}
-              onChange={handleVisibilityChange}
-              onClose={() => setShowTableSettings(false)}
-            />
-          )}
-
-          {/* Tree config panel */}
-          {showTreeConfig && (
-            <TreeConfigPanel
-              config={treeConfig}
-              availableFields={availableFields}
-              customFields={customFieldCols}
-              onChange={handleTreeConfigChange}
-              onClose={() => setShowTreeConfig(false)}
-            />
-          )}
-
-          {/* Profile card */}
-          {profileLoading ? (
-            expanded ? (
-              <div className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl">
-                <div className="h-8 w-8 rounded-full bg-slate-200 animate-pulse shrink-0" />
-                <div className="flex flex-col gap-1.5 flex-1">
-                  <div className="h-3 w-24 bg-slate-200 animate-pulse rounded-full" />
-                  <div className="h-2.5 w-16 bg-slate-100 animate-pulse rounded-full" />
-                </div>
-              </div>
-            ) : (
-              <div className="h-9 w-9 rounded-full bg-slate-200 animate-pulse mx-auto" />
-            )
-          ) : (
+        <div className="flex flex-col gap-1 items-center">
           <button
-            onClick={() => setShowCompanySwitcher(p => !p)}
-            title={expanded ? undefined : (profile?.full_name || 'Account')}
-            aria-label="Account menu"
-            className={`flex items-center rounded-2xl hover:bg-slate-50 transition-all ${
-              expanded ? 'w-full gap-3 px-3 py-3 text-left' : 'w-9 h-9 mx-auto justify-center'
+            onClick={() => toggleRailSection('tables')}
+            title="Tables" aria-label="Tables"
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+              activeRailSection === 'tables' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
             }`}
           >
-            <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[10px] font-bold text-white uppercase shrink-0">
-              {profile?.full_name?.substring(0, 2) || 'AD'}
-            </div>
-            {expanded && (
-              <>
-                <div className="flex flex-col min-w-0 flex-1">
-                  <p className="text-[12px] font-bold text-slate-900 truncate">
-                    {ctxCompanyName || 'No company'}
-                  </p>
-                  <p className="text-[10px] text-slate-400 truncate">
-                    {profile?.full_name || 'User'}
-                  </p>
-                </div>
-                {memberships.length > 1 && (
-                  <ChevronsUpDown size={14} className="text-slate-300 shrink-0" />
-                )}
-              </>
-            )}
+            <Table2 size={17} />
           </button>
+          <button
+            onClick={() => toggleRailSection('tools')}
+            title="Tools" aria-label="Tools"
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+              activeRailSection === 'tools' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+            }`}
+          >
+            <Wrench size={17} />
+          </button>
+          <button
+            onClick={() => toggleRailSection('settings')}
+            title="Settings" aria-label="Settings"
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+              activeRailSection === 'settings' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+            }`}
+          >
+            <Settings size={17} />
+          </button>
+          {ctxIsAdmin && (
+            <button
+              onClick={() => toggleRailSection('admin')}
+              title="Admin" aria-label="Admin"
+              className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                activeRailSection === 'admin' ? 'bg-amber-600 text-white' : 'text-amber-600 hover:bg-amber-50'
+              }`}
+            >
+              <Shield size={17} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1" />
+
+        <div className="relative" onClick={e => e.stopPropagation()}>
+          {profileLoading ? (
+            <div className="h-9 w-9 rounded-full bg-slate-200 animate-pulse" />
+          ) : (
+            <button
+              onClick={() => setShowCompanySwitcher(p => !p)}
+              title={profile?.full_name || 'Account'}
+              aria-label="Account menu"
+              className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-slate-50 transition-all"
+            >
+              <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[10px] font-bold text-white uppercase shrink-0">
+                {profile?.full_name?.substring(0, 2) || 'AD'}
+              </div>
+            </button>
           )}
 
-          {/* Company switcher — fixed width so it stays readable even when the trigger sits in the collapsed rail */}
+          {/* Company switcher — fixed width so it stays readable even though the trigger sits in the narrow rail */}
           {showCompanySwitcher && memberships.length > 0 && (
-            <div className="absolute bottom-full left-0 mb-2 w-72 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden z-50">
+            <div className="absolute bottom-0 left-full ml-2 w-72 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden z-50">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-5 pt-4 pb-2">
                 {memberships.length > 1 ? 'Switch company' : 'Your company'}
               </p>
@@ -1334,19 +1065,359 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Sign out */}
         <button
           onClick={() => supabase.auth.signOut().then(() => window.location.replace("/login"))}
-          title={expanded ? undefined : 'Sign out'}
+          title="Sign out"
           aria-label="Sign out"
-          className={`flex items-center rounded-2xl text-[12px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all ${
-            expanded ? 'w-full gap-3 px-3 py-2.5' : 'w-9 h-9 mx-auto justify-center'
-          }`}
+          className="w-9 h-9 mt-1 rounded-2xl flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
         >
-          <LogOut size={15} className="shrink-0" />
-          {expanded && 'Sign out'}
+          <LogOut size={16} />
         </button>
       </div>
+
+      {/* ── Second-level panel ── */}
+      {activeRailSection && (
+        <div className="w-72 shrink-0 flex flex-col h-screen bg-white border-r border-slate-100 overflow-hidden relative">
+
+          {activeRailSection === 'tables' && (
+            <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+              {/* Tables */}
+              <div className="mb-2">
+                <div className="relative" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between px-3 mb-1">
+                    <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Tables</p>
+                    <button
+                      onClick={() => setShowTableSettings(p => !p)}
+                      className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
+                      title="Configure visible tables"
+                      aria-label="Configure visible tables"
+                    >
+                      <Eye size={12} />
+                    </button>
+                  </div>
+
+                  {/* Table visibility panel */}
+                  {showTableSettings && (
+                    <TableVisibilityPanel
+                      visible={visibleTables}
+                      systemTables={ALL_SYSTEM_TABLES}
+                      customTables={customTables}
+                      onChange={handleVisibilityChange}
+                      onClose={() => setShowTableSettings(false)}
+                    />
+                  )}
+                </div>
+
+                {profileLoading ? (
+                  <div className="space-y-1 px-1">
+                    {[1,2,3].map(i => (
+                      <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-2xl">
+                        <div className="h-4 w-4 rounded bg-slate-100 animate-pulse shrink-0" />
+                        <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${i === 1 ? 'w-20' : i === 2 ? 'w-16' : 'w-24'}`} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                {visibleSystemTables.map(({ slug, label, icon: Icon }) => (
+                  <button
+                    key={slug}
+                    onClick={() => { if (!isTableActive(slug)) { startNavigation(); router.push(`/dashboard/${slug}`); } }}
+                    aria-label={label}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                      isTableActive(slug)
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Icon size={16} className="shrink-0" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+
+                {visibleCustomTables.map(table => {
+                  const Icon = (LucideIcons as any)[table.icon] || Table2;
+                  return (
+                    <button
+                      key={table.id}
+                      onClick={() => { if (!isTableActive(table.slug)) { startNavigation(); router.push(`/dashboard/${table.slug}`); } }}
+                      aria-label={table.name}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                        isTableActive(table.slug)
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon size={16} className="shrink-0" />
+                      <span className="truncate">{table.name}</span>
+                    </button>
+                  );
+                })}
+                  </>
+                )}
+
+                {!profileLoading && visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
+                  <button
+                    onClick={() => setShowTableSettings(true)}
+                    className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
+                  >
+                    No tables visible — click eye to configure
+                  </button>
+                )}
+              </div>
+
+              {/* Saved views — for the currently active table */}
+              {isTableActive(mode) && (
+                <div className="mb-2">
+                  <div className="flex items-center justify-between px-3 mb-1">
+                    <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Saved views</p>
+                    <button
+                      onClick={handleNewView}
+                      className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
+                      title="New saved view"
+                    >
+                      <Plus size={12} strokeWidth={3} />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { if (activeViewId) { startNavigation(); router.push(`/dashboard/${mode}`); } }}
+                    className={`w-full flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all ${
+                      !activeViewId
+                        ? 'bg-indigo-50 text-indigo-700 font-bold'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
+                    }`}
+                  >
+                    All (no filter)
+                  </button>
+                  {savedViews.map(view => (
+                    <div key={view.id} className="group/view flex items-center">
+                      <button
+                        onClick={() => { if (activeViewId !== view.id) { startNavigation(); router.push(`/dashboard/${mode}?view=${view.id}`); } }}
+                        className={`flex-1 min-w-0 flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all text-left ${
+                          activeViewId === view.id
+                            ? 'bg-indigo-50 text-indigo-700 font-bold'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
+                        }`}
+                      >
+                        <span className="truncate">{view.view_name}</span>
+                        {view.filters.length > 0 && (
+                          <span className="ml-1.5 text-[9px] text-slate-300 shrink-0">({view.filters.length})</span>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteView(view, e)}
+                        title={`Delete "${view.view_name}"`}
+                        className="p-1 mr-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/view:opacity-100 transition-all shrink-0"
+                      >
+                        <X size={11} strokeWidth={3} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Divider */}
+              <div className="h-px bg-slate-100 my-2 mx-3" />
+
+              {/* Tree nav — record list is collapsed by default, opt-in via the disclosure toggle */}
+              <div>
+                <div className="relative" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between px-3 mb-1">
+                    <div className="flex items-center gap-1 -ml-1 pl-1 pr-2 py-1 rounded-lg hover:bg-slate-50 transition-all">
+                      <button
+                        onClick={() => setTreeOpen(p => !p)}
+                        aria-expanded={treeOpen}
+                        aria-label={treeOpen ? `Collapse ${treeTableSlug} list` : `Expand ${treeTableSlug} list`}
+                        className="p-0.5 rounded hover:bg-slate-100 transition-all shrink-0"
+                      >
+                        <ChevronRight size={10} className={`text-slate-300 transition-transform ${treeOpen ? 'rotate-90' : ''}`} />
+                      </button>
+                      <select
+                        value={treeTableSlug}
+                        onChange={e => setTreeTableSlug(e.target.value)}
+                        aria-label="Choose which table's records to browse"
+                        title="Choose which table's records to browse"
+                        className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-transparent border-none outline-none cursor-pointer hover:text-slate-600 transition-all"
+                      >
+                        {visibleSystemTables.map(t => (
+                          <option key={t.slug} value={t.slug}>{t.label}</option>
+                        ))}
+                      </select>
+                      {hasActiveFilters && (
+                        <span className="px-1.5 py-0.5 bg-indigo-600 text-white rounded-full text-[8px] font-bold">
+                          {treeConfig.filters.length}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => treeTableSlug === 'entities' ? setIsEntOpen(true) : setIsProjOpen(true)}
+                        className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
+                        title="New record"
+                        aria-label="New record"
+                      >
+                        <Plus size={12} strokeWidth={3} />
+                      </button>
+                      <button
+                        onClick={() => setShowTreeConfig(p => !p)}
+                        title="Tree settings"
+                        aria-label="Tree settings"
+                        className={`p-1 rounded-lg transition-all ${
+                          showTreeConfig || hasActiveFilters
+                            ? 'text-indigo-600 bg-indigo-50'
+                            : 'text-slate-300 hover:text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <SlidersHorizontal size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tree config panel */}
+                  {showTreeConfig && (
+                    <TreeConfigPanel
+                      config={treeConfig}
+                      availableFields={availableFields}
+                      customFields={customFieldCols}
+                      onChange={handleTreeConfigChange}
+                      onClose={() => setShowTreeConfig(false)}
+                    />
+                  )}
+                </div>
+
+                {treeOpen && (
+                  <>
+                {/* Active config hints */}
+                {(treeConfig.displayFields.length > 1 ||
+                  treeConfig.sortField !== availableFields[0]?.key) && (
+                  <div className="px-3 mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-[9px] text-slate-400 truncate">
+                      {treeConfig.displayFields.map(f => {
+                        const all = [
+                          ...availableFields,
+                          ...customFieldCols.map(cf => ({ key: `cf:${cf.id}`, label: cf.label })),
+                        ];
+                        return all.find(af => af.key === f)?.label || f;
+                      }).join(treeConfig.separator)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 shrink-0">
+                      ↕ {[
+                        ...availableFields,
+                        ...customFieldCols.map(cf => ({ key: `cf:${cf.id}`, label: cf.label })),
+                      ].find(f => f.key === treeConfig.sortField)?.label || treeConfig.sortField}
+                    </span>
+                  </div>
+                )}
+
+                {/* Tree items */}
+                {itemsLoading ? (
+                  <div className="space-y-0.5 px-1">
+                    {[1,2,3,4,5].map(i => (
+                      <div key={i} className="flex items-center px-3 py-2 rounded-2xl">
+                        <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${
+                          i % 3 === 0 ? 'w-32' : i % 3 === 1 ? 'w-40' : 'w-28'
+                        }`} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                {items.map((item: any) => (
+                  <Link
+                    key={item.id}
+                    href={`/dashboard/${treeTableSlug}?id=${item.id}`}
+                    className={`flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all ${
+                      treeTableSlug === mode && currentId === item.id
+                        ? 'bg-indigo-600 text-white font-bold'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
+                    }`}
+                  >
+                    <span className="truncate">{getItemLabel(item)}</span>
+                  </Link>
+                ))}
+
+                {!itemsLoading && items.length === 0 && (
+                  <p className="px-3 py-2 text-[11px] text-slate-300 italic">
+                    No records
+                    {hasActiveFilters && ' — filters active'}
+                  </p>
+                )}
+                  </>
+                )}
+                  </>
+                )}
+              </div>
+            </nav>
+          )}
+
+          {activeRailSection === 'tools' && (
+            <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+              <p className="px-3 mb-1 text-[9px] font-bold text-slate-300 uppercase tracking-widest">Tools</p>
+              {TOOLS_LINKS.map(link => (
+                <SidebarNavLink
+                  key={link.href}
+                  href={link.href}
+                  icon={link.icon}
+                  label={link.label}
+                  active={pathname.startsWith(link.href)}
+                  collapsed={false}
+                />
+              ))}
+            </nav>
+          )}
+
+          {activeRailSection === 'settings' && (
+            <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+              <p className="px-3 mb-1 text-[9px] font-bold text-slate-300 uppercase tracking-widest">Settings</p>
+              {SETTINGS_LINKS.map(link => {
+                const [linkPath, linkQuery] = link.href.split('?view=');
+                const isActive = link.matchExact
+                  ? pathname === linkPath && !currentSettingsView
+                  : linkQuery
+                    ? pathname === linkPath && currentSettingsView === linkQuery
+                    : pathname === linkPath;
+                return (
+                  <SidebarNavLink
+                    key={link.href}
+                    href={link.href}
+                    icon={link.icon}
+                    label={link.label}
+                    active={isActive}
+                    collapsed={false}
+                  />
+                );
+              })}
+            </nav>
+          )}
+
+          {activeRailSection === 'admin' && ctxIsAdmin && (
+            <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+              <p className="px-3 mb-1 text-[9px] font-bold text-slate-300 uppercase tracking-widest">Admin</p>
+              {ADMIN_LINKS.map(link => (
+                <SidebarNavLink
+                  key={link.tab}
+                  href={`/dashboard/admin?tab=${link.tab}`}
+                  icon={link.icon}
+                  label={link.label}
+                  active={pathname.startsWith('/dashboard/admin') && currentAdminTab === link.tab}
+                  collapsed={false}
+                  activeClassName="bg-amber-600 text-white"
+                />
+              ))}
+              {ctxUserEmail === PERF_TAB_ALLOWED_EMAIL && (
+                <SidebarNavLink
+                  href="/dashboard/admin?tab=perf"
+                  icon={Gauge}
+                  label="Performance"
+                  active={pathname.startsWith('/dashboard/admin') && currentAdminTab === 'perf'}
+                  collapsed={false}
+                  activeClassName="bg-amber-600 text-white"
+                />
+              )}
+            </nav>
+          )}
+        </div>
+      )}
 
       <NewProjectModal
         isOpen={isProjOpen}
@@ -1358,7 +1429,6 @@ export default function Sidebar() {
         onClose={() => setIsEntOpen(false)}
         onRefresh={fetchTreeData}
       />
-      </div>
-    </>
+    </div>
   );
 }

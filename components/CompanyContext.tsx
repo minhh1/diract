@@ -11,6 +11,7 @@ interface CompanyContextValue {
   companyId: string | null;
   companyName: string | null;
   userId: string | null;
+  userEmail: string | null;
   isAdmin: boolean;
   loading: boolean;
 }
@@ -19,6 +20,7 @@ const CompanyContext = createContext<CompanyContextValue>({
   companyId: null,
   companyName: null,
   userId: null,
+  userEmail: null,
   isAdmin: false,
   loading: true,
 });
@@ -27,6 +29,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -69,6 +72,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const cname = (prof?.companies as any)?.name || null;
 
       setUserId(user.id);
+      setUserEmail(user.email ?? null);
       setCompanyId(cid);
       setCompanyName(cname);
       setIsAdmin((allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin");
@@ -81,7 +85,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <CompanyContext.Provider value={{ companyId, companyName, userId, isAdmin, loading }}>
+    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, loading }}>
       {children}
     </CompanyContext.Provider>
   );

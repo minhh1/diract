@@ -2,11 +2,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, Users, Settings, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor, Activity, MessageCircle, Users2, Sparkles, Gauge,
+  Loader2, Shield, Trash2,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical,
 } from "lucide-react";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
@@ -100,14 +100,27 @@ function buildCalendarFormat(tokens: string[], separator: string): string {
   return tokens.map(t => `{${t}}`).join(separator);
 }
 
+type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'aiAssistant' | 'perf';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'aiAssistant', 'perf'];
+const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
+  members: 'Members', teams: 'Teams', views: 'Default views', invites: 'Invite links',
+  gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
+  aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
+};
+
 export default function AdminPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Which tab is active now lives in the URL — the sidebar's Admin panel
+  // links directly to e.g. ?tab=gmailSync, replacing what used to be a
+  // horizontal tab bar crammed with 12 items on this page itself.
+  const tabParam = searchParams.get('tab');
+  const activeTab: AdminTab = (tabParam && ADMIN_TABS.includes(tabParam as AdminTab)) ? (tabParam as AdminTab) : 'members';
   const [loading, setLoading] = useState(true);
   const [unauthorized, setUnauthorized] = useState(false);
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'aiAssistant' | 'perf'>('members');
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -462,62 +475,24 @@ export default function AdminPage() {
     ...projectCustomFields.map(f => ({ id: f.field_key, label: f.label, example: 'Custom value' })),
   ];
 
-  const tabs = [
-    { id: 'members' as const,  label: 'Members',      icon: Users },
-    { id: 'teams'   as const,  label: 'Teams',        icon: Users },
-    { id: 'views'   as const,  label: 'Default views', icon: Settings },
-    { id: 'invites' as const,  label: 'Invite links', icon: Link },
-    { id: 'gmail'   as const,  label: 'Gmail',        icon: Mail },
-    { id: 'gmailSync' as const, label: 'Gmail sync',  icon: Activity },
-    { id: 'whatsapp' as const, label: 'WhatsApp', icon: MessageCircle },
-    { id: 'msTeams' as const, label: 'Microsoft Teams', icon: Users2 },
-    { id: 'aiAssistant' as const, label: 'AI Assistant', icon: Sparkles },
-    { id: 'virtualComputers' as const, label: 'Virtual computers', icon: Monitor },
-    { id: 'company' as const,  label: 'Company',      icon: Settings },
-    ...(userEmail === PERF_TAB_ALLOWED_EMAIL
-      ? [{ id: 'perf' as const, label: 'Performance', icon: Gauge }]
-      : []),
-  ];
-
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
 
-      {/* Header */}
-      <header className="bg-white border-b border-slate-100 shrink-0 px-8 pt-8 pb-0">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-2xl bg-amber-50 flex items-center justify-center">
-              <Shield size={18} className="text-amber-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-light uppercase tracking-tight text-slate-900">
-                Admin
-              </h1>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {company?.name}
-              </p>
-            </div>
+      {/* Header — the tab bar that used to live here moved to the sidebar's
+          Admin panel; 12 tabs in a horizontal row was getting too crowded. */}
+      <header className="bg-white border-b border-slate-100 shrink-0 px-8 py-8">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-2xl bg-amber-50 flex items-center justify-center">
+            <Shield size={18} className="text-amber-600" />
           </div>
-        </div>
-
-        <div className="flex gap-1">
-          {tabs.map(tab => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-[11px] font-bold border-b-2 transition-all ${
-                  activeTab === tab.id
-                    ? 'border-amber-500 text-amber-600'
-                    : 'border-transparent text-slate-400 hover:text-slate-700'
-                }`}
-              >
-                <Icon size={13} />
-                {tab.label}
-              </button>
-            );
-          })}
+          <div>
+            <h1 className="text-2xl font-light uppercase tracking-tight text-slate-900">
+              Admin
+            </h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              {company?.name} · {ADMIN_TAB_LABELS[activeTab]}
+            </p>
+          </div>
         </div>
       </header>
 
@@ -533,7 +508,7 @@ export default function AdminPage() {
                   {members.length} member{members.length !== 1 ? 's' : ''}
                 </p>
                 <button
-                  onClick={() => setActiveTab('invites')}
+                  onClick={() => router.push('/dashboard/admin?tab=invites')}
                   className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-full text-[10px] font-bold hover:bg-amber-700 transition-all"
                 >
                   <Plus size={12} /> Invite member

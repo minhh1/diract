@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   Database, Clock, Copy, ArrowLeft, Loader2,
@@ -20,7 +21,20 @@ type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplica
 type DupType = "properties" | "entities" | "projects";
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
   const [view, setView] = useState<SettingsView>("menu");
+
+  // The sidebar's Settings panel deep-links straight to a view (e.g.
+  // ?view=history) instead of always landing on the menu first. This is a
+  // one-way sync (param → state) on top of the existing local nav — back
+  // button/menu clicks inside this page still just call setView directly.
+  useEffect(() => {
+    const v = searchParams.get("view");
+    if (v && ["menu", "history", "schema", "duplicates_menu", "duplicates_view", "public_pages"].includes(v)) {
+      setView(v as SettingsView);
+    }
+  }, [searchParams.get("view")]);
+
   const [activeDupType, setActiveDupType] = useState<DupType>("properties");
   const [items, setItems] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);

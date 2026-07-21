@@ -19,7 +19,7 @@ export interface CompanyCustomField {
 // table, doubling a query that never changes mid-session.
 const cache = new Map<string, CompanyCustomField[]>();
 
-export function useCompanyCustomFields(tableName: string): {
+export function useCompanyCustomFields(tableName: string, enabled: boolean = true): {
   fields: CompanyCustomField[];
   loading: boolean;
 } {
@@ -32,6 +32,7 @@ export function useCompanyCustomFields(tableName: string): {
       setLoading(false);
       return;
     }
+    if (!enabled) return;
     let active = true;
     perfLog(`useCompanyCustomFields(${tableName}): start`);
     supabase
@@ -48,7 +49,7 @@ export function useCompanyCustomFields(tableName: string): {
         setLoading(false);
       });
     return () => { active = false; };
-  }, [tableName]);
+  }, [tableName, enabled]);
 
   return { fields, loading };
 }
