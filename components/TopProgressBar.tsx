@@ -40,10 +40,16 @@ function RouteChangeWatcher({
     if (key === prevKey.current) return;
     prevKey.current = key;
     if (!pendingRef.current) return;
-    pendingRef.current = false;
     // Small settle delay so the destination has a moment to paint before
     // we call it "done" — avoids the bar flickering off mid-transition.
-    const t = setTimeout(() => done(), 200);
+    // pendingRef stays true until done() actually runs (not just while it's
+    // scheduled), so a second navigation landing inside this window is
+    // recognized as still-pending rather than starting an uncounted extra
+    // start() that can never be matched by a done().
+    const t = setTimeout(() => {
+      pendingRef.current = false;
+      done();
+    }, 200);
     return () => clearTimeout(t);
   }, [key, done]);
 
@@ -90,6 +96,10 @@ export function ProgressBarProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startNavigation = useCallback(() => {
+    // A navigation is already in flight — treat a second click before it
+    // settles as part of the same trip instead of stacking another start(),
+    // since only one done() will ever fire for the eventual final URL.
+    if (pendingNavRef.current) return;
     pendingNavRef.current = true;
     start();
   }, [start]);
