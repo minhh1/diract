@@ -48,6 +48,22 @@ async function getAppToken(creds: TeamsCredentials): Promise<string | null> {
   return json.access_token ?? null;
 }
 
+// Decodes the `roles` claim out of an app-only Graph access token, purely
+// for diagnostics -- no signature verification, since we're only
+// introspecting a token we just received ourselves, not authenticating an
+// inbound request. Lets a failed Graph call report exactly what roles
+// Microsoft actually issued, rather than relying on what the Azure Portal
+// displays as granted (which can lag real token issuance).
+function decodeTokenRoles(token: string): string[] {
+  try {
+    const payload = token.split(".")[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return json.roles ?? [];
+  } catch {
+    return ["<failed to decode token>"];
+  }
+}
+
 async function getCursor(companyId: string, resourceType: "channel" | "chat", resourceId: string) {
   const { data } = await db
     .from("teams_sync_cursors")
@@ -89,25 +105,49 @@ function messageBody(msg: any): string | null {
   return msg.body?.content?.replace(/<[^>]+>/g, " ").trim() || null;
 }
 
-async function syncCompany(companyId: string, creds: TeamsCredentials) {
+interface SyncSummary {
+  teams: number;
+  channels: number;
+  channelListErrors: string[];
+  rawMessages: number;
+  storedMessages: number;
+}
+
+async function syncCompany(companyId: string, creds: TeamsCredentials): Promise<SyncSummary> {
   const token = await getAppToken(creds);
   if (!token) throw new Error("Failed to acquire app-only Graph token");
 
   const teamsRes = await fetch(`${GRAPH_BASE}/teams`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!teamsRes.ok) throw new Error(`Failed to list teams: ${teamsRes.status} ${await teamsRes.text()}`);
+  if (!teamsRes.ok) {
+    throw new Error(
+      `Failed to list teams: ${teamsRes.status} ${await teamsRes.text()} | roles actually in token: ${JSON.stringify(decodeTokenRoles(token))}`
+    );
+  }
   const teams = (await teamsRes.json()).value ?? [];
 
   const rows: Record<string, unknown>[] = [];
+  let channelCount = 0;
+  let rawMessageCount = 0;
+  const channelListErrors: string[] = [];
 
   for (const team of teams) {
     const channelsRes = await fetch(`${GRAPH_BASE}/teams/${team.id}/channels`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!channelsRes.ok) continue;
+    if (!channelsRes.ok) {
+      // Previously silently skipped -- a per-team permission/scope issue
+      // (e.g. the app can list teams but not this particular team's
+      // channels) would look identical to "no channels" with no way to
+      // tell them apart.
+      channelListErrors.push(`team ${team.id}: ${channelsRes.status} ${await channelsRes.text()}`);
+      continue;
+    }
     const channels = (await channelsRes.json()).value ?? [];
+    channelCount += channels.length;
 
     for (const channel of channels) {
       const cursor = await getCursor(companyId, "channel", channel.id);
       const startUrl = cursor ?? `${GRAPH_BASE}/teams/${team.id}/channels/${channel.id}/messages/delta`;
       const { messages, deltaLink } = await fetchDelta(token, startUrl);
+      rawMessageCount += messages.length;
 
       for (const msg of messages) {
         if (!messageBody(msg)) continue;
@@ -127,6 +167,8 @@ async function syncCompany(companyId: string, creds: TeamsCredentials) {
   if (rows.length > 0) {
     await db.from("teams_messages").upsert(rows, { onConflict: "teams_message_id", ignoreDuplicates: true });
   }
+
+  return { teams: teams.length, channels: channelCount, channelListErrors, rawMessages: rawMessageCount, storedMessages: rows.length };
 }
 
 Deno.serve(async () => {
@@ -140,12 +182,12 @@ Deno.serve(async () => {
 
   for (const row of companies ?? []) {
     try {
-      await syncCompany(row.company_id, row.credentials as TeamsCredentials);
+      const summary = await syncCompany(row.company_id, row.credentials as TeamsCredentials);
       await db
         .from("company_teams_credentials")
         .update({ last_synced_at: new Date().toISOString(), last_sync_error: null })
         .eq("company_id", row.company_id);
-      results[row.company_id] = "ok";
+      results[row.company_id] = `ok: ${JSON.stringify(summary)}`;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await db
