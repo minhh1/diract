@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { perfLog } from "@/lib/perfLog";
 
 export interface RelatedField {
   path: string;
@@ -58,6 +59,7 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
     if (tableName === '__skip__') { setLoading(false); return; }
     if (cache.has(tableName)) { setFields(cache.get(tableName)!); setLoading(false); return; }
     let active = true;
+    perfLog(`useRelatedFields(${tableName}): start`);
 
     const rpcPromise = supabase.rpc('get_all_related_fields', {
       base_table: tableName,
@@ -72,6 +74,7 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
       if (!active) return;
       if (error) console.error('useRelatedFields error:', error);
       const result = (data || []) as RelatedField[];
+      perfLog(`useRelatedFields(${tableName}): resolved`, error ? String(error.message) : `${result.length} fields`);
       // Don't cache a timeout as if it were "no related fields" — a later
       // mount (e.g. after the slow request actually finishes) should retry
       // rather than being stuck with an empty result for the whole session.

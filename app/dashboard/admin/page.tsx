@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   Loader2, Users, Settings, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor, Activity, MessageCircle, Users2, Sparkles,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, Mail, GripVertical, Monitor, Activity, MessageCircle, Users2, Sparkles, Gauge,
 } from "lucide-react";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
@@ -17,6 +17,12 @@ import AdminGmailSyncTab from "@/components/admin/AdminGmailSyncTab";
 import AdminWhatsAppTab from "@/components/admin/AdminWhatsAppTab";
 import AdminMsTeamsTab from "@/components/admin/AdminMsTeamsTab";
 import AdminAiAssistantTab from "@/components/admin/AdminAiAssistantTab";
+import AdminPerfTab from "@/components/admin/AdminPerfTab";
+
+// Load-time diagnostics are an internal debugging tool, not a company-admin
+// feature — restricted to this one account rather than every admin across
+// every company on the platform.
+const PERF_TAB_ALLOWED_EMAIL = "minh@huynhco.com";
 
 interface Member {
   id: string;
@@ -101,7 +107,8 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'aiAssistant'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'aiAssistant' | 'perf'>('members');
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -146,6 +153,7 @@ export default function AdminPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return; }
+    setUserEmail(user.email ?? null);
 
     // Get profile
     const { data: profile } = await supabase
@@ -466,6 +474,9 @@ export default function AdminPage() {
     { id: 'aiAssistant' as const, label: 'AI Assistant', icon: Sparkles },
     { id: 'virtualComputers' as const, label: 'Virtual computers', icon: Monitor },
     { id: 'company' as const,  label: 'Company',      icon: Settings },
+    ...(userEmail === PERF_TAB_ALLOWED_EMAIL
+      ? [{ id: 'perf' as const, label: 'Performance', icon: Gauge }]
+      : []),
   ];
 
   return (
@@ -829,6 +840,11 @@ export default function AdminPage() {
           {/* ── AI Assistant ── */}
           {activeTab === 'aiAssistant' && company?.id && (
             <AdminAiAssistantTab companyId={company.id} />
+          )}
+
+          {/* ── Performance (internal — restricted, see PERF_TAB_ALLOWED_EMAIL) ── */}
+          {activeTab === 'perf' && userEmail === PERF_TAB_ALLOWED_EMAIL && (
+            <AdminPerfTab />
           )}
 
           {/* ── Virtual computers ── */}

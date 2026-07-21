@@ -7,6 +7,7 @@ import {
   getCachedSchemaMetadata, getCachedCompanyIdSync,
   type ColumnMeta,
 } from "@/lib/services/schemaService";
+import { perfLog } from "@/lib/perfLog";
 import type { FieldConfig } from "@/components/RecordEditModal";
 import type { RelationalEditConfig } from "@/components/MasterTable";
 import type { LogParentType } from "@/lib/logging";
@@ -89,8 +90,10 @@ export function useTableSchema(tableName: string, externalCompanyId?: string | n
 
     (async () => {
       try {
+        perfLog(`useTableSchema(${tableName}): start`, usingExternalCompanyId ? "companyId from context" : "self-resolving companyId");
         const cid = usingExternalCompanyId ? externalCompanyId! : await getCompanyId();
         const cols = await getSchemaMetadata(tableName, cid);
+        perfLog(`useTableSchema(${tableName}): schema resolved`, `${cols.length} cols`);
         if (active) {
           setCompanyId(cid);
           setAll(cols);

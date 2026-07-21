@@ -19,6 +19,8 @@ import { useCompany } from "@/components/CompanyContext";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
+import { perfLog } from "@/lib/perfLog";
+import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -566,11 +568,28 @@ export default function Sidebar() {
   const [visibleTables, setVisibleTables] = useState<string[]>([]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showTreeConfig, setShowTreeConfig] = useState(false);
-  const [treeConfig, setTreeConfig] = useState<TreeConfig>(() => DEFAULT_TREE_CONFIG[
-    pathname.includes('properties') ? 'properties' :
-    pathname.includes('entities') ? 'entities' : 'projects'
-  ] || DEFAULT_TREE_CONFIG.projects);
-  const [customFieldCols, setCustomFieldCols] = useState<any[]>([]);
+  // Which table's records the tree section browses — independent of the
+  // active page/tab, so switching e.g. Projects → Properties in the main
+  // view doesn't yank the tree away from whatever the user picked there.
+  // Defaults to the active page only on first-ever load (no saved pick yet).
+  const [treeTableSlug, setTreeTableSlugState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('nk_sidebar_tree_table');
+      if (saved && ALL_SYSTEM_TABLES.some(t => t.slug === saved)) return saved;
+    } catch {}
+    return pathname.includes('properties') ? 'properties' :
+      pathname.includes('entities') ? 'entities' : 'projects';
+  });
+  const setTreeTableSlug = (slug: string) => {
+    setTreeTableSlugState(slug);
+    try { localStorage.setItem('nk_sidebar_tree_table', slug); } catch {}
+  };
+  const [treeConfig, setTreeConfig] = useState<TreeConfig>(() =>
+    DEFAULT_TREE_CONFIG[treeTableSlug] || DEFAULT_TREE_CONFIG.projects
+  );
+  // Shared with GenericMasterTable via useCompanyCustomFields' module cache —
+  // when the tree's table matches the active page's table, this fires once.
+  const { fields: customFieldCols } = useCompanyCustomFields(treeTableSlug);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [peeking, setPeeking] = useState(false);
@@ -597,47 +616,48 @@ export default function Sidebar() {
     });
   };
 
-  // Record list is opt-in — collapse it again whenever the active table changes
-  useEffect(() => { setTreeOpen(false); }, [mode]);
+  // Record list is opt-in — collapse it again whenever the tree's table changes
+  useEffect(() => { setTreeOpen(false); }, [treeTableSlug]);
 
-  // ── Load tree config from DB when mode changes ─────────────────
+  // ── Load tree config from DB when the tree's table changes ──────
   useEffect(() => {
     if (!ctxUserId) return;
     const load = async () => {
-      const config = await loadTreeConfigFromDB(mode, ctxUserId);
+      perfLog(`Sidebar(${treeTableSlug}): treeConfig start`);
+      const config = await loadTreeConfigFromDB(treeTableSlug, ctxUserId);
+      perfLog(`Sidebar(${treeTableSlug}): treeConfig resolved`);
       setTreeConfig(config);
     };
     load();
-  }, [mode, ctxUserId]);
+  }, [treeTableSlug, ctxUserId]);
 
   // ── Load saved views for the active table ───────────────────────
   useEffect(() => {
     if (!ctxUserId || !ctxCompanyId) return;
-    savedViewsService.listByTable(ctxUserId, ctxCompanyId, mode).then(views =>
-      setSavedViews(views.filter(v => v.view_name !== DEFAULT_VIEW_NAME))
-    );
+    perfLog(`Sidebar(${mode}): savedViews start`);
+    savedViewsService.listByTable(ctxUserId, ctxCompanyId, mode).then(views => {
+      perfLog(`Sidebar(${mode}): savedViews resolved`, `${views.length} views`);
+      setSavedViews(views.filter(v => v.view_name !== DEFAULT_VIEW_NAME));
+    });
   }, [mode, ctxUserId, ctxCompanyId]);
 
-  // ── Load custom fields for current mode ────────────────────────
+  // Deferred until the tree is actually expanded — this used to run
+  // unconditionally on every mount/table-switch (rows + custom field values,
+  // up to 2000 records), even for users who never open the tree. It also
+  // fired twice per table switch: once with the synchronous default
+  // treeConfig, again once the real config loaded from the DB a moment
+  // later. Gating on treeOpen fixes both — closed trees do no work at all,
+  // and opening one fetches once against whichever config has landed by then.
   useEffect(() => {
-    const loadCF = async () => {
-      const { data } = await supabase
-        .from('company_custom_fields')
-        .select('id, field_key, label, field_type')
-        .eq('table_name', mode)
-        .order('display_order');
-      setCustomFieldCols(data || []);
-    };
-    loadCF();
-  }, [mode]);
-
-  useEffect(() => {
-    fetchTreeData();
-  }, [mode, treeConfig]);
+    if (!treeOpen) return;
+    perfLog(`Sidebar(${treeTableSlug}): fetchTreeData start`);
+    fetchTreeData().then(() => perfLog(`Sidebar(${treeTableSlug}): fetchTreeData resolved`));
+  }, [treeTableSlug, treeConfig, treeOpen]);
 
   useEffect(() => {
     if (!ctxUserId) return;
-    fetchProfile();
+    perfLog("Sidebar: fetchProfile start");
+    fetchProfile().then(() => perfLog("Sidebar: fetchProfile resolved"));
   }, [ctxUserId]);
 
   useEffect(() => {
@@ -711,7 +731,7 @@ export default function Sidebar() {
     const selectCols = [...baseColsSet].join(', ');
 
     let query = supabase
-      .from(mode)
+      .from(treeTableSlug)
       .select(selectCols)
       .is('deleted_at', null);
 
@@ -798,7 +818,7 @@ export default function Sidebar() {
   // ── Resolve display label ──────────────────────────────────────
   const getItemLabel = (item: any): string => {
     const allFields = [
-      ...SYSTEM_TABLE_FIELDS[mode] || [],
+      ...SYSTEM_TABLE_FIELDS[treeTableSlug] || [],
       ...customFieldCols.map(f => ({ key: `cf:${f.id}`, label: f.label })),
     ];
 
@@ -822,7 +842,7 @@ export default function Sidebar() {
   // ── Handlers ───────────────────────────────────────────────────
   const handleTreeConfigChange = async (config: TreeConfig) => {
     setTreeConfig(config);
-    await saveTreeConfigToDB(mode, config, ctxUserId);
+    await saveTreeConfigToDB(treeTableSlug, config, ctxUserId);
   };
 
   const handleVisibilityChange = async (slugs: string[]) => {
@@ -877,7 +897,7 @@ export default function Sidebar() {
     !pathname.includes('settings') &&
     !pathname.includes('admin');
 
-  const availableFields = SYSTEM_TABLE_FIELDS[mode] || SYSTEM_TABLE_FIELDS.projects;
+  const availableFields = SYSTEM_TABLE_FIELDS[treeTableSlug] || SYSTEM_TABLE_FIELDS.projects;
   const hasActiveFilters = treeConfig.filters.length > 0;
   // Pinned open, or temporarily peeking out on hover while collapsed —
   // everything below renders full-width content in either case.
@@ -1085,25 +1105,35 @@ export default function Sidebar() {
         {expanded && (
         <div>
           <div className="flex items-center justify-between px-3 mb-1">
-            <button
-              onClick={() => setTreeOpen(p => !p)}
-              aria-expanded={treeOpen}
-              aria-label={treeOpen ? `Collapse ${mode} list` : `Expand ${mode} list`}
-              className="flex items-center gap-1.5 -ml-1 pl-1 pr-2 py-1 rounded-lg hover:bg-slate-50 transition-all"
-            >
-              <ChevronRight size={10} className={`text-slate-300 shrink-0 transition-transform ${treeOpen ? 'rotate-90' : ''}`} />
-              <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
-                {mode}
-              </p>
+            <div className="flex items-center gap-1 -ml-1 pl-1 pr-2 py-1 rounded-lg hover:bg-slate-50 transition-all">
+              <button
+                onClick={() => setTreeOpen(p => !p)}
+                aria-expanded={treeOpen}
+                aria-label={treeOpen ? `Collapse ${treeTableSlug} list` : `Expand ${treeTableSlug} list`}
+                className="p-0.5 rounded hover:bg-slate-100 transition-all shrink-0"
+              >
+                <ChevronRight size={10} className={`text-slate-300 transition-transform ${treeOpen ? 'rotate-90' : ''}`} />
+              </button>
+              <select
+                value={treeTableSlug}
+                onChange={e => setTreeTableSlug(e.target.value)}
+                aria-label="Choose which table's records to browse"
+                title="Choose which table's records to browse"
+                className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-transparent border-none outline-none cursor-pointer hover:text-slate-600 transition-all"
+              >
+                {visibleSystemTables.map(t => (
+                  <option key={t.slug} value={t.slug}>{t.label}</option>
+                ))}
+              </select>
               {hasActiveFilters && (
                 <span className="px-1.5 py-0.5 bg-indigo-600 text-white rounded-full text-[8px] font-bold">
                   {treeConfig.filters.length}
                 </span>
               )}
-            </button>
+            </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => mode === 'entities' ? setIsEntOpen(true) : setIsProjOpen(true)}
+                onClick={() => treeTableSlug === 'entities' ? setIsEntOpen(true) : setIsProjOpen(true)}
                 className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
                 title="New record"
                 aria-label="New record"
@@ -1165,9 +1195,9 @@ export default function Sidebar() {
           {items.map((item: any) => (
             <Link
               key={item.id}
-              href={`/dashboard/${mode}?id=${item.id}`}
+              href={`/dashboard/${treeTableSlug}?id=${item.id}`}
               className={`flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all ${
-                currentId === item.id
+                treeTableSlug === mode && currentId === item.id
                   ? 'bg-indigo-600 text-white font-bold'
                   : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
               }`}

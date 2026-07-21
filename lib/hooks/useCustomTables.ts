@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { perfLog } from "@/lib/perfLog";
 
 export interface CustomTable {
   id: string;
@@ -26,12 +27,14 @@ export function useCustomTables(): {
 
   useEffect(() => {
     let active = true;
+    perfLog("useCustomTables: start");
     supabase
       .from('company_tables')
       .select('*')
       .order('display_order')
       .then(({ data }) => {
         if (!active) return;
+        perfLog("useCustomTables: resolved", `${data?.length ?? 0} tables`);
         setTables(data || []);
         setLoading(false);
       });

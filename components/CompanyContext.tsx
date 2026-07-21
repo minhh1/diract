@@ -5,6 +5,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { perfLog } from "@/lib/perfLog";
 
 interface CompanyContextValue {
   companyId: string | null;
@@ -32,14 +33,36 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
+      perfLog("CompanyContext: start");
+      // getSession() reads the local session (no network round-trip) instead
+      // of getUser() re-validating the JWT against the auth server on every
+      // page load. Safe here because this only bootstraps UI context — every
+      // actual data query that follows is still enforced by RLS using the
+      // real JWT on each request, so a stale/tampered local session can't
+      // grant access to anything; it can at most show slightly-stale
+      // identity info for a moment before a real query fails.
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      perfLog("CompanyContext: auth.getSession resolved");
       if (!user || cancelled) return;
 
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("active_company_id, companies:active_company_id(name)")
-        .eq("id", user.id)
-        .single();
+      // Membership lookup only needs user_id, not active_company_id — so it
+      // doesn't actually have to wait on the profile fetch to resolve first.
+      // Fetching all of this user's memberships (not filtered to one company)
+      // and matching client-side lets both queries run in parallel instead
+      // of a sequential round-trip chain.
+      const [{ data: prof }, { data: allMemberships }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("active_company_id, companies:active_company_id(name)")
+          .eq("id", user.id)
+          .single(),
+        supabase
+          .from("company_memberships")
+          .select("company_id, role")
+          .eq("user_id", user.id),
+      ]);
+      perfLog("CompanyContext: profiles+memberships resolved");
 
       if (cancelled) return;
       const cid = prof?.active_company_id || null;
@@ -48,18 +71,10 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       setUserId(user.id);
       setCompanyId(cid);
       setCompanyName(cname);
+      setIsAdmin((allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin");
 
-      if (cid) {
-        const { data: mem } = await supabase
-          .from("company_memberships")
-          .select("role")
-          .eq("user_id", user.id)
-          .eq("company_id", cid)
-          .single();
-        if (!cancelled) setIsAdmin(mem?.role === "company_admin");
-      }
-
-      if (!cancelled) setLoading(false);
+      setLoading(false);
+      perfLog("CompanyContext: done");
     }
     load();
     return () => { cancelled = true; };

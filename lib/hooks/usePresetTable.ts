@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { perfLog } from "@/lib/perfLog";
 
 const DEFAULT_PRESET_NAME = "Default view";
 
@@ -146,6 +147,7 @@ export function usePresetTable({
   // don't duplicate the identity fetch GenericMasterTable already does.
   const init = useCallback(async () => {
     if (!companyId || !schemaReady) return;
+    perfLog(`usePresetTable(${tableSlug}): init start`);
 
     // ── Step 1: show cached rows immediately ─────────────────────
     // (Already seeded synchronously via the lazy initializer above when
@@ -180,6 +182,7 @@ export function usePresetTable({
       .eq('company_id', companyId)
       .eq('table_slug', tableSlug)
       .maybeSingle();
+    perfLog(`usePresetTable(${tableSlug}): company_default_views resolved`);
 
     if (companyView) {
       resolvedTableCols = companyView.columns?.length ? companyView.columns : defaultCols;
@@ -203,11 +206,15 @@ export function usePresetTable({
     // If we had cached data, fetch in background and only update if changed
     if (hasCachedData) {
       fetchItemsRef.current([...resolvedTableCols, ...resolvedExpandCols])
-        .then(fresh => { if (fresh?.length) setItems(fresh); })
+        .then(fresh => {
+          perfLog(`usePresetTable(${tableSlug}): background refresh resolved`, `${fresh?.length ?? 0} rows`);
+          if (fresh?.length) setItems(fresh);
+        })
         .catch(() => {});
     } else {
       // No cache — must wait
       const data = await fetchItemsRef.current([...resolvedTableCols, ...resolvedExpandCols]);
+      perfLog(`usePresetTable(${tableSlug}): blocking fetch resolved`, `${data?.length ?? 0} rows`);
       if (data?.length) setItems(data);
       setLoading(false);
     }

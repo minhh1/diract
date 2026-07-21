@@ -4,12 +4,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { perfLog } from "@/lib/perfLog";
 
 async function fetchProfile() {
+  perfLog("useProfile: start");
   const { data: { user } } = await supabase.auth.getUser();
+  perfLog("useProfile: auth.getUser resolved");
   if (!user) return null;
-
-  const t0 = performance.now();
 
   // Profile
   const { data: prof, error } = await supabase
@@ -19,9 +20,7 @@ async function fetchProfile() {
     .single();
 
   if (error || !prof) return null;
-  console.log(`[useProfile] profile: ${(performance.now()-t0).toFixed(0)}ms`);
-
-  const t1 = performance.now();
+  perfLog("useProfile: profile resolved");
 
   // Company + membership + all memberships — parallel
   const [companyRes, membershipRes, membershipsRes] = await Promise.all([
@@ -35,7 +34,7 @@ async function fetchProfile() {
       .eq("user_id", user.id),
   ]);
 
-  console.log(`[useProfile] company+memberships (parallel): ${(performance.now()-t1).toFixed(0)}ms`);
+  perfLog("useProfile: company+memberships resolved");
 
   return {
     ...prof,

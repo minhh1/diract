@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import type { RelationDef } from "@/lib/relationDefinitions";
+import { perfLog } from "@/lib/perfLog";
 
 interface ReverseRelation {
   child_table: string;
@@ -137,11 +138,13 @@ export function useTableRelations(tableName: string, enabled: boolean = true): {
     let active = true;
 
     (async () => {
+      perfLog(`useTableRelations(${tableName}): start`);
       const [{ data: reverse, error: reverseErr }, { data: self, error: selfErr }] =
         await Promise.all([
           supabase.rpc('get_reverse_relations', { target_table: tableName }),
           supabase.rpc('get_self_relations', { target_table: tableName }),
         ]);
+      perfLog(`useTableRelations(${tableName}): resolved`);
 
       if (!active) return;
 

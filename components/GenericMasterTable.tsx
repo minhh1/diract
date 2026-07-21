@@ -28,6 +28,8 @@ import { swr, clearCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
 import { savedViewsService } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
+import { perfLog } from "@/lib/perfLog";
+import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 
 
 interface GenericMasterTableProps {
@@ -47,12 +49,6 @@ function getCategoryKeyForColumn(colId: string): string | null {
 }
 
 const TABLE_AREA_CLASS = "bg-[#F9FAFB] p-8";
-
-// Module-level cache (same pattern as schemaService's schema cache) so a
-// table already visited this session has its custom field labels available
-// synchronously on remount, instead of the raw "custom_field:<uuid>" column
-// id briefly rendering while a fresh useEffect fetch is in flight.
-const customFieldsCache = new Map<string, any[]>();
 
 function buildDynamicSelectQuery(
   schemaColumns: any[],
@@ -165,31 +161,12 @@ function GenericMasterTableInner({
     [[...relatedFields.byPath.keys()].join(',')] // eslint-disable-line
   );
   const fetchedCategoriesRef = useRef<Set<string>>(new Set());
-  const [customFieldCols, setCustomFieldCols] = useState<any[]>(() => customFieldsCache.get(tableName) ?? []);
-  const [customFieldsLoading, setCustomFieldsLoading] = useState(() => !customFieldsCache.has(tableName));
+  // Shared with Sidebar's tree section via useCompanyCustomFields' module
+  // cache — when both show the same table, this fires the query once.
+  const { fields: customFieldCols, loading: customFieldsLoading } = useCompanyCustomFields(tableName);
   const filtersReadyToSave = useRef(false);
 
-  useEffect(() => {
-    if (customFieldsCache.has(tableName)) return; // already cached — lazy initializer above already picked it up
-    let active = true;
-    const loadCustomFields = async () => {
-      const { data } = await supabase
-        .from('company_custom_fields')
-        .select('id, field_key, label, field_type, show_in_table, select_options')
-        .eq('table_name', tableName)
-        .order('display_order');
-      const result = data || [];
-      customFieldsCache.set(tableName, result);
-      if (active) {
-        setCustomFieldCols(result);
-        setCustomFieldsLoading(false);
-      }
-    };
-    loadCustomFields();
-    return () => { active = false; };
-  }, [tableName]);
 
-  
 
   // get_reverse_relations is expensive server-side and its result is only
   // used by the Setup drawer and expand-row sub-tables — only fetch once
@@ -236,7 +213,7 @@ function GenericMasterTableInner({
   }, [ctxCompanyId]);
 
   const fetchItems = useCallback(async (visibleColumns: string[]) => {
-    const tFetch0 = performance.now();
+    perfLog(`GenericMasterTable(${tableName}): fetchItems start`);
 
     // Use cached companyId if available — saves ~1800ms per call
     let cid = companyIdRef.current;
@@ -247,9 +224,7 @@ function GenericMasterTableInner({
       cid = prof?.active_company_id || null;
       companyIdRef.current = cid;
       setCompanyId(cid);
-      console.log(`[MasterTable:${tableName}] auth+profile (first load): ${(performance.now()-tFetch0).toFixed(0)}ms`);
-    } else {
-      console.log(`[MasterTable:${tableName}] auth+profile (cached): 0ms`);
+      perfLog(`GenericMasterTable(${tableName}): fetchItems' own auth+profile resolved`, "companyIdRef was empty — redundant lookup, should be rare");
     }
 
     let items: any[] = [];
@@ -261,26 +236,21 @@ function GenericMasterTableInner({
       .filter(c => c.startsWith('custom_field:'))
       .map(c => c.replace('custom_field:', ''));
 
-    // Helper to fetch custom field values for a set of record IDs
-    const fetchCustomFields = async (recordIds: string[]) => {
-      if (!visibleCustomFieldIds.length || !recordIds.length || !cid) return {};
-      const BATCH_SIZE = 100;
-      const allCfValues: any[] = [];
-      const batches = [];
-      for (let i = 0; i < recordIds.length; i += BATCH_SIZE) {
-        batches.push(recordIds.slice(i, i + BATCH_SIZE));
-      }
-      // Fetch all batches in parallel
-      await Promise.all(batches.map(async batch => {
-        const { data: batchValues } = await supabase
-          .from('company_custom_field_values')
-          .select('record_id, field_id, value_text, value_number, value_date, value_boolean')
-          .in('record_id', batch)
-          .in('field_id', visibleCustomFieldIds);
-        allCfValues.push(...(batchValues || []));
-      }));
+    // Values are looked up by field_id alone (which already scopes to this
+    // table's custom fields, RLS scopes to this company) rather than by
+    // record_id — that's what lets this run in Promise.all alongside the
+    // base row query below instead of waiting for it to know which IDs to
+    // ask for. Trade-off: this can also fetch values for soft-deleted rows,
+    // which the merge step below silently discards since they match no
+    // baseItems id — cheap compared to a whole extra sequential round-trip.
+    const fetchCustomFields = async () => {
+      if (!visibleCustomFieldIds.length || !cid) return {};
+      const { data: cfValues } = await supabase
+        .from('company_custom_field_values')
+        .select('record_id, field_id, value_text, value_number, value_date, value_boolean')
+        .in('field_id', visibleCustomFieldIds);
       const byRecord: Record<string, Record<string, any>> = {};
-      allCfValues.forEach(v => {
+      (cfValues || []).forEach(v => {
         if (!byRecord[v.record_id]) byRecord[v.record_id] = {};
         byRecord[v.record_id][v.field_id] =
           v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
@@ -296,10 +266,9 @@ function GenericMasterTableInner({
       const cached = await swr(
         cacheKeyBase,
         async () => {
-          const baseItems = await propertyService.getAll(visibleColumns);
-          // Fetch custom fields in parallel with any post-processing
-          const [byRecord] = await Promise.all([
-            fetchCustomFields(baseItems.map((i: any) => i.id)),
+          const [baseItems, byRecord] = await Promise.all([
+            propertyService.getAll(visibleColumns),
+            fetchCustomFields(),
           ]);
           return visibleCustomFieldIds.length
             ? baseItems.map((item: any) => ({ ...item, __customFields: byRecord[item.id] || {} }))
@@ -308,7 +277,7 @@ function GenericMasterTableInner({
         (fresh) => { if (fresh?.length) t.setItems(fresh); },
       );
       items = cached || [];
-      console.log(`[MasterTable:properties] data+cf fetch: ${(performance.now()-tProps).toFixed(0)}ms — ${items.length} rows`);
+      perfLog(`GenericMasterTable(properties): rows+customFieldValues resolved`, `${items.length} rows, ${(performance.now()-tProps).toFixed(0)}ms`);
     } else {
       const baseVisibleCols = visibleColumns.filter(c => !c.startsWith('custom_field:'));
       const selectQuery = buildDynamicSelectQuery(schemaAll, baseVisibleCols, relatedByPath);
@@ -316,16 +285,12 @@ function GenericMasterTableInner({
       const cached = await swr(
         cacheKeyBase,
         async () => {
-          // Fire base query and custom fields query simultaneously
-          const { data, error } = await supabase
-            .from(tableName)
-            .select(selectQuery)
-            .is('deleted_at', null);
+          const [{ data, error }, byRecord] = await Promise.all([
+            supabase.from(tableName).select(selectQuery).is('deleted_at', null),
+            fetchCustomFields(),
+          ]);
           if (error) { console.error(`fetchItems(${tableName}):`, error); return []; }
           const baseItems = data || [];
-
-          // Custom fields fetched in parallel using record IDs from base query
-          const byRecord = await fetchCustomFields(baseItems.map((i: any) => i.id));
 
           return visibleCustomFieldIds.length
             ? baseItems.map((item: any) => ({ ...item, __customFields: byRecord[item.id] || {} }))
@@ -334,11 +299,10 @@ function GenericMasterTableInner({
         (fresh) => { if (fresh?.length) t.setItems(fresh); },
       );
       items = cached || [];
-      console.log(`[MasterTable:${tableName}] data+cf fetch: ${(performance.now()-tOther).toFixed(0)}ms — ${items.length} rows`);
+      perfLog(`GenericMasterTable(${tableName}): rows+customFieldValues resolved`, `${items.length} rows, ${(performance.now()-tOther).toFixed(0)}ms`);
     }
 
-
-    console.log(`[MasterTable:${tableName}] fetchItems TOTAL: ${(performance.now()-tFetch0).toFixed(0)}ms`);
+    perfLog(`GenericMasterTable(${tableName}): fetchItems done`);
     return items;
   }, [tableName, schemaAll, relatedByPath]);
 
