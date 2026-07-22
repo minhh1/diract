@@ -103,6 +103,16 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
         }
       }
 
+      // Best-effort — a project should still count as created even if Gmail
+      // label setup fails (e.g. company hasn't configured Gmail sync yet).
+      if (proj) {
+        fetch('/api/gmail/create-project-label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: proj.id }),
+        }).catch(err => console.error('[NewProjectModal] Gmail label creation failed:', err));
+      }
+
       setSaved(true);
       setTimeout(() => { onRefresh(); handleClose(); }, 700);
     } catch (err: any) {

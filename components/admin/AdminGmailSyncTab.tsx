@@ -1,11 +1,12 @@
 // components/admin/AdminGmailSyncTab.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, Check, X, ClipboardCheck, ArrowUpDown, Clock, AlertTriangle, RotateCw, Search,
 } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface AdminGmailSyncTabProps {
   companyId: string;
@@ -185,12 +186,29 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
   const [heartbeats, setHeartbeats] = useState<HeartbeatRow[]>([]);
   const [syncFailures, setSyncFailures] = useState<SyncFailure[]>([]);
   const [failuresSearch, setFailuresSearch] = useState("");
+  const [retryingFailureId, setRetryingFailureId] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [companyId]);
   useEffect(() => { loadActivity(true); }, [companyId, activityFilter, activityRange, activityCustomFrom, activityCustomTo, activitySortAsc]);
+  useProgressBarWhile(loading);
 
-  const load = async () => {
-    setLoading(true);
+  // "Live" queue was a one-shot fetch on mount with no polling — anyone
+  // watching it saw a frozen snapshot from whenever they opened the tab
+  // while jobs kept progressing underneath. Poll in the background instead;
+  // `silent` skips the loading-spinner flash on every refresh, and the
+  // in-flight guard stops overlapping polls if a fetch ever runs long.
+  const isRefreshingRef = useRef(false);
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (isRefreshingRef.current) return;
+      isRefreshingRef.current = true;
+      try { await load(true); } finally { isRefreshingRef.current = false; }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [companyId]);
+
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
 
     const [{ data: memberships }, { data: labels }, { data: archived }, { data: jobs }, { data: archiveJobs }, { data: hb }, { data: comp }, { data: requests }, { data: failures }] = await Promise.all([
       supabase.from("company_memberships").select("user_id").eq("company_id", companyId),
@@ -360,6 +378,24 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     setLoading(false);
   };
 
+  const handleRetryFailure = async (failureId: string) => {
+    setRetryingFailureId(failureId);
+    try {
+      const res = await fetch("/api/gmail/retry-failure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ failureId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to queue retry");
+      await load();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setRetryingFailureId(null);
+    }
+  };
+
   const toggleRequestSelected = (id: string) => {
     setSelectedRequestIds(prev => {
       const next = new Set(prev);
@@ -502,11 +538,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     setLoadingMore(false);
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <Loader2 className="animate-spin text-slate-300" size={24} />
-    </div>
-  );
+  if (loading) return null;
 
   const sections = [
     { id: "labels" as const, label: "Shared labels", icon: Tag },
@@ -860,6 +892,16 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                     {" "}— {f.attempts} recovery attempt{f.attempts !== 1 ? "s" : ""}
                   </p>
                 </div>
+                <button
+                  onClick={() => handleRetryFailure(f.id)}
+                  disabled={retryingFailureId === f.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold border border-slate-200 bg-white text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-all shrink-0 disabled:opacity-50"
+                >
+                  {retryingFailureId === f.id
+                    ? <Loader2 size={11} className="animate-spin" />
+                    : <RotateCw size={11} />}
+                  Retry
+                </button>
               </div>
             ))
           )}

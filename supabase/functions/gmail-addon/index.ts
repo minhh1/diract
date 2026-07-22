@@ -28,6 +28,38 @@ async function logTaskActivity(params: { taskId: string; companyId: string; acto
   });
 }
 
+// Enqueues a label_sync job right after a label is created, instead of
+// relying solely on gmail-label-sync-cron's 15-minute sweep to notice the
+// new project_gmail_labels row — gmail-label-sync-worker runs every 1
+// minute, so this gets a brand-new label synced within ~60s instead of up
+// to 15 minutes. Best-effort: never throws, since a missing job just means
+// the 15-min cron catches it later instead of blocking the label creation.
+async function enqueueLabelSyncJob(companyId: string, projectId: string, labelCode: string, gmailLabelName: string): Promise<void> {
+  try {
+    const { data: members } = await db.from('company_memberships').select('user_id').eq('company_id', companyId);
+    const memberIds = (members || []).map((m: any) => m.user_id);
+    const { data: connected } = memberIds.length
+      ? await db.from('user_gmail_tokens').select('user_id').in('user_id', memberIds)
+      : { data: [] as any[] };
+    const totalUsers = (connected || []).length;
+    if (!totalUsers) return;
+
+    await db.from('gmail_sync_jobs').insert({
+      job_type: 'label_sync',
+      company_id: companyId,
+      project_id: projectId,
+      label_code: labelCode,
+      gmail_label_name: gmailLabelName,
+      status: 'pending',
+      attempts: 0,
+      completed_users: [],
+      total_users: totalUsers,
+    });
+  } catch (err: any) {
+    console.error('[enqueueLabelSyncJob] failed:', err.message);
+  }
+}
+
 function truncateText(text: string, max = 40): string {
   const t = text.trim();
   return t.length > max ? t.slice(0, max - 1) + '…' : t;
@@ -548,7 +580,7 @@ Deno.serve(async (req) => {
       }
 
       // Create Gmail label in DB
-      await db.from('project_gmail_labels').insert({
+      const { error: pglErr } = await db.from('project_gmail_labels').insert({
         company_id: companyId,
         project_id: project.id,
         gmail_label_name: fullLabelName,
@@ -556,6 +588,21 @@ Deno.serve(async (req) => {
         label_code: labelCode,
         created_by: profile.id,
       });
+
+      if (pglErr) {
+        console.error('[create-project] project_gmail_labels insert failed:', pglErr.message);
+        // Roll back everything created so far — a project silently missing
+        // its label is worse than no project at all (see 2026-07-22 incident:
+        // this insert's result was never checked, so the client was told
+        // "success" while the label row never existed).
+        if (matterNumber) {
+          await db.from('company_custom_field_values').delete().eq('record_id', project.id);
+        }
+        await db.from('projects').delete().eq('id', project.id);
+        return json({ error: `Failed to create Gmail label: ${pglErr.message}` }, 500, headers);
+      }
+
+      await enqueueLabelSyncJob(companyId, project.id, labelCode, fullLabelName);
 
       // Save message to project_emails if messageId provided
       if (messageId) {
@@ -640,7 +687,7 @@ Deno.serve(async (req) => {
       const { data: profile } = await db
         .from('profiles').select('id').eq('email', userEmail).single();
 
-      await db.from('project_gmail_labels').insert({
+      const { error: pglErr } = await db.from('project_gmail_labels').insert({
         company_id: companyId,
         project_id: projectId,
         gmail_label_name: fullLabelName,
@@ -648,6 +695,13 @@ Deno.serve(async (req) => {
         label_code: labelCode,
         created_by: profile?.id,
       });
+
+      if (pglErr) {
+        console.error('[import-label] project_gmail_labels insert failed:', pglErr.message);
+        return json({ error: `Failed to create Gmail label: ${pglErr.message}` }, 500, headers);
+      }
+
+      await enqueueLabelSyncJob(companyId, projectId, labelCode, fullLabelName);
 
       return json({ ok: true, labelName: fullLabelName }, 200, headers);
     }
@@ -2012,7 +2066,7 @@ async function processImportJob(
           const sublabel = cleanParts.join(separator) + ` [${labelCode}]`;
           const fullLabelName = `${parentLabel}/${sublabel}`;
 
-          await db.from('project_gmail_labels').insert({
+          const { error: pglErr } = await db.from('project_gmail_labels').insert({
             company_id: companyId,
             project_id: projectId,
             gmail_label_name: fullLabelName,
@@ -2020,6 +2074,8 @@ async function processImportJob(
             label_code: labelCode,
             created_by: createdBy,
           });
+          if (pglErr) throw new Error(pglErr.message);
+          await enqueueLabelSyncJob(companyId, projectId, labelCode, fullLabelName);
           created++;
         }
       } catch (err: any) {
