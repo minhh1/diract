@@ -1179,13 +1179,13 @@ export default function Sidebar() {
                       <Plus size={12} strokeWidth={3} />
                     </button>
                   </div>
+                  {/* Not highlighted even when no named view is selected —
+                      filters auto-save without one, so "no view selected"
+                      doesn't mean "no filter active" and shouldn't look
+                      like a selected/active state. */}
                   <button
                     onClick={() => { if (activeViewId) { startNavigation(); router.push(`/dashboard/${mode}`); } }}
-                    className={`w-full flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all ${
-                      !activeViewId
-                        ? 'bg-indigo-50 text-indigo-700 font-bold'
-                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium'
-                    }`}
+                    className="w-full flex items-center px-3 py-2 rounded-2xl text-[12px] transition-all text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium"
                   >
                     All (no filter)
                   </button>
