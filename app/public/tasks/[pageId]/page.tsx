@@ -429,7 +429,9 @@ export default function PublicTaskPage() {
                 ["follow_up", "Follow up", followUpGroupTasks],
                 ["watcher", "Watching", watchingGroupTasks],
               ] as [TaskGroup, string, Task[]][]
-            ).map(([key, label, groupTasks]) => (
+            )
+              .filter(([, , groupTasks]) => groupTasks.length > 0)
+              .map(([key, label, groupTasks]) => (
               <div key={key} className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
                 <div className="px-5 pt-4 pb-1 text-[11px] font-bold text-slate-500 uppercase tracking-widest">
                   {label} <span className="opacity-60">({groupTasks.length})</span>
@@ -437,14 +439,14 @@ export default function PublicTaskPage() {
                 <table className="w-full min-w-[760px] text-[13px]">
                   <thead>{tableHead}</thead>
                   <tbody>
-                    {groupTasks.length === 0 && (
-                      <tr><td colSpan={columns.length + 3} className="px-4 py-6 text-center text-[12px] text-slate-300 italic">No tasks</td></tr>
-                    )}
                     {groupTasks.map(renderRow)}
                   </tbody>
                 </table>
               </div>
             ))}
+            {actionTasks.length === 0 && followUpGroupTasks.length === 0 && watchingGroupTasks.length === 0 && (
+              <div className="bg-white rounded-[24px] border border-slate-200 px-4 py-10 text-center text-[12px] text-slate-300 italic">No tasks</div>
+            )}
           </div>
         ) : (
           <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
