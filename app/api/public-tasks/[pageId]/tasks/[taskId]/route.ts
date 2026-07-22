@@ -7,6 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 import { loadPageAndAuthorize } from "@/lib/publicTaskPageAuth";
 import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
 import { saveTaskWatchers } from "@/lib/taskWatchers";
+import { TASK_GROUP_LABELS, type TaskGroup } from "@/lib/taskGroup";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pageId: string; taskId: string }> }) {
   const { pageId, taskId } = await params;
@@ -49,6 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   if (body.awaitingFollowUp !== undefined) update.awaiting_follow_up = !!body.awaitingFollowUp;
   if (body.followUpDate !== undefined) update.follow_up_date = body.followUpDate || null;
   if (body.notes !== undefined) update.notes = body.notes || null;
+  if (body.taskGroup !== undefined) update.task_group = body.taskGroup || null;
   if (body.assigneeId !== undefined) {
     if (body.assigneeId && !targetUserIds.includes(body.assigneeId)) {
       return NextResponse.json({ error: "Assignee is outside this page's scope" }, { status: 400 });
@@ -78,6 +80,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
       action: body.awaitingFollowUp ? "follow_up_set" : "follow_up_cleared",
       detail: body.awaitingFollowUp && body.followUpDate ? `follow-up date: ${body.followUpDate}` : null,
     });
+  } else if (bodyKeys.length === 1 && body.taskGroup !== undefined) {
+    const label = body.taskGroup ? TASK_GROUP_LABELS[body.taskGroup as TaskGroup] || body.taskGroup : "auto";
+    await logTaskActivity(admin, { taskId, companyId: page.company_id, actorId: user.id, action: "updated", detail: `moved to "${label}"` });
   } else {
     const after: any = {};
     if (update.name !== undefined) after.name = update.name;

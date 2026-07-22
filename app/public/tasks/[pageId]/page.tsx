@@ -15,6 +15,7 @@ import FollowUpToggle, { FollowUpEntry } from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
 import { splitCompletedByRecency } from "@/lib/completedBucket";
+import { classifyTask, TaskGroup, TASK_GROUP_LABELS } from "@/lib/taskGroup";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
 
 interface Task {
@@ -31,6 +32,7 @@ interface Task {
   followUps: FollowUpEntry[];
   isWatcher: boolean;
   watcherIds: string[];
+  taskGroup: string | null;
 }
 interface Tab { userId: string; userName: string; tasks: Task[]; }
 interface FormOptions {
@@ -62,6 +64,20 @@ export default function PublicTaskPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [organisedView, setOrganisedView] = useState(false);
+
+  // Persist the organised-view preference per browser (it's a display
+  // choice, not something that needs to sync across viewers).
+  useEffect(() => {
+    setOrganisedView(localStorage.getItem("publicTasksOrganisedView") === "true");
+  }, []);
+  const toggleOrganisedView = () => {
+    setOrganisedView(prev => {
+      const next = !prev;
+      localStorage.setItem("publicTasksOrganisedView", String(next));
+      return next;
+    });
+  };
 
   // Silent refetch — updates data in place without flashing the full-page
   // loading spinner. Used for realtime-triggered refreshes and after the
@@ -207,6 +223,23 @@ export default function PublicTaskPage() {
     })();
   };
 
+  // Manually override which organised-view bucket a task sits in.
+  const moveTaskGroup = async (task: Task, group: TaskGroup) => {
+    setData(prev => prev ? {
+      ...prev,
+      tabs: prev.tabs.map(tab => ({
+        ...tab,
+        tasks: tab.tasks.map(t => t.id === task.id ? { ...t, taskGroup: group } : t),
+      })),
+    } : prev);
+    const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskGroup: group }),
+    });
+    if (!res.ok) refresh();
+  };
+
   // ── Not signed in ────────────────────────────────────────────────
   if (authChecked && !signedIn) {
     return (
@@ -262,6 +295,22 @@ export default function PublicTaskPage() {
   const { thisWeek: completedThisWeek, older: completedOlder } = splitCompletedByRecency(completedTasks, t => t.completedAt);
   const columns = PUBLIC_TASK_COLUMNS.filter(c => data.columns.includes(c.key));
 
+  const groupOf = (t: Task): TaskGroup => classifyTask({ ...t, followUpCount: t.followUps.length });
+  const actionTasks = activeTasks.filter(t => groupOf(t) === "action");
+  const followUpGroupTasks = activeTasks.filter(t => groupOf(t) === "follow_up");
+  const watchingGroupTasks = activeTasks.filter(t => groupOf(t) === "watcher");
+
+  const tableHead = (
+    <tr className="border-b border-slate-100 text-left">
+      <th className="px-4 py-3.5 w-16"></th>
+      <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[280px]">Task</th>
+      {columns.map(c => (
+        <th key={c.key} className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{c.label}</th>
+      ))}
+      <th className="px-4 py-3.5 w-20"></th>
+    </tr>
+  );
+
   const renderRow = (t: Task) => {
     const dl = getDaysLeft(t.dueDate, t.isCompleted);
     return (
@@ -311,9 +360,19 @@ export default function PublicTaskPage() {
           </td>
         ))}
         <td className="px-4 py-4">
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => setEditingTask(t)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600"><Pencil size={13} /></button>
-            <button onClick={() => deleteTask(t)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+          <div className="flex items-center gap-1">
+            {organisedView && (
+              <select value={groupOf(t)} onClick={e => e.stopPropagation()} onChange={e => moveTaskGroup(t, e.target.value as TaskGroup)}
+                className="text-[10px] font-bold text-slate-500 border border-slate-200 rounded-full pl-2 pr-1 py-1 outline-none bg-white cursor-pointer">
+                {(Object.keys(TASK_GROUP_LABELS) as TaskGroup[]).map(g => (
+                  <option key={g} value={g}>{TASK_GROUP_LABELS[g]}</option>
+                ))}
+              </select>
+            )}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={() => setEditingTask(t)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600"><Pencil size={13} /></button>
+              <button onClick={() => deleteTask(t)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
+            </div>
           </div>
         </td>
       </tr>
@@ -332,6 +391,12 @@ export default function PublicTaskPage() {
                 <ExternalLink size={13} />
               </button>
             )}
+            <button onClick={toggleOrganisedView}
+              className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-bold rounded-full transition-colors ${
+                organisedView ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-indigo-300"
+              }`}>
+              {organisedView ? "Standard view" : "Organised view"}
+            </button>
             <button onClick={() => setShowTemplates(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-[11px] font-bold rounded-full hover:border-indigo-300 transition-colors">
               <FileStack size={13} /> Apply template
@@ -356,26 +421,44 @@ export default function PublicTaskPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
-          <table className="w-full min-w-[760px] text-[13px]">
-            <thead>
-              <tr className="border-b border-slate-100 text-left">
-                <th className="px-4 py-3.5 w-16"></th>
-                <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest min-w-[280px]">Task</th>
-                {columns.map(c => (
-                  <th key={c.key} className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{c.label}</th>
-                ))}
-                <th className="px-4 py-3.5 w-20"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeTasks.length === 0 && completedTasks.length === 0 && (
-                <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No tasks</td></tr>
-              )}
-              {activeTasks.map(renderRow)}
-            </tbody>
-          </table>
-        </div>
+        {organisedView ? (
+          <div className="space-y-4">
+            {(
+              [
+                ["action", "Action", actionTasks],
+                ["follow_up", "Follow up", followUpGroupTasks],
+                ["watcher", "Watching", watchingGroupTasks],
+              ] as [TaskGroup, string, Task[]][]
+            ).map(([key, label, groupTasks]) => (
+              <div key={key} className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
+                <div className="px-5 pt-4 pb-1 text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                  {label} <span className="opacity-60">({groupTasks.length})</span>
+                </div>
+                <table className="w-full min-w-[760px] text-[13px]">
+                  <thead>{tableHead}</thead>
+                  <tbody>
+                    {groupTasks.length === 0 && (
+                      <tr><td colSpan={columns.length + 3} className="px-4 py-6 text-center text-[12px] text-slate-300 italic">No tasks</td></tr>
+                    )}
+                    {groupTasks.map(renderRow)}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
+            <table className="w-full min-w-[760px] text-[13px]">
+              <thead>{tableHead}</thead>
+              <tbody>
+                {activeTasks.length === 0 && completedTasks.length === 0 && (
+                  <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No tasks</td></tr>
+                )}
+                {activeTasks.map(renderRow)}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {completedThisWeek.length > 0 && (
           <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden">
