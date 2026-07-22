@@ -36,11 +36,26 @@ CREATE POLICY ai_chat_settings_company_members ON ai_chat_settings
 -- source types, called from app/api/ai/chat/route.ts via .rpc(). Plain
 -- PostgREST queries can't express the `<->` operator or a LIMIT on
 -- distance ordering, so this is a SQL function instead.
+--
+-- Ranks within each source_type separately (via row_number() PARTITION BY
+-- source_type) and takes the top p_match_count_per_type from *each*,
+-- rather than one global top-N across all types combined. A single global
+-- ranking let a high-volume source (e.g. 196 Gmail chunks) completely
+-- crowd out a low-volume one (4 Teams chunks) even for a question
+-- specifically about Teams, since Gmail's sheer size means it's likely to
+-- contain *something* that ranks marginally closer than every Teams chunk
+-- has to offer. Guaranteeing each source type a slot means a small-but-relevant
+-- source is never silently invisible just because a bigger one exists.
+--
+-- The DROP first is deliberate -- Postgres won't let CREATE OR REPLACE
+-- change an existing function's parameter name (p_match_count ->
+-- p_match_count_per_type here), only its body.
+DROP FUNCTION IF EXISTS match_ai_document_chunks(uuid, text[], vector(1024), int);
 CREATE OR REPLACE FUNCTION match_ai_document_chunks(
   p_company_id uuid,
   p_source_types text[],
   p_query_embedding vector(1024),
-  p_match_count int DEFAULT 8
+  p_match_count_per_type int DEFAULT 3
 ) RETURNS TABLE (
   id uuid,
   source_type text,
@@ -49,11 +64,15 @@ CREATE OR REPLACE FUNCTION match_ai_document_chunks(
   content text,
   similarity float
 ) LANGUAGE sql STABLE AS $$
-  SELECT id, source_type, source_id, source_url, content,
-         1 - (embedding <=> p_query_embedding) AS similarity
-  FROM ai_document_chunks
-  WHERE company_id = p_company_id
-    AND source_type = ANY(p_source_types)
-  ORDER BY embedding <=> p_query_embedding
-  LIMIT p_match_count;
+  SELECT id, source_type, source_id, source_url, content, similarity
+  FROM (
+    SELECT id, source_type, source_id, source_url, content,
+           1 - (embedding <=> p_query_embedding) AS similarity,
+           row_number() OVER (PARTITION BY source_type ORDER BY embedding <=> p_query_embedding) AS rn
+    FROM ai_document_chunks
+    WHERE company_id = p_company_id
+      AND source_type = ANY(p_source_types)
+  ) ranked
+  WHERE rn <= p_match_count_per_type
+  ORDER BY similarity DESC;
 $$;
