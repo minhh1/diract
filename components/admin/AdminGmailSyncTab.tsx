@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, Check, X, ClipboardCheck, ArrowUpDown, Clock, AlertTriangle, RotateCw,
+  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, Check, X, ClipboardCheck, ArrowUpDown, Clock, AlertTriangle, RotateCw, Search,
 } from "lucide-react";
 
 interface AdminGmailSyncTabProps {
@@ -45,6 +45,7 @@ interface ActivityRow {
   email_snippet: string | null;
   user_name: string;
   reapplied: boolean;
+  count: number | null;
   created_at: string;
 }
 
@@ -73,6 +74,7 @@ function describeActivity(row: ActivityRow): string {
     case "sync_failed": return `Persistent failure for ${row.user_name} — needs attention`;
     case "sync_error": return `Sync failed for ${row.user_name} — quarantined, will retry automatically`;
     case "dispatch_error": return `Couldn't reach the processor for ${row.user_name} — will retry next cycle`;
+    case "bulk_label_sync_deferred": return `${row.count ?? "Several"} emails bulk-labelled by ${row.user_name} — queued for the workers to sync details`;
     default: return row.user_name;
   }
 }
@@ -131,6 +133,7 @@ const ACTION_META: Record<string, { label: string; icon: any; style: string }> =
   sync_failed: { label: "Persistent failure", icon: AlertTriangle, style: "bg-red-50 text-red-600" },
   sync_error: { label: "Sync error (quarantined)", icon: AlertTriangle, style: "bg-amber-50 text-amber-600" },
   dispatch_error: { label: "Dispatch error", icon: AlertTriangle, style: "bg-amber-50 text-amber-600" },
+  bulk_label_sync_deferred: { label: "Bulk label (deferred)", icon: Inbox, style: "bg-indigo-50 text-indigo-600" },
 };
 
 // name → [human label, expected interval in ms]
@@ -141,6 +144,10 @@ const HEARTBEAT_DEFS: Record<string, { label: string; intervalMs: number }> = {
   "gmail-email-sync-worker": { label: "Email sync worker (every 1 min)", intervalMs: 60 * 1000 },
   "gmail-watch-renewal": { label: "Watch renewal (daily)", intervalMs: 24 * 60 * 60 * 1000 },
   "gmail-sync-recovery-worker": { label: "Sync recovery worker (every 15 min)", intervalMs: 15 * 60 * 1000 },
+  // Event-driven (Gmail Pub/Sub webhook), not cron-scheduled — a long interval
+  // avoids a false "Down" reading during a genuinely quiet night/weekend,
+  // while still catching a subscription that's actually stopped delivering.
+  "gmail-push": { label: "Pub/Sub webhook (event-driven)", intervalMs: 24 * 60 * 60 * 1000 },
 };
 
 const ACTIVITY_PAGE_SIZE = 50;
@@ -161,8 +168,10 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
   const [queue, setQueue] = useState<QueueJob[]>([]);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [queueSearch, setQueueSearch] = useState("");
 
   const [activity, setActivity] = useState<ActivityRow[]>([]);
+  const [activitySearch, setActivitySearch] = useState("");
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [activityRange, setActivityRange] = useState<ActivityRange>("all");
   const [activityCustomFrom, setActivityCustomFrom] = useState("");
@@ -175,6 +184,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
   const [heartbeats, setHeartbeats] = useState<HeartbeatRow[]>([]);
   const [syncFailures, setSyncFailures] = useState<SyncFailure[]>([]);
+  const [failuresSearch, setFailuresSearch] = useState("");
 
   useEffect(() => { load(); }, [companyId]);
   useEffect(() => { loadActivity(true); }, [companyId, activityFilter, activityRange, activityCustomFrom, activityCustomTo, activitySortAsc]);
@@ -482,6 +492,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
       email_snippet: r.details?.snippet || null,
       user_name: r.target_user_id ? (nameById.get(r.target_user_id) || "Unknown") : "System",
       reapplied: !!r.details?.reapplied,
+      count: typeof r.details?.count === "number" ? r.details.count : null,
       created_at: r.created_at,
     }));
 
@@ -506,6 +517,24 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     { id: "activity" as const, label: "Activity log", icon: Activity },
     { id: "health" as const, label: "System health", icon: Radio },
   ];
+
+  const queueSearchLower = queueSearch.trim().toLowerCase();
+  const filteredQueue = !queueSearchLower ? queue : queue.filter(j =>
+    [j.gmail_label_name, j.project_name, j.job_type, ...j.doneNames, ...j.pendingNames]
+      .some(v => v?.toLowerCase().includes(queueSearchLower))
+  );
+
+  const failuresSearchLower = failuresSearch.trim().toLowerCase();
+  const filteredFailures = !failuresSearchLower ? syncFailures : syncFailures.filter(f =>
+    [f.project_name, f.gmail_label_name, f.user_name, f.job_type, f.last_error]
+      .some(v => v?.toLowerCase().includes(failuresSearchLower))
+  );
+
+  const activitySearchLower = activitySearch.trim().toLowerCase();
+  const filteredActivity = !activitySearchLower ? activity : activity.filter(row =>
+    [row.project_name, row.gmail_label_name, row.label_code, row.email_subject, row.email_snippet, row.user_name, describeActivity(row)]
+      .some(v => v?.toLowerCase().includes(activitySearchLower))
+  );
 
   return (
     <div className="space-y-4">
@@ -677,12 +706,26 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
       {section === "queue" && (
         <div className="space-y-3">
+          <div className="relative">
+            <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
+            <input
+              type="text"
+              value={queueSearch}
+              onChange={e => setQueueSearch(e.target.value)}
+              placeholder="Search label, project, or user…"
+              className="w-full bg-white border border-slate-200 rounded-full py-2 pl-9 pr-4 text-[11px] font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+            />
+          </div>
           {queue.length === 0 ? (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
               Queue is empty — nothing in process
             </p>
+          ) : filteredQueue.length === 0 ? (
+            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
+              No matches for "{queueSearch}"
+            </p>
           ) : (
-            queue.map(job => {
+            filteredQueue.map(job => {
               const done = job.completed_users?.length || 0;
               const total = job.total_users || 0;
               const expanded = expandedJobId === job.id;
@@ -766,12 +809,26 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
             gmail-sync-recovery-worker retries it every 15 minutes; anything still failing after 3 retries shows as a
             persistent failure and needs the account owner to fix it (usually reconnecting Gmail, or waiting out a rate limit).
           </div>
+          <div className="relative">
+            <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
+            <input
+              type="text"
+              value={failuresSearch}
+              onChange={e => setFailuresSearch(e.target.value)}
+              placeholder="Search label, project, user, or error…"
+              className="w-full bg-white border border-slate-200 rounded-full py-2 pl-9 pr-4 text-[11px] font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+            />
+          </div>
           {syncFailures.length === 0 ? (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
               No failures — everything syncing cleanly
             </p>
+          ) : filteredFailures.length === 0 ? (
+            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
+              No matches for "{failuresSearch}"
+            </p>
           ) : (
-            syncFailures.map(f => (
+            filteredFailures.map(f => (
               <div key={f.id} className="bg-white border border-slate-100 rounded-[28px] p-5 flex items-start gap-4">
                 <div className={`h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 ${
                   f.status === "persistent_failure" ? "bg-red-50" : "bg-amber-50"
@@ -811,6 +868,17 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
       {section === "activity" && (
         <div className="space-y-3">
+          <div className="relative">
+            <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
+            <input
+              type="text"
+              value={activitySearch}
+              onChange={e => setActivitySearch(e.target.value)}
+              placeholder="Search subject, label, project, or user…"
+              className="w-full bg-white border border-slate-200 rounded-full py-2 pl-9 pr-4 text-[11px] font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+            />
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={activityFilter || "all"}
@@ -867,9 +935,24 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
               No activity recorded yet
             </p>
+          ) : filteredActivity.length === 0 ? (
+            <>
+              <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
+                No matches for "{activitySearch}" in what's loaded
+              </p>
+              {activityHasMore && (
+                <button
+                  onClick={() => loadActivity(false)}
+                  disabled={loadingMore}
+                  className="w-full py-3 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-slate-400 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loadingMore ? <Loader2 size={12} className="animate-spin" /> : "Load more to keep searching"}
+                </button>
+              )}
+            </>
           ) : (
             <>
-              {activity.map(row => {
+              {filteredActivity.map(row => {
                 const meta = ACTION_META[row.action] || { label: row.action, icon: Mail, style: "bg-slate-100 text-slate-500" };
                 const Icon = meta.icon;
                 return (

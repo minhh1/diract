@@ -30,9 +30,8 @@ const MAX_ATTEMPTS = 3;
 // modest or the dispatcher itself blows the 150s ceiling waiting them out.
 // Empirically even ~2.86 req/s (350ms pacing) kept exceeding the gateway's
 // sustainable rate (observed retry-after growing across a single tick), so
-// this is paced much more conservatively at ~1 req/s and the per-tick job
-// count is cut accordingly to fit that rate inside the 150s window.
-const BATCH_SIZE = 5;
+// this is paced much more conservatively at ~1 req/s. Per-tier job limits
+// (not one shared BATCH_SIZE) live next to each query below.
 const DISPATCH_CONCURRENCY = 3;
 const MIN_DISPATCH_INTERVAL_MS = 1000; // paces request starts to stay under the gateway's own rate limit
 const DISPATCH_TIMEOUT_MS = 60_000; // processor may do several sequential Gmail calls
@@ -172,6 +171,17 @@ Deno.serve(async (_req) => {
 });
 
 async function runDispatch(t0: number): Promise<Response> {
+  // Each tier gets its own reserved query limit instead of "gather
+  // new-then-processing-then-old and truncate to BATCH_SIZE" — that scheme
+  // let a steady trickle of brand-new jobs (newJobs alone often filled
+  // BATCH_SIZE) permanently starve processingJobs, since the merge loop
+  // broke before ever reaching them. Found in production on 2026-07-22:
+  // 184 label_sync jobs sat frozen in "processing" (mid-rollout, some
+  // members never getting synced) while only ~8 new jobs kept cycling
+  // through every tick. Processing jobs get the largest allowance since
+  // they're closest to done and users are actively waiting on them; most
+  // have only 1-2 pending users left, so a larger job count here doesn't
+  // translate into a proportionally larger dispatch-unit count.
   const { data: newJobs } = await db
     .from("gmail_sync_jobs")
     .select("*")
@@ -180,7 +190,7 @@ async function runDispatch(t0: number): Promise<Response> {
     .lt("attempts", MAX_ATTEMPTS)
     .eq("completed_users", "[]")
     .order("updated_at", { ascending: false })
-    .limit(BATCH_SIZE);
+    .limit(3);
 
   const { data: processingJobs } = await db
     .from("gmail_sync_jobs")
@@ -188,7 +198,8 @@ async function runDispatch(t0: number): Promise<Response> {
     .eq("job_type", "label_sync")
     .eq("status", "processing")
     .lt("attempts", MAX_ATTEMPTS)
-    .limit(20);
+    .order("updated_at", { ascending: true })
+    .limit(30);
 
   const { data: oldJobs } = await db
     .from("gmail_sync_jobs")
@@ -198,13 +209,12 @@ async function runDispatch(t0: number): Promise<Response> {
     .lt("attempts", MAX_ATTEMPTS)
     .neq("completed_users", "[]")
     .order("updated_at", { ascending: true })
-    .limit(20);
+    .limit(8);
 
   const seen = new Set<string>();
   const jobs: any[] = [];
   for (const j of [...(newJobs || []), ...(processingJobs || []), ...(oldJobs || [])]) {
     if (!seen.has(j.id)) { seen.add(j.id); jobs.push(j); }
-    if (jobs.length >= BATCH_SIZE) break;
   }
 
   console.log(`[label-sync-worker] Jobs: new=${newJobs?.length||0} processing=${processingJobs?.length||0} old=${oldJobs?.length||0} total=${jobs.length}`);
@@ -216,8 +226,17 @@ async function runDispatch(t0: number): Promise<Response> {
   }
 
   const units: DispatchUnit[] = [];
+  // Job count alone doesn't bound tick duration — the 184-job starvation
+  // backlog found on 2026-07-22 wasn't uniform: most jobs had 1-2 pending
+  // users left, but a handful had 6-7 (never touched since creation). At
+  // ~1 unit/sec pacing, a batch that happens to include several of those
+  // can still blow the 150s ceiling even with a modest job-count limit —
+  // cap the actual unit count directly and let leftover jobs roll to next
+  // tick instead.
+  const MAX_UNITS_PER_TICK = 25;
 
   for (const job of jobs) {
+    if (units.length >= MAX_UNITS_PER_TICK) break;
     const { id: jobId, company_id: companyId, project_id: projectId, label_code: labelCode, gmail_label_name: rawLabelName, completed_users, total_users } = job;
     const gmailLabelName = sanitiseLabelName(rawLabelName || "");
 

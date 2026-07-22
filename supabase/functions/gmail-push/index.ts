@@ -19,6 +19,15 @@ async function logActivity(row: Record<string, unknown>): Promise<void> {
   try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break sync over logging */ }
 }
 
+async function heartbeat(name: string, durationMs: number, result: unknown): Promise<void> {
+  try {
+    await db.from("cron_heartbeats").upsert(
+      { name, last_run_at: new Date().toISOString(), last_duration_ms: durationMs, last_result: result },
+      { onConflict: "name" }
+    );
+  } catch (_) { /* never break the webhook over a heartbeat write */ }
+}
+
 // ── Helpers ────────────────────────────────────────────────────────
 
 async function getAccessToken(userId: string): Promise<string | null> {
@@ -191,16 +200,25 @@ async function invalidateSyncJob(companyId: string, projectId: string, userId: s
 // ── Main handler ───────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  const t0 = Date.now();
+  // Updated as the handler progresses so the finally block below always has
+  // something meaningful to report, however early the handler exits — this
+  // is a webhook, not a cron job, so its "liveness" signal is "did the last
+  // invocation get this far" rather than a fixed schedule.
+  const summary: Record<string, unknown> = { stage: "start" };
+
   try {
     const body = await req.json();
 
     // Pub/Sub message is base64 encoded
     const data = body.message?.data;
-    if (!data) return new Response("ok", { status: 200 });
+    if (!data) { summary.stage = "no_data"; return new Response("ok", { status: 200 }); }
 
     const decoded = JSON.parse(atob(data));
     const { emailAddress, historyId } = decoded;
     console.log(`[push] ${emailAddress} historyId=${historyId}`);
+    summary.emailAddress = emailAddress;
+    summary.stage = "decoded";
 
     // Find user by email
     const { data: tokenRow } = await db
@@ -211,12 +229,13 @@ Deno.serve(async (req) => {
 
     if (!tokenRow) {
       console.log(`[push] No token for ${emailAddress}`);
+      summary.stage = "no_token";
       return new Response("ok", { status: 200 });
     }
 
     const { user_id: userId, last_history_id: lastHistoryId } = tokenRow;
     const token = await getAccessToken(userId);
-    if (!token) return new Response("ok", { status: 200 });
+    if (!token) { summary.stage = "no_access_token"; return new Response("ok", { status: 200 }); }
 
     // Get ALL companies this user belongs to, with their gmail_parent_label
     const { data: memberships } = await db
@@ -235,6 +254,7 @@ Deno.serve(async (req) => {
 
     if (!companiesByPrefix.size) {
       console.log(`[push] No companies with gmail configured for ${emailAddress}`);
+      summary.stage = "no_companies_configured";
       return new Response("ok", { status: 200 });
     }
 
@@ -270,16 +290,30 @@ Deno.serve(async (req) => {
 
     if (!history.length) {
       console.log(`[push] No history events`);
+      summary.stage = "no_history_events";
       return new Response("ok", { status: 200 });
     }
 
     const gmailLabels = await getGmailLabels(token);
 
     console.log(`[push] ${history.length} history events, companies=${allCompanyIds.length}, dbLabels=${dbLabelsByCode.size}`);
+    summary.stage = "processed";
+    summary.historyEvents = history.length;
+    summary.companies = allCompanyIds.length;
+
+    // ── Labels added: aggregate across ALL history events first ───────
+    // A single bulk operation (e.g. someone labelling hundreds of old
+    // emails at once) shows up as many separate history events, each
+    // contributing one labelsAdded item — grouping by label before doing
+    // any work lets us tell "a handful of new emails" apart from "a bulk
+    // batch" and pick a cheap path for the latter, rather than making a
+    // full Gmail metadata fetch (getMessage) per message inline in the
+    // push handler, which doesn't scale and risks the handler running long
+    // or leaving inconsistent state if it's cut off partway through.
+    interface LabelGroupItem { msgId: string; threadId: string }
+    const labelGroups = new Map<string, { companyId: string; dbLabel: any; gmailLabelDisplayName: string; items: LabelGroupItem[] }>();
 
     for (const event of history) {
-
-      // ── Labels added: save to project_emails if company label ─────
       for (const item of (event.labelsAdded || [])) {
         const msgId = item.message?.id;
         if (!msgId) continue;
@@ -292,34 +326,87 @@ Deno.serve(async (req) => {
           if (!codeMatch) continue;
           const dbLabel = dbLabelsByCode.get(codeMatch[1]);
           if (!dbLabel) continue;
-          console.log(`[push] Label added "${gmailLabel.name}" → project ${dbLabel.project_id}`);
-          const msgData1 = await getMessage(token, msgId);
-          const threadId1 = msgData1?.threadId || msgId;
-          const meta1 = extractEmailMeta(msgData1);
-          const { error: e1 } = await db.from("project_emails").upsert({
-            project_id: dbLabel.project_id, company_id: companyId,
-            user_id: userId, gmail_message_id: msgId, gmail_thread_id: threadId1,
-            subject: meta1.subject, from_address: meta1.from_address, from_name: meta1.from_name,
-            date: meta1.date, snippet: meta1.snippet, gmail_label_applied: true,
-          }, { onConflict: "user_id,gmail_message_id", ignoreDuplicates: true });
-          if (e1) console.error(`[push] project_emails error:`, e1.message);
-          else {
-            console.log(`[push] ✓ Saved msg=${msgId} subject="${meta1.subject}"`);
-            await logActivity({
-              company_id: companyId, triggered_by: null, action: "sync_to_user",
-              project_id: dbLabel.project_id, gmail_message_id: msgId, gmail_label_name: gmailLabel.name,
-              target_user_id: userId, details: { label_code: codeMatch[1], subject: meta1.subject, snippet: meta1.snippet },
-            });
+          if (!labelGroups.has(codeMatch[1])) {
+            labelGroups.set(codeMatch[1], { companyId, dbLabel, gmailLabelDisplayName: gmailLabel.name, items: [] });
           }
-          if (meta1.subject) {
-            const ns = normaliseSubject(meta1.subject);
-            if (ns) await db.from("project_email_subjects").upsert({
-              project_id: dbLabel.project_id, company_id: companyId,
-              gmail_message_id: msgId, subject_normalised: ns,
-            }, { onConflict: "project_id,gmail_message_id", ignoreDuplicates: true });
-          }
+          labelGroups.get(codeMatch[1])!.items.push({ msgId, threadId: item.message?.threadId || msgId });
         }
       }
+    }
+
+    const BULK_LABEL_THRESHOLD = 5;
+
+    for (const [labelCode, group] of labelGroups) {
+      const { companyId, dbLabel, gmailLabelDisplayName, items } = group;
+
+      if (items.length > BULK_LABEL_THRESHOLD) {
+        // Bulk path — skip the per-message Gmail metadata fetch entirely.
+        // We already have message/thread IDs for free from the history
+        // event, so record skeleton rows (subject/snippet left null) and
+        // one summary log line, then nudge the label/email sync jobs back
+        // to "pending" so the regular dispatcher pipeline — which already
+        // has proper timeouts, quarantine, and a metadata backfill pass —
+        // reconciles the details on its own next tick. A "done" job is
+        // invisible to the dispatcher's polling query, so it has to be
+        // reset rather than left alone.
+        console.log(`[push] Bulk label event: ${items.length} messages for "${gmailLabelDisplayName}" — deferring detail to workers`);
+
+        const rows = items.map(it => ({
+          project_id: dbLabel.project_id, company_id: companyId,
+          user_id: userId, gmail_message_id: it.msgId, gmail_thread_id: it.threadId,
+          gmail_label_applied: true,
+        }));
+        const { error: bulkErr } = await db.from("project_emails")
+          .upsert(rows, { onConflict: "user_id,gmail_message_id", ignoreDuplicates: true });
+        if (bulkErr) console.error(`[push] Bulk upsert error:`, bulkErr.message);
+
+        await logActivity({
+          company_id: companyId, triggered_by: null, action: "bulk_label_sync_deferred",
+          project_id: dbLabel.project_id, gmail_label_name: gmailLabelDisplayName,
+          target_user_id: userId, details: { label_code: labelCode, count: items.length },
+        });
+
+        for (const jobType of ["label_sync", "email_sync"]) {
+          await db.from("gmail_sync_jobs")
+            .update({ status: "pending", completed_users: [], updated_at: new Date().toISOString() })
+            .eq("job_type", jobType).eq("project_id", dbLabel.project_id).eq("company_id", companyId);
+        }
+        continue;
+      }
+
+      // Small path — same per-message detail as before.
+      for (const it of items) {
+        const msgId = it.msgId;
+        console.log(`[push] Label added "${gmailLabelDisplayName}" → project ${dbLabel.project_id}`);
+        const msgData1 = await getMessage(token, msgId);
+        const threadId1 = msgData1?.threadId || msgId;
+        const meta1 = extractEmailMeta(msgData1);
+        const { error: e1 } = await db.from("project_emails").upsert({
+          project_id: dbLabel.project_id, company_id: companyId,
+          user_id: userId, gmail_message_id: msgId, gmail_thread_id: threadId1,
+          subject: meta1.subject, from_address: meta1.from_address, from_name: meta1.from_name,
+          date: meta1.date, snippet: meta1.snippet, gmail_label_applied: true,
+        }, { onConflict: "user_id,gmail_message_id", ignoreDuplicates: true });
+        if (e1) console.error(`[push] project_emails error:`, e1.message);
+        else {
+          console.log(`[push] ✓ Saved msg=${msgId} subject="${meta1.subject}"`);
+          await logActivity({
+            company_id: companyId, triggered_by: null, action: "sync_to_user",
+            project_id: dbLabel.project_id, gmail_message_id: msgId, gmail_label_name: gmailLabelDisplayName,
+            target_user_id: userId, details: { label_code: labelCode, subject: meta1.subject, snippet: meta1.snippet },
+          });
+        }
+        if (meta1.subject) {
+          const ns = normaliseSubject(meta1.subject);
+          if (ns) await db.from("project_email_subjects").upsert({
+            project_id: dbLabel.project_id, company_id: companyId,
+            gmail_message_id: msgId, subject_normalised: ns,
+          }, { onConflict: "project_id,gmail_message_id", ignoreDuplicates: true });
+        }
+      }
+    }
+
+    for (const event of history) {
 
       // ── Labels removed: re-add if still active in DB ─────────────
       for (const item of (event.labelsRemoved || [])) {
@@ -405,13 +492,49 @@ Deno.serve(async (req) => {
         const normSubject = normaliseSubject(sh.value);
         if (!normSubject || normSubject.length < 3) continue;
 
-        console.log(`[push] Auto-label check: "${normSubject}"`);
+        const threadIdForMatch = msgData.threadId || msgId;
 
-        const { data: subjectMatch } = await db.from("project_email_subjects")
+        // Prefer thread continuity over subject text — Gmail's own threading
+        // (References/In-Reply-To) is a far more reliable signal than a
+        // normalized subject string, which two unrelated matters can share
+        // (e.g. a sender's copy-paste/typo referencing the wrong lot number
+        // in near-identical property names — this is exactly how emails for
+        // adjacent matters 260581/260582 got cross-labeled). If this
+        // message's thread already has another message filed to a project,
+        // use that project directly and skip subject matching entirely.
+        let subjectMatch: { project_id: string; company_id: string } | null = null;
+
+        const { data: threadMatches } = await db.from("project_emails")
           .select("project_id, company_id")
           .in("company_id", allCompanyIds)
-          .eq("subject_normalised", normSubject)
-          .limit(1).maybeSingle();
+          .eq("gmail_thread_id", threadIdForMatch)
+          .limit(2);
+        const distinctThreadProjects = new Set((threadMatches || []).map(m => `${m.company_id}:${m.project_id}`));
+        if (distinctThreadProjects.size === 1) {
+          subjectMatch = threadMatches![0];
+          console.log(`[push] Auto-label by thread continuity: "${normSubject}" → project ${subjectMatch.project_id}`);
+        }
+
+        if (!subjectMatch) {
+          console.log(`[push] Auto-label check: "${normSubject}"`);
+
+          const { data: candidates } = await db.from("project_email_subjects")
+            .select("project_id, company_id")
+            .in("company_id", allCompanyIds)
+            .eq("subject_normalised", normSubject)
+            .limit(5);
+
+          const distinctSubjectProjects = new Set((candidates || []).map(c => `${c.company_id}:${c.project_id}`));
+          if (distinctSubjectProjects.size > 1) {
+            // Same subject text matches more than one project — exactly the
+            // ambiguous case that caused the cross-labeling incident. No
+            // reliable way to pick the right one from subject text alone,
+            // so skip auto-labeling rather than guess.
+            console.log(`[push] Skipping auto-label — "${normSubject}" matches ${distinctSubjectProjects.size} different projects`);
+            continue;
+          }
+          subjectMatch = candidates?.[0] || null;
+        }
 
         if (!subjectMatch) continue;
 
@@ -466,9 +589,13 @@ Deno.serve(async (req) => {
       }
     }
 
-        return new Response("ok", { status: 200 });
+    return new Response("ok", { status: 200 });
   } catch (err: any) {
     console.error("[push] Error:", err.message);
+    summary.stage = "error";
+    summary.error = err.message;
     return new Response("ok", { status: 200 }); // always 200 to Pub/Sub
+  } finally {
+    await heartbeat("gmail-push", Date.now() - t0, summary);
   }
 });
