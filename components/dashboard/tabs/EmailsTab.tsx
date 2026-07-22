@@ -3,11 +3,14 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Mail, Loader2 } from "lucide-react";
+import { Mail } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 export default function EmailsTab({ recordId }: { recordId: string }) {
   const [emails, setEmails] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useProgressBarWhile(loading);
 
   useEffect(() => {
     supabase
@@ -18,11 +21,7 @@ export default function EmailsTab({ recordId }: { recordId: string }) {
       .then(({ data }) => { setEmails(data || []); setLoading(false); });
   }, [recordId]);
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <Loader2 className="animate-spin text-slate-300" size={20} />
-    </div>
-  );
+  if (loading) return null;
 
   if (emails.length === 0) return (
     <div className="flex flex-col items-center justify-center py-16 gap-3">

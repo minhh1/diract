@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Users2, Trash2, Loader2, ExternalLink, CheckCircle2, HelpCircle, Bot, Copy, Check } from "lucide-react";
 import CredentialsHelpDrawer from "./CredentialsHelpDrawer";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { APP_URL } from "@/lib/config";
 
 const CONSENT_CALLBACK_URL = `${APP_URL}/api/teams/admin-consent-callback`;
@@ -201,6 +202,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
     load();
     loadBot();
   }, [load, loadBot]);
+  useProgressBarWhile(loading);
 
   const connect = async () => {
     setError(null);
@@ -248,11 +250,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
     : null;
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 size={20} className="animate-spin text-slate-300" />
-      </div>
-    );
+    return null;
   }
 
   return (

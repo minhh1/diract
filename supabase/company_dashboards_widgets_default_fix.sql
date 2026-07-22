@@ -1,0 +1,19 @@
+-- Bug fix: company_dashboards_widgets.sql gave widgets_migrated_at no
+-- default (NULL), intending NULL to mean "legacy row, needs one-time
+-- conversion from quick_add_field_ids/grid_field_ids/filter_field_ids/
+-- summary_tiles/chart_config" (see ensureDashboardWidgetsMigrated in
+-- lib/dashboardWidgets/ensureMigrated.ts). But a brand-new dashboard created
+-- by the new Canvas/Code builder has real `widgets` content and empty
+-- legacy columns -- if its insert forgot to also set widgets_migrated_at
+-- (which the builder page's insert path did), the very next page load
+-- would see widgets_migrated_at IS NULL, treat it as an unconverted legacy
+-- row, and overwrite its real widgets with an empty array derived from the
+-- empty legacy columns. Confirmed via a scratch test dashboard (never
+-- shipped/user-facing) that this silently destroyed its widgets on first
+-- view.
+--
+-- Fix: default new rows to now() so only genuinely pre-existing rows
+-- (inserted before this column existed) are ever NULL and eligible for
+-- legacy conversion. Existing already-migrated rows are untouched (they
+-- already have a real timestamp, not NULL).
+ALTER TABLE company_dashboards ALTER COLUMN widgets_migrated_at SET DEFAULT now();

@@ -25,6 +25,20 @@ export function useProgressBar() {
   return useContext(ProgressBarContext);
 }
 
+// Drives the top bar from a boolean loading flag instead of manual
+// start()/done() calls — swap in for a route/page-level "if (loading)
+// return <Spinner />" gate. Reference-counting in the provider means
+// concurrent users of this hook (e.g. a tab's own fetch alongside a
+// route change) resolve correctly.
+export function useProgressBarWhile(active: boolean) {
+  const { start, done } = useProgressBar();
+  useEffect(() => {
+    if (!active) return;
+    start();
+    return done;
+  }, [active, start, done]);
+}
+
 // useSearchParams() needs a Suspense boundary in this Next.js version —
 // isolate it in its own leaf component (same pattern already used for
 // GenericMasterTable/Sidebar elsewhere in this app).

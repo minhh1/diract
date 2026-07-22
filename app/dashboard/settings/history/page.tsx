@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Clock, Loader2, RotateCcw, Plus, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface LogEntry {
   seq: number;
@@ -31,6 +32,7 @@ const ENTITY_LABELS: Record<string, string> = {
   template_definition_system_field: 'Template field',
   company_template_install: 'Template install',
   schema_revert: 'Revert',
+  company_dashboard: 'Dashboard',
 };
 
 const ACTION_ICON: Record<string, React.ElementType> = { create: Plus, update: Pencil, delete: Trash2 };
@@ -52,6 +54,8 @@ export default function SchemaHistoryPage() {
   }, [companyId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useProgressBarWhile(loading);
 
   const handleRevert = async (entry: LogEntry) => {
     if (!window.confirm(`Revert to right after "${entry.entity_label || entry.entity_type}" (${entry.action})? This undoes every schema change made since then — table/field shape only, not data.`)) return;
@@ -76,9 +80,7 @@ export default function SchemaHistoryPage() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
-      ) : (
+      {loading ? null : (
         <div className="space-y-2">
           {entries.map(entry => {
             const Icon = ACTION_ICON[entry.action] || Pencil;

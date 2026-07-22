@@ -9,6 +9,7 @@ import {
   Loader2, Upload, FileText, Plus, Copy, Check, Trash2, ExternalLink, X, Link2, Lock, RefreshCw, Bold, Italic, List,
   ChevronUp, ChevronDown, Combine,
 } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface TemplateField {
   id: string;
@@ -144,6 +145,8 @@ export default function DocumentTemplatesTab({ recordId }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useProgressBarWhile(loading);
+
   // Called both on mount and after every save/join/upload/revoke — only the
   // initial call should show the full-tab spinner (`loading` starts true).
   // Re-fetching afterwards must NOT flip it back to true, or every join/save
@@ -216,7 +219,7 @@ export default function DocumentTemplatesTab({ recordId }: Props) {
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  if (loading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-slate-300" /></div>;
+  if (loading) return null;
 
   return (
     <div className="space-y-8 animate-in fade-in p-1">

@@ -4,9 +4,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, Plus, Copy, Check, Trash2, ExternalLink, X,
+  Plus, Copy, Check, Trash2, ExternalLink, X,
 } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Team { id: string; team_name: string; leader_id: string | null; }
 interface Page {
@@ -29,6 +30,8 @@ export default function PublicTaskPagesTab() {
   const [pages, setPages] = useState<Page[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useProgressBarWhile(loading);
 
   useEffect(() => { load(); }, []);
 
@@ -80,7 +83,7 @@ export default function PublicTaskPagesTab() {
 
   const teamOptions = isAdmin ? allTeams : myTeams;
 
-  if (loading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-slate-300" /></div>;
+  if (loading) return null;
 
   return (
     <div className="space-y-6 animate-in fade-in">

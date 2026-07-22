@@ -1,21 +1,69 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Check, Loader2, Trash2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import type { CustomField, FieldType } from "./types";
-import { getFieldTypeConfig } from "./types" 
+import { getFieldTypeConfig } from "./types"
 
 const RELATION_TYPES: FieldType[] = ['table_relation', 'property', 'entity', 'project', 'link'];
 
+// Native, text-ish columns worth offering as extra search fields or a
+// restrict-to filter for a relation linked to a system table (see
+// lib/columnDefinitions.ts for the full column lists -- these are the
+// subset that make sense to ilike/eq against from a picker).
+const SEARCH_COLUMNS: Record<string, string[]> = {
+  properties: ['street_address', 'suburb', 'postcode', 'folio_identifier'],
+  entities: ['name', 'entity_type', 'acn', 'abn'],
+  projects: ['name', 'description'],
+};
+const FILTER_COLUMNS: Record<string, string[]> = {
+  properties: ['is_sold'],
+  entities: ['entity_type'],
+  projects: [],
+};
+// Mirrors components/NewEntityModal.tsx's ENTITY_TYPES -- offered as a
+// convenience dropdown when filtering entities by entity_type (e.g. a
+// "Staff" field restricted to entity_type = 'Staff').
+const ENTITY_TYPE_VALUES = [
+  'Company', 'Individual', 'Discretionary Family Trust', 'Fixed Unit Trust',
+  'Lawyer', 'Accountant', 'Mortgage Broker', 'Real Estate Agent',
+  'Local Council', 'Bank', 'Staff', 'Other',
+];
+
+function prettifyColumn(col: string): string {
+  return col.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// True if `fromFieldId` (transitively, via its own formula_field_a_id/b_id)
+// depends on `targetFieldId` -- used to keep a field's Field A/B pickers
+// from offering anything that would create a circular formula (e.g. A = 50%
+// of B, B = 50% of A). The picker already excludes the field itself
+// (direct self-reference); this catches indirect cycles through any chain
+// length. computeFormulaFields (lib/services/customTableService.ts) can't
+// infinite-loop on a cycle -- it's a single forward pass, not recursive --
+// but it silently produces one-step-stale, order-dependent numbers, which
+// is confusing enough to prevent at configuration time instead.
+function dependsOnField(fromFieldId: string, targetFieldId: string, fields: CustomField[], visited: Set<string> = new Set()): boolean {
+  if (visited.has(fromFieldId)) return false;
+  visited.add(fromFieldId);
+  const field = fields.find(f => f.id === fromFieldId);
+  if (!field) return false;
+  const deps = [field.formula_field_a_id, field.formula_field_b_id].filter((id): id is string => !!id);
+  if (deps.includes(targetFieldId)) return true;
+  return deps.some(depId => dependsOnField(depId, targetFieldId, fields, visited));
+}
+
 interface Props {
   field: CustomField;
+  siblingFields?: CustomField[];
   onSave: (updates: Partial<CustomField>) => Promise<void>;
   onDelete: () => Promise<void>;
   onClose: () => void;
 }
 
-export default function FieldConfigPanel({ field, onSave, onDelete, onClose }: Props) {
+export default function FieldConfigPanel({ field, siblingFields = [], onSave, onDelete, onClose }: Props) {
   const { tables: customTables } = useCustomTables();
   const [draft, setDraft] = useState<CustomField>({ ...field });
   const [saving, setSaving] = useState(false);
@@ -23,9 +71,31 @@ export default function FieldConfigPanel({ field, onSave, onDelete, onClose }: P
   const [selectOptionsText, setSelectOptionsText] = useState(
     field.select_options?.join('\n') || ''
   );
+  const [customFieldOptions, setCustomFieldOptions] = useState<{ id: string; label: string }[]>([]);
 
   const update = (key: keyof CustomField, value: any) =>
     setDraft(prev => ({ ...prev, [key]: value }));
+
+  // Candidate custom fields (e.g. "Matter Number" on projects) that can be
+  // added as an extra search field alongside the display field.
+  useEffect(() => {
+    const table = draft.linked_table;
+    if (!table || !SEARCH_COLUMNS[table]) { setCustomFieldOptions([]); return; }
+    let active = true;
+    supabase
+      .from('company_custom_fields')
+      .select('id, label')
+      .eq('table_name', table)
+      .is('deleted_at', null)
+      .order('display_order')
+      .then(({ data }) => { if (active) setCustomFieldOptions(data || []); });
+    return () => { active = false; };
+  }, [draft.linked_table]);
+
+  const toggleSearchField = (key: string) => {
+    const current = draft.linked_search_field_keys || [];
+    update('linked_search_field_keys', current.includes(key) ? current.filter(k => k !== key) : [...current, key]);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -202,6 +272,95 @@ export default function FieldConfigPanel({ field, onSave, onDelete, onClose }: P
                 Which field from the linked record to display
               </p>
             </div>
+
+            {/* Search fields + restrict-to filter -- system-table relations
+                on custom-table fields only (see
+                supabase/company_table_fields_relation_config.sql). */}
+            {draft.isCustomTable && draft.linked_table && SEARCH_COLUMNS[draft.linked_table] && (
+              <>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                    Also search by
+                  </label>
+                  <div className="space-y-1.5">
+                    {SEARCH_COLUMNS[draft.linked_table].map(col => (
+                      <label key={col} className="flex items-center gap-2.5 cursor-pointer group">
+                        <div
+                          onClick={() => toggleSearchField(col)}
+                          className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                            (draft.linked_search_field_keys || []).includes(col)
+                              ? 'bg-indigo-600 border-indigo-600'
+                              : 'border-slate-200 group-hover:border-indigo-300'
+                          }`}
+                        >
+                          {(draft.linked_search_field_keys || []).includes(col) && <Check size={10} className="text-white" />}
+                        </div>
+                        <span className="text-[12px] font-medium text-slate-600">{prettifyColumn(col)}</span>
+                      </label>
+                    ))}
+                    {customFieldOptions.map(cf => {
+                      const key = `cf:${cf.id}`;
+                      return (
+                        <label key={key} className="flex items-center gap-2.5 cursor-pointer group">
+                          <div
+                            onClick={() => toggleSearchField(key)}
+                            className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                              (draft.linked_search_field_keys || []).includes(key)
+                                ? 'bg-indigo-600 border-indigo-600'
+                                : 'border-slate-200 group-hover:border-indigo-300'
+                            }`}
+                          >
+                            {(draft.linked_search_field_keys || []).includes(key) && <Check size={10} className="text-white" />}
+                          </div>
+                          <span className="text-[12px] font-medium text-slate-600">{cf.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5 px-1">
+                    Typing in the picker also matches these, e.g. a Matter Number
+                  </p>
+                </div>
+
+                {FILTER_COLUMNS[draft.linked_table].length > 0 && (
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                      Restrict to
+                    </label>
+                    <select
+                      value={draft.linked_filter_column || ''}
+                      onChange={e => { update('linked_filter_column', e.target.value || null); update('linked_filter_value', null); }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                    >
+                      <option value="">No restriction — show all</option>
+                      {FILTER_COLUMNS[draft.linked_table].map(col => (
+                        <option key={col} value={col}>{prettifyColumn(col)}</option>
+                      ))}
+                    </select>
+                    {draft.linked_filter_column === 'entity_type' ? (
+                      <select
+                        value={draft.linked_filter_value || ''}
+                        onChange={e => update('linked_filter_value', e.target.value || null)}
+                        className="w-full mt-2 bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                      >
+                        <option value="">Select a value...</option>
+                        {ENTITY_TYPE_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    ) : draft.linked_filter_column ? (
+                      <input
+                        value={draft.linked_filter_value || ''}
+                        onChange={e => update('linked_filter_value', e.target.value || null)}
+                        placeholder="Value to match"
+                        className="w-full mt-2 bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                      />
+                    ) : null}
+                    <p className="text-[10px] text-slate-400 mt-1.5 px-1">
+                      Only show records where {prettifyColumn(draft.linked_filter_column || '...')} matches this
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -266,6 +425,102 @@ export default function FieldConfigPanel({ field, onSave, onDelete, onClose }: P
             </div>
           </div>
         )}
+
+        {/* Computed value — custom-table number/currency fields only */}
+        {draft.isCustomTable && (['number', 'currency'] as FieldType[]).includes(draft.field_type) && (() => {
+          // Excludes the field itself (direct self-reference) and anything
+          // that already transitively depends on it (would close a cycle --
+          // e.g. this field can't pick B as a dependency if B already
+          // computes off this field, directly or through a longer chain).
+          const numericSiblings = siblingFields.filter(
+            f => f.id !== draft.id
+              && (['number', 'currency'] as FieldType[]).includes(f.field_type)
+              && !dependsOnField(f.id, draft.id, siblingFields)
+          );
+          return (
+            <div className="space-y-3">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">
+                Computed value
+              </label>
+              <div className="flex gap-2">
+                {[
+                  { v: null, l: 'Typed in' },
+                  { v: 'multiply', l: 'Multiply' },
+                  { v: 'percentage_of', l: '% of' },
+                ].map(opt => (
+                  <button
+                    key={String(opt.v)}
+                    onClick={() => {
+                      update('formula_type', opt.v);
+                      if (!opt.v) {
+                        update('formula_field_a_id', null);
+                        update('formula_field_b_id', null);
+                        update('formula_percent', null);
+                      }
+                    }}
+                    className={`flex-1 py-2 rounded-full text-[10px] font-bold transition-all ${
+                      (draft.formula_type ?? null) === opt.v
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {opt.l}
+                  </button>
+                ))}
+              </div>
+
+              {draft.formula_type === 'multiply' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={draft.formula_field_a_id || ''}
+                    onChange={e => update('formula_field_a_id', e.target.value || null)}
+                    className="bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                  >
+                    <option value="">Field A...</option>
+                    {numericSiblings.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                  <select
+                    value={draft.formula_field_b_id || ''}
+                    onChange={e => update('formula_field_b_id', e.target.value || null)}
+                    className="bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                  >
+                    <option value="">Field B...</option>
+                    {numericSiblings.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {draft.formula_type === 'percentage_of' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={draft.formula_field_a_id || ''}
+                    onChange={e => update('formula_field_a_id', e.target.value || null)}
+                    className="bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                  >
+                    <option value="">Of field...</option>
+                    {numericSiblings.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={draft.formula_percent ?? ''}
+                      onChange={e => update('formula_percent', e.target.value ? Number(e.target.value) : null)}
+                      placeholder="10"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 pl-4 pr-8 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">%</span>
+                  </div>
+                </div>
+              )}
+
+              {draft.formula_type && (
+                <p className="text-[10px] text-slate-400 px-1">
+                  Auto-calculated — not editable by hand once saved.
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Text regex validation */}
         {draft.field_type === 'text' && (

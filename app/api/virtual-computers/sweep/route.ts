@@ -16,7 +16,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getProvider } from "@/lib/vmProviders/registry";
-import { resolveCredentials, startHibernate, wakeVm, getCompanySchedule, closeUsageEvent } from "../_lib";
+import { resolveCredentials, startHibernate, wakeVm, getCompanySchedule, closeUsageEvent, reconcileProvisioningVm } from "../_lib";
 import { hourInTimezone, todayAtLocalTime, dayOfWeekInTimezone } from "@/lib/vmProviders/scheduling";
 import { reportUsageForCustomer } from "@/lib/billing/usageReporting";
 import type { CloudProviderId } from "@/lib/vmProviders/types";
@@ -44,6 +44,17 @@ export async function GET(req: Request) {
 
   const admin = adminClient();
   const now = new Date();
+
+  // Reliable backstop for provisioning VMs -- the status route does the
+  // same reconciliation, but only while someone's dashboard tab is actually
+  // open and polling. Without this pass, a Windows-on-DigitalOcean VM whose
+  // RDP login check fails while nobody's watching would just sit there
+  // silently broken instead of retrying (exactly what happened once
+  // already -- see reconcileProvisioningVm's comment).
+  const { data: provisioning } = await admin.from("virtual_computers").select("*").eq("status", "provisioning");
+  for (const vm of provisioning ?? []) {
+    await reconcileProvisioningVm(admin, vm);
+  }
 
   const { data: snapshotting } = await admin.from("virtual_computers").select("*").eq("status", "snapshotting");
   for (const vm of snapshotting ?? []) {

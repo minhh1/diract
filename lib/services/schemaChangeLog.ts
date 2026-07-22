@@ -13,7 +13,7 @@ export type SchemaChangeEntityType =
   | 'company_table' | 'company_table_field' | 'company_custom_field'
   | 'template_definition' | 'template_definition_table'
   | 'template_definition_table_field' | 'template_definition_system_field'
-  | 'company_template_install';
+  | 'company_template_install' | 'company_dashboard';
 
 export type SchemaChangeAction = 'create' | 'update' | 'delete';
 

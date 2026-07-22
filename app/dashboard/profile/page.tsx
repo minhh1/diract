@@ -8,6 +8,7 @@ import { useProfile } from "@/lib/hooks/useProfile";
 import {
   ArrowLeft, Loader2, Camera, Trash2, CheckCircle2, AlertCircle, User,
 } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 export default function ProfilePage() {
   const { data: profile, isLoading: profileLoading } = useProfile();
@@ -16,6 +17,8 @@ export default function ProfilePage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setEmail(user?.email || ""));
   }, []);
+
+  useProgressBarWhile(profileLoading || !email);
 
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
@@ -31,9 +34,7 @@ export default function ProfilePage() {
 
       <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="max-w-2xl mx-auto space-y-4 pb-20">
-          {profileLoading || !email ? (
-            <div className="flex justify-center p-20"><Loader2 className="animate-spin text-slate-300" /></div>
-          ) : (
+          {profileLoading || !email ? null : (
             <ProfileForm
               // Remount with fresh initial state if the signed-in user ever changes.
               key={profile?.id || "anon"}

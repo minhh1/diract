@@ -6,7 +6,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Upload, Loader2, Trash2, PenSquare } from "lucide-react";
+import { FileText, Upload, Trash2, PenSquare } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 import PdfEditor, { type PdfSource } from "@/components/pdfeditor/PdfEditor";
 
 interface PdfDoc {
@@ -33,6 +34,7 @@ export default function PdfEditorPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useProgressBarWhile(loading);
 
   const openFile = (file: File | undefined) => {
     if (!file) return;
@@ -106,11 +108,7 @@ export default function PdfEditorPage() {
         <div className="mb-4 px-4 py-2.5 bg-red-50 text-red-600 text-[12px] rounded-xl">{error}</div>
       )}
 
-      {loading ? (
-        <div className="flex items-center gap-2 text-slate-400 text-[13px] mt-16 justify-center">
-          <Loader2 size={16} className="animate-spin" /> Loading…
-        </div>
-      ) : documents.length === 0 ? (
+      {loading ? null : documents.length === 0 ? (
         <div className="text-center mt-16 text-slate-400 text-[13px]">
           No saved PDFs yet — drag a PDF anywhere on this page, or click "Open PDF" to get started.
         </div>

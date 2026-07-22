@@ -6,7 +6,7 @@ import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
-  ChevronRight, Sparkles, Wrench, Store, Trash2,
+  ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon,
 } from "lucide-react";
@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import { useCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
@@ -90,6 +91,7 @@ const TOOLS_LINKS = [
   { href: '/dashboard/pdf-editor', icon: PenSquare, label: 'PDF editor' },
   { href: '/dashboard/virtual-computers', icon: Monitor, label: 'Virtual computers' },
   { href: '/dashboard/schema', icon: Network, label: 'Schema map' },
+  { href: '/dashboard/dashboards/new/builder', icon: LayoutDashboard, label: 'Custom dashboard' },
 ];
 
 const SETTINGS_LINKS = [
@@ -645,6 +647,7 @@ export default function Sidebar() {
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
   const { tables: customTables } = useCustomTables();
+  const { dashboards } = useCustomDashboards();
 
   const mode = pathname.includes("projects") ? "projects"
     : pathname.includes("properties") ? "properties"
@@ -1221,6 +1224,48 @@ export default function Sidebar() {
                     className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
                   >
                     No tables visible — click eye to configure
+                  </button>
+                )}
+              </div>
+
+              {/* Dashboards — custom, user-built screens bound to one
+                  custom table (quick-add form + grid + stats + activity
+                  chart). See lib/hooks/useCustomDashboards.ts. */}
+              <div className="mb-2">
+                <div className="flex items-center justify-between px-3 mb-1">
+                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Dashboards</p>
+                  <button
+                    onClick={() => { startNavigation(); router.push('/dashboard/dashboards/new/builder'); }}
+                    className="p-1 text-slate-300 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
+                    title="New dashboard"
+                    aria-label="New dashboard"
+                  >
+                    <Plus size={12} strokeWidth={3} />
+                  </button>
+                </div>
+                {dashboards.map(d => {
+                  const Icon = (LucideIcons as any)[d.icon] || LayoutDashboard;
+                  const active = pathname === `/dashboard/dashboards/${d.slug}`;
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => { if (!active) { startNavigation(); router.push(`/dashboard/dashboards/${d.slug}`); } }}
+                      aria-label={d.name}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                        active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon size={16} className="shrink-0" />
+                      <span className="truncate">{d.name}</span>
+                    </button>
+                  );
+                })}
+                {dashboards.length === 0 && (
+                  <button
+                    onClick={() => { startNavigation(); router.push('/dashboard/dashboards/new/builder'); }}
+                    className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
+                  >
+                    No dashboards yet — click + to build one
                   </button>
                 )}
               </div>

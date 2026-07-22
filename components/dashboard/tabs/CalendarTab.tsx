@@ -3,12 +3,15 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 export default function CalendarTab({ recordId }: { recordId: string }) {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  useProgressBarWhile(loading);
 
   useEffect(() => {
     supabase
@@ -45,11 +48,7 @@ export default function CalendarTab({ recordId }: { recordId: string }) {
 
   const today = new Date();
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <Loader2 className="animate-spin text-slate-300" size={20} />
-    </div>
-  );
+  if (loading) return null;
 
   return (
     <div>

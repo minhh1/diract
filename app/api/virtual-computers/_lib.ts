@@ -6,6 +6,7 @@ import net from "net";
 import { getPlatformCredentials } from "@/lib/vmProviders/platformCredentials";
 import { getProvider } from "@/lib/vmProviders/registry";
 import { nextLocalMidnight } from "@/lib/vmProviders/scheduling";
+import { verifyWindowsRdpLogin } from "@/lib/vmProviders/windowsLoginCheck";
 import type { CloudProviderId, ProviderCredentials, VmOs, VmProtocol } from "@/lib/vmProviders/types";
 
 // A cloud provider reporting the host instance as "running" only means the
@@ -264,4 +265,166 @@ export async function wakeVm(
       })
       .eq("id", vm.id);
   }
+}
+
+// Total attempts = this + the original install. dockur/windows's unattended
+// Windows 11 install occasionally leaves the guest's Administrator account
+// unable to log in (confirmed directly, twice, on real VMs -- see
+// lib/vmProviders/windowsLoginCheck.ts's header comment), with no way to
+// fix it post-hoc, so the only real remedy is redoing the whole ~75-90 min
+// install from scratch. Capped so a VM that keeps failing (a real,
+// non-transient problem -- e.g. something wrong with the assigned droplet
+// size/region) doesn't retry forever and rack up cost.
+const MAX_WINDOWS_VERIFY_ATTEMPTS = 2;
+
+type ProvisioningVm = {
+  id: string;
+  company_id: string;
+  provider: string;
+  provider_instance_id: string | null;
+  region: string;
+  billing_mode: string;
+  credential_id: string | null;
+  os: VmOs;
+  snapshot_id: string | null;
+  windows_verify_attempts: number;
+  remote_username: string;
+  remote_password: string;
+  name: string;
+  size_slug: string;
+  protocol: string;
+  hourly_usd_at_creation: number | null;
+};
+
+// Destroys a Windows-on-DigitalOcean install that failed its login check and
+// starts a fresh one in its place, keeping the same virtual_computers row
+// (so assignment/history aren't disturbed). Only ever safe to call for a
+// *fresh* install with no snapshot yet -- there's no user data to lose,
+// unlike a wake-from-snapshot failure, which this deliberately never
+// retries this way (see the isFreshWindowsOnDo guard in
+// reconcileProvisioningVm).
+async function retryFreshWindowsInstall(admin: any, vm: ProvisioningVm, credentials: ProviderCredentials): Promise<void> {
+  const adapter = getProvider(vm.provider as CloudProviderId);
+  if (vm.provider_instance_id) {
+    await adapter.destroyInstance(credentials, vm.provider_instance_id, vm.region).catch(() => {
+      // Best-effort -- proceed with the recreate regardless, same reasoning
+      // as wakeVm clearing provider_instance_id below.
+    });
+  }
+  // A fresh password each retry, in case a bad password/encoding was ever
+  // the actual cause -- cheap to rule out and never harmful otherwise.
+  const newPassword = generateWindowsPassword();
+  await admin
+    .from("virtual_computers")
+    .update({
+      status: "provisioning",
+      provider_instance_id: null,
+      ip_address: null,
+      remote_password: newPassword,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", vm.id);
+  // Separate, best-effort update -- if the windows_verify_attempts column
+  // doesn't exist yet (migration not applied: see
+  // supabase/virtual_computers_windows_verify_attempts.sql), this alone
+  // fails with a PostgREST "column does not exist" error without taking
+  // down the actually-critical update above with it. Degrades to retrying
+  // without an enforced cap until the migration lands, rather than not
+  // retrying (or erroring) at all.
+  await admin
+    .from("virtual_computers")
+    .update({ windows_verify_attempts: (vm.windows_verify_attempts ?? 0) + 1 })
+    .eq("id", vm.id);
+  try {
+    const result = await adapter.createInstance({
+      credentials,
+      name: vm.name,
+      sizeSlug: vm.size_slug,
+      region: vm.region,
+      protocol: vm.protocol as VmProtocol,
+      os: vm.os,
+      remoteUsername: vm.remote_username,
+      remotePassword: newPassword,
+    });
+    await admin
+      .from("virtual_computers")
+      .update({
+        provider_instance_id: result.providerInstanceId,
+        ip_address: result.ipAddress,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", vm.id);
+  } catch (err) {
+    await admin
+      .from("virtual_computers")
+      .update({
+        status: "error",
+        error_message: err instanceof Error ? err.message : "Retry provisioning failed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", vm.id);
+  }
+}
+
+// Shared by the status route (polled live while someone's dashboard tab is
+// open) and the sweep cron (the reliable backstop when nobody's watching --
+// this is exactly the gap that let a broken Windows VM go unnoticed for a
+// full day before). Resolves the provider's own instance state and, for a
+// fresh Windows-on-DigitalOcean install specifically, also verifies the RDP
+// login actually works (not just that the port is open) before ever
+// reporting "running" -- auto-retrying (destroy + recreate) on a confirmed
+// login failure, up to MAX_WINDOWS_VERIFY_ATTEMPTS.
+export async function reconcileProvisioningVm(admin: any, vm: ProvisioningVm): Promise<void> {
+  if (!vm.provider_instance_id) return;
+  const credentials = await resolveCredentials(admin, vm);
+  if (!credentials) return;
+  const adapter = getProvider(vm.provider as CloudProviderId);
+
+  let instance;
+  try {
+    instance = await adapter.getInstance(credentials, vm.provider_instance_id, vm.region);
+  } catch {
+    // Transient provider errors shouldn't crash the caller or flip status
+    // to error -- report the last known state and let the next poll retry.
+    return;
+  }
+
+  const isFreshWindowsOnDo = vm.os === "windows" && vm.provider === "digitalocean" && !vm.snapshot_id;
+  let reportedStatus = instance.status;
+
+  if (reportedStatus === "running" && vm.os === "windows" && instance.ipAddress) {
+    const rdpUp = await isPortReachable(instance.ipAddress, 3389);
+    if (!rdpUp) {
+      reportedStatus = "provisioning";
+    } else if (isFreshWindowsOnDo) {
+      const check = await verifyWindowsRdpLogin(vm, instance.ipAddress, vm.remote_username, vm.remote_password);
+      if (check === "auth-failed") {
+        // Defensive default -- if the windows_verify_attempts column/migration
+        // (supabase/virtual_computers_windows_verify_attempts.sql) hasn't
+        // landed yet, `vm.windows_verify_attempts` comes back undefined;
+        // treating that as 0 lets retries actually happen instead of every
+        // failure silently skipping straight to "attempts exhausted".
+        const attemptsSoFar = vm.windows_verify_attempts ?? 0;
+        if (attemptsSoFar < MAX_WINDOWS_VERIFY_ATTEMPTS) {
+          await retryFreshWindowsInstall(admin, { ...vm, windows_verify_attempts: attemptsSoFar }, credentials);
+        } else {
+          await admin
+            .from("virtual_computers")
+            .update({
+              status: "error",
+              error_message: `Windows never accepted its own login after ${attemptsSoFar + 1} attempts. This is a rare dockur/windows install failure -- try creating the VM again, possibly in a different region.`,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", vm.id);
+        }
+        return;
+      }
+      if (check === "inconclusive") reportedStatus = "provisioning";
+      // "success" falls through -- reportedStatus stays "running".
+    }
+  }
+
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), status: reportedStatus };
+  if (instance.ipAddress) updates.ip_address = instance.ipAddress;
+  await admin.from("virtual_computers").update(updates).eq("id", vm.id);
 }

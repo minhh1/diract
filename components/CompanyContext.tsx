@@ -20,6 +20,7 @@ interface CompanyContextValue {
   isAdmin: boolean;
   loading: boolean;
   tableLabelOverrides: TableLabelOverrides;
+  refreshTableLabelOverrides: () => Promise<void>;
 }
 
 const CompanyContext = createContext<CompanyContextValue>({
@@ -30,6 +31,7 @@ const CompanyContext = createContext<CompanyContextValue>({
   isAdmin: false,
   loading: true,
   tableLabelOverrides: {},
+  refreshTableLabelOverrides: async () => {},
 });
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
@@ -94,8 +96,17 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
+  // Re-fetches just the label overrides, so the settings panel that edits
+  // companies.table_label_overrides can push the change out to the Sidebar
+  // (and anywhere else reading tableLabelOverrides) without a full reload.
+  const refreshTableLabelOverrides = async () => {
+    if (!companyId) return;
+    const { data } = await supabase.from("companies").select("table_label_overrides").eq("id", companyId).single();
+    setTableLabelOverrides((data as any)?.table_label_overrides || {});
+  };
+
   return (
-    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, loading, tableLabelOverrides }}>
+    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, loading, tableLabelOverrides, refreshTableLabelOverrides }}>
       {children}
     </CompanyContext.Provider>
   );

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { CheckCircle2, Circle, Briefcase, Clock, RotateCcw, Archive, AlertCircle, Loader2 } from "lucide-react";
+import { CheckCircle2, Circle, Briefcase, Clock, RotateCcw, Archive, AlertCircle } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,8 @@ export default function AllTasksPage() {
 
   useEffect(() => { fetchTasks(); }, [view]);
 
+  useProgressBarWhile(loading);
+
   return (
     <div className="p-8 md:p-14 bg-[#fcfcfd] min-h-screen">
       <header className="mb-14 flex flex-col lg:flex-row lg:items-end justify-between gap-8">
@@ -34,7 +37,7 @@ export default function AllTasksPage() {
         </div>
       </header>
       <div className="max-w-6xl mx-auto space-y-4">
-        {loading ? <Loader2 className="animate-spin text-slate-200 mx-auto" size={48} /> : tasks.map((task) => (
+        {loading ? null : tasks.map((task) => (
           <div key={task.id} className="bg-white border rounded-[36px] p-8 shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-6">
               <div className="text-slate-200">{task.is_completed ? <CheckCircle2 className="text-emerald-500" size={28} /> : <Circle size={28} />}</div>

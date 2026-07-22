@@ -78,9 +78,16 @@ function CustomColumnDrawer({
   );
 }
 
+const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
+
 // ── Format a cell value for display ───────────────────────────────
-function formatValue(value: any, field: CustomTableField): string {
+// Relation-type fields store a target record id in `values` — the resolved
+// label lives in `record.displayValues` (populated by useCustomTable), so
+// those need the whole record, not just the raw value.
+function formatValue(record: CustomTableRecord, field: CustomTableField): string {
+  const value = record.values[field.field_key];
   if (value === null || value === undefined || value === '') return '—';
+  if (RELATION_FIELD_TYPES.includes(field.field_type)) return record.displayValues[field.field_key] ?? 'Untitled';
   if (field.field_type === 'boolean') return value ? 'Yes' : 'No';
   if (field.field_type === 'currency') return `$${Number(value).toLocaleString()}`;
   if (field.field_type === 'date') {
@@ -150,6 +157,10 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
     const rec = await createRecord(tableDef.id, cid, user.id, {}, fields);
     setIsCreating(false);
+    if (rec && 'error' in rec) {
+      window.alert(rec.error);
+      return;
+    }
     if (rec) {
       refetch();
       router.push(`/dashboard/${tableSlug}?id=${rec.id}`);
@@ -160,7 +171,8 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     e.stopPropagation();
     if (!window.confirm('Archive this record?')) return;
     setDeletingId(id);
-    await deleteRecord(id);
+    const result = await deleteRecord(id);
+    if (result && 'error' in result) window.alert(result.error);
     setDeletingId(null);
     refetch();
   };
@@ -339,10 +351,10 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                         {idx === 0 ? (
                           // Primary column — styled as a link
                           <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
-                            {formatValue(record.values[col.field_key], col)}
+                            {formatValue(record, col)}
                           </span>
                         ) : (
-                          formatValue(record.values[col.field_key], col)
+                          formatValue(record, col)
                         )}
                       </div>
                     ))}
@@ -385,7 +397,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                               {col.label}
                             </p>
                             <p className="text-[13px] font-medium text-slate-700 truncate">
-                              {formatValue(record.values[col.field_key], col) || '—'}
+                              {formatValue(record, col) || '—'}
                             </p>
                           </div>
                         ))}

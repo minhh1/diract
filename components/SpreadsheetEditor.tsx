@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import RecordCreatorField from "@/components/RecordCreatorField"
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 type BaseTable = "properties" | "entities" | "projects";
 
@@ -360,6 +361,7 @@ function PropertyFieldPicker({
 }) {
   const [fields, setFields] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  useProgressBarWhile(loading);
 
   useEffect(() => {
     supabase.rpc('get_schema_metadata', {
@@ -377,11 +379,7 @@ function PropertyFieldPicker({
     });
   }, [companyId, existingColIds]);
 
-  if (loading) return (
-    <div className="flex justify-center py-10">
-      <Loader2 className="animate-spin text-slate-300" size={20} />
-    </div>
-  );
+  if (loading) return null;
 
   if (fields.length === 0) return (
     <p className="text-center text-[11px] text-slate-300 italic py-8">
@@ -538,6 +536,8 @@ export default function SpreadsheetEditor({
     () => columnOrder.map(id => colMap.get(id)).filter(Boolean) as SpreadsheetColumn[],
     [columnOrder, colMap]
   );
+
+  useProgressBarWhile(loading);
 
   // ── Effects ────────────────────────────────────────────────────────
   useEffect(() => { loadSchema(); }, [tableName]);
@@ -1012,11 +1012,7 @@ const loadRows = async (cols: SpreadsheetColumn[], cid: string | null) => {
     };
   const totalWidth = orderedColumns.reduce((sum, c) => sum + (colWidths[c.id] || c.width), 0) + 52 + 48;
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-full">
-      <Loader2 className="animate-spin text-slate-300" size={24} />
-    </div>
-  );
+  if (loading) return null;
 
   return (
     <div className="flex flex-col h-full min-h-0 font-sans">

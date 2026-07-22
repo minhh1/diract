@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import TemplateTableBuilder from "@/components/marketplace/TemplateTableBuilder";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Template {
   id: string; slug: string; name: string; description: string | null;
@@ -17,17 +18,41 @@ interface Template {
   is_published: boolean; suggested_label_overrides: Record<string, { singular: string; plural: string }>;
 }
 
+interface TemplateTableField { label: string; fieldType: string; linksTo: string | null }
+
 interface PreviewConflict {
   slug?: string; tableName?: string; fieldKey?: string; name?: string; label?: string;
+  icon?: string; color?: string; fieldType?: string; fields?: TemplateTableField[];
+  // Present once this template has already been installed once -- true means
+  // this table/field is already installed for the company (nothing pending);
+  // false means it was added to the template's catalog since (see
+  // upgrade_company_template in supabase/template_marketplace_upgrade.sql).
+  owned?: boolean;
+  // Table-only: template fields not yet present on the already-installed
+  // table -- e.g. new fields added to the catalog after this company
+  // installed it. Empty when the table itself isn't owned yet.
+  newFields?: TemplateTableField[];
   conflict: { existingId: string; existingName?: string; existingLabel?: string } | null;
 }
 
+interface PreviewDashboard { slug: string; name: string; icon: string; color: string; owned: boolean }
+
 interface PreviewResult {
+  templateName: string;
+  templateDescription: string | null;
   alreadyInstalled: boolean;
+  // True when there's something for an upgrade to actually add (a new table,
+  // new fields on an owned table, or a new dashboard) -- only meaningful
+  // when alreadyInstalled.
+  hasUpgrade: boolean;
+  currentSchema: { tableNames: string[]; systemFieldCounts: Record<string, number> };
   tables: PreviewConflict[];
   systemFields: PreviewConflict[];
+  dashboards: PreviewDashboard[];
   suggestedLabelOverrides: Record<string, { singular: string; plural: string }>;
 }
+
+const SYSTEM_TABLE_LABELS: Record<string, string> = { projects: 'Projects', entities: 'Entities', properties: 'Properties' };
 
 export default function MarketplacePage() {
   const { companyId, userId, isAdmin } = useCompany();
@@ -66,6 +91,9 @@ export default function MarketplacePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useProgressBarWhile(loading);
+  useProgressBarWhile(!!installing && !preview);
+
   const openInstall = async (template: Template) => {
     setInstalling(template);
     setInstallError('');
@@ -85,13 +113,17 @@ export default function MarketplacePage() {
     if (!installing) return;
     setInstallBusy(true);
     setInstallError('');
-    const res = await fetch(`/api/templates/${installing.slug}/install`, {
+    // Same review dialog serves both flows -- an already-installed template
+    // hits /upgrade (only adds what's missing) instead of /install (which
+    // would just return status:'already_installed' and do nothing).
+    const endpoint = preview?.alreadyInstalled ? 'upgrade' : 'install';
+    const res = await fetch(`/api/templates/${installing.slug}/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ resolutions }),
     });
     const data = await res.json();
     setInstallBusy(false);
-    if (!res.ok) { setInstallError(data.error || 'Install failed'); return; }
+    if (!res.ok) { setInstallError(data.error || (preview?.alreadyInstalled ? 'Upgrade failed' : 'Install failed')); return; }
     setInstalling(null);
     load();
   };
@@ -164,7 +196,10 @@ export default function MarketplacePage() {
 
         {mode === 'browse' && (
           isInstalled ? (
-            <button onClick={() => uninstall(template)} className="px-4 py-2 bg-slate-50 text-slate-500 rounded-full text-[11px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">Uninstall</button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button onClick={() => openInstall(template)} className="px-4 py-2 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all">Update</button>
+              <button onClick={() => uninstall(template)} className="px-4 py-2 bg-slate-50 text-slate-500 rounded-full text-[11px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">Uninstall</button>
+            </div>
           ) : (
             <button onClick={() => openInstall(template)} className="px-4 py-2 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all">Install</button>
           )
@@ -197,9 +232,7 @@ export default function MarketplacePage() {
         <button onClick={() => setTab('mine')} className={`px-4 py-2 rounded-full text-[11px] font-bold transition-all ${tab === 'mine' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500'}`}>My templates</button>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
-      ) : tab === 'browse' ? (
+      {loading ? null : tab === 'browse' ? (
         <div className="space-y-2">
           {published.map(t => renderCard(t, 'browse'))}
           {published.length === 0 && <p className="text-center text-[11px] text-slate-300 italic py-8">No published templates yet</p>}
@@ -234,56 +267,137 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* Install / resolve-conflicts modal */}
+      {/* Install / review-and-approve modal */}
       {installing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-          <div className="bg-white rounded-[40px] p-8 w-full max-w-lg shadow-2xl max-h-[85vh] overflow-y-auto space-y-5">
+          <div className="bg-white rounded-[40px] p-8 w-full max-w-xl shadow-2xl max-h-[85vh] overflow-y-auto space-y-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Install "{installing.name}"</h3>
+              <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">
+                {preview?.alreadyInstalled ? 'Update' : 'Install'} "{installing.name}"
+              </h3>
               <button onClick={() => setInstalling(null)} className="p-2 text-slate-300 hover:text-black"><X size={18} /></button>
             </div>
 
-            {!preview ? (
-              <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
-            ) : (
+            {!preview ? null : (
               <>
                 {preview.alreadyInstalled && (
-                  <p className="text-[12px] text-emerald-600 font-medium">Already installed.</p>
+                  <p className="text-[12px] font-medium text-emerald-600">
+                    {preview.hasUpgrade
+                      ? "Already installed — here's what's been added to the template since."
+                      : "Already installed, and you're fully up to date."}
+                  </p>
+                )}
+                {preview.templateDescription && (
+                  <p className="text-[12px] text-slate-500">{preview.templateDescription}</p>
                 )}
 
-                {[...preview.tables, ...preview.systemFields].every(x => !x.conflict) ? (
-                  <p className="text-[12px] text-slate-500">No naming conflicts found — this will add {preview.tables.length} table(s) and {preview.systemFields.length} field(s) to your workspace.</p>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest">Resolve conflicts</p>
-                    {preview.tables.filter(t => t.conflict).map(t => (
-                      <div key={t.slug} className="p-3 bg-amber-50 border border-amber-100 rounded-2xl space-y-2">
-                        <p className="text-[12px] font-medium text-slate-700">Table <strong>{t.name}</strong> — you already have "{t.conflict!.existingName}"</p>
-                        <div className="flex gap-2">
-                          {(['use_existing', 'create_new'] as const).map(r => (
-                            <button key={r} onClick={() => setResolutions(prev => ({ ...prev, tables: { ...prev.tables, [t.slug!]: r } }))}
-                              className={`flex-1 py-1.5 rounded-full text-[10px] font-bold ${resolutions.tables[t.slug!] === r ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>
-                              {r === 'use_existing' ? 'Use existing' : 'Create new'}
-                            </button>
-                          ))}
-                        </div>
+                {/* Your workspace today, for context */}
+                <div className="p-4 bg-slate-50 rounded-2xl space-y-1">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Your workspace today</p>
+                  <p className="text-[12px] text-slate-600">
+                    {preview.currentSchema.tableNames.length > 0
+                      ? `${preview.currentSchema.tableNames.length} custom table${preview.currentSchema.tableNames.length === 1 ? '' : 's'}: ${preview.currentSchema.tableNames.join(', ')}`
+                      : 'No custom tables yet'}
+                  </p>
+                  <p className="text-[12px] text-slate-600">
+                    {preview.currentSchema.systemFieldCounts.projects} field(s) on Projects · {preview.currentSchema.systemFieldCounts.entities} on Entities · {preview.currentSchema.systemFieldCounts.properties} on Properties
+                  </p>
+                </div>
+
+                {/* Exactly what this template will do to that schema -- for
+                    an upgrade, a fully-owned table with nothing new just
+                    doesn't render at all, so the list only ever shows what's
+                    actually pending. */}
+                <div className="space-y-3">
+                  <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">
+                    {preview.alreadyInstalled ? "What's pending" : 'This template will add'}
+                  </p>
+
+                  {preview.tables.filter(t => !t.owned || (t.newFields?.length ?? 0) > 0).map(t => (
+                    <div key={t.slug} className={`p-3 rounded-2xl border space-y-2 ${t.conflict ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-200'}`}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[12px] font-bold text-slate-800">
+                          {t.name} <span className="font-normal text-slate-400">
+                            {t.owned ? `— ${t.newFields!.length} new field${t.newFields!.length === 1 ? '' : 's'}` : '— new table'}
+                          </span>
+                        </p>
+                        {!t.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
                       </div>
-                    ))}
-                    {preview.systemFields.filter(f => f.conflict).map(f => (
-                      <div key={`${f.tableName}:${f.fieldKey}`} className="p-3 bg-amber-50 border border-amber-100 rounded-2xl space-y-2">
-                        <p className="text-[12px] font-medium text-slate-700">Field <strong>{f.label}</strong> on {f.tableName} — you already have "{f.conflict!.existingLabel}"</p>
-                        <div className="flex gap-2">
-                          {(['use_existing', 'create_new'] as const).map(r => (
-                            <button key={r} onClick={() => setResolutions(prev => ({ ...prev, systemFields: { ...prev.systemFields, [`${f.tableName}:${f.fieldKey}`]: r } }))}
-                              className={`flex-1 py-1.5 rounded-full text-[10px] font-bold ${resolutions.systemFields[`${f.tableName}:${f.fieldKey}`] === r ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>
-                              {r === 'use_existing' ? 'Use existing' : 'Create new'}
-                            </button>
-                          ))}
-                        </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(t.owned ? t.newFields! : (t.fields || [])).map((f, i) => (
+                          <span key={i} className="px-2 py-1 bg-slate-50 rounded-full text-[10px] font-medium text-slate-600">
+                            {f.label} <span className="text-slate-400">· {f.fieldType}{f.linksTo ? ` → ${f.linksTo}` : ''}</span>
+                          </span>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                      {t.conflict && (
+                        <>
+                          <p className="text-[11px] text-amber-700">You already have a table called "{t.conflict.existingName}"</p>
+                          <div className="flex gap-2">
+                            {(['use_existing', 'create_new'] as const).map(r => (
+                              <button key={r} onClick={() => setResolutions(prev => ({ ...prev, tables: { ...prev.tables, [t.slug!]: r } }))}
+                                className={`flex-1 py-1.5 rounded-full text-[10px] font-bold ${resolutions.tables[t.slug!] === r ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                {r === 'use_existing' ? 'Use existing' : 'Create new'}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+
+                  {Object.entries(
+                    preview.systemFields.filter(f => !f.owned).reduce<Record<string, PreviewConflict[]>>((acc, f) => {
+                      const key = f.tableName!;
+                      (acc[key] ||= []).push(f);
+                      return acc;
+                    }, {})
+                  ).map(([tableName, fields]) => (
+                    <div key={tableName} className="p-3 bg-white border border-slate-200 rounded-2xl space-y-2">
+                      <p className="text-[11px] font-bold text-slate-500">{SYSTEM_TABLE_LABELS[tableName] || tableName} fields</p>
+                      <div className="space-y-2">
+                        {fields.map(f => (
+                          <div key={f.fieldKey} className={`p-2 rounded-xl ${f.conflict ? 'bg-amber-50' : ''}`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-slate-700">{f.label} <span className="text-slate-400">· {f.fieldType}</span></span>
+                              {!f.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
+                            </div>
+                            {f.conflict && (
+                              <>
+                                <p className="text-[10px] text-amber-700 mt-1">You already have "{f.conflict.existingLabel}"</p>
+                                <div className="flex gap-2 mt-1">
+                                  {(['use_existing', 'create_new'] as const).map(r => (
+                                    <button key={r} onClick={() => setResolutions(prev => ({ ...prev, systemFields: { ...prev.systemFields, [`${f.tableName}:${f.fieldKey}`]: r } }))}
+                                      className={`flex-1 py-1 rounded-full text-[9px] font-bold ${resolutions.systemFields[`${f.tableName}:${f.fieldKey}`] === r ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                      {r === 'use_existing' ? 'Use existing' : 'Create new'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {preview.dashboards.filter(d => !d.owned).map(d => {
+                    const DashIcon = (LucideIcons as any)[d.icon] || Store;
+                    return (
+                      <div key={d.slug} className="p-3 bg-white border border-slate-200 rounded-2xl flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${d.color}20` }}>
+                          <DashIcon size={14} style={{ color: d.color }} />
+                        </div>
+                        <p className="text-[12px] font-bold text-slate-800 flex-1">{d.name} <span className="font-normal text-slate-400">— dashboard</span></p>
+                        <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>
+                      </div>
+                    );
+                  })}
+
+                  {preview.alreadyInstalled && !preview.hasUpgrade && (
+                    <p className="text-center text-[11px] text-slate-300 italic py-4">Nothing pending — you have everything this template currently offers.</p>
+                  )}
+                </div>
 
                 {Object.keys(preview.suggestedLabelOverrides || {}).length > 0 && (
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
@@ -294,9 +408,13 @@ export default function MarketplacePage() {
 
                 {installError && <p className="text-[11px] text-red-500 font-medium">{installError}</p>}
 
-                <button onClick={confirmInstall} disabled={installBusy} className="w-full py-3.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2">
-                  {installBusy ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Install</>}
-                </button>
+                {!(preview.alreadyInstalled && !preview.hasUpgrade) && (
+                  <button onClick={confirmInstall} disabled={installBusy} className="w-full py-3.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2">
+                    {installBusy
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : <><Check size={14} /> {preview.alreadyInstalled ? 'Apply upgrade' : 'Approve & install'}</>}
+                  </button>
+                )}
               </>
             )}
           </div>

@@ -5,8 +5,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface LogEntry {
   id: string;
@@ -36,6 +36,8 @@ const ACTION_LABELS: Record<string, string> = {
 export default function TaskHistoryTab({ taskId, profiles }: { taskId: string; profiles: Profile[] }) {
   const [entries, setEntries] = useState<LogEntry[] | null>(null);
 
+  useProgressBarWhile(entries === null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -56,7 +58,7 @@ export default function TaskHistoryTab({ taskId, profiles }: { taskId: string; p
   };
 
   if (entries === null) {
-    return <div className="flex justify-center py-10"><Loader2 size={18} className="animate-spin text-slate-300" /></div>;
+    return null;
   }
   if (!entries.length) {
     return <p className="text-center text-[11px] text-slate-300 italic py-10">No activity yet</p>;

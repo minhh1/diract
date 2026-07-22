@@ -1,6 +1,7 @@
 "use client";
 
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
+import RelationPicker from "./RelationPicker";
 
 // Which company_table_values column stores a given field_type's value.
 export function valueColumnFor(fieldType: string): string {
@@ -26,6 +27,15 @@ interface Props {
 // across the schema system (see components/schema/types.ts).
 export default function FieldValueInput({ field, value, onCommit, disabled }: Props) {
   const type = field.field_type;
+
+  // Computed fields are never hand-edited — see supabase/company_table_fields_formula.sql.
+  if (field.formula_type) {
+    return (
+      <div className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium text-slate-500 truncate" title="Auto-calculated">
+        {value !== null && value !== undefined && value !== '' ? String(value) : '—'}
+      </div>
+    );
+  }
 
   if (type === 'boolean') {
     return (
@@ -83,12 +93,20 @@ export default function FieldValueInput({ field, value, onCommit, disabled }: Pr
     );
   }
 
-  // Relation types have no inline picker here — show a read-only reference.
   if (['property', 'entity', 'project', 'table_relation'].includes(type)) {
     return (
-      <div className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium text-slate-400 truncate">
-        {value ? String(value) : `${field.label} (linked)`}
-      </div>
+      <RelationPicker
+        linkedSystemTable={field.linked_system_table}
+        linkedTableId={field.linked_system_table ? null : field.linked_table_id}
+        displayField={field.linked_display_field}
+        searchFieldKeys={field.linked_search_field_keys}
+        filterColumn={field.linked_filter_column}
+        filterValue={field.linked_filter_value}
+        value={value || null}
+        onSelect={id => onCommit(id)}
+        disabled={disabled}
+        placeholder={field.label}
+      />
     );
   }
 

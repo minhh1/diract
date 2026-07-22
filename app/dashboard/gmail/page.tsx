@@ -3,7 +3,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Mail } from "lucide-react";
+import { Mail } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 import GmailHeader from "@/components/gmail/GmailHeader";
 import EmailList from "@/components/gmail/EmailList";
@@ -123,6 +124,8 @@ export default function GmailPage() {
     };
     load();
   }, [searchFields, projects]);
+
+  useProgressBarWhile(connected === null);
 
   // ── Data loaders
 
@@ -589,11 +592,7 @@ export default function GmailPage() {
   // ── Not connected
 
   if (connected === null) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="animate-spin text-slate-300" size={24} />
-      </div>
-    );
+    return null;
   }
 
   if (connected === false) {

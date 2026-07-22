@@ -5,7 +5,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { getCompanyId } from "@/lib/services/schemaService";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
-import { Loader2, ZoomIn, ZoomOut, Maximize2, RefreshCw } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, RefreshCw } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -168,6 +169,8 @@ export default function SchemaMap() {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [handleMouseMove, handleMouseUp]);
+
+  useProgressBarWhile(loading);
 
   // ── Load schema ────────────────────────────────────────────────
 
@@ -390,11 +393,7 @@ export default function SchemaMap() {
     setZoom(z => Math.min(2.5, Math.max(0.2, z * factor)));
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-96">
-      <Loader2 className="animate-spin text-slate-300" size={24} />
-    </div>
-  );
+  if (loading) return null;
 
   return (
     <div className="flex flex-col h-full min-h-0">

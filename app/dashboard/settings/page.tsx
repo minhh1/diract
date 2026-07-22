@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
-  Database, Clock, Copy, ArrowLeft, Loader2,
+  Database, Clock, Copy, ArrowLeft,
   CheckCircle2, ChevronRight, AlertCircle,
   Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2
 } from "lucide-react";
@@ -15,6 +15,8 @@ import SchemaVisualisation from "@/components/SchemaVisualisation";
 import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import CustomTableBuilder from "@/components/CustomTableBuilder";
 import PublicTaskPagesTab from "@/components/settings/PublicTaskPagesTab";
+import TableLabelsPanel from "@/components/settings/TableLabelsPanel";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 
 type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages";
@@ -49,6 +51,8 @@ export default function SettingsPage() {
     if (view === "history") fetchHistory();
     if (view === "duplicates_view") fetchDuplicates();
   }, [view, activeDupType]);
+
+  useProgressBarWhile(loading);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -195,9 +199,7 @@ export default function SettingsPage() {
           {/* ── IMPORT HISTORY ── */}
           {view === "history" && (
             <div className="space-y-3 animate-in fade-in">
-              {loading ? (
-                <div className="flex justify-center p-20"><Loader2 className="animate-spin text-slate-300" /></div>
-              ) : history.length === 0 ? (
+              {loading ? null : history.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-20">No import history yet</p>
               ) : (
                 history.map(log => {
@@ -270,6 +272,7 @@ export default function SettingsPage() {
 
           {view === 'schema' && (
             <div className="space-y-8">
+              <TableLabelsPanel />
               <CustomTableBuilder />
               <Link href="/dashboard/schema"
                 className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
@@ -302,9 +305,7 @@ export default function SettingsPage() {
           {/* ── DUPLICATES VIEW ── */}
           {view === "duplicates_view" && (
             <div className="space-y-8 animate-in fade-in">
-              {loading ? (
-                <div className="flex justify-center p-20"><Loader2 className="animate-spin text-slate-300" /></div>
-              ) : items.length === 0 ? (
+              {loading ? null : items.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-20">No duplicates found</p>
               ) : (
                 items.map((pair, idx) => (

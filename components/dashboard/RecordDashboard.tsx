@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, AlertCircle, ArrowLeft, Trash2,
+  AlertCircle, ArrowLeft, Trash2,
   Pencil, FolderKanban, Plus, X, ShieldCheck
 } from "lucide-react";
 import ProjectAccessPanel from "@/components/projects/ProjectAccessPanel";
@@ -20,6 +20,7 @@ import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
 import GridTabEditor from "./GridTabEditor";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { getCompanyId } from "@/lib/services/schemaService";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -707,6 +708,8 @@ export default function RecordDashboard({
     }
   }, [record, fields]);
 
+  useProgressBarWhile(loading);
+
   // ── Derived ────────────────────────────────────────────────────
 
   const primaryValue = record
@@ -862,11 +865,7 @@ export default function RecordDashboard({
 
   // ── Early returns ──────────────────────────────────────────────
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <Loader2 className="animate-spin text-slate-300" size={24} />
-    </div>
-  );
+  if (loading) return null;
 
   if (!record) return (
     <div className="flex flex-col items-center justify-center h-screen gap-3">

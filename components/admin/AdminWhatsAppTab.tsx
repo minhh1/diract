@@ -7,9 +7,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { MessageCircle, Trash2, Loader2, Copy, Check, HelpCircle } from "lucide-react";
+import { MessageCircle, Trash2, Copy, Check, HelpCircle } from "lucide-react";
 import { APP_URL } from "@/lib/config";
 import CredentialsHelpDrawer from "./CredentialsHelpDrawer";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 // Meta periodically restructures this console (e.g. the old "Add Product ->
 // WhatsApp" flow was replaced by a use-case-based flow), so these steps can
@@ -66,6 +67,8 @@ export default function AdminWhatsAppTab({ companyId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+
+  useProgressBarWhile(loading);
 
   const webhookUrl = `${APP_URL}/api/whatsapp/webhook/${companyId}`;
 
@@ -124,13 +127,7 @@ export default function AdminWhatsAppTab({ companyId }: Props) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 size={20} className="animate-spin text-slate-300" />
-      </div>
-    );
-  }
+  if (loading) return null;
 
   return (
     <div className="space-y-6">

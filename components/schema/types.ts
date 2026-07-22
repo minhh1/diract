@@ -29,11 +29,23 @@ export interface CustomField {
   linked_table: string | null;
   linked_table_id: string | null;
   linked_display_column: string | null;
+  // Extra relation config -- custom-table fields linked to a system table
+  // only (see supabase/company_table_fields_relation_config.sql).
+  linked_search_field_keys?: string[] | null;
+  linked_filter_column?: string | null;
+  linked_filter_value?: string | null;
   section_name: string | null;
   grid_width: number;
   show_in_table: boolean;
   help_text: string | null;
   isCustomTable?: boolean;
+  // Computed/formula fields — custom-table fields only (see
+  // supabase/company_table_fields_formula.sql). null means an ordinary,
+  // user-entered field.
+  formula_type?: 'multiply' | 'percentage_of' | null;
+  formula_field_a_id?: string | null;
+  formula_field_b_id?: string | null;
+  formula_percent?: number | null;
 }
 
 export const FIELD_TYPES: {

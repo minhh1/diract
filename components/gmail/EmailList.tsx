@@ -1,9 +1,10 @@
 // components/gmail/EmailList.tsx
 "use client";
 
-import { Loader2, Inbox, Paperclip, Tag } from "lucide-react";
+import { Inbox, Paperclip, Tag } from "lucide-react";
 import type { GmailMessage, GmailProject } from "@/lib/gmail/types";
 import { getProjectLabel, formatDate } from "@/lib/gmail/types";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Props {
   messages: GmailMessage[];
@@ -21,15 +22,12 @@ export default function EmailList({
   messages, loading, fetchError, selectedId,
   assignedMap, projects, collapsed, onSelect, onRetry,
 }: Props) {
+  useProgressBarWhile(loading);
   return (
     <div className={`flex flex-col bg-white border-r border-slate-100 overflow-hidden ${
       collapsed ? 'w-80 shrink-0' : 'flex-1'
     }`}>
-      {loading ? (
-        <div className="flex items-center justify-center flex-1">
-          <Loader2 className="animate-spin text-slate-300" size={24} />
-        </div>
-      ) : fetchError ? (
+      {loading ? null : fetchError ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-3 p-8">
           <p className="text-[11px] text-red-400 font-bold uppercase tracking-widest text-center">
             {fetchError}

@@ -8,6 +8,7 @@ import {
   Loader2, Shield, Trash2,
   CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical,
 } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
 import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
@@ -160,6 +161,7 @@ export default function AdminPage() {
   const [allTeams, setAllTeams] = useState<{ id: string; team_name: string }[]>([]);
 
   useEffect(() => { load(); }, []);
+  useProgressBarWhile(loading);
 
   const load = async () => {
     setLoading(true);
@@ -448,11 +450,7 @@ export default function AdminPage() {
 
   // ── Loading / unauthorized ─────────────────────────────────────
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <Loader2 className="animate-spin text-slate-300" size={24} />
-    </div>
-  );
+  if (loading) return null;
 
   if (unauthorized) return (
     <div className="flex flex-col items-center justify-center h-screen gap-3">

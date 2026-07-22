@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { CreditCard, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { CreditCard, CheckCircle2, AlertCircle } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Plan {
   id: string;
@@ -95,6 +96,8 @@ export default function BillingPage() {
     return () => clearInterval(interval);
   }, [checkoutResult, loadStatus]);
 
+  useProgressBarWhile(loading);
+
   const subscribe = async (planId: string) => {
     setError(null);
     setSubscribingPlanId(planId);
@@ -126,11 +129,7 @@ export default function BillingPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="animate-spin text-slate-300" size={24} />
-      </div>
-    );
+    return null;
   }
 
   return (

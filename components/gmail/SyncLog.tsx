@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Loader2, RotateCcw, RefreshCw, Tag, User, Mail, AlertTriangle } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface SyncLogEntry {
   id: string;
@@ -102,6 +103,7 @@ export default function SyncLog({ isAdmin }: { isAdmin: boolean }) {
   };
 
   useEffect(() => { loadLogs(); }, []);
+  useProgressBarWhile(loading);
 
   const handleReverse = async (log: SyncLogEntry) => {
     if (!isAdmin) return;
@@ -125,11 +127,7 @@ export default function SyncLog({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <Loader2 className="animate-spin text-slate-300" size={20} />
-    </div>
-  );
+  if (loading) return null;
 
   if (error) return (
     <div className="flex flex-col items-center justify-center py-20 gap-3">

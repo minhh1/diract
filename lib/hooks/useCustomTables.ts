@@ -12,6 +12,9 @@ export interface CustomTable {
   color: string;
   primary_field_key: string | null;
   display_order: number;
+  // Append-only statutory ledger (see supabase/company_table_ledger.sql):
+  // rows can only be added, never edited or deleted.
+  is_ledger: boolean;
 }
 
 const cache = new Map<string, CustomTable[]>();

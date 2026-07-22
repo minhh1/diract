@@ -27,7 +27,9 @@
     "pizzip": "^3.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "stripe": "^22.3.2"
+    "react-grid-layout": "^2.2.3",
+    "stripe": "^22.3.2",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@aws-sdk/client-iam": "^3.1090.0",
@@ -35,6 +37,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "playwright": "^1.61.1",

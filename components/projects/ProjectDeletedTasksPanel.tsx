@@ -6,7 +6,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, RotateCcw, Trash2, AlertTriangle } from "lucide-react";
+import { RotateCcw, Trash2, AlertTriangle } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface DeletedTask {
   id: string;
@@ -21,6 +22,8 @@ export default function ProjectDeletedTasksPanel({ projectId }: { projectId: str
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+
+  useProgressBarWhile(loading);
 
   const load = async () => {
     setLoading(true);
@@ -62,7 +65,7 @@ export default function ProjectDeletedTasksPanel({ projectId }: { projectId: str
     load();
   };
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-slate-300" size={20} /></div>;
+  if (loading) return null;
 
   return (
     <div className="space-y-4">

@@ -6,7 +6,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Props {
   companyId: string;
@@ -45,6 +46,7 @@ export default function AdminAiAssistantTab({ companyId }: Props) {
   useEffect(() => {
     load();
   }, [load]);
+  useProgressBarWhile(loading);
 
   const save = async (next: Settings) => {
     setSettings(next);
@@ -61,11 +63,7 @@ export default function AdminAiAssistantTab({ companyId }: Props) {
   };
 
   if (loading || !settings) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 size={20} className="animate-spin text-slate-300" />
-      </div>
-    );
+    return null;
   }
 
   return (

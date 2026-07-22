@@ -44,6 +44,10 @@ export default function CustomTableMasterView({
 
     const rec = await createRecord(tableDef.id, companyId, user.id, {}, fields);
     setIsCreating(false);
+    if (rec && 'error' in rec) {
+      window.alert(rec.error);
+      return;
+    }
     if (rec) {
       onRefresh();
       router.push(`/dashboard/${tableDef.slug}?id=${rec.id}`);
@@ -53,12 +57,17 @@ export default function CustomTableMasterView({
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm('Archive this record?')) return;
-    await deleteRecord(id);
+    const result = await deleteRecord(id);
+    if (result && 'error' in result) window.alert(result.error);
     onRefresh();
   };
 
-  const formatValue = (value: any, field: CustomTableField): string => {
+  const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
+
+  const formatValue = (record: CustomTableRecord, field: CustomTableField): string => {
+    const value = record.values[field.field_key];
     if (value === null || value === undefined) return '—';
+    if (RELATION_FIELD_TYPES.includes(field.field_type)) return record.displayValues[field.field_key] ?? 'Untitled';
     if (field.field_type === 'boolean') return value ? 'Yes' : 'No';
     if (field.field_type === 'currency') return `$${Number(value).toLocaleString()}`;
     if (field.field_type === 'date') return new Date(value).toLocaleDateString('en-AU');
@@ -153,7 +162,7 @@ export default function CustomTableMasterView({
                   >
                     {tableFields.map(f => (
                       <div key={f.id} className="px-6 py-5 text-[13px] font-medium text-slate-700 truncate">
-                        {formatValue(record.values[f.field_key], f)}
+                        {formatValue(record, f)}
                       </div>
                     ))}
                     <div className="px-4 py-5 flex items-center justify-end gap-1">

@@ -3,13 +3,16 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Loader2, FolderKanban, ChevronRight } from "lucide-react";
+import { Plus, FolderKanban, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 export default function SubProjectsTab({ recordId }: { recordId: string }) {
   const [subProjects, setSubProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+
+  useProgressBarWhile(loading);
 
   useEffect(() => {
     supabase
@@ -56,11 +59,7 @@ export default function SubProjectsTab({ recordId }: { recordId: string }) {
     if (data) router.push(`/dashboard/projects?id=${data.id}`);
   };
 
-  if (loading) return (
-    <div className="flex justify-center py-20">
-      <Loader2 className="animate-spin text-slate-300" size={20} />
-    </div>
-  );
+  if (loading) return null;
 
   return (
     <div className="space-y-3">

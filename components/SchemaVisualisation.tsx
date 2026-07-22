@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Loader2, Store } from "lucide-react";
+import { Plus, Store } from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 import FieldConfigPanel from "./schema/FieldConfigPanel";
 import FieldCard from "./schema/FieldCard";
 import { FIELD_TYPES, SYSTEM_TABLES, getFieldTypeConfig } from "./schema/types";
@@ -25,6 +26,7 @@ export default function SchemaVisualisation() {
   const [showPalette, setShowPalette] = useState(false);
 
   useEffect(() => { loadFields(); }, [activeTable, isCustomTable, customTableId]);
+  useProgressBarWhile(loading);
 
   const handleTableSelect = (slug: string, tableId?: string) => {
     setActiveTable(slug);
@@ -74,11 +76,18 @@ export default function SchemaVisualisation() {
         linked_table: f.linked_system_table || null,
         linked_table_id: f.linked_table_id || null,
         linked_display_column: f.linked_display_field || null,
+        linked_search_field_keys: f.linked_search_field_keys || null,
+        linked_filter_column: f.linked_filter_column || null,
+        linked_filter_value: f.linked_filter_value || null,
         section_name: f.section_name,
         grid_width: 2,
         show_in_table: f.show_in_table,
         help_text: f.help_text,
         isCustomTable: true,
+        formula_type: f.formula_type,
+        formula_field_a_id: f.formula_field_a_id,
+        formula_field_b_id: f.formula_field_b_id,
+        formula_percent: f.formula_percent,
       })));
     } else {
       const { data } = await supabase
@@ -142,11 +151,18 @@ export default function SchemaVisualisation() {
           linked_table: null,
           linked_table_id: null,
           linked_display_column: null,
+          linked_search_field_keys: null,
+          linked_filter_column: null,
+          linked_filter_value: null,
           section_name: null,
           grid_width: 2,
           show_in_table: true,
           help_text: null,
           isCustomTable: true,
+          formula_type: null,
+          formula_field_a_id: null,
+          formula_field_b_id: null,
+          formula_percent: null,
         };
         setFields(prev => [...prev, mapped]);
         setSelectedFieldId(data.id);
@@ -210,6 +226,13 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
         linked_system_table: updates.linked_table || null,
         linked_table_id: updates.linked_table_id || null,
         linked_display_field: updates.linked_display_column || null,
+        linked_search_field_keys: updates.linked_search_field_keys ?? null,
+        linked_filter_column: updates.linked_filter_column ?? null,
+        linked_filter_value: updates.linked_filter_value ?? null,
+        formula_type: updates.formula_type ?? null,
+        formula_field_a_id: updates.formula_field_a_id ?? null,
+        formula_field_b_id: updates.formula_field_b_id ?? null,
+        formula_percent: updates.formula_percent ?? null,
       })
       .eq('id', selectedFieldId);
   } else {
@@ -462,11 +485,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
 
           {/* Canvas */}
           <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="animate-spin text-slate-300" size={24} />
-              </div>
-            ) : fields.length === 0 ? (
+            {loading ? null : fields.length === 0 ? (
               <div
                 className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer hover:border-indigo-300 transition-colors"
                 onClick={() => setShowPalette(true)}
@@ -532,10 +551,10 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
             <FieldConfigPanel
               key={selectedField.id}
               field={selectedField}
+              siblingFields={fields}
               onSave={handleSaveField}
               onDelete={handleDeleteField}
               onClose={() => setSelectedFieldId(null)}
-              
             />
           </div>
         )}

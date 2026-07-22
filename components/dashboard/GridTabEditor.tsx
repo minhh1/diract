@@ -5,6 +5,7 @@ import { Loader2, Plus, Combine, Split, Save, Type, Database } from "lucide-reac
 import { supabase } from "@/lib/supabase";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import FieldValueInput, { valueColumnFor } from "./FieldValueInput";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 const COLS = 3;
 
@@ -161,6 +162,8 @@ export default function GridTabEditor({ tabId, linkedTableId, recordId, companyI
     return () => window.removeEventListener('mouseup', onUp);
   }, []);
 
+  useProgressBarWhile(loading);
+
   const selRect = () => {
     if (!selStart || !selEnd) return null;
     return {
@@ -265,13 +268,7 @@ export default function GridTabEditor({ tabId, linkedTableId, recordId, companyI
 
   const relationCandidates = fields.filter(f => f.field_type === 'project' || f.linked_system_table === 'projects');
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-slate-300" size={20} />
-      </div>
-    );
-  }
+  if (loading) return null;
 
   const gridStyle = { gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))` } as const;
 
