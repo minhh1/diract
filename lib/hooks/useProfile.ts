@@ -15,7 +15,7 @@ async function fetchProfile() {
   // Profile
   const { data: prof, error } = await supabase
     .from("profiles")
-    .select("id, full_name, is_admin, active_company_id, sidebar_visible_tables")
+    .select("id, full_name, avatar_url, is_admin, active_company_id, sidebar_visible_tables")
     .eq("id", user.id)
     .single();
 

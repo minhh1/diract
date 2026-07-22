@@ -1,12 +1,12 @@
 // components/Sidebar.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
-  ChevronRight, Sparkles, Wrench,
+  ChevronRight, Sparkles, Wrench, Store,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon,
 } from "lucide-react";
@@ -99,6 +99,7 @@ const SETTINGS_LINKS = [
   { href: '/dashboard/settings?view=schema', icon: Database, label: 'Schema configuration' },
   { href: '/dashboard/settings?view=duplicates_menu', icon: Copy, label: 'Reconciliation tool' },
   { href: '/dashboard/settings?view=public_pages', icon: Share2, label: 'Public task pages' },
+  { href: '/dashboard/settings/history', icon: Clock, label: 'Schema history' },
 ];
 
 const ADMIN_LINKS = [
@@ -597,7 +598,17 @@ export default function Sidebar() {
   const activeViewId = searchParams.get("view");
 
   // Use shared company context — avoids duplicate auth call with GenericMasterTable
-  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, userEmail: ctxUserEmail, isAdmin: ctxIsAdmin, loading: ctxLoading } = useCompany();
+  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, userEmail: ctxUserEmail, isAdmin: ctxIsAdmin, loading: ctxLoading, tableLabelOverrides } = useCompany();
+
+  // Per-company display-name overrides (e.g. a law firm renaming "Projects"
+  // to "Matters") layered over the hardcoded defaults.
+  const systemTables = useMemo(
+    () => ALL_SYSTEM_TABLES.map(t => {
+      const override = tableLabelOverrides[t.slug];
+      return override?.plural ? { ...t, label: override.plural } : t;
+    }),
+    [tableLabelOverrides]
+  );
 
   const [profile, setProfile] = useState<any>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -707,7 +718,10 @@ export default function Sidebar() {
     if (!ctxUserId) return;
     perfLog("Sidebar: fetchProfile start");
     fetchProfile().then(() => perfLog("Sidebar: fetchProfile resolved"));
-  }, [ctxUserId]);
+    // Re-fetch on route change too, so edits made on /dashboard/profile (name, photo)
+    // show up in the rail as soon as the user navigates back — this layout persists
+    // across route changes so it wouldn't otherwise remount to pick them up.
+  }, [ctxUserId, pathname]);
 
   useEffect(() => {
     if (!showCompanySwitcher) return;
@@ -724,11 +738,12 @@ export default function Sidebar() {
 
     // Try with sidebar_visible_tables first, fall back if column doesn't exist
     let fullName: string | null = null;
+    let avatarUrl: string | null = null;
     let visibleTablesData: any = null;
 
     const { data: profFull, error } = await supabase
       .from("profiles")
-      .select("full_name, sidebar_visible_tables")
+      .select("full_name, avatar_url, sidebar_visible_tables")
       .eq("id", ctxUserId)
       .single();
 
@@ -742,10 +757,11 @@ export default function Sidebar() {
       fullName = profBasic?.full_name ?? null;
     } else {
       fullName = profFull?.full_name ?? null;
+      avatarUrl = profFull?.avatar_url ?? null;
       visibleTablesData = profFull?.sidebar_visible_tables;
     }
 
-    setProfile({ full_name: fullName });
+    setProfile({ full_name: fullName, avatar_url: avatarUrl });
 
     // Set visible tables
     setVisibleTables(visibleTablesData || ALL_SYSTEM_TABLES.map(t => t.slug));
@@ -938,7 +954,7 @@ export default function Sidebar() {
   };
 
   // ── Derived ────────────────────────────────────────────────────
-  const visibleSystemTables = ALL_SYSTEM_TABLES.filter(t => visibleTables.includes(t.slug));
+  const visibleSystemTables = systemTables.filter(t => visibleTables.includes(t.slug));
   const visibleCustomTables = customTables.filter(t => visibleTables.includes(t.slug));
   const isTableActive = (slug: string) =>
     pathname.includes(slug) &&
@@ -980,6 +996,16 @@ export default function Sidebar() {
           >
             <Wrench size={17} />
           </button>
+          <Link
+            href="/dashboard/marketplace"
+            onClick={() => { if (!pathname.startsWith('/dashboard/marketplace')) startNavigation(); setActiveRailSection(null); }}
+            title="Marketplace" aria-label="Marketplace"
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+              pathname.startsWith('/dashboard/marketplace') ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+            }`}
+          >
+            <Store size={17} />
+          </Link>
           <button
             onClick={() => toggleRailSection('settings')}
             title="Settings" aria-label="Settings"
@@ -1014,19 +1040,45 @@ export default function Sidebar() {
               aria-label="Account menu"
               className="w-9 h-9 rounded-2xl flex items-center justify-center hover:bg-slate-50 transition-all"
             >
-              <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[10px] font-bold text-white uppercase shrink-0">
-                {profile?.full_name?.substring(0, 2) || 'AD'}
+              <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-[10px] font-bold text-white uppercase shrink-0 overflow-hidden">
+                {profile?.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  profile?.full_name?.substring(0, 2) || 'AD'
+                )}
               </div>
             </button>
           )}
 
-          {/* Company switcher — fixed width so it stays readable even though the trigger sits in the narrow rail */}
-          {showCompanySwitcher && memberships.length > 0 && (
+          {/* Account menu — fixed width so it stays readable even though the trigger sits in the narrow rail */}
+          {showCompanySwitcher && (
             <div className="absolute bottom-0 left-full ml-2 w-72 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden z-50">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-5 pt-4 pb-2">
-                {memberships.length > 1 ? 'Switch company' : 'Your company'}
-              </p>
-              {memberships.map(m => {
+              <Link
+                href="/dashboard/profile"
+                onClick={() => setShowCompanySwitcher(false)}
+                className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-100 hover:bg-slate-50 transition-colors"
+              >
+                <div className="h-7 w-7 rounded-full bg-slate-900 flex items-center justify-center text-[9px] font-bold text-white uppercase shrink-0 overflow-hidden">
+                  {profile?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    profile?.full_name?.substring(0, 2) || 'AD'
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-bold text-slate-900 truncate">{profile?.full_name || 'My Profile'}</p>
+                  <p className="text-[9px] text-slate-400 uppercase font-medium">View profile</p>
+                </div>
+              </Link>
+
+              {memberships.length > 0 && (
+                <>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-5 pt-4 pb-2">
+                    {memberships.length > 1 ? 'Switch company' : 'Your company'}
+                  </p>
+                  {memberships.map(m => {
                 const isActive = m.company_id === ctxCompanyId;
                 return (
                   <button
@@ -1061,6 +1113,8 @@ export default function Sidebar() {
                   </button>
                 );
               })}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1100,7 +1154,7 @@ export default function Sidebar() {
                   {showTableSettings && (
                     <TableVisibilityPanel
                       visible={visibleTables}
-                      systemTables={ALL_SYSTEM_TABLES}
+                      systemTables={systemTables}
                       customTables={customTables}
                       onChange={handleVisibilityChange}
                       onClose={() => setShowTableSettings(false)}
