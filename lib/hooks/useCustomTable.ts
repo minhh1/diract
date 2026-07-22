@@ -53,6 +53,7 @@ export function useCustomTable(tableSlug: string | null): {
         .from('company_tables')
         .select('*')
         .eq('slug', tableSlug)
+        .is('deleted_at', null)
         .single();
 
       if (!tbl || !active) { setLoading(false); return; }
@@ -63,6 +64,7 @@ export function useCustomTable(tableSlug: string | null): {
         .from('company_table_fields')
         .select('*')
         .eq('table_id', tbl.id)
+        .is('deleted_at', null)
         .order('display_order');
 
       const fieldList = (flds || []) as CustomTableField[];

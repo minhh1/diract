@@ -43,6 +43,9 @@ yarn-error.log*
 # perf test suite -- real session cookies/tokens, never commit
 scripts/perf/auth-state.json
 
+# client data export used to design the law firm template, never commit
+/templatecustomtables-lawfirm/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

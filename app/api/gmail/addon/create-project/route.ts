@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
       .eq('company_id', companyId)
       .eq('table_name', 'projects')
       .ilike('label', '%matter%')
+      .is('deleted_at', null)
       .single();
 
     if (matterField) {

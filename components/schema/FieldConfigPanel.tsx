@@ -339,9 +339,17 @@ export default function FieldConfigPanel({ field, onSave, onDelete, onClose }: P
         </button>
         <button
           onClick={async () => {
-            if (!window.confirm('Delete this field? All data stored in it will also be deleted.')) return;
+            // onDelete (SchemaVisualisation.handleDeleteField) does its own
+            // confirm with the real count of populated values, since this
+            // panel has no way to know that count itself. Reset `deleting`
+            // if it returns without actually deleting (user cancelled),
+            // otherwise the button would spin forever.
             setDeleting(true);
-            await onDelete();
+            try {
+              await onDelete();
+            } finally {
+              setDeleting(false);
+            }
           }}
           disabled={deleting}
           className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"

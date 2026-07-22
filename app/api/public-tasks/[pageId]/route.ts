@@ -94,7 +94,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     const projectIds = [...new Set(tasks.map((t: any) => t.project_id).filter(Boolean))];
     const { data: matterField } = await admin
       .from("company_custom_fields").select("id")
-      .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").maybeSingle();
+      .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").is("deleted_at", null).maybeSingle();
     if (matterField && projectIds.length) {
       const { data: values } = await admin
         .from("company_custom_field_values").select("record_id, value_text")
@@ -164,7 +164,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     .from("projects").select("id, name").eq("company_id", page.company_id).is("deleted_at", null).order("name");
   const { data: matterFieldForCatalog } = await admin
     .from("company_custom_fields").select("id")
-    .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").maybeSingle();
+    .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").is("deleted_at", null).maybeSingle();
   let matterByProjectCatalog: Record<string, string> = {};
   if (matterFieldForCatalog && allProjects?.length) {
     // Don't filter by .in(record_id, ...) with hundreds of IDs — hits URL

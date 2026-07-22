@@ -6,7 +6,7 @@ import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail,
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
-  ChevronRight, Sparkles, Wrench, Store,
+  ChevronRight, Sparkles, Wrench, Store, Trash2,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon,
 } from "lucide-react";
@@ -100,6 +100,7 @@ const SETTINGS_LINKS = [
   { href: '/dashboard/settings?view=duplicates_menu', icon: Copy, label: 'Reconciliation tool' },
   { href: '/dashboard/settings?view=public_pages', icon: Share2, label: 'Public task pages' },
   { href: '/dashboard/settings/history', icon: Clock, label: 'Schema history' },
+  { href: '/dashboard/settings/trash', icon: Trash2, label: 'Trash' },
 ];
 
 const ADMIN_LINKS = [

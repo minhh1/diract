@@ -217,6 +217,7 @@ export default function RecordDashboard({
         .from('company_custom_fields')
         .select('*')
         .eq('table_name', systemTable)
+        .is('deleted_at', null)
         .order('display_order');
 
       const HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id'];
@@ -287,6 +288,7 @@ export default function RecordDashboard({
         .from('company_table_fields')
         .select('*')
         .eq('table_id', tableId)
+        .is('deleted_at', null)
         .order('display_order');
 
       const mappedFields = (tableFields || []).map((f: any, i: number) => ({

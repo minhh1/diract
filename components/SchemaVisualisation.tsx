@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Store } from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import FieldConfigPanel from "./schema/FieldConfigPanel";
 import FieldCard from "./schema/FieldCard";
 import { FIELD_TYPES, SYSTEM_TABLES, getFieldTypeConfig } from "./schema/types";
 import type { CustomField, FieldType } from "./schema/types";
+import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 
 export default function SchemaVisualisation() {
   const { tables: customTables } = useCustomTables();
@@ -49,6 +50,7 @@ export default function SchemaVisualisation() {
         .from('company_table_fields')
         .select('*')
         .eq('table_id', customTableId)
+        .is('deleted_at', null)
         .order('display_order');
 
       setFields((data || []).map(f => ({
@@ -83,6 +85,7 @@ export default function SchemaVisualisation() {
         .from('company_custom_fields')
         .select('*')
         .eq('table_name', activeTable)
+        .is('deleted_at', null)
         .order('display_order');
       setFields(data || []);
     }
@@ -95,6 +98,7 @@ export default function SchemaVisualisation() {
     setAdding(true);
     setShowPalette(false);
 
+    const { data: { user } } = await supabase.auth.getUser();
     const label = FIELD_TYPES.find(f => f.type === fieldType)?.label || 'New field';
     const field_key = `field_${Date.now()}`;
 
@@ -146,6 +150,10 @@ export default function SchemaVisualisation() {
         };
         setFields(prev => [...prev, mapped]);
         setSelectedFieldId(data.id);
+        logSchemaChange({
+          companyId, actorId: user?.id ?? null, entityType: 'company_table_field',
+          entityId: data.id, entityLabel: label, action: 'create', after: data,
+        });
       }
     } else {
       const { data, error } = await supabase
@@ -171,6 +179,10 @@ export default function SchemaVisualisation() {
       if (data) {
         setFields(prev => [...prev, data]);
         setSelectedFieldId(data.id);
+        logSchemaChange({
+          companyId, actorId: user?.id ?? null, entityType: 'company_custom_field',
+          entityId: data.id, entityLabel: label, action: 'create', after: data,
+        });
       }
     }
 
@@ -179,6 +191,8 @@ export default function SchemaVisualisation() {
 
 const handleSaveField = async (updates: Partial<CustomField>) => {
   if (!selectedFieldId) return;
+  const before = fields.find(f => f.id === selectedFieldId);
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (isCustomTable && customTableId) {
     // company_table_fields — uses linked_system_table + linked_table_id
@@ -228,19 +242,54 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
   setFields(prev => prev.map(f =>
     f.id === selectedFieldId ? { ...f, ...updates } : f
   ));
+
+  if (companyId && before) {
+    logSchemaChange({
+      companyId, actorId: user?.id ?? null,
+      entityType: isCustomTable ? 'company_table_field' : 'company_custom_field',
+      entityId: selectedFieldId, entityLabel: updates.label ?? before.label,
+      action: 'update', before, after: { ...before, ...updates },
+    });
+  }
 };
 
   const handleDeleteField = async () => {
     if (!selectedFieldId) return;
+    const before = fields.find(f => f.id === selectedFieldId);
+    if (!before) return;
 
+    const valueTable = isCustomTable ? 'company_table_values' : 'company_custom_field_values';
+    const { count } = await supabase
+      .from(valueTable)
+      .select('field_id', { count: 'exact', head: true })
+      .eq('field_id', selectedFieldId);
+    const valueCount = count ?? 0;
+
+    const warning = valueCount > 0
+      ? `Delete "${before.label}"? It has data stored against ${valueCount} record${valueCount === 1 ? '' : 's'}. This moves it to Trash — nothing is deleted permanently, and you can restore it (with its data) from there.`
+      : `Delete "${before.label}"? This moves it to Trash and can be restored later.`;
+    if (!window.confirm(warning)) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Soft-delete — the field's stored values are untouched, so this is
+    // fully reversible from Trash.
     if (isCustomTable) {
-      await supabase.from('company_table_fields').delete().eq('id', selectedFieldId);
+      await supabase.from('company_table_fields').update({ deleted_at: new Date().toISOString() }).eq('id', selectedFieldId);
     } else {
-      await supabase.from('company_custom_fields').delete().eq('id', selectedFieldId);
+      await supabase.from('company_custom_fields').update({ deleted_at: new Date().toISOString() }).eq('id', selectedFieldId);
     }
 
     setFields(prev => prev.filter(f => f.id !== selectedFieldId));
     setSelectedFieldId(null);
+
+    if (companyId && before) {
+      logSchemaChange({
+        companyId, actorId: user?.id ?? null,
+        entityType: isCustomTable ? 'company_table_field' : 'company_custom_field',
+        entityId: selectedFieldId, entityLabel: before.label, action: 'delete', before,
+      });
+    }
   };
 
   const handleDrop = async (targetIdx: number) => {
@@ -257,6 +306,36 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
         supabase.from(table).update({ display_order: i }).eq('id', f.id)
       )
     );
+  };
+
+  // Snapshots every custom field on the active system table (entities/
+  // projects/properties) into a brand-new draft template — a one-time copy,
+  // not a live link (see supabase/template_marketplace.sql).
+  const handlePublishSystemFields = async () => {
+    if (isCustomTable || !companyId || fields.length === 0) return;
+    const templateName = window.prompt(
+      `Publish these ${activeTable} custom fields to the marketplace as a new template. Template name:`,
+      `${activeTable.charAt(0).toUpperCase()}${activeTable.slice(1)} fields`
+    );
+    if (!templateName?.trim()) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const slug = `${templateName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-')}-${Date.now().toString(36)}`;
+    const { data: template, error: tErr } = await supabase.from('template_definitions').insert({
+      slug, name: templateName.trim(), owner_company_id: companyId, is_published: false,
+    }).select().single();
+    if (tErr || !template) { alert(tErr?.message || 'Could not create template'); return; }
+
+    await supabase.from('template_definition_system_fields').insert(fields.map(f => ({
+      template_id: template.id, table_name: activeTable, field_key: f.field_key, label: f.label, field_type: f.field_type,
+      select_options: f.select_options, is_required: f.is_required, is_unique: f.is_unique,
+      display_order: f.display_order, section_name: f.section_name, help_text: f.help_text,
+      default_value: f.default_value, auto_generate: f.auto_generate, auto_generate_type: f.auto_generate_type,
+      auto_generate_prefix: f.auto_generate_prefix, linked_table: f.linked_table, linked_display_column: f.linked_display_column,
+    })));
+
+    logSchemaChange({ companyId, actorId: user?.id ?? null, entityType: 'template_definition', entityId: template.id, entityLabel: template.name, action: 'create', after: template });
+    alert(`Published as a draft template. Find it under Marketplace → My templates to review and publish.`);
   };
 
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
@@ -334,7 +413,17 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
               </p>
             </div>
 
-            <div className="relative">
+            <div className="flex items-center gap-2">
+              {!isCustomTable && fields.length > 0 && (
+                <button
+                  onClick={handlePublishSystemFields}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                  title="Publish these custom fields to the marketplace"
+                >
+                  <Store size={13} /> Publish to marketplace
+                </button>
+              )}
+              <div className="relative">
               <button
                 onClick={() => setShowPalette(p => !p)}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all"
@@ -367,6 +456,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           </div>
 

@@ -40,7 +40,7 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
   const ENTITY_TYPES = [
     'Company', 'Individual', 'Discretionary Family Trust', 'Fixed Unit Trust',
     'Lawyer', 'Accountant', 'Mortgage Broker', 'Real Estate Agent',
-    'Local Council', 'Bank', 'Other',
+    'Local Council', 'Bank', 'Staff', 'Other',
   ];
 
   useEffect(() => {
@@ -61,6 +61,7 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
       .select('id, field_key, label, field_type, is_required, select_options, display_order')
       .eq('table_name', 'entities')
       .eq('company_id', cid)
+      .is('deleted_at', null)
       .order('display_order');
     setCustomFields(cf || []);
   };

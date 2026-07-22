@@ -88,7 +88,7 @@ export default function GridTabEditor({ tabId, linkedTableId, recordId, companyI
     setLoading(true);
     (async () => {
       const [{ data: flds }, { data: savedCells }, { data: tab }] = await Promise.all([
-        supabase.from('company_table_fields').select('*').eq('table_id', linkedTableId).order('display_order'),
+        supabase.from('company_table_fields').select('*').eq('table_id', linkedTableId).is('deleted_at', null).order('display_order'),
         supabase.from('record_tab_grid_cells').select('*').eq('tab_id', tabId).order('display_order'),
         supabase.from('record_tabs').select('link_field_id').eq('id', tabId).single(),
       ]);
@@ -109,11 +109,12 @@ export default function GridTabEditor({ tabId, linkedTableId, recordId, companyI
       setRows(rowCount);
       setCells(normalize(anchors, rowCount));
 
-      // Resolve link field — auto-set if exactly one project-relation field
+      // Resolve link field — auto-set if exactly one project- or entity-relation field
       let lf: string | null = tab?.link_field_id ?? null;
       if (!lf) {
         const candidates = fieldList.filter(
-          f => f.field_type === 'project' || f.linked_system_table === 'projects'
+          f => f.field_type === 'project' || f.linked_system_table === 'projects' ||
+               f.field_type === 'entity' || f.linked_system_table === 'entities'
         );
         if (candidates.length === 1) {
           lf = candidates[0].id;

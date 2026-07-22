@@ -93,6 +93,7 @@ export default function AdminDefaultViewsTab({ companyId }: Props) {
         .select('id, label, field_type, select_options')
         .eq('company_id', companyId)
         .eq('table_name', t.slug)
+        .is('deleted_at', null)
         .order('display_order');
 
       const cfFields: SchemaField[] = (customFields || []).map((cf: any) => ({

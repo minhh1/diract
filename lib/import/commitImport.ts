@@ -51,7 +51,8 @@ async function saveCustomFieldValues(
   const { data: fieldMeta } = await supabase
     .from('company_custom_fields')
     .select('id, field_type')
-    .in('id', fieldIds);
+    .in('id', fieldIds)
+    .is('deleted_at', null);
 
   const typeMap = new Map((fieldMeta || []).map(f => [f.id, f.field_type]));
 

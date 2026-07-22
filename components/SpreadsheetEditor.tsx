@@ -658,6 +658,7 @@ export default function SpreadsheetEditor({
     .from('company_custom_fields')
     .select('*')
     .eq('table_name', tableName)
+    .is('deleted_at', null)
     .order('display_order');
 
     const baseCols: SpreadsheetColumn[] = (schemaCols || [])

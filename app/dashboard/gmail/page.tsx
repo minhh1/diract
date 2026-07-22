@@ -182,6 +182,7 @@ export default function GmailPage() {
       .from('company_custom_fields')
       .select('id, field_key, label, field_type')
       .eq('table_name', 'projects')
+      .is('deleted_at', null)
       .order('display_order');
 
     setSearchableFields([

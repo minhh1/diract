@@ -53,6 +53,7 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
       .select('id, field_key, label, field_type, is_required, select_options, display_order')
       .eq('table_name', tableName)
       .eq('company_id', cid)
+      .is('deleted_at', null)
       .order('display_order');
     setCustomFields(cf || []);
   };

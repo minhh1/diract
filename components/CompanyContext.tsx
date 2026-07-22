@@ -7,6 +7,11 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
 
+// Per-company display-name overrides for the three system tables, e.g. a
+// law firm renaming "Projects" to "Matters" (see supabase/companies_table_labels.sql).
+export interface TableLabelOverride { singular: string; plural: string }
+export type TableLabelOverrides = Record<string, TableLabelOverride>;
+
 interface CompanyContextValue {
   companyId: string | null;
   companyName: string | null;
@@ -14,6 +19,7 @@ interface CompanyContextValue {
   userEmail: string | null;
   isAdmin: boolean;
   loading: boolean;
+  tableLabelOverrides: TableLabelOverrides;
 }
 
 const CompanyContext = createContext<CompanyContextValue>({
@@ -23,6 +29,7 @@ const CompanyContext = createContext<CompanyContextValue>({
   userEmail: null,
   isAdmin: false,
   loading: true,
+  tableLabelOverrides: {},
 });
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
@@ -32,6 +39,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +65,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const [{ data: prof }, { data: allMemberships }] = await Promise.all([
         supabase
           .from("profiles")
-          .select("active_company_id, companies:active_company_id(name)")
+          .select("active_company_id, companies:active_company_id(name, table_label_overrides)")
           .eq("id", user.id)
           .single(),
         supabase
@@ -70,11 +78,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       const cid = prof?.active_company_id || null;
       const cname = (prof?.companies as any)?.name || null;
+      const overrides = (prof?.companies as any)?.table_label_overrides || {};
 
       setUserId(user.id);
       setUserEmail(user.email ?? null);
       setCompanyId(cid);
       setCompanyName(cname);
+      setTableLabelOverrides(overrides);
       setIsAdmin((allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin");
 
       setLoading(false);
@@ -85,7 +95,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, loading }}>
+    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, loading, tableLabelOverrides }}>
       {children}
     </CompanyContext.Provider>
   );

@@ -115,6 +115,7 @@ async function appendCustomFieldHeaders(
     .from('company_custom_fields')
     .select('id, table_name, field_key, label, field_type')
     .eq('company_id', companyId)
+    .is('deleted_at', null)
     .order('display_order');
 
   if (!customFields?.length) return sections;
@@ -262,6 +263,7 @@ export async function buildHeaderMap(
     .from('company_custom_fields')
     .select('id, field_key, label')
     .eq('table_name', targetTable)
+    .is('deleted_at', null)
     .order('display_order');
 
   (customFields || []).forEach(f => {

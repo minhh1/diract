@@ -213,6 +213,7 @@ export default function AdminPage() {
         .select('id, field_key, label')
         .eq('company_id', companyId)
         .eq('table_name', 'projects')
+        .is('deleted_at', null)
         .order('display_order'),
     ]);
     setProjectCustomFields(customFieldData || []);

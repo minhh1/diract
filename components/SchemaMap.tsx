@@ -189,12 +189,14 @@ export default function SchemaMap() {
         supabase
           .from('company_custom_fields')
           .select('*')
+          .is('deleted_at', null)
           .order('display_order'),
         ...customTables.map(t =>
           supabase
             .from('company_table_fields')
             .select('*')
             .eq('table_id', t.id)
+            .is('deleted_at', null)
             .order('display_order')
         ),
       ]);

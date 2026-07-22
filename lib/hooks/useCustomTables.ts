@@ -31,6 +31,7 @@ export function useCustomTables(): {
     supabase
       .from('company_tables')
       .select('*')
+      .is('deleted_at', null)
       .order('display_order')
       .then(({ data }) => {
         if (!active) return;

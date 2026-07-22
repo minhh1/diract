@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
     .select("id, field_key, label, field_type")
     .eq("company_id", companyId)
     .eq("table_name", "projects")
+    .is("deleted_at", null)
     .order("display_order");
 
   return NextResponse.json({ templates: templates || [], pages, customFields: customFields || [] });

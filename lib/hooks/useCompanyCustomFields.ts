@@ -39,6 +39,7 @@ export function useCompanyCustomFields(tableName: string, enabled: boolean = tru
       .from("company_custom_fields")
       .select("id, field_key, label, field_type, show_in_table, select_options")
       .eq("table_name", tableName)
+      .is("deleted_at", null)
       .order("display_order")
       .then(({ data }) => {
         if (!active) return;
