@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Save, Lock } from "lucide-react";
+import { X, Save, Lock, Check } from "lucide-react";
 import FilterPanel from "@/components/FilterPanel";
 import type { ActiveFilter } from "@/lib/types/filters";
 
@@ -51,6 +51,15 @@ export default function ColumnConfigDrawer({
   // Local draft for filters — only applied on Save
   const [draftFilters, setDraftFilters] = useState<ActiveFilter[]>(filters);
   const [filtersDirty, setFiltersDirty] = useState(false);
+  // Brief "Saved" confirmation on the button — the drawer intentionally
+  // stays open on save so filters can keep being tweaked without reopening it.
+  const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => {
+    if (!justSaved) return;
+    const t = setTimeout(() => setJustSaved(false), 2000);
+    return () => clearTimeout(t);
+  }, [justSaved]);
 
   // Sync draft when external filters change (e.g. preset switch)
   useEffect(() => {
@@ -61,11 +70,13 @@ export default function ColumnConfigDrawer({
   const handleFilterChange = (f: ActiveFilter[]) => {
     setDraftFilters(f);
     setFiltersDirty(true);
+    setJustSaved(false);
   };
 
   const handleSaveFilters = () => {
     onFiltersChange?.(draftFilters);
     setFiltersDirty(false);
+    setJustSaved(true);
   };
 
   const handleClearFilters = () => {
@@ -99,7 +110,7 @@ export default function ColumnConfigDrawer({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-100 px-6 shrink-0">
+        <div className="flex border-b border-slate-100 px-6 pt-4 shrink-0">
           <button
             onClick={() => setActiveTab('columns')}
             className={`pb-3 mr-6 text-[11px] font-bold uppercase tracking-widest transition-colors border-b-2 ${
@@ -213,10 +224,14 @@ export default function ColumnConfigDrawer({
               <button
                 onClick={handleSaveFilters}
                 disabled={!filtersDirty}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-[11px] font-bold rounded-full transition-colors ${
+                  justSaved
+                    ? 'bg-emerald-50 text-emerald-600'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed'
+                }`}
               >
-                <Save size={13} />
-                Save filters
+                {justSaved ? <Check size={13} /> : <Save size={13} />}
+                {justSaved ? 'Saved' : 'Save filters'}
               </button>
               {draftFilters.length > 0 && (
                 <button
