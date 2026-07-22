@@ -33,7 +33,7 @@ const VM_LIFECYCLE_STEPS = [
   {
     title: "Choose a size and region",
     description:
-      "Bigger sizes cost more per hour but handle heavier use (Windows 11 specifically needs at least the 4 vCPU/8GB tier to run at all). Region affects both where the VM physically runs and which of our streaming gateways (Sydney, US, Europe, or Asia) it routes through -- pick whichever's actually closest to the person using it, not necessarily your own company's HQ.",
+      "Bigger sizes cost more per hour but handle heavier use (Windows 11 specifically needs at least the 4 vCPU/8GB tier to run at all). The \"dedicated CPU\" 4 vCPU/8GB options cost a bit more per hour but get their own physical cores instead of sharing them with other droplets -- worth it for Windows 11, since nested virtualization already adds overhead that shared cores make worse; a good way to beat a staff member's old Windows Cloud PC spec on both CPU and disk. Region affects both where the VM physically runs and which of our streaming gateways (Sydney, US, Europe, or Asia) it routes through -- pick whichever's actually closest to the person using it, not necessarily your own company's HQ.",
   },
   {
     title: "Assign it to someone",
@@ -126,7 +126,7 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Mirrors the server-side check in app/api/virtual-computers/create/route.ts
 // -- dockur/windows (a real Windows 11 install inside nested KVM) needs
 // meaningfully more resources than DigitalOcean's smallest tier.
-const WINDOWS_CAPABLE_DO_SIZES = ["s-4vcpu-8gb", "s-8vcpu-16gb"];
+const WINDOWS_CAPABLE_DO_SIZES = ["s-4vcpu-8gb", "s-4vcpu-8gb-intel", "s-4vcpu-8gb-240gb-intel", "s-8vcpu-16gb"];
 
 const PROVIDER_CREDENTIAL_FIELDS: Record<CloudProviderId, { key: string; label: string; type?: string }[]> = {
   digitalocean: [{ key: "api_token", label: "API token", type: "password" }],

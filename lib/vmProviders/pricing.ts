@@ -8,9 +8,19 @@ import type { CloudProviderId, VmSizeOption } from "./types";
 
 export const PRICING: Record<CloudProviderId, VmSizeOption[]> = {
   digitalocean: [
-    { slug: "s-2vcpu-4gb", label: "2 vCPU / 4 GB", vcpus: 2, memoryMb: 4096, hourlyUsd: 0.036 },
-    { slug: "s-4vcpu-8gb", label: "4 vCPU / 8 GB", vcpus: 4, memoryMb: 8192, hourlyUsd: 0.071 },
-    { slug: "s-8vcpu-16gb", label: "8 vCPU / 16 GB", vcpus: 8, memoryMb: 16384, hourlyUsd: 0.143 },
+    { slug: "s-2vcpu-4gb", label: "2 vCPU / 4 GB", vcpus: 2, memoryMb: 4096, diskGb: 80, hourlyUsd: 0.036 },
+    { slug: "s-4vcpu-8gb", label: "4 vCPU / 8 GB", vcpus: 4, memoryMb: 8192, diskGb: 160, hourlyUsd: 0.071 },
+    // Dedicated-vCPU (Premium Intel) variants of the same 4 vCPU/8 GB spec --
+    // same shared-vs-dedicated cores tradeoff DO sells across its whole
+    // lineup, called out here specifically because it matters more than
+    // usual for Windows-on-DO: nested virtualization (dockur/windows running
+    // Windows 11 inside KVM inside Docker) already adds scheduling overhead,
+    // and sharing physical cores with other droplets on the Regular tier
+    // compounds that. Confirmed pricing via the DigitalOcean API directly
+    // (2026-07-22), not estimated.
+    { slug: "s-4vcpu-8gb-intel", label: "4 vCPU / 8 GB (dedicated CPU)", vcpus: 4, memoryMb: 8192, diskGb: 160, hourlyUsd: 0.083 },
+    { slug: "s-4vcpu-8gb-240gb-intel", label: "4 vCPU / 8 GB (dedicated CPU, 240 GB disk)", vcpus: 4, memoryMb: 8192, diskGb: 240, hourlyUsd: 0.095 },
+    { slug: "s-8vcpu-16gb", label: "8 vCPU / 16 GB", vcpus: 8, memoryMb: 16384, diskGb: 320, hourlyUsd: 0.143 },
   ],
   // Windows Server pricing, not Linux -- this provider is Windows-only (see
   // lib/vmProviders/aws.ts and PROVIDER_LABELS below), roughly double the

@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getProvider } from "@/lib/vmProviders/registry";
-import { loadVm, resolveCredentials } from "../../_lib";
+import { loadVm, resolveCredentials, isPortReachable } from "../../_lib";
 import type { CloudProviderId } from "@/lib/vmProviders/types";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,10 +22,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       if (credentials) {
         const adapter = getProvider(vm.provider as CloudProviderId);
         const instance = await adapter.getInstance(credentials, vm.provider_instance_id, vm.region);
-        const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), status: instance.status };
+        // The host powering on isn't the same as Windows being ready --
+        // gate "running" on RDP actually accepting connections (see
+        // isPortReachable's comment for why).
+        let reportedStatus = instance.status;
+        if (reportedStatus === "running" && vm.os === "windows" && instance.ipAddress) {
+          const rdpUp = await isPortReachable(instance.ipAddress, 3389);
+          if (!rdpUp) reportedStatus = "provisioning";
+        }
+        const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), status: reportedStatus };
         if (instance.ipAddress) updates.ip_address = instance.ipAddress;
         await admin.from("virtual_computers").update(updates).eq("id", id);
-        vm.status = instance.status;
+        vm.status = reportedStatus;
         if (instance.ipAddress) vm.ip_address = instance.ipAddress;
       }
     } catch {
@@ -41,6 +49,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     errorMessage: vm.error_message,
     ipAddress: vm.ip_address,
     os: vm.os,
+    provider: vm.provider,
     createdAt: vm.created_at,
     hibernateDeadline: vm.hibernate_deadline,
     resolutionWidth: vm.resolution_width,

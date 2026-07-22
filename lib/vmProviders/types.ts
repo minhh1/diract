@@ -12,6 +12,10 @@ export interface VmSizeOption {
   vcpus: number;
   memoryMb: number;
   hourlyUsd: number;
+  // Only set for DigitalOcean -- the droplet's actual disk allocation,
+  // which the Windows-on-DO path (lib/vmProviders/digitalocean.ts) uses to
+  // size the guest's virtual disk instead of a fixed value.
+  diskGb?: number;
 }
 
 // Shape depends on provider -- see supabase/company_cloud_credentials.sql.

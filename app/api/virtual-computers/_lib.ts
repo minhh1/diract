@@ -2,10 +2,32 @@
 // Shared helpers for the virtual-computers API routes. Not a route itself
 // (no exported HTTP method handlers), so Next.js ignores it for routing.
 import crypto from "crypto";
+import net from "net";
 import { getPlatformCredentials } from "@/lib/vmProviders/platformCredentials";
 import { getProvider } from "@/lib/vmProviders/registry";
 import { nextLocalMidnight } from "@/lib/vmProviders/scheduling";
 import type { CloudProviderId, ProviderCredentials, VmOs, VmProtocol } from "@/lib/vmProviders/types";
+
+// A cloud provider reporting the host instance as "running" only means the
+// underlying machine powered on -- for Windows on DigitalOcean (a from-
+// scratch dockur/windows install, ~75-90 min) and, to a lesser extent, AWS
+// (Sysprep/specialize during first boot), RDP isn't actually listening for a
+// long stretch after that. Without this check, the frontend session page
+// (app/dashboard/virtual-computers/[id]/page.tsx) would flip straight to the
+// GuacamoleViewer and attempt a doomed connection instead of showing the
+// "installing Windows" progress screen.
+export function isPortReachable(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port, timeout: timeoutMs });
+    const done = (result: boolean) => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.once("connect", () => done(true));
+    socket.once("timeout", () => done(false));
+    socket.once("error", () => done(false));
+  });
+}
 
 // Classic VNC auth (TigerVNC) truncates passwords to 8 characters, so keep
 // the generated password short -- used for the Linux VNC/xrdp path only.

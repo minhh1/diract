@@ -23,6 +23,7 @@ interface VmStatus {
   status: string;
   errorMessage: string | null;
   os: "linux" | "windows";
+  provider: string;
   createdAt: string;
   hibernateDeadline: string | null;
   resolutionWidth: number | null;
@@ -196,7 +197,9 @@ export default function VirtualComputerSessionPage() {
               {status.createdAt && ` (${elapsedLabel(status.createdAt, now)})`}
             </p>
             <p className="text-[12px] text-slate-400 max-w-sm">
-              {status.os === "windows"
+              {status.os === "windows" && status.provider === "digitalocean"
+                ? "Installing Windows 11 from scratch -- this can take 75-90 minutes."
+                : status.os === "windows"
                 ? "Installing Windows and Microsoft Office -- this can take 10-15 minutes."
                 : "This usually takes about a minute."}
             </p>

@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   // smallest DigitalOcean tier -- confirmed directly (this session's spike)
   // that a real, usable unattended Windows 11 + Office install needs at
   // least the s-4vcpu-8gb tier, not s-2vcpu-4gb.
-  const WINDOWS_CAPABLE_DO_SIZES = ["s-4vcpu-8gb", "s-8vcpu-16gb"];
+  const WINDOWS_CAPABLE_DO_SIZES = ["s-4vcpu-8gb", "s-4vcpu-8gb-intel", "s-4vcpu-8gb-240gb-intel", "s-8vcpu-16gb"];
   if (provider === "digitalocean" && os === "windows" && !WINDOWS_CAPABLE_DO_SIZES.includes(sizeSlug)) {
     return NextResponse.json(
       { error: `Windows 11 needs at least the ${WINDOWS_CAPABLE_DO_SIZES[0]} size.` },

@@ -14,6 +14,7 @@ import type {
   VmProvider,
 } from "./types";
 import { CHROME_DPI_FIX_SNIPPET, INSTALL_OFFICE_SNIPPET } from "./windowsProvisioning";
+import { PRICING } from "./pricing";
 
 const DO_API_URL = "https://api.digitalocean.com/v2";
 
@@ -191,10 +192,24 @@ ${writeFiles}runcmd:
 `;
 }
 
+// Not anchored at the end -- deliberately matches slugs with a dedicated-CPU
+// suffix too (e.g. "s-4vcpu-8gb-intel", "s-4vcpu-8gb-240gb-intel"), which all
+// share the same "s-<vcpus>vcpu-<memoryGb>gb" prefix regardless of tier.
 function parseSizeSlug(sizeSlug: string): { vcpus: number; memoryGb: number } {
-  const match = /^s-(\d+)vcpu-(\d+)gb$/.exec(sizeSlug);
+  const match = /^s-(\d+)vcpu-(\d+)gb/.exec(sizeSlug);
   if (!match) throw new Error(`Cannot size a Windows 11 VM from unrecognized slug "${sizeSlug}".`);
   return { vcpus: Number(match[1]), memoryGb: Number(match[2]) };
+}
+
+// The droplet's real disk allocation (see lib/vmProviders/pricing.ts's
+// diskGb) minus headroom for the Ubuntu host OS + Docker images -- 10GB is
+// comfortably more than a minimal Ubuntu server + Docker daemon actually
+// needs. Falls back to the smallest Windows-capable tier's disk size if a
+// slug somehow isn't in the pricing table, rather than throwing.
+function guestDiskGb(sizeSlug: string): number {
+  const size = PRICING.digitalocean.find((s) => s.slug === sizeSlug);
+  const diskGb = size?.diskGb ?? 160;
+  return Math.max(40, diskGb - 10);
 }
 
 // A genuine Windows 11 install, running inside nested KVM on the droplet's
@@ -216,11 +231,14 @@ function parseSizeSlug(sizeSlug: string): { vcpus: number; memoryGb: number } {
 // the AWS Windows path (see windowsProvisioning.ts), via a companion
 // PowerShell script the batch file just invokes.
 //
-// Sizing reserves 1 vCPU / 2GB for the Ubuntu host itself (Docker/QEMU
-// overhead is real even though no desktop is installed on the host side),
-// giving the rest to the Windows guest. DISK_SIZE is fixed at 80G -- safely
-// within either Windows-capable droplet size's actual disk allocation
-// (160GB/320GB on DO's s-4vcpu-8gb/s-8vcpu-16gb Basic tiers).
+// Sizing reserves 1 vCPU / 1GB for the Ubuntu host itself (Docker/QEMU
+// overhead is real even though no desktop is installed on the host side) --
+// trimmed down from an earlier, overly conservative 2GB reservation, since a
+// minimal Ubuntu server running just the Docker daemon + QEMU's own process
+// doesn't need that much headroom, and every GB kept from the guest matters
+// for comparison against a staff member's previous Windows Cloud PC spec.
+// DISK_SIZE scales with the droplet's real disk allocation (see
+// guestDiskGb above) instead of a value fixed regardless of size/tier.
 //
 // Only ever called for a fresh create, never a snapshot restore -- see the
 // comment on the `fromSnapshotId` branch in createInstance below for why
@@ -228,7 +246,8 @@ function parseSizeSlug(sizeSlug: string): { vcpus: number; memoryGb: number } {
 function windowsCloudInitScript(username: string, password: string, sizeSlug: string): string {
   const { vcpus, memoryGb } = parseSizeSlug(sizeSlug);
   const guestVcpus = Math.max(2, vcpus - 1);
-  const guestRamGb = Math.max(4, memoryGb - 2);
+  const guestRamGb = Math.max(4, memoryGb - 1);
+  const diskGb = guestDiskGb(sizeSlug);
   const escapedUsername = username.replace(/"/g, '\\"');
   const escapedPassword = password.replace(/"/g, '\\"');
 
@@ -247,7 +266,7 @@ ${INSTALL_OFFICE_SNIPPET}`;
             VERSION: "11"
             RAM_SIZE: "${guestRamGb}G"
             CPU_CORES: "${guestVcpus}"
-            DISK_SIZE: "80G"
+            DISK_SIZE: "${diskGb}G"
             USERNAME: "${escapedUsername}"
             PASSWORD: "${escapedPassword}"
             LANGUAGE: "English"
