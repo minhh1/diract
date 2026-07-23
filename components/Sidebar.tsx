@@ -647,7 +647,7 @@ export default function Sidebar() {
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
   const { tables: customTables } = useCustomTables();
-  const { dashboards } = useCustomDashboards();
+  const { dashboards, refetch: refetchDashboards } = useCustomDashboards();
 
   const mode = pathname.includes("projects") ? "projects"
     : pathname.includes("properties") ? "properties"
@@ -730,6 +730,15 @@ export default function Sidebar() {
     // show up in the rail as soon as the user navigates back — this layout persists
     // across route changes so it wouldn't otherwise remount to pick them up.
   }, [ctxUserId, pathname]);
+
+  useEffect(() => {
+    // useCustomDashboards() here is a separate hook instance from the one the
+    // builder/view pages use, so creating/deleting a dashboard elsewhere
+    // doesn't update this list on its own — re-fetch on every route change
+    // (the delete/save flows navigate away immediately after) instead of
+    // requiring a full page reload to see the sidebar catch up.
+    refetchDashboards();
+  }, [pathname, refetchDashboards]);
 
   useEffect(() => {
     if (!showCompanySwitcher) return;

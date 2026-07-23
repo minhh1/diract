@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface CustomDashboard {
@@ -38,5 +38,7 @@ export function useCustomDashboards(): {
     return () => { active = false; };
   }, [tick]);
 
-  return { dashboards, loading, refetch: () => setTick(t => t + 1) };
+  const refetch = useCallback(() => setTick(t => t + 1), []);
+
+  return { dashboards, loading, refetch };
 }
