@@ -34,15 +34,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const followedUpAt = body.followedUpAt || new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const followedUpAt = body.followedUpAt || todayStr;
+  const isDone = followedUpAt <= todayStr;
 
   const { data: entry, error } = await admin.from("task_follow_ups").insert({
-    task_id: taskId, company_id: page.company_id, followed_up_at: followedUpAt, created_by: user.id,
+    task_id: taskId, company_id: page.company_id, followed_up_at: followedUpAt, is_done: isDone, created_by: user.id,
   }).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  await admin.from("tasks").update({ awaiting_follow_up: true, follow_up_date: followedUpAt }).eq("id", taskId);
-  await logTaskActivity(admin, { taskId, companyId: page.company_id, actorId: user.id, action: "follow_up_set", detail: `follow-up date: ${followedUpAt}` });
+  const taskUpdate: Record<string, any> = {};
+  if (isDone) { taskUpdate.awaiting_follow_up = true; taskUpdate.follow_up_date = followedUpAt; }
+  // A future follow-up date is effectively a rescheduled due date.
+  if (!isDone) taskUpdate.due_date = followedUpAt;
+  await admin.from("tasks").update(taskUpdate).eq("id", taskId);
 
-  return NextResponse.json({ ok: true, entry: { id: entry.id, followedUpAt: String(entry.followed_up_at).slice(0, 10) } });
+  await logTaskActivity(admin, {
+    taskId, companyId: page.company_id, actorId: user.id,
+    action: "follow_up_set",
+    detail: isDone ? `follow-up date: ${followedUpAt}` : `follow-up scheduled: ${followedUpAt} (due date moved to match)`,
+  });
+
+  return NextResponse.json({ ok: true, entry: { id: entry.id, followedUpAt: String(entry.followed_up_at).slice(0, 10), isDone: entry.is_done } });
 }

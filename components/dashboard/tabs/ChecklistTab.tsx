@@ -41,13 +41,15 @@ interface Template { id: string; name: string; items: TemplateItem[]; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
   const creator = profiles.find((p: any) => p.id === task.created_by);
   const completedSubtasks = subtasks.filter((s: any) => s.is_completed).length;
   const followUps: FollowUpEntry[] = followUpsByTask[task.id] || [];
+  const doneFollowUps = followUps.filter(f => f.isDone);
+  const scheduledFollowUps = followUps.filter(f => !f.isDone);
   const watchers = ((watchersByTask?.[task.id] || []) as string[])
     .filter(id => id !== task.assignee_id)
     .map(id => profiles.find((p: any) => p.id === id))
@@ -67,6 +69,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             entries={followUps}
             onAdd={date => onAddFollowUp(task.id, date)}
             onRemove={id => onRemoveFollowUp(task.id, id)}
+            onMarkDone={id => onMarkFollowUpDone(task.id, id)}
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -83,9 +86,14 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             ))}
             {team && <span className="flex items-center gap-1 text-[10px] text-slate-400"><Users size={10} />{team.team_name}</span>}
             {task.is_monetary && task.estimated_cost > 0 && <span className="flex items-center gap-1 text-[10px] text-slate-400"><DollarSign size={10} />${Number(task.estimated_cost).toLocaleString()}</span>}
-            {followUps.length > 0 && (
+            {doneFollowUps.length > 0 && (
               <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
-                <Flag size={10} /> Followed up {followUps.length}x{task.follow_up_date ? ` · last ${getRelativeDateLabel(task.follow_up_date)}` : ''}
+                <Flag size={10} /> Followed up {doneFollowUps.length}x{task.follow_up_date ? ` · last ${getRelativeDateLabel(task.follow_up_date)}` : ''}
+              </span>
+            )}
+            {scheduledFollowUps.length > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-sky-600 font-medium">
+                📅 Follow-up scheduled {getRelativeDateLabel(scheduledFollowUps[0].followedUpAt)}
               </span>
             )}
             {task.notes && (
@@ -114,7 +122,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             <TaskRow key={sub.id} task={sub} subtasks={allTasks.filter((t: any) => t.parent_task_id === sub.id)} allTasks={allTasks}
               profiles={profiles} teams={teams} depth={depth + 1} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit}
-              onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} />
+              onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} onMarkFollowUpDone={onMarkFollowUpDone} />
           ))}
         </div>
       )}
@@ -123,7 +131,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
 }
 
 // ── TaskEditModal ─────────────────────────────────────────────────
-function TaskEditModal({ task, profiles, teams, followUps, watcherIds: initWatcherIds, onAddFollowUp, onRemoveFollowUp, onSave, onClose }: any) {
+function TaskEditModal({ task, profiles, teams, followUps, watcherIds: initWatcherIds, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, onSave, onClose }: any) {
   const [draft, setDraft] = useState<Partial<Task>>({ ...task });
   const [watcherIds, setWatcherIds] = useState<string[]>(initWatcherIds || []);
   const [saving, setSaving] = useState(false);
@@ -256,9 +264,15 @@ function TaskEditModal({ task, profiles, teams, followUps, watcherIds: initWatch
                   entries={followUps}
                   onAdd={(date: string) => onAddFollowUp(task.id, date)}
                   onRemove={(id: string) => onRemoveFollowUp(task.id, id)}
+                  onMarkDone={(id: string) => onMarkFollowUpDone(task.id, id)}
                 />
                 <span className="text-[12px] text-slate-500">
-                  {followUps.length ? `Followed up ${followUps.length} time${followUps.length !== 1 ? 's' : ''}` : 'Not followed up yet'}
+                  {(() => {
+                    const done = followUps.filter((f: FollowUpEntry) => f.isDone).length;
+                    const scheduled = followUps.length - done;
+                    if (!followUps.length) return 'Not followed up yet';
+                    return `Followed up ${done} time${done !== 1 ? 's' : ''}` + (scheduled ? ` · ${scheduled} scheduled` : '');
+                  })()}
                 </span>
               </div>
             </div>
@@ -774,12 +788,12 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     const taskIds = (taskData || []).map((t: any) => t.id);
     if (taskIds.length) {
       const [{ data: followUpData }, { data: watcherData }] = await Promise.all([
-        supabase.from('task_follow_ups').select('id, task_id, followed_up_at').in('task_id', taskIds),
+        supabase.from('task_follow_ups').select('id, task_id, followed_up_at, is_done').in('task_id', taskIds),
         supabase.from('task_watchers').select('task_id, profile_id').in('task_id', taskIds),
       ]);
       const grouped: Record<string, FollowUpEntry[]> = {};
       for (const f of followUpData || []) {
-        (grouped[f.task_id] ||= []).push({ id: f.id, followedUpAt: f.followed_up_at });
+        (grouped[f.task_id] ||= []).push({ id: f.id, followedUpAt: f.followed_up_at, isDone: f.is_done });
       }
       setFollowUpsByTask(grouped);
       const watcherGroups: Record<string, string[]> = {};
@@ -872,22 +886,30 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   // (optimistic) and fire the writes in the background so the tick doesn't
   // feel laggy.
   const applyFollowUpCacheLocally = (taskId: string, entries: FollowUpEntry[]) => {
-    const latest = entries.length ? entries.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
-    const patch = { awaiting_follow_up: entries.length > 0, follow_up_date: latest?.followedUpAt || null };
+    const done = entries.filter(e => e.isDone);
+    const latest = done.length ? done.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
+    const patch = { awaiting_follow_up: done.length > 0, follow_up_date: latest?.followedUpAt || null };
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...patch } : t));
     return patch;
   };
 
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
   const handleAddFollowUp = (taskId: string, date: string) => {
+    const isDone = date <= todayStr();
     const tempId = `temp-${Date.now()}`;
-    const next = [...(followUpsByTask[taskId] || []), { id: tempId, followedUpAt: date }];
+    const next = [...(followUpsByTask[taskId] || []), { id: tempId, followedUpAt: date, isDone }];
     setFollowUpsByTask(prev => ({ ...prev, [taskId]: next }));
     const patch = applyFollowUpCacheLocally(taskId, next);
+
+    // A future follow-up date is effectively a rescheduled due date — move
+    // it along so the task doesn't keep showing as due before then.
+    if (!isDone) setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: date } : t));
 
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       const { data, error } = await supabase.from('task_follow_ups').insert({
-        task_id: taskId, company_id: companyId, followed_up_at: date, created_by: user?.id,
+        task_id: taskId, company_id: companyId, followed_up_at: date, is_done: isDone, created_by: user?.id,
       }).select().single();
       if (error || !data) {
         setFollowUpsByTask(prev => ({ ...prev, [taskId]: (prev[taskId] || []).filter(f => f.id !== tempId) }));
@@ -895,10 +917,15 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       }
       setFollowUpsByTask(prev => ({
         ...prev,
-        [taskId]: (prev[taskId] || []).map(f => f.id === tempId ? { id: data.id, followedUpAt: data.followed_up_at } : f),
+        [taskId]: (prev[taskId] || []).map(f => f.id === tempId ? { id: data.id, followedUpAt: data.followed_up_at, isDone: data.is_done } : f),
       }));
       supabase.from('tasks').update(patch).eq('id', taskId);
-      logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_set', detail: `follow-up date: ${date}` });
+      if (!isDone) supabase.from('tasks').update({ due_date: date }).eq('id', taskId);
+      logTaskActivity(supabase, {
+        taskId, companyId, actorId: user?.id || null,
+        action: 'follow_up_set',
+        detail: isDone ? `follow-up date: ${date}` : `follow-up scheduled: ${date} (due date moved to match)`,
+      });
     })();
   };
 
@@ -912,6 +939,19 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       await supabase.from('tasks').update(patch).eq('id', taskId);
       const { data: { user } } = await supabase.auth.getUser();
       logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_cleared' });
+    })();
+  };
+
+  const handleMarkFollowUpDone = (taskId: string, followUpId: string) => {
+    const next = (followUpsByTask[taskId] || []).map(f => f.id === followUpId ? { ...f, isDone: true } : f);
+    setFollowUpsByTask(prev => ({ ...prev, [taskId]: next }));
+    const patch = applyFollowUpCacheLocally(taskId, next);
+
+    (async () => {
+      await supabase.from('task_follow_ups').update({ is_done: true }).eq('id', followUpId);
+      await supabase.from('tasks').update(patch).eq('id', taskId);
+      const { data: { user } } = await supabase.auth.getUser();
+      logTaskActivity(supabase, { taskId, companyId, actorId: user?.id || null, action: 'follow_up_set', detail: 'scheduled follow-up marked done' });
     })();
   };
 
@@ -1011,7 +1051,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
             <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
               allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
-              onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
+              onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone} />
           ))}
         </div>
       )}
@@ -1028,7 +1068,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
                   allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
-                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
+                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone} />
               ))}
             </div>
           )}
@@ -1047,7 +1087,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
                   allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
-                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} />
+                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone} />
               ))}
             </div>
           )}
@@ -1059,7 +1099,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
         <TaskEditModal task={editingTask} profiles={profiles} teams={teams}
           followUps={editingTask.id ? (followUpsByTask[editingTask.id] || []) : []}
           watcherIds={editingTask.id ? (watchersByTask[editingTask.id] || []) : []}
-          onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp}
+          onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
           companyId={companyId} projectId={recordId} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
       )}
       {showTemplates && (

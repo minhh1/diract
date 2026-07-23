@@ -777,6 +777,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
         if (at.isMonetary && at.estimatedCost) atSub += (atSub ? ' · ' : '') + '$' + at.estimatedCost;
         if (at.createdBy) atSub += (atSub ? ' · ' : '') + 'Added by ' + at.createdBy;
         if (at.followUpCount) atSub += (atSub ? ' · ' : '') + '🚩 Followed up ' + at.followUpCount + 'x' + (at.followUpDate ? ' · last ' + getRelativeDateLabel(at.followUpDate) : '');
+        if (at.scheduledFollowUpDate) atSub += (atSub ? ' · ' : '') + '📅 Follow-up scheduled ' + getRelativeDateLabel(at.scheduledFollowUpDate);
         if (at.notes) atSub += (atSub ? ' · ' : '') + '📝 ' + at.notes;
         if (at.sourceEmailSubject) atSub += (atSub ? ' · ' : '') + '📧 ' + at.sourceEmailSubject;
       }
@@ -1061,6 +1062,7 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       if (t.followUpCount) {
         sub += (sub ? ' · ' : '') + '🚩 Followed up ' + t.followUpCount + 'x' + (t.followUpDate ? ' · last ' + getRelativeDateLabel(t.followUpDate) : '');
       }
+      if (t.scheduledFollowUpDate) sub += (sub ? ' · ' : '') + '📅 Follow-up scheduled ' + getRelativeDateLabel(t.scheduledFollowUpDate);
       if (t.notes) sub += (sub ? ' · ' : '') + '📝 ' + t.notes;
     }
 
@@ -1126,7 +1128,9 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
       // shown on the same row.
       var taskButtonRow = CardService.newButtonSet()
         .addButton(CardService.newTextButton()
-          .setText(t.followUpCount ? '🚩 Followed up ' + t.followUpCount + 'x — manage' : '🏳️ Log follow-up')
+          .setText(t.followUpCount ? '🚩 Followed up ' + t.followUpCount + 'x — manage'
+            : t.scheduledFollowUpDate ? '📅 Follow-up scheduled — manage'
+            : '🏳️ Log follow-up')
           .setOnClickAction(CardService.newAction()
             .setFunctionName('onOpenFollowUpsCard')
             .setParameters(taskParams)))
@@ -1582,31 +1586,54 @@ function buildFollowUpsCard(params, token) {
   var section = CardService.newCardSection();
   var res = apiGet('/task-follow-ups?taskId=' + params.taskId, token);
   var entries = res.ok ? (res.data.entries || []) : [];
+  // Scheduled (not-yet-done) entries first, then done ones newest-first.
+  entries.sort(function(a, b) {
+    if (a.isDone !== b.isDone) return a.isDone ? 1 : -1;
+    return a.followedUpAt < b.followedUpAt ? 1 : -1;
+  });
 
   if (!entries.length) {
     section.addWidget(CardService.newTextParagraph().setText('No follow-ups logged yet.'));
   } else {
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i];
-      section.addWidget(CardService.newDecoratedText()
-        .setText(entry.followedUpAt)
-        .setButton(CardService.newImageButton()
-          .setIconUrl('https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/close/default/24px.svg')
-          .setAltText('Remove')
-          .setOnClickAction(CardService.newAction()
-            .setFunctionName('onRemoveFollowUpEntry')
-            .setParameters(Object.assign({}, params, { followUpId: entry.id })))));
+      if (entry.isDone) {
+        section.addWidget(CardService.newDecoratedText()
+          .setText(entry.followedUpAt)
+          .setButton(CardService.newImageButton()
+            .setIconUrl('https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/close/default/24px.svg')
+            .setAltText('Remove')
+            .setOnClickAction(CardService.newAction()
+              .setFunctionName('onRemoveFollowUpEntry')
+              .setParameters(Object.assign({}, params, { followUpId: entry.id })))));
+      } else {
+        section.addWidget(CardService.newDecoratedText()
+          .setText('📅 ' + entry.followedUpAt + ' · scheduled'));
+        section.addWidget(CardService.newButtonSet()
+          .addButton(CardService.newTextButton()
+            .setText('✓ Mark done')
+            .setOnClickAction(CardService.newAction()
+              .setFunctionName('onMarkFollowUpEntryDone')
+              .setParameters(Object.assign({}, params, { followUpId: entry.id }))))
+          .addButton(CardService.newTextButton()
+            .setText('Remove')
+            .setOnClickAction(CardService.newAction()
+              .setFunctionName('onRemoveFollowUpEntry')
+              .setParameters(Object.assign({}, params, { followUpId: entry.id })))));
+      }
     }
   }
 
   var newDatePicker = CardService.newDatePicker()
     .setFieldName('followUpDate')
-    .setTitle('Date followed up')
+    .setTitle('Date followed up (future = scheduled)')
     .setValueInMsSinceEpoch(dateStrToUtcMidnight(todayDateStr()).getTime());
   section.addWidget(newDatePicker);
+  section.addWidget(CardService.newTextParagraph()
+    .setText('A future date schedules the follow-up (tick it off later) and moves the task\'s due date to match.'));
   section.addWidget(CardService.newButtonSet()
     .addButton(CardService.newTextButton()
-      .setText('Log follow-up')
+      .setText('Log / schedule follow-up')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
       .setBackgroundColor('#f59e0b')
       .setOnClickAction(CardService.newAction()
@@ -1646,6 +1673,17 @@ function onRemoveFollowUpEntry(e) {
   invalidateTaskCache(e.parameters.companyId);
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation().updateCard(buildFollowUpsCard(e.parameters, token)))
+    .build();
+}
+
+function onMarkFollowUpEntryDone(e) {
+  var token = e.parameters.accessToken || getToken();
+  var result = apiPost('/mark-follow-up-done', { taskId: e.parameters.taskId, followUpId: e.parameters.followUpId }, token);
+  if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
+  invalidateTaskCache(e.parameters.companyId);
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().updateCard(buildFollowUpsCard(e.parameters, token)))
+    .setNotification(CardService.newNotification().setText('✓ Follow-up marked done'))
     .build();
 }
 

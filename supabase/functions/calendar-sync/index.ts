@@ -84,6 +84,8 @@ async function resolveCalendarId(userId: string, token: string, calendarTarget: 
 
 // ── Calendar API ───────────────────────────────────────────────────
 
+let lastCalendarApiError: string | null = null;
+
 async function createCalendarEvent(
   token: string,
   calendarId: string,
@@ -95,7 +97,9 @@ async function createCalendarEvent(
       body: JSON.stringify(event) }
   );
   if (!res.ok) {
-    console.error("[calendar] create error:", await res.text());
+    const err = await res.text();
+    console.error("[calendar] create error:", err);
+    lastCalendarApiError = err;
     return null;
   }
   const data = await res.json();
@@ -326,7 +330,7 @@ Deno.serve(async (req) => {
     }
 
     if (!eventId) {
-      return new Response(JSON.stringify({ error: "Failed to create event" }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Failed to create event", detail: lastCalendarApiError }), { status: 500, headers: corsHeaders });
     }
 
     await db.from("tasks").update({

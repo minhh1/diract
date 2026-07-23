@@ -159,23 +159,29 @@ export default function PublicTaskPage() {
     if (!res.ok) refresh(); // revert to server truth on failure
   };
 
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
   // Optimistic — update local state immediately so the tick feels instant,
   // then fire the request in the background. Re-fetch to resync on failure.
   const addFollowUp = (task: Task, date: string) => {
+    const isDone = date <= todayStr();
     const tempId = `temp-${Date.now()}`;
-    const optimisticEntry = { id: tempId, followedUpAt: date };
+    const optimisticEntry = { id: tempId, followedUpAt: date, isDone };
+    const applyAdd = (t: Task) => ({
+      ...t,
+      followUps: [...t.followUps, optimisticEntry],
+      ...(isDone ? { awaitingFollowUp: true, followUpDate: date } : {}),
+      // A future follow-up date is effectively a rescheduled due date.
+      ...(isDone ? {} : { dueDate: date }),
+    });
     setData(prev => prev ? {
       ...prev,
       tabs: prev.tabs.map(tab => ({
         ...tab,
-        tasks: tab.tasks.map(t => t.id === task.id
-          ? { ...t, followUps: [...t.followUps, optimisticEntry], awaitingFollowUp: true, followUpDate: date }
-          : t),
+        tasks: tab.tasks.map(t => t.id === task.id ? applyAdd(t) : t),
       })),
     } : prev);
-    setEditingTask(prev => prev && prev.id === task.id
-      ? { ...prev, followUps: [...prev.followUps, optimisticEntry], awaitingFollowUp: true, followUpDate: date }
-      : prev);
+    setEditingTask(prev => prev && prev.id === task.id ? applyAdd(prev) : prev);
 
     (async () => {
       const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}/follow-ups`, {
@@ -197,6 +203,12 @@ export default function PublicTaskPage() {
     })();
   };
 
+  const recomputeFollowUpCache = (entries: FollowUpEntry[]) => {
+    const done = entries.filter(f => f.isDone);
+    const latest = done.length ? done.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
+    return { awaitingFollowUp: done.length > 0, followUpDate: latest?.followedUpAt || null };
+  };
+
   const removeFollowUp = (task: Task, followUpId: string) => {
     setData(prev => prev ? {
       ...prev,
@@ -205,20 +217,35 @@ export default function PublicTaskPage() {
         tasks: tab.tasks.map(t => {
           if (t.id !== task.id) return t;
           const remaining = t.followUps.filter(f => f.id !== followUpId);
-          const latest = remaining.length ? remaining.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
-          return { ...t, followUps: remaining, awaitingFollowUp: remaining.length > 0, followUpDate: latest?.followedUpAt || null };
+          return { ...t, followUps: remaining, ...recomputeFollowUpCache(remaining) };
         }),
       })),
     } : prev);
     setEditingTask(prev => {
       if (!prev || prev.id !== task.id) return prev;
       const remaining = prev.followUps.filter(f => f.id !== followUpId);
-      const latest = remaining.length ? remaining.reduce((a, b) => (a.followedUpAt > b.followedUpAt ? a : b)) : null;
-      return { ...prev, followUps: remaining, awaitingFollowUp: remaining.length > 0, followUpDate: latest?.followedUpAt || null };
+      return { ...prev, followUps: remaining, ...recomputeFollowUpCache(remaining) };
     });
 
     (async () => {
       const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}/follow-ups/${followUpId}`, { method: "DELETE" });
+      if (!res.ok) refresh();
+    })();
+  };
+
+  const markFollowUpDone = (task: Task, followUpId: string) => {
+    const applyDone = (t: Task) => {
+      const updated = t.followUps.map(f => f.id === followUpId ? { ...f, isDone: true } : f);
+      return { ...t, followUps: updated, ...recomputeFollowUpCache(updated) };
+    };
+    setData(prev => prev ? {
+      ...prev,
+      tabs: prev.tabs.map(tab => ({ ...tab, tasks: tab.tasks.map(t => t.id === task.id ? applyDone(t) : t) })),
+    } : prev);
+    setEditingTask(prev => prev && prev.id === task.id ? applyDone(prev) : prev);
+
+    (async () => {
+      const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}/follow-ups/${followUpId}`, { method: "PATCH" });
       if (!res.ok) refresh();
     })();
   };
@@ -330,6 +357,7 @@ export default function PublicTaskPage() {
               entries={t.followUps}
               onAdd={date => addFollowUp(t, date)}
               onRemove={id => removeFollowUp(t, id)}
+              onMarkDone={id => markFollowUpDone(t, id)}
             />
           </div>
         </td>
@@ -341,9 +369,14 @@ export default function PublicTaskPage() {
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             {dl && <span className={`text-[10px] font-bold ${dl.colorClass}`}>{dl.text}</span>}
-            {t.followUps.length > 0 && (
+            {t.followUps.some(f => f.isDone) && (
               <span className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
-                <Flag size={9} /> Followed up {t.followUps.length}x{t.followUpDate ? ` · last ${getRelativeDateLabel(t.followUpDate)}` : ""}
+                <Flag size={9} /> Followed up {t.followUps.filter(f => f.isDone).length}x{t.followUpDate ? ` · last ${getRelativeDateLabel(t.followUpDate)}` : ""}
+              </span>
+            )}
+            {t.followUps.some(f => !f.isDone) && (
+              <span className="flex items-center gap-1 text-[10px] text-sky-600 font-medium">
+                📅 Follow-up scheduled {getRelativeDateLabel(t.followUps.find(f => !f.isDone)!.followedUpAt)}
               </span>
             )}
             {t.notes && (
@@ -515,7 +548,7 @@ export default function PublicTaskPage() {
           setSaving={setSaving}
           onClose={() => setShowAddForm(false)}
           onSaved={() => { setShowAddForm(false); refresh(); }}
-          onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp}
+          onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp} onMarkFollowUpDone={markFollowUpDone}
         />
       )}
 
@@ -530,7 +563,7 @@ export default function PublicTaskPage() {
           onClose={() => setEditingTask(null)}
           onSaved={() => { setEditingTask(null); refresh(); }}
           onDeleted={() => { setEditingTask(null); refresh(); }}
-          onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp}
+          onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp} onMarkFollowUpDone={markFollowUpDone}
         />
       )}
 
@@ -561,10 +594,10 @@ function renderCell(key: string, t: Task) {
 }
 
 // ── Add / Edit task modal ───────────────────────────────────────────
-function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSaving, onClose, onSaved, onDeleted, onAddFollowUp, onRemoveFollowUp }: {
+function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSaving, onClose, onSaved, onDeleted, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone }: {
   pageId: string; formOptions: FormOptions; defaultAssigneeId: string | null; task?: Task;
   saving: boolean; setSaving: (v: boolean) => void; onClose: () => void; onSaved: () => void; onDeleted?: () => void;
-  onAddFollowUp: (task: Task, date: string) => void; onRemoveFollowUp: (task: Task, id: string) => void;
+  onAddFollowUp: (task: Task, date: string) => void; onRemoveFollowUp: (task: Task, id: string) => void; onMarkFollowUpDone: (task: Task, id: string) => void;
 }) {
   const isEdit = !!task;
   const [name, setName] = useState(task?.name || "");
@@ -712,9 +745,15 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
                   entries={task.followUps}
                   onAdd={date => onAddFollowUp(task, date)}
                   onRemove={id => onRemoveFollowUp(task, id)}
+                  onMarkDone={id => onMarkFollowUpDone(task, id)}
                 />
                 <span className="text-[12px] text-slate-500">
-                  {task.followUps.length ? `Followed up ${task.followUps.length} time${task.followUps.length !== 1 ? "s" : ""}` : "Not followed up yet"}
+                  {(() => {
+                    const done = task.followUps.filter(f => f.isDone).length;
+                    const scheduled = task.followUps.length - done;
+                    if (!task.followUps.length) return "Not followed up yet";
+                    return `Followed up ${done} time${done !== 1 ? "s" : ""}` + (scheduled ? ` · ${scheduled} scheduled` : "");
+                  })()}
                 </span>
               </div>
             </div>

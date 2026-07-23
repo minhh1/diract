@@ -78,13 +78,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const tasks = [...(assignedTasks || []), ...watchedTasks];
 
   // ── Follow-up log, grouped per task ──────────────────────────────
-  let followUpsByTask: Record<string, { id: string; followedUpAt: string }[]> = {};
+  let followUpsByTask: Record<string, { id: string; followedUpAt: string; isDone: boolean }[]> = {};
   if (tasks?.length) {
     const { data: followUps } = await admin
-      .from("task_follow_ups").select("id, task_id, followed_up_at")
+      .from("task_follow_ups").select("id, task_id, followed_up_at, is_done")
       .in("task_id", tasks.map((t: any) => t.id));
     for (const f of followUps || []) {
-      (followUpsByTask[f.task_id] ||= []).push({ id: f.id, followedUpAt: String(f.followed_up_at).slice(0, 10) });
+      (followUpsByTask[f.task_id] ||= []).push({ id: f.id, followedUpAt: String(f.followed_up_at).slice(0, 10), isDone: f.is_done });
     }
   }
 

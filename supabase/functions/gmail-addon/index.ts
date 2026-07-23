@@ -1134,10 +1134,17 @@ Deno.serve(async (req) => {
         .eq('is_active', true);
 
       const followUpCounts: Record<string, number> = {};
+      const scheduledFollowUpDates: Record<string, string> = {};
       if (tasks?.length) {
-        const { data: followUps } = await db.from('task_follow_ups').select('task_id')
+        const { data: followUps } = await db.from('task_follow_ups').select('task_id, is_done, followed_up_at')
           .in('task_id', tasks.map((t: any) => t.id));
-        for (const f of followUps || []) followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
+        for (const f of followUps || []) {
+          if (f.is_done) {
+            followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
+          } else if (!scheduledFollowUpDates[f.task_id] || f.followed_up_at < scheduledFollowUpDates[f.task_id]) {
+            scheduledFollowUpDates[f.task_id] = f.followed_up_at;
+          }
+        }
       }
 
       const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
@@ -1162,6 +1169,7 @@ Deno.serve(async (req) => {
           awaitingFollowUp: t.awaiting_follow_up,
           followUpDate: t.follow_up_date,
           followUpCount: followUpCounts[t.id] || 0,
+          scheduledFollowUpDate: scheduledFollowUpDates[t.id] || null,
           notes: t.notes,
           sourceMessageId: t.source_message_id,
           sourceEmailSubject: t.source_email_subject,
@@ -1269,21 +1277,32 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const { taskId, followedUpAt } = body;
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
-      const date = followedUpAt || new Date().toISOString().slice(0, 10);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const date = followedUpAt || todayStr;
+      const isDone = date <= todayStr;
 
       const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
       if (!existingTask) return json({ error: 'Task not found' }, 404, headers);
 
       const actorId = await getProfileId(userEmail);
       const { data: entry, error } = await db.from('task_follow_ups').insert({
-        task_id: taskId, company_id: existingTask.company_id, followed_up_at: date, created_by: actorId,
+        task_id: taskId, company_id: existingTask.company_id, followed_up_at: date, is_done: isDone, created_by: actorId,
       }).select().single();
       if (error) return json({ error: error.message }, 500, headers);
 
-      await db.from('tasks').update({ awaiting_follow_up: true, follow_up_date: date }).eq('id', taskId);
-      logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'follow_up_set', detail: `follow-up date: ${date}` });
+      const taskUpdate: Record<string, unknown> = {};
+      if (isDone) { taskUpdate.awaiting_follow_up = true; taskUpdate.follow_up_date = date; }
+      // A future follow-up date is effectively a rescheduled due date.
+      if (!isDone) taskUpdate.due_date = date;
+      await db.from('tasks').update(taskUpdate).eq('id', taskId);
 
-      return json({ ok: true, entry: { id: entry.id, followedUpAt: String(entry.followed_up_at).slice(0, 10) } }, 200, headers);
+      logTaskActivity({
+        taskId, companyId: existingTask.company_id, actorId,
+        action: 'follow_up_set',
+        detail: isDone ? `follow-up date: ${date}` : `follow-up scheduled: ${date} (due date moved to match)`,
+      });
+
+      return json({ ok: true, entry: { id: entry.id, followedUpAt: String(entry.followed_up_at).slice(0, 10), isDone: entry.is_done } }, 200, headers);
     }
 
     // ── POST /remove-follow-up ───────────────────────────────────────
@@ -1298,7 +1317,7 @@ Deno.serve(async (req) => {
       const { error } = await db.from('task_follow_ups').delete().eq('id', followUpId).eq('task_id', taskId);
       if (error) return json({ error: error.message }, 500, headers);
 
-      const { data: remaining } = await db.from('task_follow_ups').select('followed_up_at').eq('task_id', taskId);
+      const { data: remaining } = await db.from('task_follow_ups').select('followed_up_at').eq('task_id', taskId).eq('is_done', true);
       const dates = (remaining || []).map((r: any) => String(r.followed_up_at).slice(0, 10));
       const latest = dates.length ? dates.reduce((a: string, b: string) => (a > b ? a : b)) : null;
       await db.from('tasks').update({ awaiting_follow_up: dates.length > 0, follow_up_date: latest }).eq('id', taskId);
@@ -1309,17 +1328,41 @@ Deno.serve(async (req) => {
       return json({ ok: true }, 200, headers);
     }
 
+    // ── POST /mark-follow-up-done ──────────────────────────────────────
+    // Marks a scheduled (future-dated) follow-up as actually done.
+    if (req.method === 'POST' && path === '/mark-follow-up-done') {
+      const body = await req.json();
+      const { taskId, followUpId } = body;
+      if (!taskId || !followUpId) return json({ error: 'Missing taskId or followUpId' }, 400, headers);
+
+      const { data: existingTask } = await db.from('tasks').select('company_id').eq('id', taskId).maybeSingle();
+      if (!existingTask) return json({ error: 'Task not found' }, 404, headers);
+
+      const { error } = await db.from('task_follow_ups').update({ is_done: true }).eq('id', followUpId).eq('task_id', taskId);
+      if (error) return json({ error: error.message }, 500, headers);
+
+      const { data: doneEntries } = await db.from('task_follow_ups').select('followed_up_at').eq('task_id', taskId).eq('is_done', true);
+      const dates = (doneEntries || []).map((r: any) => String(r.followed_up_at).slice(0, 10));
+      const latest = dates.length ? dates.reduce((a: string, b: string) => (a > b ? a : b)) : null;
+      await db.from('tasks').update({ awaiting_follow_up: true, follow_up_date: latest }).eq('id', taskId);
+
+      const actorId = await getProfileId(userEmail);
+      logTaskActivity({ taskId, companyId: existingTask.company_id, actorId, action: 'follow_up_set', detail: 'scheduled follow-up marked done' });
+
+      return json({ ok: true }, 200, headers);
+    }
+
     // ── GET /task-follow-ups ─────────────────────────────────────────
     if (req.method === 'GET' && path === '/task-follow-ups') {
       const taskId = url.searchParams.get('taskId') || '';
       if (!taskId) return json({ error: 'Missing taskId' }, 400, headers);
 
       const { data: entries, error } = await db.from('task_follow_ups')
-        .select('id, followed_up_at').eq('task_id', taskId).order('followed_up_at', { ascending: false });
+        .select('id, followed_up_at, is_done').eq('task_id', taskId).order('followed_up_at', { ascending: false });
       if (error) return json({ error: error.message }, 500, headers);
 
       return json({
-        entries: (entries || []).map((e: any) => ({ id: e.id, followedUpAt: String(e.followed_up_at).slice(0, 10) })),
+        entries: (entries || []).map((e: any) => ({ id: e.id, followedUpAt: String(e.followed_up_at).slice(0, 10), isDone: e.is_done })),
       }, 200, headers);
     }
 
@@ -1836,10 +1879,17 @@ Deno.serve(async (req) => {
         .eq('company_id', companyId).eq('assignee_id', assigneeId).eq('is_completed', false).is('deleted_at', null);
 
       const followUpCounts: Record<string, number> = {};
+      const scheduledFollowUpDates: Record<string, string> = {};
       if (tasks?.length) {
-        const { data: followUps } = await db.from('task_follow_ups').select('task_id')
+        const { data: followUps } = await db.from('task_follow_ups').select('task_id, is_done, followed_up_at')
           .in('task_id', tasks.map((t: any) => t.id));
-        for (const f of followUps || []) followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
+        for (const f of followUps || []) {
+          if (f.is_done) {
+            followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
+          } else if (!scheduledFollowUpDates[f.task_id] || f.followed_up_at < scheduledFollowUpDates[f.task_id]) {
+            scheduledFollowUpDates[f.task_id] = f.followed_up_at;
+          }
+        }
       }
 
       const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
@@ -1882,6 +1932,7 @@ Deno.serve(async (req) => {
           awaitingFollowUp: t.awaiting_follow_up,
           followUpDate: t.follow_up_date,
           followUpCount: followUpCounts[t.id] || 0,
+          scheduledFollowUpDate: scheduledFollowUpDates[t.id] || null,
           notes: t.notes,
           sourceMessageId: t.source_message_id,
           sourceEmailSubject: t.source_email_subject,
