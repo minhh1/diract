@@ -11,7 +11,7 @@
 // even identify what's being created, unrelated to this per-company
 // required/default mechanism.
 export type ActionType = "create_task" | "create_project";
-export type FieldKind = "text" | "date" | "reference:project" | "reference:profile" | "select";
+export type FieldKind = "text" | "date" | "reference:project" | "reference:profile" | "reference:entity" | "select";
 
 export interface FieldDef {
   key: string;
@@ -37,7 +37,7 @@ const TABLE_NAME_BY_ACTION: Record<ActionType, "tasks" | "projects"> = {
 const BUILTIN_FIELDS: Record<ActionType, Array<Pick<FieldDef, "key" | "label" | "kind" | "alwaysRequired">>> = {
   create_task: [
     { key: "name", label: "Task name", kind: "text", alwaysRequired: true },
-    { key: "project_name", label: "Project", kind: "reference:project", alwaysRequired: true },
+    { key: "project_name", label: "Project (name or matter number)", kind: "reference:project", alwaysRequired: true },
     { key: "due_date", label: "Due date (YYYY-MM-DD)", kind: "date", alwaysRequired: false },
     { key: "assignee_name", label: "Assignee", kind: "reference:profile", alwaysRequired: false },
     { key: "notes", label: "Notes", kind: "text", alwaysRequired: false },
@@ -88,7 +88,8 @@ export async function loadFieldConfig(admin: any, companyId: string, actionType:
   const customFields: FieldDef[] = (customFieldRows ?? []).map(
     (cf: { id: string; field_key: string; label: string; field_type: string; select_options: string[] | null; is_unique: boolean }) => {
       const override = settingsByKey.get(cf.field_key);
-      const kind: FieldKind = cf.field_type === "select" ? "select" : cf.field_type === "date" ? "date" : "text";
+      const kind: FieldKind =
+        cf.field_type === "select" ? "select" : cf.field_type === "date" ? "date" : cf.field_type === "entity" ? "reference:entity" : "text";
       return {
         key: cf.field_key,
         label: cf.label,

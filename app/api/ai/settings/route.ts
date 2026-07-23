@@ -26,8 +26,37 @@ export async function GET() {
       source_teams: true,
       self_hosted_ollama_url: null,
       monthly_token_cap: 2000000,
+      require_unique_task_names: false,
     },
   });
+}
+
+// Targeted partial update for a single flag -- unlike POST below (a full
+// upsert that defaults every unspecified source_* toggle to false), this
+// only ever touches the column named in the body, leaving everything else
+// on an existing row untouched. Used by the Teams bot admin UI to flip
+// require_unique_task_names without needing to also resend every source
+// toggle (see components/admin/AdminMsTeamsTab.tsx).
+export async function PATCH(req: NextRequest) {
+  const auth = await authorizeCompanyMember();
+  if (auth.error) return auth.error;
+  const { admin, companyId, isAdmin } = auth;
+  if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+
+  const body = await req.json().catch(() => null);
+  if (typeof body?.require_unique_task_names !== "boolean") {
+    return NextResponse.json({ error: "require_unique_task_names (boolean) is required" }, { status: 400 });
+  }
+
+  const { error } = await admin
+    .from("ai_chat_settings")
+    .upsert(
+      { company_id: companyId, require_unique_task_names: body.require_unique_task_names, updated_at: new Date().toISOString() },
+      { onConflict: "company_id" }
+    );
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ success: true });
 }
 
 export async function POST(req: NextRequest) {

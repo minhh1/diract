@@ -52,6 +52,19 @@ function isCancelMessage(text: string): boolean {
 // to the same model the web chat UI defaults to on load (models[0]).
 const DEFAULT_HOSTED_MODEL_ID = HOSTED_MODELS[0].id;
 
+// The model has no real-time clock during inference -- without being told
+// today's actual date, it can't resolve a relative phrase like "tomorrow"
+// or "next Wednesday" into an absolute date at all (observed in testing:
+// it correctly said it "couldn't understand the date 'tomorrow'"). Included
+// in every tool-calling/extraction call so due_date can be given in natural
+// language, not just literal YYYY-MM-DD.
+function todayContextMessage() {
+  return {
+    role: "system",
+    content: `Today's date is ${new Date().toISOString().slice(0, 10)} (YYYY-MM-DD). If the user gives a relative date (e.g. "today", "tomorrow", "next Wednesday", "in 3 days"), convert it to an absolute YYYY-MM-DD date yourself before returning it.`,
+  };
+}
+
 function randomCode(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
@@ -310,6 +323,7 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
       const toolCallMessages = [
         modelMessages[0],
         { role: "system", content: TOOL_USE_GUARDRAILS },
+        todayContextMessage(),
         ...modelMessages.slice(1),
       ];
       const [taskFields, projectFields] = await Promise.all([
@@ -486,7 +500,7 @@ async function handleToolCall(
 
   if (toolCall.name === "update_project") {
     const projectName = args.project_name as string | undefined;
-    if (!projectName) return reply("Which project should I update?");
+    if (!projectName) return reply("Which project should I update? (name or matter number)");
     const project = await resolveProjectByName(admin, companyId, projectName);
     if (project.status !== "found") return askAbout("project", project, projectName);
 
@@ -582,6 +596,7 @@ async function continueCollecting(
       DEFAULT_HOSTED_MODEL_ID,
       [
         { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
+        todayContextMessage(),
         { role: "user", content: msg.question },
       ],
       buildMissingFieldsTool(pendingFields)

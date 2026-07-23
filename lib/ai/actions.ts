@@ -29,6 +29,15 @@ function pickBestMatch(name: string, candidates: ResolvedMatch[]): ResolveResult
   return { status: "ambiguous", candidates };
 }
 
+// Searches projects.name AND, per company, any additional custom fields an
+// admin has nominated as project search fields (teams_bot_project_search_fields
+// -- e.g. Huynh Lawyers wants "Matter Number" searchable, since staff refer
+// to a matter by its number rather than the project's literal name).
+// Candidates from both sources are merged (deduped by project id) before
+// pickBestMatch decides found/ambiguous/not_found -- pickBestMatch's exact-
+// name-wins tiebreak naturally falls through to "found on a single
+// candidate" when the match came from a custom field value instead of the
+// name column, which is exactly what's wanted there.
 export async function resolveProjectByName(admin: any, companyId: string, name: string): Promise<ResolveResult> {
   const { data } = await admin
     .from("projects")
@@ -36,7 +45,52 @@ export async function resolveProjectByName(admin: any, companyId: string, name: 
     .eq("company_id", companyId)
     .is("deleted_at", null)
     .ilike("name", `%${name}%`);
+
+  const candidates = new Map<string, ResolvedMatch>();
+  for (const p of (data ?? []) as ResolvedMatch[]) candidates.set(p.id, p);
+
+  const { data: searchFields } = await admin.from("teams_bot_project_search_fields").select("custom_field_id").eq("company_id", companyId);
+  const fieldIds = (searchFields ?? []).map((f: { custom_field_id: string }) => f.custom_field_id);
+  if (fieldIds.length) {
+    const { data: values } = await admin
+      .from("company_custom_field_values")
+      .select("record_id")
+      .eq("company_id", companyId)
+      .eq("table_name", "projects")
+      .in("field_id", fieldIds)
+      .ilike("value_text", `%${name}%`);
+    const recordIds = (values ?? []).map((v: { record_id: string }) => v.record_id);
+    if (recordIds.length) {
+      const { data: matched } = await admin.from("projects").select("id, name").eq("company_id", companyId).is("deleted_at", null).in("id", recordIds);
+      for (const p of (matched ?? []) as ResolvedMatch[]) candidates.set(p.id, p);
+    }
+  }
+
+  return pickBestMatch(name, Array.from(candidates.values()));
+}
+
+export async function resolveEntityByName(admin: any, companyId: string, name: string): Promise<ResolveResult> {
+  const { data } = await admin
+    .from("entities")
+    .select("id, name")
+    .eq("company_id", companyId)
+    .is("deleted_at", null)
+    .ilike("name", `%${name}%`);
   return pickBestMatch(name, (data ?? []) as ResolvedMatch[]);
+}
+
+// Minimal insert mirroring components/RecordCreatorField.tsx's shape --
+// used when a "reference:entity" custom field value (see
+// lib/ai/actionFields.ts, lib/ai/actionAdvance.ts) doesn't match any
+// existing entity, so the bot creates one rather than just storing text.
+export async function createEntity(admin: any, companyId: string, name: string, entityType: string = "Company"): Promise<ResolvedMatch> {
+  const { data, error } = await admin
+    .from("entities")
+    .insert({ company_id: companyId, name: name.trim(), entity_type: entityType })
+    .select("id, name")
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function resolveTaskByName(admin: any, companyId: string, name: string): Promise<ResolveResult> {
@@ -146,12 +200,19 @@ export interface CustomFieldValueInput {
   fieldId: string;
   fieldType: string;
   value: string;
+  // Only meaningful when fieldType === "entity": the id of an existing
+  // entities row already resolved by lib/ai/actionAdvance.ts, or null if
+  // no match existed and a new entity should be created with `value` as
+  // its name (see insertCustomFieldValues below).
+  existingEntityId?: string | null;
 }
 
 // Same per-type coercion components/NewProjectModal.tsx:82-104 already uses
 // when writing custom field values from the regular UI -- kept as one
 // shared helper so a bot-created record's custom fields look identical to
-// one entered by hand.
+// one entered by hand. "entity" fields get both value_text (the resolved
+// name, so every existing renderer -- none of which read value_record_id --
+// keeps displaying it correctly) and value_record_id (the real link).
 export async function insertCustomFieldValues(
   admin: any,
   companyId: string,
@@ -160,11 +221,17 @@ export async function insertCustomFieldValues(
   values: CustomFieldValueInput[]
 ): Promise<void> {
   if (!values.length) return;
-  const rows = values.map((v) => {
+  const rows: Record<string, unknown>[] = [];
+  for (const v of values) {
+    if (v.fieldType === "entity") {
+      const entityId = v.existingEntityId ?? (await createEntity(admin, companyId, v.value)).id;
+      rows.push({ company_id: companyId, record_id: recordId, field_id: v.fieldId, table_name: tableName, value_text: v.value, value_record_id: entityId });
+      continue;
+    }
     const isNum = v.fieldType === "number" || v.fieldType === "currency";
     const isBool = v.fieldType === "boolean";
     const isDate = v.fieldType === "date";
-    return {
+    rows.push({
       company_id: companyId,
       record_id: recordId,
       field_id: v.fieldId,
@@ -176,8 +243,8 @@ export async function insertCustomFieldValues(
           : isDate
             ? { value_date: v.value }
             : { value_text: v.value }),
-    };
-  });
+    });
+  }
   await admin.from("company_custom_field_values").insert(rows);
 }
 

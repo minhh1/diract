@@ -121,7 +121,7 @@ const UPDATE_PROJECT_TOOL = {
     parameters: {
       type: "object",
       properties: {
-        project_name: { type: "string", description: "The name of the existing project to update." },
+        project_name: { type: "string", description: "The existing project to update -- its name OR a known identifier like a matter number." },
         new_name: { type: "string", description: "A new name for the project, if it should be renamed." },
         description: { type: "string", description: "New description, if changing." },
         status: { type: "string", description: "New status (e.g. Open, Closed), if changing." },
@@ -146,7 +146,11 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
           type: "object",
           properties: {
             name: { type: "string", description: "The task's name/title, ONLY if the user actually stated one -- omit this property entirely rather than inventing a placeholder." },
-            project_name: { type: "string", description: "The name of the project this task belongs to, only if mentioned." },
+            project_name: {
+              type: "string",
+              description:
+                "The project this task belongs to, only if mentioned -- this can be the project's name OR a known identifier like a matter number (e.g. \"matter number 230005\" -> extract just \"230005\", not the whole phrase).",
+            },
             due_date: { type: "string", description: "Due date in YYYY-MM-DD format, if mentioned." },
             assignee_name: { type: "string", description: "Name of the person to assign the task to, if mentioned." },
             notes: { type: "string", description: "Any additional notes or details for the task." },

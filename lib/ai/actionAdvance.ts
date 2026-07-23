@@ -16,6 +16,7 @@ import { loadFieldConfig, type FieldDef, type ActionType } from "./actionFields"
 import {
   resolveProjectByName,
   resolveProfileByName,
+  resolveEntityByName,
   findExistingProjectByName,
   findExistingTaskByName,
   findExistingCustomFieldValue,
@@ -90,6 +91,9 @@ export async function advanceAction(
   const conflictNotes: string[] = [];
   let projectMatch: { id: string; name: string } | null = null;
   let assigneeMatch: { id: string; name: string } | null = null;
+  // Keyed by field.key -- the matched existing entity, or null meaning "no
+  // match, a new entity will be created with this name" (see step 4).
+  const entityMatches = new Map<string, { id: string; name: string } | null>();
 
   for (const field of fields) {
     const raw = collected[field.key]?.trim();
@@ -121,6 +125,24 @@ export async function advanceAction(
         continue;
       }
       assigneeMatch = result.match;
+    } else if (field.kind === "reference:entity") {
+      // entities enforces UNIQUE(company_id, name) -- a second entity with
+      // the exact same name literally can't be created, so an exact match
+      // is simply reused (flagged in the summary, not blocked on a second
+      // question the DB would reject anyway). No match -- a brand new
+      // entity will be created with this name at execute time, also fine
+      // without asking. Only a genuinely ambiguous partial match (e.g.
+      // "Minh" matching "Minh Huynh") needs clarification.
+      const result = await resolveEntityByName(admin, companyId, raw);
+      if (result.status === "ambiguous") {
+        delete collected[field.key];
+        needsReask.push(field);
+        conflictNotes.push(
+          `I found multiple existing entities matching "${raw}": ${result.candidates.map((c) => c.name).join(", ")}. Can you give the exact/full name?`
+        );
+        continue;
+      }
+      entityMatches.set(field.key, result.status === "found" ? result.match : null);
     } else if (field.kind === "select") {
       const options = field.selectOptions ?? [];
       const matchedOption = options.find((o) => o.toLowerCase() === raw.toLowerCase());
@@ -150,12 +172,19 @@ export async function advanceAction(
     const nameField = fields.find((f) => f.key === "name")!;
     const nameValue = collected.name?.trim();
     if (nameValue) {
-      const existing =
-        actionType === "create_project"
-          ? await findExistingProjectByName(admin, companyId, nameValue)
-          : projectMatch
-            ? await findExistingTaskByName(admin, companyId, projectMatch.id, nameValue)
-            : null;
+      // Project names are always checked (companies expect them unique).
+      // Task names are NOT, by default -- the same task name recurring
+      // across projects (e.g. "Kickoff call") is normal, so this only runs
+      // when a company has explicitly opted in via ai_chat_settings.
+      let existing = null;
+      if (actionType === "create_project") {
+        existing = await findExistingProjectByName(admin, companyId, nameValue);
+      } else if (projectMatch) {
+        const { data: settings } = await admin.from("ai_chat_settings").select("require_unique_task_names").eq("company_id", companyId).maybeSingle();
+        if (settings?.require_unique_task_names) {
+          existing = await findExistingTaskByName(admin, companyId, projectMatch.id, nameValue);
+        }
+      }
       if (existing) {
         delete collected.name;
         needsReask.push(nameField);
@@ -192,7 +221,9 @@ export async function advanceAction(
   const customFieldValues: CustomFieldValueInput[] = [];
   for (const field of fields) {
     if (field.isCustom && field.customFieldId && collected[field.key]) {
-      customFieldValues.push({ fieldId: field.customFieldId, fieldType: field.fieldType ?? "text", value: collected[field.key] });
+      const entry: CustomFieldValueInput = { fieldId: field.customFieldId, fieldType: field.fieldType ?? "text", value: collected[field.key] };
+      if (field.kind === "reference:entity") entry.existingEntityId = entityMatches.get(field.key)?.id ?? null;
+      customFieldValues.push(entry);
     }
   }
 
@@ -201,7 +232,7 @@ export async function advanceAction(
     if (field.key === "name" || field.kind === "reference:project" || field.kind === "reference:profile") continue;
     const value = collected[field.key];
     if (!value) continue;
-    const tag = wasDefaulted.has(field.key) ? " (default)" : "";
+    const tag = field.kind === "reference:entity" ? (entityMatches.get(field.key) ? " (existing entity)" : " (new entity)") : wasDefaulted.has(field.key) ? " (default)" : "";
     summaryParts.push(`${cleanLabel(field.label).toLowerCase()}: ${value}${tag}`);
   }
 

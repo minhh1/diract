@@ -120,6 +120,13 @@ interface ActionField {
   selectOptions?: string[];
 }
 
+interface ProjectSearchField {
+  id: string;
+  fieldKey: string;
+  label: string;
+  enabled: boolean;
+}
+
 export default function AdminMsTeamsTab({ companyId }: Props) {
   const searchParams = useSearchParams();
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -146,6 +153,10 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
   const [actionFieldsTab, setActionFieldsTab] = useState<"create_project" | "create_task">("create_project");
   const [actionFields, setActionFields] = useState<ActionField[]>([]);
   const [actionFieldsLoading, setActionFieldsLoading] = useState(false);
+
+  const [requireUniqueTaskNames, setRequireUniqueTaskNames] = useState(false);
+  const [projectSearchFields, setProjectSearchFields] = useState<ProjectSearchField[]>([]);
+  const [projectSearchFieldsLoading, setProjectSearchFieldsLoading] = useState(false);
 
   const consentResult = searchParams.get("msTeamsConsent");
   const consentMessage = searchParams.get("message");
@@ -238,6 +249,39 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
     });
   };
 
+  const loadProjectSearchFields = useCallback(async () => {
+    setProjectSearchFieldsLoading(true);
+    const res = await fetch("/api/teams/bot/project-search-fields");
+    const json = await res.json();
+    setProjectSearchFields(json.fields ?? []);
+    setProjectSearchFieldsLoading(false);
+  }, []);
+
+  const toggleProjectSearchField = async (field: ProjectSearchField) => {
+    const enabled = !field.enabled;
+    setProjectSearchFields((prev) => prev.map((f) => (f.id === field.id ? { ...f, enabled } : f)));
+    await fetch("/api/teams/bot/project-search-fields", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ custom_field_id: field.id, enabled }),
+    });
+  };
+
+  const loadRequireUniqueTaskNames = useCallback(async () => {
+    const res = await fetch("/api/ai/settings");
+    const json = await res.json();
+    setRequireUniqueTaskNames(!!json.settings?.require_unique_task_names);
+  }, []);
+
+  const toggleRequireUniqueTaskNames = async (value: boolean) => {
+    setRequireUniqueTaskNames(value);
+    await fetch("/api/ai/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ require_unique_task_names: value }),
+    });
+  };
+
   useEffect(() => {
     load();
     loadBot();
@@ -245,6 +289,12 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
   useEffect(() => {
     if (botConnection) loadActionFields(actionFieldsTab);
   }, [botConnection, actionFieldsTab, loadActionFields]);
+  useEffect(() => {
+    if (botConnection) {
+      loadProjectSearchFields();
+      loadRequireUniqueTaskNames();
+    }
+  }, [botConnection, loadProjectSearchFields, loadRequireUniqueTaskNames]);
   useProgressBarWhile(loading);
 
   const connect = async () => {
@@ -586,6 +636,54 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
                       {field.required ? "Required" : "Optional"}
                     </button>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {botConnection && (
+        <div className="bg-white border border-slate-200 rounded-[32px] p-6">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Bot behavior</p>
+
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl mb-4">
+            <p className="text-[12px] font-medium text-slate-700 flex-1">
+              Require unique task names within a project
+            </p>
+            <button
+              onClick={() => toggleRequireUniqueTaskNames(!requireUniqueTaskNames)}
+              className={`px-3 py-1 text-[10px] font-bold rounded-full transition-colors shrink-0 ${
+                requireUniqueTaskNames ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {requireUniqueTaskNames ? "On" : "Off"}
+            </button>
+          </div>
+
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Project search fields</p>
+          <p className="text-[12px] text-slate-400 mb-4">
+            Beyond a project&apos;s name, which custom fields can also be used to find it (e.g. a matter number)?
+          </p>
+          {projectSearchFieldsLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 size={16} className="animate-spin text-slate-300" />
+            </div>
+          ) : projectSearchFields.length === 0 ? (
+            <p className="text-[12px] text-slate-400">No custom fields on Projects yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {projectSearchFields.map((field) => (
+                <div key={field.id} className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">
+                  <p className="text-[12px] font-medium text-slate-700 flex-1">{field.label}</p>
+                  <button
+                    onClick={() => toggleProjectSearchField(field)}
+                    className={`px-3 py-1 text-[10px] font-bold rounded-full transition-colors shrink-0 ${
+                      field.enabled ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {field.enabled ? "Searchable" : "Not searchable"}
+                  </button>
                 </div>
               ))}
             </div>
