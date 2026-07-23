@@ -1,7 +1,7 @@
 "use client";
 
 // The one place widget -> presentational component dispatch happens. Used
-// by both the view page (app/dashboard/dashboards/[slug]/page.tsx, via
+// by both the view page (app/dashboard/[slug]/page.tsx, via
 // StaticWidgetGrid) and the builder's Canvas editor (via react-grid-layout)
 // and Code editor's preview pane -- so view-mode and every builder preview
 // share one rendering code path.
@@ -12,6 +12,9 @@ import { SummaryTile } from "./DashboardSummaryTiles";
 import DashboardActivityChart from "./DashboardActivityChart";
 import TrustReconciliationWidget from "./TrustReconciliationWidget";
 import LedesExportWidget from "./LedesExportWidget";
+import TrustLedgerStatementWidget from "./TrustLedgerStatementWidget";
+import TrustCashBookWidget from "./TrustCashBookWidget";
+import TrustAgedBalancesWidget from "./TrustAgedBalancesWidget";
 import { computeSummaryTileValue, computeChartSeries } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -128,6 +131,15 @@ export default function DashboardWidgetRenderer({
 
     case 'ledes_export':
       return <LedesExportWidget records={allRecords} />;
+
+    case 'trust_ledger_statement':
+      return <TrustLedgerStatementWidget records={allRecords} />;
+
+    case 'trust_cash_book':
+      return <TrustCashBookWidget records={allRecords} />;
+
+    case 'trust_aged_balances':
+      return <TrustAgedBalancesWidget records={allRecords} dormantDays={widget.config.dormantDays} />;
 
     default:
       return null;

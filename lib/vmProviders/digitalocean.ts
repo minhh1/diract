@@ -13,7 +13,7 @@ import type {
   VmProtocol,
   VmProvider,
 } from "./types";
-import { CHROME_DPI_FIX_SNIPPET, INSTALL_OFFICE_SNIPPET } from "./windowsProvisioning";
+import { CHROME_DPI_FIX_SNIPPET, INSTALL_OFFICE_SNIPPET, REDUCE_BACKGROUND_LOAD_SNIPPET } from "./windowsProvisioning";
 import { PRICING } from "./pricing";
 
 const DO_API_URL = "https://api.digitalocean.com/v2";
@@ -53,6 +53,55 @@ async function resolveLatestUbuntuLts(credentials: ProviderCredentials): Promise
 // desktop shell. guacd connects straight to the VM's VNC/RDP port over
 // TCP -- no websocket proxy needed on the VM side, Guacamole handles that.
 //
+// The two protocols now install two different desktops:
+//
+//   rdp (preferred) -- stock Ubuntu GNOME served by gnome-remote-desktop's
+//   single-user headless mode (GNOME 46+, so Ubuntu 24.04+). This is the
+//   modern-looking option: the real Yaru-themed Ubuntu desktop, not the
+//   dated stock-XFCE look the old xrdp path had. gnome-remote-desktop is
+//   also the future-proof choice -- it's Wayland-native and maintained by
+//   GNOME, whereas xrdp needs an X11 session and KDE/GNOME are both
+//   retiring X11 (xrdp+XFCE keeps working but is a visual dead end).
+//   Single-user headless mode (grdctl --headless + the per-user
+//   gnome-remote-desktop-headless.service) is deliberately chosen over the
+//   system-level remote-login mode (grdctl --system): system mode lands
+//   connections on a GDM login screen (a second, interactive login our
+//   Guacamole flow can't fill in), while headless mode authenticates with
+//   the user's own RDP credentials and drops straight into their session.
+//   Details that make this work unattended:
+//     - The RDP backend refuses to start without a TLS key/cert, so a
+//       self-signed pair is generated with openssl; lib/guacamole.ts
+//       already sends ignore-cert=true for RDP (it always had to -- xrdp's
+//       certs were self-signed too).
+//     - grdctl --headless stores credentials in a plain file instead of
+//       the GNOME keyring (which doesn't exist in a session that hasn't
+//       started yet) -- that's the whole point of the flag.
+//     - The headless daemon runs from the user's own systemd instance, so
+//       the user manager must exist without an interactive login:
+//       loginctl enable-linger starts it, a poll waits for the user bus
+//       socket to appear (enable-linger returns before the manager is up),
+//       and systemctl --user is then invoked via su with XDG_RUNTIME_DIR/
+//       DBUS_SESSION_BUS_ADDRESS set by hand (su alone doesn't set them).
+//     - gdm3 gets pulled in as a dependency but is disabled: nothing ever
+//       looks at the droplet's virtual console, and GDM just burns RAM.
+//     - Droplets have no GPU (llvmpipe software rendering), so GNOME
+//       animations are turned off system-wide via a dconf database, along
+//       with screen lock/blank and idle suspend -- a remote session that
+//       locks or suspends itself just looks like a dead VM. dconf-cli is
+//       installed explicitly: it's what `dconf update` comes from and
+//       --no-install-recommends would otherwise skip it.
+//   ubuntu-desktop-minimal is installed with --no-install-recommends
+//   because its recommends are exactly the seeded snaps (Firefox etc.),
+//   and snap installs from cloud-init are slow and flaky (same reasoning
+//   as the Mozilla-repo Firefox note below). The GNOME core bits that
+//   matter (shell, session, Yaru, pipewire for gnome-remote-desktop's
+//   screen/audio streaming, portal/settings apps) are listed explicitly so
+//   skipping recommends can't silently drop them.
+//
+//   vnc (legacy/lightweight) -- the original XFCE + TigerVNC setup,
+//   unchanged. gnome-remote-desktop's VNC backend is deprecated upstream
+//   and GNOME-under-Xvnc is fragile, so VNC machines keep XFCE.
+//
 // Ordering matters here: our status polling marks a VM "running" as soon
 // as the provider's hypervisor reports the droplet booted (tens of
 // seconds), not when cloud-init actually finishes. So the desktop + VNC/RDP
@@ -90,9 +139,18 @@ async function resolveLatestUbuntuLts(credentials: ProviderCredentials): Promise
 // string itself (the `#cloud-config`/`runcmd` YAML below) -- that was tried
 // once and broke cloud-init's parsing of the whole document; keep
 // explanations here, in the surrounding TypeScript, instead.
-function cloudInitScript(protocol: VmProtocol, username: string, password: string, ubuntuVersionDots: string): string {
+function cloudInitScript(
+  protocol: VmProtocol,
+  username: string,
+  password: string,
+  ubuntuVersionDots: string,
+  // Set to the droplet's size slug to also provision the WinApps/Office
+  // guest (see officeGuestCloudInit below); null for a plain Linux desktop.
+  officeSizeSlug: string | null
+): string {
   const escapedPassword = password.replace(/'/g, "'\\''");
   const escapedUsername = username.replace(/'/g, "'\\''");
+  const office = protocol === "rdp" && officeSizeSlug ? officeGuestCloudInit(escapedUsername, escapedPassword, officeSizeSlug) : null;
 
   const vncSystemdUnit = `  - path: /etc/systemd/system/vncserver@.service
     content: |
@@ -153,8 +211,80 @@ function cloudInitScript(protocol: VmProtocol, username: string, password: strin
       ExecStart=/usr/local/bin/install-extra-apps.sh
 `;
 
+  // System-wide dconf defaults for the GNOME/RDP path (see the function
+  // comment): no animations (no GPU on a droplet), no screen lock/blank/
+  // idle-suspend (all of which read as "the VM died" through a remote
+  // session). Written as a dconf system database rather than per-user
+  // gsettings calls because gsettings needs a running session bus at a
+  // point in provisioning where none exists yet.
+  //
+  // gnome-headless-shell.service exists because gnome-remote-desktop's
+  // headless daemon does NOT start a session itself -- it sits silently on
+  // the user bus waiting for mutter's remote-desktop API to appear, and
+  // never binds its RDP port until one does (confirmed directly on a real
+  // Ubuntu 26.04/GNOME 50 droplet: daemon active, config all correct,
+  // nothing listening on 3389; the moment `gnome-shell --headless` came up,
+  // the daemon bound the port and a full RDP session worked). Upstream's
+  // README hints at this with "an independently configured headless
+  // graphical session", but ships no unit for it -- so this is that unit.
+  // The drop-in makes enabling gnome-remote-desktop-headless pull the shell
+  // in with it (Wants=) rather than relying on two separate enables.
+  //
+  // Two details of that unit, both learned from a live connection test:
+  //   - No --virtual-monitor flag: with a pre-created monitor, the shell
+  //     UI lives on it and a connecting RDP client gets a SECOND, empty
+  //     virtual monitor -- the user sees only the background fill color (a
+  //     solid dark-blue screen, no top bar). With zero monitors at start,
+  //     the client's own monitor becomes primary and gets the real desktop
+  //     at the client's resolution.
+  //   - The ubuntu:GNOME/GNOME_SHELL_SESSION_MODE env: Ubuntu's whole look
+  //     (Yaru wallpaper defaults, dock, appindicators) is applied through
+  //     session-scoped gschema overrides ([...:ubuntu] in ubuntu-settings)
+  //     that only apply when the session declares itself "ubuntu" -- a bare
+  //     gnome-shell gets upstream-GNOME defaults instead, including a
+  //     wallpaper file that only exists in gnome-backgrounds (hence that
+  //     package, ubuntu-settings, and ibus in the install list).
+  const gnomeDconfFiles = `  - path: /etc/systemd/user/gnome-headless-shell.service
+    content: |
+      [Unit]
+      Description=GNOME Shell (headless) for gnome-remote-desktop
+
+      [Service]
+      Environment=XDG_SESSION_TYPE=wayland
+      Environment=XDG_CURRENT_DESKTOP=ubuntu:GNOME
+      Environment=XDG_SESSION_DESKTOP=ubuntu
+      Environment=GNOME_SHELL_SESSION_MODE=ubuntu
+      ExecStart=/usr/bin/gnome-shell --headless
+      Restart=on-failure
+
+      [Install]
+      WantedBy=default.target
+  - path: /etc/systemd/user/gnome-remote-desktop-headless.service.d/10-headless-shell.conf
+    content: |
+      [Unit]
+      Wants=gnome-headless-shell.service
+      After=gnome-headless-shell.service
+  - path: /etc/dconf/profile/user
+    content: |
+      user-db:user
+      system-db:local
+  - path: /etc/dconf/db/local.d/00-virtual-computer
+    content: |
+      [org/gnome/desktop/interface]
+      enable-animations=false
+      [org/gnome/desktop/session]
+      idle-delay=uint32 0
+      [org/gnome/desktop/screensaver]
+      lock-enabled=false
+      [org/gnome/desktop/lockdown]
+      disable-lock-screen=true
+      [org/gnome/settings-daemon/plugins/power]
+      sleep-inactive-ac-type='nothing'
+      sleep-inactive-battery-type='nothing'
+`;
+
   const writeFiles = `write_files:
-${protocol === "vnc" ? vncSystemdUnit : ""}${extraAppsFiles}`;
+${protocol === "vnc" ? vncSystemdUnit : gnomeDconfFiles}${extraAppsFiles}${office?.writeFiles ?? ""}`;
 
   const userSetup = `#cloud-config
 users:
@@ -181,15 +311,179 @@ ${writeFiles}runcmd:
 `;
   }
 
+  const grdDir = `/home/${escapedUsername}/.local/share/gnome-remote-desktop`;
   return `${userSetup}
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4 xfce4-goodies xrdp
-  - DEBIAN_FRONTEND=noninteractive apt-get remove -y xfce4-screensaver light-locker || true
-  - echo xfce4-session > /home/${escapedUsername}/.xsession
-  - chown ${escapedUsername}:${escapedUsername} /home/${escapedUsername}/.xsession
-  - adduser xrdp ssl-cert
-  - systemctl enable --now xrdp
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ubuntu-desktop-minimal gnome-remote-desktop pipewire pipewire-pulse wireplumber dbus-user-session dconf-cli xdg-desktop-portal-gnome nautilus gnome-console gnome-text-editor gnome-control-center yaru-theme-gnome-shell yaru-theme-gtk yaru-theme-icon fonts-ubuntu ubuntu-settings gnome-backgrounds ibus
+  - systemctl disable --now gdm3 || true
+  - systemctl set-default multi-user.target
+  - dconf update
+  - su - ${escapedUsername} -c "mkdir -p ~/.config && echo yes > ~/.config/gnome-initial-setup-done"
+  - install -d -m 700 -o ${escapedUsername} -g ${escapedUsername} /home/${escapedUsername}/.local /home/${escapedUsername}/.local/share ${grdDir}
+  - openssl req -x509 -newkey rsa:4096 -nodes -days 3650 -subj /CN=virtual-computer -keyout ${grdDir}/tls.key -out ${grdDir}/tls.crt
+  - chown ${escapedUsername}:${escapedUsername} ${grdDir}/tls.key ${grdDir}/tls.crt
+  - chmod 600 ${grdDir}/tls.key
+  - su - ${escapedUsername} -c "grdctl --headless rdp set-tls-key ~/.local/share/gnome-remote-desktop/tls.key"
+  - su - ${escapedUsername} -c "grdctl --headless rdp set-tls-cert ~/.local/share/gnome-remote-desktop/tls.crt"
+  - su - ${escapedUsername} -c "grdctl --headless rdp set-credentials '${escapedUsername}' '${escapedPassword}'"
+  - su - ${escapedUsername} -c "grdctl --headless rdp enable"
+  - loginctl enable-linger ${escapedUsername}
+  - for i in $(seq 1 60); do test -S /run/user/$(id -u ${escapedUsername})/bus && break; sleep 1; done
+  - su - ${escapedUsername} -c "XDG_RUNTIME_DIR=/run/user/$(id -u ${escapedUsername}) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u ${escapedUsername})/bus systemctl --user enable --now gnome-headless-shell.service gnome-remote-desktop-headless.service"
   - systemctl start --no-block extra-apps.service
+${office?.runcmd ?? ""}`;
+}
+
+// The "Microsoft Office on Ubuntu" add-on (virtual_computers.with_office):
+// a minimal Windows 11 guest runs invisibly in Docker on the same droplet
+// (dockur/windows, same image as the full Windows-on-DO path below), Office
+// gets installed into it via the same OEM mechanism, and WinApps
+// (https://github.com/winapps-org/winapps) projects the individual Office
+// app windows onto the GNOME desktop via FreeRDP RemoteApp -- launcher
+// icons, file associations, floating windows; the user never sees Windows.
+//
+// Differences from the full Windows path (windowsCloudInitScript):
+//   - The host RDP port 3389 belongs to gnome-remote-desktop, so the guest
+//     maps to 3390 -- and binds to 127.0.0.1 only. Nothing about the guest
+//     is reachable from outside; only WinApps' local FreeRDP talks to it.
+//     (Same for dockur's 8006 web viewer -- SSH-tunnel to it for debugging.)
+//   - Sizing splits the droplet with a running desktop instead of a bare
+//     Docker host: the guest gets everything above 2 vCPU / 4GB (so on the
+//     s-4vcpu-8gb tiers: 2 vCPU / 4GB each side). Guest disk is a fixed
+//     64GB (dockur's own default, ample for Windows + Office) rather than
+//     guestDiskGb() -- the *host* is the user's actual computer here and
+//     keeps the rest of the disk.
+//   - The guest's Windows account reuses the row's remoteUsername/
+//     remotePassword (Linux creds) so WinApps' stored config matches what's
+//     in the DB. Local Windows accounts don't enforce complexity at
+//     unattended-install time, so the short Linux-style password is fine.
+//   - The guest is CPU-deprioritized (cpu_shares 256 vs the 1024 default,
+//     plus user.slice CPUWeight=400) so under contention the interactive
+//     desktop always wins -- without capping the guest when the desktop is
+//     idle. cgroup weights only bite under contention, so Office in the
+//     guest still gets full CPU when it's the thing the user is actually
+//     doing. Added after real-droplet testing: the guest's initial Windows
+//     install pegged 2 of 4 cores and made the GNOME session visibly lag.
+//   - provision.ps1 additionally sets TSAppAllowList\\fDisabledAllowList=1,
+//     which lets any installed program be launched as a RemoteApp -- this
+//     is the core of WinApps' own RDPApps.reg, which its docker flavor
+//     normally applies itself; with WAFLAVOR=manual we own the guest, so
+//     we apply it ourselves.
+//
+// Everything runs from one detached oneshot unit (office-apps.service),
+// for the same reason extra-apps.service is detached (see cloudInitScript's
+// comment) -- and it's ordered After=extra-apps.service so two apt runs
+// never fight over the dpkg lock (belt-and-suspenders: DPkg::Lock::Timeout
+// too, since get.docker.com's own apt calls are outside our control).
+// Type=oneshot has no start timeout by default, which matters: the script
+// legitimately runs for an hour+ (Windows unattended install + Office
+// download inside the guest) before winapps-setup can succeed. WinApps
+// setup runs under xvfb-run because its FreeRDP invocations expect an X
+// display and the unit has none; the launchers it creates run later inside
+// the user's real GNOME session (Xwayland) instead. WAFLAVOR=manual tells
+// WinApps the VM lifecycle is not its problem (our compose + Docker's
+// restart policy own that, surviving reboots and snapshot restores).
+function officeGuestCloudInit(
+  escapedUsername: string,
+  escapedPassword: string,
+  sizeSlug: string
+): { writeFiles: string; runcmd: string } {
+  const { vcpus, memoryGb } = parseSizeSlug(sizeSlug);
+  const guestVcpus = Math.max(2, vcpus - 2);
+  const guestRamGb = Math.max(4, memoryGb - 4);
+
+  const provisionPs1 = `${REDUCE_BACKGROUND_LOAD_SNIPPET}
+
+${INSTALL_OFFICE_SNIPPET}
+
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Terminal Server\\TSAppAllowList" /v fDisabledAllowList /t REG_DWORD /d 1 /f`;
+  const provisionPs1B64 = Buffer.from(provisionPs1, "utf-8").toString("base64");
+
+  const writeFiles = `  - path: /root/office-vm/docker-compose.yml
+    content: |
+      services:
+        windows:
+          image: ghcr.io/dockur/windows:5.14
+          container_name: office-windows
+          cpu_shares: 256
+          environment:
+            VERSION: "11"
+            RAM_SIZE: "${guestRamGb}G"
+            CPU_CORES: "${guestVcpus}"
+            DISK_SIZE: "64G"
+            USERNAME: "${escapedUsername}"
+            PASSWORD: "${escapedPassword}"
+            LANGUAGE: "English"
+          cap_add:
+            - NET_ADMIN
+          devices:
+            - /dev/kvm
+          ports:
+            - "127.0.0.1:3390:3389/tcp"
+            - "127.0.0.1:3390:3389/udp"
+            - "127.0.0.1:8006:8006"
+          volumes:
+            - /root/office-vm/data:/storage
+            - /root/office-vm/oem:/oem
+          restart: unless-stopped
+          stop_grace_period: 2m
+  - path: /root/office-vm/oem/install.bat
+    content: |
+      @echo off
+      powershell -ExecutionPolicy Bypass -File C:\\OEM\\provision.ps1
+  - path: /root/office-vm/oem/provision.ps1
+    encoding: b64
+    content: ${provisionPs1B64}
+  - path: /usr/local/bin/setup-office-apps.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+      export DEBIAN_FRONTEND=noninteractive
+      APT="apt-get -o DPkg::Lock::Timeout=600"
+      $APT update
+      $APT install -y ca-certificates curl
+      curl -fsSL https://get.docker.com | sh
+      systemctl enable --now docker
+      docker compose -f /root/office-vm/docker-compose.yml up -d
+      $APT install -y dialog freerdp3-x11 git iproute2 libnotify-bin netcat-openbsd xvfb
+      curl -fsSL https://raw.githubusercontent.com/winapps-org/winapps/main/setup.sh -o /usr/local/share/winapps-setup.sh
+      su - ${escapedUsername} -c "mkdir -p ~/.config/winapps"
+      su - ${escapedUsername} -c "cat > ~/.config/winapps/winapps.conf && chmod 600 ~/.config/winapps/winapps.conf" <<'WACONF'
+      RDP_USER="${escapedUsername}"
+      RDP_PASS="${escapedPassword}"
+      RDP_IP="127.0.0.1"
+      RDP_PORT="3390"
+      WAFLAVOR="manual"
+      RDP_SCALE="100"
+      RDP_FLAGS="/cert:tofu"
+      WACONF
+      for i in $(seq 1 240); do nc -z 127.0.0.1 3390 && break; sleep 30; done
+      for i in $(seq 1 30); do
+        if su - ${escapedUsername} -c "xvfb-run -a bash /usr/local/share/winapps-setup.sh --user --setupAllOfficiallySupportedApps"; then
+          exit 0
+        fi
+        sleep 120
+      done
+      echo "WinApps setup did not complete; run setup-office-apps.sh again or /usr/local/share/winapps-setup.sh manually" >&2
+      exit 1
+  - path: /etc/systemd/system/office-apps.service
+    content: |
+      [Unit]
+      Description=Provision embedded Windows guest (Microsoft Office via WinApps)
+      After=network-online.target extra-apps.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/setup-office-apps.sh
 `;
+
+  const runcmd = `  - mkdir -p /root/office-vm/data /root/office-vm/oem
+  - systemctl set-property user.slice CPUWeight=400
+  - systemctl start --no-block office-apps.service
+`;
+
+  return { writeFiles, runcmd };
 }
 
 // Not anchored at the end -- deliberately matches slugs with a dedicated-CPU
@@ -216,7 +510,7 @@ function guestDiskGb(sizeSlug: string): number {
 // own Ubuntu host via dockur/windows (ghcr.io/dockur/windows) -- Guacamole
 // connects straight to its exposed RDP port (3389) the same way it already
 // connects to a native Windows Server EC2 instance or this file's own
-// Linux-desktop xrdp/VNC server above. No RemoteApp/individual-app-window
+// Linux-desktop RDP/VNC server above. No RemoteApp/individual-app-window
 // layer is involved here -- that's WinBoat's own wrapper around this same
 // image, built for a different use case (surfacing individual floating app
 // windows on someone's own Linux desktop), not needed for a full remote
@@ -252,6 +546,8 @@ function windowsCloudInitScript(username: string, password: string, sizeSlug: st
   const escapedPassword = password.replace(/"/g, '\\"');
 
   const provisionPs1 = `${CHROME_DPI_FIX_SNIPPET}
+
+${REDUCE_BACKGROUND_LOAD_SNIPPET}
 
 ${INSTALL_OFFICE_SNIPPET}`;
   const provisionPs1B64 = Buffer.from(provisionPs1, "utf-8").toString("base64");
@@ -380,7 +676,13 @@ export const digitalOceanProvider: VmProvider = {
     } else {
       const ubuntu = await resolveLatestUbuntuLts(params.credentials);
       image = ubuntu.slug;
-      userData = cloudInitScript(params.protocol, params.remoteUsername, params.remotePassword, ubuntu.versionDots);
+      userData = cloudInitScript(
+        params.protocol,
+        params.remoteUsername,
+        params.remotePassword,
+        ubuntu.versionDots,
+        params.withOffice ? params.sizeSlug : null
+      );
     }
 
     const res = await doFetch(params.credentials, "/droplets", {
@@ -392,6 +694,7 @@ export const digitalOceanProvider: VmProvider = {
         image,
         user_data: userData,
         ipv6: false,
+        ...(params.sshKeyIds?.length ? { ssh_keys: params.sshKeyIds } : {}),
       }),
     });
     await throwIfNotOk(res, "droplet creation");

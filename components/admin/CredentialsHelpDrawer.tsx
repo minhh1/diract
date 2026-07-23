@@ -21,9 +21,13 @@ interface Props {
   title: string;
   intro: string;
   steps: Step[];
+  // Optional extra content rendered below the numbered steps -- e.g. a
+  // "show connection details" action, so a drawer can carry an actual
+  // interactive affordance a step's text points to, not just prose.
+  footer?: React.ReactNode;
 }
 
-export default function CredentialsHelpDrawer({ isOpen, onClose, title, intro, steps }: Props) {
+export default function CredentialsHelpDrawer({ isOpen, onClose, title, intro, steps, footer }: Props) {
   if (!isOpen) return null;
 
   return (
@@ -64,6 +68,8 @@ export default function CredentialsHelpDrawer({ isOpen, onClose, title, intro, s
               </li>
             ))}
           </ol>
+
+          {footer}
         </div>
       </div>
     </div>

@@ -10,6 +10,9 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   chart: { label: 'Activity chart', icon: 'BarChart2' },
   trust_reconciliation: { label: 'Trust reconciliation', icon: 'Landmark' },
   ledes_export: { label: 'LEDES export', icon: 'FileDown' },
+  trust_ledger_statement: { label: 'Trust ledger statement', icon: 'FileText' },
+  trust_cash_book: { label: 'Trust cash book', icon: 'BookOpen' },
+  trust_aged_balances: { label: 'Dormant trust balances', icon: 'AlertTriangle' },
 };
 
 // Sensible default size (grid units) for a freshly-added widget of each type;
@@ -24,6 +27,9 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   chart: { w: 12, h: 4 },
   trust_reconciliation: { w: 12, h: 10 },
   ledes_export: { w: 12, h: 6 },
+  trust_ledger_statement: { w: 12, h: 8 },
+  trust_cash_book: { w: 12, h: 8 },
+  trust_aged_balances: { w: 12, h: 6 },
 };
 
 export function createWidget(type: DashboardWidgetType, existingWidgets: DashboardWidget[]): DashboardWidget {
@@ -40,5 +46,8 @@ export function createWidget(type: DashboardWidgetType, existingWidgets: Dashboa
     case 'chart': return { ...base, type, config: { dateFieldId: '', valueFieldId: null, aggregate: 'sum', granularity: 'day', series: [] } };
     case 'trust_reconciliation': return { ...base, type, config: {} };
     case 'ledes_export': return { ...base, type, config: {} };
+    case 'trust_ledger_statement': return { ...base, type, config: {} };
+    case 'trust_cash_book': return { ...base, type, config: {} };
+    case 'trust_aged_balances': return { ...base, type, config: { dormantDays: 365 } };
   }
 }

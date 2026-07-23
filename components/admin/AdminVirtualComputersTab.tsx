@@ -5,7 +5,7 @@
 // app/dashboard/virtual-computers/page.tsx for what they see instead.
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { Monitor, Plus, X, KeyRound, Trash2, CreditCard, Loader2, AlertTriangle, HelpCircle } from "lucide-react";
@@ -28,7 +28,7 @@ const VM_LIFECYCLE_STEPS = [
   {
     title: "Pick a provider and operating system",
     description:
-      "DigitalOcean offers a plain Ubuntu desktop (cheapest, VNC) or Windows 11 (Beta -- a real Windows 11 install inside nested virtualization, RDP only). AWS is Windows Server + Microsoft Office preinstalled, RDP only, and licensed per-hour the normal Windows Server way. Windows 11 on DigitalOcean is different: it starts on Microsoft's free evaluation license, not a bundled paid license -- whoever's assigned needs to activate it with their own Windows 11 product key inside the VM for continued/production use.",
+      "DigitalOcean offers a plain Ubuntu desktop (cheapest, VNC) or Windows 11 (Beta -- a real Windows 11 install inside nested virtualization, RDP only). AWS is Windows Server + Microsoft Office preinstalled, RDP only, and licensed per-hour the normal Windows Server way. Windows 11 on DigitalOcean is different: it starts on Microsoft's free evaluation license, not a bundled paid license -- whoever's assigned needs to activate it with their own Windows 11 product key inside the VM for continued/production use. Each Windows VM's row has a field for recording that key once it's activated -- if that VM is ever destroyed and recreated, the same key can usually be reused (a retail key's activation isn't tied to a particular machine), and the create form will remind you what was used last time.",
   },
   {
     title: "Choose a size and region",
@@ -79,6 +79,7 @@ interface Vm {
   provider: CloudProviderId;
   protocol: VmProtocol;
   os: "linux" | "windows";
+  with_office: boolean;
   size_slug: string;
   region: string;
   status: string;
@@ -86,6 +87,7 @@ interface Vm {
   assigned_user_id: string | null;
   billing_mode: "byo" | "platform";
   hourly_usd_at_creation: number | null;
+  windows_product_key: string | null;
 }
 
 interface Member {
@@ -143,7 +145,12 @@ const PROVIDER_CREDENTIAL_FIELDS: Record<CloudProviderId, { key: string; label: 
 
 export default function AdminVirtualComputersTab({ companyId }: Props) {
   const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [vms, setVms] = useState<Vm[]>([]);
+  // Includes destroyed rows -- kept around only to suggest a previously-
+  // activated Windows product key when creating a new VM for someone who
+  // already had one destroyed (see the productKeySuggestion memo below).
+  // Everywhere else in this component should use `vms` (below), not this.
+  const [allVms, setAllVms] = useState<Vm[]>([]);
+  const vms = useMemo(() => allVms.filter((vm) => vm.status !== "destroyed"), [allVms]);
   const [members, setMembers] = useState<Member[]>([]);
   const [pricingData, setPricingData] = useState<PricingResponse | null>(null);
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
@@ -164,7 +171,8 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
   const [vmOs, setVmOs] = useState<"linux" | "windows">("linux");
   const [vmSizeSlug, setVmSizeSlug] = useState("");
   const [vmRegion, setVmRegion] = useState(() => REGIONS.digitalocean?.[0]?.slug || "");
-  const [vmProtocol, setVmProtocol] = useState<VmProtocol>("vnc");
+  const [vmProtocol, setVmProtocol] = useState<VmProtocol>("rdp");
+  const [vmWithOffice, setVmWithOffice] = useState(false);
   const [vmBillingMode, setVmBillingMode] = useState<"byo" | "platform">("byo");
   const [vmCredentialId, setVmCredentialId] = useState("");
   const [vmAssignedUserId, setVmAssignedUserId] = useState("");
@@ -187,7 +195,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
   const load = useCallback(async () => {
     const [credRes, vmRes, pricingRes, billingRes, scheduleRes] = await Promise.all([
       fetch("/api/virtual-computers/credentials"),
-      fetch("/api/virtual-computers/list"),
+      fetch("/api/virtual-computers/list?includeDestroyed=1"),
       fetch("/api/virtual-computers/pricing"),
       fetch("/api/billing/status"),
       fetch("/api/virtual-computers/schedule"),
@@ -200,7 +208,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
       scheduleRes.json(),
     ]);
     setCredentials(credJson.credentials || []);
-    setVms(vmJson.virtualComputers || []);
+    setAllVms(vmJson.virtualComputers || []);
     setPricingData(pricingJson.pricing ? pricingJson : null);
     setBillingStatus(billingJson);
     setSchedule(scheduleJson.schedule || null);
@@ -280,6 +288,8 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
           ? "Windows + Office setup can take 10-15 minutes."
           : windowsOnDo
           ? "Windows 11 installs from scratch inside the VM -- this can take 75-90 minutes."
+          : officeOnDo
+          ? "The Ubuntu desktop will be ready in a few minutes. Microsoft Office installs in the background over the first hour or so -- its icons appear in the app grid once it's done."
           : "This usually takes about a minute."
       }`,
       0
@@ -291,6 +301,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
         name: trimmedName,
         provider: vmProvider,
         os: vmProvider === "digitalocean" ? vmOs : undefined,
+        withOffice: officeOnDo || undefined,
         sizeSlug: vmSizeSlug,
         region: vmRegion.trim(),
         protocol: vmProtocol,
@@ -310,6 +321,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
     notify("success", `"${trimmedName}" is being set up now -- watch its status below.`);
     setVmName("");
     setVmOs("linux");
+    setVmWithOffice(false);
     setVmSizeSlug("");
     setVmRegion("");
     setVmCredentialId("");
@@ -323,6 +335,15 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ assignedUserId: userId }),
+    });
+    load();
+  };
+
+  const updateProductKey = async (id: string, productKey: string) => {
+    await fetch(`/api/virtual-computers/${id}/product-key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productKey: productKey || null }),
     });
     load();
   };
@@ -397,12 +418,28 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
   const platformSlotsAvailable = activePlan ? activePlan.includedVmSlots - platformSlotsUsed : 0;
   const platformAllowedSizeSlugs = activePlan?.allowedSizes[vmProvider] || [];
   const windowsOnDo = vmProvider === "digitalocean" && vmOs === "windows";
+  // Office-on-Linux runs the same dockur/windows guest in the background,
+  // so it shares the Windows size floor (mirrors the server-side check in
+  // app/api/virtual-computers/create/route.ts).
+  const officeOnDo = vmProvider === "digitalocean" && vmOs === "linux" && vmProtocol === "rdp" && vmWithOffice;
   const sizesForProvider = (
     vmBillingMode === "platform"
       ? (pricingData?.pricing[vmProvider] || []).filter((s) => platformAllowedSizeSlugs.includes(s.slug))
       : pricingData?.pricing[vmProvider] || []
-  ).filter((s) => !windowsOnDo || WINDOWS_CAPABLE_DO_SIZES.includes(s.slug));
+  ).filter((s) => !(windowsOnDo || officeOnDo) || WINDOWS_CAPABLE_DO_SIZES.includes(s.slug));
   const platformBillingBlocked = vmBillingMode === "platform" && (!activePlan || platformSlotsAvailable <= 0);
+
+  // Reuse a Windows product key across a destroy+recreate for the same
+  // person -- e.g. a retail key's activation isn't tied to any particular
+  // VM, just to however many times Microsoft's own activation servers have
+  // seen it, so re-entering the same one on a fresh install for the same
+  // assignee usually just works. Most-recent destroyed row wins if there's
+  // more than one. allVms (not vms) deliberately includes destroyed rows.
+  const productKeySuggestion =
+    vmOs === "windows" && vmAssignedUserId
+      ? allVms.find((v) => v.assigned_user_id === vmAssignedUserId && v.os === "windows" && v.windows_product_key)
+          ?.windows_product_key || null
+      : null;
 
   return (
     <div className="space-y-6">
@@ -722,11 +759,15 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
               ) : (
                 <select
                   value={vmProtocol}
-                  onChange={(e) => setVmProtocol(e.target.value as VmProtocol)}
+                  onChange={(e) => {
+                    const nextProtocol = e.target.value as VmProtocol;
+                    setVmProtocol(nextProtocol);
+                    if (nextProtocol === "vnc") setVmWithOffice(false);
+                  }}
                   className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
                 >
-                  <option value="vnc">VNC</option>
-                  <option value="rdp">RDP</option>
+                  <option value="rdp">RDP (GNOME desktop)</option>
+                  <option value="vnc">VNC (lightweight XFCE)</option>
                 </select>
               )}
             </div>
@@ -737,13 +778,37 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                   const nextOs = e.target.value as "linux" | "windows";
                   setVmOs(nextOs);
                   setVmSizeSlug("");
-                  setVmProtocol(nextOs === "windows" ? "rdp" : "vnc");
+                  setVmProtocol("rdp");
+                  if (nextOs === "windows") setVmWithOffice(false);
                 }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
               >
                 <option value="linux">Ubuntu Desktop</option>
                 <option value="windows">Windows 11 (Beta -- nested virtualization)</option>
               </select>
+            )}
+            {vmProvider === "digitalocean" && vmOs === "linux" && vmProtocol === "rdp" && (
+              <label className="flex items-start gap-2 text-[12px] text-slate-600 px-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={vmWithOffice}
+                  onChange={(e) => {
+                    setVmWithOffice(e.target.checked);
+                    // Office shares the Windows size floor -- clear a
+                    // too-small selection instead of silently keeping it.
+                    if (e.target.checked && vmSizeSlug && !WINDOWS_CAPABLE_DO_SIZES.includes(vmSizeSlug)) {
+                      setVmSizeSlug("");
+                    }
+                  }}
+                  className="mt-0.5 accent-indigo-600"
+                />
+                <span>
+                  Include Microsoft Office (Word, Excel, PowerPoint, Outlook) -- runs a hidden Windows guest in the
+                  background and shows Office as normal app windows on the Ubuntu desktop. Needs a 4 vCPU / 8 GB size
+                  or bigger; Office finishes installing in the background during the first hour. Whoever&rsquo;s
+                  assigned signs in with their own Microsoft 365 account to activate it.
+                </span>
+              </label>
             )}
             {vmProvider === "digitalocean" && vmOs === "windows" && (
               <p className="flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 rounded-2xl px-4 py-3">
@@ -820,6 +885,14 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                 ))}
               </select>
             </div>
+            {productKeySuggestion && (
+              <p className="text-[11px] text-slate-400">
+                This person previously activated Windows with{" "}
+                <span className="font-mono text-slate-600">{productKeySuggestion}</span> on a since-destroyed VM --
+                re-entering the same key inside the new one usually works, since a retail key's activation isn't tied
+                to any particular machine. Add it below once this VM is ready.
+              </p>
+            )}
             {createError && <p className="text-[11px] text-red-500">{createError}</p>}
             <div className="flex gap-2">
               <button
@@ -858,7 +931,8 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                     )}
                   </div>
                   <p className="text-[10px] text-slate-400 truncate">
-                    {vm.provider} · {vm.protocol.toUpperCase()} · {vm.size_slug} · {vm.region}
+                    {vm.provider} · {vm.protocol.toUpperCase()}
+                    {vm.with_office ? " · Office" : ""} · {vm.size_slug} · {vm.region}
                   </p>
                   {vm.status === "provisioning" && !destroyingIds.has(vm.id) && (
                     <p className="text-[10px] text-indigo-400 truncate mt-0.5">
@@ -868,6 +942,20 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                         ? "Booting instance and installing Office -- can take 10-15 minutes."
                         : "Booting instance -- usually ready within a minute."}
                     </p>
+                  )}
+                  {vm.os === "windows" && (
+                    <input
+                      key={`${vm.id}-${vm.windows_product_key || ""}`}
+                      type="text"
+                      defaultValue={vm.windows_product_key || ""}
+                      placeholder="Windows product key (none set)"
+                      onBlur={(e) => {
+                        if (e.target.value.trim() !== (vm.windows_product_key || "")) {
+                          updateProductKey(vm.id, e.target.value.trim());
+                        }
+                      }}
+                      className="mt-1 w-full px-2 py-1 border border-slate-200 rounded-full text-[10px] font-mono outline-none focus:border-indigo-400 bg-white"
+                    />
                   )}
                 </div>
                 <select

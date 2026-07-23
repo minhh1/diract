@@ -291,9 +291,34 @@ BEGIN
     {"id":"ta6","type":"summary_tile","layout":{"x":9,"y":4,"w":3,"h":2},"config":{"label":"Transactions","fieldId":null,"aggregate":"count"}},
     {"id":"ta7","type":"chart","layout":{"x":0,"y":6,"w":12,"h":4},"config":{"dateFieldId":"date","valueFieldId":"amount_in","aggregate":"sum"}},
     {"id":"ta8","type":"grid","layout":{"x":0,"y":10,"w":12,"h":6},"config":{"fieldIds":["receipt_number","date","matter","client","type","payor_payee","purpose","bank_reference","amount_in","amount_out","running_balance"]}},
-    {"id":"ta9","type":"trust_reconciliation","layout":{"x":0,"y":16,"w":12,"h":10},"config":{}}
+    {"id":"ta9","type":"trust_reconciliation","layout":{"x":0,"y":16,"w":12,"h":10},"config":{}},
+    {"id":"ta10","type":"trust_ledger_statement","layout":{"x":0,"y":26,"w":12,"h":8},"config":{}},
+    {"id":"ta11","type":"trust_cash_book","layout":{"x":0,"y":34,"w":12,"h":8},"config":{}},
+    {"id":"ta12","type":"trust_aged_balances","layout":{"x":0,"y":42,"w":12,"h":6},"config":{"dormantDays":365}}
   ]'::jsonb
   WHERE NOT EXISTS (SELECT 1 FROM template_definition_dashboards WHERE template_id = v_template_id AND slug = 'trust-account');
+
+  -- Catalog-only refresh for a re-run after the dashboard row already
+  -- exists (the INSERT above is a create-once guard, so a later addition to
+  -- this dashboard's widgets_template -- e.g. the three trust-reporting
+  -- widgets added after the dashboard was first seeded -- needs its own
+  -- UPDATE to reach the catalog). Never touches any company's own installed
+  -- copy -- see supabase/trust_reporting_widgets_backfill.sql for that.
+  UPDATE template_definition_dashboards SET widgets_template = '[
+    {"id":"ta1","type":"filter_bar","layout":{"x":0,"y":0,"w":12,"h":2},"config":{"fieldIds":["matter","client"]}},
+    {"id":"ta2","type":"quick_add_form","layout":{"x":0,"y":2,"w":12,"h":2},"config":{"fieldIds":["date","matter","client","type","payor_payee","purpose","bank_reference","amount_in","amount_out","invoice","authority_reference"]}},
+    {"id":"ta3","type":"summary_tile","layout":{"x":0,"y":4,"w":3,"h":2},"config":{"label":"Funds received","fieldId":"amount_in","aggregate":"sum"}},
+    {"id":"ta4","type":"summary_tile","layout":{"x":3,"y":4,"w":3,"h":2},"config":{"label":"Funds disbursed","fieldId":"amount_out","aggregate":"sum"}},
+    {"id":"ta5","type":"summary_tile","layout":{"x":6,"y":4,"w":3,"h":2},"config":{"label":"Trust balance","fieldId":"amount_in","aggregate":"net","fieldBId":"amount_out"}},
+    {"id":"ta6","type":"summary_tile","layout":{"x":9,"y":4,"w":3,"h":2},"config":{"label":"Transactions","fieldId":null,"aggregate":"count"}},
+    {"id":"ta7","type":"chart","layout":{"x":0,"y":6,"w":12,"h":4},"config":{"dateFieldId":"date","valueFieldId":"amount_in","aggregate":"sum"}},
+    {"id":"ta8","type":"grid","layout":{"x":0,"y":10,"w":12,"h":6},"config":{"fieldIds":["receipt_number","date","matter","client","type","payor_payee","purpose","bank_reference","amount_in","amount_out","running_balance"]}},
+    {"id":"ta9","type":"trust_reconciliation","layout":{"x":0,"y":16,"w":12,"h":10},"config":{}},
+    {"id":"ta10","type":"trust_ledger_statement","layout":{"x":0,"y":26,"w":12,"h":8},"config":{}},
+    {"id":"ta11","type":"trust_cash_book","layout":{"x":0,"y":34,"w":12,"h":8},"config":{}},
+    {"id":"ta12","type":"trust_aged_balances","layout":{"x":0,"y":42,"w":12,"h":6},"config":{"dormantDays":365}}
+  ]'::jsonb
+  WHERE template_id = v_template_id AND slug = 'trust-account';
 
   INSERT INTO template_definition_dashboards (template_id, source_template_table_id, name, slug, icon, color, display_order, widgets_template)
   SELECT v_template_id, v_invoices_table_id, 'Billing', 'billing', 'Receipt', '#0891b2', 2, '[

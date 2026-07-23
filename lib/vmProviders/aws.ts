@@ -32,7 +32,7 @@ import type {
   StartSnapshotResult,
   VmProvider,
 } from "./types";
-import { CHROME_DPI_FIX_SNIPPET, INSTALL_OFFICE_SNIPPET } from "./windowsProvisioning";
+import { CHROME_DPI_FIX_SNIPPET, INSTALL_OFFICE_SNIPPET, REDUCE_BACKGROUND_LOAD_SNIPPET } from "./windowsProvisioning";
 
 // The standard, Microsoft-documented way to avoid hardcoding a Windows AMI
 // ID (which differs per region and changes with every patch Tuesday) --
@@ -108,6 +108,8 @@ Set-ItemProperty -Path "HKLM:\\System\\CurrentControlSet\\Control\\Terminal Serv
 
 ${CHROME_DPI_FIX_SNIPPET}
 
+${REDUCE_BACKGROUND_LOAD_SNIPPET}
+
 ${INSTALL_OFFICE_SNIPPET}
 </powershell>`;
   return Buffer.from(script, "utf-8").toString("base64");
@@ -130,6 +132,8 @@ function windowsRestoreUserData(password: string): string {
 net user Administrator "${escapedPassword}"
 Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 Set-ItemProperty -Path "HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server" -Name "fDenyTSConnections" -Value 0
+
+${REDUCE_BACKGROUND_LOAD_SNIPPET}
 
 ${INSTALL_OFFICE_SNIPPET}
 </powershell>

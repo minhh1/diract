@@ -65,6 +65,20 @@ export function generateWindowsPassword(): string {
   return password.join("");
 }
 
+// Attaches our own debug SSH keypair (see .secrets/do_debug_ed25519 and
+// DIGITALOCEAN_DEBUG_SSH_KEY_ID) to a droplet's Ubuntu host so a developer
+// can inspect/tune the actual QEMU process dockur/windows runs -- e.g.
+// checking `-cpu host` is really in effect, or applying RT vCPU scheduling
+// priority to reduce nested-KVM input jitter. Deliberately platform-billed
+// only: BYO VMs run on a customer's own DigitalOcean account, and silently
+// adding our own access there would mean giving ourselves a backdoor into
+// infrastructure we don't own.
+export function debugSshKeyIds(provider: string, billingMode: string): string[] | undefined {
+  if (provider !== "digitalocean" || billingMode !== "platform") return undefined;
+  const keyId = process.env.DIGITALOCEAN_DEBUG_SSH_KEY_ID;
+  return keyId ? [keyId] : undefined;
+}
+
 export async function loadVm(admin: any, companyId: string, id: string) {
   const { data } = await admin.from("virtual_computers").select("*").eq("id", id).maybeSingle();
   if (!data || data.company_id !== companyId) return null;
@@ -241,6 +255,7 @@ export async function wakeVm(
       remoteUsername: vm.remote_username,
       remotePassword: vm.remote_password,
       fromSnapshotId: vm.snapshot_id,
+      sshKeyIds: debugSshKeyIds(vm.provider, vm.billing_mode),
     });
     await openUsageEvent(admin, vm);
     const schedule = await getCompanySchedule(admin, vm.company_id);
@@ -345,6 +360,7 @@ async function retryFreshWindowsInstall(admin: any, vm: ProvisioningVm, credenti
       os: vm.os,
       remoteUsername: vm.remote_username,
       remotePassword: newPassword,
+      sshKeyIds: debugSshKeyIds(vm.provider, vm.billing_mode),
     });
     await admin
       .from("virtual_computers")

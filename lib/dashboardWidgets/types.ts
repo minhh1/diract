@@ -163,9 +163,37 @@ export interface LedesExportWidget extends BaseWidget {
   config: {};
 }
 
+// Per-matter trust ledger statement (see
+// components/dashboard/TrustLedgerStatementWidget.tsx) -- every transaction
+// for one matter, in date order, with running balance; printable. No
+// config: the matter is picked interactively within the widget.
+export interface TrustLedgerStatementWidget extends BaseWidget {
+  type: 'trust_ledger_statement';
+  config: {};
+}
+
+// Trust cash book (see components/dashboard/TrustCashBookWidget.tsx) --
+// every transaction across every matter, in date order, with a
+// whole-account running total. No config: date range is picked
+// interactively within the widget.
+export interface TrustCashBookWidget extends BaseWidget {
+  type: 'trust_cash_book';
+  config: {};
+}
+
+// Dormant/aged trust balances (see
+// components/dashboard/TrustAgedBalancesWidget.tsx) -- matters with a live
+// (non-zero) trust balance whose last transaction is older than
+// dormantDays, a common trust-compliance check for unclaimed money.
+export interface TrustAgedBalancesWidget extends BaseWidget {
+  type: 'trust_aged_balances';
+  config: { dormantDays: number };
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
-  | TrustReconciliationWidget | LedesExportWidget;
+  | TrustReconciliationWidget | LedesExportWidget
+  | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];

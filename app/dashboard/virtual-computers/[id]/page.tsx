@@ -14,9 +14,10 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, HelpCircle, Copy, Check } from "lucide-react";
 import GuacamoleViewer from "@/components/virtualcomputers/GuacamoleViewer";
 import VmStatusBadge from "@/components/virtualcomputers/VmStatusBadge";
+import CredentialsHelpDrawer from "@/components/admin/CredentialsHelpDrawer";
 
 interface VmStatus {
   id: string;
@@ -24,10 +25,19 @@ interface VmStatus {
   errorMessage: string | null;
   os: "linux" | "windows";
   provider: string;
+  protocol: string;
   createdAt: string;
   hibernateDeadline: string | null;
   resolutionWidth: number | null;
   resolutionHeight: number | null;
+}
+
+interface ConnectionInfo {
+  hostname: string;
+  port: number;
+  protocol: string;
+  username: string;
+  password: string;
 }
 
 // "Ultra-wide" is an honest single wide desktop, not real multi-monitor --
@@ -45,6 +55,37 @@ function elapsedLabel(createdAt: string, now: number): string {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+// Native RDP/VNC clients skip the browser<->Guacamole relay entirely --
+// confirmed directly, this connects straight from a Mac's own Windows App
+// to a real VM: noticeably snappier than the same VM through the browser,
+// though some residual lag remains either way (nested-virtualization
+// scheduling jitter, not something a client choice can fix). Worth
+// documenting as a real, already-available option -- the RDP/VNC port is
+// already open on every VM's public IP regardless (that's how the native
+// client test above worked at all), this just surfaces it.
+function connectStepsFor(protocol: string) {
+  const nativeApp =
+    protocol === "rdp"
+      ? "a Remote Desktop app -- \"Windows App\" (Mac App Store) on a Mac, the built-in \"Remote Desktop Connection\" on Windows, or \"Remmina\" on Linux"
+      : "a VNC viewer app -- \"Screen Sharing\" (built into macOS) or \"RealVNC Viewer\"/\"TigerVNC Viewer\" on Windows/Linux";
+  return [
+    {
+      title: "Opening it in the browser",
+      description:
+        "\"Open virtual computer\" launches a full remote desktop in a new browser tab -- no install needed, works on any device, but it does add a small relay hop and re-renders the screen for the browser, which can feel a little softer than a direct connection.",
+    },
+    {
+      title: "Want it faster? Connect with a native app instead",
+      description: `Connecting directly with ${nativeApp} skips that relay and rendering step, and can feel noticeably snappier -- confirmed directly by testing both side by side on the same computer. Click "Show connection details" below to get the address and login, then add them as a new connection in that app.`,
+    },
+    {
+      title: "Your computer's schedule still applies",
+      description:
+        "Connecting a different way doesn't change when this computer sleeps or wakes -- it still follows whatever awake-hours schedule your admin set, it just won't show this page's \"waking up\" progress screen while you wait.",
+    },
+  ];
+}
+
 const HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;
 const EXTEND_PROMPT_LEAD_MS = 15 * 60 * 1000;
 
@@ -55,6 +96,11 @@ export default function VirtualComputerSessionPage() {
   const [now, setNow] = useState(() => Date.now());
   const [showExtendPrompt, setShowExtendPrompt] = useState(false);
   const wakeRequested = useRef(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [loadingConnectionInfo, setLoadingConnectionInfo] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const poll = useCallback(async () => {
     const res = await fetch(`/api/virtual-computers/${id}/status`);
@@ -137,6 +183,25 @@ export default function VirtualComputerSessionPage() {
     poll();
   };
 
+  const revealConnectionInfo = async () => {
+    setLoadingConnectionInfo(true);
+    setConnectionError(null);
+    const res = await fetch(`/api/virtual-computers/${id}/connection-info`);
+    const json = await res.json();
+    setLoadingConnectionInfo(false);
+    if (!res.ok) {
+      setConnectionError(json.error || "Could not load connection details");
+      return;
+    }
+    setConnectionInfo(json);
+  };
+
+  const copyField = (field: string, value: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField((cur) => (cur === field ? null : cur)), 1500);
+  };
+
   return (
     <div className="flex flex-col h-screen">
       <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-white shrink-0">
@@ -167,6 +232,13 @@ export default function VirtualComputerSessionPage() {
           </select>
         )}
         {status && <VmStatusBadge status={status.status} />}
+        <button
+          onClick={() => setHelpOpen(true)}
+          className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-slate-400 hover:text-indigo-600 transition-colors"
+        >
+          <HelpCircle size={13} />
+          Connect a different way
+        </button>
       </div>
 
       {showExtendPrompt && (
@@ -206,6 +278,56 @@ export default function VirtualComputerSessionPage() {
           </div>
         )}
       </div>
+
+      {status && (
+        <CredentialsHelpDrawer
+          isOpen={helpOpen}
+          onClose={() => setHelpOpen(false)}
+          title="Connect a different way"
+          intro="This computer is reachable from the browser, or directly from a native app on your own device."
+          steps={connectStepsFor(status.protocol)}
+          footer={
+            <div className="pt-2 border-t border-slate-100">
+              {status.status !== "running" ? (
+                <p className="text-[11px] text-slate-400">
+                  Connection details are only available while this computer is running.
+                </p>
+              ) : !connectionInfo ? (
+                <button
+                  onClick={revealConnectionInfo}
+                  disabled={loadingConnectionInfo}
+                  className="w-full px-4 py-2 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                >
+                  {loadingConnectionInfo ? "Loading..." : "Show connection details"}
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  {[
+                    { label: "Address", value: `${connectionInfo.hostname}:${connectionInfo.port}` },
+                    { label: "Username", value: connectionInfo.username },
+                    { label: "Password", value: connectionInfo.password },
+                  ].map((field) => (
+                    <div key={field.label} className="flex items-center gap-2 bg-slate-50 rounded-2xl px-4 py-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{field.label}</p>
+                        <p className="text-[12px] font-mono text-slate-700 truncate">{field.value}</p>
+                      </div>
+                      <button
+                        onClick={() => copyField(field.label, field.value)}
+                        className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors shrink-0"
+                        title={`Copy ${field.label.toLowerCase()}`}
+                      >
+                        {copiedField === field.label ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {connectionError && <p className="text-[11px] text-red-500 mt-2">{connectionError}</p>}
+            </div>
+          }
+        />
+      )}
     </div>
   );
 }

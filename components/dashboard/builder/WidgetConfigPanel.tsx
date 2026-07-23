@@ -478,8 +478,22 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
           </div>
         )}
 
-        {(draft.type === 'trust_reconciliation' || draft.type === 'ledes_export') && (
+        {(draft.type === 'trust_reconciliation' || draft.type === 'ledes_export'
+          || draft.type === 'trust_ledger_statement' || draft.type === 'trust_cash_book') && (
           <p className="text-[11px] text-slate-400 italic">No settings — it always reads this dashboard's own table.</p>
+        )}
+
+        {draft.type === 'trust_aged_balances' && (
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Flag dormant after (days)</label>
+            <input
+              type="number"
+              min={1}
+              value={draft.config.dormantDays}
+              onChange={e => updateConfig({ dormantDays: Math.max(1, parseInt(e.target.value, 10) || 365) })}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+            />
+          </div>
         )}
 
         <div className="flex gap-2 pt-2">

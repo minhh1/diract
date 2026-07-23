@@ -32,10 +32,25 @@ export interface CreateInstanceParams {
   os: VmOs;
   remoteUsername: string;
   remotePassword: string;
+  // DigitalOcean Linux/RDP only: also provision a background dockur/windows
+  // guest (bound to localhost, never exposed) with Microsoft Office
+  // installed, surfaced as individual app windows on the GNOME desktop via
+  // WinApps/FreeRDP RemoteApp -- see officeGuestCloudInit in
+  // lib/vmProviders/digitalocean.ts. Other providers/OSes ignore this.
+  withOffice?: boolean;
   // Set when waking a hibernated VM: launch from this saved snapshot/image
   // instead of the provider's base image, and skip whatever first-boot
   // provisioning is already baked into it (see createSnapshot below).
   fromSnapshotId?: string;
+  // Debug-only: attaches these SSH keys to the droplet's Ubuntu host (NOT
+  // the Windows guest) so a developer can inspect/tune the actual QEMU
+  // process dockur/windows runs -- e.g. verifying `-cpu host` is in effect,
+  // or applying RT scheduling priority to reduce nested-KVM input jitter.
+  // Only ever set for platform-billed DO VMs using our own debug keypair
+  // (see DIGITALOCEAN_DEBUG_SSH_KEY_ID) -- never for BYO credentials, since
+  // that would mean silently adding our own access to a customer's own
+  // cloud account. DigitalOcean-specific; other providers ignore this.
+  sshKeyIds?: string[];
 }
 
 export interface StartSnapshotResult {

@@ -30,6 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     ipAddress: vm.ip_address,
     os: vm.os,
     provider: vm.provider,
+    protocol: vm.protocol,
     createdAt: vm.created_at,
     hibernateDeadline: vm.hibernate_deadline,
     resolutionWidth: vm.resolution_width,

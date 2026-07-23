@@ -16,7 +16,7 @@ import { getProvider, PROVISIONABLE_PROVIDERS } from "@/lib/vmProviders/registry
 import { PRICING } from "@/lib/vmProviders/pricing";
 import { getPlatformCredentials } from "@/lib/vmProviders/platformCredentials";
 import { PLANS, isPlanId } from "@/lib/billing/plans";
-import { generateRemotePassword, generateWindowsPassword, openUsageEvent, getCompanySchedule } from "../_lib";
+import { generateRemotePassword, generateWindowsPassword, openUsageEvent, getCompanySchedule, debugSshKeyIds } from "../_lib";
 import { nextLocalMidnight } from "@/lib/vmProviders/scheduling";
 import type { CloudProviderId, ProviderCredentials, VmOs, VmProtocol } from "@/lib/vmProviders/types";
 
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
-  const { name, provider, sizeSlug, region, protocol, credentialId, assignedUserId, os: requestedOs } = body || {};
+  const { name, provider, sizeSlug, region, protocol, credentialId, assignedUserId, os: requestedOs, withOffice: requestedWithOffice } = body || {};
   const billingMode = body?.billingMode === "platform" ? "platform" : "byo";
 
   if (!PROVISIONABLE_PROVIDERS.includes(provider)) {
@@ -70,6 +70,25 @@ export async function POST(req: NextRequest) {
   // this, but don't just trust the client for it.
   if (os === "windows" && protocol !== "rdp") {
     return NextResponse.json({ error: "Windows VMs must use the rdp protocol" }, { status: 400 });
+  }
+
+  // Office-on-Linux (WinApps -- see lib/vmProviders/digitalocean.ts) runs
+  // the same dockur/windows guest in the background, so it has the same
+  // provider/size floor as a full Windows VM, plus it only makes sense on
+  // the GNOME/RDP desktop (the guest's app windows are projected into that
+  // session; the legacy XFCE/VNC path has no WinApps setup).
+  const withOffice = requestedWithOffice === true && os === "linux";
+  if (withOffice && provider !== "digitalocean") {
+    return NextResponse.json({ error: "Office on Linux is only available on DigitalOcean" }, { status: 400 });
+  }
+  if (withOffice && protocol !== "rdp") {
+    return NextResponse.json({ error: "Office on Linux requires the rdp protocol" }, { status: 400 });
+  }
+  if (withOffice && !WINDOWS_CAPABLE_DO_SIZES.includes(sizeSlug)) {
+    return NextResponse.json(
+      { error: `Office on Linux runs a background Windows guest and needs at least the ${WINDOWS_CAPABLE_DO_SIZES[0]} size.` },
+      { status: 400 }
+    );
   }
 
   const sizeOption = PRICING[provider as CloudProviderId]?.find((s) => s.slug === sizeSlug);
@@ -150,6 +169,7 @@ export async function POST(req: NextRequest) {
       provider,
       protocol,
       os,
+      with_office: withOffice,
       size_slug: sizeSlug,
       region,
       credential_id: billingMode === "byo" ? credentialId : null,
@@ -173,8 +193,10 @@ export async function POST(req: NextRequest) {
       region,
       protocol: protocol as VmProtocol,
       os,
+      withOffice,
       remoteUsername,
       remotePassword,
+      sshKeyIds: debugSshKeyIds(provider, billingMode),
     });
     await openUsageEvent(admin, { id: row.id, company_id: companyId, hourly_usd_at_creation: sizeOption.hourlyUsd });
     const schedule = await getCompanySchedule(admin, companyId);

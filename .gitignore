@@ -49,3 +49,6 @@ scripts/perf/auth-state.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# SSH debug keypair for inspecting DO droplets (see lib/vmProviders/digitalocean.ts's sshKeyIds support)
+.secrets/

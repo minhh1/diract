@@ -18,6 +18,9 @@
 //   series ["<label>"] field=<key> agg=sum|count [when=<cond>[,<cond>...]]
 //   trust_reconciliation
 //   ledes_export
+//   trust_ledger_statement
+//   trust_cash_book
+//   trust_aged_balances [dormant_days=<n>]
 //
 // One or more `series` lines directly after a `chart` line add measures to
 // it (a multi-series chart) instead of starting new widgets -- e.g.
@@ -71,6 +74,9 @@ const KEYWORD_TO_TYPE: Record<string, DashboardWidgetType> = {
   chart: 'chart',
   trust_reconciliation: 'trust_reconciliation',
   ledes_export: 'ledes_export',
+  trust_ledger_statement: 'trust_ledger_statement',
+  trust_cash_book: 'trust_cash_book',
+  trust_aged_balances: 'trust_aged_balances',
 };
 
 function buildFieldLookup(fields: CustomTableField[]) {
@@ -309,6 +315,17 @@ export function parseDSL(source: string, fields: CustomTableField[]): DslParseRe
       case 'ledes_export':
         widgets.push({ id, type, layout, config: {} });
         break;
+      case 'trust_ledger_statement':
+        widgets.push({ id, type, layout, config: {} });
+        break;
+      case 'trust_cash_book':
+        widgets.push({ id, type, layout, config: {} });
+        break;
+      case 'trust_aged_balances': {
+        const dormantDays = kv.dormant_days ? Math.max(1, parseInt(kv.dormant_days, 10) || 365) : 365;
+        widgets.push({ id, type, layout, config: { dormantDays } });
+        break;
+      }
     }
 
     y += h;
@@ -386,6 +403,12 @@ export function serializeToDSL(widgets: DashboardWidget[], fields: CustomTableFi
           return `trust_reconciliation${widthSuffix(w.layout.w)}`;
         case 'ledes_export':
           return `ledes_export${widthSuffix(w.layout.w)}`;
+        case 'trust_ledger_statement':
+          return `trust_ledger_statement${widthSuffix(w.layout.w)}`;
+        case 'trust_cash_book':
+          return `trust_cash_book${widthSuffix(w.layout.w)}`;
+        case 'trust_aged_balances':
+          return `trust_aged_balances dormant_days=${w.config.dormantDays}${widthSuffix(w.layout.w)}`;
       }
     })
     .join('\n');

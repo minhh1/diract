@@ -20,6 +20,36 @@ export const CHROME_DPI_FIX_SNIPPET = `reg load HKU\\DefaultUser "C:\\Users\\Def
 reg add "HKU\\DefaultUser\\Software\\Google\\Chrome\\Profile" /v high-dpi-support /t REG_DWORD /d 1 /f
 reg unload HKU\\DefaultUser`;
 
+// A brand-new Windows install spends its first hours doing expensive
+// background work -- Windows Update scanning/downloading, Search Indexer
+// crawling the entire fresh disk, Delivery Optimization pulling update
+// payloads peer-to-peer -- that's a background annoyance on real hardware
+// but pins the CPU near 100% for hours on top of nested virtualization
+// (confirmed directly: both a shared-CPU and a dedicated-CPU DO droplet hit
+// 80-100% CPU on a literally idle desktop right after install, ruling out
+// CPU contention as the cause). None of these are needed for a one-person
+// remote-desktop VM, so this just sets them to manual/disabled start and
+// stops them now -- reversible any time (`sc config <svc> start= auto` +
+// start it) if someone actually wants them. Defender's real-time
+// protection is deliberately left alone -- security-relevant, and wasn't
+// implicated by the CPU numbers observed.
+//
+// Guarded by a marker file so this only ever applies once per VM, the same
+// reasoning as INSTALL_OFFICE_SNIPPET's WINWORD.EXE check but inverted:
+// there, the guard exists so a repeat run doesn't redo finished work; here,
+// it exists so a repeat run (every wake-from-snapshot) doesn't silently
+// undo an admin's own choice to turn one of these back on later.
+export const REDUCE_BACKGROUND_LOAD_SNIPPET = `if (!(Test-Path "C:\\ProvisionMarkers\\reduce-background-load.done")) {
+  sc.exe config wuauserv start= demand
+  sc.exe stop wuauserv
+  sc.exe config WSearch start= disabled
+  sc.exe stop WSearch
+  sc.exe config DoSvc start= demand
+  sc.exe stop DoSvc
+  New-Item -ItemType Directory -Path "C:\\ProvisionMarkers" -Force | Out-Null
+  New-Item -ItemType File -Path "C:\\ProvisionMarkers\\reduce-background-load.done" -Force | Out-Null
+}`;
+
 // Silently installs Microsoft Office via the Office Deployment Tool. Product
 // ID O365ProPlusRetail is "Microsoft 365 Apps for enterprise" -- standard
 // (non-shared) licensing, since each VM here is assigned to exactly one
