@@ -1,7 +1,21 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { NextResponse, type NextRequest, type NextFetchEvent } from 'next/server'
 
-export async function proxy(request: NextRequest) {
+// Fire-and-forget invocation counter feeding the Platform Health tab's
+// "API calls per day, per endpoint" chart — path + method + timestamp only,
+// no status code (Proxy runs pre-handler, before a status exists) and no
+// request body. Logged via event.waitUntil so it doesn't add latency to the
+// actual request and can't get cut off once the response is returned.
+function logApiInvocation(pathname: string, method: string): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return Promise.resolve();
+  const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  return Promise.resolve(admin.from('api_invocations').insert({ path: pathname, method })).then(() => {}, () => {});
+}
+
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
   let response = NextResponse.next({
     request: { headers: request.headers },
   })
@@ -10,6 +24,10 @@ export async function proxy(request: NextRequest) {
 
   // Allow Google verification files through
   if (pathname.startsWith('/google')) return NextResponse.next();
+
+  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/track/')) {
+    event.waitUntil(logApiInvocation(pathname, request.method));
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

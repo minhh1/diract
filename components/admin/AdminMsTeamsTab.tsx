@@ -95,6 +95,7 @@ interface Connection {
   created_at: string;
   tenant_id: string;
   client_id: string;
+  secret_expires_at: string | null;
 }
 
 interface BotConnection {
@@ -103,6 +104,7 @@ interface BotConnection {
   created_at: string;
   bot_app_id: string;
   bot_tenant_id: string;
+  secret_expires_at: string | null;
 }
 
 // Mirrors lib/ai/actionFields.ts's FieldDef -- what the Teams bot must ask
@@ -135,6 +137,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
   const [tenantId, setTenantId] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [clientSecretExpiresAt, setClientSecretExpiresAt] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -145,6 +148,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
   const [botAppId, setBotAppId] = useState("");
   const [botAppPassword, setBotAppPassword] = useState("");
   const [botTenantId, setBotTenantId] = useState("");
+  const [botSecretExpiresAt, setBotSecretExpiresAt] = useState("");
   const [botSaving, setBotSaving] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
   const [botHelpOpen, setBotHelpOpen] = useState(false);
@@ -192,6 +196,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
         bot_app_id: botAppId.trim(),
         bot_app_password: botAppPassword.trim(),
         bot_tenant_id: botTenantId.trim(),
+        secret_expires_at: botSecretExpiresAt || null,
       }),
     });
     const json = await res.json();
@@ -203,6 +208,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
     setBotAppId("");
     setBotAppPassword("");
     setBotTenantId("");
+    setBotSecretExpiresAt("");
     setShowBotForm(false);
     loadBot();
   };
@@ -307,7 +313,10 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
     const res = await fetch("/api/teams/credentials", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant_id: tenantId.trim(), client_id: clientId.trim(), client_secret: clientSecret.trim() }),
+      body: JSON.stringify({
+        tenant_id: tenantId.trim(), client_id: clientId.trim(), client_secret: clientSecret.trim(),
+        secret_expires_at: clientSecretExpiresAt || null,
+      }),
     });
     const json = await res.json();
     setSaving(false);
@@ -318,6 +327,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
     setTenantId("");
     setClientId("");
     setClientSecret("");
+    setClientSecretExpiresAt("");
     setShowForm(false);
     load();
   };
@@ -394,6 +404,15 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
               <p className="text-[11px] text-red-500 px-4">{connection.last_sync_error}</p>
             )}
 
+            {connection.secret_expires_at && (
+              <p className={`text-[11px] px-4 ${
+                new Date(connection.secret_expires_at).getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000
+                  ? "text-amber-600 font-bold" : "text-slate-400"
+              }`}>
+                Client secret expires {new Date(connection.secret_expires_at).toLocaleDateString()}
+              </p>
+            )}
+
             {!connection.admin_consent_granted && (
               <div className="px-4 py-3 bg-amber-50 rounded-2xl space-y-2">
                 <p className="text-[12px] text-amber-800">
@@ -446,6 +465,17 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
               placeholder="Client secret"
               className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
             />
+            <div>
+              <label className="text-[10px] text-slate-400 block mb-1 ml-1">
+                Secret expires on (from Azure AD -- Certificates &amp; secrets)
+              </label>
+              <input
+                type="date"
+                value={clientSecretExpiresAt}
+                onChange={(e) => setClientSecretExpiresAt(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+              />
+            </div>
             {error && <p className="text-[11px] text-red-500">{error}</p>}
             <div className="flex gap-2">
               <button
@@ -507,6 +537,14 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
                     <Trash2 size={12} />
                   </button>
                 </div>
+                {botConnection.secret_expires_at && (
+                  <p className={`text-[11px] px-4 ${
+                    new Date(botConnection.secret_expires_at).getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000
+                      ? "text-amber-600 font-bold" : "text-slate-400"
+                  }`}>
+                    Bot secret expires {new Date(botConnection.secret_expires_at).toLocaleDateString()}
+                  </p>
+                )}
               </div>
             )}
 
@@ -552,6 +590,17 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
                       placeholder="Bot client secret"
                       className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
                     />
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1 ml-1">
+                        Secret expires on (from Azure AD -- Certificates &amp; secrets)
+                      </label>
+                      <input
+                        type="date"
+                        value={botSecretExpiresAt}
+                        onChange={(e) => setBotSecretExpiresAt(e.target.value)}
+                        className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+                      />
+                    </div>
                     {botError && <p className="text-[11px] text-red-500">{botError}</p>}
                     <div className="flex gap-2">
                       <button

@@ -16,7 +16,7 @@ export async function GET() {
 
   const { data, error } = await admin
     .from("company_teams_credentials")
-    .select("id, company_id, admin_consent_granted, last_synced_at, last_sync_error, created_at, credentials->tenant_id, credentials->client_id")
+    .select("id, company_id, admin_consent_granted, last_synced_at, last_sync_error, created_at, secret_expires_at, credentials->tenant_id, credentials->client_id")
     .eq("company_id", companyId)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
-  const { tenant_id, client_id, client_secret } = body ?? {};
+  const { tenant_id, client_id, client_secret, secret_expires_at } = body ?? {};
 
   if (!tenant_id || !client_id || !client_secret) {
     return NextResponse.json({ error: "tenant_id, client_id, and client_secret are all required" }, { status: 400 });
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       {
         company_id: companyId,
         credentials: { tenant_id, client_id, client_secret },
+        secret_expires_at: secret_expires_at || null,
         admin_consent_granted: false,
         created_by: user.id,
         updated_at: new Date().toISOString(),

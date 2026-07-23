@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AppLoader from "@/components/AppLoader";
+import VisitBeacon from "@/components/VisitBeacon";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,6 +20,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        <VisitBeacon />
         <AppLoader>
           {children}
         </AppLoader>

@@ -23,6 +23,7 @@ export async function GET(req: Request) {
   if (!isAuthorizedCron(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const admin = adminClient();
+  const started = Date.now();
 
   const { data: unreported } = await admin
     .from("ai_usage_events")
@@ -47,6 +48,11 @@ export async function GET(req: Request) {
     await reportAiUsageForCustomer(admin, sub.stripe_customer_id, events);
     reported += events.length;
   }
+
+  await admin.from("cron_heartbeats").upsert(
+    { name: "ai-usage-sweep", last_run_at: new Date().toISOString(), last_duration_ms: Date.now() - started, last_result: { companies: byCompany.size, eventsReported: reported } },
+    { onConflict: "name" }
+  );
 
   return NextResponse.json({ companies: byCompany.size, eventsReported: reported });
 }

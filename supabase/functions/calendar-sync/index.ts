@@ -214,6 +214,11 @@ Deno.serve(async (req) => {
 
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // Event-driven (called per-task, not cron-scheduled) — heartbeat still
+  // records "last time this ran" so the Platform Health tab can flag it as
+  // Down if task syncing has genuinely stopped invoking this function.
+  const started = Date.now();
+  let heartbeatResult: Record<string, unknown> = { ok: true };
   try {
     const { action, taskId } = await req.json();
     if (!taskId) return new Response(JSON.stringify({ error: "Missing taskId" }), { status: 400, headers: corsHeaders });
@@ -384,6 +389,12 @@ Deno.serve(async (req) => {
 
   } catch (err: any) {
     console.error("[calendar] error:", err.message);
+    heartbeatResult = { ok: false, error: err.message };
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+  } finally {
+    await db.from("cron_heartbeats").upsert(
+      { name: "calendar-sync", last_run_at: new Date().toISOString(), last_duration_ms: Date.now() - started, last_result: heartbeatResult },
+      { onConflict: "name" }
+    );
   }
 });

@@ -44,6 +44,7 @@ export async function GET(req: Request) {
 
   const admin = adminClient();
   const now = new Date();
+  const started = Date.now();
 
   // Reliable backstop for provisioning VMs -- the status route does the
   // same reconciliation, but only while someone's dashboard tab is actually
@@ -185,6 +186,11 @@ export async function GET(req: Request) {
       // lib/billing/usageReporting.ts's header comment).
     }
   }
+
+  await admin.from("cron_heartbeats").upsert(
+    { name: "virtual-computers-sweep", last_run_at: now.toISOString(), last_duration_ms: Date.now() - started, last_result: { ok: true } },
+    { onConflict: "name" }
+  );
 
   return NextResponse.json({ ok: true });
 }

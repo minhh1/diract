@@ -18,6 +18,7 @@ interface CompanyContextValue {
   userId: string | null;
   userEmail: string | null;
   isAdmin: boolean;
+  isSiteAdmin: boolean;
   loading: boolean;
   tableLabelOverrides: TableLabelOverrides;
   refreshTableLabelOverrides: () => Promise<void>;
@@ -29,6 +30,7 @@ const CompanyContext = createContext<CompanyContextValue>({
   userId: null,
   userEmail: null,
   isAdmin: false,
+  isSiteAdmin: false,
   loading: true,
   tableLabelOverrides: {},
   refreshTableLabelOverrides: async () => {},
@@ -40,6 +42,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSiteAdmin, setIsSiteAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>({});
 
@@ -67,7 +70,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const [{ data: prof }, { data: allMemberships }] = await Promise.all([
         supabase
           .from("profiles")
-          .select("active_company_id, companies:active_company_id(name, table_label_overrides)")
+          .select("active_company_id, is_site_admin, companies:active_company_id(name, table_label_overrides)")
           .eq("id", user.id)
           .single(),
         supabase
@@ -88,6 +91,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       setCompanyName(cname);
       setTableLabelOverrides(overrides);
       setIsAdmin((allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin");
+      setIsSiteAdmin(!!prof?.is_site_admin);
 
       setLoading(false);
       perfLog("CompanyContext: done");
@@ -106,7 +110,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, loading, tableLabelOverrides, refreshTableLabelOverrides }}>
+    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, isSiteAdmin, loading, tableLabelOverrides, refreshTableLabelOverrides }}>
       {children}
     </CompanyContext.Provider>
   );
