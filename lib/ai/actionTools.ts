@@ -28,11 +28,63 @@ import type { FieldDef } from "./actionFields";
 // from a rich first message instead of always having to be asked for it
 // separately. Built-in optional fields are already static properties below
 // and aren't duplicated here.
+function slugify(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "value";
+}
+
+// Maps each field to the JSON property name the model is asked to use.
+// Built-ins keep their existing key (already semantic: due_date, notes,
+// ...); custom fields get a slug of their *label* instead of their often-
+// opaque field_key (e.g. "field_1783322037432"). Observed in testing: the
+// model doesn't reliably echo back an opaque key in its function-call
+// output -- for a "Client Name" field keyed "field_1783322037432" it
+// silently substituted its own more natural key ("client") instead, so the
+// answer never landed on the real field. A readable slug fixes that. Two
+// custom fields sharing a label get a numeric suffix to stay unique.
+// Callers regenerate this same map from the same field list to translate
+// the model's response keys back to each field's real .key (see
+// translateFieldAnswers below) -- it's not returned/stored anywhere.
+export function propertyKeysForFields(fields: FieldDef[]): Map<string, FieldDef> {
+  const used = new Set<string>();
+  const map = new Map<string, FieldDef>();
+  for (const field of fields) {
+    if (!field.isCustom) {
+      map.set(field.key, field);
+      used.add(field.key);
+      continue;
+    }
+    let slug = slugify(field.label);
+    let suffix = 2;
+    while (used.has(slug)) slug = `${slugify(field.label)}_${suffix++}`;
+    used.add(slug);
+    map.set(slug, field);
+  }
+  return map;
+}
+
+// Translates a model's extracted answers (keyed by whatever property names
+// buildActionTools/buildMissingFieldsTool exposed, per propertyKeysForFields
+// above) back into each field's real .key for storage in "collected".
+// Drops any key the model invented that doesn't match a known field --
+// there's nowhere safe to put it.
+export function translateFieldAnswers(fields: FieldDef[], answers: Record<string, unknown>): Record<string, string> {
+  const keyMap = propertyKeysForFields(fields);
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    if (value === undefined || value === null) continue;
+    const str = String(value).trim();
+    if (!str) continue;
+    const field = keyMap.get(key);
+    if (field) result[field.key] = str;
+  }
+  return result;
+}
+
 function customFieldProperties(fields: FieldDef[]): Record<string, { type: string; description: string }> {
   const properties: Record<string, { type: string; description: string }> = {};
-  for (const field of fields) {
+  for (const [key, field] of propertyKeysForFields(fields)) {
     if (!field.isCustom) continue;
-    properties[field.key] = {
+    properties[key] = {
       type: "string",
       description: field.selectOptions?.length ? `${field.label} (one of: ${field.selectOptions.join(", ")})` : field.label,
     };
@@ -144,8 +196,8 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
 // caller, same as the other tool-calling call).
 export function buildMissingFieldsTool(missingFields: FieldDef[]) {
   const properties: Record<string, { type: string; description: string }> = {};
-  for (const field of missingFields) {
-    properties[field.key] =
+  for (const [key, field] of propertyKeysForFields(missingFields)) {
+    properties[key] =
       field.kind === "select" && field.selectOptions?.length
         ? { type: "string", description: `${field.label} (one of: ${field.selectOptions.join(", ")})` }
         : { type: "string", description: field.label };

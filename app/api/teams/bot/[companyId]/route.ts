@@ -19,7 +19,7 @@ import { verifyIncomingBotRequest } from "@/lib/msTeamsBot/verifyIncomingToken";
 import { getBotToken, sendReply, type BotCredentials } from "@/lib/msTeamsBot/connector";
 import { resolveSourceTypes, retrieveGroundingContext, buildSystemPrompt } from "@/lib/ai/retrieval";
 import { callHostedModel, callHostedModelWithTools, callSelfHostedModel, type ToolCall } from "@/lib/ai/modelCall";
-import { buildActionTools, buildMissingFieldsTool, TOOL_USE_GUARDRAILS } from "@/lib/ai/actionTools";
+import { buildActionTools, buildMissingFieldsTool, translateFieldAnswers, TOOL_USE_GUARDRAILS } from "@/lib/ai/actionTools";
 import { loadFieldConfig, type ActionType, type FieldDef } from "@/lib/ai/actionFields";
 import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
@@ -31,7 +31,22 @@ import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { APP_URL } from "@/lib/config";
 
 const CONFIRM_WORDS = new Set(["yes", "y", "confirm", "confirmed", "do it", "go ahead", "yep", "yeah"]);
-const CANCEL_WORDS = new Set(["no", "n", "cancel", "nevermind", "never mind", "stop"]);
+
+// Exact-match only -- these are short/ambiguous enough that matching them
+// as a substring would false-positive on unrelated answers (e.g. "no" is a
+// substring of "Notary", "stop" of "laptop").
+const CANCEL_EXACT_WORDS = new Set(["no", "n", "cancel", "nevermind", "never mind", "stop"]);
+// Longer, distinctive phrases -- safe to match anywhere in a natural
+// sentence. Observed in testing: a real reply like "it's fine, don't
+// create, I'll test again tomorrow, good night" isn't equal to any single
+// short word, so it fell through and got mistaken for an answer to the
+// pending question, and the bot just re-asked it.
+const CANCEL_PHRASES = ["don't create", "do not create", "don't bother", "forget it", "not now", "no thanks", "no thank you", "cancel that", "leave it"];
+
+function isCancelMessage(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return CANCEL_EXACT_WORDS.has(normalized) || CANCEL_PHRASES.some((p) => normalized.includes(p));
+}
 
 // No per-message model picker in Teams (unlike the web chat) -- defaults
 // to the same model the web chat UI defaults to on load (models[0]).
@@ -193,7 +208,7 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
     .maybeSingle();
   if (pending && new Date(pending.expires_at) > new Date()) {
     const normalized = msg.question.trim().toLowerCase();
-    if (CANCEL_WORDS.has(normalized)) {
+    if (isCancelMessage(msg.question)) {
       await admin.from("teams_bot_pending_actions").delete().eq("linked_account_id", linked.id);
       await sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, "Cancelled.");
       return;
@@ -417,10 +432,12 @@ async function handleToolCall(
   };
 
   if (toolCall.name === "create_task" || toolCall.name === "create_project") {
-    const collected: Record<string, string> = {};
-    for (const [key, value] of Object.entries(args)) {
-      if (value !== undefined && value !== null && String(value).trim() !== "") collected[key] = String(value);
-    }
+    // args is keyed by whatever buildActionTools exposed -- built-in
+    // properties directly, custom fields by a label slug (see
+    // lib/ai/actionTools.ts's propertyKeysForFields) -- translateFieldAnswers
+    // maps those back to each field's real .key before storing in "collected".
+    const fields = await loadFieldConfig(admin, companyId, toolCall.name);
+    const collected = translateFieldAnswers(fields, args);
     return applyAdvanceResult(admin, companyId, linked, msg, botToken, toolCall.name, await advanceAction(admin, companyId, toolCall.name, collected));
   }
 
@@ -584,10 +601,10 @@ async function continueCollecting(
     console.error("Teams bot field-extraction call failed:", err);
   }
 
-  const merged = { ...collectedSoFar };
-  for (const [key, value] of Object.entries(extracted)) {
-    if (value !== undefined && value !== null && String(value).trim() !== "") merged[key] = String(value);
-  }
+  // extracted is keyed by whatever buildMissingFieldsTool exposed (built-in
+  // keys directly, custom fields by a label slug) -- translate back to real
+  // field.key before merging, same as the initial tool call's args.
+  const merged = { ...collectedSoFar, ...translateFieldAnswers(pendingFields, extracted) };
 
   await applyAdvanceResult(admin, companyId, linked, msg, botToken, actionType, await advanceAction(admin, companyId, actionType as ActionType, merged));
 }
