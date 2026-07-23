@@ -19,9 +19,11 @@ import { verifyIncomingBotRequest } from "@/lib/msTeamsBot/verifyIncomingToken";
 import { getBotToken, sendReply, type BotCredentials } from "@/lib/msTeamsBot/connector";
 import { resolveSourceTypes, retrieveGroundingContext, buildSystemPrompt } from "@/lib/ai/retrieval";
 import { callHostedModel, callHostedModelWithTools, callSelfHostedModel, type ToolCall } from "@/lib/ai/modelCall";
-import { ACTION_TOOLS, TOOL_USE_GUARDRAILS } from "@/lib/ai/actionTools";
+import { buildActionTools, buildMissingFieldsTool, TOOL_USE_GUARDRAILS } from "@/lib/ai/actionTools";
+import { loadFieldConfig, type ActionType, type FieldDef } from "@/lib/ai/actionFields";
+import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
-  resolveProjectByName, resolveProfileByName, resolveTaskByName, resolveStatusByLabel,
+  resolveTaskByName, resolveStatusByLabel, resolveProjectByName, resolveProfileByName,
   createTask, updateTask, createProject, updateProject,
 } from "@/lib/ai/actions";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
@@ -41,6 +43,16 @@ function randomCode(): string {
 
 function stripMentionMarkup(text: string): string {
   return text.replace(/<at>.*?<\/at>/g, "").trim();
+}
+
+// Bot Framework activities carry a "mention" entity referencing whoever was
+// @mentioned; `mentioned.id` is compared against `recipient.id` (the bot's
+// own id as seen in this specific conversation) rather than the literal
+// <at> text, since a channel message might @mention a different user/bot
+// entirely.
+function wasBotMentioned(activity: any): boolean {
+  const entities = activity.entities as Array<{ type?: string; mentioned?: { id?: string } }> | undefined;
+  return !!entities?.some((e) => e.type === "mention" && e.mentioned?.id === activity.recipient?.id);
 }
 
 // Same live-discovery GET /api/tags call app/api/ai/models makes for the
@@ -83,6 +95,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ com
   // Only real user messages need a reply -- conversationUpdate (bot
   // added/removed), typing indicators, reactions, etc. are just acked.
   if (activity.type !== "message" || !activity.text) {
+    return NextResponse.json({ ok: true });
+  }
+
+  // In a group chat or channel, only respond when actually @mentioned --
+  // replying to every unrelated message in a team channel would be noisy
+  // and wrong. A 1:1 (personal) conversation has no one else to mention it
+  // for, so every message there gets a reply.
+  const conversationType: string | undefined = activity.conversation?.conversationType;
+  if (conversationType !== "personal" && !wasBotMentioned(activity)) {
     return NextResponse.json({ ok: true });
   }
 
@@ -157,18 +178,36 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
     return;
   }
 
-  // A pending create/update-task/project action awaiting yes/no takes
-  // priority over everything else -- see supabase/teams_bot_pending_actions.sql.
-  // Anything other than a clear confirm/cancel word falls through and is
+  // A pending create/update-task/project action takes priority over
+  // everything else -- see supabase/teams_bot_pending_actions.sql. Two
+  // sub-states: "collecting" (still gathering required fields for a
+  // create_task/create_project, see lib/ai/actionAdvance.ts) and
+  // "confirming" (fully resolved, just needs yes/no). Anything other than
+  // a clear confirm/cancel word during "confirming" falls through and is
   // treated as a brand new message instead (the stale pending action is
   // simply discarded rather than left to confuse a later confirmation).
   const { data: pending } = await admin
     .from("teams_bot_pending_actions")
-    .select("action_type, params, expires_at")
+    .select("action_type, params, summary, expires_at, status, collected, next_fields")
     .eq("linked_account_id", linked.id)
     .maybeSingle();
   if (pending && new Date(pending.expires_at) > new Date()) {
     const normalized = msg.question.trim().toLowerCase();
+    if (CANCEL_WORDS.has(normalized)) {
+      await admin.from("teams_bot_pending_actions").delete().eq("linked_account_id", linked.id);
+      await sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, "Cancelled.");
+      return;
+    }
+
+    if (pending.status === "collecting") {
+      await continueCollecting(admin, companyId, linked, msg, botToken, pending.action_type, pending.collected ?? {}, pending.next_fields ?? []);
+      return;
+    }
+
+    // status === "confirming" -- any reply other than yes/no discards the
+    // pending row and falls through to be treated as a brand-new message
+    // (same as before this phase: don't leave a stale confirmation lying
+    // around to confuse a later one).
     await admin.from("teams_bot_pending_actions").delete().eq("linked_account_id", linked.id);
     if (CONFIRM_WORDS.has(normalized)) {
       let resultText: string;
@@ -178,10 +217,6 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
         resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
       }
       await sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, resultText);
-      return;
-    }
-    if (CANCEL_WORDS.has(normalized)) {
-      await sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, "Cancelled.");
       return;
     }
   }
@@ -262,7 +297,11 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
         { role: "system", content: TOOL_USE_GUARDRAILS },
         ...modelMessages.slice(1),
       ];
-      toolResult = await callHostedModelWithTools(modelId, toolCallMessages, ACTION_TOOLS);
+      const [taskFields, projectFields] = await Promise.all([
+        loadFieldConfig(admin, companyId, "create_task"),
+        loadFieldConfig(admin, companyId, "create_project"),
+      ]);
+      toolResult = await callHostedModelWithTools(modelId, toolCallMessages, buildActionTools(taskFields, projectFields));
     } catch (err) {
       console.error("Teams bot tool-calling call failed, falling back to plain chat:", err);
       toolResult = null;
@@ -354,39 +393,35 @@ async function handleToolCall(
     }
   };
 
+  // update_task/update_project stay single-shot (resolve + confirm) --
+  // Phase G's required-field gathering only applies to creation. Always
+  // resets status/collected/next_fields explicitly: Supabase's upsert only
+  // overwrites the columns present in the payload, so an update_* upsert
+  // that omitted these could otherwise leave a stale "collecting" state
+  // from an unrelated abandoned create_task/create_project lingering.
   const storePending = async (actionType: string, params: Record<string, unknown>, summary: string) => {
     await admin.from("teams_bot_pending_actions").upsert(
-      { linked_account_id: linked.id, action_type: actionType, params, summary, created_at: new Date().toISOString() },
+      {
+        linked_account_id: linked.id,
+        action_type: actionType,
+        status: "confirming",
+        params,
+        summary,
+        collected: null,
+        next_fields: null,
+        created_at: new Date().toISOString(),
+      },
       { onConflict: "linked_account_id" }
     );
     await reply(`${summary}\n\nReply "yes" to confirm or "no" to cancel.`);
   };
 
-  if (toolCall.name === "create_task") {
-    const projectName = args.project_name as string | undefined;
-    if (!projectName) return reply("Which project should this task go in?");
-    const project = await resolveProjectByName(admin, companyId, projectName);
-    if (project.status !== "found") return askAbout("project", project, projectName);
-
-    let assigneeId: string | null = null;
-    let assigneeName: string | null = null;
-    if (args.assignee_name) {
-      const assignee = await resolveProfileByName(admin, companyId, args.assignee_name as string);
-      if (assignee.status !== "found") return askAbout("person", assignee, args.assignee_name as string);
-      assigneeId = assignee.match.id;
-      assigneeName = assignee.match.name;
+  if (toolCall.name === "create_task" || toolCall.name === "create_project") {
+    const collected: Record<string, string> = {};
+    for (const [key, value] of Object.entries(args)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") collected[key] = String(value);
     }
-
-    const summary =
-      `I'll create a task "${args.name}" in project ${project.match.name}` +
-      (args.due_date ? `, due ${args.due_date}` : "") +
-      (assigneeName ? `, assigned to ${assigneeName}` : "") +
-      ".";
-    return storePending(
-      "create_task",
-      { name: args.name, projectId: project.match.id, dueDate: args.due_date ?? null, assigneeId, notes: args.notes ?? null },
-      summary
-    );
+    return applyAdvanceResult(admin, companyId, linked, msg, botToken, toolCall.name, await advanceAction(admin, companyId, toolCall.name, collected));
   }
 
   if (toolCall.name === "update_task") {
@@ -432,12 +467,6 @@ async function handleToolCall(
     );
   }
 
-  if (toolCall.name === "create_project") {
-    if (!args.name) return reply("What should the project be called?");
-    const summary = `I'll create a project "${args.name}"${args.status ? ` with status ${args.status}` : ""}.`;
-    return storePending("create_project", { name: args.name, description: args.description ?? null, status: args.status }, summary);
-  }
-
   if (toolCall.name === "update_project") {
     const projectName = args.project_name as string | undefined;
     if (!projectName) return reply("Which project should I update?");
@@ -458,6 +487,109 @@ async function handleToolCall(
   }
 
   await reply("I didn't understand that request.");
+}
+
+// Persists an advanceAction result (either "still need these fields,
+// asked in one combined message" or "fully resolved, ready to confirm")
+// and sends the corresponding reply. Shared by handleToolCall's first pass
+// and continueCollecting's follow-up passes below -- one place that knows
+// how a lib/ai/actionAdvance.ts result maps onto teams_bot_pending_actions.
+async function applyAdvanceResult(
+  admin: any,
+  companyId: string,
+  linked: LinkedAccount,
+  msg: IncomingMessage,
+  botToken: string,
+  actionType: string,
+  result: Awaited<ReturnType<typeof advanceAction>>
+) {
+  const reply = (text: string) => sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, text);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  if (result.status === "collecting") {
+    await admin.from("teams_bot_pending_actions").upsert(
+      {
+        linked_account_id: linked.id,
+        action_type: actionType,
+        status: "collecting",
+        collected: result.collected,
+        next_fields: result.missingFields,
+        params: null,
+        summary: null,
+        expires_at: expiresAt,
+      },
+      { onConflict: "linked_account_id" }
+    );
+    return reply(result.question);
+  }
+
+  await admin.from("teams_bot_pending_actions").upsert(
+    {
+      linked_account_id: linked.id,
+      action_type: actionType,
+      status: "confirming",
+      params: result.params,
+      summary: result.summary,
+      collected: null,
+      next_fields: null,
+      expires_at: expiresAt,
+    },
+    { onConflict: "linked_account_id" }
+  );
+  return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
+}
+
+// Handles a reply that arrives while a create_task/create_project is still
+// "collecting" (see the pending-action check in handleMessage). Since the
+// bot always asks for everything still missing in one combined message,
+// the reply might answer several of those fields in free text at once --
+// buildMissingFieldsTool + callHostedModelWithTools extracts whichever of
+// `pendingFieldKeys` the reply actually addresses (never all of them, and
+// never invented), then advanceAction is re-run with the merged answers.
+async function continueCollecting(
+  admin: any,
+  companyId: string,
+  linked: LinkedAccount,
+  msg: IncomingMessage,
+  botToken: string,
+  actionType: string,
+  collectedSoFar: Record<string, string>,
+  pendingFieldKeys: string[]
+) {
+  const fieldsForAction = await loadFieldConfig(admin, companyId, actionType as ActionType);
+  const pendingFields: FieldDef[] = fieldsForAction.filter((f) => pendingFieldKeys.includes(f.key));
+
+  let extracted: Record<string, unknown> = {};
+  try {
+    const extraction = await callHostedModelWithTools(
+      DEFAULT_HOSTED_MODEL_ID,
+      [
+        { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
+        { role: "user", content: msg.question },
+      ],
+      buildMissingFieldsTool(pendingFields)
+    );
+    const cost = costUsd("hosted", DEFAULT_HOSTED_MODEL_ID, extraction);
+    await admin.from("ai_usage_events").insert({
+      company_id: companyId,
+      user_id: linked.user_id,
+      model_id: DEFAULT_HOSTED_MODEL_ID,
+      provider: "hosted",
+      input_tokens: extraction.inputTokens,
+      output_tokens: extraction.outputTokens,
+      cost_usd: cost,
+    });
+    if (extraction.toolCall) extracted = extraction.toolCall.arguments;
+  } catch (err) {
+    console.error("Teams bot field-extraction call failed:", err);
+  }
+
+  const merged = { ...collectedSoFar };
+  for (const [key, value] of Object.entries(extracted)) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") merged[key] = String(value);
+  }
+
+  await applyAdvanceResult(admin, companyId, linked, msg, botToken, actionType, await advanceAction(admin, companyId, actionType as ActionType, merged));
 }
 
 // Runs the actual mutation once a pending action has been confirmed. Never

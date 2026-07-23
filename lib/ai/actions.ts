@@ -75,12 +75,119 @@ export async function resolveStatusByLabel(admin: any, label: string): Promise<R
   return pickBestMatch(label, candidates);
 }
 
+// Duplicate checks used by lib/ai/actionAdvance.ts before a create_task/
+// create_project pending action is confirmed -- these are "does this exact
+// name already exist" lookups, distinct from resolve*ByName's fuzzy partial
+// match (which is for referencing an *existing* project/task/person, not
+// guarding against creating a second one with the same name).
+export async function findExistingProjectByName(admin: any, companyId: string, name: string): Promise<ResolvedMatch | null> {
+  const { data } = await admin
+    .from("projects")
+    .select("id, name")
+    .eq("company_id", companyId)
+    .is("deleted_at", null)
+    .ilike("name", name.trim());
+  const exact = (data ?? []).find((p: ResolvedMatch) => p.name.trim().toLowerCase() === name.trim().toLowerCase());
+  return exact ?? null;
+}
+
+// Task names only need to be unique within the same project -- the same
+// task name recurring across different projects (e.g. "Kickoff call") is
+// normal, unlike a project name repeating company-wide.
+export async function findExistingTaskByName(admin: any, companyId: string, projectId: string, name: string): Promise<ResolvedMatch | null> {
+  const { data } = await admin
+    .from("tasks")
+    .select("id, name")
+    .eq("company_id", companyId)
+    .eq("project_id", projectId)
+    .is("deleted_at", null)
+    .ilike("name", name.trim());
+  const exact = (data ?? []).find((t: ResolvedMatch) => t.name.trim().toLowerCase() === name.trim().toLowerCase());
+  return exact ?? null;
+}
+
+export interface CustomFieldValueConflict {
+  recordId: string;
+  recordName: string;
+}
+
+// Checks whether a custom field flagged is_unique in company_custom_fields
+// already has this value on another record, so the bot can say "X has
+// already been created" instead of silently creating a duplicate matter
+// number/reference code. Coerces the same way insertCustomFieldValues does,
+// so the comparison uses the correct typed column.
+export async function findExistingCustomFieldValue(
+  admin: any,
+  companyId: string,
+  fieldId: string,
+  fieldType: string,
+  tableName: "projects" | "tasks",
+  value: string
+): Promise<CustomFieldValueConflict | null> {
+  const column = fieldType === "number" || fieldType === "currency" ? "value_number" : fieldType === "boolean" ? "value_boolean" : fieldType === "date" ? "value_date" : "value_text";
+  const coerced = column === "value_number" ? parseFloat(value) : column === "value_boolean" ? value === "true" : value;
+
+  const { data } = await admin
+    .from("company_custom_field_values")
+    .select("record_id")
+    .eq("company_id", companyId)
+    .eq("field_id", fieldId)
+    .eq("table_name", tableName)
+    .eq(column, coerced)
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+
+  const { data: record } = await admin.from(tableName).select("name").eq("id", data.record_id).maybeSingle();
+  return { recordId: data.record_id, recordName: record?.name ?? "an existing record" };
+}
+
+export interface CustomFieldValueInput {
+  fieldId: string;
+  fieldType: string;
+  value: string;
+}
+
+// Same per-type coercion components/NewProjectModal.tsx:82-104 already uses
+// when writing custom field values from the regular UI -- kept as one
+// shared helper so a bot-created record's custom fields look identical to
+// one entered by hand.
+export async function insertCustomFieldValues(
+  admin: any,
+  companyId: string,
+  recordId: string,
+  tableName: "projects" | "tasks",
+  values: CustomFieldValueInput[]
+): Promise<void> {
+  if (!values.length) return;
+  const rows = values.map((v) => {
+    const isNum = v.fieldType === "number" || v.fieldType === "currency";
+    const isBool = v.fieldType === "boolean";
+    const isDate = v.fieldType === "date";
+    return {
+      company_id: companyId,
+      record_id: recordId,
+      field_id: v.fieldId,
+      table_name: tableName,
+      ...(isNum
+        ? { value_number: parseFloat(v.value) }
+        : isBool
+          ? { value_boolean: v.value === "true" }
+          : isDate
+            ? { value_date: v.value }
+            : { value_text: v.value }),
+    };
+  });
+  await admin.from("company_custom_field_values").insert(rows);
+}
+
 export interface CreateTaskParams {
   name: string;
   projectId: string;
   dueDate?: string | null;
   assigneeId?: string | null;
   notes?: string | null;
+  customFieldValues?: CustomFieldValueInput[];
 }
 
 export async function createTask(admin: any, companyId: string, userId: string, params: CreateTaskParams) {
@@ -101,6 +208,9 @@ export async function createTask(admin: any, companyId: string, userId: string, 
     .single();
   if (error) throw new Error(error.message);
 
+  if (params.customFieldValues?.length) {
+    await insertCustomFieldValues(admin, companyId, task.id, "tasks", params.customFieldValues);
+  }
   await logTaskActivity(admin, { taskId: task.id, companyId, actorId: userId, action: "created" });
   if (task.due_date) triggerCalendarSync(task.id, "upsert");
   return task;
@@ -136,6 +246,7 @@ export interface CreateProjectParams {
   name: string;
   description?: string | null;
   status?: string;
+  customFieldValues?: CustomFieldValueInput[];
 }
 
 export async function createProject(admin: any, companyId: string, userId: string, params: CreateProjectParams) {
@@ -151,6 +262,10 @@ export async function createProject(admin: any, companyId: string, userId: strin
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  if (params.customFieldValues?.length) {
+    await insertCustomFieldValues(admin, companyId, project.id, "projects", params.customFieldValues);
+  }
   return project;
 }
 

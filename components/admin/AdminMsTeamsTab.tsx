@@ -105,6 +105,21 @@ interface BotConnection {
   bot_tenant_id: string;
 }
 
+// Mirrors lib/ai/actionFields.ts's FieldDef -- what the Teams bot must ask
+// about before creating a task/project (required) and what to fall back to
+// silently when a field is left out (defaultValue). alwaysRequired fields
+// (name, and project_name for tasks) aren't configurable here.
+interface ActionField {
+  key: string;
+  label: string;
+  kind: string;
+  alwaysRequired: boolean;
+  required: boolean;
+  defaultValue: string | null;
+  isCustom: boolean;
+  selectOptions?: string[];
+}
+
 export default function AdminMsTeamsTab({ companyId }: Props) {
   const searchParams = useSearchParams();
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -127,6 +142,10 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
   const [botError, setBotError] = useState<string | null>(null);
   const [botHelpOpen, setBotHelpOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const [actionFieldsTab, setActionFieldsTab] = useState<"create_project" | "create_task">("create_project");
+  const [actionFields, setActionFields] = useState<ActionField[]>([]);
+  const [actionFieldsLoading, setActionFieldsLoading] = useState(false);
 
   const consentResult = searchParams.get("msTeamsConsent");
   const consentMessage = searchParams.get("message");
@@ -198,10 +217,34 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const loadActionFields = useCallback(async (actionType: "create_project" | "create_task") => {
+    setActionFieldsLoading(true);
+    const res = await fetch(`/api/teams/bot/action-fields?actionType=${actionType}`);
+    const json = await res.json();
+    setActionFields(json.fields ?? []);
+    setActionFieldsLoading(false);
+  }, []);
+
+  const updateActionField = async (field: ActionField, patch: { required?: boolean; default_value?: string | null }) => {
+    await fetch("/api/teams/bot/action-fields", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action_type: actionFieldsTab,
+        field_key: field.key,
+        required: patch.required ?? field.required,
+        default_value: patch.default_value !== undefined ? patch.default_value : field.defaultValue,
+      }),
+    });
+  };
+
   useEffect(() => {
     load();
     loadBot();
   }, [load, loadBot]);
+  useEffect(() => {
+    if (botConnection) loadActionFields(actionFieldsTab);
+  }, [botConnection, actionFieldsTab, loadActionFields]);
   useProgressBarWhile(loading);
 
   const connect = async () => {
@@ -479,6 +522,76 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
           </>
         )}
       </div>
+
+      {botConnection && (
+        <div className="bg-white border border-slate-200 rounded-[32px] p-6">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Bot action fields</p>
+          <p className="text-[12px] text-slate-400 mb-4">
+            Choose which fields the bot must ask about before creating a task or project, and what to fill in silently
+            when a field is left out (used as-is unless the user says otherwise).
+          </p>
+          <div className="flex gap-2 mb-4">
+            {(["create_project", "create_task"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setActionFieldsTab(t)}
+                className={`px-4 py-1.5 text-[11px] font-bold rounded-full transition-colors ${
+                  actionFieldsTab === t ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {t === "create_project" ? "Create Project" : "Create Task"}
+              </button>
+            ))}
+          </div>
+
+          {actionFieldsLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 size={16} className="animate-spin text-slate-300" />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {actionFields.map((field) => (
+                <div key={field.key} className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-medium text-slate-700 flex items-center gap-1.5">
+                      {field.label}
+                      {field.isCustom && (
+                        <span className="text-[9px] font-bold text-violet-400 uppercase tracking-wide">Custom</span>
+                      )}
+                    </p>
+                    {!field.alwaysRequired && (
+                      <input
+                        defaultValue={field.defaultValue ?? ""}
+                        onBlur={(e) => updateActionField(field, { default_value: e.target.value || null })}
+                        placeholder="Default value (used if left out)"
+                        className="mt-1.5 w-full bg-white border border-slate-200 rounded-full py-1.5 px-3 text-[11px] outline-none focus:border-indigo-400"
+                      />
+                    )}
+                  </div>
+                  {field.alwaysRequired ? (
+                    <span className="px-3 py-1 text-[10px] font-bold rounded-full bg-slate-200 text-slate-500 shrink-0">
+                      Always required
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const required = !field.required;
+                        setActionFields((prev) => prev.map((f) => (f.key === field.key ? { ...f, required } : f)));
+                        updateActionField(field, { required });
+                      }}
+                      className={`px-3 py-1 text-[10px] font-bold rounded-full transition-colors shrink-0 ${
+                        field.required ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {field.required ? "Required" : "Optional"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <CredentialsHelpDrawer
         isOpen={helpOpen}
