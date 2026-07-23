@@ -543,7 +543,7 @@ export default function PublicTaskPage() {
         <TaskModal
           pageId={pageId}
           formOptions={data.formOptions}
-          defaultAssigneeId={activeTab}
+          defaultAssigneeId={activeTab === "unallocated" ? null : activeTab}
           saving={saving}
           setSaving={setSaving}
           onClose={() => setShowAddForm(false)}
@@ -556,7 +556,7 @@ export default function PublicTaskPage() {
         <TaskModal
           pageId={pageId}
           formOptions={data.formOptions}
-          defaultAssigneeId={activeTab}
+          defaultAssigneeId={activeTab === "unallocated" ? null : activeTab}
           task={editingTask}
           saving={saving}
           setSaving={setSaving}

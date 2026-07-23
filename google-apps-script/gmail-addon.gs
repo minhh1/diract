@@ -465,8 +465,9 @@ function onGmailMessage(e) {
 
 // ── Main card ──────────────────────────────────────────────────────
 
-function buildMainCard(messageId, accessToken, allTasksOffset) {
+function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset) {
   allTasksOffset = allTasksOffset || 0;
+  unallocatedOffset = unallocatedOffset || 0;
   var token = accessToken || getToken();
 
   var ctx = getUserContext(token);
@@ -753,7 +754,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
       .setText(allTasksSimplified ? '☰ Full view' : '☰ Simplify view')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('onToggleTaskViewMode')
-        .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset) }))));
+        .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset), unallocatedOffset: String(unallocatedOffset) }))));
 
   if (allTasksData && allTasksData.tasks && allTasksData.tasks.length) {
     var atTasks = allTasksData.tasks;
@@ -816,14 +817,14 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
           .setText('← Previous')
           .setOnClickAction(CardService.newAction()
             .setFunctionName('onChangeAllTasksPage')
-            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(Math.max(0, allTasksOffset - allTasksPageSize)) })));
+            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(Math.max(0, allTasksOffset - allTasksPageSize)), unallocatedOffset: String(unallocatedOffset) })));
       }
       if (atTo < atTotal) {
         atPageBtns.addButton(CardService.newTextButton()
           .setText('Next →')
           .setOnClickAction(CardService.newAction()
             .setFunctionName('onChangeAllTasksPage')
-            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset + allTasksPageSize) })));
+            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset + allTasksPageSize), unallocatedOffset: String(unallocatedOffset) })));
       }
       allTasksSection.addWidget(atPageBtns);
     }
@@ -832,6 +833,104 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
   }
 
   card.addSection(allTasksSection);
+
+  // ── Unallocated Tasks ─────────────────────────────────────────────
+  // Company-wide tasks with no assignee — these fall through "All My
+  // Tasks" and every other per-person view, so they need somewhere to
+  // surface or they're effectively invisible. Paginated 20 at a time.
+  var unallocatedPageSize = 20;
+  var unallocatedRes = cachedApiGet('/unallocated-tasks?companyId=' + activeCompanyId +
+      '&limit=' + unallocatedPageSize + '&offset=' + unallocatedOffset, token, 30);
+  var unallocatedData = unallocatedRes.ok ? unallocatedRes.data : null;
+
+  var unallocatedSection = CardService.newCardSection()
+    .setHeader('Unallocated Tasks')
+    .setCollapsible(true)
+    .setNumUncollapsibleWidgets(0);
+
+  unallocatedSection.addWidget(CardService.newButtonSet()
+    .addButton(CardService.newTextButton()
+      .setText(allTasksSimplified ? '☰ Full view' : '☰ Simplify view')
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('onToggleTaskViewMode')
+        .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset), unallocatedOffset: String(unallocatedOffset) }))));
+
+  if (unallocatedData && unallocatedData.tasks && unallocatedData.tasks.length) {
+    var uTasks = unallocatedData.tasks;
+    for (var ui = 0; ui < uTasks.length; ui++) {
+      var ut = uTasks[ui];
+
+      var uLabel = ut.labelName || 'No label';
+      var uTitle = ut.name;
+      var uSub = '';
+
+      if (allTasksSimplified) {
+        uLabel = ut.projectName || 'No project';
+        if (ut.matterNumber) uSub += ut.matterNumber;
+        uSub += (uSub ? ' · ' : '') + formatSimpleDueDate(ut.dueDate, ut.dueTime);
+      } else {
+        if (ut.projectName) uSub += ut.projectName;
+        var uDaysLeft = getRelativeDueLabel(ut.dueDate, ut.isCompleted);
+        if (uDaysLeft) uSub += (uSub ? ' · ' : '') + uDaysLeft;
+        if (ut.assignedTeam) uSub += (uSub ? ' · ' : '') + '👥 ' + ut.assignedTeam;
+        uSub += (uSub ? ' · ' : '') + getTaskStatusLabel(ut.isCompleted, ut.awaitingFollowUp);
+        if (ut.isMonetary && ut.estimatedCost) uSub += (uSub ? ' · ' : '') + '$' + ut.estimatedCost;
+        if (ut.createdBy) uSub += (uSub ? ' · ' : '') + 'Added by ' + ut.createdBy;
+        if (ut.followUpCount) uSub += (uSub ? ' · ' : '') + '🚩 Followed up ' + ut.followUpCount + 'x' + (ut.followUpDate ? ' · last ' + getRelativeDateLabel(ut.followUpDate) : '');
+        if (ut.scheduledFollowUpDate) uSub += (uSub ? ' · ' : '') + '📅 Follow-up scheduled ' + getRelativeDateLabel(ut.scheduledFollowUpDate);
+        if (ut.notes) uSub += (uSub ? ' · ' : '') + '📝 ' + ut.notes;
+        if (ut.sourceEmailSubject) uSub += (uSub ? ' · ' : '') + '📧 ' + ut.sourceEmailSubject;
+      }
+
+      var uRow = CardService.newDecoratedText()
+        .setTopLabel(uLabel)
+        .setText(uTitle)
+        .setWrapText(true)
+        .setBottomLabel(uSub)
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('onViewTasks')
+          .setParameters({
+            projectId: ut.projectId || '',
+            projectName: ut.projectName || '',
+            labelCode: ut.labelCode || '',
+            companyId: activeCompanyId,
+            messageId: '',
+            accessToken: token,
+          }));
+
+      unallocatedSection.addWidget(uRow);
+      if (ui < uTasks.length - 1) unallocatedSection.addWidget(CardService.newDivider());
+    }
+
+    var uTotal = unallocatedData.totalCount || uTasks.length;
+    if (uTotal > unallocatedPageSize) {
+      var uFrom = unallocatedOffset + 1;
+      var uTo = unallocatedOffset + uTasks.length;
+      unallocatedSection.addWidget(CardService.newTextParagraph()
+        .setText('Showing ' + uFrom + '–' + uTo + ' of ' + uTotal));
+
+      var uPageBtns = CardService.newButtonSet();
+      if (unallocatedOffset > 0) {
+        uPageBtns.addButton(CardService.newTextButton()
+          .setText('← Previous')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onChangeUnallocatedTasksPage')
+            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset), unallocatedOffset: String(Math.max(0, unallocatedOffset - unallocatedPageSize)) })));
+      }
+      if (uTo < uTotal) {
+        uPageBtns.addButton(CardService.newTextButton()
+          .setText('Next →')
+          .setOnClickAction(CardService.newAction()
+            .setFunctionName('onChangeUnallocatedTasksPage')
+            .setParameters({ accessToken: token, messageId: messageId || '', offset: String(allTasksOffset), unallocatedOffset: String(unallocatedOffset + unallocatedPageSize) })));
+      }
+      unallocatedSection.addWidget(uPageBtns);
+    }
+  } else {
+    unallocatedSection.addWidget(CardService.newTextParagraph().setText('No unallocated tasks.'));
+  }
+
+  card.addSection(unallocatedSection);
 
   // ── View project tasks ────────────────────────────────────────
   card.addSection(CardService.newCardSection()
@@ -858,9 +957,21 @@ function buildMainCard(messageId, accessToken, allTasksOffset) {
 function onChangeAllTasksPage(e) {
   var token = e.parameters.accessToken || getToken();
   var offset = parseInt(e.parameters.offset || '0') || 0;
+  var unallocatedOffset = parseInt(e.parameters.unallocatedOffset || '0') || 0;
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation()
-      .updateCard(buildMainCard(e.parameters.messageId || null, token, offset)))
+      .updateCard(buildMainCard(e.parameters.messageId || null, token, offset, unallocatedOffset)))
+    .build();
+}
+
+// Fired by the Home card's "Unallocated Tasks" Previous/Next buttons.
+function onChangeUnallocatedTasksPage(e) {
+  var token = e.parameters.accessToken || getToken();
+  var offset = parseInt(e.parameters.offset || '0') || 0;
+  var unallocatedOffset = parseInt(e.parameters.unallocatedOffset || '0') || 0;
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation()
+      .updateCard(buildMainCard(e.parameters.messageId || null, token, offset, unallocatedOffset)))
     .build();
 }
 
@@ -882,9 +993,10 @@ function onToggleTaskViewMode(e) {
   }
 
   var offset = parseInt(e.parameters.offset || '0') || 0;
+  var unallocatedOffset = parseInt(e.parameters.unallocatedOffset || '0') || 0;
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation()
-      .updateCard(buildMainCard(e.parameters.messageId || null, token, offset)))
+      .updateCard(buildMainCard(e.parameters.messageId || null, token, offset, unallocatedOffset)))
     .build();
 }
 

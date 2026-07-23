@@ -1946,6 +1946,106 @@ Deno.serve(async (req) => {
       }, 200, headers);
     }
 
+    // ── GET /unallocated-tasks ────────────────────────────────────────
+    // Company-wide tasks with no assignee — these fall through every
+    // per-person view (including "All My Tasks"), so they need their own
+    // place to surface. Paginated via limit/offset, same shape as /all-tasks.
+    if (req.method === 'GET' && path === '/unallocated-tasks') {
+      const companyId = url.searchParams.get('companyId') || '';
+      if (!companyId) return json({ error: 'Missing companyId' }, 400, headers);
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '20') || 20, 100);
+      const offset = Math.max(parseInt(url.searchParams.get('offset') || '0') || 0, 0);
+
+      const { data: tasks, error: tasksErr } = await db
+        .from('tasks')
+        .select(`
+          id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
+          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target,
+          project_id,
+          projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
+          teams:assigned_team_id(team_name),
+          task_statuses:status_id(label, color_hex),
+          creator:created_by(full_name, email)
+        `)
+        .eq('company_id', companyId)
+        .is('assignee_id', null)
+        .eq('is_completed', false)
+        .is('deleted_at', null)
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('due_time', { ascending: true, nullsFirst: false })
+        .range(offset, offset + limit - 1);
+
+      if (tasksErr) return json({ error: tasksErr.message }, 500, headers);
+
+      const { count: totalCount } = await db
+        .from('tasks').select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId).is('assignee_id', null).eq('is_completed', false).is('deleted_at', null);
+
+      const followUpCounts: Record<string, number> = {};
+      const scheduledFollowUpDates: Record<string, string> = {};
+      if (tasks?.length) {
+        const { data: followUps } = await db.from('task_follow_ups').select('task_id, is_done, followed_up_at')
+          .in('task_id', tasks.map((t: any) => t.id));
+        for (const f of followUps || []) {
+          if (f.is_done) {
+            followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
+          } else if (!scheduledFollowUpDates[f.task_id] || f.followed_up_at < scheduledFollowUpDates[f.task_id]) {
+            scheduledFollowUpDates[f.task_id] = f.followed_up_at;
+          }
+        }
+      }
+
+      const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
+
+      let matterByProject: Record<string, string> = {};
+      const projectIds = [...new Set((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
+      if (projectIds.length) {
+        const { data: matterField } = await db.from('company_custom_fields')
+          .select('id').eq('company_id', companyId).eq('table_name', 'projects').eq('field_key', 'matter_number').maybeSingle();
+        if (matterField) {
+          const { data: values } = await db.from('company_custom_field_values')
+            .select('record_id, value_text').eq('field_id', matterField.id).in('record_id', projectIds);
+          matterByProject = Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || '']));
+        }
+      }
+
+      return json({
+        tasks: (tasks || []).map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          isCompleted: t.is_completed,
+          dueDate: t.due_date,
+          dueTime: t.due_time,
+          projectId: t.project_id,
+          projectName: t.projects?.name || null,
+          matterNumber: t.project_id ? matterByProject[t.project_id] || null : null,
+          labelName: t.projects?.project_gmail_labels?.[0]?.gmail_label_name || null,
+          labelCode: t.projects?.project_gmail_labels?.[0]?.label_code || null,
+          assignedTeamId: t.assigned_team_id,
+          assignedTeam: t.teams?.team_name || null,
+          statusId: t.status_id,
+          status: t.task_statuses?.label || null,
+          statusColor: t.task_statuses?.color_hex || null,
+          isMonetary: t.is_monetary,
+          estimatedCost: t.estimated_cost,
+          createdBy: t.creator?.full_name || t.creator?.email || null,
+          awaitingFollowUp: t.awaiting_follow_up,
+          followUpDate: t.follow_up_date,
+          followUpCount: followUpCounts[t.id] || 0,
+          scheduledFollowUpDate: scheduledFollowUpDates[t.id] || null,
+          notes: t.notes,
+          sourceMessageId: t.source_message_id,
+          sourceEmailSubject: t.source_email_subject,
+          sourceEmailBody: t.source_email_body,
+          calendarTarget: t.calendar_target,
+          watchers: watchersByTask[t.id] || [],
+        })),
+        limit,
+        offset,
+        totalCount,
+      }, 200, headers);
+    }
+
     // ── POST /apply-template ───────────────────────────────────────
     if (req.method === 'POST' && path === '/apply-template') {
       const body = await req.json();

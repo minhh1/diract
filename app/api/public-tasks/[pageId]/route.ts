@@ -75,7 +75,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     watchedTasks = isAdmin ? (rawWatched || []) : await filterTasksByProjectAccess(admin, user.id, rawWatched || []);
   }
 
-  const tasks = [...(assignedTasks || []), ...watchedTasks];
+  // ── Unallocated tasks ────────────────────────────────────────────
+  // Tasks with no assignee fall through every per-user tab — surface them
+  // under their own pseudo-tab so they don't disappear entirely. Doesn't
+  // apply to a self-scoped page (that's inherently "just my own tasks").
+  let unallocatedTasks: any[] = [];
+  if (page.scope !== "self") {
+    const { data: rawUnallocated } = await admin
+      .from("tasks")
+      .select(TASK_SELECT)
+      .is("assignee_id", null)
+      .eq("company_id", page.company_id)
+      .is("deleted_at", null)
+      .order("due_date", { ascending: true, nullsFirst: false });
+    unallocatedTasks = isAdmin ? (rawUnallocated || []) : await filterTasksByProjectAccess(admin, user.id, rawUnallocated || []);
+  }
+
+  const tasks = [...(assignedTasks || []), ...watchedTasks, ...unallocatedTasks];
 
   // ── Follow-up log, grouped per task ──────────────────────────────
   let followUpsByTask: Record<string, { id: string; followedUpAt: string; isDone: boolean }[]> = {};
@@ -120,41 +136,51 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const { data: targetProfiles } = await admin
     .from("profiles").select("id, full_name, email").in("id", targetUserIds.length ? targetUserIds : ["00000000-0000-0000-0000-000000000000"]);
 
+  const mapTask = (t: any, isWatcher: boolean, tabUserId: string) => ({
+    id: t.id, name: t.name, isCompleted: t.is_completed, completedAt: t.completed_at,
+    dueDate: t.due_date ? String(t.due_date).slice(0, 10) : null,
+    dueTime: t.due_time,
+    projectId: t.project_id,
+    projectName: t.project?.name || null,
+    matterNumber: t.project_id ? matterByProject[t.project_id] || null : null,
+    statusId: t.status_id,
+    status: t.task_statuses?.label || null,
+    statusColor: t.task_statuses?.color_hex || null,
+    teamId: t.assigned_team_id,
+    team: t.teams?.team_name || null,
+    isMonetary: t.is_monetary,
+    estimatedCost: t.estimated_cost,
+    dateEntered: t.date_entered,
+    createdBy: t.creator?.full_name || t.creator?.email || null,
+    awaitingFollowUp: t.awaiting_follow_up,
+    followUpDate: t.follow_up_date ? String(t.follow_up_date).slice(0, 10) : null,
+    notes: t.notes,
+    sourceMessageId: t.source_message_id,
+    sourceEmailSubject: t.source_email_subject,
+    sourceEmailBody: t.source_email_body,
+    followUps: followUpsByTask[t.id] || [],
+    isWatcher,
+    watcherIds: watchersByTask[t.id] || [],
+    taskGroup: taskGroupByTaskAndUser[`${t.id}:${tabUserId}`] || null,
+  });
+
   const tabs = (targetProfiles || [])
     .map((p: any) => ({
       userId: p.id,
       userName: p.full_name || p.email || "Unknown",
       tasks: (tasks || [])
         .filter((t: any) => t.assignee_id === p.id || (watchersByTask[t.id] || []).includes(p.id))
-        .map((t: any) => ({
-          id: t.id, name: t.name, isCompleted: t.is_completed, completedAt: t.completed_at,
-          dueDate: t.due_date ? String(t.due_date).slice(0, 10) : null,
-          dueTime: t.due_time,
-          projectId: t.project_id,
-          projectName: t.project?.name || null,
-          matterNumber: t.project_id ? matterByProject[t.project_id] || null : null,
-          statusId: t.status_id,
-          status: t.task_statuses?.label || null,
-          statusColor: t.task_statuses?.color_hex || null,
-          teamId: t.assigned_team_id,
-          team: t.teams?.team_name || null,
-          isMonetary: t.is_monetary,
-          estimatedCost: t.estimated_cost,
-          dateEntered: t.date_entered,
-          createdBy: t.creator?.full_name || t.creator?.email || null,
-          awaitingFollowUp: t.awaiting_follow_up,
-          followUpDate: t.follow_up_date ? String(t.follow_up_date).slice(0, 10) : null,
-          notes: t.notes,
-          sourceMessageId: t.source_message_id,
-          sourceEmailSubject: t.source_email_subject,
-          sourceEmailBody: t.source_email_body,
-          followUps: followUpsByTask[t.id] || [],
-          isWatcher: t.assignee_id !== p.id,
-          watcherIds: watchersByTask[t.id] || [],
-          taskGroup: taskGroupByTaskAndUser[`${t.id}:${p.id}`] || null,
-        })),
+        .map((t: any) => mapTask(t, t.assignee_id !== p.id, p.id)),
     }))
     .sort((a: any, b: any) => a.userName.localeCompare(b.userName));
+
+  if (page.scope !== "self") {
+    tabs.push({
+      userId: "unallocated",
+      userName: "Unallocated",
+      tasks: unallocatedTasks.map((t: any) => mapTask(t, false, "unallocated")),
+    });
+  }
 
   // ── Form options for "add/edit task" ────────────────────────────
   // Full project catalog is loaded once here (not searched per-keystroke) —
@@ -228,7 +254,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   if (finalAssigneeId && !targetUserIds.includes(finalAssigneeId)) {
     return NextResponse.json({ error: "Assignee is outside this page's scope" }, { status: 400 });
   }
-  if (!finalAssigneeId && targetUserIds.includes(user.id)) finalAssigneeId = user.id;
+  // Only auto-assign to the creator when they had no way to choose
+  // otherwise (a single-target page hides the assignee picker entirely) —
+  // on a multi-assignee page, leaving it blank means "unallocated",
+  // deliberately, not "assign to me".
+  if (!finalAssigneeId && targetUserIds.length === 1 && targetUserIds.includes(user.id)) finalAssigneeId = user.id;
 
   const { data: task, error } = await admin.from("tasks").insert({
     project_id: projectId,
