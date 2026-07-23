@@ -27,7 +27,9 @@ import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
   resolveTaskByName, resolveStatusByLabel, resolveProjectByName, resolveProfileByName,
   createTask, updateTask, createProject, updateProject,
+  createOnedriveFile, updateOnedriveFile,
 } from "@/lib/ai/actions";
+import { advanceFileAction, buildFileMissingFieldsTool, type FileAdvanceResult } from "@/lib/ai/fileActions";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { APP_URL } from "@/lib/config";
@@ -200,6 +202,17 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
     return;
   }
 
+  // Loaded before the pending-action check (not just before the RAG path
+  // further down) because continuing a "collecting" create_file/update_file
+  // action needs sourceTypes for the drafting call's grounding context --
+  // see lib/ai/fileActions.ts's advanceFileAction.
+  const { data: settings } = await admin
+    .from("ai_chat_settings")
+    .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap")
+    .eq("company_id", companyId)
+    .maybeSingle();
+  const sourceTypes = resolveSourceTypes(settings);
+
   const { data: pending } = await admin
     .from("whatsapp_bot_pending_actions")
     .select("action_type, params, summary, expires_at, status, collected, next_fields")
@@ -214,7 +227,7 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
     }
 
     if (pending.status === "collecting") {
-      await continueCollecting(admin, companyId, linked, msg, credentials, pending.action_type, pending.collected ?? {}, pending.next_fields ?? []);
+      await continueCollecting(admin, companyId, linked, msg, credentials, sourceTypes, pending.action_type, pending.collected ?? {}, pending.next_fields ?? []);
       return;
     }
 
@@ -230,12 +243,6 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
       return;
     }
   }
-
-  const { data: settings } = await admin
-    .from("ai_chat_settings")
-    .select("source_crm, source_gmail, source_whatsapp, source_teams, self_hosted_ollama_url, monthly_token_cap")
-    .eq("company_id", companyId)
-    .maybeSingle();
 
   const tokenCap = settings?.monthly_token_cap ?? 2000000;
   if (await isTokenCapReached(admin, companyId, tokenCap)) {
@@ -259,7 +266,6 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
   const history = (priorMessages ?? []).slice(0, -1).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content }));
 
   const ollamaUrl = settings?.self_hosted_ollama_url ?? null;
-  const sourceTypes = resolveSourceTypes(settings);
   const { citations, contextBlock } = await retrieveGroundingContext(admin, companyId, msg.text, sourceTypes, ollamaUrl);
   const systemPrompt = buildSystemPrompt(contextBlock);
   const modelMessages = [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: msg.text }];
@@ -300,7 +306,7 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
         cost_usd: cost,
       });
       if (toolResult.toolCall) {
-        await handleToolCall(admin, companyId, linked, msg, credentials, toolResult.toolCall);
+        await handleToolCall(admin, companyId, linked, msg, credentials, sourceTypes, toolResult.toolCall);
         return;
       }
       await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "assistant", content: toolResult.content, citations });
@@ -336,7 +342,15 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
   await reply(usage.content + citationLines);
 }
 
-async function handleToolCall(admin: any, companyId: string, linked: LinkedAccount, msg: IncomingMessage, credentials: WhatsAppCredentials, toolCall: ToolCall) {
+async function handleToolCall(
+  admin: any,
+  companyId: string,
+  linked: LinkedAccount,
+  msg: IncomingMessage,
+  credentials: WhatsAppCredentials,
+  sourceTypes: string[],
+  toolCall: ToolCall
+) {
   const reply = (text: string) => sendWhatsAppReply(credentials, destinationFor(msg), msg.messageId, text);
   const args = toolCall.arguments as Record<string, string | boolean | undefined>;
 
@@ -360,6 +374,15 @@ async function handleToolCall(admin: any, companyId: string, linked: LinkedAccou
     const fields = await loadFieldConfig(admin, companyId, toolCall.name);
     const collected = translateFieldAnswers(fields, args);
     return applyAdvanceResult(admin, companyId, linked, msg, credentials, toolCall.name, await advanceAction(admin, companyId, toolCall.name, collected));
+  }
+
+  if (toolCall.name === "create_file" || toolCall.name === "update_file") {
+    const collected: Record<string, string> = {};
+    for (const [key, value] of Object.entries(args)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") collected[key] = String(value);
+    }
+    const result = await advanceFileAction(admin, companyId, toolCall.name, DEFAULT_HOSTED_MODEL_ID, null, sourceTypes, collected);
+    return applyFileAdvanceResult(admin, linked, msg, credentials, toolCall.name, result);
   }
 
   if (toolCall.name === "update_task") {
@@ -442,16 +465,81 @@ async function applyAdvanceResult(
   return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
 }
 
+// Mirrors applyAdvanceResult, for lib/ai/fileActions.ts's FileAdvanceResult
+// shape -- kept separate rather than unioning the two result types, since
+// create_task/create_project's params/collected shapes and file actions'
+// don't overlap meaningfully.
+async function applyFileAdvanceResult(
+  admin: any,
+  linked: LinkedAccount,
+  msg: IncomingMessage,
+  credentials: WhatsAppCredentials,
+  actionType: string,
+  result: FileAdvanceResult
+) {
+  const reply = (text: string) => sendWhatsAppReply(credentials, destinationFor(msg), msg.messageId, text);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  if (result.status === "collecting") {
+    await admin.from("whatsapp_bot_pending_actions").upsert(
+      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, expires_at: expiresAt },
+      { onConflict: "linked_account_id" }
+    );
+    return reply(result.question);
+  }
+
+  await admin.from("whatsapp_bot_pending_actions").upsert(
+    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, expires_at: expiresAt },
+    { onConflict: "linked_account_id" }
+  );
+  return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
+}
+
 async function continueCollecting(
   admin: any,
   companyId: string,
   linked: LinkedAccount,
   msg: IncomingMessage,
   credentials: WhatsAppCredentials,
+  sourceTypes: string[],
   actionType: string,
   collectedSoFar: Record<string, string>,
   pendingFieldKeys: string[]
 ) {
+  if (actionType === "create_file" || actionType === "update_file") {
+    let extracted: Record<string, unknown> = {};
+    try {
+      const extraction = await callHostedModelWithTools(
+        DEFAULT_HOSTED_MODEL_ID,
+        [
+          { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
+          { role: "user", content: msg.text },
+        ],
+        buildFileMissingFieldsTool(actionType, pendingFieldKeys)
+      );
+      const cost = costUsd("hosted", DEFAULT_HOSTED_MODEL_ID, extraction);
+      await admin.from("ai_usage_events").insert({
+        company_id: companyId,
+        user_id: linked.user_id,
+        model_id: DEFAULT_HOSTED_MODEL_ID,
+        provider: "hosted",
+        input_tokens: extraction.inputTokens,
+        output_tokens: extraction.outputTokens,
+        cost_usd: cost,
+      });
+      if (extraction.toolCall) extracted = extraction.toolCall.arguments;
+    } catch (err) {
+      console.error("WhatsApp bot file field-extraction call failed:", err);
+    }
+    const merged = { ...collectedSoFar };
+    for (const [key, value] of Object.entries(extracted)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") merged[key] = String(value);
+    }
+    const result = await advanceFileAction(admin, companyId, actionType, DEFAULT_HOSTED_MODEL_ID, null, sourceTypes, merged);
+    await applyFileAdvanceResult(admin, linked, msg, credentials, actionType, result);
+    return;
+  }
+
   const fieldsForAction = await loadFieldConfig(admin, companyId, actionType as ActionType);
   const pendingFields: FieldDef[] = fieldsForAction.filter((f) => pendingFieldKeys.includes(f.key));
 
@@ -501,6 +589,14 @@ async function executeAction(admin: any, companyId: string, userId: string, acti
   if (actionType === "update_project") {
     await updateProject(admin, companyId, params);
     return "Done — updated the project.";
+  }
+  if (actionType === "create_file") {
+    const file = await createOnedriveFile(admin, companyId, params);
+    return `Done — created "${file.name}": ${file.webUrl}`;
+  }
+  if (actionType === "update_file") {
+    const file = await updateOnedriveFile(admin, companyId, params.itemId, params.content);
+    return `Done — updated the file: ${file.webUrl}`;
   }
   return "Unknown action type.";
 }

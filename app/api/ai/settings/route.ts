@@ -24,6 +24,7 @@ export async function GET() {
       source_gmail: true,
       source_whatsapp: true,
       source_teams: true,
+      source_onedrive: true,
       self_hosted_ollama_url: null,
       monthly_token_cap: 2000000,
       require_unique_task_names: false,
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
-  const { source_crm, source_gmail, source_whatsapp, source_teams, self_hosted_ollama_url, monthly_token_cap } = body ?? {};
+  const { source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap } = body ?? {};
 
   const { data, error } = await admin
     .from("ai_chat_settings")
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
         source_gmail: !!source_gmail,
         source_whatsapp: !!source_whatsapp,
         source_teams: !!source_teams,
+        source_onedrive: !!source_onedrive,
         self_hosted_ollama_url: self_hosted_ollama_url || null,
         monthly_token_cap: Number.isFinite(monthly_token_cap) ? monthly_token_cap : 2000000,
         updated_at: new Date().toISOString(),

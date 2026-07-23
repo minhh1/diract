@@ -10,6 +10,7 @@
 // from scratch.
 import { logTaskActivity } from "@/lib/taskActivityLog";
 import { triggerCalendarSync } from "@/lib/triggerCalendarSync";
+import { getGraphAppToken, ensureFolderPath, uploadFile, updateFileContent } from "@/lib/msGraph/onedrive";
 
 export interface ResolvedMatch {
   id: string;
@@ -351,4 +352,45 @@ export async function updateProject(admin: any, companyId: string, params: Updat
 
   const { error } = await admin.from("projects").update(update).eq("id", params.projectId).eq("company_id", companyId);
   if (error) throw new Error(error.message);
+}
+
+// Fuzzy match against files already synced in from OneDrive (onedrive_files,
+// kept fresh by supabase/functions/onedrive-sync-worker) -- mirrors
+// resolveTaskByName's found/ambiguous/not_found shape exactly.
+export async function resolveOnedriveFileByName(admin: any, companyId: string, name: string): Promise<ResolveResult> {
+  const { data } = await admin.from("onedrive_files").select("item_id, name").eq("company_id", companyId).ilike("name", `%${name}%`);
+  const candidates: ResolvedMatch[] = (data ?? []).map((f: { item_id: string; name: string }) => ({ id: f.item_id, name: f.name }));
+  return pickBestMatch(name, candidates);
+}
+
+async function getOnedriveGraphContext(admin: any, companyId: string): Promise<{ token: string; driveId: string }> {
+  const { data: creds } = await admin.from("company_onedrive_credentials").select("credentials, drive_id").eq("company_id", companyId).maybeSingle();
+  if (!creds?.drive_id) throw new Error("OneDrive isn't connected for this company -- ask an admin to connect it in Admin -> OneDrive.");
+  const token = await getGraphAppToken(creds.credentials.tenant_id, creds.credentials.client_id, creds.credentials.client_secret);
+  return { token, driveId: creds.drive_id };
+}
+
+export interface CreateOnedriveFileParams {
+  name: string;
+  projectName?: string | null;
+  content: string;
+}
+
+// Files created via chat are organized under /Projects/{project name}/ when
+// a project was mentioned, otherwise a default /Assistant Files/ folder --
+// both created on demand. v1 writes plain text content (see lib/ai/fileDraft.ts's
+// header comment on why this isn't real Word/.docx authoring yet).
+export async function createOnedriveFile(admin: any, companyId: string, params: CreateOnedriveFileParams): Promise<{ name: string; webUrl: string }> {
+  const { token, driveId } = await getOnedriveGraphContext(admin, companyId);
+  const folderPath = params.projectName ? `Projects/${params.projectName}` : "Assistant Files";
+  await ensureFolderPath(token, driveId, folderPath);
+  const fileName = /\.[a-z0-9]+$/i.test(params.name) ? params.name : `${params.name}.txt`;
+  const uploaded = await uploadFile(token, driveId, folderPath, fileName, params.content);
+  return { name: fileName, webUrl: uploaded.webUrl };
+}
+
+export async function updateOnedriveFile(admin: any, companyId: string, itemId: string, content: string): Promise<{ webUrl: string }> {
+  const { token, driveId } = await getOnedriveGraphContext(admin, companyId);
+  const updated = await updateFileContent(token, driveId, itemId, content);
+  return { webUrl: updated.webUrl };
 }

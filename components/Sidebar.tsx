@@ -8,7 +8,7 @@ import {
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
-  Link as LinkIcon,
+  Link as LinkIcon, HeartPulse, FolderOpen,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -114,12 +114,11 @@ const ADMIN_LINKS = [
   { tab: 'gmailSync', icon: Activity, label: 'Gmail sync' },
   { tab: 'whatsapp', icon: MessageCircle, label: 'WhatsApp' },
   { tab: 'msTeams', icon: Users2, label: 'Microsoft Teams' },
+  { tab: 'oneDrive', icon: FolderOpen, label: 'OneDrive' },
   { tab: 'aiAssistant', icon: Sparkles, label: 'AI Assistant' },
   { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },
   { tab: 'company', icon: Settings, label: 'Company' },
 ] as const;
-
-const PERF_TAB_ALLOWED_EMAIL = "minh@huynhco.com";
 
 // ── DB helpers ─────────────────────────────────────────────────────
 
@@ -601,7 +600,7 @@ export default function Sidebar() {
   const activeViewId = searchParams.get("view");
 
   // Use shared company context — avoids duplicate auth call with GenericMasterTable
-  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, userEmail: ctxUserEmail, isAdmin: ctxIsAdmin, loading: ctxLoading, tableLabelOverrides } = useCompany();
+  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, loading: ctxLoading, tableLabelOverrides } = useCompany();
 
   // Per-company display-name overrides (e.g. a law firm renaming "Projects"
   // to "Matters") layered over the hardcoded defaults.
@@ -1519,15 +1518,25 @@ export default function Sidebar() {
                   activeClassName="bg-amber-600 text-white"
                 />
               ))}
-              {ctxUserEmail === PERF_TAB_ALLOWED_EMAIL && (
-                <SidebarNavLink
-                  href="/dashboard/admin?tab=perf"
-                  icon={Gauge}
-                  label="Performance"
-                  active={pathname.startsWith('/dashboard/admin') && currentAdminTab === 'perf'}
-                  collapsed={false}
-                  activeClassName="bg-amber-600 text-white"
-                />
+              {ctxIsSiteAdmin && (
+                <>
+                  <SidebarNavLink
+                    href="/dashboard/admin?tab=perf"
+                    icon={Gauge}
+                    label="Performance"
+                    active={pathname.startsWith('/dashboard/admin') && currentAdminTab === 'perf'}
+                    collapsed={false}
+                    activeClassName="bg-amber-600 text-white"
+                  />
+                  <SidebarNavLink
+                    href="/dashboard/admin?tab=platformHealth"
+                    icon={HeartPulse}
+                    label="Platform health"
+                    active={pathname.startsWith('/dashboard/admin') && currentAdminTab === 'platformHealth'}
+                    collapsed={false}
+                    activeClassName="bg-amber-600 text-white"
+                  />
+                </>
               )}
             </nav>
           )}

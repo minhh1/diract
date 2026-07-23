@@ -25,7 +25,9 @@ import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
   resolveTaskByName, resolveStatusByLabel, resolveProjectByName, resolveProfileByName,
   createTask, updateTask, createProject, updateProject,
+  createOnedriveFile, updateOnedriveFile,
 } from "@/lib/ai/actions";
+import { advanceFileAction, buildFileMissingFieldsTool, type FileAdvanceResult } from "@/lib/ai/fileActions";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { APP_URL } from "@/lib/config";
@@ -206,14 +208,26 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
     return;
   }
 
-  // A pending create/update-task/project action takes priority over
+  // Loaded before the pending-action check (not just before the RAG path
+  // further down) because continuing a "collecting" create_file/update_file
+  // action needs sourceTypes for the drafting call's grounding context --
+  // see lib/ai/fileActions.ts's advanceFileAction.
+  const { data: settings } = await admin
+    .from("ai_chat_settings")
+    .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap")
+    .eq("company_id", companyId)
+    .maybeSingle();
+  const sourceTypes = resolveSourceTypes(settings);
+
+  // A pending create/update-task/project/file action takes priority over
   // everything else -- see supabase/teams_bot_pending_actions.sql. Two
   // sub-states: "collecting" (still gathering required fields for a
-  // create_task/create_project, see lib/ai/actionAdvance.ts) and
-  // "confirming" (fully resolved, just needs yes/no). Anything other than
-  // a clear confirm/cancel word during "confirming" falls through and is
-  // treated as a brand new message instead (the stale pending action is
-  // simply discarded rather than left to confuse a later confirmation).
+  // create_task/create_project/create_file/update_file, see
+  // lib/ai/actionAdvance.ts/lib/ai/fileActions.ts) and "confirming" (fully
+  // resolved, just needs yes/no). Anything other than a clear confirm/cancel
+  // word during "confirming" falls through and is treated as a brand new
+  // message instead (the stale pending action is simply discarded rather
+  // than left to confuse a later confirmation).
   const { data: pending } = await admin
     .from("teams_bot_pending_actions")
     .select("action_type, params, summary, expires_at, status, collected, next_fields")
@@ -228,7 +242,7 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
     }
 
     if (pending.status === "collecting") {
-      await continueCollecting(admin, companyId, linked, msg, botToken, pending.action_type, pending.collected ?? {}, pending.next_fields ?? []);
+      await continueCollecting(admin, companyId, linked, msg, botToken, sourceTypes, pending.action_type, pending.collected ?? {}, pending.next_fields ?? []);
       return;
     }
 
@@ -248,12 +262,6 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
       return;
     }
   }
-
-  const { data: settings } = await admin
-    .from("ai_chat_settings")
-    .select("source_crm, source_gmail, source_whatsapp, source_teams, self_hosted_ollama_url, monthly_token_cap")
-    .eq("company_id", companyId)
-    .maybeSingle();
 
   const tokenCap = settings?.monthly_token_cap ?? 2000000;
   if (await isTokenCapReached(admin, companyId, tokenCap)) {
@@ -283,7 +291,6 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
   const history = (priorMessages ?? []).slice(0, -1).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content }));
 
   const ollamaUrl = settings?.self_hosted_ollama_url ?? null;
-  const sourceTypes = resolveSourceTypes(settings);
   const { citations, contextBlock } = await retrieveGroundingContext(admin, companyId, msg.question, sourceTypes, ollamaUrl);
   const systemPrompt = buildSystemPrompt(contextBlock);
   const modelMessages = [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: msg.question }];
@@ -347,7 +354,7 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
         cost_usd: cost,
       });
       if (toolResult.toolCall) {
-        await handleToolCall(admin, companyId, linked, msg, botToken, toolResult.toolCall);
+        await handleToolCall(admin, companyId, linked, msg, botToken, sourceTypes, toolResult.toolCall);
         return;
       }
       // No tool call -- treat the model's own response as the answer and
@@ -409,6 +416,7 @@ async function handleToolCall(
   linked: LinkedAccount,
   msg: IncomingMessage,
   botToken: string,
+  sourceTypes: string[],
   toolCall: ToolCall
 ) {
   const reply = (text: string) => sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, text);
@@ -453,6 +461,15 @@ async function handleToolCall(
     const fields = await loadFieldConfig(admin, companyId, toolCall.name);
     const collected = translateFieldAnswers(fields, args);
     return applyAdvanceResult(admin, companyId, linked, msg, botToken, toolCall.name, await advanceAction(admin, companyId, toolCall.name, collected));
+  }
+
+  if (toolCall.name === "create_file" || toolCall.name === "update_file") {
+    const collected: Record<string, string> = {};
+    for (const [key, value] of Object.entries(args)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") collected[key] = String(value);
+    }
+    const result = await advanceFileAction(admin, companyId, toolCall.name, DEFAULT_HOSTED_MODEL_ID, null, sourceTypes, collected);
+    return applyFileAdvanceResult(admin, linked, msg, botToken, toolCall.name, result);
   }
 
   if (toolCall.name === "update_task") {
@@ -570,6 +587,36 @@ async function applyAdvanceResult(
   return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
 }
 
+// Mirrors applyAdvanceResult exactly, for lib/ai/fileActions.ts's
+// FileAdvanceResult shape -- kept separate rather than unioning the two
+// result types, since create_task/create_project's params/collected shapes
+// and file actions' don't overlap meaningfully.
+async function applyFileAdvanceResult(
+  admin: any,
+  linked: LinkedAccount,
+  msg: IncomingMessage,
+  botToken: string,
+  actionType: string,
+  result: FileAdvanceResult
+) {
+  const reply = (text: string) => sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, text);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  if (result.status === "collecting") {
+    await admin.from("teams_bot_pending_actions").upsert(
+      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, expires_at: expiresAt },
+      { onConflict: "linked_account_id" }
+    );
+    return reply(result.question);
+  }
+
+  await admin.from("teams_bot_pending_actions").upsert(
+    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, expires_at: expiresAt },
+    { onConflict: "linked_account_id" }
+  );
+  return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
+}
+
 // Handles a reply that arrives while a create_task/create_project is still
 // "collecting" (see the pending-action check in handleMessage). Since the
 // bot always asks for everything still missing in one combined message,
@@ -583,10 +630,45 @@ async function continueCollecting(
   linked: LinkedAccount,
   msg: IncomingMessage,
   botToken: string,
+  sourceTypes: string[],
   actionType: string,
   collectedSoFar: Record<string, string>,
   pendingFieldKeys: string[]
 ) {
+  if (actionType === "create_file" || actionType === "update_file") {
+    let extracted: Record<string, unknown> = {};
+    try {
+      const extraction = await callHostedModelWithTools(
+        DEFAULT_HOSTED_MODEL_ID,
+        [
+          { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
+          { role: "user", content: msg.question },
+        ],
+        buildFileMissingFieldsTool(actionType, pendingFieldKeys)
+      );
+      const cost = costUsd("hosted", DEFAULT_HOSTED_MODEL_ID, extraction);
+      await admin.from("ai_usage_events").insert({
+        company_id: companyId,
+        user_id: linked.user_id,
+        model_id: DEFAULT_HOSTED_MODEL_ID,
+        provider: "hosted",
+        input_tokens: extraction.inputTokens,
+        output_tokens: extraction.outputTokens,
+        cost_usd: cost,
+      });
+      if (extraction.toolCall) extracted = extraction.toolCall.arguments;
+    } catch (err) {
+      console.error("Teams bot file field-extraction call failed:", err);
+    }
+    const merged = { ...collectedSoFar };
+    for (const [key, value] of Object.entries(extracted)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") merged[key] = String(value);
+    }
+    const result = await advanceFileAction(admin, companyId, actionType, DEFAULT_HOSTED_MODEL_ID, null, sourceTypes, merged);
+    await applyFileAdvanceResult(admin, linked, msg, botToken, actionType, result);
+    return;
+  }
+
   const fieldsForAction = await loadFieldConfig(admin, companyId, actionType as ActionType);
   const pendingFields: FieldDef[] = fieldsForAction.filter((f) => pendingFieldKeys.includes(f.key));
 
@@ -643,6 +725,14 @@ async function executeAction(admin: any, companyId: string, userId: string, acti
   if (actionType === "update_project") {
     await updateProject(admin, companyId, params);
     return "Done — updated the project.";
+  }
+  if (actionType === "create_file") {
+    const file = await createOnedriveFile(admin, companyId, params);
+    return `Done — created "${file.name}": ${file.webUrl}`;
+  }
+  if (actionType === "update_file") {
+    const file = await updateOnedriveFile(admin, companyId, params.itemId, params.content);
+    return `Done — updated the file: ${file.webUrl}`;
   }
   return "Unknown action type.";
 }

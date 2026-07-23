@@ -18,6 +18,7 @@ interface Settings {
   source_gmail: boolean;
   source_whatsapp: boolean;
   source_teams: boolean;
+  source_onedrive: boolean;
   self_hosted_ollama_url: string | null;
   monthly_token_cap: number;
 }
@@ -27,6 +28,7 @@ const SOURCE_TOGGLES: { key: keyof Settings; label: string }[] = [
   { key: "source_gmail", label: "Gmail" },
   { key: "source_whatsapp", label: "WhatsApp" },
   { key: "source_teams", label: "Microsoft Teams" },
+  { key: "source_onedrive", label: "OneDrive / SharePoint" },
 ];
 
 export default function AdminAiAssistantTab({ companyId }: Props) {

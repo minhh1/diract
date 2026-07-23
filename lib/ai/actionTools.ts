@@ -131,6 +131,42 @@ const UPDATE_PROJECT_TOOL = {
   },
 };
 
+const CREATE_FILE_TOOL = {
+  type: "function",
+  function: {
+    name: "create_file",
+    description: "Create a new file/document in the company's OneDrive/SharePoint. The content is drafted from the instructions, not typed in directly.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The file's name/title, ONLY if the user actually stated one -- omit rather than inventing one." },
+        instructions: {
+          type: "string",
+          description: "What the file should say -- e.g. \"a letter to the client about the settlement offer\" -- only if the user actually gave real instructions, not invented.",
+        },
+        project_name: { type: "string", description: "Which project this relates to, if mentioned -- used to file it in that project's folder. Optional." },
+      },
+      required: [],
+    },
+  },
+};
+
+const UPDATE_FILE_TOOL = {
+  type: "function",
+  function: {
+    name: "update_file",
+    description: "Update an existing OneDrive/SharePoint file with new content drafted from instructions.",
+    parameters: {
+      type: "object",
+      properties: {
+        file_name: { type: "string", description: "The name of the existing file to update, only if stated." },
+        instructions: { type: "string", description: "What should change or be added, only if actually given." },
+      },
+      required: [],
+    },
+  },
+};
+
 // Built with this company's field config so create_task/create_project's
 // schemas reflect its custom fields -- called once per bot message (see
 // app/api/teams/bot/[companyId]/route.ts). update_task/update_project are
@@ -189,6 +225,8 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
       },
     },
     UPDATE_PROJECT_TOOL,
+    CREATE_FILE_TOOL,
+    UPDATE_FILE_TOOL,
   ];
 }
 

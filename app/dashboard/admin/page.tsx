@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useCompany } from "@/components/CompanyContext";
 import {
   Loader2, Shield, Trash2,
   CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical,
@@ -17,13 +18,10 @@ import AdminVirtualComputersTab from "@/components/admin/AdminVirtualComputersTa
 import AdminGmailSyncTab from "@/components/admin/AdminGmailSyncTab";
 import AdminWhatsAppTab from "@/components/admin/AdminWhatsAppTab";
 import AdminMsTeamsTab from "@/components/admin/AdminMsTeamsTab";
+import AdminOneDriveTab from "@/components/admin/AdminOneDriveTab";
 import AdminAiAssistantTab from "@/components/admin/AdminAiAssistantTab";
 import AdminPerfTab from "@/components/admin/AdminPerfTab";
-
-// Load-time diagnostics are an internal debugging tool, not a company-admin
-// feature — restricted to this one account rather than every admin across
-// every company on the platform.
-const PERF_TAB_ALLOWED_EMAIL = "minh@huynhco.com";
+import AdminPlatformHealthTab from "@/components/admin/AdminPlatformHealthTab";
 
 interface Member {
   id: string;
@@ -101,12 +99,14 @@ function buildCalendarFormat(tokens: string[], separator: string): string {
   return tokens.map(t => `{${t}}`).join(separator);
 }
 
-type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'aiAssistant' | 'perf';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'aiAssistant', 'perf'];
+type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'aiAssistant' | 'perf' | 'platformHealth';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'aiAssistant', 'perf', 'platformHealth'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', views: 'Default views', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
+  oneDrive: 'OneDrive',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
+  platformHealth: 'Platform health',
 };
 
 export default function AdminPage() {
@@ -122,7 +122,7 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { isSiteAdmin } = useCompany();
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -169,7 +169,6 @@ export default function AdminPage() {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return; }
-    setUserEmail(user.email ?? null);
 
     // Get profile
     const { data: profile } = await supabase
@@ -814,14 +813,24 @@ export default function AdminPage() {
             <AdminMsTeamsTab companyId={company.id} />
           )}
 
+          {/* ── OneDrive / SharePoint ── */}
+          {activeTab === 'oneDrive' && company?.id && (
+            <AdminOneDriveTab companyId={company.id} />
+          )}
+
           {/* ── AI Assistant ── */}
           {activeTab === 'aiAssistant' && company?.id && (
             <AdminAiAssistantTab companyId={company.id} />
           )}
 
-          {/* ── Performance (internal — restricted, see PERF_TAB_ALLOWED_EMAIL) ── */}
-          {activeTab === 'perf' && userEmail === PERF_TAB_ALLOWED_EMAIL && (
+          {/* ── Performance (internal — site-admin only) ── */}
+          {activeTab === 'perf' && isSiteAdmin && (
             <AdminPerfTab />
+          )}
+
+          {/* ── Platform health (site-admin only) ── */}
+          {activeTab === 'platformHealth' && isSiteAdmin && (
+            <AdminPlatformHealthTab />
           )}
 
           {/* ── Virtual computers ── */}

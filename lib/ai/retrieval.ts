@@ -29,12 +29,14 @@ export function resolveSourceTypes(settings: {
   source_gmail?: boolean;
   source_whatsapp?: boolean;
   source_teams?: boolean;
+  source_onedrive?: boolean;
 } | null): string[] {
   return [
     settings?.source_crm !== false && "crm_record",
     settings?.source_gmail !== false && "gmail",
     settings?.source_whatsapp !== false && "whatsapp",
     settings?.source_teams !== false && "teams",
+    settings?.source_onedrive !== false && "onedrive",
   ].filter(Boolean) as string[];
 }
 
@@ -82,6 +84,6 @@ export async function retrieveGroundingContext(
 
 export function buildSystemPrompt(contextBlock: string): string {
   return contextBlock
-    ? `You are an assistant answering questions using the company's own CRM, email, WhatsApp, and Teams data below. Cite sources by their [n] number when you use them. If the answer isn't in the context, say so rather than guessing.\n\nContext:\n${contextBlock}`
+    ? `You are an assistant answering questions using the company's own CRM, email, WhatsApp, Teams, and OneDrive/SharePoint data below. Cite sources by their [n] number when you use them. If the answer isn't in the context, say so rather than guessing.\n\nContext:\n${contextBlock}`
     : `You are an assistant for this company. No relevant grounding context was found for this question -- answer generally and note that no company data matched.`;
 }

@@ -198,6 +198,27 @@ async function collectTeamsCandidates(companyId: string, since: string): Promise
     }));
 }
 
+async function collectOnedriveCandidates(companyId: string, since: string): Promise<EmbedCandidate[]> {
+  const { data, error } = await db
+    .from("onedrive_files")
+    .select("item_id, name, web_url, extracted_text, updated_at")
+    .eq("company_id", companyId)
+    .not("extracted_text", "is", null)
+    .gt("updated_at", since)
+    .order("updated_at", { ascending: true })
+    .limit(BATCH_SIZE);
+  if (error || !data) return [];
+
+  return data
+    .filter((row) => row.extracted_text)
+    .map((row) => ({
+      sourceId: row.item_id,
+      sourceUrl: row.web_url,
+      content: `${row.name}\n\n${row.extracted_text}`,
+      createdAt: row.updated_at,
+    }));
+}
+
 async function embedAndStore(companyId: string, sourceType: string, candidates: EmbedCandidate[], ollamaUrl: string | null) {
   if (candidates.length === 0) return;
 
@@ -256,7 +277,7 @@ async function runEmbedPass(): Promise<Response> {
   const { data: companies } = await db.from("companies").select("id");
   const { data: settingsRows } = await db
     .from("ai_chat_settings")
-    .select("company_id, source_crm, source_gmail, source_whatsapp, source_teams, self_hosted_ollama_url");
+    .select("company_id, source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url");
   const settingsByCompany = new Map((settingsRows ?? []).map((s) => [s.company_id, s]));
 
   const results: Record<string, string> = {};
@@ -291,6 +312,12 @@ async function runEmbedPass(): Promise<Response> {
         const since = await getCursor(companyId, "teams");
         const candidates = await collectTeamsCandidates(companyId, since);
         await embedAndStore(companyId, "teams", candidates, ollamaUrl);
+        embeddedCount += candidates.length;
+      }
+      if (settings?.source_onedrive !== false) {
+        const since = await getCursor(companyId, "onedrive");
+        const candidates = await collectOnedriveCandidates(companyId, since);
+        await embedAndStore(companyId, "onedrive", candidates, ollamaUrl);
         embeddedCount += candidates.length;
       }
 
