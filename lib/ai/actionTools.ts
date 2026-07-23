@@ -93,14 +93,24 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
         parameters: {
           type: "object",
           properties: {
-            name: { type: "string", description: "The task's name/title." },
-            project_name: { type: "string", description: "The name of the project this task belongs to." },
+            name: { type: "string", description: "The task's name/title, ONLY if the user actually stated one -- omit this property entirely rather than inventing a placeholder." },
+            project_name: { type: "string", description: "The name of the project this task belongs to, only if mentioned." },
             due_date: { type: "string", description: "Due date in YYYY-MM-DD format, if mentioned." },
             assignee_name: { type: "string", description: "Name of the person to assign the task to, if mentioned." },
             notes: { type: "string", description: "Any additional notes or details for the task." },
             ...customFieldProperties(taskFields),
           },
-          required: ["name", "project_name"],
+          // Deliberately empty -- name/project_name ARE required before a
+          // task can actually be created, but that's enforced by
+          // lib/ai/actionAdvance.ts (which asks for whatever's missing)
+          // after this call, not by this schema. Observed in testing: with
+          // "name" listed here as JSON-schema required, the model invented
+          // a placeholder ("Test Project") to satisfy the schema rather
+          // than omitting it, silently skipping the "what should this be
+          // called?" question entirely. An empty `required` lets the model
+          // call the tool the moment it recognizes intent, without being
+          // structurally pressured to fabricate any value.
+          required: [],
         },
       },
     },
@@ -113,12 +123,12 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
         parameters: {
           type: "object",
           properties: {
-            name: { type: "string", description: "The project's name." },
+            name: { type: "string", description: "The project's name, ONLY if the user actually stated one -- omit this property entirely rather than inventing a placeholder." },
             description: { type: "string", description: "A description of the project, if mentioned." },
             status: { type: "string", description: "Initial status, if mentioned (defaults to Open)." },
             ...customFieldProperties(projectFields),
           },
-          required: ["name"],
+          required: [],
         },
       },
     },
