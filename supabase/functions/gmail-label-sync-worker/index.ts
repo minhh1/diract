@@ -104,7 +104,23 @@ async function dispatchOnce(unit: DispatchUnit): Promise<{ quarantined?: boolean
   return await res.json().catch(() => ({}));
 }
 
-async function dispatchOne(unit: DispatchUnit): Promise<"ok" | "quarantined" | "dispatch_error"> {
+// Gmail's "Too many concurrent requests for user" (429) is a per-ACCOUNT
+// ceiling, not per-caller — a user on several active matters can be the
+// target of multiple simultaneous processor calls (one per job), each
+// individually respecting its own dispatcher's pacing with no cross-job or
+// cross-function awareness. This is a DB-backed lock (not in-process)
+// because gmail-label-sync-worker and gmail-email-sync-worker run as
+// separate isolates and both write to the same Gmail accounts.
+async function acquireUserLock(userId: string): Promise<boolean> {
+  const { data } = await db.rpc("acquire_gmail_user_lock", { p_user_id: userId, p_ttl_seconds: 100 });
+  return data === true;
+}
+async function releaseUserLock(userId: string): Promise<void> {
+  try { await db.rpc("release_gmail_user_lock", { p_user_id: userId }); } catch (_) {}
+}
+
+async function dispatchOne(unit: DispatchUnit): Promise<"ok" | "quarantined" | "dispatch_error" | "user_busy"> {
+  if (!(await acquireUserLock(unit.userId))) return "user_busy";
   try {
     const data = await dispatchOnce(unit);
     if (data?.quarantined) return "quarantined";
@@ -137,6 +153,8 @@ async function dispatchOne(unit: DispatchUnit): Promise<"ok" | "quarantined" | "
       target_user_id: unit.userId, details: { job_type: "label_sync", error: err.message },
     });
     return "dispatch_error";
+  } finally {
+    await releaseUserLock(unit.userId);
   }
 }
 
@@ -246,8 +264,11 @@ async function runDispatch(t0: number): Promise<Response> {
   // ~1 unit/sec pacing, a batch that happens to include several of those
   // can still blow the 150s ceiling even with a modest job-count limit —
   // cap the actual unit count directly and let leftover jobs roll to next
-  // tick instead.
-  const MAX_UNITS_PER_TICK = 25;
+  // tick instead. Trimmed further after adding the per-user concurrency
+  // lock (2026-07-23) — its extra acquire/release round-trip per unit
+  // pushed one tick to 177s, over the ceiling (it happened to still
+  // complete, but too close for comfort).
+  const MAX_UNITS_PER_TICK = 18;
 
   for (const job of jobs) {
     if (units.length >= MAX_UNITS_PER_TICK) break;
@@ -297,11 +318,15 @@ async function runDispatch(t0: number): Promise<Response> {
   const ok = outcomes.filter(o => o === "ok").length;
   const quarantinedCount = outcomes.filter(o => o === "quarantined").length;
   const dispatchErrors = outcomes.filter(o => o === "dispatch_error").length;
+  // Another job (this dispatcher or gmail-email-sync-worker) already had a
+  // write in flight against this same Gmail account — left pending, no
+  // error logged, picked up again next tick once that other call clears.
+  const userBusy = outcomes.filter(o => o === "user_busy").length;
 
   const { count: remaining } = await db.from("gmail_sync_jobs")
     .select("*", { count: "exact", head: true }).eq("job_type", "label_sync").eq("status", "pending");
 
-  const result = { dispatched: units.length, ok, quarantined: quarantinedCount, dispatchErrors, remaining };
+  const result = { dispatched: units.length, ok, quarantined: quarantinedCount, dispatchErrors, userBusy, remaining };
   console.log(`[label-sync-worker] DONE in ${Date.now() - t0}ms —`, JSON.stringify(result));
   await heartbeat("gmail-label-sync-worker", Date.now() - t0, result);
   return respond({ ok: true, ...result });
