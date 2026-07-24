@@ -354,41 +354,6 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
     setView('edit');
   };
 
-  // Auto-save: debounce name/item edits and persist in the background.
-  // Skips the render that immediately follows opening/creating a template.
-  const skipNextSave = useRef(true);
-  useEffect(() => {
-    skipNextSave.current = true;
-  }, [selected?.id]);
-
-  useEffect(() => {
-    if (view !== 'edit' || !selected) return;
-    if (skipNextSave.current) { skipNextSave.current = false; return; }
-    setSaved(false);
-    const timer = setTimeout(async () => {
-      setSaving(true);
-      const finalName = editName.trim() || nextUntitledName(
-        templates.filter((t: Template) => t.id !== selected.id).map((t: Template) => t.name)
-      );
-      if (finalName !== editName) setEditName(finalName);
-      await supabase.from('checklist_templates').update({ name: finalName }).eq('id', selected.id);
-      await supabase.from('checklist_template_items').delete().eq('template_id', selected.id);
-      const validItems = editItems.filter(i => i.title?.trim());
-      if (validItems.length) {
-        await supabase.from('checklist_template_items').insert(
-          validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i }))
-        );
-      }
-      const updatedTemplate: Template = { ...selected, name: finalName, items: validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i, id: item.id || '' })) as TemplateItem[] };
-      setTemplates((prev: Template[]) => prev.map(t => t.id === selected.id ? updatedTemplate : t));
-      setSelected(updatedTemplate);
-      setSaving(false);
-      setSaved(true);
-    }, 800);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editName, editItems]);
-
   const ANCHORS = [
     { value: 'record_created', label: 'Project created' },
     { value: 'record_due', label: 'Project due date' },
@@ -433,6 +398,62 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
     return anchor.toISOString().split('T')[0];
   };
 
+  // Auto-save: debounce name/item edits and persist in the background.
+  // Skips the render that immediately follows opening/creating a template.
+  const skipNextSave = useRef(true);
+  useEffect(() => {
+    skipNextSave.current = true;
+  }, [selected?.id]);
+
+  useEffect(() => {
+    if (view !== 'edit' || !selected) return;
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    setSaved(false);
+    const timer = setTimeout(async () => {
+      setSaving(true);
+      const finalName = editName.trim() || nextUntitledName(
+        templates.filter((t: Template) => t.id !== selected.id).map((t: Template) => t.name)
+      );
+      if (finalName !== editName) setEditName(finalName);
+      await supabase.from('checklist_templates').update({ name: finalName }).eq('id', selected.id);
+      await supabase.from('checklist_template_items').delete().eq('template_id', selected.id);
+
+      // Persist tasks in due-date order (undated tasks last) rather than entry order.
+      // `due_anchor` values like `task_<oldIndex>` reference positions in `editItems` (the edit
+      // session's array) — remap them to the new sorted positions so "After: X" links survive reordering.
+      const dates = await Promise.all(editItems.map(item => resolveItemDate(item, editItems)));
+      const withOldIndex = editItems
+        .map((item, oldIndex) => ({ item, oldIndex, date: dates[oldIndex] }))
+        .filter(x => x.item.title?.trim());
+      withOldIndex.sort((a, b) => {
+        if (a.date && b.date) return a.date.localeCompare(b.date);
+        if (a.date && !b.date) return -1;
+        if (!a.date && b.date) return 1;
+        return a.oldIndex - b.oldIndex;
+      });
+      const oldToNewIndex = new Map(withOldIndex.map((x, newIndex) => [x.oldIndex, newIndex]));
+      const validItems = withOldIndex.map(({ item }) => {
+        const m = /^task_(\d+)$/.exec(item.due_anchor || '');
+        if (!m) return item;
+        const newRef = oldToNewIndex.get(Number(m[1]));
+        return { ...item, due_anchor: newRef !== undefined ? `task_${newRef}` : 'record_created' };
+      });
+
+      if (validItems.length) {
+        await supabase.from('checklist_template_items').insert(
+          validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i }))
+        );
+      }
+      const updatedTemplate: Template = { ...selected, name: finalName, items: validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i, id: item.id || '' })) as TemplateItem[] };
+      setTemplates((prev: Template[]) => prev.map(t => t.id === selected.id ? updatedTemplate : t));
+      setSelected(updatedTemplate);
+      setSaving(false);
+      setSaved(true);
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editName, editItems]);
+
   // Resolved dates for the "apply" preview — keyed by item id, populated async.
   const [resolvedDates, setResolvedDates] = useState<Record<string, string | null>>({});
 
@@ -447,6 +468,21 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
     return () => { cancelled = true; };
   }, [view, selected]);
 
+  // Resolved dates for the edit view — keyed by index into editItems (new items have no id yet).
+  // Shown as a per-task badge; actual reordering into date order happens on save (see auto-save effect
+  // below) rather than live in this list, so a row doesn't jump out from under the field being edited.
+  const [editDates, setEditDates] = useState<Record<number, string | null>>({});
+  useEffect(() => {
+    if (view !== 'edit') return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const entries = await Promise.all(editItems.map(async (item, i) => [i, await resolveItemDate(item, editItems)] as const));
+      if (!cancelled) setEditDates(Object.fromEntries(entries));
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editItems, view]);
+
   const handleApply = async () => {
     if (!selected) return;
     setSaving(true);
@@ -460,6 +496,13 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
       is_monetary: item.is_monetary || false, estimated_cost: item.estimated_cost || 0,
       due_date: await resolveItemDate(item, selected.items), is_completed: false,
     })));
+    // Create tasks in due-date order (undated tasks last) rather than the template's raw entry order.
+    tasksToCreate.sort((a, b) => {
+      if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+      if (a.due_date && !b.due_date) return -1;
+      if (!a.due_date && b.due_date) return 1;
+      return 0;
+    });
     console.log('[template] tasksToCreate:', tasksToCreate);
     await onApply(tasksToCreate);
     setSaving(false);
@@ -542,7 +585,18 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
               <p className="text-[11px] text-slate-500 mb-4">
                 The following {selected.items.filter(i => !i.parent_item_id).length} tasks will be created with dates calculated from the project.
               </p>
-              {selected.items.filter(i => !i.parent_item_id).map(item => (
+              {selected.items
+                .filter(i => !i.parent_item_id)
+                .slice()
+                .sort((a, b) => {
+                  const da = resolvedDates[a.id];
+                  const db = resolvedDates[b.id];
+                  if (da && db) return da.localeCompare(db);
+                  if (da && !db) return -1;
+                  if (!da && db) return 1;
+                  return a.display_order - b.display_order;
+                })
+                .map(item => (
                 <div key={item.id} className="flex items-start gap-3 px-4 py-3 bg-slate-50 rounded-2xl">
                   <CheckSquare size={14} className="text-indigo-400 mt-0.5 shrink-0" />
                   <div className="flex-1">
@@ -604,6 +658,11 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                         <button onClick={() => setEditItems(editItems.filter((_, i) => i !== idx))}
                           className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"><X size={12} /></button>
                       </div>
+                      {editDates[idx] !== undefined && (
+                        <p className="text-[10px] text-slate-400 flex items-center gap-1 -mt-1">
+                          <Calendar size={9} /> {editDates[idx] ? `Due ${editDates[idx]}` : 'No auto date'}
+                        </p>
+                      )}
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <p className="text-[9px] text-slate-400 mb-1">Offset days</p>
