@@ -576,8 +576,11 @@ async function continueCollecting(
   collectedSoFar: Record<string, string>,
   pendingFieldKeys: string[]
 ) {
+  const reply = (text: string) => sendWhatsAppReply(credentials, destinationFor(msg), msg.messageId, attribute(text, msg));
+
   if (actionType === "create_file" || actionType === "update_file") {
     let extracted: Record<string, unknown> = {};
+    let plainReply = "";
     try {
       const extraction = await callHostedModelWithTools(
         DEFAULT_HOSTED_MODEL_ID,
@@ -598,9 +601,24 @@ async function continueCollecting(
         cost_usd: cost,
       });
       if (extraction.toolCall) extracted = extraction.toolCall.arguments;
+      else plainReply = extraction.content?.trim() ?? "";
     } catch (err) {
       console.error("WhatsApp bot file field-extraction call failed:", err);
     }
+
+    // Nothing was actually answered -- tool_choice is "auto", so the model
+    // was free to recognize this message wasn't an attempt to address the
+    // pending question(s) and just replied to it directly instead (e.g. a
+    // stray "hi are you there" hours later). Surface that reply rather
+    // than silently re-asking the identical question with no
+    // acknowledgment of what was actually said -- and, since nothing
+    // changed, skip applyFileAdvanceResult so its upsert doesn't refresh
+    // expires_at and keep an unrelated conversation alive indefinitely.
+    if (!Object.keys(extracted).length && plainReply) {
+      await reply(plainReply);
+      return;
+    }
+
     const merged = { ...collectedSoFar };
     for (const [key, value] of Object.entries(extracted)) {
       if (value !== undefined && value !== null && String(value).trim() !== "") merged[key] = String(value);
@@ -614,6 +632,7 @@ async function continueCollecting(
   const pendingFields: FieldDef[] = fieldsForAction.filter((f) => pendingFieldKeys.includes(f.key));
 
   let extracted: Record<string, unknown> = {};
+  let plainReply = "";
   try {
     const extraction = await callHostedModelWithTools(
       DEFAULT_HOSTED_MODEL_ID,
@@ -635,8 +654,17 @@ async function continueCollecting(
       cost_usd: cost,
     });
     if (extraction.toolCall) extracted = extraction.toolCall.arguments;
+    else plainReply = extraction.content?.trim() ?? "";
   } catch (err) {
     console.error("WhatsApp bot field-extraction call failed:", err);
+  }
+
+  // Same reasoning as the file-action branch above -- don't discard a real
+  // conversational reply the model already produced, and don't refresh
+  // expires_at (via applyAdvanceResult) when nothing was actually answered.
+  if (!Object.keys(extracted).length && plainReply) {
+    await reply(`${plainReply}\n\n(Still need ${pendingFields.map((f) => f.label).join(", ")} to finish creating this -- let me know when you're ready.)`);
+    return;
   }
 
   const merged = { ...collectedSoFar, ...translateFieldAnswers(pendingFields, extracted) };
