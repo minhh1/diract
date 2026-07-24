@@ -1,6 +1,6 @@
 // components/dashboard/tabs/ChecklistTab.tsx
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   Plus, Check, ChevronDown, ChevronRight, Trash2, Calendar,
@@ -311,18 +311,29 @@ function TaskEditModal({ task, profiles, teams, followUps, watcherIds: initWatch
 }
 
 // ── TemplateModal ─────────────────────────────────────────────────
-function TemplateModal({ templates, setTemplates, profiles, teams, companyId, projectId, projectCreatedAt, projectDueDate, tasks, onApply, onSaveNew, onClose }: any) {
-  type View = 'list' | 'apply' | 'create' | 'edit';
+// "Untitled", "Untitled 1", "Untitled 2"... — picks the lowest unused number given existing names.
+function nextUntitledName(existingNames: string[]): string {
+  const used = new Set(
+    existingNames
+      .map(n => n.match(/^Untitled(?: (\d+))?$/))
+      .filter((m): m is RegExpMatchArray => !!m)
+      .map(m => (m[1] ? parseInt(m[1], 10) : 0))
+  );
+  let n = 0;
+  while (used.has(n)) n++;
+  return n === 0 ? 'Untitled' : `Untitled ${n}`;
+}
+
+function TemplateModal({ templates, setTemplates, profiles, teams, companyId, projectId, projectCreatedAt, projectDueDate, tasks, onApply, onCreateTemplate, onClose }: any) {
+  type View = 'list' | 'apply' | 'edit';
   const [view, setView] = useState<View>('list');
   const [selected, setSelected] = useState<Template | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newItems, setNewItems] = useState<Partial<TemplateItem>[]>([
-    { title: '', due_offset_days: 0, due_anchor: 'record_created', display_order: 0 }
-  ]);
   const [editName, setEditName] = useState('');
   const [editItems, setEditItems] = useState<Partial<TemplateItem>[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const openEdit = (t: Template) => {
     setSelected(t);
@@ -331,26 +342,52 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
     setView('edit');
   };
 
-  const handleSaveEdit = async () => {
-    if (!selected || !editName.trim()) return;
-    setSaving(true);
-    // Update template name
-    await supabase.from('checklist_templates').update({ name: editName.trim() }).eq('id', selected.id);
-    // Delete all existing items and re-insert
-    await supabase.from('checklist_template_items').delete().eq('template_id', selected.id);
-    const validItems = editItems.filter(i => i.title?.trim());
-    if (validItems.length) {
-      await supabase.from('checklist_template_items').insert(
-        validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i }))
-      );
-    }
-    // Update local state
-    const updatedTemplate = { ...selected, name: editName.trim(), items: validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i, id: item.id || '' })) };
-    setTemplates((prev: Template[]) => prev.map(t => t.id === selected.id ? updatedTemplate : t));
-    setSaving(false);
-    setView('list');
-    setSelected(null);
+  const handleCreateNew = async () => {
+    setCreating(true);
+    const name = nextUntitledName(templates.map((t: Template) => t.name));
+    const created = await onCreateTemplate(name);
+    setCreating(false);
+    if (!created) return;
+    setSelected(created);
+    setEditName(created.name);
+    setEditItems([{ title: '', due_offset_days: 0, due_anchor: 'record_created', display_order: 0 }]);
+    setView('edit');
   };
+
+  // Auto-save: debounce name/item edits and persist in the background.
+  // Skips the render that immediately follows opening/creating a template.
+  const skipNextSave = useRef(true);
+  useEffect(() => {
+    skipNextSave.current = true;
+  }, [selected?.id]);
+
+  useEffect(() => {
+    if (view !== 'edit' || !selected) return;
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    setSaved(false);
+    const timer = setTimeout(async () => {
+      setSaving(true);
+      const finalName = editName.trim() || nextUntitledName(
+        templates.filter((t: Template) => t.id !== selected.id).map((t: Template) => t.name)
+      );
+      if (finalName !== editName) setEditName(finalName);
+      await supabase.from('checklist_templates').update({ name: finalName }).eq('id', selected.id);
+      await supabase.from('checklist_template_items').delete().eq('template_id', selected.id);
+      const validItems = editItems.filter(i => i.title?.trim());
+      if (validItems.length) {
+        await supabase.from('checklist_template_items').insert(
+          validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i }))
+        );
+      }
+      const updatedTemplate: Template = { ...selected, name: finalName, items: validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i, id: item.id || '' })) as TemplateItem[] };
+      setTemplates((prev: Template[]) => prev.map(t => t.id === selected.id ? updatedTemplate : t));
+      setSelected(updatedTemplate);
+      setSaving(false);
+      setSaved(true);
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editName, editItems]);
 
   const ANCHORS = [
     { value: 'record_created', label: 'Project created' },
@@ -431,14 +468,6 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
     setDeleting(null);
   };
 
-  const handleSaveNew = async () => {
-    if (!newName.trim()) return;
-    setSaving(true);
-    await onSaveNew(newName, newItems.filter(i => i.title?.trim()));
-    setSaving(false);
-    onClose();
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -451,7 +480,7 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
             </button>
           )}
           <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide flex-1">
-            {view === 'list' ? 'Checklist templates' : view === 'apply' ? `Apply: ${selected?.name}` : view === 'edit' ? `Edit: ${selected?.name}` : 'Create template'}
+            {view === 'list' ? 'Checklist templates' : view === 'apply' ? `Apply: ${selected?.name}` : `Edit: ${selected?.name}`}
           </h3>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
@@ -460,9 +489,9 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
           {/* ── List view ── */}
           {view === 'list' && (
             <div className="space-y-3">
-              <button onClick={() => setView('create')}
-                className="w-full flex items-center gap-3 px-4 py-3 border-2 border-dashed border-indigo-300 text-indigo-600 rounded-2xl hover:bg-indigo-50 transition-colors text-[12px] font-medium">
-                <Plus size={14} /> Create new template
+              <button onClick={handleCreateNew} disabled={creating}
+                className="w-full flex items-center gap-3 px-4 py-3 border-2 border-dashed border-indigo-300 text-indigo-600 rounded-2xl hover:bg-indigo-50 transition-colors text-[12px] font-medium disabled:opacity-40">
+                <Plus size={14} /> {creating ? 'Creating...' : 'Create new template'}
               </button>
               {templates.length === 0 && (
                 <p className="text-center text-[11px] text-slate-300 italic py-8">No templates yet</p>
@@ -543,104 +572,12 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
             </div>
           )}
 
-          {/* ── Create view ── */}
-          {view === 'create' && (
-            <div className="space-y-6">
-              <div>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Template name</p>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Property Settlement"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
-              </div>
-              <div>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Tasks</p>
-                <div className="space-y-3">
-                  {newItems.map((item, idx) => (
-                    <div key={idx} className="bg-slate-50 rounded-2xl p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <input value={item.title || ''} onChange={e => {
-                          const next = [...newItems]; next[idx] = { ...next[idx], title: e.target.value }; setNewItems(next);
-                        }} placeholder={`Task ${idx + 1} name...`}
-                          className="flex-1 px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 bg-white" />
-                        <button onClick={() => setNewItems(newItems.filter((_, i) => i !== idx))}
-                          className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"><X size={12} /></button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <p className="text-[9px] text-slate-400 mb-1">Offset days</p>
-                          <input type="number" value={item.due_offset_days ?? 0} onChange={e => {
-                            const next = [...newItems]; next[idx] = { ...next[idx], due_offset_days: parseInt(e.target.value) || 0 }; setNewItems(next);
-                          }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white" />
-                        </div>
-                        <div className="col-span-2">
-                          <p className="text-[9px] text-slate-400 mb-1">From</p>
-                          <select value={item.due_anchor || 'record_created'} onChange={e => {
-                            const next = [...newItems]; next[idx] = { ...next[idx], due_anchor: e.target.value }; setNewItems(next);
-                          }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-                            {ANCHORS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                            {newItems.slice(0, idx).filter(i => i.title).map((i, prevIdx) => (
-                              <option key={`task_${prevIdx}`} value={`task_${prevIdx}`}>After: {i.title || `Task ${prevIdx + 1}`}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div className={`grid gap-2 ${item.due_offset_mode === 'business' ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        <div>
-                          <p className="text-[9px] text-slate-400 mb-1">Day type</p>
-                          <select value={item.due_offset_mode || 'calendar'} onChange={e => {
-                            const next = [...newItems]; next[idx] = { ...next[idx], due_offset_mode: e.target.value as 'calendar' | 'business' }; setNewItems(next);
-                          }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-                            <option value="calendar">Calendar days</option>
-                            <option value="business">Business days</option>
-                          </select>
-                        </div>
-                        {item.due_offset_mode === 'business' && (
-                          <div>
-                            <p className="text-[9px] text-slate-400 mb-1">State</p>
-                            <select value={item.due_offset_state || 'NSW'} onChange={e => {
-                              const next = [...newItems]; next[idx] = { ...next[idx], due_offset_state: e.target.value }; setNewItems(next);
-                            }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-                              {AU_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <p className="text-[9px] text-slate-400 mb-1">Assignee</p>
-                          <select value={item.assignee_id || ''} onChange={e => {
-                            const next = [...newItems]; next[idx] = { ...next[idx], assignee_id: e.target.value || null }; setNewItems(next);
-                          }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-                            <option value="">Unassigned</option>
-                            {profiles.map((p: any) => <option key={p.id} value={p.id}>{p.full_name || p.email}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <p className="text-[9px] text-slate-400 mb-1">Team</p>
-                          <select value={item.assigned_team_id || ''} onChange={e => {
-                            const next = [...newItems]; next[idx] = { ...next[idx], assigned_team_id: e.target.value || null }; setNewItems(next);
-                          }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-                            <option value="">No team</option>
-                            {teams.map((t: any) => <option key={t.id} value={t.id}>{t.team_name}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <button onClick={() => setNewItems([...newItems, { title: '', due_offset_days: 0, due_anchor: 'record_created', due_offset_mode: 'calendar', display_order: newItems.length }])}
-                    className="w-full flex items-center gap-2 justify-center py-2.5 border border-dashed border-slate-300 text-slate-400 rounded-2xl hover:border-indigo-300 hover:text-indigo-600 transition-colors text-[12px]">
-                    <Plus size={13} /> Add task
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* ── Edit view ── */}
           {view === 'edit' && selected && (
             <div className="space-y-6">
               <div>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Template name</p>
-                <input value={editName} onChange={e => setEditName(e.target.value)}
+                <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Property Settlement"
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
               </div>
               <div>
@@ -732,17 +669,16 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
               {saving ? 'Creating tasks...' : `Apply template — ${selected?.items.filter(i => !i.parent_item_id).length} tasks`}
             </button>
           )}
-          {view === 'create' && (
-            <button onClick={handleSaveNew} disabled={saving || !newName.trim()}
-              className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-              {saving ? 'Saving...' : 'Save template'}
-            </button>
-          )}
           {view === 'edit' && (
-            <button onClick={handleSaveEdit} disabled={saving || !editName.trim()}
-              className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-              {saving ? 'Saving...' : 'Save changes'}
-            </button>
+            <div className="flex items-center gap-3">
+              <p className="flex-1 text-[11px] text-slate-400 italic">
+                {saving ? 'Saving...' : saved ? 'All changes saved' : ''}
+              </p>
+              <button onClick={() => { setView('list'); setSelected(null); }}
+                className="px-6 py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
+                Done
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -988,11 +924,12 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     }
   };
 
-  const handleSaveTemplate = async (name: string, items: Partial<TemplateItem>[]) => {
+  const handleCreateTemplate = async (name: string): Promise<Template | null> => {
     const { data: tpl } = await supabase.from('checklist_templates').insert({ company_id: companyId, name, record_table: 'projects' }).select().single();
-    if (!tpl) return;
-    await supabase.from('checklist_template_items').insert(items.map((item, i) => ({ ...item, template_id: tpl.id, display_order: i })));
-    load();
+    if (!tpl) return null;
+    const newTemplate: Template = { id: tpl.id, name: tpl.name, items: [] };
+    setTemplates(prev => [...prev, newTemplate]);
+    return newTemplate;
   };
 
   const rootTasks = tasks.filter(t => !t.parent_task_id);
@@ -1109,7 +1046,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
           profiles={profiles} teams={teams} companyId={companyId} projectId={recordId}
           projectCreatedAt={project?.created_at || new Date().toISOString()}
           projectDueDate={project?.estimated_completion_date || null}
-          tasks={tasks} onApply={handleApplyTemplate} onSaveNew={handleSaveTemplate}
+          tasks={tasks} onApply={handleApplyTemplate} onCreateTemplate={handleCreateTemplate}
           onClose={() => { setShowTemplates(false); }}
         />
       )}
