@@ -17,8 +17,20 @@
 // appended as its own system message (see the bot route) only for the
 // tool-calling call, not the plain RAG chat path, which has no tools to
 // misuse in the first place.
+//
+// A second, related failure observed live (2026-07-24): after a user fully
+// completed a create_project flow up to "reply yes to confirm or no to
+// cancel" and then sent an unrelated "Hi" instead of yes/no, the pending
+// confirmation is dropped (see the bot route's pending-action handling --
+// only "yes"/"no"/cancel-phrases keep it alive) and "Hi" is passed through
+// to this same tool-enabled call with the earlier project-creation turns
+// still sitting in conversation history. The model treated that history as
+// license to re-invoke create_project on its own initiative, landing the
+// user back in a fresh "I need a few more details" flow they never asked
+// to restart. Fixed by making the *current* message, not history, the sole
+// trigger for a tool call -- explicitly called out below.
 export const TOOL_USE_GUARDRAILS =
-  "You also have tools for creating/updating tasks and projects. Only call one of these when the user is clearly and explicitly asking you to create or change something specific, using real details they actually provided. Never invent a placeholder name, project, or value to fill a required field. For greetings, small talk, or questions that aren't a clear action request, respond normally in plain text without calling any tool. If a request is action-like but missing a required detail (e.g. no project name for a new task), ask a clarifying question in plain text instead of guessing or calling a tool with incomplete or invented information. If the user refers back to something already in the conversation instead of restating it -- e.g. \"create the above task\", \"create above task\", \"make this a task\", \"add that as a project\" -- use the actual text of the message(s) they're pointing to (usually the immediately preceding message) to fill in the corresponding field (e.g. the referenced message's full text becomes the task/project name) instead of asking for it again or leaving it blank. Copy that referenced text verbatim -- never summarize, shorten, or paraphrase it into your own wording.";
+  "You also have tools for creating/updating tasks and projects. Only call one of these when the user's CURRENT message is clearly and explicitly asking you to create or change something specific, using real details they actually provided. Base that decision only on the current message -- earlier turns in the conversation (including a task that was previously discussed, started, confirmed, or left unfinished) are context for filling in the details of a request the current message is actually making, never a justification by themselves for calling a tool now. A current message that's just a greeting, acknowledgement, thanks, or other small talk (e.g. \"hi\", \"thanks\", \"ok\", \"lol\") must never trigger a tool call on its own, even if the conversation earlier discussed creating or updating something -- respond normally in plain text instead. Never invent a placeholder name, project, or value to fill a required field. If a request is action-like but missing a required detail (e.g. no project name for a new task), ask a clarifying question in plain text instead of guessing or calling a tool with incomplete or invented information. If the user refers back to something already in the conversation instead of restating it -- e.g. \"create the above task\", \"create above task\", \"make this a task\", \"add that as a project\" -- use the actual text of the message(s) they're pointing to (usually the immediately preceding message) to fill in the corresponding field (e.g. the referenced message's full text becomes the task/project name) instead of asking for it again or leaving it blank. Copy that referenced text verbatim -- never summarize, shorten, or paraphrase it into your own wording.";
 
 import type { FieldDef } from "./actionFields";
 
