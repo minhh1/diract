@@ -447,6 +447,20 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
     return () => { cancelled = true; };
   }, [view, selected]);
 
+  // Resolved dates for the edit view — keyed by index into editItems (new items have no id yet).
+  // Drives the visual ordering below so tasks re-sort into date order as offsets/anchors change.
+  const [editDates, setEditDates] = useState<Record<number, string | null>>({});
+  useEffect(() => {
+    if (view !== 'edit') return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const entries = await Promise.all(editItems.map(async (item, i) => [i, await resolveItemDate(item, editItems)] as const));
+      if (!cancelled) setEditDates(Object.fromEntries(entries));
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editItems, view]);
+
   const handleApply = async () => {
     if (!selected) return;
     setSaving(true);
@@ -612,7 +626,17 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
               <div>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Tasks</p>
                 <div className="space-y-3">
-                  {editItems.map((item, idx) => (
+                  {editItems
+                    .map((item, idx) => ({ item, idx }))
+                    .sort((a, b) => {
+                      const da = editDates[a.idx];
+                      const db = editDates[b.idx];
+                      if (da && db) return da.localeCompare(db);
+                      if (da && !db) return -1;
+                      if (!da && db) return 1;
+                      return a.idx - b.idx;
+                    })
+                    .map(({ item, idx }) => (
                     <div key={idx} className="bg-slate-50 rounded-2xl p-4 space-y-3">
                       <div className="flex items-center gap-2">
                         <input value={item.title || ''} onChange={e => {
