@@ -17,12 +17,16 @@ export interface WhatsAppSendCredentials {
 // can't join an *existing* WhatsApp group, only ones this app creates.
 export type WhatsAppDestination = { type: "individual"; waId: string } | { type: "group"; groupId: string };
 
+// Returns the sent message's own wamid (Meta's standard send response
+// shape, `{ messages: [{ id: "wamid...." }] }`) so callers can later verify
+// a 👍 reaction's `reaction.message_id` actually targets this specific
+// message -- see app/api/whatsapp/webhook/[companyId]/route.ts.
 export async function sendWhatsAppReply(
   credentials: WhatsAppSendCredentials,
   destination: WhatsAppDestination,
   replyToMessageId: string,
   text: string
-): Promise<void> {
+): Promise<string> {
   const res = await fetch(`https://graph.facebook.com/v21.0/${credentials.phone_number_id}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${credentials.access_token}` },
@@ -36,4 +40,6 @@ export async function sendWhatsAppReply(
     }),
   });
   if (!res.ok) throw new Error(`WhatsApp send failed: ${res.status} ${await res.text()}`);
+  const json = await res.json().catch(() => ({}));
+  return json.messages?.[0]?.id ?? "";
 }

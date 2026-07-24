@@ -52,14 +52,18 @@ export async function getBotToken(creds: BotCredentials): Promise<string> {
 // Replies to a specific inbound activity within its conversation --
 // {serviceUrl}/v3/conversations/{conversationId}/activities/{activityId}
 // per the Bot Connector REST API. serviceUrl and conversationId/activityId
-// all come from the inbound Activity the bot is responding to.
+// all come from the inbound Activity the bot is responding to. Returns the
+// new activity's own id (the Connector API's standard ResourceResponse
+// shape, `{ "id": "..." }`) so callers can later verify a "like" reaction's
+// `replyToId` actually targets this specific message -- see
+// app/api/teams/bot/[companyId]/route.ts.
 export async function sendReply(
   serviceUrl: string,
   conversationId: string,
   activityId: string,
   botToken: string,
   text: string
-): Promise<void> {
+): Promise<string> {
   const url = `${serviceUrl.replace(/\/$/, "")}/v3/conversations/${encodeURIComponent(conversationId)}/activities/${encodeURIComponent(activityId)}`;
   const res = await fetch(url, {
     method: "POST",
@@ -67,4 +71,6 @@ export async function sendReply(
     body: JSON.stringify({ type: "message", text }),
   });
   if (!res.ok) throw new Error(`Failed to send Teams bot reply: ${res.status} ${await res.text()}`);
+  const json = await res.json().catch(() => ({}));
+  return json.id ?? "";
 }

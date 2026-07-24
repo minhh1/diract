@@ -118,7 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ com
   const payload = JSON.parse(rawBody);
 
   const rows: Record<string, unknown>[] = [];
-  const botMessages: { waId: string; messageId: string; text: string; groupId: string | null }[] = [];
+  const botMessages: { waId: string; messageId: string; text: string; groupId: string | null; reactionTargetId?: string }[] = [];
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value ?? {};
@@ -145,14 +145,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ com
           botMessages.push({ waId: message.from, messageId: message.id, text: message.text.body, groupId: message.group_id ?? null });
         }
         // A 👍 reaction counts as a lightweight "yes" -- lets someone
-        // confirm a pending create/update without typing a word. Doesn't
-        // check *which* message was reacted to (message.reaction.message_id
-        // isn't cross-referenced); if there's no active pending confirmation
-        // for that person, handleMessage just treats the synthetic "yes" as
-        // an ordinary one-word question, which is harmless. Matches the
-        // base thumbs-up regardless of skin-tone modifier.
-        if (message.type === "reaction" && message.reaction?.emoji?.startsWith("\u{1F44D}")) {
-          botMessages.push({ waId: message.from, messageId: message.id, text: "yes", groupId: message.group_id ?? null });
+        // confirm a pending create/update without typing a word. Verified
+        // strictly: message.reaction.message_id is carried through as
+        // reactionTargetId and only treated as a confirm if it matches the
+        // prompt_message_id we actually stored for that pending action (see
+        // handleMessage) -- a reaction on some unrelated older message is
+        // ignored rather than blindly confirming whatever's pending. Matches
+        // the base thumbs-up regardless of skin-tone modifier.
+        if (message.type === "reaction" && message.reaction?.emoji?.startsWith("\u{1F44D}") && message.reaction?.message_id) {
+          botMessages.push({ waId: message.from, messageId: message.id, text: "\u{1F44D}", groupId: message.group_id ?? null, reactionTargetId: message.reaction.message_id });
         }
       }
     }
@@ -184,6 +185,7 @@ interface IncomingMessage {
   messageId: string;
   text: string;
   groupId: string | null;
+  reactionTargetId?: string;
 }
 
 interface LinkedAccount {
@@ -227,9 +229,24 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
 
   const { data: pending } = await admin
     .from("whatsapp_bot_pending_actions")
-    .select("action_type, params, summary, expires_at, status, collected, next_fields")
+    .select("action_type, params, summary, expires_at, status, collected, next_fields, prompt_message_id")
     .eq("linked_account_id", linked.id)
     .maybeSingle();
+
+  if (msg.reactionTargetId) {
+    if (pending && pending.status === "confirming" && pending.prompt_message_id === msg.reactionTargetId && new Date(pending.expires_at) > new Date()) {
+      await admin.from("whatsapp_bot_pending_actions").delete().eq("linked_account_id", linked.id);
+      let resultText: string;
+      try {
+        resultText = await executeAction(admin, companyId, linked.user_id, pending.action_type, pending.params);
+      } catch (err) {
+        resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await reply(resultText);
+    }
+    return;
+  }
+
   if (pending && new Date(pending.expires_at) > new Date()) {
     const normalized = msg.text.trim().toLowerCase();
     if (isCancelMessage(msg.text)) {
@@ -375,11 +392,11 @@ async function handleToolCall(
   };
 
   const storePending = async (actionType: string, params: Record<string, unknown>, summary: string) => {
+    const promptMessageId = await reply(`${summary}\n\nReply "yes" to confirm or "no" to cancel.`);
     await admin.from("whatsapp_bot_pending_actions").upsert(
-      { linked_account_id: linked.id, action_type: actionType, status: "confirming", params, summary, collected: null, next_fields: null, created_at: new Date().toISOString() },
+      { linked_account_id: linked.id, action_type: actionType, status: "confirming", params, summary, collected: null, next_fields: null, prompt_message_id: promptMessageId, created_at: new Date().toISOString() },
       { onConflict: "linked_account_id" }
     );
-    await reply(`${summary}\n\nReply "yes" to confirm or "no" to cancel.`);
   };
 
   if (toolCall.name === "create_task" || toolCall.name === "create_project") {
@@ -491,17 +508,17 @@ async function applyAdvanceResult(
 
   if (result.status === "collecting") {
     await admin.from("whatsapp_bot_pending_actions").upsert(
-      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, expires_at: expiresAt },
+      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, prompt_message_id: null, expires_at: expiresAt },
       { onConflict: "linked_account_id" }
     );
     return reply(result.question);
   }
 
+  const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
   await admin.from("whatsapp_bot_pending_actions").upsert(
-    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, expires_at: expiresAt },
+    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, prompt_message_id: promptMessageId, expires_at: expiresAt },
     { onConflict: "linked_account_id" }
   );
-  return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
 }
 
 // Mirrors applyAdvanceResult, for lib/ai/fileActions.ts's FileAdvanceResult
@@ -521,17 +538,17 @@ async function applyFileAdvanceResult(
 
   if (result.status === "collecting") {
     await admin.from("whatsapp_bot_pending_actions").upsert(
-      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, expires_at: expiresAt },
+      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, prompt_message_id: null, expires_at: expiresAt },
       { onConflict: "linked_account_id" }
     );
     return reply(result.question);
   }
 
+  const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
   await admin.from("whatsapp_bot_pending_actions").upsert(
-    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, expires_at: expiresAt },
+    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, prompt_message_id: promptMessageId, expires_at: expiresAt },
     { onConflict: "linked_account_id" }
   );
-  return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
 }
 
 async function continueCollecting(

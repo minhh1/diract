@@ -124,13 +124,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ com
     return NextResponse.json({ error: `Unauthorized: ${verification.reason}` }, { status: 403 });
   }
 
-  // A "like" reaction on any message counts as a lightweight "yes" -- lets
-  // someone confirm a pending create/update without typing a word. Doesn't
-  // check *which* message was reacted to (Bot Framework's reaction activity
-  // doesn't make that cheap to verify); if there's no active pending
-  // confirmation for that person, handleMessage just treats the synthetic
-  // "yes" as an ordinary one-word question, which is harmless.
+  // A "like" reaction on the bot's own confirmation message counts as a
+  // "yes" -- lets someone confirm a pending create/update without typing a
+  // word. `replyToId` on a messageReaction activity identifies exactly
+  // which message was reacted to (the Connector API's standard reply
+  // property), verified in handleMessage against the prompt_message_id
+  // captured when that confirmation was sent -- see sendReply's return
+  // value and applyAdvanceResult/applyFileAdvanceResult/storePending below.
   const isLikeReaction = activity.type === "messageReaction" && (activity.reactionsAdded ?? []).some((r: { type?: string }) => r.type === "like" || r.type === "plusOne");
+  const reactionTargetId: string | undefined = isLikeReaction ? activity.replyToId : undefined;
 
   // Only real user messages (or a like-reaction confirm) need a reply --
   // conversationUpdate (bot added/removed), typing indicators, other
@@ -149,7 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ com
     return NextResponse.json({ ok: true });
   }
 
-  const question = isLikeReaction ? "yes" : stripMentionMarkup(activity.text);
+  const question = isLikeReaction ? "\u{1F44D}" : stripMentionMarkup(activity.text);
   const aadObjectId: string | undefined = activity.from?.aadObjectId;
   const tenantId: string | undefined = activity.conversation?.tenantId ?? activity.channelData?.tenant?.id;
   const serviceUrl: string = activity.serviceUrl;
@@ -172,7 +174,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ com
   // the same message when it didn't see a timely-enough response (observed
   // as duplicate teams_bot_link_requests rows for the same identity).
   after(() =>
-    handleMessage(admin, companyId, creds, { aadObjectId, tenantId, serviceUrl, conversationId, activityId, question }).catch((err) =>
+    handleMessage(admin, companyId, creds, { aadObjectId, tenantId, serviceUrl, conversationId, activityId, question, reactionTargetId }).catch((err) =>
       console.error("Teams bot message handling failed:", err)
     )
   );
@@ -187,6 +189,7 @@ interface IncomingMessage {
   conversationId: string;
   activityId: string;
   question: string;
+  reactionTargetId?: string;
 }
 
 async function handleMessage(admin: any, companyId: string, botCreds: BotCredentials, msg: IncomingMessage) {
@@ -242,9 +245,29 @@ async function handleMessage(admin: any, companyId: string, botCreds: BotCredent
   // than left to confuse a later confirmation).
   const { data: pending } = await admin
     .from("teams_bot_pending_actions")
-    .select("action_type, params, summary, expires_at, status, collected, next_fields")
+    .select("action_type, params, summary, expires_at, status, collected, next_fields, prompt_message_id")
     .eq("linked_account_id", linked.id)
     .maybeSingle();
+
+  // A "like" reaction only ever means "confirm" -- and only when it's on
+  // the exact confirmation message this pending action's prompt_message_id
+  // points at (not just any reaction from this person). No match -> ignore
+  // silently rather than guessing; there's nothing sensible to fall
+  // through to for a reaction (unlike a mistyped text reply).
+  if (msg.reactionTargetId) {
+    if (pending && pending.status === "confirming" && pending.prompt_message_id === msg.reactionTargetId && new Date(pending.expires_at) > new Date()) {
+      await admin.from("teams_bot_pending_actions").delete().eq("linked_account_id", linked.id);
+      let resultText: string;
+      try {
+        resultText = await executeAction(admin, companyId, linked.user_id, pending.action_type, pending.params);
+      } catch (err) {
+        resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      await sendReply(msg.serviceUrl, msg.conversationId, msg.activityId, botToken, resultText);
+    }
+    return;
+  }
+
   if (pending && new Date(pending.expires_at) > new Date()) {
     const normalized = msg.question.trim().toLowerCase();
     if (isCancelMessage(msg.question)) {
@@ -449,6 +472,10 @@ async function handleToolCall(
   // that omitted these could otherwise leave a stale "collecting" state
   // from an unrelated abandoned create_task/create_project lingering.
   const storePending = async (actionType: string, params: Record<string, unknown>, summary: string) => {
+    // Sent first so the returned activity id can be stored as
+    // prompt_message_id -- a later "like" reaction is only honored as a
+    // confirm when it targets this exact message (see handleMessage).
+    const promptMessageId = await reply(`${summary}\n\nReply "yes" to confirm or "no" to cancel.`);
     await admin.from("teams_bot_pending_actions").upsert(
       {
         linked_account_id: linked.id,
@@ -458,11 +485,11 @@ async function handleToolCall(
         summary,
         collected: null,
         next_fields: null,
+        prompt_message_id: promptMessageId,
         created_at: new Date().toISOString(),
       },
       { onConflict: "linked_account_id" }
     );
-    await reply(`${summary}\n\nReply "yes" to confirm or "no" to cancel.`);
   };
 
   if (toolCall.name === "create_task" || toolCall.name === "create_project") {
@@ -595,6 +622,7 @@ async function applyAdvanceResult(
         next_fields: result.missingFields,
         params: null,
         summary: null,
+        prompt_message_id: null,
         expires_at: expiresAt,
       },
       { onConflict: "linked_account_id" }
@@ -602,6 +630,7 @@ async function applyAdvanceResult(
     return reply(result.question);
   }
 
+  const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
   await admin.from("teams_bot_pending_actions").upsert(
     {
       linked_account_id: linked.id,
@@ -611,11 +640,11 @@ async function applyAdvanceResult(
       summary: result.summary,
       collected: null,
       next_fields: null,
+      prompt_message_id: promptMessageId,
       expires_at: expiresAt,
     },
     { onConflict: "linked_account_id" }
   );
-  return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
 }
 
 // Mirrors applyAdvanceResult exactly, for lib/ai/fileActions.ts's
@@ -635,17 +664,17 @@ async function applyFileAdvanceResult(
 
   if (result.status === "collecting") {
     await admin.from("teams_bot_pending_actions").upsert(
-      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, expires_at: expiresAt },
+      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, prompt_message_id: null, expires_at: expiresAt },
       { onConflict: "linked_account_id" }
     );
     return reply(result.question);
   }
 
+  const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
   await admin.from("teams_bot_pending_actions").upsert(
-    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, expires_at: expiresAt },
+    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, prompt_message_id: promptMessageId, expires_at: expiresAt },
     { onConflict: "linked_account_id" }
   );
-  return reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
 }
 
 // Handles a reply that arrives while a create_task/create_project is still
