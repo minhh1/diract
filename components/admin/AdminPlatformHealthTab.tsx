@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   Loader2, KeyRound, Radio, DollarSign, BarChart3, HeartPulse,
-  CheckCircle2, XCircle, RotateCw, Plus, Trash2,
+  CheckCircle2, XCircle, RotateCw, Plus, Trash2, Search, ChevronDown, ChevronUp,
   type LucideIcon,
 } from "lucide-react";
 import HeartbeatStatusList, { type HeartbeatDef, type HeartbeatRow } from "@/components/admin/HeartbeatStatusList";
@@ -103,6 +103,56 @@ interface AnalyticsData {
   invocationsByDay: DayCount[];
   topApiEndpoints: { key: string; count: number }[];
   totals: { visits: number; invocations: number };
+}
+
+// Search + "show top N / show all" list, shared by the Analytics sub-tab's
+// Top pages and Top API endpoints panels — both can have far more distinct
+// entries than fit comfortably in a preview, so search is the fast way to
+// find one specific path without scrolling a long list.
+const RANKED_LIST_PREVIEW = 10;
+function RankedList({ items, mono }: { items: { key: string; count: number }[]; mono?: boolean }) {
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  const filtered = search.trim()
+    ? items.filter(i => i.key.toLowerCase().includes(search.trim().toLowerCase()))
+    : items;
+  // Searching implies "show me every match", not just the top 10 of them.
+  const visible = search.trim() || expanded ? filtered : filtered.slice(0, RANKED_LIST_PREVIEW);
+
+  return (
+    <div>
+      <div className="relative mb-2">
+        <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder={`Search ${items.length} entr${items.length === 1 ? "y" : "ies"}...`}
+          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400"
+        />
+      </div>
+      <div className="space-y-1.5 max-h-80 overflow-y-auto">
+        {visible.map(p => (
+          <div key={p.key} className="flex items-center justify-between text-[11px]">
+            <span className={`text-slate-600 truncate ${mono ? "font-mono" : ""}`}>{p.key}</span>
+            <span className="text-slate-400 font-bold shrink-0 ml-2">{p.count}</span>
+          </div>
+        ))}
+        {items.length === 0 && <p className="text-[11px] text-slate-300">No data yet</p>}
+        {items.length > 0 && filtered.length === 0 && <p className="text-[11px] text-slate-300">No matches</p>}
+      </div>
+      {!search.trim() && filtered.length > RANKED_LIST_PREVIEW && (
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex items-center gap-1 mt-2 text-[10px] font-bold text-indigo-600 hover:underline"
+        >
+          {expanded
+            ? <>Show less <ChevronUp size={11} /></>
+            : <>Show all {filtered.length} <ChevronDown size={11} /></>}
+        </button>
+      )}
+    </div>
+  );
 }
 
 interface HeartbeatCheck {
@@ -509,27 +559,11 @@ export default function AdminPlatformHealthTab() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-white border border-slate-100 rounded-[28px] p-5">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Top pages</p>
-                <div className="space-y-1.5">
-                  {analytics.topPaths.map(p => (
-                    <div key={p.key} className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-600 truncate">{p.key}</span>
-                      <span className="text-slate-400 font-bold shrink-0 ml-2">{p.count}</span>
-                    </div>
-                  ))}
-                  {analytics.topPaths.length === 0 && <p className="text-[11px] text-slate-300">No data yet</p>}
-                </div>
+                <RankedList items={analytics.topPaths} />
               </div>
               <div className="bg-white border border-slate-100 rounded-[28px] p-5">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Top API endpoints</p>
-                <div className="space-y-1.5">
-                  {analytics.topApiEndpoints.map(p => (
-                    <div key={p.key} className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-600 truncate font-mono">{p.key}</span>
-                      <span className="text-slate-400 font-bold shrink-0 ml-2">{p.count}</span>
-                    </div>
-                  ))}
-                  {analytics.topApiEndpoints.length === 0 && <p className="text-[11px] text-slate-300">No data yet</p>}
-                </div>
+                <RankedList items={analytics.topApiEndpoints} mono />
               </div>
             </div>
           </div>

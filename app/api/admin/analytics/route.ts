@@ -60,10 +60,13 @@ export async function GET() {
 
   return NextResponse.json({
     visitsByDay: countByDay(visits || [], 30),
-    topPaths: topBy(visits || [], "path", 10),
+    // Full ranked lists (not just a top-N slice) -- the Analytics sub-tab
+    // shows a top-10 preview with a "show all" expand + search over the
+    // complete set, so the client needs every distinct path/endpoint here.
+    topPaths: topBy(visits || [], "path", Infinity),
     topCountries: topBy((visits || []).filter(v => v.country), "country", 10),
     invocationsByDay: countByDay(invocations || [], 30),
-    topApiEndpoints: topBy(invocationRows, "key", 15),
+    topApiEndpoints: topBy(invocationRows, "key", Infinity),
     totals: { visits: (visits || []).length, invocations: (invocations || []).length },
   });
 }
