@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import {
   Plus, Check, ChevronDown, ChevronRight, Trash2, Calendar,
   User, Users, DollarSign, Pencil, X,
-  Copy, ArrowLeft, CheckSquare, Flag, StickyNote, Mail,
+  Copy, ArrowLeft, CheckSquare, Flag, StickyNote, Mail, GripVertical,
 } from "lucide-react";
 import DateCalculator from "@/components/DateCalculator";
 import FollowUpToggle, { FollowUpEntry } from "@/components/FollowUpToggle";
@@ -334,6 +334,36 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+
+  // Reorders editItems (drag from `from` to `to`), remapping every task_<index> anchor
+  // reference so "After: X" links keep pointing at the same task after the shuffle, then
+  // resets the dragged task's own anchor to "After: <whatever is now directly above it>"
+  // (or "Project created" if it's now first). Applied straight to state — no save round-trip.
+  const handleDropReorder = (to: number) => {
+    const from = draggedIdx;
+    setDraggedIdx(null);
+    if (from === null || from === to) return;
+    const indexMap = new Map<number, number>();
+    for (let i = 0; i < editItems.length; i++) {
+      if (i === from) { indexMap.set(i, to); continue; }
+      if (from < to) indexMap.set(i, i > from && i <= to ? i - 1 : i);
+      else indexMap.set(i, i >= to && i < from ? i + 1 : i);
+    }
+    const reordered = [...editItems];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+    const remapped = reordered.map((item, newIdx) => {
+      if (newIdx === to) {
+        return { ...item, due_anchor: to === 0 ? 'record_created' : `task_${to - 1}` };
+      }
+      const m = /^task_(\d+)$/.exec(item.due_anchor || '');
+      if (!m) return item;
+      const newRef = indexMap.get(Number(m[1]));
+      return { ...item, due_anchor: newRef !== undefined ? `task_${newRef}` : 'record_created' };
+    });
+    setEditItems(remapped);
+  };
 
   const openEdit = (t: Template) => {
     setSelected(t);
@@ -422,19 +452,13 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
       await supabase.from('checklist_templates').update({ name: finalName }).eq('id', selected.id);
       await supabase.from('checklist_template_items').delete().eq('template_id', selected.id);
 
-      // Persist tasks in due-date order (undated tasks last) rather than entry order.
-      // `due_anchor` values like `task_<oldIndex>` reference positions in `editItems` (the edit
-      // session's array) — remap them to the new sorted positions so "After: X" links survive reordering.
-      const dates = await Promise.all(editItems.map(item => resolveItemDate(item, editItems)));
+      // Persist tasks in their current list order (the user's own drag order) rather than
+      // re-sorting by computed date — dragging is now how order is controlled. `due_anchor`
+      // values like `task_<oldIndex>` reference positions in `editItems`; dropping empty-title
+      // rows shifts everyone after them, so remap references to the filtered positions.
       const withOldIndex = editItems
-        .map((item, oldIndex) => ({ item, oldIndex, date: dates[oldIndex] }))
+        .map((item, oldIndex) => ({ item, oldIndex }))
         .filter(x => x.item.title?.trim());
-      withOldIndex.sort((a, b) => {
-        if (a.date && b.date) return a.date.localeCompare(b.date);
-        if (a.date && !b.date) return -1;
-        if (!a.date && b.date) return 1;
-        return a.oldIndex - b.oldIndex;
-      });
       const oldToNewIndex = new Map(withOldIndex.map((x, newIndex) => [x.oldIndex, newIndex]));
       const validItems = withOldIndex.map(({ item }) => {
         const m = /^task_(\d+)$/.exec(item.due_anchor || '');
@@ -652,8 +676,14 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Tasks</p>
                 <div className="space-y-3">
                   {editItems.map((item, idx) => (
-                    <div key={idx} className="bg-slate-50 rounded-2xl p-4 space-y-3">
+                    <div key={idx} draggable
+                      onDragStart={() => setDraggedIdx(idx)}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => { e.preventDefault(); handleDropReorder(idx); }}
+                      onDragEnd={() => setDraggedIdx(null)}
+                      className={`bg-slate-50 rounded-2xl p-4 space-y-3 transition-opacity ${draggedIdx === idx ? 'opacity-40' : ''}`}>
                       <div className="flex items-center gap-2">
+                        <GripVertical size={14} className="text-slate-300 cursor-grab shrink-0" />
                         <input value={item.title || ''} onChange={e => {
                           const next = [...editItems]; next[idx] = { ...next[idx], title: e.target.value }; setEditItems(next);
                         }} placeholder={`Task ${idx + 1} name...`}
