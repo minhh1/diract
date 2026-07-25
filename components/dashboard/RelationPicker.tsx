@@ -285,40 +285,66 @@ export default function RelationPicker({
           const { data } = await q;
           results = (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') }));
         } else {
-          // Extra search fields and/or a restrict-to filter -- fetch a
-          // wider candidate set and match client-side, same scale
-          // assumption RelationPicker already makes for custom tables.
+          // Extra search fields and/or a restrict-to filter. Searches
+          // server-side, not "fetch a page then filter client-side" -- a
+          // custom field's value (e.g. Matter Number) has no relationship
+          // to `col`'s alphabetical order, so once a table has more rows
+          // than the fetch limit, the record actually being searched for
+          // can easily fall outside the page that got fetched, and the
+          // search would silently return nothing even on an exact match
+          // (confirmed live: 523 matters, page limit 200, "no matches" for
+          // a real matter number). Native extra columns and custom fields
+          // are searched separately (a custom field's value isn't a column
+          // on `linkedSystemTable`, so it can't join into one query) and
+          // merged by id.
           const nativeCols = Array.from(new Set([col, ...nativeExtra]));
-          let rowsQuery = supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null).order(col).limit(200);
-          if (filterColumn) {
+          const q = query.trim();
+
+          const withFilterColumn = async (qb: any) => {
+            if (!filterColumn) return qb;
             const resolvedValue = await resolveFilterValue(filterValue);
-            rowsQuery = resolvedValue ? rowsQuery.eq(filterColumn, resolvedValue) : rowsQuery.eq(filterColumn, '__none__');
-          }
-          const { data: rows } = await rowsQuery;
+            return resolvedValue ? qb.eq(filterColumn, resolvedValue) : qb.eq(filterColumn, '__none__');
+          };
 
-          const cfTextByRecord = new Map<string, string[]>();
-          if (cfIds.length && rows?.length) {
-            const { data: cfRows } = await supabase
-              .from('company_custom_field_values')
-              .select('record_id, value_text')
-              .in('field_id', cfIds)
-              .in('record_id', rows.map((r: any) => r.id));
-            (cfRows || []).forEach((v: any) => {
-              const list = cfTextByRecord.get(v.record_id) || [];
-              list.push(v.value_text || '');
-              cfTextByRecord.set(v.record_id, list);
-            });
-          }
+          if (!q) {
+            // Dropdown just opened, nothing typed yet -- plain browse list.
+            const rowsQuery = await withFilterColumn(
+              supabase.from(linkedSystemTable).select(`id, ${col}`).is('deleted_at', null).order(col).limit(20)
+            );
+            const { data } = await rowsQuery;
+            results = (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') }));
+          } else {
+            const nativeQueryBuilder = await withFilterColumn(
+              supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null)
+                .or(nativeCols.map(c => `${c}.ilike.%${q}%`).join(','))
+                .order(col).limit(20)
+            );
+            let cfMatchIds: string[] = [];
+            if (cfIds.length) {
+              const { data: cfRows } = await supabase
+                .from('company_custom_field_values')
+                .select('record_id')
+                .in('field_id', cfIds)
+                .ilike('value_text', `%${q}%`)
+                .limit(20);
+              cfMatchIds = Array.from(new Set((cfRows || []).map((r: any) => r.record_id)));
+            }
+            const cfQueryBuilder = cfMatchIds.length
+              ? await withFilterColumn(
+                  supabase.from(linkedSystemTable).select(`id, ${col}`).is('deleted_at', null).in('id', cfMatchIds)
+                )
+              : null;
 
-          const q = query.trim().toLowerCase();
-          const candidates = (rows || []).map((r: any) => {
-            const searchText = [...nativeCols.map(c => r[c]), ...(cfTextByRecord.get(r.id) || [])]
-              .filter(Boolean).join(' ').toLowerCase();
-            return { id: r.id, label: String(r[col] ?? 'Untitled'), searchText };
-          });
-          results = (q ? candidates.filter(c => c.searchText.includes(q)) : candidates)
-            .slice(0, 20)
-            .map(({ id, label }) => ({ id, label }));
+            const [nativeResult, cfResult] = await Promise.all([
+              nativeQueryBuilder,
+              cfQueryBuilder ?? Promise.resolve({ data: [] }),
+            ]);
+
+            const merged = new Map<string, RelationOption>();
+            for (const r of (nativeResult as any).data || []) merged.set(r.id, { id: r.id, label: String((r as any)[col] ?? 'Untitled') });
+            for (const r of (cfResult as any).data || []) merged.set(r.id, { id: r.id, label: String((r as any)[col] ?? 'Untitled') });
+            results = Array.from(merged.values()).slice(0, 20);
+          }
         }
       } else if (linkedTableId) {
         const all = await fetchCustomTableRecordLabels(linkedTableId);
