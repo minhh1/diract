@@ -2,6 +2,18 @@
    placement via the --col-start/--col-span/--row-start/--row-span custom
    properties set inline per-widget (dynamic values can't live in a static
    CSS module class, only in the rule that reads them).
+   `minmax(40px, auto)`, not a flat `40px` -- every row's *floor* is still
+   40px (so a widget's saved `h` is a real minimum, matching what the
+   builder's react-grid-layout canvas shows while dragging/resizing), but a
+   row is free to grow past that floor when whatever's actually placed in it
+   needs more room than its designed height accounted for. Since every
+   widget after it is positioned by an explicit --row-start (a hard grid
+   line), a row growing here pushes every later row down with it -- this is
+   what makes widget-to-widget overlap structurally impossible, independent
+   of font/input rendering differences across browsers (the original bug:
+   Safari's native form controls render a few px taller than Chromium's,
+   which a flat 40px track had zero slack to absorb) or of what an admin
+   drags a widget's height to.
    Mobile (<=768px): collapse to one full-width column in y-order, with
    auto row height -- a widget's original `h` was tuned for its *wide*
    layout, so keeping a fixed row-span here would clip content once every
@@ -9,7 +21,7 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  grid-auto-rows: 40px;
+  grid-auto-rows: minmax(40px, auto);
   gap: 12px;
 }
 
