@@ -155,6 +155,11 @@ export interface ChartSeriesResult {
   label: string;
   fieldType: string; // lets the renderer format per-series (e.g. currency), not chart-wide
   points: { bucket: string; value: number }[];
+  // Passed straight through from ChartSeriesConfig.axis -- see its doc
+  // comment in lib/dashboardWidgets/types.ts. Computation doesn't care about
+  // it at all; it's purely how DashboardActivityChart decides which series
+  // to show for the current axis-selector choice.
+  axis?: { name: string; choice: string }[];
 }
 
 export function computeChartSeries(
@@ -208,6 +213,7 @@ export function computeChartSeries(
       label: series.label || valueField?.label || (series.aggregate === 'count' ? 'Entries' : 'Value'),
       fieldType: valueField?.field_type || 'number',
       points,
+      axis: series.axis,
     };
   });
 }

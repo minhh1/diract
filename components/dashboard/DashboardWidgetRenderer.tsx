@@ -96,6 +96,7 @@ export default function DashboardWidgetRenderer({
           onFilterChange={setFilter}
           pillSize={widget.config.pillSize}
           pillGap={widget.config.pillGap}
+          fieldLayout={widget.config.fieldLayout}
         />
       );
 
@@ -115,6 +116,7 @@ export default function DashboardWidgetRenderer({
           fixedValues={fixedValues}
           pillSize={widget.config.pillSize}
           pillGap={widget.config.pillGap}
+          fieldLayout={widget.config.fieldLayout}
         />
       );
 
@@ -124,6 +126,7 @@ export default function DashboardWidgetRenderer({
           tableId={tableId}
           sourceKind={sourceKind}
           companyId={companyId}
+          userId={userId}
           fields={fields}
           gridFieldIds={widget.config.fieldIds}
           records={filterByConditions(records, widget.config.conditions, fieldById)}

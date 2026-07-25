@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { bucketKey } from "@/lib/dashboardWidgets/compute";
 import type { ChartGranularity } from "@/lib/dashboardWidgets/types";
@@ -9,6 +9,10 @@ interface SeriesProp {
   label: string;
   fieldType: string;
   points: { bucket: string; value: number }[];
+  // See ChartSeriesConfig.axis in lib/dashboardWidgets/types.ts -- when set
+  // on 2+ series, drives the axis-selector UI below instead of the plain
+  // click-a-legend-item-to-hide/show behavior.
+  axis?: { name: string; choice: string }[];
 }
 
 interface Props {
@@ -64,7 +68,8 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
   // Which configured series are hidden from view -- a live legend toggle,
   // purely local/visual (doesn't affect what's fetched or other widgets).
   // Index-keyed, not label-keyed, so two series that happen to share a
-  // label toggle independently.
+  // label toggle independently. Only used when NO series carry axis tags
+  // (see below) -- an axis-tagged chart is driven by `selection` instead.
   const [hiddenSeries, setHiddenSeries] = useState<Set<number>>(new Set());
 
   const toggleSeries = (i: number) => setHiddenSeries(prev => {
@@ -73,9 +78,54 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
     return next;
   });
 
+  // Every distinct axis name across all series, each with its distinct
+  // choices in first-seen (= series config) order -- e.g. [{name:'Type',
+  // choices:['Billable','Non-billable']}, {name:'Metric',choices:['Hours',
+  // 'Amount']}] for a 4-series Billable/Non-billable x Hours/Amount chart.
+  const axes = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const s of series) {
+      for (const a of s.axis || []) {
+        if (!map.has(a.name)) map.set(a.name, []);
+        const choices = map.get(a.name)!;
+        if (!choices.includes(a.choice)) choices.push(a.choice);
+      }
+    }
+    return Array.from(map.entries()).map(([name, choices]) => ({ name, choices }));
+  }, [series]);
+  const hasAxes = axes.length > 0;
+
+  // Current choice per axis -- defaults to each axis's first-seen choice
+  // (so series authoring order sets the default, e.g. put "Billable" and
+  // "Hours" first to default to Billable Hours) without clobbering a
+  // choice the viewer already picked, including across a `series` prop
+  // change that keeps the same axis/choices.
+  const [selection, setSelection] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setSelection(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const axis of axes) {
+        if (!next[axis.name] || !axis.choices.includes(next[axis.name])) {
+          next[axis.name] = axis.choices[0];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [axes]);
+
   const byBucketPerSeries = useMemo(() => series.map(s => new Map(s.points.map(p => [p.bucket, p.value]))), [series]);
   const todayBucket = useMemo(() => bucketKey(today.toISOString().slice(0, 10), granularity), [granularity]); // eslint-disable-line react-hooks/exhaustive-deps
-  const visibleIndexes = useMemo(() => series.map((_, i) => i).filter(i => !hiddenSeries.has(i)), [series, hiddenSeries]);
+
+  const visibleIndexes = useMemo(() => {
+    if (hasAxes) {
+      return series
+        .map((_, i) => i)
+        .filter(i => (series[i].axis || []).every(tag => selection[tag.name] === tag.choice));
+    }
+    return series.map((_, i) => i).filter(i => !hiddenSeries.has(i));
+  }, [series, hasAxes, selection, hiddenSeries]);
 
   // day: the existing month-by-month pager, unchanged, just N sub-bars per
   // slot instead of 1. week/month: no pager -- a flat rolling window of the
@@ -110,10 +160,12 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
     ? new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + ' activity'
     : `Last 12 ${granularity === 'week' ? 'weeks' : 'months'}`;
 
-  // Bar-color treatment (single-hue vs categorical) is fixed by how many
-  // series are CONFIGURED, not how many are currently visible -- toggling
-  // one off in the legend shouldn't recolor the survivor.
-  const isSingleSeries = series.length === 1;
+  // Bar-color treatment (single-hue vs categorical): an axis-tagged chart
+  // always shows exactly one series at a time by construction, so it's
+  // always single-hue; otherwise it's fixed by how many series are
+  // CONFIGURED (not how many are currently legend-visible), so toggling one
+  // off in the legend doesn't recolor the survivor.
+  const isSingleSeries = hasAxes ? true : series.length === 1;
 
   return (
     <div className="p-4 bg-white border border-slate-200 rounded-2xl">
@@ -131,11 +183,36 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
         )}
       </div>
 
-      {/* A legend is always present for 2+ series (the dependable identity
-          channel); a single series needs none -- the header already names it.
-          Each entry doubles as a visibility toggle -- click to hide/show that
-          series (e.g. isolate Billable Hours by hiding Non-billable). */}
-      {!isSingleSeries && (
+      {/* One toggle group per axis (e.g. Billable/Non-billable, then
+          Hours/Amount) -- picking a choice on every axis narrows to exactly
+          one series, so this replaces the legend entirely for a tagged
+          chart. */}
+      {hasAxes && (
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          {axes.map(axis => (
+            <div key={axis.name} className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-full p-0.5">
+              {axis.choices.map(choice => (
+                <button
+                  key={choice}
+                  onClick={() => setSelection(prev => ({ ...prev, [axis.name]: choice }))}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all ${
+                    selection[axis.name] === choice ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* A legend is always present for 2+ untagged series (the dependable
+          identity channel); a single series needs none -- the header
+          already names it. Each entry doubles as a visibility toggle --
+          click to hide/show that series. Not shown for an axis-tagged
+          chart, which uses the toggle groups above instead. */}
+      {!hasAxes && !isSingleSeries && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3">
           {series.map((s, i) => {
             const isHidden = hiddenSeries.has(i);
@@ -156,7 +233,7 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
 
       {visibleIndexes.length === 0 ? (
         <div className="h-32 flex items-center justify-center text-[11px] text-slate-300 italic">
-          Every series is hidden — click a legend item to show it
+          {hasAxes ? 'No series matches this combination' : 'Every series is hidden — click a legend item to show it'}
         </div>
       ) : (
       <div className="relative flex items-end gap-[3px] h-32">
@@ -196,7 +273,7 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
               )}
               <div className="relative flex items-end justify-center gap-[2px] h-full w-full">
                 {series.map((s, i) => {
-                  if (hiddenSeries.has(i)) return null;
+                  if (!visibleIndexes.includes(i)) return null;
                   const value = byBucketPerSeries[i].get(slot.bucket) || 0;
                   const heightPct = Math.max(2, (value / maxValue) * 100);
                   const color = isSingleSeries

@@ -763,6 +763,32 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           </div>
         )}
 
+        {/* Boolean fields get a checked/unchecked toggle instead of the
+            free-text input above -- e.g. a "Billable" field that should
+            start checked on a new quick-add entry. Encoded as text
+            ('true'/'false') in the same default_value column. */}
+        {draft.field_type === 'boolean' && (
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+              Default value
+            </label>
+            <div className="flex gap-1.5">
+              {(['false', 'true'] as const).map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => update('default_value', v)}
+                  className={`flex-1 py-2 rounded-full text-[11px] font-bold uppercase tracking-wide transition-all ${
+                    (draft.default_value ?? 'false') === v ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                  }`}
+                >
+                  {v === 'true' ? 'Checked' : 'Unchecked'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Constraints */}
         <div className="space-y-2">
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">

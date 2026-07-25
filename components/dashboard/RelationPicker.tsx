@@ -515,6 +515,16 @@ export default function RelationPicker({
     return fullOptions.filter(o => (o.searchText ?? o.label.toLowerCase()).includes(q)).slice(0, 50);
   }, [fullOptions, query]);
 
+  // Keyboard nav: which option ArrowUp/Down has moved to, confirmed by
+  // Enter/Tab -- -1 means none (so a bare Tab/Enter on an unfiltered browse
+  // list, e.g. the dropdown just opened with nothing typed, doesn't
+  // surprise-select the alphabetically-first row). Reset to -1 whenever the
+  // option list itself changes (a keystroke, or the dropdown re-opening),
+  // since a stale index from the previous list could point at an unrelated
+  // row (or past the end of a now-shorter one).
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  useEffect(() => { setHighlightedIndex(-1); }, [options]);
+
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
@@ -569,15 +579,30 @@ export default function RelationPicker({
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => {
-                // Tab/Enter with the search narrowed to exactly one match --
-                // confirm it instead of making the user reach for the mouse
-                // (or, for Tab, hunt down an option that's already the only
-                // one left). Enter is prevented so it doesn't also submit an
-                // enclosing form; Tab's own focus-move behavior is left
-                // alone, it just also picks the option on the way out.
-                if ((e.key !== 'Enter' && e.key !== 'Tab') || options.length !== 1) return;
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setHighlightedIndex(i => Math.min(i + 1, options.length - 1));
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setHighlightedIndex(i => Math.max(i - 1, 0));
+                  return;
+                }
+                // Enter/Tab confirms the arrow-highlighted option; with
+                // nothing highlighted (dropdown just opened, no arrows
+                // pressed yet) a search narrowed to exactly one match still
+                // confirms that one -- otherwise Tab just moves focus on and
+                // Enter does nothing, so an untouched browse list can't
+                // surprise-select its alphabetically-first row. Enter is
+                // prevented so it doesn't also submit an enclosing form;
+                // Tab's own focus-move behavior is left alone, it just also
+                // toggles the match on the way out.
+                if (e.key !== 'Enter' && e.key !== 'Tab') return;
+                const target = highlightedIndex >= 0 ? options[highlightedIndex] : (options.length === 1 ? options[0] : null);
+                if (!target) return;
                 if (e.key === 'Enter') e.preventDefault();
-                toggle(options[0]);
+                toggle(target);
                 setQuery('');
                 if (e.key === 'Tab') setOpen(false);
               }}
@@ -596,14 +621,18 @@ export default function RelationPicker({
             ) : options.length === 0 ? (
               <p className="text-[11px] text-slate-300 italic text-center py-4">No matches</p>
             ) : (
-              options.map(opt => {
+              options.map((opt, i) => {
                 const checked = selectedIds.includes(opt.id);
+                const isHighlighted = i === highlightedIndex;
                 return (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => toggle(opt)}
-                    className={`w-full text-left px-4 py-2 text-[12px] font-medium flex items-center gap-2 transition-colors ${checked ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-indigo-50'}`}
+                    onMouseEnter={() => setHighlightedIndex(i)}
+                    className={`w-full text-left px-4 py-2 text-[12px] font-medium flex items-center gap-2 transition-colors ${
+                      checked ? 'bg-indigo-50 text-indigo-700' : isHighlighted ? 'bg-slate-50 text-slate-700' : 'text-slate-700 hover:bg-indigo-50'
+                    }`}
                   >
                     <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 ${checked ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'}`}>
                       {checked && <Check size={9} className="text-white" />}
@@ -644,14 +673,30 @@ export default function RelationPicker({
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => {
-              // Tab/Enter with the search narrowed to exactly one match --
-              // confirm it instead of making the user reach for the mouse.
-              // Enter is prevented so it doesn't also submit an enclosing
-              // form; Tab's own focus-move behavior is left alone, it just
-              // also picks the option on the way out.
-              if ((e.key !== 'Enter' && e.key !== 'Tab') || options.length !== 1) return;
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setHighlightedIndex(i => Math.min(i + 1, options.length - 1));
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setHighlightedIndex(i => Math.max(i - 1, 0));
+                return;
+              }
+              // Enter/Tab confirms the arrow-highlighted option; with
+              // nothing highlighted (dropdown just opened, no arrows
+              // pressed yet) a search narrowed to exactly one match still
+              // confirms that one -- otherwise Tab just moves focus on and
+              // Enter does nothing, so an untouched browse list can't
+              // surprise-select its alphabetically-first row. Enter is
+              // prevented so it doesn't also submit an enclosing form;
+              // Tab's own focus-move behavior is left alone, it just also
+              // picks the match on the way out.
+              if (e.key !== 'Enter' && e.key !== 'Tab') return;
+              const target = highlightedIndex >= 0 ? options[highlightedIndex] : (options.length === 1 ? options[0] : null);
+              if (!target) return;
               if (e.key === 'Enter') e.preventDefault();
-              selectOption(options[0]);
+              selectOption(target);
             }}
             placeholder={placeholder || 'Search...'}
             className="w-full bg-transparent outline-none"
@@ -679,12 +724,15 @@ export default function RelationPicker({
           ) : options.length === 0 ? (
             <p className="text-[11px] text-slate-300 italic text-center py-4">No matches</p>
           ) : (
-            options.map(opt => (
+            options.map((opt, i) => (
               <button
                 key={opt.id}
                 type="button"
                 onClick={() => selectOption(opt)}
-                className="w-full text-left px-4 py-2 text-[12px] font-medium text-slate-700 hover:bg-indigo-50 transition-colors"
+                onMouseEnter={() => setHighlightedIndex(i)}
+                className={`w-full text-left px-4 py-2 text-[12px] font-medium text-slate-700 transition-colors ${
+                  i === highlightedIndex ? 'bg-indigo-50' : 'hover:bg-indigo-50'
+                }`}
               >
                 {opt.label}
               </button>

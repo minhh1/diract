@@ -3,7 +3,7 @@
 import RelationPicker from "./RelationPicker";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import { isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
-import { PILL_SIZE_CLASSES, PILL_GAP_CLASSES, type PillSize, type PillGap } from "@/lib/dashboardWidgets/pillSize";
+import { PILL_SIZE_CLASSES, PILL_GAP_CLASSES, FIELD_WIDTH_CLASSES, defaultFieldWidth, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
 
 interface Props {
   fields: CustomTableField[];
@@ -15,6 +15,9 @@ interface Props {
   // only look.
   pillSize?: PillSize;
   pillGap?: PillGap;
+  // Per-field width override, keyed by field id -- see
+  // lib/dashboardWidgets/pillSize.ts's FIELD_WIDTH_CLASSES.
+  fieldLayout?: Record<string, { width?: FieldWidth }>;
 }
 
 // Renders a dashboard's configured filter fields as a top toolbar, feeding
@@ -22,7 +25,7 @@ interface Props {
 // String(value) === String(filterValue) match, so any field type works as
 // long as the control here produces a comparable value. Type-aware, mirrors
 // WidgetConfigPanel's ConditionRow value control.
-export default function DashboardFilterBar({ fields, filterFieldIds, filters, onFilterChange, pillSize = 'md', pillGap = 'normal' }: Props) {
+export default function DashboardFilterBar({ fields, filterFieldIds, filters, onFilterChange, pillSize = 'md', pillGap = 'normal', fieldLayout }: Props) {
   const filterFields = filterFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
@@ -34,7 +37,7 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
   return (
     <div className={`flex flex-wrap p-4 bg-white border border-slate-200 rounded-2xl ${PILL_GAP_CLASSES[pillGap]}`}>
       {filterFields.map(field => (
-        <div key={field.id} className="w-48">
+        <div key={field.id} className={FIELD_WIDTH_CLASSES[fieldLayout?.[field.id]?.width || defaultFieldWidth(field.field_type)]}>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1 px-1">
             {field.label}
           </label>

@@ -8,7 +8,7 @@ import { createRecord as createSystemTableRecord } from "@/lib/services/systemTa
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
 import type { SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
-import { PILL_GAP_CLASSES, type PillSize, type PillGap } from "@/lib/dashboardWidgets/pillSize";
+import { PILL_GAP_CLASSES, FIELD_WIDTH_CLASSES, defaultFieldWidth, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
 
 interface Props {
   tableId: string;
@@ -27,6 +27,9 @@ interface Props {
   // only look.
   pillSize?: PillSize;
   pillGap?: PillGap;
+  // Per-field width override, keyed by field id -- see
+  // lib/dashboardWidgets/pillSize.ts's FIELD_WIDTH_CLASSES.
+  fieldLayout?: Record<string, { width?: FieldWidth }>;
 }
 
 // Live-computes every formula field's preview value from the in-progress
@@ -60,28 +63,28 @@ function computeAllPreviews(fields: CustomTableField[], values: Record<string, a
 
 // Date fields default to today rather than blank -- almost every quick-add
 // use case (e.g. a time entry) is logged same-day, and re-picking the date
-// for every row is friction. Boolean fields default to false, matching the
-// checkbox's unchecked appearance -- otherwise an intentionally-unchecked
-// (not billable) box leaves the key absent from `values`, and the required-
-// field check in customTableService can't tell "left blank" from "the user
-// picked No", blocking a legitimate submission. Recomputed after each
-// successful add so the next entry starts from these same defaults again
-// instead of resetting to blank/undefined.
+// for every row is friction. Boolean fields default to `default_value`
+// (see supabase/company_table_fields_default_value.sql), or false when
+// unset -- either way the key is always present in `values`, since the
+// required-field check in customTableService can't tell "left blank" from
+// "the user picked No" otherwise, blocking a legitimate submission.
+// Recomputed after each successful add so the next entry starts from these
+// same defaults again instead of resetting to blank/undefined.
 function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, any> {
   const defaults: Record<string, any> = {};
   for (const field of quickAddFields) {
     if (field.field_type === 'date' && !field.formula_type) {
       defaults[field.field_key] = new Date().toISOString().slice(0, 10);
     } else if (field.field_type === 'boolean' && !field.formula_type) {
-      defaults[field.field_key] = false;
+      defaults[field.field_key] = field.default_value === 'true';
     }
   }
   return defaults;
 }
 
-function FieldSlot({ field, value, onCommit, wide, size }: { field: CustomTableField; value: any; onCommit: (v: any) => void; wide?: boolean; size?: PillSize }) {
+function FieldSlot({ field, value, onCommit, widthClass, size }: { field: CustomTableField; value: any; onCommit: (v: any) => void; widthClass: string; size?: PillSize }) {
   return (
-    <div className={wide ? 'w-full' : 'flex-1 min-w-[110px]'}>
+    <div className={widthClass}>
       <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1 px-1">
         {field.label}{field.is_required && <span className="text-red-400 ml-1">*</span>}
       </label>
@@ -90,7 +93,7 @@ function FieldSlot({ field, value, onCommit, wide, size }: { field: CustomTableF
   );
 }
 
-export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues, pillSize = 'md', pillGap = 'normal' }: Props) {
+export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout }: Props) {
   const quickAddFields = quickAddFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
@@ -98,16 +101,14 @@ export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, 
   const [values, setValues] = useState<Record<string, any>>(() => getDefaultValues(quickAddFields));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after every successful add, used as part of each FieldSlot's key
+  // below -- text/number/date/select inputs are uncontrolled (defaultValue,
+  // not value, so retyping doesn't lag behind a slow re-render), so
+  // resetting `values` state alone doesn't touch what's actually showing in
+  // the DOM. Forcing a remount is what actually clears them after Add.
+  const [formGeneration, setFormGeneration] = useState(0);
 
   if (quickAddFields.length === 0) return null;
-
-  // Text fields (e.g. Description) get their own full-width line; number/
-  // currency fields (Rate, Duration, Amount, GST...) cluster together on
-  // one line since they're usually read/entered as a group; everything
-  // else (relations, date, select, boolean) sits in the top row.
-  const textFields = quickAddFields.filter(f => f.field_type === 'text');
-  const numericFields = quickAddFields.filter(f => ['number', 'currency'].includes(f.field_type));
-  const otherFields = quickAddFields.filter(f => f.field_type !== 'text' && !['number', 'currency'].includes(f.field_type));
 
   const handleAdd = async () => {
     // An untouched form (values still exactly the prefilled defaults --
@@ -131,6 +132,7 @@ export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, 
     }
     if (record) {
       setValues(getDefaultValues(quickAddFields));
+      setFormGeneration(g => g + 1);
       onAdded();
     }
   };
@@ -156,28 +158,23 @@ export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, 
           {error}
         </div>
       )}
-      {otherFields.length > 0 && (
-        <div className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
-          {otherFields.map(field => (
-            <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} size={pillSize} />
-          ))}
-          {numericFields.length === 0 && AddButton}
-        </div>
-      )}
-      {textFields.map(field => (
-        <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} wide size={pillSize} />
-      ))}
-      {numericFields.length > 0 && (
-        <div className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
-          {numericFields.map(field => (
-            <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} size={pillSize} />
-          ))}
-          {AddButton}
-        </div>
-      )}
-      {otherFields.length === 0 && numericFields.length === 0 && (
-        <div className="flex justify-end">{AddButton}</div>
-      )}
+      {/* Fields render in their configured order (quickAddFieldIds --
+          reorderable in the widget's field picker) at their configured
+          width (fieldLayout, or a per-type default) instead of the old
+          fixed text/numeric/other grouping -- both the field's POSITION and
+          its SIZE are now under the admin's control, not decided for them.
+          Fixed widths (not flex-1 grow/shrink) is also what fixed pills
+          visually overlapping when several with different intrinsic
+          minimum widths (e.g. a native date input) crowded one flex row. */}
+      <div className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
+        {quickAddFields.map(field => {
+          const widthClass = FIELD_WIDTH_CLASSES[fieldLayout?.[field.id]?.width || defaultFieldWidth(field.field_type)];
+          return (
+            <FieldSlot key={`${field.id}-${formGeneration}`} field={field} value={valueFor(field)} onCommit={commitFor(field)} widthClass={widthClass} size={pillSize} />
+          );
+        })}
+        {AddButton}
+      </div>
     </div>
   );
 }

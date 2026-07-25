@@ -18,7 +18,8 @@ import { createArchiveRequest } from "@/lib/archiveRequests";
 export default function SchemaVisualisation() {
   const { tables: customTables } = useCustomTables();
 
-  const { isAdmin } = useCompany();
+  const { isAdmin, disabledSystemTables } = useCompany();
+  const visibleSystemTables = SYSTEM_TABLES.filter(t => !disabledSystemTables[t]);
   const [activeTable, setActiveTable] = useState<string>('properties');
   const [isCustomTable, setIsCustomTable] = useState(false);
   const [customTableId, setCustomTableId] = useState<string | null>(null);
@@ -37,6 +38,16 @@ export default function SchemaVisualisation() {
 
   useEffect(() => { loadFields(); }, [activeTable, isCustomTable, customTableId]);
   useEffect(() => { if (companyId) loadDuplicateLabels(companyId); }, [companyId, customTables]);
+  // Deleted-table-you're-currently-viewing guard: if the default/current
+  // system table gets deleted out from under you (e.g. reopening this page
+  // after deleting "Properties" while it was still selected), fall back to
+  // another visible table instead of showing a config panel for one that no
+  // longer appears anywhere else in the UI.
+  useEffect(() => {
+    if (isCustomTable || !disabledSystemTables[activeTable]) return;
+    if (visibleSystemTables.length > 0) handleTableSelect(visibleSystemTables[0]);
+    else if (customTables.length > 0) handleTableSelect(customTables[0].slug, customTables[0].id);
+  }, [disabledSystemTables, isCustomTable, activeTable, customTables]);
   useProgressBarWhile(loading);
 
   const loadDuplicateLabels = async (cid: string) => {
@@ -99,7 +110,7 @@ export default function SchemaVisualisation() {
         is_required: f.is_required,
         is_unique: f.is_unique,
         display_order: f.display_order,
-        default_value: null,
+        default_value: f.default_value ?? null,
         validation_regex: null,
         validation_min: null,
         validation_max: null,
@@ -258,6 +269,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
         label: updates.label,
         field_type: updates.field_type,
         select_options: updates.select_options,
+        default_value: updates.default_value ?? null,
         is_required: updates.is_required,
         is_unique: updates.is_unique,
         show_in_table: updates.show_in_table,
@@ -436,7 +448,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
           Tables
         </p>
         <div className="flex flex-wrap gap-2">
-          {SYSTEM_TABLES.map(t => (
+          {visibleSystemTables.map(t => (
             <button
               key={t}
               onClick={() => handleTableSelect(t)}

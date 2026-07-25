@@ -12,7 +12,22 @@ import RelationPicker from "../RelationPicker";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { DashboardWidget, SummaryTileWidget, TileCondition, ChartSeriesConfig } from "@/lib/dashboardWidgets/types";
 import { isRelationType, isNumericType, isDateType, operatorsForType, aggregatesForType } from "@/lib/schema/fieldCapabilities";
-import { PILL_SIZE_LABELS, PILL_GAP_LABELS, type PillSize, type PillGap } from "@/lib/dashboardWidgets/pillSize";
+import { PILL_SIZE_LABELS, PILL_GAP_LABELS, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
+
+// Grid columns store a raw pixel width (GridWidget.config.columnWidths),
+// unlike filter_bar/quick_add_form's category-based fieldLayout -- these
+// map FieldPickerList's shared width selector onto pixel values so the
+// same control/UI works for both instead of building a second one.
+const GRID_WIDTH_PX: Record<FieldWidth, number> = { sm: 100, md: 160, lg: 260, full: 420 };
+function widthCategoryFromPx(px: number): FieldWidth {
+  let closest: FieldWidth = 'md';
+  let closestDiff = Infinity;
+  for (const [width, value] of Object.entries(GRID_WIDTH_PX) as [FieldWidth, number][]) {
+    const diff = Math.abs(value - px);
+    if (diff < closestDiff) { closest = width; closestDiff = diff; }
+  }
+  return closest;
+}
 
 // Widget-level size/spacing for a filter_bar or quick_add_form's controls
 // (RelationPicker/date/select/text inputs) -- see lib/dashboardWidgets/
@@ -211,6 +226,15 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
     setDraft(prev => ({ ...prev, config: { ...prev.config, ...patch } } as DashboardWidget));
   };
 
+  // filter_bar/quick_add_form only -- merges one field's width into
+  // config.fieldLayout without disturbing any other field's override.
+  const updateFieldWidth = (fieldId: string, width: FieldWidth) => {
+    setDraft(prev => {
+      if (prev.type !== 'filter_bar' && prev.type !== 'quick_add_form') return prev;
+      return { ...prev, config: { ...prev.config, fieldLayout: { ...prev.config.fieldLayout, [fieldId]: { width } } } };
+    });
+  };
+
   // Shared by summary_tile's "only count/sum when..." and grid's "only show
   // rows when..." -- same TileCondition[] shape, same semantics (every
   // condition ANDed), just filtering summed rows vs. displayed rows.
@@ -270,6 +294,24 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
     const series = draft.config.series || [];
     updateSeries(seriesIndex, { conditions: (series[seriesIndex]?.conditions || []).filter((_, i) => i !== condIndex) });
   };
+  // Axis tags -- see ChartSeriesConfig.axis's doc comment. Two tags per
+  // series (e.g. Type:Billable, Metric:Hours) is the expected common case
+  // (a 2x2 grid), but nothing here caps it below.
+  const addSeriesAxis = (seriesIndex: number) => {
+    if (draft.type !== 'chart') return;
+    const series = draft.config.series || [];
+    updateSeries(seriesIndex, { axis: [...(series[seriesIndex]?.axis || []), { name: '', choice: '' }] });
+  };
+  const updateSeriesAxis = (seriesIndex: number, axisIndex: number, patch: Partial<{ name: string; choice: string }>) => {
+    if (draft.type !== 'chart') return;
+    const series = draft.config.series || [];
+    updateSeries(seriesIndex, { axis: (series[seriesIndex]?.axis || []).map((a, i) => i === axisIndex ? { ...a, ...patch } : a) });
+  };
+  const removeSeriesAxis = (seriesIndex: number, axisIndex: number) => {
+    if (draft.type !== 'chart') return;
+    const series = draft.config.series || [];
+    updateSeries(seriesIndex, { axis: (series[seriesIndex]?.axis || []).filter((_, i) => i !== axisIndex) });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4">
@@ -318,21 +360,42 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
 
         {draft.type === 'filter_bar' && (
           <div className="space-y-3">
-            <FieldPickerList title="Filter fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} max={2} />
+            <FieldPickerList
+              title="Filter fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} max={2}
+              fieldWidths={Object.fromEntries(Object.entries(draft.config.fieldLayout || {}).map(([id, l]) => [id, l.width]))}
+              onWidthChange={updateFieldWidth}
+            />
             <PillStyleControls pillSize={draft.config.pillSize} pillGap={draft.config.pillGap} onChange={updateConfig} />
+            <p className="text-[10px] text-slate-400 px-1">
+              Reorder with the arrows to change each pill's position; the dropdown next to a field sets its width.
+            </p>
           </div>
         )}
 
         {draft.type === 'quick_add_form' && (
           <div className="space-y-3">
-            <FieldPickerList title="Quick-add fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} />
+            <FieldPickerList
+              title="Quick-add fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })}
+              fieldWidths={Object.fromEntries(Object.entries(draft.config.fieldLayout || {}).map(([id, l]) => [id, l.width]))}
+              onWidthChange={updateFieldWidth}
+            />
             <PillStyleControls pillSize={draft.config.pillSize} pillGap={draft.config.pillGap} onChange={updateConfig} />
+            <p className="text-[10px] text-slate-400 px-1">
+              Reorder with the arrows to change each pill's position; the dropdown next to a field sets its width.
+            </p>
           </div>
         )}
 
         {draft.type === 'grid' && (
           <div className="space-y-3">
-            <FieldPickerList title="Grid columns" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} />
+            <FieldPickerList
+              title="Grid columns" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })}
+              fieldWidths={Object.fromEntries(Object.entries(draft.config.columnWidths || {}).map(([id, px]) => [id, widthCategoryFromPx(px)]))}
+              onWidthChange={(fieldId, width) => updateConfig({ columnWidths: { ...(draft.config.columnWidths || {}), [fieldId]: GRID_WIDTH_PX[width] } })}
+            />
+            <p className="text-[10px] text-slate-400 px-1">
+              Reorder with the arrows to change each column's position; the same width control is also live-draggable on the dashboard itself (drag a column's right edge).
+            </p>
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
                 Extra empty rows
@@ -606,6 +669,33 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
                         onChange={patch => updateSeriesCondition(si, ci, patch)}
                         onRemove={() => removeSeriesCondition(si, ci)}
                       />
+                    ))}
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                        Axis tags (groups this into a toggle -- e.g. Type: Billable)
+                      </label>
+                      <button onClick={() => addSeriesAxis(si)} className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">
+                        <Plus size={11} /> Add tag
+                      </button>
+                    </div>
+                    {(s.axis || []).map((tag, ai) => (
+                      <div key={ai} className="flex items-center gap-1.5">
+                        <input
+                          value={tag.name}
+                          onChange={e => updateSeriesAxis(si, ai, { name: e.target.value })}
+                          placeholder="Axis (e.g. Type)"
+                          className="flex-1 bg-white border border-slate-200 rounded-full py-1.5 px-3 text-[11px] font-medium outline-none"
+                        />
+                        <input
+                          value={tag.choice}
+                          onChange={e => updateSeriesAxis(si, ai, { choice: e.target.value })}
+                          placeholder="Choice (e.g. Billable)"
+                          className="flex-1 bg-white border border-slate-200 rounded-full py-1.5 px-3 text-[11px] font-medium outline-none"
+                        />
+                        <button onClick={() => removeSeriesAxis(si, ai)} className="shrink-0 p-1 text-slate-300 hover:text-red-500"><X size={12} /></button>
+                      </div>
                     ))}
                   </div>
                 </div>

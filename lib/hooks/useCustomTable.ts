@@ -26,6 +26,11 @@ export interface CustomTableField {
   linked_search_field_keys: string[] | null;
   linked_filter_column: string | null;
   linked_filter_value: string | null;
+  // Text-encoded default ('true'/'false' for booleans, raw text otherwise --
+  // see supabase/company_table_fields_default_value.sql). Read by
+  // DashboardQuickAddForm's getDefaultValues; null means the old hardcoded
+  // per-type default (false for booleans, no prefill otherwise).
+  default_value: string | null;
   is_required: boolean;
   is_unique: boolean;
   show_in_table: boolean;

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, GripVertical } from "lucide-react";
+import { useState, useEffect, Fragment } from "react";
+import { X, GripVertical, Loader2 } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
-import { updateRecord, deleteRecord } from "@/lib/services/customTableService";
+import { createRecord, updateRecord, deleteRecord } from "@/lib/services/customTableService";
 import {
-  updateRecord as updateSystemTableRecord, deleteRecord as deleteSystemTableRecord,
+  createRecord as createSystemTableRecord, updateRecord as updateSystemTableRecord, deleteRecord as deleteSystemTableRecord,
 } from "@/lib/services/systemTableRecordService";
 import { evaluateCondition } from "@/lib/dashboardWidgets/compute";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -15,6 +15,15 @@ import type { SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const MIN_COLUMN_WIDTH = 80;
+
+// A text column (e.g. Description) at the same default width as a Date or
+// Status column reads as truncated -- barely any of a real sentence fits,
+// and there's no ellipsis to even signal it's cut off, just a native input
+// scrolled to the caret. Wider by default; still fully resizable by an
+// admin (see startResizing below) if that's still not enough.
+function defaultColumnWidth(fieldType: string): number {
+  return fieldType === 'text' ? 260 : DEFAULT_COLUMN_WIDTH;
+}
 
 // Tailwind needs literal class strings, not template-built ones -- this map
 // is what makes the 'red' | 'amber' | 'emerald' union in GridWidget.config
@@ -27,6 +36,10 @@ interface Props {
   tableId: string;
   sourceKind: DashboardSourceKind;
   companyId: string;
+  // Needed to create a record from an empty/draft row (see handleDraftCommit)
+  // -- every other write in this component (cell edit, delete) doesn't need
+  // it, only creation does (createRecord/createSystemTableRecord's signature).
+  userId: string;
   fields: CustomTableField[]; // full field list -- formula recompute needs dependencies
   gridFieldIds: string[]; // ordered subset of columns to show
   records: CustomTableRecord[];
@@ -34,11 +47,10 @@ interface Props {
   // Ledger tables (company_tables.is_ledger) are append-only -- cells render
   // disabled and the delete column is hidden entirely.
   readOnly?: boolean;
-  // Blank rows always kept at the bottom -- purely visual padding (a table
-  // with only 1-2 real rows otherwise looks sparse/broken next to its
-  // sibling widgets), NOT an editable fast-entry surface. Real spreadsheet-
-  // style multi-row entry belongs to the dashboard's own fullscreen mode
-  // (see DashboardViewPage) or the source table's full master-table page.
+  // Blank rows always kept at the bottom, genuinely editable -- typing into
+  // any cell of one creates a new record from it (see handleDraftCommit),
+  // and a fresh blank row replaces it so there's always one more at the
+  // bottom, the same "keep typing, keep getting rows" flow as a spreadsheet.
   emptyRowCount?: number;
   // Per-column pixel width, keyed by field id -- see GridWidget.config in
   // lib/dashboardWidgets/types.ts. Missing entries fall back to DEFAULT_COLUMN_WIDTH.
@@ -80,7 +92,7 @@ function formatTotal(value: number, fieldType: string): string {
 // view (column drawer, search, expand-row) -- this is meant to be one
 // section of a composed dashboard, not a standalone page.
 export default function DashboardGrid({
-  tableId, sourceKind, companyId, fields, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
+  tableId, sourceKind, companyId, userId, fields, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
   columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow,
 }: Props) {
   const gridFields = gridFieldIds
@@ -103,7 +115,11 @@ export default function DashboardGrid({
   // to persist (mirrors usePresetTable.ts's startResizing exactly, just
   // inlined here since this grid doesn't have an equivalent shared hook).
   const [liveWidths, setLiveWidths] = useState<Record<string, number> | null>(null);
-  const widthFor = (fieldId: string) => (liveWidths ?? columnWidths ?? {})[fieldId] || DEFAULT_COLUMN_WIDTH;
+  const widthFor = (fieldId: string) => {
+    const stored = (liveWidths ?? columnWidths ?? {})[fieldId];
+    if (stored) return stored;
+    return defaultColumnWidth(gridFields.find(f => f.id === fieldId)?.field_type || '');
+  };
 
   const startResizing = (fieldId: string, e: React.MouseEvent) => {
     if (!isAdmin || !onResize) return;
@@ -186,10 +202,60 @@ export default function DashboardGrid({
     onChanged();
   };
 
-  // Purely visual padding rows -- see emptyRowCount's doc comment. Not
-  // offered on ledger tables (nothing here is editable anyway, but a ledger
-  // grid also always renders exactly its real rows, no filler).
+  // Blank rows at the bottom, genuinely editable -- see emptyRowCount's doc
+  // comment. Not offered on ledger tables (append-only, and every cell
+  // renders disabled there anyway).
   const paddingRowCount = readOnly ? 0 : emptyRowCount;
+
+  // One in-progress record per draft row -- index-keyed (not id-keyed, since
+  // there's no record yet), resized to paddingRowCount whenever the widget's
+  // own emptyRowCount config changes without discarding whatever's already
+  // been typed into the rows that still exist.
+  const [draftRows, setDraftRows] = useState<Record<string, any>[]>([]);
+  const [draftErrors, setDraftErrors] = useState<Record<number, string>>({});
+  const [draftSaving, setDraftSaving] = useState<Record<number, boolean>>({});
+  // Bumped every time a draft row successfully becomes a real record, so
+  // that row's inputs (uncontrolled -- defaultValue, not value, same as
+  // DashboardQuickAddForm) can be force-remounted back to blank via key.
+  const [draftGeneration, setDraftGeneration] = useState<Record<number, number>>({});
+
+  useEffect(() => {
+    setDraftRows(prev => (prev.length === paddingRowCount ? prev : Array.from({ length: paddingRowCount }, (_, i) => prev[i] || {})));
+  }, [paddingRowCount]);
+
+  const handleDraftCommit = async (rowIndex: number, field: CustomTableField, value: any) => {
+    const nextValues = { ...(draftRows[rowIndex] || {}), [field.field_key]: value };
+    setDraftRows(prev => prev.map((r, i) => i === rowIndex ? nextValues : r));
+
+    // Every value cleared back out isn't a real attempt to create anything
+    // -- skip the write and drop any stale error for this row.
+    const hasContent = Object.values(nextValues).some(v => v !== null && v !== undefined && v !== '');
+    if (!hasContent) {
+      setDraftErrors(prev => { const { [rowIndex]: _removed, ...rest } = prev; return rest; });
+      return;
+    }
+
+    setDraftSaving(prev => ({ ...prev, [rowIndex]: true }));
+    const record = sourceKind === 'custom'
+      ? await createRecord(tableId, companyId, userId, nextValues, fields)
+      : await createSystemTableRecord(sourceKind as SystemTableName, companyId, userId, nextValues, fields);
+    setDraftSaving(prev => { const { [rowIndex]: _removed, ...rest } = prev; return rest; });
+
+    if (record && 'error' in record) {
+      // Expected mid-entry, e.g. other required columns not filled in yet --
+      // surfaced inline (not an alert()) so it doesn't interrupt typing into
+      // the next cell; cleared automatically once creation succeeds or the
+      // row goes back to fully blank above.
+      setDraftErrors(prev => ({ ...prev, [rowIndex]: record.error }));
+      return;
+    }
+    if (record) {
+      setDraftErrors(prev => { const { [rowIndex]: _removed, ...rest } = prev; return rest; });
+      setDraftRows(prev => prev.map((r, i) => i === rowIndex ? {} : r));
+      setDraftGeneration(prev => ({ ...prev, [rowIndex]: (prev[rowIndex] || 0) + 1 }));
+      onChanged();
+    }
+  };
 
   if (gridFields.length === 0) {
     return <p className="text-center text-[11px] text-slate-300 italic py-6">No columns configured</p>;
@@ -258,13 +324,30 @@ export default function DashboardGrid({
               )}
             </tr>
           ))}
-          {Array.from({ length: paddingRowCount }, (_, i) => (
-            <tr key={`pad-${i}`} className="border-b border-slate-50 select-none" aria-hidden="true">
-              {gridFields.map(f => (
-                <td key={f.id} className="px-4 py-2" style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }} />
-              ))}
-              <td className="px-2" />
-            </tr>
+          {draftRows.map((draft, i) => (
+            <Fragment key={`draft-${i}`}>
+              <tr className="border-b border-slate-50">
+                {gridFields.map(f => (
+                  <td key={f.id} className="px-4 py-2" style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
+                    <FieldValueInput
+                      key={`${f.id}-${draftGeneration[i] || 0}`}
+                      field={f}
+                      value={draft[f.field_key] ?? null}
+                      onCommit={v => handleDraftCommit(i, f, v)}
+                      disabled={!!draftSaving[i]}
+                    />
+                  </td>
+                ))}
+                <td className="px-2">{draftSaving[i] && <Loader2 size={13} className="animate-spin text-slate-300" />}</td>
+              </tr>
+              {draftErrors[i] && (
+                <tr className="border-b border-slate-50">
+                  <td colSpan={gridFields.length + 1} className="px-4 pb-2 -mt-1.5 text-[10px] font-semibold text-rose-500">
+                    {draftErrors[i]}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
           {records.length === 0 && paddingRowCount === 0 && (
             <tr>

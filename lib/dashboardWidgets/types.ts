@@ -40,22 +40,28 @@ export interface TextWidget extends BaseWidget {
 export interface FilterBarWidget extends BaseWidget {
   type: 'filter_bar';
   config: {
-    fieldIds: string[]; // max 2, mirrors filter_field_ids today
+    fieldIds: string[]; // max 2, mirrors filter_field_ids today -- also this widget's field POSITION (render order)
     // Visual size/spacing of this widget's controls (RelationPicker/date/
     // select/text inputs) -- see lib/dashboardWidgets/pillSize.ts. Undefined
     // means 'md'/'normal', today's only look.
     pillSize?: 'sm' | 'md' | 'lg';
     pillGap?: 'tight' | 'normal' | 'loose';
+    // Per-field SIZE override, keyed by field id -- lets one pill run wider/
+    // narrower than pillSize's widget-wide default without changing every
+    // other field. Absent entry (or absent width) falls back to
+    // defaultFieldWidth(field.field_type) in pillSize.ts.
+    fieldLayout?: Record<string, { width?: 'sm' | 'md' | 'lg' | 'full' }>;
   };
 }
 
 export interface QuickAddFormWidget extends BaseWidget {
   type: 'quick_add_form';
   config: {
-    fieldIds: string[]; // ordered, mirrors quick_add_field_ids
-    // See FilterBarWidget.config.pillSize/pillGap above -- same meaning.
+    fieldIds: string[]; // ordered, mirrors quick_add_field_ids -- also this widget's field POSITION (render order)
+    // See FilterBarWidget.config.pillSize/pillGap/fieldLayout above -- same meaning.
     pillSize?: 'sm' | 'md' | 'lg';
     pillGap?: 'tight' | 'normal' | 'loose';
+    fieldLayout?: Record<string, { width?: 'sm' | 'md' | 'lg' | 'full' }>;
   };
 }
 
@@ -161,6 +167,19 @@ export interface ChartSeriesConfig {
   valueFieldId: string | null;
   aggregate: 'sum' | 'count' | 'count-distinct';
   conditions?: TileCondition[];
+  // Tags this series into one labeled choice per named axis (e.g. axis
+  // "Type": choice "Billable"; axis "Metric": choice "Hours") -- when 2+
+  // series share an axis name with different choices, the chart renders
+  // that axis as a toggle-group selector and shows only the series whose
+  // choice matches the current selection on every axis it's tagged with
+  // (a series tagged on 2 axes needs both to match; the classic case is a
+  // 2x2 grid like Billable/Non-billable x Amount/Hours -- 4 series, 2 axes,
+  // exactly one visible at a time). A series with no axis tags is always
+  // shown and keeps the older click-a-legend-item-to-hide behavior instead.
+  // Axis/choice order in series config order is what decides the DEFAULT
+  // selection (first-seen choice per axis), so put the intended default
+  // first when authoring a tagged chart.
+  axis?: { name: string; choice: string }[];
 }
 
 export interface ChartWidget extends BaseWidget {
