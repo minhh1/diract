@@ -362,14 +362,14 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
             )}
           </div>
         ) : (
-          <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
             {/* Table header */}
             <div className="flex bg-slate-50 border-b border-slate-100">
               {tableColumns.map(col => (
                 <div
                   key={col.id}
-                  className="flex-1 px-6 py-4 text-[9px] font-bold uppercase tracking-widest text-slate-400 min-w-0"
+                  className="flex-1 px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-slate-400 min-w-0"
                 >
                   {col.label}
                 </div>
