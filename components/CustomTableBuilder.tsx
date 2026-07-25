@@ -2,12 +2,26 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, Store } from "lucide-react";
+import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, Store, RotateCcw, MapPin, Building2, LayoutGrid } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
-import { useCompany } from "@/components/CompanyContext";
+import { useCompany, type TableLabelOverride } from "@/components/CompanyContext";
 import { createArchiveRequest, usePendingArchiveRequests } from "@/lib/archiveRequests";
+
+// The 3 built-in tables every company starts with -- shown in the same list
+// as a company's own tables (see the header comment below for why) rather
+// than a separate "system" section. Icons mirror Sidebar.tsx's ALL_SYSTEM_TABLES.
+const SYSTEM_TABLE_DEFS = [
+  { slug: 'properties', icon: MapPin,      color: '#6366f1' },
+  { slug: 'entities',   icon: Building2,   color: '#8b5cf6' },
+  { slug: 'projects',   icon: LayoutGrid,  color: '#ec4899' },
+];
+const DEFAULT_LABELS: Record<string, TableLabelOverride> = {
+  projects: { singular: "Project", plural: "Projects" },
+  properties: { singular: "Property", plural: "Properties" },
+  entities: { singular: "Entity", plural: "Entities" },
+};
 
 const ICON_OPTIONS = [
   'Table2', 'FileText', 'Briefcase', 'Users', 'Home',
@@ -24,8 +38,11 @@ const COLOR_OPTIONS = [
 
 export default function CustomTableBuilder() {
   const { tables, loading, refetch } = useCustomTables();
-  const { isAdmin, companyId } = useCompany();
+  const { isAdmin, companyId, tableLabelOverrides, refreshTableLabelOverrides } = useCompany();
   const { pendingIds: pendingArchiveIds, refreshPendingArchiveRequests } = usePendingArchiveRequests("company_tables", companyId);
+  const [editingSystemSlug, setEditingSystemSlug] = useState<string | null>(null);
+  const [systemDraft, setSystemDraft] = useState<TableLabelOverride>({ singular: "", plural: "" });
+  const [systemSaving, setSystemSaving] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newIcon, setNewIcon] = useState('Table2');
@@ -47,6 +64,41 @@ export default function CustomTableBuilder() {
       .single()
       .then(({ data }) => { if (data) setLimit(data.max_custom_tables); });
   }, []);
+
+  // Renaming one of the 3 built-in tables (e.g. "Projects" -> "Matters" for
+  // a law firm) -- see supabase/companies_table_labels.sql. Distinct from
+  // handleUpdate below (that renames/re-icons/re-colours a company's own
+  // table row in company_tables); these 3 aren't real rows, just a label
+  // override stored on companies.table_label_overrides, so there's no
+  // icon/colour to change and no delete.
+  const startSystemEdit = (slug: string) => {
+    const current = tableLabelOverrides[slug] || DEFAULT_LABELS[slug];
+    setSystemDraft({ singular: current.singular, plural: current.plural });
+    setEditingSystemSlug(slug);
+  };
+
+  const saveSystemLabel = async (slug: string) => {
+    if (!companyId || !systemDraft.singular.trim() || !systemDraft.plural.trim()) return;
+    setSystemSaving(slug);
+    const next = { ...tableLabelOverrides, [slug]: { singular: systemDraft.singular.trim(), plural: systemDraft.plural.trim() } };
+    const { error } = await supabase.from("companies").update({ table_label_overrides: next }).eq("id", companyId);
+    setSystemSaving(null);
+    if (error) { alert(error.message); return; }
+    setEditingSystemSlug(null);
+    await refreshTableLabelOverrides();
+  };
+
+  const resetSystemLabel = async (slug: string) => {
+    if (!companyId) return;
+    if (!window.confirm(`Reset "${(tableLabelOverrides[slug] || DEFAULT_LABELS[slug]).plural}" back to its default name "${DEFAULT_LABELS[slug].plural}"?`)) return;
+    setSystemSaving(slug);
+    const next = { ...tableLabelOverrides };
+    delete next[slug];
+    const { error } = await supabase.from("companies").update({ table_label_overrides: next }).eq("id", companyId);
+    setSystemSaving(null);
+    if (error) { alert(error.message); return; }
+    await refreshTableLabelOverrides();
+  };
 
   const handleCreate = async () => {
     if (!newName.trim()) { setError('Name is required'); return; }
@@ -212,10 +264,10 @@ export default function CustomTableBuilder() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[13px] font-bold text-slate-800">Custom tables</p>
+          <p className="text-[13px] font-bold text-slate-800">Tables</p>
           <p className="text-[10px] text-slate-400 mt-0.5">
-            {tables.length} table{tables.length !== 1 ? 's' : ''} created
-            {limit && ` · ${limit - tables.length} remaining`}
+            {SYSTEM_TABLE_DEFS.length + tables.length} table{SYSTEM_TABLE_DEFS.length + tables.length !== 1 ? 's' : ''}
+            {limit && ` · ${limit - tables.length} more can be created`}
           </p>
         </div>
         <button
@@ -226,8 +278,78 @@ export default function CustomTableBuilder() {
         </button>
       </div>
 
-      {/* Existing tables */}
+      {/* Existing tables -- the 3 built-in ones first, then a company's own,
+          in one undifferentiated list (only their available actions
+          differ: built-ins can only be renamed, not re-iconed or deleted). */}
       <div className="space-y-2">
+        {SYSTEM_TABLE_DEFS.map(({ slug, icon: Icon, color }) => {
+          const override = tableLabelOverrides[slug];
+          const effective = override || DEFAULT_LABELS[slug];
+          const isEditing = editingSystemSlug === slug;
+          const isSaving = systemSaving === slug;
+          return (
+            <div key={slug} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-2xl">
+              {isEditing ? (
+                <>
+                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}20` }}>
+                    <Icon size={16} style={{ color }} />
+                  </div>
+                  <div className="flex-1 grid grid-cols-2 gap-2">
+                    <input
+                      value={systemDraft.singular}
+                      onChange={e => setSystemDraft(d => ({ ...d, singular: e.target.value }))}
+                      placeholder="Singular, e.g. Matter"
+                      className="px-3 py-2 text-[12px] border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400"
+                    />
+                    <input
+                      value={systemDraft.plural}
+                      onChange={e => setSystemDraft(d => ({ ...d, plural: e.target.value }))}
+                      placeholder="Plural, e.g. Matters"
+                      className="px-3 py-2 text-[12px] border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400"
+                    />
+                  </div>
+                  <button onClick={() => saveSystemLabel(slug)} disabled={isSaving} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-50">
+                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  </button>
+                  <button onClick={() => setEditingSystemSlug(null)} disabled={isSaving} className="p-2 text-slate-400 hover:bg-slate-100 rounded-xl transition-all">
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}20` }}>
+                    <Icon size={16} style={{ color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-bold text-slate-800">{effective.plural}</p>
+                    <p className="text-[10px] text-slate-400">/dashboard/{slug}</p>
+                  </div>
+                  {isAdmin && (
+                    <>
+                      {override && (
+                        <button
+                          onClick={() => resetSystemLabel(slug)}
+                          disabled={isSaving}
+                          title="Reset to default name"
+                          className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all disabled:opacity-50"
+                        >
+                          {isSaving ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => startSystemEdit(slug)}
+                        className="p-1.5 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all"
+                        title="Rename"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
         {tables.map(table => {
           const Icon = (LucideIcons as any)[table.icon] || LucideIcons.Table2;
           return (
@@ -270,11 +392,6 @@ export default function CustomTableBuilder() {
             </div>
           );
         })}
-        {tables.length === 0 && !loading && (
-          <p className="text-center text-[11px] text-slate-300 italic py-6">
-            No custom tables yet — create one to get started
-          </p>
-        )}
       </div>
 
       {/* Create modal */}

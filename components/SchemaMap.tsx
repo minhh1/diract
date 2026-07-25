@@ -557,7 +557,7 @@ export default function SchemaMap() {
                     fontFamily="system-ui, -apple-system, sans-serif"
                     style={{ textTransform: 'uppercase', letterSpacing: '0.08em' }}
                   >
-                    {box.isSystem ? 'System' : 'Custom'} · {box.fields.length} fields
+                    {box.fields.length} field{box.fields.length === 1 ? '' : 's'}
                   </text>
 
                   {/* Header / body divider */}
@@ -587,16 +587,12 @@ export default function SchemaMap() {
                         )}
 
                         {/* Left accent bar */}
-                        {(field.isPrimary || field.isFK || field.isCustom) && (
+                        {(field.isPrimary || field.isFK) && (
                           <rect
                             x={0} y={fy + 5}
                             width={3}
                             height={FIELD_HEIGHT - 10}
-                            fill={
-                              field.isPrimary ? box.color
-                              : field.isFK ? '#f97316'
-                              : '#a78bfa'
-                            }
+                            fill={field.isPrimary ? box.color : '#f97316'}
                             rx={1.5}
                           />
                         )}
@@ -625,33 +621,17 @@ export default function SchemaMap() {
                             : field.label}
                         </text>
 
-                        {/* Custom badge */}
-                        {field.isCustom && (
-                          <text
-                            x={BOX_WIDTH - 52}
-                            y={fy + FIELD_HEIGHT / 2 + 4}
-                            fontSize={8}
-                            fill="#a78bfa"
-                            fontFamily="system-ui, -apple-system, sans-serif"
-                            style={{ letterSpacing: '0.04em' }}
-                          >
-                            CUSTOM
-                          </text>
-                        )}
-
                         {/* Field type — right aligned */}
-                        {!field.isCustom && (
-                          <text
-                            x={BOX_WIDTH - 10}
-                            y={fy + FIELD_HEIGHT / 2 + 4}
-                            fontSize={9}
-                            fill={typeColor}
-                            fontFamily="'Menlo','Monaco',monospace"
-                            textAnchor="end"
-                          >
-                            {field.fieldType}
-                          </text>
-                        )}
+                        <text
+                          x={BOX_WIDTH - 10}
+                          y={fy + FIELD_HEIGHT / 2 + 4}
+                          fontSize={9}
+                          fill={typeColor}
+                          fontFamily="'Menlo','Monaco',monospace"
+                          textAnchor="end"
+                        >
+                          {field.fieldType}
+                        </text>
                       </g>
                     );
                   })}
@@ -688,8 +668,6 @@ export default function SchemaMap() {
       {/* Legend */}
       <div className="flex items-center gap-5 mt-3 shrink-0 flex-wrap">
         {[
-          { color: '#6366f1', label: 'System table' },
-          { color: '#a78bfa', label: 'Custom table / field' },
           { color: '#f97316', label: 'Foreign key field' },
         ].map(l => (
           <div key={l.label} className="flex items-center gap-1.5">

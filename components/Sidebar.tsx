@@ -208,26 +208,13 @@ function TableVisibilityPanel({
         </button>
       </div>
 
-      <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest px-1 mb-1.5">
-        System
-      </p>
-      <div className="space-y-1 mb-3">
+      <div className="space-y-1">
         {systemTables.map(t => <Row key={t.slug} slug={t.slug} label={t.label} icon={t.icon} />)}
+        {customTables.map(t => {
+          const Icon = (LucideIcons as any)[t.icon] || Table2;
+          return <Row key={t.slug} slug={t.slug} label={t.name} icon={Icon} />;
+        })}
       </div>
-
-      {customTables.length > 0 && (
-        <>
-          <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest px-1 mb-1.5">
-            Custom
-          </p>
-          <div className="space-y-1">
-            {customTables.map(t => {
-              const Icon = (LucideIcons as any)[t.icon] || Table2;
-              return <Row key={t.slug} slug={t.slug} label={t.name} icon={Icon} />;
-            })}
-          </div>
-        </>
-      )}
     </div>
   );
 }

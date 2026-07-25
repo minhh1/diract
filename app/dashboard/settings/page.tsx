@@ -15,7 +15,6 @@ import SchemaVisualisation from "@/components/SchemaVisualisation";
 import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import CustomTableBuilder from "@/components/CustomTableBuilder";
 import PublicTaskPagesTab from "@/components/settings/PublicTaskPagesTab";
-import TableLabelsPanel from "@/components/settings/TableLabelsPanel";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 
@@ -272,7 +271,6 @@ export default function SettingsPage() {
 
           {view === 'schema' && (
             <div className="space-y-8">
-              <TableLabelsPanel />
               <CustomTableBuilder />
               <Link href="/dashboard/schema"
                 className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">

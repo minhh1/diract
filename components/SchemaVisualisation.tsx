@@ -390,7 +390,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
   const handlePublishSystemFields = async () => {
     if (isCustomTable || !companyId || fields.length === 0) return;
     const templateName = window.prompt(
-      `Publish these ${activeTable} custom fields to the marketplace as a new template. Template name:`,
+      `Publish these ${activeTable} fields to the marketplace as a new template. Template name:`,
       `${activeTable.charAt(0).toUpperCase()}${activeTable.slice(1)} fields`
     );
     if (!templateName?.trim()) return;
@@ -426,49 +426,44 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
   return (
     <div className="flex flex-col h-full min-h-0 animate-in fade-in">
 
-      {/* Table selector */}
+      {/* Table selector -- every table (system and custom alike) in one
+          list, since a user has no reason to think of their own tables as
+          a lesser/different kind of table from Properties/Entities/Projects. */}
       <div className="mb-4 shrink-0">
-        <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100 mb-3">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-2">
+          Tables
+        </p>
+        <div className="flex flex-wrap gap-2">
           {SYSTEM_TABLES.map(t => (
             <button
               key={t}
               onClick={() => handleTableSelect(t)}
-              className={`flex-1 py-3 rounded-xl text-xs font-bold capitalize transition-all ${
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold capitalize transition-all ${
                 activeTable === t && !isCustomTable
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-600'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
               }`}
             >
               {t}
             </button>
           ))}
+          {customTables.map(t => (
+            <button
+              key={t.id}
+              onClick={() => handleTableSelect(t.slug, t.id)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                activeTable === t.slug && isCustomTable
+                  ? 'text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}
+              style={activeTable === t.slug && isCustomTable
+                ? { backgroundColor: t.color }
+                : undefined}
+            >
+              {t.name}
+            </button>
+          ))}
         </div>
-
-        {customTables.length > 0 && (
-          <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-2">
-              Custom tables
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {customTables.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => handleTableSelect(t.slug, t.id)}
-                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
-                    activeTable === t.slug && isCustomTable
-                      ? 'text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                  }`}
-                  style={activeTable === t.slug && isCustomTable
-                    ? { backgroundColor: t.color }
-                    : undefined}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main layout */}
@@ -480,9 +475,9 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
             <div>
               <p className="text-[13px] font-bold text-slate-800">
                 {isCustomTable
-                  ? customTables.find(t => t.id === customTableId)?.name || 'Custom table'
+                  ? customTables.find(t => t.id === customTableId)?.name || 'Table'
                   : activeTable.charAt(0).toUpperCase() + activeTable.slice(1)
-                } — {isCustomTable ? 'fields' : 'custom fields'}
+                } — fields
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5">
                 {fields.length} field{fields.length !== 1 ? 's' : ''} · drag to reorder
@@ -494,7 +489,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
                 <button
                   onClick={handlePublishSystemFields}
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
-                  title="Publish these custom fields to the marketplace"
+                  title="Publish these fields to the marketplace"
                 >
                   <Store size={13} /> Publish to marketplace
                 </button>
