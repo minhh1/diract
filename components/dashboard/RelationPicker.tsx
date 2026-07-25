@@ -568,6 +568,19 @@ export default function RelationPicker({
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                // Tab/Enter with the search narrowed to exactly one match --
+                // confirm it instead of making the user reach for the mouse
+                // (or, for Tab, hunt down an option that's already the only
+                // one left). Enter is prevented so it doesn't also submit an
+                // enclosing form; Tab's own focus-move behavior is left
+                // alone, it just also picks the option on the way out.
+                if ((e.key !== 'Enter' && e.key !== 'Tab') || options.length !== 1) return;
+                if (e.key === 'Enter') e.preventDefault();
+                toggle(options[0]);
+                setQuery('');
+                if (e.key === 'Tab') setOpen(false);
+              }}
               placeholder={selectedIds.length ? '' : (placeholder || 'Search...')}
               className="flex-1 min-w-[80px] bg-transparent outline-none"
             />
@@ -606,6 +619,19 @@ export default function RelationPicker({
     );
   }
 
+  // Shared by the option click handler and the Tab/Enter-with-one-match
+  // shortcut below, so the two ways of confirming a pick can't drift apart.
+  const selectOption = (opt: RelationOption) => {
+    // Already know the label from the option clicked -- set it immediately
+    // instead of waiting on the value-resolution effect below to re-fetch
+    // it from the server, which was the visible lag on every relation pick.
+    setCurrentLabel(opt.label);
+    resolvedForRef.current = opt.id;
+    onSelect?.(opt.id, opt.label);
+    setQuery('');
+    setOpen(false);
+  };
+
   return (
     <div ref={containerRef} className="relative w-full">
       <div
@@ -617,6 +643,16 @@ export default function RelationPicker({
             autoFocus
             value={query}
             onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => {
+              // Tab/Enter with the search narrowed to exactly one match --
+              // confirm it instead of making the user reach for the mouse.
+              // Enter is prevented so it doesn't also submit an enclosing
+              // form; Tab's own focus-move behavior is left alone, it just
+              // also picks the option on the way out.
+              if ((e.key !== 'Enter' && e.key !== 'Tab') || options.length !== 1) return;
+              if (e.key === 'Enter') e.preventDefault();
+              selectOption(options[0]);
+            }}
             placeholder={placeholder || 'Search...'}
             className="w-full bg-transparent outline-none"
           />
@@ -647,17 +683,7 @@ export default function RelationPicker({
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => {
-                  // Already know the label from the option clicked -- set it
-                  // immediately instead of waiting on the value-resolution
-                  // effect below to re-fetch it from the server, which was
-                  // the visible lag on every relation pick.
-                  setCurrentLabel(opt.label);
-                  resolvedForRef.current = opt.id;
-                  onSelect?.(opt.id, opt.label);
-                  setQuery('');
-                  setOpen(false);
-                }}
+                onClick={() => selectOption(opt)}
                 className="w-full text-left px-4 py-2 text-[12px] font-medium text-slate-700 hover:bg-indigo-50 transition-colors"
               >
                 {opt.label}
