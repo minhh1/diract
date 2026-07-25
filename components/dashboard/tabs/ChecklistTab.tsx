@@ -679,8 +679,10 @@ function TemplateModal({ templates, setTemplates, profiles, teams, companyId, pr
                             const next = [...editItems]; next[idx] = { ...next[idx], due_anchor: e.target.value }; setEditItems(next);
                           }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
                             {ANCHORS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                            {editItems.slice(0, idx).filter(i => i.title).map((i, prevIdx) => (
-                              <option key={`task_${prevIdx}`} value={`task_${prevIdx}`}>After: {i.title || `Task ${prevIdx + 1}`}</option>
+                            {editItems.map((i, otherIdx) => (
+                              otherIdx !== idx && i.title?.trim() && (
+                                <option key={`task_${otherIdx}`} value={`task_${otherIdx}`}>After: {i.title}</option>
+                              )
                             ))}
                           </select>
                         </div>
