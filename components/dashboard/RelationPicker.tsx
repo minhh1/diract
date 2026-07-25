@@ -38,10 +38,20 @@ const CURRENT_USER_SENTINEL = '$current_user';
 // direct user action that should always hit fresh data, not a mount-time
 // stampede.
 const CACHE_TTL_MS = 30_000;
+// The full candidate-list cache (see fetchAllSystemTableOptions/
+// fetchAllOptions below) gets a much longer TTL than label/auto-select
+// lookups above -- it's meant to survive from page load (see
+// warmRelationOptionsCache, called once from CompanyContext on sign-in)
+// until whenever the user actually opens a picker, not just cover a mount-
+// time stampede. 5 minutes: long enough that "open the site, work for a
+// bit, then search a Matter" still hits warm cache; short enough that a
+// matter created minutes ago in another tab shows up on the next natural
+// refetch instead of staying invisible all session.
+const OPTIONS_CACHE_TTL_MS = 5 * 60_000;
 const cache = new Map<string, { value: unknown; expiresAt: number }>();
 const inFlight = new Map<string, Promise<unknown>>();
 
-function dedupedFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+function dedupedFetch<T>(key: string, fetcher: () => Promise<T>, ttlMs: number = CACHE_TTL_MS): Promise<T> {
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
   const existing = inFlight.get(key);
@@ -54,7 +64,7 @@ function dedupedFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
       // this is cheap, and it means no cleanup interval to leak/forget.
       const now = Date.now();
       for (const [k, v] of cache) if (v.expiresAt <= now) cache.delete(k);
-      cache.set(key, { value, expiresAt: now + CACHE_TTL_MS });
+      cache.set(key, { value, expiresAt: now + ttlMs });
       return value;
     })
     .catch(err => { inFlight.delete(key); throw err; });
@@ -268,6 +278,67 @@ async function fetchAllSystemTableOptions(
   });
 }
 
+// Builds the exact same cache key the "fetch full list on open" effect
+// below uses -- factored out so warmRelationOptionsCache (called once at
+// sign-in, before any picker has even mounted) writes to the identical slot
+// a later real RelationPicker instance reads from. Any drift between the
+// two would silently defeat the warm-up (a real open would just miss the
+// cache and refetch), so this is the one place either side is allowed to
+// build one.
+function optionsCacheKey(
+  linkedSystemTable: string | null | undefined,
+  linkedTableId: string | null | undefined,
+  displayField: string | null | undefined,
+  displayField2: string | null | undefined,
+  searchFieldKeys: string[] | null | undefined,
+  filterColumn: string | null | undefined,
+  filterValue: string | null | undefined
+): string {
+  return `options:${linkedSystemTable ?? ''}:${linkedTableId ?? ''}:${displayField ?? ''}:${displayField2 ?? ''}:${(searchFieldKeys || []).join(',')}:${filterColumn ?? ''}:${filterValue ?? ''}`;
+}
+
+// Pre-warms the full-candidate-list cache for every distinct relation
+// config currently in use against a system table (properties/entities/
+// projects -- "Matters" for a firm that's renamed Projects, see
+// CompanyContext's tableLabelOverrides) -- called once at sign-in
+// (CompanyContext.tsx) so the FIRST time a user opens a relation picker,
+// not just the second, is instant. Scoped to system-table targets: those
+// are the ones a firm-wide table (like Matters, at hundreds of rows) makes
+// slow on a cold fetch; a custom-table relation's target is typically much
+// smaller and isn't worth warming speculatively for every table in the
+// schema. Distinct configs are deduped before fetching so e.g. six
+// different "Matter" fields across six tables that all search/display the
+// same way (the common case) cost one fetch, not six.
+export async function warmRelationOptionsCache(): Promise<void> {
+  const { data: fields } = await supabase
+    .from('company_table_fields')
+    .select('linked_system_table, linked_display_field, linked_display_field_2, linked_search_field_keys, linked_filter_column, linked_filter_value')
+    .in('linked_system_table', ['properties', 'entities', 'projects'])
+    .is('deleted_at', null);
+  if (!fields?.length) return;
+
+  const seen = new Set<string>();
+  for (const f of fields) {
+    const key = optionsCacheKey(
+      f.linked_system_table, null, f.linked_display_field, f.linked_display_field_2,
+      f.linked_search_field_keys, f.linked_filter_column, f.linked_filter_value
+    );
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // Fire-and-forget, same dedup/cache every real picker reads from -- a
+    // failure here (e.g. offline) just means the normal on-open fetch
+    // covers it later, so nothing awaits or surfaces these.
+    dedupedFetch(
+      key,
+      () => fetchAllSystemTableOptions(
+        f.linked_system_table!, f.linked_display_field, f.linked_display_field_2,
+        f.linked_search_field_keys, f.linked_filter_column, f.linked_filter_value
+      ),
+      OPTIONS_CACHE_TTL_MS
+    ).catch(() => {});
+  }
+}
+
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md',
@@ -413,12 +484,14 @@ export default function RelationPicker({
   // and caches it (dedupedFetch above) -- typing after the first open just
   // filters this in memory (the `options` useMemo below), so it's instant
   // instead of waiting on a fresh server round trip per keystroke. Keyed on
-  // everything that changes what the list contains, not on `query`.
+  // everything that changes what the list contains, not on `query`, via the
+  // same key builder warmRelationOptionsCache uses -- so a system-table
+  // relation's very first open, at page load, can already be warm.
   useEffect(() => {
     if (!open) return;
     let active = true;
     setLoading(true);
-    const cacheKey = `options:${linkedSystemTable ?? ''}:${linkedTableId ?? ''}:${displayField ?? ''}:${displayField2 ?? ''}:${(searchFieldKeys || []).join(',')}:${filterColumn ?? ''}:${filterValue ?? ''}`;
+    const cacheKey = optionsCacheKey(linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
     dedupedFetch(cacheKey, async (): Promise<RelationOption[]> => {
       if (linkedSystemTable) {
         return fetchAllSystemTableOptions(linkedSystemTable, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
@@ -428,7 +501,7 @@ export default function RelationPicker({
         return all.map(o => ({ ...o, searchText: o.label.toLowerCase() }));
       }
       return [];
-    }).then(list => {
+    }, OPTIONS_CACHE_TTL_MS).then(list => {
       if (active) { setFullOptions(list); setLoading(false); }
     });
     return () => { active = false; };

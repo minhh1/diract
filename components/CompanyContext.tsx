@@ -6,6 +6,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
+import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 
 // Per-company display-name overrides for the three system tables, e.g. a
 // law firm renaming "Projects" to "Matters" (see supabase/companies_table_labels.sql).
@@ -95,6 +96,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
       setLoading(false);
       perfLog("CompanyContext: done");
+
+      // Pre-warms RelationPicker's full-candidate-list cache (Matters/Staff/
+      // Properties search-and-choose bars) so the FIRST time a user opens
+      // one, not just the second, is instant -- fire-and-forget, doesn't
+      // block anything above. See RelationPicker.tsx's warmRelationOptionsCache.
+      warmRelationOptionsCache();
     }
     load();
     return () => { cancelled = true; };
