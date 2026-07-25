@@ -14,6 +14,14 @@ interface SeriesProp {
 interface Props {
   series: SeriesProp[];
   granularity: ChartGranularity;
+  // The filter bar's current value for this chart's own date field (if any)
+  // -- highlights the matching bucket so it's clear which day the rest of
+  // the dashboard is currently scoped to.
+  selectedBucket?: string | null;
+  // Clicking a bucket sets every other visible widget's date filter to that
+  // bucket (see DashboardWidgetRenderer's 'chart' case) -- undefined
+  // disables the interaction entirely (e.g. builder preview).
+  onBucketClick?: (bucket: string) => void;
 }
 
 // Sequential single-hue treatment for the 1-series case (unchanged from
@@ -48,14 +56,26 @@ function formatValue(v: number, fieldType: string): string {
     : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export default function DashboardActivityChart({ series, granularity }: Props) {
+export default function DashboardActivityChart({ series, granularity, selectedBucket, onBucketClick }: Props) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [hoverBucket, setHoverBucket] = useState<string | null>(null);
+  // Which configured series are hidden from view -- a live legend toggle,
+  // purely local/visual (doesn't affect what's fetched or other widgets).
+  // Index-keyed, not label-keyed, so two series that happen to share a
+  // label toggle independently.
+  const [hiddenSeries, setHiddenSeries] = useState<Set<number>>(new Set());
+
+  const toggleSeries = (i: number) => setHiddenSeries(prev => {
+    const next = new Set(prev);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    return next;
+  });
 
   const byBucketPerSeries = useMemo(() => series.map(s => new Map(s.points.map(p => [p.bucket, p.value]))), [series]);
   const todayBucket = useMemo(() => bucketKey(today.toISOString().slice(0, 10), granularity), [granularity]); // eslint-disable-line react-hooks/exhaustive-deps
+  const visibleIndexes = useMemo(() => series.map((_, i) => i).filter(i => !hiddenSeries.has(i)), [series, hiddenSeries]);
 
   // day: the existing month-by-month pager, unchanged, just N sub-bars per
   // slot instead of 1. week/month: no pager -- a flat rolling window of the
@@ -76,7 +96,7 @@ export default function DashboardActivityChart({ series, granularity }: Props) {
     return Array.from(allBuckets).sort().slice(-12).map(bucket => ({ bucket, label: formatBucketLabel(bucket, granularity) }));
   }, [granularity, year, month, byBucketPerSeries]);
 
-  const maxValue = Math.max(1, ...slots.flatMap(slot => byBucketPerSeries.map(m => m.get(slot.bucket) || 0)));
+  const maxValue = Math.max(1, ...slots.flatMap(slot => visibleIndexes.map(i => byBucketPerSeries[i].get(slot.bucket) || 0)));
 
   const changeMonth = (delta: number) => {
     let m = month + delta;
@@ -90,6 +110,9 @@ export default function DashboardActivityChart({ series, granularity }: Props) {
     ? new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + ' activity'
     : `Last 12 ${granularity === 'week' ? 'weeks' : 'months'}`;
 
+  // Bar-color treatment (single-hue vs categorical) is fixed by how many
+  // series are CONFIGURED, not how many are currently visible -- toggling
+  // one off in the legend shouldn't recolor the survivor.
   const isSingleSeries = series.length === 1;
 
   return (
@@ -109,31 +132,49 @@ export default function DashboardActivityChart({ series, granularity }: Props) {
       </div>
 
       {/* A legend is always present for 2+ series (the dependable identity
-          channel); a single series needs none -- the header already names it. */}
+          channel); a single series needs none -- the header already names it.
+          Each entry doubles as a visibility toggle -- click to hide/show that
+          series (e.g. isolate Billable Hours by hiding Non-billable). */}
       {!isSingleSeries && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3">
-          {series.map((s, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: SERIES_COLORS[i % SERIES_COLORS.length] }} />
-              <span className="text-[10px] font-medium text-slate-500">{s.label}</span>
-            </div>
-          ))}
+          {series.map((s, i) => {
+            const isHidden = hiddenSeries.has(i);
+            return (
+              <button
+                key={i}
+                onClick={() => toggleSeries(i)}
+                title={isHidden ? `Show ${s.label || 'series'}` : `Hide ${s.label || 'series'}`}
+                className={`flex items-center gap-1.5 transition-opacity ${isHidden ? 'opacity-35 hover:opacity-60' : 'hover:opacity-70'}`}
+              >
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: SERIES_COLORS[i % SERIES_COLORS.length] }} />
+                <span className="text-[10px] font-medium text-slate-500">{s.label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
+      {visibleIndexes.length === 0 ? (
+        <div className="h-32 flex items-center justify-center text-[11px] text-slate-300 italic">
+          Every series is hidden — click a legend item to show it
+        </div>
+      ) : (
       <div className="relative flex items-end gap-[3px] h-32">
         {slots.map(slot => {
           const isCurrent = slot.bucket === todayBucket;
+          const isSelected = slot.bucket === selectedBucket;
           return (
             <div
               key={slot.bucket}
-              className="flex-1 h-full flex flex-col justify-end relative"
+              className={`flex-1 h-full flex flex-col justify-end relative ${onBucketClick ? 'cursor-pointer' : ''}`}
               onMouseEnter={() => setHoverBucket(slot.bucket)}
               onMouseLeave={() => setHoverBucket(prev => (prev === slot.bucket ? null : prev))}
+              onClick={onBucketClick ? () => onBucketClick(slot.bucket) : undefined}
             >
               {hoverBucket === slot.bucket && (
                 <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 px-2.5 py-1.5 bg-slate-900 text-white text-[10px] font-bold rounded-lg whitespace-nowrap z-10 shadow-lg space-y-0.5">
-                  {series.map((s, i) => {
+                  {visibleIndexes.map(i => {
+                    const s = series[i];
                     const value = byBucketPerSeries[i].get(slot.bucket) || 0;
                     return (
                       <div key={i} className="flex items-center gap-1.5">
@@ -144,14 +185,18 @@ export default function DashboardActivityChart({ series, granularity }: Props) {
                   })}
                 </div>
               )}
-              {/* 2+ series: a light vertical guide marks "now" instead of
-                  recoloring a bar -- shading one series' bar would overload
-                  the hue channel and read as a data error, not emphasis. */}
-              {!isSingleSeries && isCurrent && (
+              {/* Selected (filtered-to) bucket gets a firm accent backdrop;
+                  "today" gets a lighter one when nothing's selected -- the two
+                  never compete since a selection is a deliberate, stronger
+                  signal than the ambient "now" marker. */}
+              {isSelected ? (
+                <div className="absolute inset-y-0 left-0 right-0 bg-indigo-100/80 rounded pointer-events-none" />
+              ) : (!isSingleSeries && isCurrent) && (
                 <div className="absolute inset-y-0 left-0 right-0 bg-slate-100/70 rounded pointer-events-none" />
               )}
               <div className="relative flex items-end justify-center gap-[2px] h-full w-full">
                 {series.map((s, i) => {
+                  if (hiddenSeries.has(i)) return null;
                   const value = byBucketPerSeries[i].get(slot.bucket) || 0;
                   const heightPct = Math.max(2, (value / maxValue) * 100);
                   const color = isSingleSeries
@@ -170,11 +215,12 @@ export default function DashboardActivityChart({ series, granularity }: Props) {
           );
         })}
       </div>
+      )}
 
       <div className="flex gap-[3px] mt-1.5">
         {slots.map(slot => (
           <div key={slot.bucket} className="flex-1 text-center">
-            <span className={`text-[8px] ${slot.bucket === todayBucket ? 'font-bold text-slate-700' : 'text-slate-300'}`}>
+            <span className={`text-[8px] ${slot.bucket === selectedBucket ? 'font-bold text-indigo-600' : slot.bucket === todayBucket ? 'font-bold text-slate-700' : 'text-slate-300'}`}>
               {slot.label}
             </span>
           </div>

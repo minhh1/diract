@@ -137,7 +137,23 @@ export default function DashboardWidgetRenderer({
 
     case 'chart': {
       const series = computeChartSeries(widget.config, chartRecords ?? records, fieldById);
-      return <DashboardActivityChart series={series} granularity={widget.config.granularity ?? 'day'} />;
+      const dateFieldId = widget.config.dateFieldId;
+      const selectedBucket = dateFieldId ? (filters[dateFieldId] ?? null) : null;
+      return (
+        <DashboardActivityChart
+          series={series}
+          granularity={widget.config.granularity ?? 'day'}
+          selectedBucket={selectedBucket}
+          // Clicking the already-selected bucket clears it (toggle) instead
+          // of re-setting the same value -- lets the viewer get back to
+          // "every date" without hunting for the filter bar's own clear
+          // control. Disabled in preview (mode !== 'view'), same as every
+          // other interactive bit in this switch.
+          onBucketClick={mode === 'view' && dateFieldId
+            ? (bucket) => setFilter(dateFieldId, bucket === selectedBucket ? '' : bucket)
+            : undefined}
+        />
+      );
     }
 
     case 'trust_reconciliation':
