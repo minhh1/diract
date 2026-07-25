@@ -364,10 +364,11 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
               title="Filter fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} max={2}
               fieldWidths={Object.fromEntries(Object.entries(draft.config.fieldLayout || {}).map(([id, l]) => [id, l.width]))}
               onWidthChange={updateFieldWidth}
+              showReorder={false}
             />
             <PillStyleControls pillSize={draft.config.pillSize} pillGap={draft.config.pillGap} onChange={updateConfig} />
             <p className="text-[10px] text-slate-400 px-1">
-              Reorder with the arrows to change each pill's position; the dropdown next to a field sets its width.
+              Position is set by dragging a pill's grip handle directly on the dashboard (admin view); the dropdown next to a field here sets its width.
             </p>
           </div>
         )}
@@ -378,10 +379,11 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
               title="Quick-add fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })}
               fieldWidths={Object.fromEntries(Object.entries(draft.config.fieldLayout || {}).map(([id, l]) => [id, l.width]))}
               onWidthChange={updateFieldWidth}
+              showReorder={false}
             />
             <PillStyleControls pillSize={draft.config.pillSize} pillGap={draft.config.pillGap} onChange={updateConfig} />
             <p className="text-[10px] text-slate-400 px-1">
-              Reorder with the arrows to change each pill's position; the dropdown next to a field sets its width.
+              Position is set by dragging a pill's grip handle directly on the dashboard (admin view); the dropdown next to a field here sets its width.
             </p>
           </div>
         )}

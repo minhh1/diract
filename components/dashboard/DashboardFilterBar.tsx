@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { GripVertical } from "lucide-react";
 import RelationPicker from "./RelationPicker";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import { isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
@@ -18,6 +20,14 @@ interface Props {
   // Per-field width override, keyed by field id -- see
   // lib/dashboardWidgets/pillSize.ts's FIELD_WIDTH_CLASSES.
   fieldLayout?: Record<string, { width?: FieldWidth }>;
+  // Drag-to-reorder a pill directly on the dashboard, gated to admins --
+  // mirrors DashboardGrid's column grip handle exactly (same drag/drop
+  // mechanics), so "where's this field positioned" has one live answer
+  // instead of a second, disconnected up/down control in the widget's
+  // settings panel. Omitted entirely in builder-preview contexts, same as
+  // grid's isAdmin.
+  isAdmin?: boolean;
+  onReorder?: (fieldIds: string[]) => void;
 }
 
 // Renders a dashboard's configured filter fields as a top toolbar, feeding
@@ -25,10 +35,25 @@ interface Props {
 // String(value) === String(filterValue) match, so any field type works as
 // long as the control here produces a comparable value. Type-aware, mirrors
 // WidgetConfigPanel's ConditionRow value control.
-export default function DashboardFilterBar({ fields, filterFieldIds, filters, onFilterChange, pillSize = 'md', pillGap = 'normal', fieldLayout }: Props) {
+export default function DashboardFilterBar({ fields, filterFieldIds, filters, onFilterChange, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder }: Props) {
   const filterFields = filterFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
+
+  // Drag-to-reorder state (which field is currently being dragged) --
+  // identical shape to DashboardGrid's draggedIdx/handleDrop.
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const handleDrop = (targetId: string) => {
+    if (!draggedId || !onReorder || draggedId === targetId) { setDraggedId(null); return; }
+    const next = [...filterFieldIds];
+    const from = next.indexOf(draggedId);
+    const to = next.indexOf(targetId);
+    if (from === -1 || to === -1) { setDraggedId(null); return; }
+    next.splice(from, 1);
+    next.splice(to, 0, draggedId);
+    onReorder(next);
+    setDraggedId(null);
+  };
 
   if (filterFields.length === 0) return null;
 
@@ -37,8 +62,18 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
   return (
     <div className={`flex flex-wrap p-4 bg-white border border-slate-200 rounded-2xl ${PILL_GAP_CLASSES[pillGap]}`}>
       {filterFields.map(field => (
-        <div key={field.id} className={FIELD_WIDTH_CLASSES[fieldLayout?.[field.id]?.width || defaultFieldWidth(field.field_type)]}>
-          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1 px-1">
+        <div
+          key={field.id}
+          draggable={isAdmin && !!onReorder}
+          onDragStart={() => setDraggedId(field.id)}
+          onDragOver={e => e.preventDefault()}
+          onDrop={() => handleDrop(field.id)}
+          className={`group/pill ${FIELD_WIDTH_CLASSES[fieldLayout?.[field.id]?.width || defaultFieldWidth(field.field_type)]}`}
+        >
+          <label className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 px-1">
+            {isAdmin && onReorder && (
+              <GripVertical size={10} className="cursor-move opacity-0 group-hover/pill:opacity-100 transition-opacity shrink-0" />
+            )}
             {field.label}
           </label>
           {field.field_type === 'date' ? (

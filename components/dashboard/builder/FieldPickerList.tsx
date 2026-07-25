@@ -21,9 +21,17 @@ interface Props {
   // checkbox-and-reorder row with no width control.
   fieldWidths?: Record<string, FieldWidth | undefined>;
   onWidthChange?: (fieldId: string, width: FieldWidth) => void;
+  // Hides the up/down position arrows -- for a widget type where position
+  // is instead set by dragging the field's own pill live on the dashboard
+  // (filter_bar/quick_add_form; see DashboardFilterBar/DashboardQuickAddForm's
+  // isAdmin drag-reorder), a second, disconnected "position" control here
+  // would just be the same setting exposed in two places that can never
+  // visually confirm each other. Defaults to shown, what grid columns and
+  // summary tile pickers (no live-drag equivalent) still use.
+  showReorder?: boolean;
 }
 
-export default function FieldPickerList({ title, fields, selectedIds, onChange, max, fieldWidths, onWidthChange }: Props) {
+export default function FieldPickerList({ title, fields, selectedIds, onChange, max, fieldWidths, onWidthChange, showReorder = true }: Props) {
   const toggle = (id: string) => {
     if (selectedIds.includes(id)) onChange(selectedIds.filter(i => i !== id));
     else if (!max || selectedIds.length < max) onChange([...selectedIds, id]);
@@ -62,7 +70,7 @@ export default function FieldPickerList({ title, fields, selectedIds, onChange, 
                   ))}
                 </select>
               )}
-              {selected && (
+              {selected && showReorder && (
                 <div className="flex gap-0.5 shrink-0">
                   <button onClick={() => move(f.id, -1)} className="p-0.5 text-slate-300 hover:text-slate-600"><ChevronUp size={12} /></button>
                   <button onClick={() => move(f.id, 1)} className="p-0.5 text-slate-300 hover:text-slate-600"><ChevronDown size={12} /></button>

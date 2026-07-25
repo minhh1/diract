@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, GripVertical } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
 import { createRecord } from "@/lib/services/customTableService";
 import { createRecord as createSystemTableRecord } from "@/lib/services/systemTableRecordService";
@@ -30,6 +30,14 @@ interface Props {
   // Per-field width override, keyed by field id -- see
   // lib/dashboardWidgets/pillSize.ts's FIELD_WIDTH_CLASSES.
   fieldLayout?: Record<string, { width?: FieldWidth }>;
+  // Drag-to-reorder a field directly on the dashboard, gated to admins --
+  // mirrors DashboardGrid's column grip handle exactly (same drag/drop
+  // mechanics), so "where's this field positioned" has one live answer
+  // instead of a second, disconnected up/down control in the widget's
+  // settings panel. Omitted entirely in builder-preview contexts, same as
+  // grid's isAdmin.
+  isAdmin?: boolean;
+  onReorder?: (fieldIds: string[]) => void;
 }
 
 // Live-computes every formula field's preview value from the in-progress
@@ -82,10 +90,22 @@ function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, an
   return defaults;
 }
 
-function FieldSlot({ field, value, onCommit, widthClass, size }: { field: CustomTableField; value: any; onCommit: (v: any) => void; widthClass: string; size?: PillSize }) {
+function FieldSlot({
+  field, value, onCommit, widthClass, size, draggable, onDragStart, onDragOver, onDrop, showGrip,
+}: {
+  field: CustomTableField; value: any; onCommit: (v: any) => void; widthClass: string; size?: PillSize;
+  draggable?: boolean; onDragStart?: () => void; onDragOver?: (e: React.DragEvent) => void; onDrop?: () => void; showGrip?: boolean;
+}) {
   return (
-    <div className={widthClass}>
-      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1 px-1">
+    <div
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={`group/pill ${widthClass}`}
+    >
+      <label className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 px-1">
+        {showGrip && <GripVertical size={10} className="cursor-move opacity-0 group-hover/pill:opacity-100 transition-opacity shrink-0" />}
         {field.label}{field.is_required && <span className="text-red-400 ml-1">*</span>}
       </label>
       <FieldValueInput field={field} value={value} onCommit={onCommit} size={size} />
@@ -93,10 +113,27 @@ function FieldSlot({ field, value, onCommit, widthClass, size }: { field: Custom
   );
 }
 
-export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout }: Props) {
+export default function DashboardQuickAddForm({
+  tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
+}: Props) {
   const quickAddFields = quickAddFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
+
+  // Drag-to-reorder state -- identical shape to DashboardFilterBar/
+  // DashboardGrid's draggedId/handleDrop.
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const handleDrop = (targetId: string) => {
+    if (!draggedId || !onReorder || draggedId === targetId) { setDraggedId(null); return; }
+    const next = [...quickAddFieldIds];
+    const from = next.indexOf(draggedId);
+    const to = next.indexOf(targetId);
+    if (from === -1 || to === -1) { setDraggedId(null); return; }
+    next.splice(from, 1);
+    next.splice(to, 0, draggedId);
+    onReorder(next);
+    setDraggedId(null);
+  };
 
   const [values, setValues] = useState<Record<string, any>>(() => getDefaultValues(quickAddFields));
   const [saving, setSaving] = useState(false);
@@ -170,7 +207,15 @@ export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, 
         {quickAddFields.map(field => {
           const widthClass = FIELD_WIDTH_CLASSES[fieldLayout?.[field.id]?.width || defaultFieldWidth(field.field_type)];
           return (
-            <FieldSlot key={`${field.id}-${formGeneration}`} field={field} value={valueFor(field)} onCommit={commitFor(field)} widthClass={widthClass} size={pillSize} />
+            <FieldSlot
+              key={`${field.id}-${formGeneration}`}
+              field={field} value={valueFor(field)} onCommit={commitFor(field)} widthClass={widthClass} size={pillSize}
+              draggable={isAdmin && !!onReorder}
+              onDragStart={() => setDraggedId(field.id)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => handleDrop(field.id)}
+              showGrip={isAdmin && !!onReorder}
+            />
           );
         })}
         {AddButton}

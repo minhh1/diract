@@ -97,6 +97,8 @@ export default function DashboardWidgetRenderer({
           pillSize={widget.config.pillSize}
           pillGap={widget.config.pillGap}
           fieldLayout={widget.config.fieldLayout}
+          isAdmin={mode === 'view' ? isAdmin : undefined}
+          onReorder={onWidgetChange ? (fieldIds) => onWidgetChange({ ...widget, config: { ...widget.config, fieldIds } }) : undefined}
         />
       );
 
@@ -117,6 +119,8 @@ export default function DashboardWidgetRenderer({
           pillSize={widget.config.pillSize}
           pillGap={widget.config.pillGap}
           fieldLayout={widget.config.fieldLayout}
+          isAdmin={mode === 'view' ? isAdmin : undefined}
+          onReorder={onWidgetChange ? (fieldIds) => onWidgetChange({ ...widget, config: { ...widget.config, fieldIds } }) : undefined}
         />
       );
 
