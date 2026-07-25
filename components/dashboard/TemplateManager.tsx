@@ -74,10 +74,12 @@ export default function TemplateManager({
   // Reorders editItems (drag from `from` to `to`), remapping every task_<index> anchor
   // reference so "After: X" links keep pointing at the same task after the shuffle, then
   // resets the dragged task's own anchor to "After: <whatever is now directly above it>"
-  // (or "Project created" if it's now first). Applied straight to state — no save round-trip.
-  const handleDropReorder = (to: number) => {
+  // (or "Project created" if it's now first). Runs on every dragover (not just drop) so the
+  // other tasks visibly slide out of the way as the dragged one passes over them — `draggedIdx`
+  // tracks the dragged item's current live position, so each subsequent hover moves it again
+  // relative to where it already is, and self-throttles once it's sitting on the hovered row.
+  const handleDragOverItem = (to: number) => {
     const from = draggedIdx;
-    setDraggedIdx(null);
     if (from === null || from === to) return;
     const indexMap = new Map<number, number>();
     for (let i = 0; i < editItems.length; i++) {
@@ -98,6 +100,7 @@ export default function TemplateManager({
       return { ...item, due_anchor: newRef !== undefined ? `task_${newRef}` : 'record_created' };
     });
     setEditItems(remapped);
+    setDraggedIdx(to);
   };
 
   const openEdit = (t: Template) => {
@@ -416,8 +419,8 @@ export default function TemplateManager({
                 {editItems.map((item, idx) => (
                   <div key={idx} draggable
                     onDragStart={() => setDraggedIdx(idx)}
-                    onDragOver={e => e.preventDefault()}
-                    onDrop={e => { e.preventDefault(); handleDropReorder(idx); }}
+                    onDragOver={e => { e.preventDefault(); handleDragOverItem(idx); }}
+                    onDrop={e => { e.preventDefault(); setDraggedIdx(null); }}
                     onDragEnd={() => setDraggedIdx(null)}
                     className={`bg-slate-50 rounded-2xl p-4 space-y-3 transition-opacity ${draggedIdx === idx ? 'opacity-40' : ''}`}>
                     <div className="flex items-center gap-2">
