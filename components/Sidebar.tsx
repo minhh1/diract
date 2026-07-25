@@ -8,7 +8,7 @@ import {
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
-  Link as LinkIcon, HeartPulse, FolderOpen, Archive,
+  Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -92,6 +92,7 @@ const TOOLS_LINKS = [
   { href: '/dashboard/virtual-computers', icon: Monitor, label: 'Virtual computers' },
   { href: '/dashboard/schema', icon: Network, label: 'Schema map' },
   { href: '/dashboard/new/builder', icon: LayoutDashboard, label: 'Custom dashboard' },
+  { href: '/dashboard/templates', icon: CheckSquare, label: 'Checklist templates' },
 ];
 
 const SETTINGS_LINKS = [
@@ -663,7 +664,7 @@ export default function Sidebar() {
     if (
       pathname.includes('/dashboard/ai') || pathname.includes('/gmail') ||
       pathname.includes('/pdf-editor') || pathname.includes('/virtual-computers') ||
-      pathname.includes('/schema')
+      pathname.includes('/schema') || pathname.includes('/dashboard/templates')
     ) return 'tools';
     return 'tables';
   });
