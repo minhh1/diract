@@ -3,8 +3,15 @@
 // admin-direct trigger (app/api/gmail/archive-project) and the unified
 // archive-request approval flow (app/api/archive-requests/approve's
 // 'gmail_project_archive' entity_table case). Stamps
-// project_gmail_labels.archived_at and inserts a gmail_sync_jobs row that
-// gmail-archive-worker will pick up on its next tick.
+// project_gmail_labels.archived_at, marks the matter Closed, and inserts a
+// gmail_sync_jobs row that gmail-archive-worker will pick up on its next
+// tick. Runs in that order deliberately: by the time the projects.status
+// update fires trg_projects_status_archive (see
+// enqueue_gmail_archive_on_close() in supabase/gmail_archive.sql -- the
+// *other* direction of this same relationship, closing a matter
+// auto-archives Gmail if the company has that turned on), archived_at is
+// already set, so that trigger's own "is there an active label" check finds
+// none and no-ops instead of double-enqueueing.
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type EnqueueArchiveResult =
@@ -75,6 +82,18 @@ export async function enqueueProjectArchive(
       .eq("project_id", projectId).eq("company_id", companyId);
     return { ok: false, status: 500, error: insertErr.message };
   }
+
+  // Gmail-archiving a matter means the matter is done -- mark it Closed too.
+  // Unconditional (not `.neq("status", "Closed")`) since a NULL status
+  // would never satisfy a not-equal filter in Postgres and silently never
+  // get closed; re-setting an already-Closed project to Closed is a no-op
+  // for trg_projects_status_archive anyway (it only fires on an actual
+  // change). Best-effort: the Gmail side of the archive is already durably
+  // enqueued above, so a failure here shouldn't be reported as the archive
+  // itself having failed.
+  await adminDb.from("projects")
+    .update({ status: "Closed" })
+    .eq("id", projectId).eq("company_id", companyId);
 
   return { ok: true, totalUsers };
 }
