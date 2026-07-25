@@ -227,10 +227,21 @@ export default function DashboardGrid({
     const nextValues = { ...(draftRows[rowIndex] || {}), [field.field_key]: value };
     setDraftRows(prev => prev.map((r, i) => i === rowIndex ? nextValues : r));
 
-    // Every value cleared back out isn't a real attempt to create anything
-    // -- skip the write and drop any stale error for this row.
-    const hasContent = Object.values(nextValues).some(v => v !== null && v !== undefined && v !== '');
-    if (!hasContent) {
+    // A blank row should look and stay blank -- not attempt a save (and
+    // show a premature error) just because a "signed-in user only" field
+    // auto-selected itself the moment this row mounted. Only try once every
+    // REQUIRED column actually visible in this grid has a value; a
+    // required field the admin didn't add as a column can never be filled
+    // in from here, so that case still surfaces via the real error once
+    // every visible required field IS filled but creation still fails.
+    const requiredVisible = gridFields.filter(f => f.is_required);
+    const isEmpty = (v: any) => v === null || v === undefined || v === '';
+    // No required column visible at all -- nothing to gate on, so any
+    // content (matching the pre-fix behavior) is enough to attempt a save.
+    const readyToSave = requiredVisible.length > 0
+      ? requiredVisible.every(f => !isEmpty(nextValues[f.field_key]))
+      : Object.values(nextValues).some(v => !isEmpty(v));
+    if (!readyToSave) {
       setDraftErrors(prev => { const { [rowIndex]: _removed, ...rest } = prev; return rest; });
       return;
     }
