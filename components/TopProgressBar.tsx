@@ -77,6 +77,9 @@ export function ProgressBarProvider({ children }: { children: ReactNode }) {
   const [width, setWidth] = useState(0);
   const growTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A done() that brings the count to zero doesn't finalize immediately --
+  // see its own comment below for why.
+  const finalizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stable identities are load-bearing here: these are consumed in other
   // components' effect dependency arrays (e.g. "call done() on unmount if
@@ -85,7 +88,19 @@ export function ProgressBarProvider({ children }: { children: ReactNode }) {
   // eventually desyncing the start()/done() reference count.
   const start = useCallback(() => {
     activeCount.current += 1;
-    if (activeCount.current > 1) return; // already running — just keep it alive
+    // A done() moments ago already brought the count to zero and is
+    // waiting out its own grace window (see done()'s comment) -- this
+    // start() is really a continuation of the same visual run, so cancel
+    // that pending finalize and stop here, WITHOUT resetting width back to
+    // 15 or restarting growTimer. Without this, a back-to-back
+    // start()/done()/start() (e.g. a page's loading flag going through two
+    // sequential fetch phases, or a dev-mode Strict Mode effect replay)
+    // still visibly snaps the bar back down and regrows it for what's
+    // really one continuous load, even though the "complete and hide" half
+    // of that glitch is already covered by cancelling the finalize below.
+    const wasPendingFinalize = finalizeTimerRef.current !== null;
+    if (finalizeTimerRef.current) { clearTimeout(finalizeTimerRef.current); finalizeTimerRef.current = null; }
+    if (activeCount.current > 1 || wasPendingFinalize) return;
 
     if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
     setVisible(true);
@@ -101,12 +116,20 @@ export function ProgressBarProvider({ children }: { children: ReactNode }) {
     activeCount.current = Math.max(0, activeCount.current - 1);
     if (activeCount.current > 0) return;
 
-    if (growTimerRef.current) { clearInterval(growTimerRef.current); growTimerRef.current = null; }
-    setWidth(100);
-    hideTimerRef.current = setTimeout(() => {
-      setVisible(false);
-      setWidth(0);
-    }, 300);
+    // Give a closely-following start() a brief window to arrive and cancel
+    // this (via finalizeTimerRef above) before actually finalizing -- see
+    // start()'s comment for the back-to-back-loads case this covers. 50ms
+    // is well under human perception for the (common, single-phase-load)
+    // case where nothing cancels it.
+    finalizeTimerRef.current = setTimeout(() => {
+      finalizeTimerRef.current = null;
+      if (growTimerRef.current) { clearInterval(growTimerRef.current); growTimerRef.current = null; }
+      setWidth(100);
+      hideTimerRef.current = setTimeout(() => {
+        setVisible(false);
+        setWidth(0);
+      }, 300);
+    }, 50);
   }, []);
 
   const startNavigation = useCallback(() => {
@@ -121,6 +144,7 @@ export function ProgressBarProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => {
     if (growTimerRef.current) clearInterval(growTimerRef.current);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    if (finalizeTimerRef.current) clearTimeout(finalizeTimerRef.current);
   }, []);
 
   const contextValue = useMemo(
