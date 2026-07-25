@@ -8,8 +8,18 @@ import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSiz
 // Which company_table_values column stores a given field_type's value.
 export const valueColumnFor = getValueColumn;
 
-const inputClassFor = (size: PillSize) =>
-  `w-full bg-slate-50 border border-slate-200 rounded-full font-medium outline-none focus:ring-2 focus:ring-indigo-100 ${PILL_SIZE_CLASSES[size]}`;
+// 'pill' is the rounded, bordered, placeholder-labelled look used by filter
+// bars/quick-add forms (real standalone form controls). 'plain' is a flat
+// spreadsheet-cell look with no border/background/placeholder/field-label
+// decoration -- used by DashboardGrid, where the column header already
+// names the field and every row (filled or still blank) should read like an
+// actual spreadsheet cell, not a little form floating in a table.
+type Variant = 'pill' | 'plain';
+
+const inputClassFor = (size: PillSize, variant: Variant) =>
+  variant === 'plain'
+    ? 'w-full bg-transparent outline-none font-medium text-[12px] text-slate-700 px-0.5 py-1 rounded-sm focus:ring-2 focus:ring-indigo-100'
+    : `w-full bg-slate-50 border border-slate-200 rounded-full font-medium outline-none focus:ring-2 focus:ring-indigo-100 ${PILL_SIZE_CLASSES[size]}`;
 
 interface Props {
   field: CustomTableField;
@@ -24,27 +34,34 @@ interface Props {
   // Undefined means 'md', the size every existing caller (grid cells, etc.)
   // already renders at.
   size?: PillSize;
+  // See Variant above. Undefined means 'pill', what every existing caller
+  // besides DashboardGrid already renders at.
+  variant?: Variant;
 }
 
 // Renders the appropriate input widget for a custom-table field, bound to a
 // value, committing on blur/change. Reuses the field_type conventions shared
 // across the schema system (see components/schema/types.ts).
-export default function FieldValueInput({ field, value, onCommit, disabled, displayValue, size = 'md' }: Props) {
+export default function FieldValueInput({ field, value, onCommit, disabled, displayValue, size = 'md', variant = 'pill' }: Props) {
   const type = field.field_type;
-  const inputClass = inputClassFor(size);
+  const inputClass = inputClassFor(size, variant);
+  const plain = variant === 'plain';
 
   // Computed fields are never hand-edited — see supabase/company_table_fields_formula.sql.
   if (field.formula_type) {
     return (
-      <div className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium text-slate-500 truncate" title="Auto-calculated">
-        {value !== null && value !== undefined && value !== '' ? String(value) : '—'}
+      <div
+        className={plain ? 'w-full text-[12px] font-medium text-slate-500 truncate px-0.5 py-1' : 'w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium text-slate-500 truncate'}
+        title="Auto-calculated"
+      >
+        {value !== null && value !== undefined && value !== '' ? String(value) : (plain ? '' : '—')}
       </div>
     );
   }
 
   if (type === 'boolean') {
     return (
-      <label className="flex items-center gap-2 cursor-pointer">
+      <label className={`flex items-center ${plain ? '' : 'gap-2'} cursor-pointer`}>
         <input
           type="checkbox"
           checked={!!value}
@@ -52,7 +69,10 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
           onChange={e => onCommit(e.target.checked)}
           className="w-4 h-4 accent-indigo-600"
         />
-        <span className="text-[11px] font-medium text-slate-500">{field.label}</span>
+        {/* Grid columns already name the field via their header -- a
+            repeated visible label here would be exactly the "help text"
+            a blank spreadsheet cell shouldn't show. Kept for a11y only. */}
+        <span className={plain ? 'sr-only' : 'text-[11px] font-medium text-slate-500'}>{field.label}</span>
       </label>
     );
   }
@@ -65,7 +85,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         onChange={e => onCommit(e.target.value || null)}
         className={`${inputClass} appearance-none`}
       >
-        <option value="">—</option>
+        <option value="">{plain ? '' : '—'}</option>
         {(field.select_options || []).map(opt => (
           <option key={opt} value={opt}>{opt}</option>
         ))}
@@ -93,7 +113,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         disabled={disabled}
         onBlur={e => onCommit(e.target.value === '' ? null : Number(e.target.value))}
         className={inputClass}
-        placeholder={field.label}
+        placeholder={plain ? undefined : field.label}
       />
     );
   }
@@ -113,8 +133,9 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
           values={Array.isArray(value) ? value : []}
           onSelectMulti={ids => onCommit(ids)}
           disabled={disabled}
-          placeholder={field.label}
+          placeholder={plain ? '' : field.label}
           size={size}
+          variant={variant}
         />
       );
     }
@@ -130,9 +151,10 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         value={value || null}
         onSelect={id => onCommit(id)}
         disabled={disabled}
-        placeholder={field.label}
+        placeholder={plain ? '' : field.label}
         initialLabel={displayValue}
         size={size}
+        variant={variant}
       />
     );
   }
@@ -145,7 +167,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
       disabled={disabled}
       onBlur={e => onCommit(e.target.value || null)}
       className={inputClass}
-      placeholder={field.label}
+      placeholder={plain ? undefined : field.label}
     />
   );
 }

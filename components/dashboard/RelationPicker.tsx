@@ -141,6 +141,11 @@ interface Props {
   // Visual size (padding/text) -- see lib/dashboardWidgets/pillSize.ts.
   // Undefined means 'md', the size every existing caller already renders at.
   size?: PillSize;
+  // 'plain' (DashboardGrid only) drops the rounded pill chrome for a flat
+  // spreadsheet-cell look, and suppresses the closed/empty "Select..."
+  // fallback text -- see FieldValueInput's Variant doc comment. Undefined
+  // means 'pill', what every existing caller already renders at.
+  variant?: 'pill' | 'plain';
 }
 
 // Resolves the primary display field's value (plus an optional second
@@ -341,9 +346,10 @@ export async function warmRelationOptionsCache(): Promise<void> {
 
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
-  value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md',
+  value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md', variant = 'pill',
 }: Props) {
-  const sizeClass = PILL_SIZE_CLASSES[size];
+  const plain = variant === 'plain';
+  const sizeClass = plain ? 'py-1 px-0.5 text-[12px]' : PILL_SIZE_CLASSES[size];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   // The whole candidate list, fetched once per open (see the effect below)
@@ -539,8 +545,8 @@ export default function RelationPicker({
       ? (values || []).map(id => multiLabels[id] ?? options.find(o => o.id === id)?.label).filter(Boolean).join(', ')
       : currentLabel;
     return (
-      <div className={`w-full bg-slate-50 border border-slate-200 rounded-full font-medium text-slate-500 truncate ${sizeClass}`}>
-        {label || '—'}
+      <div className={plain ? `w-full font-medium text-slate-500 truncate ${sizeClass}` : `w-full bg-slate-50 border border-slate-200 rounded-full font-medium text-slate-500 truncate ${sizeClass}`}>
+        {label || (plain ? '' : '—')}
       </div>
     );
   }
@@ -559,7 +565,9 @@ export default function RelationPicker({
       <div ref={containerRef} className="relative w-full">
         <div
           onClick={() => setOpen(true)}
-          className={`w-full min-h-[38px] bg-slate-50 border border-slate-200 rounded-2xl font-medium outline-none cursor-pointer flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`}
+          className={plain
+            ? `w-full min-h-[28px] font-medium outline-none cursor-pointer flex flex-wrap items-center gap-1.5 rounded-sm focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`
+            : `w-full min-h-[38px] bg-slate-50 border border-slate-200 rounded-2xl font-medium outline-none cursor-pointer flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`}
         >
           {selectedIds.map(id => (
             <span key={id} className="flex items-center gap-1 bg-indigo-50 text-indigo-700 rounded-full pl-2.5 pr-1.5 py-1 text-[11px] font-semibold">
@@ -606,10 +614,10 @@ export default function RelationPicker({
                 setQuery('');
                 if (e.key === 'Tab') setOpen(false);
               }}
-              placeholder={selectedIds.length ? '' : (placeholder || 'Search...')}
+              placeholder={selectedIds.length ? '' : (placeholder || (plain ? '' : 'Search...'))}
               className="flex-1 min-w-[80px] bg-transparent outline-none"
             />
-          ) : selectedIds.length === 0 ? (
+          ) : selectedIds.length === 0 && (placeholder || !plain) ? (
             <span className="text-slate-400">{placeholder || 'Select...'}</span>
           ) : null}
         </div>
@@ -665,7 +673,9 @@ export default function RelationPicker({
     <div ref={containerRef} className="relative w-full">
       <div
         onClick={() => setOpen(true)}
-        className={`w-full bg-slate-50 border border-slate-200 rounded-full font-medium outline-none cursor-pointer flex items-center justify-between gap-2 focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`}
+        className={plain
+          ? `w-full font-medium outline-none cursor-pointer flex items-center justify-between gap-2 rounded-sm focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`
+          : `w-full bg-slate-50 border border-slate-200 rounded-full font-medium outline-none cursor-pointer flex items-center justify-between gap-2 focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`}
       >
         {open ? (
           <input
@@ -698,12 +708,12 @@ export default function RelationPicker({
               if (e.key === 'Enter') e.preventDefault();
               selectOption(target);
             }}
-            placeholder={placeholder || 'Search...'}
+            placeholder={placeholder || (plain ? '' : 'Search...')}
             className="w-full bg-transparent outline-none"
           />
         ) : (
           <span className={`truncate ${currentLabel ? 'text-slate-700' : 'text-slate-400'}`}>
-            {currentLabel || placeholder || 'Select...'}
+            {currentLabel || placeholder || (plain ? '' : 'Select...')}
           </span>
         )}
         {currentLabel && !open && (

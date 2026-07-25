@@ -323,6 +323,7 @@ export default function DashboardGrid({
                     onCommit={v => handleCellCommit(r.id, f, v)}
                     disabled={readOnly}
                     displayValue={r.displayValues[f.field_key]}
+                    variant="plain"
                   />
                 </td>
               ))}
@@ -346,6 +347,7 @@ export default function DashboardGrid({
                       value={draft[f.field_key] ?? null}
                       onCommit={v => handleDraftCommit(i, f, v)}
                       disabled={!!draftSaving[i]}
+                      variant="plain"
                     />
                   </td>
                 ))}
