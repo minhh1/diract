@@ -17,7 +17,8 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
   const router = useRouter();
   const { companyId, userId, isAdmin } = useCompany();
   const {
-    dashboard, sourceKind, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, filters, setFilter, refetch, updateWidget,
+    dashboard, sourceKind, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, filters, setFilter,
+    quickAddPrefill, setQuickAddPrefill, refetch, updateWidget,
   } = useDashboardData(slug);
 
   // Fullscreen = the whole dashboard (every widget), not any single one --
@@ -107,6 +108,8 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
               userId={userId}
               filters={filters}
               setFilter={setFilter}
+              quickAddPrefill={quickAddPrefill}
+              onQuickAddPrefill={setQuickAddPrefill}
               onChanged={refetch}
               mode="view"
               isLedger={tableDef?.is_ledger}

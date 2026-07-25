@@ -9,6 +9,7 @@ import { useState } from "react";
 import { X, Plus } from "lucide-react";
 import FieldPickerList from "./FieldPickerList";
 import RelationPicker from "../RelationPicker";
+import { useCompany } from "@/components/CompanyContext";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { DashboardWidget, SummaryTileWidget, TileCondition, ChartSeriesConfig } from "@/lib/dashboardWidgets/types";
 import { isRelationType, isNumericType, isDateType, operatorsForType, aggregatesForType } from "@/lib/schema/fieldCapabilities";
@@ -75,6 +76,105 @@ function PillStyleControls({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Creates/manages the public_task_pages row a PublicTaskPageWidget owns
+// (see lib/dashboardWidgets/types.ts) -- unlike every other widget's config,
+// this one makes a real API call from inside the config panel itself
+// (Settings -> Public task pages' own create flow works the same way),
+// since there's nothing meaningful to preview locally before the page
+// actually exists server-side.
+function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | null; onPageIdChange: (id: string) => void }) {
+  const [title, setTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [revoked, setRevoked] = useState(false);
+
+  const handleCreate = async () => {
+    if (!title.trim()) { setError('Title is required'); return; }
+    setSaving(true);
+    setError(null);
+    const res = await fetch('/api/public-tasks/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title, scope: 'my_and_unassigned',
+        columns: ['project_name', 'due_date', 'status'],
+        expiresAt: null,
+      }),
+    });
+    const json = await res.json();
+    setSaving(false);
+    if (!res.ok) { setError(json.error || 'Failed to create page'); return; }
+    onPageIdChange(json.pageId);
+  };
+
+  const handleRevoke = async () => {
+    if (!pageId || !window.confirm('Revoke this page? The link will stop working immediately.')) return;
+    setRevoking(true);
+    await fetch(`/api/public-tasks/${pageId}/revoke`, { method: 'PATCH' });
+    setRevoking(false);
+    setRevoked(true);
+  };
+
+  if (!pageId) {
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-slate-400">
+          Shows tasks assigned to whoever opens this page, plus unallocated ones — anyone with the link can also assign a new task to any company member, not just themself. Only visible/actionable within projects the viewer has access to.
+        </p>
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Title</label>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. My tasks"
+            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+          />
+        </div>
+        {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
+        <button
+          onClick={handleCreate}
+          disabled={saving}
+          className="w-full py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all"
+        >
+          {saving ? 'Creating...' : 'Create page'}
+        </button>
+      </div>
+    );
+  }
+
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/public/tasks/${pageId}` : `/public/tasks/${pageId}`;
+  return (
+    <div className="space-y-3">
+      {revoked ? (
+        <p className="text-[11px] text-red-500 font-medium">Revoked — the link no longer works.</p>
+      ) : (
+        <>
+          <div className="px-4 py-3 bg-slate-50 rounded-2xl">
+            <code className="text-[11px] text-slate-600 break-all">{url}</code>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+            >
+              {copied ? 'Copied' : 'Copy link'}
+            </button>
+            <button
+              onClick={handleRevoke}
+              disabled={revoking}
+              className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-red-300 hover:text-red-600 disabled:opacity-50 transition-all"
+            >
+              {revoking ? 'Revoking...' : 'Revoke'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -232,6 +332,7 @@ function normalizeWidget(widget: DashboardWidget): DashboardWidget {
 }
 
 export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, onClose }: Props) {
+  const { tableLabelOverrides } = useCompany();
   const [draft, setDraft] = useState<DashboardWidget>(() => normalizeWidget(widget));
 
   const numericFields = fields.filter(f => isNumericType(f.field_type));
@@ -784,6 +885,59 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
         {(draft.type === 'trust_reconciliation' || draft.type === 'ledes_export'
           || draft.type === 'trust_ledger_statement' || draft.type === 'trust_cash_book') && (
           <p className="text-[11px] text-slate-400 italic">No settings — it always reads this dashboard's own table.</p>
+        )}
+
+        {draft.type === 'public_task_page' && (
+          <PublicTaskPageConfig
+            pageId={draft.config.pageId}
+            onPageIdChange={pageId => updateConfig({ pageId })}
+          />
+        )}
+
+        {draft.type === 'my_tasks_button' && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Button label</label>
+              <input
+                value={draft.config.label ?? ''}
+                onChange={e => updateConfig({ label: e.target.value })}
+                placeholder="My Tasks"
+                className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Description field</label>
+              <select
+                value={draft.config.descriptionFieldId ?? ''}
+                onChange={e => updateConfig({ descriptionFieldId: e.target.value || null })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+              >
+                <option value="">None -- required before Convert works</option>
+                {fields.filter(f => !f.formula_type).map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1 px-1">
+                A task's (optionally AI-rewritten) text is loaded into this field on the quick-add form.
+              </p>
+            </div>
+            <div>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                {tableLabelOverrides.projects?.singular || 'Matter'} field (optional)
+              </label>
+              <select
+                value={draft.config.matterFieldId ?? ''}
+                onChange={e => updateConfig({ matterFieldId: e.target.value || null })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+              >
+                <option value="">None</option>
+                {fields.filter(f => isRelationType(f.field_type) && f.linked_system_table === 'projects').map(f => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1 px-1">
+                When a task is linked to a {(tableLabelOverrides.projects?.singular || 'Matter').toLowerCase()}, it's also loaded into this field.
+              </p>
+            </div>
+          </div>
         )}
 
         {draft.type === 'trust_aged_balances' && (

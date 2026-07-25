@@ -13,6 +13,8 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   trust_ledger_statement: { label: 'Trust ledger statement', icon: 'FileText' },
   trust_cash_book: { label: 'Trust cash book', icon: 'BookOpen' },
   trust_aged_balances: { label: 'Dormant trust balances', icon: 'AlertTriangle' },
+  public_task_page: { label: 'Public task page', icon: 'Share2' },
+  my_tasks_button: { label: 'My Tasks button', icon: 'ListChecks' },
 };
 
 // Sensible default size (grid units) for a freshly-added widget of each type;
@@ -30,6 +32,8 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   trust_ledger_statement: { w: 12, h: 8 },
   trust_cash_book: { w: 12, h: 8 },
   trust_aged_balances: { w: 12, h: 6 },
+  public_task_page: { w: 4, h: 3 },
+  my_tasks_button: { w: 3, h: 2 },
 };
 
 export function createWidget(type: DashboardWidgetType, existingWidgets: DashboardWidget[]): DashboardWidget {
@@ -49,5 +53,7 @@ export function createWidget(type: DashboardWidgetType, existingWidgets: Dashboa
     case 'trust_ledger_statement': return { ...base, type, config: {} };
     case 'trust_cash_book': return { ...base, type, config: {} };
     case 'trust_aged_balances': return { ...base, type, config: { dormantDays: 365 } };
+    case 'public_task_page': return { ...base, type, config: { pageId: null } };
+    case 'my_tasks_button': return { ...base, type, config: { label: '', descriptionFieldId: null, matterFieldId: null } };
   }
 }

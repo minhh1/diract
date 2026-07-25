@@ -15,6 +15,8 @@ import LedesExportWidget from "./LedesExportWidget";
 import TrustLedgerStatementWidget from "./TrustLedgerStatementWidget";
 import TrustCashBookWidget from "./TrustCashBookWidget";
 import TrustAgedBalancesWidget from "./TrustAgedBalancesWidget";
+import PublicTaskPageWidget from "./PublicTaskPageWidget";
+import MyTasksButtonWidget from "./MyTasksButtonWidget";
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -71,11 +73,19 @@ interface Props {
   // quick_add_form/grid widgets below -- see DashboardQuickAddForm's doc
   // comment. Undefined everywhere except record-scoped dashboard tabs.
   fixedValues?: Record<string, any>;
+  // A field_key -> value map waiting to be picked up by THIS dashboard's
+  // quick_add_form widget -- see useDashboardData's quickAddPrefill doc
+  // comment. Undefined in builder-preview contexts (no live quick-add form
+  // there to receive it anyway).
+  quickAddPrefill?: Record<string, any> | null;
+  // Sets/clears quickAddPrefill -- called by my_tasks_button's "Convert" to
+  // hand values off, and by quick_add_form itself once it's applied them.
+  onQuickAddPrefill?: (values: Record<string, any> | null) => void;
 }
 
 export default function DashboardWidgetRenderer({
   widget, sourceKind, fields, fieldById, records, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
-  isAdmin, onWidgetChange, fixedValues,
+  isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill,
 }: Props) {
   switch (widget.type) {
     case 'heading': {
@@ -121,6 +131,8 @@ export default function DashboardWidgetRenderer({
           fieldLayout={widget.config.fieldLayout}
           isAdmin={mode === 'view' ? isAdmin : undefined}
           onReorder={onWidgetChange ? (fieldIds) => onWidgetChange({ ...widget, config: { ...widget.config, fieldIds } }) : undefined}
+          prefill={quickAddPrefill}
+          onPrefillApplied={onQuickAddPrefill ? () => onQuickAddPrefill(null) : undefined}
         />
       );
 
@@ -191,6 +203,31 @@ export default function DashboardWidgetRenderer({
 
     case 'trust_aged_balances':
       return <TrustAgedBalancesWidget records={allRecords} dormantDays={widget.config.dormantDays} />;
+
+    case 'public_task_page':
+      return <PublicTaskPageWidget pageId={widget.config.pageId} />;
+
+    case 'my_tasks_button': {
+      if (mode === 'preview') {
+        return (
+          <div className="w-full h-full min-h-[56px] flex items-center justify-center px-4 py-3 bg-white border border-dashed border-slate-200 rounded-2xl text-[11px] text-slate-300 italic text-center">
+            My Tasks button preview (disabled while editing)
+          </div>
+        );
+      }
+      const descriptionField = widget.config.descriptionFieldId ? fieldById.get(widget.config.descriptionFieldId) : undefined;
+      const matterField = widget.config.matterFieldId ? fieldById.get(widget.config.matterFieldId) : undefined;
+      return (
+        <MyTasksButtonWidget
+          label={widget.config.label || 'My Tasks'}
+          companyId={companyId}
+          userId={userId}
+          descriptionFieldKey={descriptionField?.field_key ?? null}
+          matterFieldKey={matterField?.field_key ?? null}
+          onConvert={values => onQuickAddPrefill?.(values)}
+        />
+      );
+    }
 
     default:
       return null;

@@ -259,10 +259,44 @@ export interface TrustAgedBalancesWidget extends BaseWidget {
   config: { dormantDays: number };
 }
 
+// Generates (or manages) a shareable public_task_pages link scoped to
+// "assigned to me, plus unallocated" (see app/api/public-tasks/create/route.ts
+// and app/api/public-tasks/[pageId]/route.ts's 'my_and_unassigned' scope) --
+// unlike the self/team/company scopes creatable from Settings -> Public task
+// pages, this one lets the viewer assign new tasks to anyone, not just
+// themself, while still only ever showing/accepting projects they actually
+// have access to. pageId is null until the widget's own "Create" action
+// makes one; from then on it just links to/manages that one page, so it's
+// canvas state worth persisting, not re-derivable from anything else.
+export interface PublicTaskPageWidget extends BaseWidget {
+  type: 'public_task_page';
+  config: { pageId: string | null };
+}
+
+// A button that opens a drawer listing the viewer's own assigned tasks
+// (tasks.assignee_id = the signed-in user, not company-wide) and lets them
+// turn one into a record on THIS dashboard's bound table in one click --
+// e.g. a lawyer's task "Draft caveat letter for Smith matter" becomes a
+// Time Entry with that text as the Description. descriptionFieldId is
+// which field on this table receives the task's (optionally AI-rewritten)
+// text; matterFieldId is an optional relation field that receives the
+// task's linked project id when both the task has one and this table has
+// somewhere to put it (e.g. a Matter field). Neither is resolved/validated
+// here -- see MyTasksButtonWidget's own handling of a null/deleted field.
+export interface MyTasksButtonWidget extends BaseWidget {
+  type: 'my_tasks_button';
+  config: {
+    label?: string; // undefined/empty means "My Tasks", the default
+    descriptionFieldId: string | null;
+    matterFieldId: string | null;
+  };
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
   | TrustReconciliationWidget | LedesExportWidget
-  | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget;
+  | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
+  | PublicTaskPageWidget | MyTasksButtonWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];

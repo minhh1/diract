@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Loader2, GripVertical } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
 import { createRecord } from "@/lib/services/customTableService";
@@ -38,6 +38,18 @@ interface Props {
   // grid's isAdmin.
   isAdmin?: boolean;
   onReorder?: (fieldIds: string[]) => void;
+  // Field_key -> value pairs to load into the VISIBLE, still-editable form
+  // state -- unlike fixedValues above (silently merged in only at submit),
+  // this is meant to be seen and adjusted before Add is clicked, e.g. a
+  // my_tasks_button widget handing off a task's text as a starting
+  // Description. Applied once per distinct non-null value via the effect
+  // below, then immediately reported back via onPrefillApplied so the
+  // caller can clear its own pending state -- without that round-trip, the
+  // same object reference re-applying on every unrelated re-render would
+  // permanently pin these fields, overwriting anything the viewer typed
+  // afterward.
+  prefill?: Record<string, any> | null;
+  onPrefillApplied?: () => void;
 }
 
 // Live-computes every formula field's preview value from the in-progress
@@ -115,6 +127,7 @@ function FieldSlot({
 
 export default function DashboardQuickAddForm({
   tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
+  prefill, onPrefillApplied,
 }: Props) {
   const quickAddFields = quickAddFieldIds
     .map(id => fields.find(f => f.id === id))
@@ -144,6 +157,20 @@ export default function DashboardQuickAddForm({
   // resetting `values` state alone doesn't touch what's actually showing in
   // the DOM. Forcing a remount is what actually clears them after Add.
   const [formGeneration, setFormGeneration] = useState(0);
+
+  // See Props.prefill's doc comment -- applies once, then immediately hands
+  // the "consumed" signal back so the caller clears its own pending state.
+  // formGeneration bumps too, same as a successful Add: the fields this
+  // touches (e.g. Description) are uncontrolled (defaultValue), so merely
+  // updating `values` wouldn't touch what's actually showing in the DOM
+  // without also forcing FieldSlot's remount.
+  useEffect(() => {
+    if (!prefill) return;
+    setValues(prev => ({ ...prev, ...prefill }));
+    setFormGeneration(g => g + 1);
+    onPrefillApplied?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   if (quickAddFields.length === 0) return null;
 

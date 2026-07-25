@@ -54,6 +54,16 @@ export function useDashboardData(dashboardSlug: string) {
   const [sourceTableSlug, setSourceTableSlug] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [filters, setFilters] = useState<Record<string, any>>({});
+  // A field_key -> value map waiting to be picked up by this dashboard's
+  // OWN quick_add_form widget -- the one channel a my_tasks_button widget
+  // (or anything else that wants to hand off a draft record) has to reach
+  // a DIFFERENT widget instance on the same page. Set once by whichever
+  // widget produced it, cleared by DashboardQuickAddForm itself the moment
+  // it applies the values (see its onPrefillApplied callback) so it never
+  // re-applies on a later unrelated re-render. Null (not just absent) is
+  // the "nothing pending" state, matching filters' own convention of a
+  // real value in the map meaning "active".
+  const [quickAddPrefill, setQuickAddPrefill] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -232,6 +242,8 @@ export function useDashboardData(dashboardSlug: string) {
     loading: dashboardLoading || tableLoading,
     filters,
     setFilter,
+    quickAddPrefill,
+    setQuickAddPrefill,
     summaryTiles,
     chartData,
     // Record-level mutations (add/edit/delete) only ever need the source

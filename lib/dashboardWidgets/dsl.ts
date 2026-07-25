@@ -21,6 +21,8 @@
 //   trust_ledger_statement
 //   trust_cash_book
 //   trust_aged_balances [dormant_days=<n>]
+//   public_task_page
+//   my_tasks_button [label="<text>"] [description=<key>] [matter=<key>]
 //
 // One or more `series` lines directly after a `chart` line add measures to
 // it (a multi-series chart) instead of starting new widgets -- e.g.
@@ -79,6 +81,8 @@ const KEYWORD_TO_TYPE: Record<string, DashboardWidgetType> = {
   trust_ledger_statement: 'trust_ledger_statement',
   trust_cash_book: 'trust_cash_book',
   trust_aged_balances: 'trust_aged_balances',
+  public_task_page: 'public_task_page',
+  my_tasks_button: 'my_tasks_button',
 };
 
 function buildFieldLookup(fields: CustomTableField[]) {
@@ -330,6 +334,19 @@ export function parseDSL(source: string, fields: CustomTableField[]): DslParseRe
         widgets.push({ id, type, layout, config: { dormantDays } });
         break;
       }
+      // pageId is canvas-only state (which public_task_pages row this
+      // widget owns) -- not something meaningful to type in code mode, so a
+      // fresh one always parses as "not yet created", same as dropping it
+      // on serialize below.
+      case 'public_task_page':
+        widgets.push({ id, type, layout, config: { pageId: null } });
+        break;
+      case 'my_tasks_button': {
+        const descriptionFieldId = kv.description ? resolveFieldToken(kv.description, lineNo) : null;
+        const matterFieldId = kv.matter ? resolveFieldToken(kv.matter, lineNo) : null;
+        widgets.push({ id, type, layout, config: { label: kv.label, descriptionFieldId, matterFieldId } });
+        break;
+      }
     }
 
     y += h;
@@ -420,6 +437,15 @@ export function serializeToDSL(widgets: DashboardWidget[], fields: CustomTableFi
           return `trust_cash_book${widthSuffix(w.layout.w)}`;
         case 'trust_aged_balances':
           return `trust_aged_balances dormant_days=${w.config.dormantDays}${widthSuffix(w.layout.w)}`;
+        // pageId dropped -- canvas-only state, see the parse side above.
+        case 'public_task_page':
+          return `public_task_page${widthSuffix(w.layout.w)}`;
+        case 'my_tasks_button': {
+          const label = w.config.label ? ` label="${w.config.label}"` : '';
+          const description = w.config.descriptionFieldId ? ` description=${fieldKey(w.config.descriptionFieldId)}` : '';
+          const matter = w.config.matterFieldId ? ` matter=${fieldKey(w.config.matterFieldId)}` : '';
+          return `my_tasks_button${label}${description}${matter}${widthSuffix(w.layout.w)}`;
+        }
       }
     })
     .join('\n');
