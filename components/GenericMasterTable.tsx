@@ -15,7 +15,7 @@ import { useTableSchema } from "@/lib/hooks/useTableSchema";
 import { useRelationalEditFields } from "@/lib/hooks/useRelationalEditFields";
 import { useTableRealtime } from "@/lib/hooks/useTableRealtime";
 import { useTableRelations } from "@/lib/hooks/useTableRelations";
-import { useRelatedFields, cleanLabel } from "@/lib/hooks/useRelatedFields";
+import { useRelatedFields, cleanFullLabel } from "@/lib/hooks/useRelatedFields";
 import { useRelationSections } from "@/lib/hooks/useRelationSections";
 import { deriveLabel } from "@/lib/services/schemaService";
 import { propertyService } from "@/lib/services/propertyService";
@@ -527,7 +527,7 @@ function GenericMasterTableInner({
   const relationPathLabel = useCallback((colId: string): string | null => {
     const related = relatedFields.byPath.get(colId);
     if (!related) return null;
-    return cleanLabel(related.label);
+    return cleanFullLabel(related.label);
   }, [relatedFields.byPath]);
 
   const resolveColLabel = useCallback((colId: string): string => {
@@ -544,8 +544,10 @@ function GenericMasterTableInner({
       if (full) {
         // Column header shows just the field — the section stays visible
         // via the tooltip (resolveColTooltip) to avoid repeating it twice.
+        // Works the same for a depth-2 chain ("A — B — C") as depth-1
+        // ("A — B") -- the leaf is always the last segment.
         const parts = full.split(' — ');
-        return parts.length === 2 ? parts[1] : full;
+        return parts[parts.length - 1];
       }
       return colId.replace('.', ' ').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
@@ -605,11 +607,18 @@ function GenericMasterTableInner({
       navigateOnly: true as const,
       subFields: s.fields,
     }));
+    // useRelationSections' fields are all "this record can have many of
+    // these" child relations (sub-projects, documents, checklist items...) --
+    // a single table cell can't meaningfully show a many-valued relation, so
+    // their fields are Expand-only (see ColumnConfigDrawer.tsx's
+    // expandOnly). manyRelation flags the folder itself for the same "many"
+    // badge, replacing the title's old "(Expand)" suffix.
     const relationFolders = relationSections.map((s: any) => ({
       id: `__related__:${s.label ?? s.title}`,
-      label: s.label ?? s.title,
+      label: (s.label ?? s.title).replace(/\s*\(Expand\)$/, ''),
       navigateOnly: true as const,
-      subFields: (s.fields ?? s.cols ?? []),
+      manyRelation: true as const,
+      subFields: (s.fields ?? s.cols ?? []).map((f: any) => ({ ...f, expandOnly: true })),
     }));
 
     const customSection = customFieldCols.length > 0

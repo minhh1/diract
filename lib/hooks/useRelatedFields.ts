@@ -26,11 +26,8 @@ export interface RelatedFieldsResult {
 
 const KNOWN_ACRONYMS = new Set(['abn', 'acn', 'tfn', 'bsb', 'gst', 'id', 'nab']);
 
-export function cleanLabel(raw: string): string {
-  const parts = raw.split(' — ');
-  if (parts.length !== 2) return raw;
-  const [section, field] = parts;
-  const fixedField = field
+function fixCasing(segment: string): string {
+  return segment
     .split(' ')
     .map(word =>
       KNOWN_ACRONYMS.has(word.toLowerCase())
@@ -38,7 +35,24 @@ export function cleanLabel(raw: string): string {
         : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     )
     .join(' ');
-  return `${section} — ${fixedField}`;
+}
+
+// The RPC's raw label is the whole chain (e.g. "Parent Property — Council
+// Entity — Name" for a depth-2 relation) -- once a field is shown inside its
+// own drill-in folder (see ColumnConfigDrawer.tsx), repeating that entire
+// chain as the row's own label just runs off the edge of the panel. Only the
+// LAST segment is the field itself; the rest is exactly the folder the user
+// already drilled through to get here.
+export function cleanLabel(raw: string): string {
+  const parts = raw.split(' — ');
+  return fixCasing(parts[parts.length - 1]);
+}
+
+// Same chain, but keeping every segment -- for contexts that show the field
+// without the folder context alongside it (e.g. a grid column's hover
+// tooltip), where the section still needs to be spelled out.
+export function cleanFullLabel(raw: string): string {
+  return raw.split(' — ').map(fixCasing).join(' — ');
 }
 
 const cache = new Map<string, RelatedField[]>();

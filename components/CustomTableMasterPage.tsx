@@ -155,6 +155,12 @@ function CustomColumnDrawer({
                 const visible = visibleFieldIds.has(field.id);
                 const canDrillIn = RELATION_FIELD_TYPES.includes(field.field_type)
                   && !!(field.linked_table_id || field.linked_system_table);
+                // allow_multiple means this record can link to MANY target
+                // records -- a single table cell can't meaningfully show a
+                // many-valued relation, so it can't be added as a column
+                // itself (its own fields drilled into below still can be,
+                // since those get joined across every linked record).
+                const isMany = field.allow_multiple;
                 return (
                   <div
                     key={field.id}
@@ -163,17 +169,26 @@ function CustomColumnDrawer({
                     }`}
                   >
                     <button
-                      onClick={() => onToggleNative(field.id)}
-                      className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                      onClick={isMany ? undefined : () => onToggleNative(field.id)}
+                      disabled={isMany}
+                      title={isMany ? 'Multi-value relations can\'t be added as a table column' : undefined}
+                      className={`flex items-center gap-3 flex-1 min-w-0 text-left ${isMany ? 'cursor-default opacity-60' : ''}`}
                     >
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                        visible ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
-                      }`}>
-                        {visible && <div className="w-2 h-2 bg-white rounded-sm" />}
-                      </div>
+                      {!isMany && (
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                          visible ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
+                        }`}>
+                          {visible && <div className="w-2 h-2 bg-white rounded-sm" />}
+                        </div>
+                      )}
                       <span className={`text-[12px] font-medium truncate ${visible ? 'text-indigo-700' : 'text-slate-600'}`}>
                         {field.label}
                       </span>
+                      {isMany && (
+                        <span className="text-[8px] font-bold uppercase tracking-wide text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">
+                          Many
+                        </span>
+                      )}
                       <span className="ml-auto text-[9px] font-bold text-slate-300 uppercase shrink-0">
                         {field.field_type}
                       </span>
@@ -308,10 +323,13 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   // RelatedColumnDef) -- none by default, added via the drill-in picker.
   const [visibleRelated, setVisibleRelated] = useState<RelatedColumnDef[]>([]);
 
-  // Default: first 6 show_in_table fields, or first 6 fields
+  // Default: first 6 show_in_table fields, or first 6 fields -- excluding
+  // allow_multiple relations, which can't be shown as a table column at all
+  // (see CustomColumnDrawer's isMany).
   const defaultVisibleIds = useMemo(() => {
-    const preferred = fields.filter(f => f.show_in_table).slice(0, 6);
-    const fallback = fields.slice(0, 6);
+    const eligible = fields.filter(f => !f.allow_multiple);
+    const preferred = eligible.filter(f => f.show_in_table).slice(0, 6);
+    const fallback = eligible.slice(0, 6);
     return new Set((preferred.length > 0 ? preferred : fallback).map(f => f.id));
   }, [fields]);
 
