@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Save, Lock, Check } from "lucide-react";
+import { X, Save, Lock, Check, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 import FilterPanel from "@/components/FilterPanel";
 import type { ActiveFilter } from "@/lib/types/filters";
 
@@ -10,6 +10,20 @@ interface Field {
   id: string;
   label: string;
   fieldType?: string;
+  // Present (and non-empty, or a loader is given) on a relation field's row
+  // -- clicking that row navigates into these instead of toggling it
+  // directly, replacing the old design where every related table's fields
+  // were dumped into their own always-visible section on the same page.
+  // Either the fields themselves (already fetched, e.g. system tables'
+  // depth-2 related-fields RPC) or a lazy loader (custom tables, which have
+  // no such precomputed data) -- never both.
+  subFields?: Field[];
+  loadSubFields?: () => Promise<Field[]>;
+  // True for a synthetic "folder" row standing in for a whole related
+  // table (e.g. "Client") that isn't itself a real column on this table --
+  // hides the Table/Expand toggles (there's nothing to toggle) and makes
+  // the entire row a drill-in target instead of just the chevron button.
+  navigateOnly?: boolean;
 }
 
 interface Section {
@@ -40,6 +54,91 @@ interface Props {
 
 type ActiveTab = 'columns' | 'filters';
 
+// One level of the file-explorer-style column picker -- either the root
+// (every top-level section) or one relation field's own fields, pushed by
+// drilling in. `crumbLabel` is what shows in the breadcrumb trail for this
+// level; the root has none.
+interface DrillLevel {
+  crumbLabel: string;
+  fields: Field[];
+}
+
+function FieldRow({
+  field, inTable, inExpand, isAdmin, onToggle, onDrillIn, drilling,
+}: {
+  field: Field;
+  inTable: boolean;
+  inExpand: boolean;
+  isAdmin: boolean;
+  onToggle: (target: 'table' | 'expand' | 'none') => void;
+  onDrillIn: () => void;
+  drilling: boolean;
+}) {
+  const canDrillIn = !!(field.subFields || field.loadSubFields);
+
+  if (field.navigateOnly) {
+    return (
+      <button
+        onClick={onDrillIn}
+        className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl hover:bg-indigo-50 transition-all group text-left"
+      >
+        <span className="text-[12px] font-bold text-slate-700 truncate">{field.label}</span>
+        {drilling ? (
+          <Loader2 size={13} className="animate-spin text-slate-300 shrink-0" />
+        ) : (
+          <ChevronRight size={13} className="text-slate-300 group-hover:text-indigo-600 transition-colors shrink-0" />
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between px-3 py-2.5 rounded-2xl hover:bg-slate-50 transition-all group">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="text-[12px] font-medium text-slate-700 truncate">{field.label}</span>
+        {field.fieldType && (
+          <span className="text-[9px] text-slate-400 uppercase font-bold shrink-0">{field.fieldType}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-1 shrink-0 ml-3">
+        <button
+          onClick={isAdmin ? () => onToggle(inTable ? 'none' : 'table') : undefined}
+          disabled={!isAdmin}
+          title={!isAdmin ? 'Only admins can change columns' : inTable ? 'Remove from table' : 'Show in table'}
+          className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-all ${
+            inTable
+              ? 'bg-indigo-600 text-white'
+              : `bg-slate-100 text-slate-400 ${isAdmin ? 'hover:bg-slate-200 opacity-0 group-hover:opacity-100' : 'opacity-40'}`
+          } ${!isAdmin ? 'cursor-default' : ''}`}
+        >
+          Table
+        </button>
+        <button
+          onClick={isAdmin ? () => onToggle(inExpand ? 'none' : 'expand') : undefined}
+          disabled={!isAdmin}
+          title={!isAdmin ? 'Only admins can change columns' : inExpand ? 'Remove from expand' : 'Show in expand panel'}
+          className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-all ${
+            inExpand
+              ? 'bg-slate-600 text-white'
+              : `bg-slate-100 text-slate-400 ${isAdmin ? 'hover:bg-slate-200 opacity-0 group-hover:opacity-100' : 'opacity-40'}`
+          } ${!isAdmin ? 'cursor-default' : ''}`}
+        >
+          Expand
+        </button>
+        {canDrillIn && (
+          <button
+            onClick={onDrillIn}
+            title={`Explore ${field.label}'s fields`}
+            className="p-1 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+          >
+            {drilling ? <Loader2 size={13} className="animate-spin" /> : <ChevronRight size={13} />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ColumnConfigDrawer({
   isOpen, onClose, sections, tableCols, expandCols,
   activePresetName, onToggle,
@@ -54,6 +153,17 @@ export default function ColumnConfigDrawer({
   // Brief "Saved" confirmation on the button — the drawer intentionally
   // stays open on save so filters can keep being tweaked without reopening it.
   const [justSaved, setJustSaved] = useState(false);
+
+  // Drill-in navigation stack for the Columns tab -- [] means "at the root"
+  // (showing `sections` as before). Reset whenever the drawer reopens or the
+  // underlying sections change (e.g. switching table/preset), so a stale
+  // drilled-in view never survives past the data it was built from.
+  const [drillStack, setDrillStack] = useState<DrillLevel[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setDrillStack([]);
+  }, [isOpen, sections]);
 
   useEffect(() => {
     if (!justSaved) return;
@@ -84,7 +194,25 @@ export default function ColumnConfigDrawer({
     setFiltersDirty(true);
   };
 
+  const handleDrillIn = async (field: Field) => {
+    if (field.subFields) {
+      setDrillStack(prev => [...prev, { crumbLabel: field.label, fields: field.subFields! }]);
+      return;
+    }
+    if (!field.loadSubFields) return;
+    setDrillLoading(true);
+    try {
+      const fields = await field.loadSubFields();
+      setDrillStack(prev => [...prev, { crumbLabel: field.label, fields }]);
+    } finally {
+      setDrillLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
+
+  const atRoot = drillStack.length === 0;
+  const currentFields = atRoot ? null : drillStack[drillStack.length - 1].fields;
 
   return (
     <div className="fixed inset-0 z-40 flex">
@@ -145,59 +273,75 @@ export default function ColumnConfigDrawer({
                 </p>
               </div>
             )}
-            {sections.map((section, si) => (
-              <div key={si} className="px-6 py-4 border-b border-slate-50 last:border-0">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                  {section.label}
-                </p>
-                <div className="grid grid-cols-1 gap-1.5">
-                  {(section.fields || []).map((f: Field) => {
-                    const inTable  = tableCols.includes(f.id);
-                    const inExpand = expandCols.includes(f.id);
 
-                    return (
-                      <div key={f.id} className="flex items-center justify-between px-3 py-2.5 rounded-2xl hover:bg-slate-50 transition-all group">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-[12px] font-medium text-slate-700 truncate">{f.label}</span>
-                          {f.fieldType && (
-                            <span className="text-[9px] text-slate-400 uppercase font-bold shrink-0">{f.fieldType}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0 ml-3">
-                          <button
-                            onClick={isAdmin ? () => onToggle(f.id, inTable ? 'none' : 'table') : undefined}
-                            disabled={!isAdmin}
-                            title={!isAdmin ? 'Only admins can change columns' : inTable ? 'Remove from table' : 'Show in table'}
-                            className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-all ${
-                              inTable
-                                ? 'bg-indigo-600 text-white'
-                                : `bg-slate-100 text-slate-400 ${isAdmin ? 'hover:bg-slate-200 opacity-0 group-hover:opacity-100' : 'opacity-40'}`
-                            } ${!isAdmin ? 'cursor-default' : ''}`}
-                          >
-                            Table
-                          </button>
-                          <button
-                            onClick={isAdmin ? () => onToggle(f.id, inExpand ? 'none' : 'expand') : undefined}
-                            disabled={!isAdmin}
-                            title={!isAdmin ? 'Only admins can change columns' : inExpand ? 'Remove from expand' : 'Show in expand panel'}
-                            className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-all ${
-                              inExpand
-                                ? 'bg-slate-600 text-white'
-                                : `bg-slate-100 text-slate-400 ${isAdmin ? 'hover:bg-slate-200 opacity-0 group-hover:opacity-100' : 'opacity-40'}`
-                            } ${!isAdmin ? 'cursor-default' : ''}`}
-                          >
-                            Expand
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {(section.fields || []).length === 0 && (
-                    <p className="text-[11px] text-slate-300 italic py-2">No fields in this section</p>
+            {/* Breadcrumb -- only once drilled into a relation's fields */}
+            {!atRoot && (
+              <div className="px-6 mb-2 flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setDrillStack(prev => prev.slice(0, -1))}
+                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 shrink-0"
+                >
+                  <ChevronLeft size={12} /> Back
+                </button>
+                <span className="text-[10px] text-slate-300 shrink-0">/</span>
+                {drillStack.map((level, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setDrillStack(prev => prev.slice(0, i + 1))}
+                    className={`text-[10px] font-bold ${i === drillStack.length - 1 ? 'text-slate-500' : 'text-indigo-600 hover:text-indigo-700'}`}
+                  >
+                    {level.crumbLabel}{i < drillStack.length - 1 ? ' /' : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {atRoot ? (
+              sections.map((section, si) => (
+                <div key={si} className="px-6 py-4 border-b border-slate-50 last:border-0">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                    {section.label}
+                  </p>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {(section.fields || []).map((f: Field) => (
+                      <FieldRow
+                        key={f.id}
+                        field={f}
+                        inTable={tableCols.includes(f.id)}
+                        inExpand={expandCols.includes(f.id)}
+                        isAdmin={isAdmin}
+                        onToggle={target => onToggle(f.id, target)}
+                        onDrillIn={() => handleDrillIn(f)}
+                        drilling={drillLoading}
+                      />
+                    ))}
+                    {(section.fields || []).length === 0 && (
+                      <p className="text-[11px] text-slate-300 italic py-2">No fields in this section</p>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="px-6 py-4">
+                <div className="grid grid-cols-1 gap-1.5">
+                  {(currentFields || []).map((f: Field) => (
+                    <FieldRow
+                      key={f.id}
+                      field={f}
+                      inTable={tableCols.includes(f.id)}
+                      inExpand={expandCols.includes(f.id)}
+                      isAdmin={isAdmin}
+                      onToggle={target => onToggle(f.id, target)}
+                      onDrillIn={() => handleDrillIn(f)}
+                      drilling={drillLoading}
+                    />
+                  ))}
+                  {(currentFields || []).length === 0 && (
+                    <p className="text-[11px] text-slate-300 italic py-2">No fields here</p>
                   )}
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
 

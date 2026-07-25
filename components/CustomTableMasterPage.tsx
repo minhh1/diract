@@ -1,9 +1,9 @@
 // components/CustomTableMasterPage.tsx
 "use client";
 
-import React, { useState, useCallback, useMemo, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Search, Settings2, LayoutGrid, X, Plus, ChevronDown, ChevronUp, Trash2, Download } from "lucide-react";
+import { Search, Settings2, LayoutGrid, X, Plus, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Loader2, Trash2, Download } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
@@ -20,17 +20,108 @@ interface Props {
   tableSlug: string;
 }
 
-// ── Column config drawer — mirrors ColumnConfigDrawer for custom tables ──
+const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
+
+// A column pulled from a relation field's target table/row rather than a
+// field native to this table -- e.g. showing a Matter relation's "Client
+// Email" alongside this table's own columns. Scoped to one hop only (the
+// target's own fields, not fields related to THOSE) and, for a
+// system-table target, only its custom fields (not full native-column
+// parity) -- see loadRelationSubFields below.
+interface RelatedColumnDef {
+  id: string; // related:<relationFieldId>:<custom|system>:<targetFieldId>
+  label: string;
+  relationField: CustomTableField;
+  targetKind: 'custom' | 'system';
+  targetFieldId: string;
+  targetFieldKey: string;
+  targetFieldType: string;
+}
+
+interface DrillField {
+  id: string;
+  label: string;
+  fieldType?: string;
+  targetKind?: 'custom' | 'system';
+  targetFieldId?: string;
+  targetFieldKey?: string;
+}
+
+// Fetches the fields available on a relation field's target -- another
+// custom table (via company_table_fields) or a system table (via
+// company_custom_fields, since a system table's native columns aren't
+// exposed here).
+async function loadRelationSubFields(field: CustomTableField): Promise<DrillField[]> {
+  if (field.field_type === 'table_relation' && field.linked_table_id) {
+    const { data } = await supabase
+      .from('company_table_fields')
+      .select('id, field_key, label, field_type')
+      .eq('table_id', field.linked_table_id)
+      .is('deleted_at', null)
+      .order('display_order');
+    return (data || []).map(f => ({
+      id: `related:${field.id}:custom:${f.id}`,
+      label: f.label,
+      fieldType: f.field_type,
+      targetKind: 'custom' as const,
+      targetFieldId: f.id,
+      targetFieldKey: f.field_key,
+    }));
+  }
+  if (field.linked_system_table) {
+    const { data } = await supabase
+      .from('company_custom_fields')
+      .select('id, field_key, label, field_type')
+      .eq('table_name', field.linked_system_table)
+      .is('deleted_at', null)
+      .order('display_order');
+    return (data || []).map(f => ({
+      id: `related:${field.id}:system:${f.id}`,
+      label: f.label,
+      fieldType: f.field_type,
+      targetKind: 'system' as const,
+      targetFieldId: f.id,
+      targetFieldKey: f.field_key,
+    }));
+  }
+  return [];
+}
+
+// ── Column config drawer — file-explorer-style drill-in for relation
+// fields, mirroring ColumnConfigDrawer.tsx's pattern but with this page's
+// simpler single-Set toggle model (no separate table/expand placement).
 function CustomColumnDrawer({
-  isOpen, onClose, fields, visibleFieldIds, onToggle,
+  isOpen, onClose, fields, visibleFieldIds, onToggleNative,
+  visibleRelated, onToggleRelated,
 }: {
   isOpen: boolean;
   onClose: () => void;
   fields: CustomTableField[];
   visibleFieldIds: Set<string>;
-  onToggle: (fieldId: string) => void;
+  onToggleNative: (fieldId: string) => void;
+  visibleRelated: RelatedColumnDef[];
+  onToggleRelated: (def: RelatedColumnDef) => void;
 }) {
+  const [drillField, setDrillField] = useState<CustomTableField | null>(null);
+  const [subFields, setSubFields] = useState<DrillField[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) setDrillField(null);
+  }, [isOpen]);
+
+  const handleDrillIn = async (field: CustomTableField) => {
+    setDrillField(field);
+    setDrillLoading(true);
+    try {
+      setSubFields(await loadRelationSubFields(field));
+    } finally {
+      setDrillLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-40 flex">
       <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={onClose} />
@@ -43,45 +134,118 @@ function CustomColumnDrawer({
             <X size={18} />
           </button>
         </div>
+
+        {drillField && (
+          <div className="px-6 pt-4 flex items-center gap-1.5">
+            <button
+              onClick={() => setDrillField(null)}
+              className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700"
+            >
+              <ChevronLeft size={12} /> Back
+            </button>
+            <span className="text-[10px] text-slate-300">/</span>
+            <span className="text-[10px] font-bold text-slate-500">{drillField.label}</span>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-6 space-y-2">
-          {fields.map(field => {
-            const visible = visibleFieldIds.has(field.id);
-            return (
-              <button
-                key={field.id}
-                onClick={() => onToggle(field.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                  visible
-                    ? 'border-indigo-200 bg-indigo-50'
-                    : 'border-slate-100 hover:border-slate-200'
-                }`}
-              >
-                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                  visible ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
-                }`}>
-                  {visible && <div className="w-2 h-2 bg-white rounded-sm" />}
-                </div>
-                <span className={`text-[12px] font-medium ${visible ? 'text-indigo-700' : 'text-slate-600'}`}>
-                  {field.label}
-                </span>
-                <span className="ml-auto text-[9px] font-bold text-slate-300 uppercase">
-                  {field.field_type}
-                </span>
-              </button>
-            );
-          })}
-          {fields.length === 0 && (
-            <p className="text-center text-[11px] text-slate-300 italic py-8">
-              No fields defined yet — add fields in Schema settings
-            </p>
+          {!drillField ? (
+            <>
+              {fields.map(field => {
+                const visible = visibleFieldIds.has(field.id);
+                const canDrillIn = RELATION_FIELD_TYPES.includes(field.field_type)
+                  && !!(field.linked_table_id || field.linked_system_table);
+                return (
+                  <div
+                    key={field.id}
+                    className={`w-full flex items-center gap-2 px-4 py-3 rounded-2xl border transition-all ${
+                      visible ? 'border-indigo-200 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'
+                    }`}
+                  >
+                    <button
+                      onClick={() => onToggleNative(field.id)}
+                      className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                    >
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                        visible ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
+                      }`}>
+                        {visible && <div className="w-2 h-2 bg-white rounded-sm" />}
+                      </div>
+                      <span className={`text-[12px] font-medium truncate ${visible ? 'text-indigo-700' : 'text-slate-600'}`}>
+                        {field.label}
+                      </span>
+                      <span className="ml-auto text-[9px] font-bold text-slate-300 uppercase shrink-0">
+                        {field.field_type}
+                      </span>
+                    </button>
+                    {canDrillIn && (
+                      <button
+                        onClick={() => handleDrillIn(field)}
+                        title={`Explore ${field.label}'s fields`}
+                        className="p-1 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all shrink-0"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {fields.length === 0 && (
+                <p className="text-center text-[11px] text-slate-300 italic py-8">
+                  No fields defined yet — add fields in Schema settings
+                </p>
+              )}
+            </>
+          ) : drillLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 size={18} className="animate-spin text-slate-300" />
+            </div>
+          ) : (
+            <>
+              {subFields.map(sf => {
+                const visible = visibleRelated.some(d => d.id === sf.id);
+                return (
+                  <button
+                    key={sf.id}
+                    onClick={() => onToggleRelated({
+                      id: sf.id,
+                      label: `${drillField.label} · ${sf.label}`,
+                      relationField: drillField,
+                      targetKind: sf.targetKind!,
+                      targetFieldId: sf.targetFieldId!,
+                      targetFieldKey: sf.targetFieldKey!,
+                      targetFieldType: sf.fieldType || 'text',
+                    })}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
+                      visible ? 'border-indigo-200 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                      visible ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
+                    }`}>
+                      {visible && <div className="w-2 h-2 bg-white rounded-sm" />}
+                    </div>
+                    <span className={`text-[12px] font-medium truncate ${visible ? 'text-indigo-700' : 'text-slate-600'}`}>
+                      {sf.label}
+                    </span>
+                    <span className="ml-auto text-[9px] font-bold text-slate-300 uppercase shrink-0">
+                      {sf.fieldType}
+                    </span>
+                  </button>
+                );
+              })}
+              {subFields.length === 0 && (
+                <p className="text-center text-[11px] text-slate-300 italic py-8">
+                  No fields on this table yet
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
     </div>
   );
 }
-
-const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
 
 // ── Format a cell value for display ───────────────────────────────
 // Relation-type fields store a target record id in `values` — the resolved
@@ -98,6 +262,27 @@ function formatValue(record: CustomTableRecord, field: CustomTableField): string
   }
   return String(value);
 }
+
+// Same idea as formatValue, but for a RelatedColumnDef column -- the value
+// lives on the relation's TARGET record, pre-resolved into `relatedValues`
+// by the effect in the main component below (a single batched query per
+// visible related column beats one per row/record).
+function formatRelatedValue(
+  record: CustomTableRecord,
+  def: RelatedColumnDef,
+  relatedValues: Map<string, Map<string, string>>
+): string {
+  const raw = record.values[def.relationField.field_key];
+  const targetIds: string[] = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+  if (targetIds.length === 0) return '—';
+  const byTarget = relatedValues.get(def.id);
+  const labels = targetIds.map(id => byTarget?.get(id)).filter((l): l is string => !!l);
+  return labels.length ? labels.join(', ') : '—';
+}
+
+type TableColumn =
+  | { kind: 'native'; id: string; label: string; field: CustomTableField }
+  | { kind: 'related'; id: string; label: string; def: RelatedColumnDef };
 
 // ── Main component ─────────────────────────────────────────────────
 function CustomTableMasterPageInner({ tableSlug }: Props) {
@@ -119,6 +304,9 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
   // Which fields are visible as table columns
   const [visibleFieldIds, setVisibleFieldIds] = useState<Set<string> | null>(null);
+  // Columns pulled from a relation field's target table (see
+  // RelatedColumnDef) -- none by default, added via the drill-in picker.
+  const [visibleRelated, setVisibleRelated] = useState<RelatedColumnDef[]>([]);
 
   // Default: first 6 show_in_table fields, or first 6 fields
   const defaultVisibleIds = useMemo(() => {
@@ -129,10 +317,47 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
   const effectiveVisibleIds = visibleFieldIds || defaultVisibleIds;
 
-  const tableColumns = useMemo(
-    () => fields.filter(f => effectiveVisibleIds.has(f.id)),
-    [fields, effectiveVisibleIds]
-  );
+  const tableColumns: TableColumn[] = useMemo(() => [
+    ...fields.filter(f => effectiveVisibleIds.has(f.id)).map(f => ({ kind: 'native' as const, id: f.id, label: f.label, field: f })),
+    ...visibleRelated.map(def => ({ kind: 'related' as const, id: def.id, label: def.label, def })),
+  ], [fields, effectiveVisibleIds, visibleRelated]);
+
+  // Batch-resolves every visible related column's values in one query each
+  // (not one per row) whenever the selected related columns or the record
+  // set changes -- same batching approach as resolveRelationLabels in
+  // useCustomTable.ts, just against the relation's TARGET field instead of
+  // its display field.
+  const [relatedValues, setRelatedValues] = useState<Map<string, Map<string, string>>>(new Map());
+  useEffect(() => {
+    if (visibleRelated.length === 0) { setRelatedValues(new Map()); return; }
+    let active = true;
+    (async () => {
+      const next = new Map<string, Map<string, string>>();
+      await Promise.all(visibleRelated.map(async def => {
+        const targetIds = Array.from(new Set(
+          records.flatMap(r => {
+            const v = r.values[def.relationField.field_key];
+            return Array.isArray(v) ? v : (v ? [v] : []);
+          })
+        ));
+        if (targetIds.length === 0) { next.set(def.id, new Map()); return; }
+        const table = def.targetKind === 'custom' ? 'company_table_values' : 'company_custom_field_values';
+        const { data } = await supabase
+          .from(table)
+          .select('record_id, value_text, value_number, value_date, value_boolean')
+          .eq('field_id', def.targetFieldId)
+          .in('record_id', targetIds);
+        const byTarget = new Map<string, string>();
+        (data || []).forEach((v: any) => {
+          const val = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? String(v.value_boolean) : null);
+          if (val !== null && val !== undefined) byTarget.set(v.record_id, String(val));
+        });
+        next.set(def.id, byTarget);
+      }));
+      if (active) setRelatedValues(next);
+    })();
+    return () => { active = false; };
+  }, [visibleRelated, records]);
 
   // Primary display field
   const primaryField = useMemo(
@@ -238,6 +463,10 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       }
       return next;
     });
+  };
+
+  const handleToggleRelated = (def: RelatedColumnDef) => {
+    setVisibleRelated(prev => prev.some(d => d.id === def.id) ? prev.filter(d => d.id !== def.id) : [...prev, def]);
   };
 
   // ── Dashboard view ─────────────────────────────────────────────
@@ -353,7 +582,9 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         onClose={() => setIsConfigOpen(false)}
         fields={fields}
         visibleFieldIds={effectiveVisibleIds}
-        onToggle={handleToggleField}
+        onToggleNative={handleToggleField}
+        visibleRelated={visibleRelated}
+        onToggleRelated={handleToggleRelated}
       />
 
       {/* ── Main table ── */}
@@ -417,10 +648,10 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                         {idx === 0 ? (
                           // Primary column — styled as a link
                           <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
-                            {formatValue(record, col)}
+                            {col.kind === 'native' ? formatValue(record, col.field) : formatRelatedValue(record, col.def, relatedValues)}
                           </span>
                         ) : (
-                          formatValue(record, col)
+                          col.kind === 'native' ? formatValue(record, col.field) : formatRelatedValue(record, col.def, relatedValues)
                         )}
                       </div>
                     ))}

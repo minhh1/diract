@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Search, Settings2, LayoutGrid, X } from "lucide-react";
+import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
 import ColumnConfigDrawer from "@/components/ColumnConfigDrawer";
@@ -591,7 +591,27 @@ function GenericMasterTableInner({
     const baseSections = tableName === 'properties'
       ? [...schema.sections, ...buildCredentialColumnSections()]
       : schema.sections;
-    const crossSections = relatedFields.sections;
+
+    // Related-table fields (useRelatedFields' depth-2 RPC) and reverse child
+    // relations (useRelationSections) used to each get dumped in as their
+    // own always-visible top-level section -- every field on every related
+    // table, all on the same page. Folded into single "folder" rows instead
+    // (ColumnConfigDrawer.tsx's navigateOnly), one per related table,
+    // appended to the table's own field list -- clicking one drills into
+    // that related table's fields rather than showing them all at once.
+    const crossFolders = relatedFields.sections.map(s => ({
+      id: `__related__:${s.title}`,
+      label: s.title,
+      navigateOnly: true as const,
+      subFields: s.fields,
+    }));
+    const relationFolders = relationSections.map((s: any) => ({
+      id: `__related__:${s.label ?? s.title}`,
+      label: s.label ?? s.title,
+      navigateOnly: true as const,
+      subFields: (s.fields ?? s.cols ?? []),
+    }));
+
     const customSection = customFieldCols.length > 0
       ? [{
           label: 'Custom Fields',
@@ -603,7 +623,13 @@ function GenericMasterTableInner({
         }]
       : [];
 
-    const allSections = [...baseSections, ...crossSections, ...relationSections, ...customSection];
+    const withFolders = baseSections.map((section, i) =>
+      i === 0
+        ? { ...section, fields: [...((section as any).fields ?? []), ...crossFolders, ...relationFolders] }
+        : section
+    );
+
+    const allSections = [...withFolders, ...customSection];
     // Normalise — ensure every section has a `fields` array
     return allSections.map(section => ({
     ...section,
@@ -714,6 +740,28 @@ function GenericMasterTableInner({
       return sort.direction === 'asc' ? cmp : -cmp;
     });
   }, [t.items, search, t.tableCols, resolveValue, tableName, t.sort, filters]);
+
+  // ── Records created from the Gmail add-on, pending review ──────────
+  // Free-text names/addresses typed in the add-on for a relation field
+  // (entity/property/project — no search-and-pick UI available there) get
+  // resolved server-side against the matching table — anything short of a
+  // confident single match creates a new row flagged needs_review instead
+  // of blocking creation. There's no in-app notification system in this
+  // app, so this banner is the only place that surfaces it — see
+  // supabase/functions/gmail-addon/index.ts's resolveOrCreateRelation.
+  const needsReviewItems = useMemo(
+    () => t.items.filter(item => item.needs_review),
+    [t.items]
+  );
+  const needsReviewDisplayName = useCallback((item: any) =>
+    (tableName === 'properties' ? item.street_address : item.name) || 'Untitled',
+    [tableName]
+  );
+
+  const markReviewed = useCallback(async (id: string) => {
+    await supabase.from(tableName).update({ needs_review: false, reviewed_at: new Date().toISOString() }).eq('id', id);
+    t.setItems(prev => prev.map(item => item.id === id ? { ...item, needs_review: false } : item));
+  }, [t.setItems, tableName]);
 
   // ── Early returns ──────────────────────────────────────────────────
 
@@ -829,6 +877,44 @@ function GenericMasterTableInner({
               onChange={e => setSearch(e.target.value)}
             />
           </div>
+
+          {/* Needs-review banner — records auto-created from the Gmail add-on */}
+          {needsReviewItems.length > 0 && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle size={14} className="text-amber-500" />
+                <span className="text-[11px] font-bold text-amber-700">
+                  {needsReviewItems.length} {pageTitle.toLowerCase()} record{needsReviewItems.length === 1 ? '' : 's'} need review — created from Gmail without a picker
+                </span>
+              </div>
+              <div className="space-y-2">
+                {needsReviewItems.slice(0, 5).map(item => (
+                  <div key={item.id} className="flex items-center justify-between gap-3 bg-white rounded-xl px-4 py-2.5 border border-amber-100">
+                    <div className="min-w-0">
+                      <button
+                        onClick={() => router.push(`/dashboard/${tableName}?id=${item.id}`)}
+                        className="text-[12px] font-bold text-slate-800 hover:text-indigo-600 transition-colors truncate block"
+                      >
+                        {needsReviewDisplayName(item)}
+                      </button>
+                      {item.review_reason && (
+                        <p className="text-[10px] text-amber-600 truncate">{item.review_reason}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => markReviewed(item.id)}
+                      className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full text-[10px] font-bold transition-colors"
+                    >
+                      <Check size={11} /> Confirmed
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {needsReviewItems.length > 5 && (
+                <p className="text-[10px] text-amber-500 mt-2">+ {needsReviewItems.length - 5} more</p>
+              )}
+            </div>
+          )}
 
           {/* Active filter chips */}
           {filters.length > 0 && (
