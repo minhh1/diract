@@ -92,6 +92,7 @@ function ConditionRow({
               linkedSystemTable={field.linked_system_table}
               linkedTableId={field.linked_system_table ? null : field.linked_table_id}
               displayField={field.linked_display_field}
+              displayField2={field.linked_display_field_2}
               value={condition.value ?? null}
               onSelect={id => onChange({ value: id })}
               placeholder="Value..."

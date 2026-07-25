@@ -69,6 +69,14 @@ interface Props {
   linkedSystemTable?: string | null;
   linkedTableId?: string | null;
   displayField?: string | null; // system-table column to search/show, default 'name'
+  // Optional second field combined onto every label as "<displayField> —
+  // <displayField2>" (e.g. "260586 — Onsell Contract - Dahlia by Azure Lot
+  // 35" combining a Matter Number custom field with the matter's Project
+  // Name) -- same format as displayField for a system-table target (native
+  // column, or 'cf:<company_custom_fields.id>'); for a custom-table target
+  // (linkedTableId), a field_key on that table's own company_table_fields.
+  // Configured per-field in components/schema/FieldConfigPanel.tsx.
+  displayField2?: string | null;
   // Extra fields to match the search query against, besides displayField --
   // native column names, or 'cf:<company_custom_fields.id>' for a custom
   // field (e.g. Matter Number on projects). System table only. Configured
@@ -113,14 +121,18 @@ interface Props {
   initialLabel?: string;
 }
 
-// Resolves the primary display field's value for one record of a custom
+// Resolves the primary display field's value (plus an optional second
+// field, combined as "<primary> — <secondary>") for records of a custom
 // (company_tables) table -- used both to label the currently-selected value
 // and to build the search results list.
-async function fetchCustomTableRecordLabels(tableId: string, recordIds?: string[]): Promise<RelationOption[]> {
+async function fetchCustomTableRecordLabels(
+  tableId: string, recordIds?: string[], secondaryFieldKey?: string | null
+): Promise<RelationOption[]> {
   const { data: tableRow } = await supabase.from('company_tables').select('primary_field_key').eq('id', tableId).maybeSingle();
   const { data: fieldsData } = await supabase.from('company_table_fields').select('id, field_key').eq('table_id', tableId).is('deleted_at', null);
   const primaryField = (fieldsData || []).find(f => f.field_key === tableRow?.primary_field_key) || (fieldsData || [])[0];
   if (!primaryField) return [];
+  const secondaryField = secondaryFieldKey ? (fieldsData || []).find(f => f.field_key === secondaryFieldKey) : undefined;
 
   let query = supabase
     .from('company_table_records')
@@ -132,14 +144,47 @@ async function fetchCustomTableRecordLabels(tableId: string, recordIds?: string[
 
   const { data: records } = await query;
   return (records || []).map((r: any) => {
-    const v = (r.values || []).find((val: any) => val.field_id === primaryField.id);
-    const label = v ? (v.value_text ?? v.value_number ?? v.value_date ?? '') : '';
-    return { id: r.id, label: String(label || 'Untitled') };
+    const valueOf = (fieldId: string) => {
+      const v = (r.values || []).find((val: any) => val.field_id === fieldId);
+      return v ? (v.value_text ?? v.value_number ?? v.value_date ?? '') : '';
+    };
+    const primary = String(valueOf(primaryField.id) || 'Untitled');
+    const secondary = secondaryField ? String(valueOf(secondaryField.id) || '') : '';
+    return { id: r.id, label: secondary ? `${primary} — ${secondary}` : primary };
   });
 }
 
+// Resolves displayField2's value for a batch of system-table rows and
+// appends it onto each row's already-resolved label -- separate from the
+// primary field's own resolution since a 'cf:<id>' second field lives in
+// company_custom_field_values, not a column on linkedSystemTable, so it
+// can't be folded into the same select() as the primary field.
+async function appendDisplayField2(
+  rows: RelationOption[], linkedSystemTable: string, displayField2: string | null | undefined
+): Promise<RelationOption[]> {
+  if (!displayField2 || rows.length === 0) return rows;
+  const ids = rows.map(r => r.id);
+  const byId = new Map<string, string>();
+  if (displayField2.startsWith('cf:')) {
+    const cfId = displayField2.slice(3);
+    const { data } = await supabase
+      .from('company_custom_field_values')
+      .select('record_id, value_text, value_number, value_date, value_boolean')
+      .eq('field_id', cfId)
+      .in('record_id', ids);
+    (data || []).forEach((v: any) => {
+      const val = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? v.value_boolean : null);
+      if (val !== null && val !== undefined) byId.set(v.record_id, String(val));
+    });
+  } else {
+    const { data } = await supabase.from(linkedSystemTable).select(`id, ${displayField2}`).in('id', ids);
+    (data || []).forEach((r: any) => { if (r[displayField2] != null) byId.set(r.id, String(r[displayField2])); });
+  }
+  return rows.map(r => byId.has(r.id) ? { ...r, label: `${r.label} — ${byId.get(r.id)}` } : r);
+}
+
 export default function RelationPicker({
-  linkedSystemTable, linkedTableId, displayField, searchFieldKeys, filterColumn, filterValue,
+  linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -171,7 +216,7 @@ export default function RelationPicker({
     if (multiple || !value) { setCurrentLabel(''); resolvedForRef.current = null; return; }
     if (resolvedForRef.current === value) return;
     let active = true;
-    const cacheKey = `label:${linkedSystemTable ?? ''}:${linkedTableId ?? ''}:${displayField ?? ''}:${value}`;
+    const cacheKey = `label:${linkedSystemTable ?? ''}:${linkedTableId ?? ''}:${displayField ?? ''}:${displayField2 ?? ''}:${value}`;
     dedupedFetch(cacheKey, async () => {
       let label = '';
       if (linkedSystemTable) {
@@ -182,9 +227,12 @@ export default function RelationPicker({
         // would keep showing its stale label forever, inconsistently with
         // how a deleted custom-table record's relation goes blank instead.
         const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).eq('id', value).is('deleted_at', null).maybeSingle();
-        return data ? String((data as any)[col] ?? '') : '';
+        const primary = data ? String((data as any)[col] ?? '') : '';
+        if (!primary) return '';
+        const [withSecondary] = await appendDisplayField2([{ id: value, label: primary }], linkedSystemTable, displayField2);
+        return withSecondary.label;
       } else if (linkedTableId) {
-        const [opt] = await fetchCustomTableRecordLabels(linkedTableId, [value]);
+        const [opt] = await fetchCustomTableRecordLabels(linkedTableId, [value], displayField2);
         return opt?.label || '';
       }
       return label;
@@ -192,7 +240,7 @@ export default function RelationPicker({
       if (active) { setCurrentLabel(label); resolvedForRef.current = value; }
     });
     return () => { active = false; };
-  }, [multiple, value, linkedSystemTable, linkedTableId, displayField]);
+  }, [multiple, value, linkedSystemTable, linkedTableId, displayField, displayField2]);
 
   // Multi-select mode: resolve labels for every selected id not already
   // known (from a prior search's `options`, or already resolved). Runs
@@ -210,9 +258,12 @@ export default function RelationPicker({
       if (linkedSystemTable) {
         const col = displayField || 'name';
         const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).in('id', unresolved).is('deleted_at', null);
-        resolved = (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') }));
+        resolved = await appendDisplayField2(
+          (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') })),
+          linkedSystemTable, displayField2
+        );
       } else if (linkedTableId) {
-        resolved = await fetchCustomTableRecordLabels(linkedTableId, unresolved);
+        resolved = await fetchCustomTableRecordLabels(linkedTableId, unresolved, displayField2);
       }
       if (active && resolved.length) {
         setMultiLabels(prev => {
@@ -223,7 +274,7 @@ export default function RelationPicker({
       }
     })();
     return () => { active = false; };
-  }, [multiple, values, linkedSystemTable, linkedTableId, displayField]);
+  }, [multiple, values, linkedSystemTable, linkedTableId, displayField, displayField2]);
 
   // Auto-fills a "Signed-in user only" field the moment it mounts empty --
   // that filter can only ever match zero or one row (the entity linked to
@@ -243,18 +294,20 @@ export default function RelationPicker({
     if (multiple || value || userClearedRef.current || !linkedSystemTable || filterColumn !== 'linked_profile_id' || filterValue !== CURRENT_USER_SENTINEL) return;
     let active = true;
     const col = displayField || 'name';
-    const cacheKey = `autoSelect:${linkedSystemTable}:${filterColumn}:${filterValue}:${col}`;
+    const cacheKey = `autoSelect:${linkedSystemTable}:${filterColumn}:${filterValue}:${col}:${displayField2 ?? ''}`;
     dedupedFetch(cacheKey, async () => {
       const userId = await resolveFilterValue(filterValue);
       if (!userId) return null;
       const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).eq('linked_profile_id', userId).is('deleted_at', null).maybeSingle();
-      return data as { id: string; [key: string]: unknown } | null;
+      if (!data) return null;
+      const primary = String((data as any)[col] ?? '');
+      const [withSecondary] = await appendDisplayField2([{ id: (data as any).id, label: primary }], linkedSystemTable, displayField2);
+      return { id: (data as any).id, label: withSecondary.label };
     }).then(row => {
       if (active && row) {
-        const label = String(row[col] ?? '');
-        setCurrentLabel(label);
+        setCurrentLabel(row.label);
         resolvedForRef.current = row.id;
-        onSelect?.(row.id, label);
+        onSelect?.(row.id, row.label);
       }
     });
     return () => { active = false; };
@@ -264,7 +317,7 @@ export default function RelationPicker({
     // fetch via the cleanup's `active = false`) on every unrelated parent
     // re-render, before the request had a chance to resolve. Matches the
     // same omission already made in the label-resolution effect above.
-  }, [multiple, value, linkedSystemTable, filterColumn, filterValue, displayField]);
+  }, [multiple, value, linkedSystemTable, filterColumn, filterValue, displayField, displayField2]);
 
   // Search as the dropdown is open / query changes.
   useEffect(() => {
@@ -346,15 +399,16 @@ export default function RelationPicker({
             results = Array.from(merged.values()).slice(0, 20);
           }
         }
+        if (displayField2) results = await appendDisplayField2(results, linkedSystemTable, displayField2);
       } else if (linkedTableId) {
-        const all = await fetchCustomTableRecordLabels(linkedTableId);
+        const all = await fetchCustomTableRecordLabels(linkedTableId, undefined, displayField2);
         const q = query.trim().toLowerCase();
         results = (q ? all.filter(o => o.label.toLowerCase().includes(q)) : all).slice(0, 20);
       }
       if (active) { setOptions(results); setLoading(false); }
     }, 200);
     return () => { active = false; clearTimeout(timer); };
-  }, [open, query, linkedSystemTable, linkedTableId, displayField, searchFieldKeys, filterColumn, filterValue]);
+  }, [open, query, linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue]);
 
   useEffect(() => {
     if (!open) return;

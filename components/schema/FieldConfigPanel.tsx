@@ -113,6 +113,10 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
     field.select_options?.join('\n') || ''
   );
   const [customFieldOptions, setCustomFieldOptions] = useState<{ id: string; label: string }[]>([]);
+  // Candidate fields on the linked CUSTOM table (as opposed to a system
+  // table -- see customFieldOptions above) for the "Also show" second
+  // display field, when this field links to another custom table.
+  const [linkedTableFieldOptions, setLinkedTableFieldOptions] = useState<{ id: string; label: string }[]>([]);
 
   const update = (key: keyof CustomField, value: any) =>
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -132,6 +136,25 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
       .then(({ data }) => { if (active) setCustomFieldOptions(data || []); });
     return () => { active = false; };
   }, [draft.linked_table]);
+
+  // Candidate fields for "Also show" when this field links to another
+  // custom table (as opposed to a system table, handled by
+  // customFieldOptions above) -- id here is the target field's field_key,
+  // matching RelationPicker's displayField2 convention for a custom-table
+  // target (see components/dashboard/RelationPicker.tsx).
+  useEffect(() => {
+    const tableId = draft.linked_table_id;
+    if (!tableId) { setLinkedTableFieldOptions([]); return; }
+    let active = true;
+    supabase
+      .from('company_table_fields')
+      .select('field_key, label')
+      .eq('table_id', tableId)
+      .is('deleted_at', null)
+      .order('display_order')
+      .then(({ data }) => { if (active) setLinkedTableFieldOptions((data || []).map(f => ({ id: f.field_key, label: f.label }))); });
+    return () => { active = false; };
+  }, [draft.linked_table_id]);
 
   const toggleSearchField = (key: string) => {
     const current = draft.linked_search_field_keys || [];
@@ -298,18 +321,12 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
               >
                 <option value="">Select a table...</option>
-                <optgroup label="System tables">
-                  <option value="properties">Properties</option>
-                  <option value="entities">Entities</option>
-                  <option value="projects">Projects</option>
-                </optgroup>
-                {customTables.length > 0 && (
-                  <optgroup label="Custom tables">
-                    {customTables.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </optgroup>
-                )}
+                <option value="properties">Properties</option>
+                <option value="entities">Entities</option>
+                <option value="projects">Projects</option>
+                {customTables.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
               </select>
             </div>
 
@@ -327,6 +344,40 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                 Which field from the linked record to display
               </p>
             </div>
+
+            {/* Combines a second field onto every label, e.g. a Matter
+                Number custom field alongside the Project Name display field
+                -- "260586 — Onsell Contract - Dahlia by Azure Lot 35" in
+                every search-and-choose bar for this relation (see
+                supabase/company_table_fields_display_field_2.sql). Offers
+                the same candidates as "Also search by" below for a system-
+                table target, or the linked custom table's own fields. */}
+            {(draft.linked_table || draft.linked_table_id) && (
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                  Also show
+                </label>
+                <select
+                  value={draft.linked_display_column_2 || ''}
+                  onChange={e => update('linked_display_column_2', e.target.value || null)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                >
+                  <option value="">None</option>
+                  {draft.linked_table && (SEARCH_COLUMNS[draft.linked_table] || []).map(col => (
+                    <option key={col} value={col}>{prettifyColumn(col)}</option>
+                  ))}
+                  {draft.linked_table && customFieldOptions.map(cf => (
+                    <option key={`cf:${cf.id}`} value={`cf:${cf.id}`}>{cf.label}</option>
+                  ))}
+                  {draft.linked_table_id && linkedTableFieldOptions.map(f => (
+                    <option key={f.id} value={f.id}>{f.label}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1 px-1">
+                  Combined onto the display field wherever this relation is searched, e.g. &quot;260586 — Onsell Contract&quot;
+                </p>
+              </div>
+            )}
 
             {/* Multi-record relations -- custom-table fields only (see
                 supabase/company_table_field_allow_multiple.sql). Off by

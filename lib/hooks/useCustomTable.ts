@@ -14,6 +14,11 @@ export interface CustomTableField {
   linked_table_id: string | null;
   linked_system_table: string | null;
   linked_display_field: string | null;
+  // Optional second field combined onto the search/display label as
+  // "<linked_display_field> — <linked_display_field_2>" (see
+  // supabase/company_table_fields_display_field_2.sql and
+  // components/dashboard/RelationPicker.tsx's displayField2 prop).
+  linked_display_field_2: string | null;
   // Extra config for relation fields linked to a system table (see
   // supabase/company_table_fields_relation_config.sql) -- lets the picker
   // search more than just the display field, and restrict results (e.g. a
@@ -46,6 +51,13 @@ export interface CustomTableField {
   // CustomTableRecord is a string[] of linked record ids instead of a
   // single id -- see this file's own load() below.
   allow_multiple: boolean;
+  // Set only by lib/hooks/useSystemTableAsCustomTable.ts's adapter, which
+  // synthesizes CustomTableField-shaped entries for a system table's native
+  // columns ('native') and company_custom_fields rows ('custom') so
+  // lib/services/systemTableRecordService.ts knows which table to write
+  // each value to. Undefined for every real company_table_fields row --
+  // never read by the custom-table write path (lib/services/customTableService.ts).
+  field_source?: 'native' | 'custom';
 }
 
 export interface CustomTableRecord {
@@ -66,7 +78,7 @@ const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property']
 // each record's `displayValues`. Mirrors the label lookups RelationPicker
 // already does for the edit-side picker (components/dashboard/RelationPicker.tsx),
 // just batched across all rows in the grid instead of one value at a time.
-async function resolveRelationLabels(fieldList: CustomTableField[], records: CustomTableRecord[]) {
+export async function resolveRelationLabels(fieldList: CustomTableField[], records: CustomTableRecord[]) {
   const relationFields = fieldList.filter(f => RELATION_FIELD_TYPES.includes(f.field_type));
   if (relationFields.length === 0) return;
 

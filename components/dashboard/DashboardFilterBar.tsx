@@ -42,6 +42,7 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               linkedSystemTable={field.linked_system_table}
               linkedTableId={field.linked_system_table ? null : field.linked_table_id}
               displayField={field.linked_display_field}
+              displayField2={field.linked_display_field_2}
               searchFieldKeys={field.linked_search_field_keys}
               filterColumn={field.linked_filter_column}
               filterValue={field.linked_filter_value}

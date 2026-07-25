@@ -29,6 +29,13 @@ export interface CustomField {
   linked_table: string | null;
   linked_table_id: string | null;
   linked_display_column: string | null;
+  // Optional second field combined onto the search/display label as
+  // "<linked_display_column> — <linked_display_column_2>" (see
+  // supabase/company_table_fields_display_field_2.sql). Same value format
+  // as linked_display_column: a native column, or 'cf:<id>' for a custom
+  // field, when linked_table is a system table; a field_key on the linked
+  // custom table's own fields when linked_table_id is set instead.
+  linked_display_column_2?: string | null;
   // Extra relation config -- custom-table fields linked to a system table
   // only (see supabase/company_table_fields_relation_config.sql).
   linked_search_field_keys?: string[] | null;
