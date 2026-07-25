@@ -1,0 +1,14 @@
+-- Lets a company admin "delete" one of the 3 built-in tables (Properties/
+-- Entities/Projects). There's no row to soft-delete -- these aren't
+-- company_tables entries, just fixed routes every company has -- so
+-- "delete" here means: hide it everywhere a user browses tables (sidebar,
+-- schema configuration, schema map, schema editor, and the table's own
+-- page), and soft-delete every field a company added to it
+-- (company_custom_fields), the same deleted_at each of those fields would
+-- get if removed one at a time from the schema editor.
+--
+-- Shape: { [slug]: { deleted_at: iso8601, field_ids: uuid[] } }. field_ids
+-- is exactly the set of fields this action soft-deleted, so restoring only
+-- un-deletes those -- not any field that happened to already be deleted for
+-- an unrelated reason before this ran.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS disabled_system_tables jsonb NOT NULL DEFAULT '{}'::jsonb;

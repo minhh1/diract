@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { getCompanyId } from "@/lib/services/schemaService";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import { useCompany } from "@/components/CompanyContext";
 import { ZoomIn, ZoomOut, Maximize2, RefreshCw } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
@@ -109,6 +110,7 @@ function getInitialPos(idx: number): { x: number; y: number } {
 
 export default function SchemaMap() {
   const { tables: customTables, loading: tablesLoading } = useCustomTables();
+  const { disabledSystemTables } = useCompany();
   const [boxes, setBoxes] = useState<TableBox[]>([]);
   const [relations, setRelations] = useState<RelationLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +131,7 @@ export default function SchemaMap() {
 
   useEffect(() => {
     if (!tablesLoading) loadSchema();
-  }, [tablesLoading, customTables]);
+  }, [tablesLoading, customTables, disabledSystemTables]);
 
   // ── Global mouse handlers ──────────────────────────────────────
 
@@ -177,7 +179,7 @@ export default function SchemaMap() {
   const loadSchema = async () => {
     setLoading(true);
     const companyId = await getCompanyId();
-    const systemTables = ['properties', 'entities', 'projects'];
+    const systemTables = ['properties', 'entities', 'projects'].filter(t => !disabledSystemTables[t]);
 
     const [schemaResults, { data: sysCustomFields }, ...customTableFieldResults] =
       await Promise.all([

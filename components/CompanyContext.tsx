@@ -13,6 +13,13 @@ import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker"
 export interface TableLabelOverride { singular: string; plural: string }
 export type TableLabelOverrides = Record<string, TableLabelOverride>;
 
+// "Deleting" one of the 3 built-in tables (see
+// supabase/companies_disabled_system_tables.sql) -- field_ids is exactly
+// which company_custom_fields this soft-deleted, so restoring only
+// un-deletes those.
+export interface DisabledSystemTable { deleted_at: string; field_ids: string[] }
+export type DisabledSystemTables = Record<string, DisabledSystemTable>;
+
 interface CompanyContextValue {
   companyId: string | null;
   companyName: string | null;
@@ -23,6 +30,8 @@ interface CompanyContextValue {
   loading: boolean;
   tableLabelOverrides: TableLabelOverrides;
   refreshTableLabelOverrides: () => Promise<void>;
+  disabledSystemTables: DisabledSystemTables;
+  refreshDisabledSystemTables: () => Promise<void>;
 }
 
 const CompanyContext = createContext<CompanyContextValue>({
@@ -35,6 +44,8 @@ const CompanyContext = createContext<CompanyContextValue>({
   loading: true,
   tableLabelOverrides: {},
   refreshTableLabelOverrides: async () => {},
+  disabledSystemTables: {},
+  refreshDisabledSystemTables: async () => {},
 });
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
@@ -46,6 +57,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [isSiteAdmin, setIsSiteAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>({});
+  const [disabledSystemTables, setDisabledSystemTables] = useState<DisabledSystemTables>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +83,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const [{ data: prof }, { data: allMemberships }] = await Promise.all([
         supabase
           .from("profiles")
-          .select("active_company_id, is_site_admin, companies:active_company_id(name, table_label_overrides)")
+          .select("active_company_id, is_site_admin, companies:active_company_id(name, table_label_overrides, disabled_system_tables)")
           .eq("id", user.id)
           .single(),
         supabase
@@ -85,12 +97,14 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const cid = prof?.active_company_id || null;
       const cname = (prof?.companies as any)?.name || null;
       const overrides = (prof?.companies as any)?.table_label_overrides || {};
+      const disabled = (prof?.companies as any)?.disabled_system_tables || {};
 
       setUserId(user.id);
       setUserEmail(user.email ?? null);
       setCompanyId(cid);
       setCompanyName(cname);
       setTableLabelOverrides(overrides);
+      setDisabledSystemTables(disabled);
       setIsAdmin((allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin");
       setIsSiteAdmin(!!prof?.is_site_admin);
 
@@ -116,8 +130,17 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     setTableLabelOverrides((data as any)?.table_label_overrides || {});
   };
 
+  // Re-fetches just which system tables are disabled, so CustomTableBuilder
+  // (delete/restore) can push the change out to the Sidebar/schema map/
+  // schema editor/table pages without a full reload.
+  const refreshDisabledSystemTables = async () => {
+    if (!companyId) return;
+    const { data } = await supabase.from("companies").select("disabled_system_tables").eq("id", companyId).single();
+    setDisabledSystemTables((data as any)?.disabled_system_tables || {});
+  };
+
   return (
-    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, isSiteAdmin, loading, tableLabelOverrides, refreshTableLabelOverrides }}>
+    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, isSiteAdmin, loading, tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables }}>
       {children}
     </CompanyContext.Provider>
   );

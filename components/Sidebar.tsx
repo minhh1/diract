@@ -597,16 +597,21 @@ export default function Sidebar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Use shared company context — avoids duplicate auth call with GenericMasterTable
-  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, loading: ctxLoading, tableLabelOverrides } = useCompany();
+  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, loading: ctxLoading, tableLabelOverrides, disabledSystemTables } = useCompany();
 
   // Per-company display-name overrides (e.g. a law firm renaming "Projects"
-  // to "Matters") layered over the hardcoded defaults.
+  // to "Matters") layered over the hardcoded defaults. A "deleted" built-in
+  // table (see CustomTableBuilder.tsx's handleDeleteSystemTable) is dropped
+  // here rather than filtered per-render-site, so every downstream consumer
+  // (the main nav list and the visibility panel below) never sees it at all.
   const systemTables = useMemo(
-    () => ALL_SYSTEM_TABLES.map(t => {
-      const override = tableLabelOverrides[t.slug];
-      return override?.plural ? { ...t, label: override.plural } : t;
-    }),
-    [tableLabelOverrides]
+    () => ALL_SYSTEM_TABLES
+      .filter(t => !disabledSystemTables[t.slug])
+      .map(t => {
+        const override = tableLabelOverrides[t.slug];
+        return override?.plural ? { ...t, label: override.plural } : t;
+      }),
+    [tableLabelOverrides, disabledSystemTables]
   );
 
   const [profile, setProfile] = useState<any>(null);

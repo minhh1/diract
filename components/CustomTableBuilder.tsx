@@ -38,7 +38,8 @@ const COLOR_OPTIONS = [
 
 export default function CustomTableBuilder() {
   const { tables, loading, refetch } = useCustomTables();
-  const { isAdmin, companyId, tableLabelOverrides, refreshTableLabelOverrides } = useCompany();
+  const { isAdmin, companyId, tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables } = useCompany();
+  const [deletingSystemSlug, setDeletingSystemSlug] = useState<string | null>(null);
   const { pendingIds: pendingArchiveIds, refreshPendingArchiveRequests } = usePendingArchiveRequests("company_tables", companyId);
   const [editingSystemSlug, setEditingSystemSlug] = useState<string | null>(null);
   const [systemDraft, setSystemDraft] = useState<TableLabelOverride>({ singular: "", plural: "" });
@@ -98,6 +99,52 @@ export default function CustomTableBuilder() {
     setSystemSaving(null);
     if (error) { alert(error.message); return; }
     await refreshTableLabelOverrides();
+  };
+
+  // "Deleting" a built-in table -- there's no company_tables row for it, so
+  // this hides it everywhere a user browses tables (Sidebar/schema config/
+  // schema map/schema editor/the table's own page all check
+  // disabledSystemTables) and soft-deletes every field the company added to
+  // it, same deleted_at each field would get removed one at a time from the
+  // schema editor. Admin-only (like renaming a built-in table above) rather
+  // than going through the non-admin archive-request flow custom tables use
+  // below -- that flow is keyed on a real row id in one of a fixed list of
+  // tables (see lib/archiveRequests.ts), which doesn't fit "a JSON flag on
+  // companies."
+  const handleDeleteSystemTable = async (slug: string) => {
+    if (!companyId) return;
+    const label = (tableLabelOverrides[slug] || DEFAULT_LABELS[slug]).plural;
+    const { data: liveFields } = await supabase
+      .from('company_custom_fields')
+      .select('id')
+      .eq('table_name', slug)
+      .is('deleted_at', null);
+    const fieldIds = (liveFields || []).map(f => f.id);
+
+    if (!window.confirm(
+      fieldIds.length > 0
+        ? `Delete "${label}"? It has ${fieldIds.length} field${fieldIds.length === 1 ? '' : 's'} added to it. This hides it and moves those fields to Trash — nothing is deleted permanently, and you can restore it from there.`
+        : `Delete "${label}"? This hides it and can be restored later from Trash.`
+    )) return;
+
+    setDeletingSystemSlug(slug);
+    const deletedAt = new Date().toISOString();
+
+    if (fieldIds.length > 0) {
+      await supabase.from('company_custom_fields').update({ deleted_at: deletedAt }).in('id', fieldIds);
+    }
+    const next = { ...disabledSystemTables, [slug]: { deleted_at: deletedAt, field_ids: fieldIds } };
+    const { error } = await supabase.from('companies').update({ disabled_system_tables: next }).eq('id', companyId);
+
+    setDeletingSystemSlug(null);
+    if (error) { alert(error.message); return; }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    await Promise.all(fieldIds.map(id =>
+      logSchemaChange({ companyId, actorId: user?.id ?? null, entityType: 'company_custom_field', entityId: id, entityLabel: label, action: 'delete' })
+    ));
+
+    await refreshDisabledSystemTables();
   };
 
   const handleCreate = async () => {
@@ -260,13 +307,15 @@ export default function CustomTableBuilder() {
     alert(`Published as a draft template. Find it under Marketplace → My templates to review and publish.`);
   };
 
+  const visibleSystemTableDefs = SYSTEM_TABLE_DEFS.filter(t => !disabledSystemTables[t.slug]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[13px] font-bold text-slate-800">Tables</p>
           <p className="text-[10px] text-slate-400 mt-0.5">
-            {SYSTEM_TABLE_DEFS.length + tables.length} table{SYSTEM_TABLE_DEFS.length + tables.length !== 1 ? 's' : ''}
+            {visibleSystemTableDefs.length + tables.length} table{visibleSystemTableDefs.length + tables.length !== 1 ? 's' : ''}
             {limit && ` · ${limit - tables.length} more can be created`}
           </p>
         </div>
@@ -279,14 +328,18 @@ export default function CustomTableBuilder() {
       </div>
 
       {/* Existing tables -- the 3 built-in ones first, then a company's own,
-          in one undifferentiated list (only their available actions
-          differ: built-ins can only be renamed, not re-iconed or deleted). */}
+          in one undifferentiated list (only their available actions differ:
+          built-ins can't be re-iconed, and can only be renamed/deleted by an
+          admin -- see handleDeleteSystemTable above). Deleted built-ins
+          (disabledSystemTables) simply don't render here at all, same as a
+          soft-deleted custom table not appearing in `tables`. */}
       <div className="space-y-2">
-        {SYSTEM_TABLE_DEFS.map(({ slug, icon: Icon, color }) => {
+        {visibleSystemTableDefs.map(({ slug, icon: Icon, color }) => {
           const override = tableLabelOverrides[slug];
           const effective = override || DEFAULT_LABELS[slug];
           const isEditing = editingSystemSlug === slug;
           const isSaving = systemSaving === slug;
+          const isDeleting = deletingSystemSlug === slug;
           return (
             <div key={slug} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-2xl">
               {isEditing ? (
@@ -342,6 +395,13 @@ export default function CustomTableBuilder() {
                         title="Rename"
                       >
                         <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSystemTable(slug)}
+                        disabled={isDeleting}
+                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all disabled:opacity-50"
+                      >
+                        {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                       </button>
                     </>
                   )}

@@ -32,16 +32,23 @@ import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 const RECORD_LIMIT = 50;
 
-type Category = "table" | "table_field" | "system_field" | "dashboard" | "table_record" | "system_record";
+type Category = "table" | "system_table" | "table_field" | "system_field" | "dashboard" | "table_record" | "system_record";
 
 const CATEGORY_META: Record<Category, { label: string; className: string }> = {
   table: { label: "Table", className: "bg-indigo-50 text-indigo-600" },
+  system_table: { label: "Table", className: "bg-indigo-50 text-indigo-600" },
   table_field: { label: "Field", className: "bg-blue-50 text-blue-600" },
   system_field: { label: "Field", className: "bg-purple-50 text-purple-600" },
   dashboard: { label: "Dashboard", className: "bg-pink-50 text-pink-600" },
   table_record: { label: "Record", className: "bg-emerald-50 text-emerald-600" },
   system_record: { label: "Record", className: "bg-amber-50 text-amber-600" },
 };
+
+// Icons/colours for the 3 built-in tables -- mirrors Sidebar.tsx's
+// ALL_SYSTEM_TABLES and CustomTableBuilder.tsx's SYSTEM_TABLE_DEFS.
+const SYSTEM_TABLE_ICONS: Record<string, string> = { properties: 'MapPin', entities: 'Building2', projects: 'LayoutGrid' };
+const SYSTEM_TABLE_COLORS: Record<string, string> = { properties: '#6366f1', entities: '#8b5cf6', projects: '#ec4899' };
+const SYSTEM_TABLE_DEFAULT_LABELS: Record<string, string> = { properties: 'Properties', entities: 'Entities', projects: 'Projects' };
 
 const TIME_RANGES = [
   { key: "all", label: "All time", ms: null },
@@ -72,7 +79,7 @@ function fmtDate(iso: string | null) {
 
 export default function TrashPage() {
   const router = useRouter();
-  const { companyId, userId, isAdmin, loading: companyLoading } = useCompany();
+  const { companyId, userId, isAdmin, loading: companyLoading, refreshDisabledSystemTables } = useCompany();
   const [items, setItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -82,6 +89,15 @@ export default function TrashPage() {
   const load = useCallback(async () => {
     if (!companyId) return;
     setLoading(true);
+
+    // Fetched fresh (not from CompanyContext) like everything else on this
+    // page, so a restore/purge below is reflected the moment `load()` is
+    // called again afterward, not one render cycle late waiting on the
+    // context's own async refresh.
+    const { data: companyRow } = await supabase
+      .from("companies").select("disabled_system_tables, table_label_overrides").eq("id", companyId).single();
+    const freshDisabledSystemTables: Record<string, { deleted_at: string; field_ids: string[] }> = (companyRow as any)?.disabled_system_tables || {};
+    const freshTableLabelOverrides: Record<string, { singular: string; plural: string }> = (companyRow as any)?.table_label_overrides || {};
 
     // ── Who deleted each schema-level item — most recent 'delete' log entry
     // per entity, resolved to a name. Record-level deletes aren't logged
@@ -137,6 +153,40 @@ export default function TrashPage() {
         },
       });
     }));
+
+    // ── Deleted built-in tables (properties/entities/projects) ───
+    // Not real rows -- see supabase/companies_disabled_system_tables.sql --
+    // so restore/purge act on the company-level flag plus the exact field
+    // ids it recorded, not a `deleted_at` on a `companies` row.
+    Object.entries(freshDisabledSystemTables).forEach(([slug, entry]) => {
+      const label = freshTableLabelOverrides[slug]?.plural || SYSTEM_TABLE_DEFAULT_LABELS[slug] || slug;
+      const fieldIds = entry.field_ids;
+      results.push({
+        id: `system_table:${slug}`, category: "system_table", label,
+        detailLine: `/${slug} · ${fieldIds.length} field${fieldIds.length === 1 ? "" : "s"}`,
+        icon: SYSTEM_TABLE_ICONS[slug], color: SYSTEM_TABLE_COLORS[slug],
+        deletedAt: entry.deleted_at, deletedBy: null, createdAt: null, createdBy: null,
+        restore: async () => {
+          if (fieldIds.length > 0) {
+            await supabase.from("company_custom_fields").update({ deleted_at: null }).in("id", fieldIds);
+          }
+          const next = { ...freshDisabledSystemTables };
+          delete next[slug];
+          if (companyId) await supabase.from("companies").update({ disabled_system_tables: next }).eq("id", companyId);
+          await refreshDisabledSystemTables();
+        },
+        purge: async () => {
+          if (!window.confirm(`Permanently delete "${label}"? This cannot be undone — it will delete its ${fieldIds.length} field(s) and all data stored in them forever. The table itself stays available, ready for new fields.`)) return;
+          if (fieldIds.length > 0) {
+            await supabase.from("company_custom_fields").delete().in("id", fieldIds);
+          }
+          const next = { ...freshDisabledSystemTables };
+          delete next[slug];
+          if (companyId) await supabase.from("companies").update({ disabled_system_tables: next }).eq("id", companyId);
+          await refreshDisabledSystemTables();
+        },
+      });
+    });
 
     // ── Custom table fields ─────────────────────────────────────
     const { data: trashedFields } = await supabase
