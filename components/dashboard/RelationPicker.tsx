@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2, X, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSize";
 
-interface RelationOption { id: string; label: string }
+interface RelationOption {
+  id: string;
+  label: string;
+  // Lowercased blob of every field this option can be matched against
+  // (display field(s) + configured search fields) -- absent on options that
+  // were resolved individually rather than through the full candidate list
+  // (e.g. a single already-selected value's label), which never need it.
+  searchText?: string;
+}
 
 // Sentinel filterValue set by FieldConfigPanel when an admin restricts a
 // relation to "Signed-in user only" -- there's no static value to type in
@@ -143,8 +151,13 @@ async function fetchCustomTableRecordLabels(
     .select('id, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean)')
     .eq('table_id', tableId)
     .is('deleted_at', null);
+  // recordIds undefined means "give me every candidate" (the picker's full,
+  // cached option list -- see fetchAllOptions below) rather than a small
+  // browse page, so this needs a limit generous enough not to silently drop
+  // real rows the way a low page size did before (see
+  // fetchAllSystemTableOptions's comment for the bug that caused).
   if (recordIds) query = query.in('id', recordIds);
-  else query = query.limit(200);
+  else query = query.limit(5000);
 
   const { data: records } = await query;
   return (records || []).map((r: any) => {
@@ -187,6 +200,74 @@ async function appendDisplayField2(
   return rows.map(r => byId.has(r.id) ? { ...r, label: `${r.label} — ${byId.get(r.id)}` } : r);
 }
 
+// Fetches EVERY candidate row for a system-table relation once (native
+// columns and every configured cf: search field / displayField2, batched
+// into as few queries as this needs), instead of the old "server-side
+// ilike + limit(20) on every keystroke" -- see fetchAllOptions below, which
+// caches this and filters it client-side on `query`, so typing after the
+// first fetch does zero network round trips. limit(5000) here is what fixed
+// the original bug this replaced: a custom field's value (e.g. Matter
+// Number) has no relationship to the display column's alphabetical order,
+// so a small page could miss a real match once a table grew past it
+// (confirmed live: 523 matters, page limit 200, "no matches" for a real
+// matter number) -- fetching the whole set up front avoids that by
+// construction, since nothing is ever paged out of what gets searched.
+async function fetchAllSystemTableOptions(
+  linkedSystemTable: string,
+  displayField: string | null | undefined,
+  displayField2: string | null | undefined,
+  searchFieldKeys: string[] | null | undefined,
+  filterColumn: string | null | undefined,
+  filterValue: string | null | undefined
+): Promise<RelationOption[]> {
+  const col = displayField || 'name';
+  const nativeExtra = (searchFieldKeys || []).filter(k => !k.startsWith('cf:'));
+  const cfSearchIds = (searchFieldKeys || []).filter(k => k.startsWith('cf:')).map(k => k.slice(3));
+  const col2IsCf = !!displayField2 && displayField2.startsWith('cf:');
+  const col2Native = displayField2 && !col2IsCf ? displayField2 : null;
+  const nativeCols = Array.from(new Set([col, ...nativeExtra, ...(col2Native ? [col2Native] : [])]));
+
+  let q = supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null).order(col).limit(5000);
+  if (filterColumn) {
+    const resolvedValue = await resolveFilterValue(filterValue);
+    q = resolvedValue ? q.eq(filterColumn, resolvedValue) : q.eq(filterColumn, '__none__');
+  }
+  const { data: rows } = await q;
+  const ids = (rows || []).map((r: any) => r.id);
+
+  // Every cf: field this option list needs a value for (search fields plus
+  // a cf: displayField2), resolved in one batched query per distinct field
+  // id -- same batching approach as resolveRelationLabels in
+  // lib/hooks/useCustomTable.ts.
+  const allCfIds = Array.from(new Set([...cfSearchIds, ...(col2IsCf ? [displayField2!.slice(3)] : [])]));
+  const cfByField = new Map<string, Map<string, string>>(); // fieldId -> recordId -> value
+  if (allCfIds.length && ids.length) {
+    const { data: cfRows } = await supabase
+      .from('company_custom_field_values')
+      .select('field_id, record_id, value_text, value_number, value_date, value_boolean')
+      .in('field_id', allCfIds)
+      .in('record_id', ids);
+    (cfRows || []).forEach((v: any) => {
+      const val = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? v.value_boolean : null);
+      if (val === null || val === undefined) return;
+      if (!cfByField.has(v.field_id)) cfByField.set(v.field_id, new Map());
+      cfByField.get(v.field_id)!.set(v.record_id, String(val));
+    });
+  }
+
+  return (rows || []).map((r: any) => {
+    const primary = String(r[col] ?? 'Untitled');
+    const secondary = col2IsCf ? cfByField.get(displayField2!.slice(3))?.get(r.id) : (col2Native ? r[col2Native] : null);
+    const label = secondary ? `${primary} — ${secondary}` : primary;
+    const searchParts = [
+      primary,
+      ...nativeExtra.map(c => r[c]),
+      ...cfSearchIds.map(id => cfByField.get(id)?.get(r.id)),
+    ].filter((v): v is string | number => v !== null && v !== undefined);
+    return { id: r.id, label, searchText: searchParts.join(' ').toLowerCase() };
+  });
+}
+
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md',
@@ -194,7 +275,11 @@ export default function RelationPicker({
   const sizeClass = PILL_SIZE_CLASSES[size];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [options, setOptions] = useState<RelationOption[]>([]);
+  // The whole candidate list, fetched once per open (see the effect below)
+  // and cached -- `options` (further down) is a client-side `.filter()` of
+  // this on `query`, not a separate fetch, so typing has zero network
+  // latency after the list first loads.
+  const [fullOptions, setFullOptions] = useState<RelationOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentLabel, setCurrentLabel] = useState(initialLabel ?? '');
   // Multi-select mode only -- id -> resolved label, for rendering chips.
@@ -324,96 +409,38 @@ export default function RelationPicker({
     // same omission already made in the label-resolution effect above.
   }, [multiple, value, linkedSystemTable, filterColumn, filterValue, displayField, displayField2]);
 
-  // Search as the dropdown is open / query changes.
+  // Fetches the WHOLE candidate list once per open (not on every keystroke)
+  // and caches it (dedupedFetch above) -- typing after the first open just
+  // filters this in memory (the `options` useMemo below), so it's instant
+  // instead of waiting on a fresh server round trip per keystroke. Keyed on
+  // everything that changes what the list contains, not on `query`.
   useEffect(() => {
     if (!open) return;
     let active = true;
     setLoading(true);
-    const timer = setTimeout(async () => {
-      let results: RelationOption[] = [];
+    const cacheKey = `options:${linkedSystemTable ?? ''}:${linkedTableId ?? ''}:${displayField ?? ''}:${displayField2 ?? ''}:${(searchFieldKeys || []).join(',')}:${filterColumn ?? ''}:${filterValue ?? ''}`;
+    dedupedFetch(cacheKey, async (): Promise<RelationOption[]> => {
       if (linkedSystemTable) {
-        const col = displayField || 'name';
-        const nativeExtra = (searchFieldKeys || []).filter(k => !k.startsWith('cf:'));
-        const cfIds = (searchFieldKeys || []).filter(k => k.startsWith('cf:')).map(k => k.slice(3));
-
-        if (nativeExtra.length === 0 && cfIds.length === 0 && !filterColumn) {
-          // Common case, unchanged: one column, server-side ilike + limit.
-          let q = supabase.from(linkedSystemTable).select(`id, ${col}`).is('deleted_at', null).order(col).limit(20);
-          if (query.trim()) q = q.ilike(col, `%${query.trim()}%`);
-          const { data } = await q;
-          results = (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') }));
-        } else {
-          // Extra search fields and/or a restrict-to filter. Searches
-          // server-side, not "fetch a page then filter client-side" -- a
-          // custom field's value (e.g. Matter Number) has no relationship
-          // to `col`'s alphabetical order, so once a table has more rows
-          // than the fetch limit, the record actually being searched for
-          // can easily fall outside the page that got fetched, and the
-          // search would silently return nothing even on an exact match
-          // (confirmed live: 523 matters, page limit 200, "no matches" for
-          // a real matter number). Native extra columns and custom fields
-          // are searched separately (a custom field's value isn't a column
-          // on `linkedSystemTable`, so it can't join into one query) and
-          // merged by id.
-          const nativeCols = Array.from(new Set([col, ...nativeExtra]));
-          const q = query.trim();
-
-          const withFilterColumn = async (qb: any) => {
-            if (!filterColumn) return qb;
-            const resolvedValue = await resolveFilterValue(filterValue);
-            return resolvedValue ? qb.eq(filterColumn, resolvedValue) : qb.eq(filterColumn, '__none__');
-          };
-
-          if (!q) {
-            // Dropdown just opened, nothing typed yet -- plain browse list.
-            const rowsQuery = await withFilterColumn(
-              supabase.from(linkedSystemTable).select(`id, ${col}`).is('deleted_at', null).order(col).limit(20)
-            );
-            const { data } = await rowsQuery;
-            results = (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') }));
-          } else {
-            const nativeQueryBuilder = await withFilterColumn(
-              supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null)
-                .or(nativeCols.map(c => `${c}.ilike.%${q}%`).join(','))
-                .order(col).limit(20)
-            );
-            let cfMatchIds: string[] = [];
-            if (cfIds.length) {
-              const { data: cfRows } = await supabase
-                .from('company_custom_field_values')
-                .select('record_id')
-                .in('field_id', cfIds)
-                .ilike('value_text', `%${q}%`)
-                .limit(20);
-              cfMatchIds = Array.from(new Set((cfRows || []).map((r: any) => r.record_id)));
-            }
-            const cfQueryBuilder = cfMatchIds.length
-              ? await withFilterColumn(
-                  supabase.from(linkedSystemTable).select(`id, ${col}`).is('deleted_at', null).in('id', cfMatchIds)
-                )
-              : null;
-
-            const [nativeResult, cfResult] = await Promise.all([
-              nativeQueryBuilder,
-              cfQueryBuilder ?? Promise.resolve({ data: [] }),
-            ]);
-
-            const merged = new Map<string, RelationOption>();
-            for (const r of (nativeResult as any).data || []) merged.set(r.id, { id: r.id, label: String((r as any)[col] ?? 'Untitled') });
-            for (const r of (cfResult as any).data || []) merged.set(r.id, { id: r.id, label: String((r as any)[col] ?? 'Untitled') });
-            results = Array.from(merged.values()).slice(0, 20);
-          }
-        }
-        if (displayField2) results = await appendDisplayField2(results, linkedSystemTable, displayField2);
-      } else if (linkedTableId) {
-        const all = await fetchCustomTableRecordLabels(linkedTableId, undefined, displayField2);
-        const q = query.trim().toLowerCase();
-        results = (q ? all.filter(o => o.label.toLowerCase().includes(q)) : all).slice(0, 20);
+        return fetchAllSystemTableOptions(linkedSystemTable, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
       }
-      if (active) { setOptions(results); setLoading(false); }
-    }, 200);
-    return () => { active = false; clearTimeout(timer); };
-  }, [open, query, linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue]);
+      if (linkedTableId) {
+        const all = await fetchCustomTableRecordLabels(linkedTableId, undefined, displayField2);
+        return all.map(o => ({ ...o, searchText: o.label.toLowerCase() }));
+      }
+      return [];
+    }).then(list => {
+      if (active) { setFullOptions(list); setLoading(false); }
+    });
+    return () => { active = false; };
+  }, [open, linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue]);
+
+  // Instant client-side filter of the cached full list -- no debounce, no
+  // network call, so every keystroke updates immediately.
+  const options = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return fullOptions.slice(0, 20);
+    return fullOptions.filter(o => (o.searchText ?? o.label.toLowerCase()).includes(q)).slice(0, 50);
+  }, [fullOptions, query]);
 
   useEffect(() => {
     if (!open) return;
