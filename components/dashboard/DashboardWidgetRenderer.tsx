@@ -18,9 +18,16 @@ import TrustAgedBalancesWidget from "./TrustAgedBalancesWidget";
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
 
 interface Props {
   widget: DashboardWidget;
+  // 'custom' writes through lib/services/customTableService.ts (company_tables);
+  // a system table name writes through lib/services/systemTableRecordService.ts
+  // (native columns + company_custom_field_values) -- see
+  // DashboardQuickAddForm.tsx/DashboardGrid.tsx, the two places this actually
+  // matters (both otherwise treat tableId as opaque).
+  sourceKind: DashboardSourceKind;
   fields: CustomTableField[];
   fieldById: Map<string, CustomTableField>;
   records: CustomTableRecord[]; // already filtered by the active filter bar
@@ -67,7 +74,7 @@ interface Props {
 }
 
 export default function DashboardWidgetRenderer({
-  widget, fields, fieldById, records, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
+  widget, sourceKind, fields, fieldById, records, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
   isAdmin, onWidgetChange, fixedValues,
 }: Props) {
   switch (widget.type) {
@@ -87,6 +94,8 @@ export default function DashboardWidgetRenderer({
           filterFieldIds={widget.config.fieldIds}
           filters={filters}
           onFilterChange={setFilter}
+          pillSize={widget.config.pillSize}
+          pillGap={widget.config.pillGap}
         />
       );
 
@@ -97,12 +106,15 @@ export default function DashboardWidgetRenderer({
       return (
         <DashboardQuickAddForm
           tableId={tableId}
+          sourceKind={sourceKind}
           companyId={companyId}
           userId={userId}
           fields={fields}
           quickAddFieldIds={widget.config.fieldIds}
           onAdded={onChanged}
           fixedValues={fixedValues}
+          pillSize={widget.config.pillSize}
+          pillGap={widget.config.pillGap}
         />
       );
 
@@ -110,6 +122,7 @@ export default function DashboardWidgetRenderer({
       return (
         <DashboardGrid
           tableId={tableId}
+          sourceKind={sourceKind}
           companyId={companyId}
           fields={fields}
           gridFieldIds={widget.config.fieldIds}

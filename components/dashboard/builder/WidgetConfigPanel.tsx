@@ -12,6 +12,56 @@ import RelationPicker from "../RelationPicker";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { DashboardWidget, SummaryTileWidget, TileCondition, ChartSeriesConfig } from "@/lib/dashboardWidgets/types";
 import { isRelationType, isNumericType, isDateType, operatorsForType, aggregatesForType } from "@/lib/schema/fieldCapabilities";
+import { PILL_SIZE_LABELS, PILL_GAP_LABELS, type PillSize, type PillGap } from "@/lib/dashboardWidgets/pillSize";
+
+// Widget-level size/spacing for a filter_bar or quick_add_form's controls
+// (RelationPicker/date/select/text inputs) -- see lib/dashboardWidgets/
+// pillSize.ts. Two button groups rather than a select, matching the
+// granularity buttons already used for the chart widget below.
+function PillStyleControls({
+  pillSize, pillGap, onChange,
+}: {
+  pillSize?: PillSize;
+  pillGap?: PillGap;
+  onChange: (patch: { pillSize?: PillSize; pillGap?: PillGap }) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Size</label>
+        <div className="flex gap-1.5">
+          {(Object.keys(PILL_SIZE_LABELS) as PillSize[]).map(v => (
+            <button
+              key={v}
+              onClick={() => onChange({ pillSize: v })}
+              className={`flex-1 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all ${
+                (pillSize ?? 'md') === v ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              {PILL_SIZE_LABELS[v]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Spacing</label>
+        <div className="flex gap-1.5">
+          {(Object.keys(PILL_GAP_LABELS) as PillGap[]).map(v => (
+            <button
+              key={v}
+              onClick={() => onChange({ pillGap: v })}
+              className={`flex-1 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all ${
+                (pillGap ?? 'normal') === v ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              {PILL_GAP_LABELS[v]}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   widget: DashboardWidget;
@@ -267,11 +317,17 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
         )}
 
         {draft.type === 'filter_bar' && (
-          <FieldPickerList title="Filter fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} max={2} />
+          <div className="space-y-3">
+            <FieldPickerList title="Filter fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} max={2} />
+            <PillStyleControls pillSize={draft.config.pillSize} pillGap={draft.config.pillGap} onChange={updateConfig} />
+          </div>
         )}
 
         {draft.type === 'quick_add_form' && (
-          <FieldPickerList title="Quick-add fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} />
+          <div className="space-y-3">
+            <FieldPickerList title="Quick-add fields" fields={fields} selectedIds={draft.config.fieldIds} onChange={ids => updateConfig({ fieldIds: ids })} />
+            <PillStyleControls pillSize={draft.config.pillSize} pillGap={draft.config.pillGap} onChange={updateConfig} />
+          </div>
         )}
 
         {draft.type === 'grid' && (

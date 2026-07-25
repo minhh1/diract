@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Loader2, X, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSize";
 
 interface RelationOption { id: string; label: string }
 
@@ -119,6 +120,9 @@ interface Props {
   // grid). Only ever used to seed the initial label -- if `value` changes
   // later without a matching prop update, the normal fetch path resolves it.
   initialLabel?: string;
+  // Visual size (padding/text) -- see lib/dashboardWidgets/pillSize.ts.
+  // Undefined means 'md', the size every existing caller already renders at.
+  size?: PillSize;
 }
 
 // Resolves the primary display field's value (plus an optional second
@@ -185,8 +189,9 @@ async function appendDisplayField2(
 
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
-  value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel,
+  value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md',
 }: Props) {
+  const sizeClass = PILL_SIZE_CLASSES[size];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<RelationOption[]>([]);
@@ -424,7 +429,7 @@ export default function RelationPicker({
       ? (values || []).map(id => multiLabels[id] ?? options.find(o => o.id === id)?.label).filter(Boolean).join(', ')
       : currentLabel;
     return (
-      <div className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium text-slate-500 truncate">
+      <div className={`w-full bg-slate-50 border border-slate-200 rounded-full font-medium text-slate-500 truncate ${sizeClass}`}>
         {label || '—'}
       </div>
     );
@@ -444,7 +449,7 @@ export default function RelationPicker({
       <div ref={containerRef} className="relative w-full">
         <div
           onClick={() => setOpen(true)}
-          className="w-full min-h-[38px] bg-slate-50 border border-slate-200 rounded-2xl py-1.5 px-2.5 text-[13px] font-medium outline-none cursor-pointer flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-indigo-100"
+          className={`w-full min-h-[38px] bg-slate-50 border border-slate-200 rounded-2xl font-medium outline-none cursor-pointer flex flex-wrap items-center gap-1.5 focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`}
         >
           {selectedIds.map(id => (
             <span key={id} className="flex items-center gap-1 bg-indigo-50 text-indigo-700 rounded-full pl-2.5 pr-1.5 py-1 text-[11px] font-semibold">
@@ -505,7 +510,7 @@ export default function RelationPicker({
     <div ref={containerRef} className="relative w-full">
       <div
         onClick={() => setOpen(true)}
-        className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none cursor-pointer flex items-center justify-between gap-2 focus-within:ring-2 focus-within:ring-indigo-100"
+        className={`w-full bg-slate-50 border border-slate-200 rounded-full font-medium outline-none cursor-pointer flex items-center justify-between gap-2 focus-within:ring-2 focus-within:ring-indigo-100 ${sizeClass}`}
       >
         {open ? (
           <input

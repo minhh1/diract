@@ -4,10 +4,15 @@ import { useState } from "react";
 import { Plus, Loader2 } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
 import { createRecord } from "@/lib/services/customTableService";
+import { createRecord as createSystemTableRecord } from "@/lib/services/systemTableRecordService";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
+import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
+import type { SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
+import { PILL_GAP_CLASSES, type PillSize, type PillGap } from "@/lib/dashboardWidgets/pillSize";
 
 interface Props {
   tableId: string;
+  sourceKind: DashboardSourceKind;
   companyId: string;
   userId: string;
   fields: CustomTableField[]; // full field list -- formula fields need their dependencies
@@ -17,6 +22,11 @@ interface Props {
   // to the form itself -- e.g. a record-scoped dashboard tab (see
   // RecordDashboardTab.tsx) stamping the link field back to its parent record.
   fixedValues?: Record<string, any>;
+  // Visual size/spacing of this widget's controls -- see
+  // lib/dashboardWidgets/pillSize.ts. Undefined means 'md'/'normal', today's
+  // only look.
+  pillSize?: PillSize;
+  pillGap?: PillGap;
 }
 
 // Live-computes every formula field's preview value from the in-progress
@@ -69,18 +79,18 @@ function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, an
   return defaults;
 }
 
-function FieldSlot({ field, value, onCommit, wide }: { field: CustomTableField; value: any; onCommit: (v: any) => void; wide?: boolean }) {
+function FieldSlot({ field, value, onCommit, wide, size }: { field: CustomTableField; value: any; onCommit: (v: any) => void; wide?: boolean; size?: PillSize }) {
   return (
     <div className={wide ? 'w-full' : 'flex-1 min-w-[110px]'}>
       <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1 px-1">
         {field.label}{field.is_required && <span className="text-red-400 ml-1">*</span>}
       </label>
-      <FieldValueInput field={field} value={value} onCommit={onCommit} />
+      <FieldValueInput field={field} value={value} onCommit={onCommit} size={size} />
     </div>
   );
 }
 
-export default function DashboardQuickAddForm({ tableId, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues }: Props) {
+export default function DashboardQuickAddForm({ tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues, pillSize = 'md', pillGap = 'normal' }: Props) {
   const quickAddFields = quickAddFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
@@ -109,7 +119,9 @@ export default function DashboardQuickAddForm({ tableId, companyId, userId, fiel
     }
     setSaving(true);
     setError(null);
-    const record = await createRecord(tableId, companyId, userId, { ...values, ...fixedValues }, fields);
+    const record = sourceKind === 'custom'
+      ? await createRecord(tableId, companyId, userId, { ...values, ...fixedValues }, fields)
+      : await createSystemTableRecord(sourceKind as SystemTableName, companyId, userId, { ...values, ...fixedValues }, fields);
     setSaving(false);
     if (record && 'error' in record) {
       // e.g. a trust-ledger overdraw refusal -- see customTableService's
@@ -145,20 +157,20 @@ export default function DashboardQuickAddForm({ tableId, companyId, userId, fiel
         </div>
       )}
       {otherFields.length > 0 && (
-        <div className="flex flex-wrap items-end gap-3">
+        <div className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
           {otherFields.map(field => (
-            <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} />
+            <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} size={pillSize} />
           ))}
           {numericFields.length === 0 && AddButton}
         </div>
       )}
       {textFields.map(field => (
-        <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} wide />
+        <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} wide size={pillSize} />
       ))}
       {numericFields.length > 0 && (
-        <div className="flex flex-wrap items-end gap-3">
+        <div className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
           {numericFields.map(field => (
-            <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} />
+            <FieldSlot key={field.id} field={field} value={valueFor(field)} onCommit={commitFor(field)} size={pillSize} />
           ))}
           {AddButton}
         </div>

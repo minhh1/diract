@@ -3,12 +3,13 @@
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import RelationPicker from "./RelationPicker";
 import { getValueColumn, isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
+import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSize";
 
 // Which company_table_values column stores a given field_type's value.
 export const valueColumnFor = getValueColumn;
 
-const inputClass =
-  "w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-indigo-100";
+const inputClassFor = (size: PillSize) =>
+  `w-full bg-slate-50 border border-slate-200 rounded-full font-medium outline-none focus:ring-2 focus:ring-indigo-100 ${PILL_SIZE_CLASSES[size]}`;
 
 interface Props {
   field: CustomTableField;
@@ -19,13 +20,18 @@ interface Props {
   // displayValues) -- see RelationPicker's initialLabel for why this
   // matters at any real scale of rows.
   displayValue?: string;
+  // Visual size (padding/text) -- see lib/dashboardWidgets/pillSize.ts.
+  // Undefined means 'md', the size every existing caller (grid cells, etc.)
+  // already renders at.
+  size?: PillSize;
 }
 
 // Renders the appropriate input widget for a custom-table field, bound to a
 // value, committing on blur/change. Reuses the field_type conventions shared
 // across the schema system (see components/schema/types.ts).
-export default function FieldValueInput({ field, value, onCommit, disabled, displayValue }: Props) {
+export default function FieldValueInput({ field, value, onCommit, disabled, displayValue, size = 'md' }: Props) {
   const type = field.field_type;
+  const inputClass = inputClassFor(size);
 
   // Computed fields are never hand-edited — see supabase/company_table_fields_formula.sql.
   if (field.formula_type) {
@@ -108,6 +114,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
           onSelectMulti={ids => onCommit(ids)}
           disabled={disabled}
           placeholder={field.label}
+          size={size}
         />
       );
     }
@@ -125,6 +132,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         disabled={disabled}
         placeholder={field.label}
         initialLabel={displayValue}
+        size={size}
       />
     );
   }

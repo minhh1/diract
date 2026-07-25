@@ -3,12 +3,18 @@
 import RelationPicker from "./RelationPicker";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import { isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
+import { PILL_SIZE_CLASSES, PILL_GAP_CLASSES, type PillSize, type PillGap } from "@/lib/dashboardWidgets/pillSize";
 
 interface Props {
   fields: CustomTableField[];
   filterFieldIds: string[];
   filters: Record<string, any>;
   onFilterChange: (fieldId: string, value: any) => void;
+  // Visual size/spacing of this widget's controls -- see
+  // lib/dashboardWidgets/pillSize.ts. Undefined means 'md'/'normal', today's
+  // only look.
+  pillSize?: PillSize;
+  pillGap?: PillGap;
 }
 
 // Renders a dashboard's configured filter fields as a top toolbar, feeding
@@ -16,15 +22,17 @@ interface Props {
 // String(value) === String(filterValue) match, so any field type works as
 // long as the control here produces a comparable value. Type-aware, mirrors
 // WidgetConfigPanel's ConditionRow value control.
-export default function DashboardFilterBar({ fields, filterFieldIds, filters, onFilterChange }: Props) {
+export default function DashboardFilterBar({ fields, filterFieldIds, filters, onFilterChange, pillSize = 'md', pillGap = 'normal' }: Props) {
   const filterFields = filterFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
 
   if (filterFields.length === 0) return null;
 
+  const controlClass = `w-full bg-slate-50 border border-slate-200 rounded-full font-medium outline-none focus:ring-2 focus:ring-indigo-100 ${PILL_SIZE_CLASSES[pillSize]}`;
+
   return (
-    <div className="flex flex-wrap gap-3 p-4 bg-white border border-slate-200 rounded-2xl">
+    <div className={`flex flex-wrap p-4 bg-white border border-slate-200 rounded-2xl ${PILL_GAP_CLASSES[pillGap]}`}>
       {filterFields.map(field => (
         <div key={field.id} className="w-48">
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1 px-1">
@@ -35,7 +43,7 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               type="date"
               value={filters[field.id] || ''}
               onChange={e => onFilterChange(field.id, e.target.value || null)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+              className={controlClass}
             />
           ) : isRelationType(field.field_type) ? (
             <RelationPicker
@@ -49,12 +57,13 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               value={filters[field.id] || null}
               onSelect={id => onFilterChange(field.id, id)}
               placeholder={`All`}
+              size={pillSize}
             />
           ) : field.field_type === 'boolean' ? (
             <select
               value={filters[field.id] ?? ''}
               onChange={e => onFilterChange(field.id, e.target.value || null)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none appearance-none focus:ring-2 focus:ring-indigo-100"
+              className={`${controlClass} appearance-none`}
             >
               <option value="">All</option>
               <option value="true">Yes</option>
@@ -64,7 +73,7 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
             <select
               value={filters[field.id] ?? ''}
               onChange={e => onFilterChange(field.id, e.target.value || null)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none appearance-none focus:ring-2 focus:ring-indigo-100"
+              className={`${controlClass} appearance-none`}
             >
               <option value="">All</option>
               {(field.select_options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -75,7 +84,7 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               value={filters[field.id] ?? ''}
               onChange={e => onFilterChange(field.id, e.target.value || null)}
               placeholder="All"
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+              className={controlClass}
             />
           )}
         </div>

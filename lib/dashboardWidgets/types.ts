@@ -39,12 +39,24 @@ export interface TextWidget extends BaseWidget {
 
 export interface FilterBarWidget extends BaseWidget {
   type: 'filter_bar';
-  config: { fieldIds: string[] }; // max 2, mirrors filter_field_ids today
+  config: {
+    fieldIds: string[]; // max 2, mirrors filter_field_ids today
+    // Visual size/spacing of this widget's controls (RelationPicker/date/
+    // select/text inputs) -- see lib/dashboardWidgets/pillSize.ts. Undefined
+    // means 'md'/'normal', today's only look.
+    pillSize?: 'sm' | 'md' | 'lg';
+    pillGap?: 'tight' | 'normal' | 'loose';
+  };
 }
 
 export interface QuickAddFormWidget extends BaseWidget {
   type: 'quick_add_form';
-  config: { fieldIds: string[] }; // ordered, mirrors quick_add_field_ids
+  config: {
+    fieldIds: string[]; // ordered, mirrors quick_add_field_ids
+    // See FilterBarWidget.config.pillSize/pillGap above -- same meaning.
+    pillSize?: 'sm' | 'md' | 'lg';
+    pillGap?: 'tight' | 'normal' | 'loose';
+  };
 }
 
 export interface GridWidget extends BaseWidget {
