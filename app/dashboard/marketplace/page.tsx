@@ -19,7 +19,7 @@ interface Template {
 }
 
 interface TemplateTableField {
-  label: string; fieldType: string; linksTo: string | null;
+  label: string; fieldKey?: string; fieldType: string; linksTo: string | null;
   // Best-practice settings the template configures on this field, surfaced
   // so the admin approves exactly what they'll get (see the preview route).
   required?: boolean; unique?: boolean;
@@ -50,7 +50,7 @@ interface PreviewConflict {
 }
 
 interface PreviewWidget { id: string; type: string; layout?: { x: number; y: number; w: number; h: number }; config?: Record<string, any> }
-interface PreviewDashboard { slug: string; name: string; icon: string; color: string; owned: boolean; widgets?: PreviewWidget[] }
+interface PreviewDashboard { slug: string; name: string; icon: string; color: string; owned: boolean; widgets?: PreviewWidget[]; sourceTableSlug?: string | null }
 
 interface PreviewResult {
   templateName: string;
@@ -92,46 +92,80 @@ function fieldTooltip(f: Partial<TemplateTableField>): string | undefined {
   return parts.length ? parts.join(' — ') : undefined;
 }
 
-const WIREFRAME_WIDGETS: Record<string, { label: string; cls: string }> = {
-  filter_bar:     { label: 'Filters',      cls: 'bg-slate-100 text-slate-500' },
-  quick_add_form: { label: 'Quick add',    cls: 'bg-indigo-50 text-indigo-500' },
-  summary_tile:   { label: 'Tile',         cls: 'bg-emerald-50 text-emerald-600' },
-  chart:          { label: 'Chart',        cls: 'bg-sky-50 text-sky-600' },
-  grid:           { label: 'Records grid', cls: 'bg-amber-50 text-amber-700' },
+const WIREFRAME_STYLES: Record<string, string> = {
+  filter_bar:     'bg-slate-100 text-slate-600',
+  quick_add_form: 'bg-indigo-50 text-indigo-700',
+  summary_tile:   'bg-emerald-50 text-emerald-700',
+  chart:          'bg-sky-50 text-sky-700',
+  grid:           'bg-amber-50 text-amber-800',
 };
+
+// What each widget actually does, resolved against the source table's real
+// field labels -- so the Leads wireframe reads "New · count where Status =
+// New", not a generic "Tile" that looks the same on every dashboard.
+function widgetText(w: PreviewWidget, labelFor: (k: string) => string): { title: string; detail: string } {
+  const c = w.config || {};
+  const names = (ids?: string[]) => (ids || []).map(labelFor);
+  const listed = (ids: string[] | undefined, max: number, unit: string) => {
+    const n = names(ids);
+    return n.length > max ? `${n.slice(0, max).join(' · ')} +${n.length - max} ${unit}` : n.join(' · ');
+  };
+  switch (w.type) {
+    case 'filter_bar':     return { title: 'Filters', detail: listed(c.fieldIds, 5, 'more') };
+    case 'quick_add_form': return { title: 'Quick add', detail: listed(c.fieldIds, 6, 'more') };
+    case 'summary_tile': {
+      const agg = c.aggregate === 'count' ? 'count' : c.fieldId ? `sum of ${labelFor(c.fieldId)}` : 'sum';
+      const filt = c.filterFieldId ? ` · ${labelFor(c.filterFieldId)} = ${String(c.filterValue)}` : '';
+      return { title: c.label || 'Tile', detail: agg + filt };
+    }
+    case 'chart': {
+      const val = c.aggregate === 'count' ? 'Count' : c.valueFieldId ? `Sum of ${labelFor(c.valueFieldId)}` : 'Sum';
+      return { title: 'Chart', detail: c.dateFieldId ? `${val} by ${labelFor(c.dateFieldId)}` : val };
+    }
+    case 'grid':           return { title: 'Records grid', detail: listed(c.fieldIds, 6, 'cols') };
+    default:               return { title: w.type.replace(/_/g, ' '), detail: '' };
+  }
+}
 
 // Scaled-down schematic of the dashboard's real 12-column widget layout, so
 // the admin sees what the dashboard looks like before agreeing to it.
-function DashboardWireframe({ widgets }: { widgets: PreviewWidget[] }) {
+function DashboardWireframe({ widgets, labelFor }: { widgets: PreviewWidget[]; labelFor: (k: string) => string }) {
   if (!widgets.length) return null;
-  const ROW_PX = 9;
-  const MAX_ROWS = 26; // deep dashboards (e.g. Trust Account) get truncated with a note
+  const ROW_PX = 15;
+  const MAX_ROWS = 30; // deep dashboards (e.g. Trust Account) get truncated with a note
   const shown = widgets.filter(w => (w.layout?.y ?? 0) < MAX_ROWS);
-  const hidden = widgets.length - shown.length;
+  const hidden = widgets.filter(w => (w.layout?.y ?? 0) >= MAX_ROWS);
   const rows = Math.min(MAX_ROWS, Math.max(...shown.map(w => (w.layout?.y ?? 0) + (w.layout?.h ?? 2))));
   return (
     <div>
-      <div className="relative w-full rounded-xl border border-slate-100 bg-white overflow-hidden" style={{ height: rows * ROW_PX + 6 }}>
+      <div className="relative w-full rounded-xl border border-slate-100 bg-slate-50/50 overflow-hidden" style={{ height: rows * ROW_PX + 6 }}>
         {shown.map(w => {
           const l = w.layout || { x: 0, y: 0, w: 12, h: 2 };
-          const s = WIREFRAME_WIDGETS[w.type] || { label: w.type.replace(/_/g, ' '), cls: 'bg-slate-50 text-slate-400' };
+          const { title, detail } = widgetText(w, labelFor);
+          const cls = WIREFRAME_STYLES[w.type] || 'bg-white text-slate-500 border border-slate-100';
           return (
             <div
               key={w.id}
-              className={`absolute rounded flex items-center justify-center text-[7px] font-bold uppercase tracking-wider overflow-hidden ${s.cls}`}
+              title={detail ? `${title} — ${detail}` : title}
+              className={`absolute rounded-md flex flex-col justify-center px-2 overflow-hidden leading-tight ${cls}`}
               style={{
                 left: `calc(${(l.x / 12) * 100}% + 2px)`,
                 width: `calc(${(l.w / 12) * 100}% - 4px)`,
                 top: l.y * ROW_PX + 3,
-                height: Math.max(l.h * ROW_PX - 4, 8),
+                height: Math.max(l.h * ROW_PX - 4, 12),
               }}
             >
-              {w.config?.label || s.label}
+              <span className="text-[9px] font-bold truncate">{title}</span>
+              {detail && l.h >= 2 && <span className="text-[8px] opacity-75 truncate">{detail}</span>}
             </div>
           );
         })}
       </div>
-      {hidden > 0 && <p className="text-[9px] text-slate-400 mt-1 px-1">+ {hidden} more widget{hidden === 1 ? '' : 's'} below</p>}
+      {hidden.length > 0 && (
+        <p className="text-[9px] text-slate-400 mt-1 px-1">
+          + below: {hidden.map(w => widgetText(w, labelFor).title).join(', ')}
+        </p>
+      )}
     </div>
   );
 }
@@ -356,7 +390,7 @@ export default function MarketplacePage() {
       {/* Install / review-and-approve modal */}
       {installing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-          <div className="bg-white rounded-[40px] p-8 w-full max-w-xl shadow-2xl max-h-[85vh] overflow-y-auto space-y-5">
+          <div className="bg-white rounded-[40px] p-8 w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-y-auto space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">
                 {preview?.alreadyInstalled ? 'Update' : 'Install'} "{installing.name}"
@@ -382,8 +416,8 @@ export default function MarketplacePage() {
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Your workspace today</p>
                   <p className="text-[12px] text-slate-600">
                     {preview.currentSchema.tableNames.length > 0
-                      ? `${preview.currentSchema.tableNames.length} custom table${preview.currentSchema.tableNames.length === 1 ? '' : 's'}: ${preview.currentSchema.tableNames.join(', ')}`
-                      : 'No custom tables yet'}
+                      ? `${preview.currentSchema.tableNames.length} table${preview.currentSchema.tableNames.length === 1 ? '' : 's'}: ${preview.currentSchema.tableNames.join(', ')}`
+                      : 'No tables yet'}
                   </p>
                   <p className="text-[12px] text-slate-600">
                     {preview.currentSchema.systemFieldCounts.projects} field(s) on Projects · {preview.currentSchema.systemFieldCounts.entities} on Entities · {preview.currentSchema.systemFieldCounts.properties} on Properties
@@ -493,6 +527,11 @@ export default function MarketplacePage() {
                   )}
                   {preview.dashboards.filter(d => !d.owned).map(d => {
                     const DashIcon = (LucideIcons as any)[d.icon] || Store;
+                    // Resolve widget field keys against the source table's
+                    // real field labels; prettified key as fallback.
+                    const srcFields = preview.tables.find(t => t.slug === d.sourceTableSlug)?.fields || [];
+                    const labelByKey = new Map(srcFields.filter(f => f.fieldKey).map(f => [f.fieldKey!, f.label]));
+                    const labelFor = (k: string) => labelByKey.get(k) || k.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
                     return (
                       <div key={d.slug} className={`p-3 bg-white border border-slate-200 rounded-2xl space-y-2 ${installDashboards ? '' : 'opacity-60'}`}>
                         <div className="flex items-center gap-3">
@@ -504,7 +543,7 @@ export default function MarketplacePage() {
                           </p>
                           <span className="text-[9px] font-bold text-emerald-600 uppercase">{installDashboards ? 'New' : 'Skipped'}</span>
                         </div>
-                        <DashboardWireframe widgets={d.widgets || []} />
+                        <DashboardWireframe widgets={d.widgets || []} labelFor={labelFor} />
                       </div>
                     );
                   })}

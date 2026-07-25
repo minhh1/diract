@@ -3,9 +3,8 @@
 // The "custom_dashboard" record tab -- reuses the exact same DashboardWidget
 // builder/renderer the standalone company_dashboards use (CanvasEditor in
 // edit mode, StaticWidgetGrid + DashboardWidgetRenderer in view mode), just
-// bound to a linked custom table's rows that point back at THIS record
-// (same linked_table_id/link_field_id convention as the "custom_table" grid
-// tab -- see GridTabEditor.tsx, which this mirrors for record scoping).
+// bound to a linked custom table's rows that point back at THIS record via
+// linked_table_id/link_field_id on the record_tabs row.
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import CanvasEditor from "../builder/CanvasEditor";
@@ -61,10 +60,9 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
       setUserId(user?.id || '');
       setWidgets(((widgetRow?.widgets as DashboardWidget[]) || []));
 
-      // Auto-set link field — same heuristic as GridTabEditor, scoped to
-      // this record's own system table so an unrelated relation field of a
-      // different kind on the linked table doesn't cause a false ambiguity
-      // (see lib/dashboardWidgets/linkField.ts).
+      // Auto-set link field — scoped to this record's own system table so
+      // an unrelated relation field of a different kind on the linked table
+      // doesn't cause a false ambiguity (see lib/dashboardWidgets/linkField.ts).
       let lf: string | null = tab?.link_field_id ?? null;
       if (!lf) {
         const candidates = computeRelationCandidates(fieldList, recordSystemTable);
@@ -183,6 +181,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
           fieldById={fieldById}
           records={records}
           tableId={linkedTableId}
+          sourceKind="custom"
           companyId={companyId}
           userId={userId}
         />
@@ -204,6 +203,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
       {(w) => (
         <DashboardWidgetRenderer
           widget={w}
+          sourceKind="custom"
           fields={fields}
           fieldById={fieldById}
           records={filteredRecords}

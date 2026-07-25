@@ -15,7 +15,7 @@ export default function DashboardViewPage() {
   const slug = params.slug as string;
   const { companyId, userId, isAdmin } = useCompany();
   const {
-    dashboard, tableDef, fields, fieldById, records, allRecords, loading, filters, setFilter, refetch, updateWidget,
+    dashboard, sourceKind, tableDef, fields, fieldById, records, allRecords, loading, filters, setFilter, refetch, updateWidget,
   } = useDashboardData(slug);
 
   useProgressBarWhile(loading || !companyId || !userId);
@@ -40,7 +40,7 @@ export default function DashboardViewPage() {
         </div>
         {isAdmin && (
           <Link
-            href={`/dashboard/dashboards/${slug}/builder`}
+            href={`/dashboard/boards/${slug}/builder`}
             className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
           >
             <Settings size={13} /> Edit
@@ -56,7 +56,8 @@ export default function DashboardViewPage() {
             fieldById={fieldById}
             records={records}
             allRecords={allRecords}
-            tableId={dashboard.source_table_id}
+            tableId={dashboard.source_table_id ?? dashboard.source_table_type}
+            sourceKind={sourceKind}
             companyId={companyId}
             userId={userId}
             filters={filters}

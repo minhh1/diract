@@ -23,8 +23,8 @@ interface LogEntry {
 }
 
 const ENTITY_LABELS: Record<string, string> = {
-  company_table: 'Custom table',
-  company_table_field: 'Custom table field',
+  company_table: 'Table',
+  company_table_field: 'Field',
   company_custom_field: 'Custom field',
   template_definition: 'Template',
   template_definition_table: 'Template table',

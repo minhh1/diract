@@ -14,6 +14,7 @@ import DashboardWidgetRenderer from "../DashboardWidgetRenderer";
 import { parseDSL, type DslParseError } from "@/lib/dashboardWidgets/dsl";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
 
 interface Props {
   source: string;
@@ -24,6 +25,7 @@ interface Props {
   fieldById: Map<string, CustomTableField>;
   records: CustomTableRecord[];
   tableId: string;
+  sourceKind: DashboardSourceKind;
   companyId: string;
   userId: string;
 }
@@ -36,7 +38,7 @@ tile "Count" field= agg=count
 chart date= value= agg=sum`;
 
 export default function CodeEditor({
-  source, onSourceChange, onWidgetsChange, onErrorsChange, fields, fieldById, records, tableId, companyId, userId,
+  source, onSourceChange, onWidgetsChange, onErrorsChange, fields, fieldById, records, tableId, sourceKind, companyId, userId,
 }: Props) {
   const [errors, setErrors] = useState<DslParseError[]>([]);
   const [previewWidgets, setPreviewWidgets] = useState<DashboardWidget[]>([]);
@@ -90,6 +92,7 @@ export default function CodeEditor({
                 records={records}
                 allRecords={records}
                 tableId={tableId}
+                sourceKind={sourceKind}
                 companyId={companyId}
                 userId={userId}
                 filters={{}}

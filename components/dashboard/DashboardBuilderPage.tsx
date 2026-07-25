@@ -15,6 +15,8 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
+import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
+import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { ensureDashboardWidgetsMigrated, type RawCompanyDashboardRow } from "@/lib/dashboardWidgets/ensureMigrated";
 import { serializeToDSL, type DslParseError } from "@/lib/dashboardWidgets/dsl";
@@ -25,10 +27,18 @@ import CodeEditor from "@/components/dashboard/builder/CodeEditor";
 const ICON_OPTIONS = ['LayoutDashboard', 'Clock', 'Receipt', 'BarChart2', 'Table2', 'Briefcase'];
 const COLOR_OPTIONS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6'];
 
+// Default plural labels for the 3 system tables, overridden per company by
+// companies.table_label_overrides (see components/CustomTableBuilder.tsx's
+// identical DEFAULT_LABELS) -- e.g. a law firm sees "Matters" here instead
+// of "Projects".
+const DEFAULT_SYSTEM_TABLE_LABELS: Record<SystemTableName, string> = {
+  projects: 'Projects', properties: 'Properties', entities: 'Entities',
+};
+
 export default function DashboardBuilderPage({ slugParam }: { slugParam: string }) {
   const router = useRouter();
   const isNew = slugParam === 'new';
-  const { companyId, userId, isAdmin, loading: companyLoading } = useCompany();
+  const { companyId, userId, isAdmin, loading: companyLoading, tableLabelOverrides } = useCompany();
   const { tables } = useCustomTables();
 
   const [loading, setLoading] = useState(!isNew);
@@ -37,7 +47,10 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('LayoutDashboard');
   const [color, setColor] = useState('#6366f1');
-  const [sourceTableId, setSourceTableId] = useState('');
+  // Either a company_tables.id (custom table) or a system table name
+  // ('projects'/'properties'/'entities') -- one flat picker, no visual
+  // distinction between the two kinds of table (see the <select> below).
+  const [sourceTableKey, setSourceTableKey] = useState('');
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [codeSource, setCodeSource] = useState('');
   const [codeWidgets, setCodeWidgets] = useState<DashboardWidget[]>([]);
@@ -46,8 +59,23 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const sourceTableSlug = useMemo(() => tables.find(t => t.id === sourceTableId)?.slug || null, [tables, sourceTableId]);
-  const { fields, records } = useCustomTable(sourceTableSlug);
+  const isSystemSource = (SYSTEM_TABLE_NAMES as readonly string[]).includes(sourceTableKey);
+  const sourceKind: DashboardSourceKind = isSystemSource ? (sourceTableKey as SystemTableName) : 'custom';
+  const sourceTableSlug = useMemo(
+    () => (isSystemSource ? null : tables.find(t => t.id === sourceTableKey)?.slug || null),
+    [tables, sourceTableKey, isSystemSource]
+  );
+
+  // Both hooks are always called (Rules of Hooks) -- each tolerates a null
+  // table identifier by no-op'ing, and only the one matching sourceKind ever
+  // has real data. Mirrors lib/hooks/useDashboardData.ts's identical pattern.
+  const customTableResult = useCustomTable(sourceTableSlug);
+  const systemTableResult = useSystemTableAsCustomTable(
+    isSystemSource ? (sourceTableKey as SystemTableName) : null,
+    companyId,
+    isSystemSource ? (tableLabelOverrides[sourceTableKey]?.plural || DEFAULT_SYSTEM_TABLE_LABELS[sourceTableKey as SystemTableName]) : undefined,
+  );
+  const { fields, records } = isSystemSource ? systemTableResult : customTableResult;
   const fieldById = useMemo(() => new Map(fields.map(f => [f.id, f])), [fields]);
 
   useEffect(() => {
@@ -55,7 +83,11 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     (async () => {
       const { data } = await supabase.from('company_dashboards').select('*').eq('slug', slugParam).maybeSingle();
       if (data) {
-        let row = data as RawCompanyDashboardRow & { name: string; icon: string; color: string; source_table_id: string; code_source: string | null; builder_mode: 'canvas' | 'code' };
+        let row = data as RawCompanyDashboardRow & {
+          name: string; icon: string; color: string;
+          source_table_id: string | null; source_table_type: DashboardSourceKind;
+          code_source: string | null; builder_mode: 'canvas' | 'code';
+        };
         if (!row.widgets_migrated_at) {
           const migrated = await ensureDashboardWidgetsMigrated(row);
           row = { ...row, widgets: migrated, widgets_migrated_at: new Date().toISOString() };
@@ -65,7 +97,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         setName(row.name);
         setIcon(row.icon);
         setColor(row.color);
-        setSourceTableId(row.source_table_id);
+        setSourceTableKey(row.source_table_type === 'custom' ? (row.source_table_id || '') : row.source_table_type);
         setWidgets(row.widgets || []);
         setCodeSource(row.code_source || '');
         setBuilderMode(row.builder_mode || 'canvas');
@@ -76,8 +108,8 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
 
   useProgressBarWhile(loading);
 
-  const handleSourceTableChange = (tableId: string) => {
-    setSourceTableId(tableId);
+  const handleSourceTableChange = (key: string) => {
+    setSourceTableKey(key);
     setWidgets([]);
     setCodeSource('');
   };
@@ -99,7 +131,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   };
 
   const handleSave = async () => {
-    if (!name.trim() || !sourceTableId || !companyId) return;
+    if (!name.trim() || !sourceTableKey || !companyId) return;
     if (builderMode === 'code' && codeErrors.length > 0) return;
     setSaving(true);
     setError('');
@@ -110,7 +142,8 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       name: name.trim(),
       icon,
       color,
-      source_table_id: sourceTableId,
+      source_table_type: sourceKind,
+      source_table_id: isSystemSource ? null : sourceTableKey,
       widgets: finalWidgets,
       code_source: builderMode === 'code' ? codeSource : serializeToDSL(finalWidgets, fields),
       builder_mode: builderMode,
@@ -160,7 +193,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     return <p className="text-center text-[12px] text-slate-400 py-20">Only company admins can build or delete dashboards.</p>;
   }
 
-  const canSave = !saving && !!name.trim() && !!sourceTableId && !(builderMode === 'code' && codeErrors.length > 0);
+  const canSave = !saving && !!name.trim() && !!sourceTableKey && !(builderMode === 'code' && codeErrors.length > 0);
 
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-6">
@@ -192,19 +225,22 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Source table</label>
           <select
-            value={sourceTableId}
+            value={sourceTableKey}
             onChange={e => handleSourceTableChange(e.target.value)}
             disabled={!isNew && !!dashboardId}
             className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none appearance-none disabled:opacity-60"
           >
-            <option value="">Select a custom table...</option>
+            <option value="">Select a table...</option>
+            {SYSTEM_TABLE_NAMES.map(t => (
+              <option key={t} value={t}>{tableLabelOverrides[t]?.plural || DEFAULT_SYSTEM_TABLE_LABELS[t]}</option>
+            ))}
             {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation — delete and recreate to switch tables.</p>}
         </div>
       </div>
 
-      {sourceTableId && companyId && userId && (
+      {sourceTableKey && companyId && userId && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-full w-fit">
             <button
@@ -228,7 +264,8 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               fields={fields}
               fieldById={fieldById}
               records={records}
-              tableId={sourceTableId}
+              tableId={sourceTableKey}
+              sourceKind={sourceKind}
               companyId={companyId}
               userId={userId}
             />
@@ -241,7 +278,8 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               fields={fields}
               fieldById={fieldById}
               records={records}
-              tableId={sourceTableId}
+              tableId={sourceTableKey}
+              sourceKind={sourceKind}
               companyId={companyId}
               userId={userId}
             />

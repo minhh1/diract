@@ -147,7 +147,7 @@ export default function CustomTableBuilder() {
     if (!isAdmin) {
       if (!window.confirm(`Request deleting the "${tableName}" table? A company admin will need to approve it.`)) return;
       if (!companyId) return;
-      const result = await createArchiveRequest("company_tables", tableId, `Custom table: ${tableName}`, companyId);
+      const result = await createArchiveRequest("company_tables", tableId, `Table: ${tableName}`, companyId);
       if (!result.ok) { window.alert(result.error); return; }
       window.alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Deletion requested — a company admin will review it.");
       refreshPendingArchiveRequests();

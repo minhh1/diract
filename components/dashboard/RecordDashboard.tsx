@@ -18,9 +18,11 @@ import CalendarTab from "./tabs/CalendarTab";
 import EmailsTab from "./tabs/EmailsTab";
 import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
 import RecordDashboardTab from "./tabs/RecordDashboardTab";
-import GridTabEditor from "./GridTabEditor";
 import TeamMemberLinkCard from "./TeamMemberLinkCard";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import {
+  SYSTEM_TABLE_HIDDEN_COLS, SYSTEM_TABLE_RELATION_MAP, SYSTEM_TABLE_PERSON_LINK_COLS,
+} from "@/lib/schema/systemTableRelations";
 import { getCompanyId } from "@/lib/services/schemaService";
 import { createArchiveRequest, type ArchiveEntityTable } from "@/lib/archiveRequests";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
@@ -234,33 +236,11 @@ export default function RecordDashboard({
         .is('deleted_at', null)
         .order('display_order');
 
-      const HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id'];
-
-      // Hardcoded relation map — overrides RPC which sometimes returns wrong table
-      const RELATION_MAP: Record<string, { table: string; displayCol: string; fieldType?: string }> = {
-        // Properties
-        holding_entity_id:  { table: 'entities',   displayCol: 'name' },
-        purchase_entity_id: { table: 'entities',   displayCol: 'name' },
-        council_entity_id:  { table: 'entities',   displayCol: 'name' },
-        insurer_entity_id:  { table: 'entities',   displayCol: 'name' },
-        property_id:        { table: 'properties', displayCol: 'street_address' },
-        project_id:         { table: 'projects',   displayCol: 'name' },
-        // Projects
-        parent_property_id: { table: 'properties', displayCol: 'street_address' },
-        parent_project_id:  { table: 'projects',   displayCol: 'name' },
-        // Entities
-        type_id:            { table: 'entity_types', displayCol: 'label' },
-      };
-
-      // project_manager and project_owner — text fields that should offer entity or profile linking
-      // Rendered as text for now but flagged as 'person_link' for future enhancement
-      const PERSON_LINK_COLS = ['project_manager', 'project_owner'];
-
       const baseFields: FieldLayout[] = (schemaCols || [])
-        .filter((c: any) => ['data', 'relation'].includes(c.category) && !c.is_hidden && !HIDDEN_COLS.includes(c.column_name))
+        .filter((c: any) => ['data', 'relation'].includes(c.category) && !c.is_hidden && !SYSTEM_TABLE_HIDDEN_COLS.includes(c.column_name))
         .map((c: any, i: number) => {
-          const relOverride = RELATION_MAP[c.column_name];
-          const isPersonLink = PERSON_LINK_COLS.includes(c.column_name);
+          const relOverride = SYSTEM_TABLE_RELATION_MAP[c.column_name];
+          const isPersonLink = SYSTEM_TABLE_PERSON_LINK_COLS.includes(c.column_name);
           return {
             id: c.column_name,
             field_key: c.column_name,
@@ -784,16 +764,6 @@ export default function RecordDashboard({
       {activeTab?.tab_type === 'document_templates' && (
         <DocumentTemplatesTab recordId={recordId} companyId={companyId} />
       )}
-      {activeTab?.tab_type === 'custom_table' && activeTab.linked_table_id && (
-        <GridTabEditor
-          tabId={activeTab.id}
-          linkedTableId={activeTab.linked_table_id}
-          recordId={recordId}
-          companyId={companyId}
-          isEditing={isEditingLayout}
-          recordSystemTable={systemTable}
-        />
-      )}
       {activeTab?.tab_type === 'custom_dashboard' && activeTab.linked_table_id && (
         <RecordDashboardTab
           tabId={activeTab.id}
@@ -930,7 +900,7 @@ export default function RecordDashboard({
               {primaryValue}
             </h2>
             <div className="flex items-center gap-2">
-              {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_table' || activeTab?.tab_type === 'custom_dashboard') && (
+              {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_dashboard') && (
                 <button
                   onClick={() => setIsEditingLayout(p => !p)}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
@@ -1004,7 +974,7 @@ export default function RecordDashboard({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_table' || activeTab?.tab_type === 'custom_dashboard') && (
+            {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_dashboard') && (
               <button
                 onClick={() => setIsEditingLayout(p => !p)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${

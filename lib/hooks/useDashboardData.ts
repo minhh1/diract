@@ -3,9 +3,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCustomTable } from "./useCustomTable";
+import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "./useSystemTableAsCustomTable";
 import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMigrated";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
+
+export type DashboardSourceKind = 'custom' | SystemTableName;
 
 export interface SummaryTileConfig {
   label: string;
@@ -28,7 +31,8 @@ export interface CompanyDashboard {
   slug: string;
   icon: string;
   color: string;
-  source_table_id: string;
+  source_table_id: string | null;
+  source_table_type: DashboardSourceKind;
   quick_add_field_ids: string[];
   grid_field_ids: string[];
   filter_field_ids: string[];
@@ -62,7 +66,7 @@ export function useDashboardData(dashboardSlug: string) {
       }
       if (!active) return;
       setDashboard(dash);
-      if (dash?.source_table_id) {
+      if (dash?.source_table_type === 'custom' && dash?.source_table_id) {
         const { data: tbl } = await supabase.from('company_tables').select('slug').eq('id', dash.source_table_id).maybeSingle();
         if (active) setSourceTableSlug(tbl?.slug || null);
       }
@@ -71,7 +75,16 @@ export function useDashboardData(dashboardSlug: string) {
     return () => { active = false; };
   }, [dashboardSlug]);
 
-  const { tableDef, fields, records, loading: tableLoading, refetch: refetchTable } = useCustomTable(sourceTableSlug);
+  const sourceKind: DashboardSourceKind = dashboard?.source_table_type ?? 'custom';
+  const systemTableName = sourceKind !== 'custom' ? sourceKind : null;
+
+  // Both hooks are always called (Rules of Hooks) -- each tolerates a null
+  // table identifier by no-op'ing, and only the one matching this
+  // dashboard's actual source_table_type ever has real data in it.
+  const customTableResult = useCustomTable(sourceKind === 'custom' ? sourceTableSlug : null);
+  const systemTableResult = useSystemTableAsCustomTable(systemTableName, dashboard?.company_id ?? null);
+  const { tableDef, fields, records, loading: tableLoading, refetch: refetchTable } =
+    sourceKind === 'custom' ? customTableResult : systemTableResult;
 
   const fieldById = useMemo(() => new Map(fields.map(f => [f.id, f])), [fields]);
 
@@ -195,6 +208,7 @@ export function useDashboardData(dashboardSlug: string) {
 
   return {
     dashboard,
+    sourceKind,
     tableDef,
     fields,
     fieldById,

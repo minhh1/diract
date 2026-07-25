@@ -32,10 +32,10 @@ const ENTITY_TABLE_LABELS: Record<string, string> = {
   tasks: "Task",
   entities: "Entity",
   properties: "Property",
-  company_table_records: "Custom table record",
-  company_tables: "Custom table",
-  company_table_fields: "Custom table field",
-  company_custom_fields: "Custom field",
+  company_table_records: "Record",
+  company_tables: "Table",
+  company_table_fields: "Table field",
+  company_custom_fields: "Extra field",
   // Not a real soft-delete -- "archiving" here moves the project's Gmail
   // messages into a nominated archive account instead (see
   // app/api/archive-requests/approve's gmail_project_archive special case).

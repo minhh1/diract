@@ -24,6 +24,7 @@ import WidgetConfigPanel from "./WidgetConfigPanel";
 import { createWidget } from "@/lib/dashboardWidgets/defaults";
 import type { DashboardWidget, DashboardWidgetType } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
 
 interface Props {
   widgets: DashboardWidget[];
@@ -32,11 +33,12 @@ interface Props {
   fieldById: Map<string, CustomTableField>;
   records: CustomTableRecord[];
   tableId: string;
+  sourceKind: DashboardSourceKind;
   companyId: string;
   userId: string;
 }
 
-export default function CanvasEditor({ widgets, onChange, fields, fieldById, records, tableId, companyId, userId }: Props) {
+export default function CanvasEditor({ widgets, onChange, fields, fieldById, records, tableId, sourceKind, companyId, userId }: Props) {
   const { width, containerRef, mounted } = useContainerWidth();
   const [configuringId, setConfiguringId] = useState<string | null>(null);
 
@@ -109,6 +111,7 @@ export default function CanvasEditor({ widgets, onChange, fields, fieldById, rec
                       records={records}
                       allRecords={records}
                       tableId={tableId}
+                      sourceKind={sourceKind}
                       companyId={companyId}
                       userId={userId}
                       filters={{}}

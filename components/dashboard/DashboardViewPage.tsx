@@ -17,7 +17,7 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
   const router = useRouter();
   const { companyId, userId, isAdmin } = useCompany();
   const {
-    dashboard, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, filters, setFilter, refetch, updateWidget,
+    dashboard, sourceKind, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, filters, setFilter, refetch, updateWidget,
   } = useDashboardData(slug);
 
   // Fullscreen = the whole dashboard (every widget), not any single one --
@@ -101,7 +101,8 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
               records={records}
               chartRecords={chartRecords}
               allRecords={allRecords}
-              tableId={dashboard.source_table_id}
+              tableId={dashboard.source_table_id ?? dashboard.source_table_type}
+              sourceKind={sourceKind}
               companyId={companyId}
               userId={userId}
               filters={filters}

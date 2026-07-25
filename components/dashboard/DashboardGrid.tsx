@@ -4,9 +4,14 @@ import { useState, useEffect } from "react";
 import { X, GripVertical } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
 import { updateRecord, deleteRecord } from "@/lib/services/customTableService";
+import {
+  updateRecord as updateSystemTableRecord, deleteRecord as deleteSystemTableRecord,
+} from "@/lib/services/systemTableRecordService";
 import { evaluateCondition } from "@/lib/dashboardWidgets/compute";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import type { GridWidget } from "@/lib/dashboardWidgets/types";
+import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
+import type { SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const MIN_COLUMN_WIDTH = 80;
@@ -20,6 +25,7 @@ const HIGHLIGHT_BG: Record<string, string> = {
 
 interface Props {
   tableId: string;
+  sourceKind: DashboardSourceKind;
   companyId: string;
   fields: CustomTableField[]; // full field list -- formula recompute needs dependencies
   gridFieldIds: string[]; // ordered subset of columns to show
@@ -74,7 +80,7 @@ function formatTotal(value: number, fieldType: string): string {
 // view (column drawer, search, expand-row) -- this is meant to be one
 // section of a composed dashboard, not a standalone page.
 export default function DashboardGrid({
-  tableId, companyId, fields, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
+  tableId, sourceKind, companyId, fields, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
   columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow,
 }: Props) {
   const gridFields = gridFieldIds
@@ -157,7 +163,9 @@ export default function DashboardGrid({
 
   const handleCellCommit = async (recordId: string, field: CustomTableField, value: any) => {
     setOverrides(prev => ({ ...prev, [recordId]: { ...prev[recordId], [field.field_key]: value } }));
-    const result = await updateRecord(recordId, tableId, companyId, { [field.field_key]: value }, fields);
+    const result = sourceKind === 'custom'
+      ? await updateRecord(recordId, tableId, companyId, { [field.field_key]: value }, fields)
+      : await updateSystemTableRecord(recordId, sourceKind as SystemTableName, companyId, { [field.field_key]: value }, fields);
     if (result && 'error' in result) {
       window.alert(result.error);
       setOverrides(prev => {
@@ -171,7 +179,9 @@ export default function DashboardGrid({
 
   const handleDelete = async (recordId: string) => {
     if (!window.confirm('Delete this entry? It can be restored from Trash.')) return;
-    const result = await deleteRecord(recordId);
+    const result = sourceKind === 'custom'
+      ? await deleteRecord(recordId)
+      : await deleteSystemTableRecord(recordId, sourceKind as SystemTableName);
     if (result && 'error' in result) window.alert(result.error);
     onChanged();
   };
