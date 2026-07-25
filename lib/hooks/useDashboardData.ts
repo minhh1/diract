@@ -128,15 +128,34 @@ export function useDashboardData(dashboardSlug: string) {
     }
   }, [dashboard]);
 
+  const activeFilters = useMemo(
+    () => Object.entries(filters).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+    [filters]
+  );
+
   const filteredRecords = useMemo(() => {
-    const active = Object.entries(filters).filter(([, v]) => v !== null && v !== undefined && v !== '');
-    if (active.length === 0) return records;
-    return records.filter(r => active.every(([fieldId, val]) => {
+    if (activeFilters.length === 0) return records;
+    return records.filter(r => activeFilters.every(([fieldId, val]) => {
       const field = fieldById.get(fieldId);
       if (!field) return true;
       return String(r.values[field.field_key] ?? '') === String(val);
     }));
-  }, [records, filters, fieldById]);
+  }, [records, activeFilters, fieldById]);
+
+  // A chart plotting activity over time is meaningless once narrowed to the
+  // filter bar's date (its default is TODAY -- see the defaults-seeding
+  // effect below -- so an unfiltered-by-date chart would otherwise render
+  // one lone bar every day instead of the trend it's for). Every OTHER
+  // active filter (e.g. Staff) still narrows it, same as the grid/tiles.
+  const chartRecords = useMemo(() => {
+    const nonDateFilters = activeFilters.filter(([fieldId]) => fieldById.get(fieldId)?.field_type !== 'date');
+    if (nonDateFilters.length === 0) return records;
+    return records.filter(r => nonDateFilters.every(([fieldId, val]) => {
+      const field = fieldById.get(fieldId);
+      if (!field) return true;
+      return String(r.values[field.field_key] ?? '') === String(val);
+    }));
+  }, [records, activeFilters, fieldById]);
 
   const summaryTiles = useMemo(() => {
     return (dashboard?.summary_tiles || []).map(tile => {
@@ -180,6 +199,7 @@ export function useDashboardData(dashboardSlug: string) {
     fields,
     fieldById,
     records: filteredRecords,
+    chartRecords,
     allRecords: records,
     loading: dashboardLoading || tableLoading,
     filters,

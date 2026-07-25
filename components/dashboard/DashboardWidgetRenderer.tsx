@@ -24,6 +24,13 @@ interface Props {
   fields: CustomTableField[];
   fieldById: Map<string, CustomTableField>;
   records: CustomTableRecord[]; // already filtered by the active filter bar
+  // Filtered by every active filter EXCEPT date fields -- a chart plotting
+  // activity over time is meaningless once narrowed to one specific date
+  // (the filter bar's own default), so it always shows every date while
+  // still respecting e.g. a Staff filter. Falls back to `records` when a
+  // caller hasn't threaded it through (builder preview contexts, where the
+  // distinction doesn't matter -- there's no real filter bar interaction).
+  chartRecords?: CustomTableRecord[];
   // Unfiltered -- trust_reconciliation/ledes_export ignore the dashboard's
   // ad-hoc filter bar (a matter filter narrowing the grid must not also
   // narrow a statutory reconciliation or an invoice export list).
@@ -60,7 +67,7 @@ interface Props {
 }
 
 export default function DashboardWidgetRenderer({
-  widget, fields, fieldById, records, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
+  widget, fields, fieldById, records, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
   isAdmin, onWidgetChange, fixedValues,
 }: Props) {
   switch (widget.type) {
@@ -129,7 +136,7 @@ export default function DashboardWidgetRenderer({
     }
 
     case 'chart': {
-      const series = computeChartSeries(widget.config, records, fieldById);
+      const series = computeChartSeries(widget.config, chartRecords ?? records, fieldById);
       return <DashboardActivityChart series={series} granularity={widget.config.granularity ?? 'day'} />;
     }
 
