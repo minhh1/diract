@@ -12,6 +12,57 @@
   }
 }
 
+/* Tactile clicks — every native <button>, link, and element the app marks
+   as clickable via `cursor-pointer` gets consistent press/hover feedback
+   instead of relying on each component to opt in. */
+@layer base {
+  button,
+  a[href],
+  .cursor-pointer {
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1),
+      filter 0.15s ease, box-shadow 0.15s ease;
+  }
+  button:not(:disabled),
+  a[href],
+  .cursor-pointer {
+    cursor: pointer;
+  }
+  button:not(:disabled):hover,
+  a[href]:hover,
+  .cursor-pointer:hover {
+    filter: brightness(1.06) saturate(1.08);
+  }
+  button:not(:disabled):active,
+  a[href]:active,
+  .cursor-pointer:active {
+    transform: scale(0.96);
+    filter: brightness(0.96);
+    transition-duration: 0.05s;
+  }
+  button:not(:disabled):active {
+    transform: scale(0.94);
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Primary CTAs (the app's dominant "bg-indigo-600" style) get a soft
+     colored elevation so they read as raised, clickable surfaces. */
+  button.bg-indigo-600,
+  a.bg-indigo-600 {
+    box-shadow: 0 1px 2px rgba(67, 56, 202, 0.18), 0 3px 10px rgba(67, 56, 202, 0.16);
+  }
+  button.bg-indigo-600:not(:disabled):hover,
+  a.bg-indigo-600:hover {
+    box-shadow: 0 2px 4px rgba(67, 56, 202, 0.22), 0 6px 16px rgba(67, 56, 202, 0.24);
+  }
+  button.bg-indigo-600:not(:disabled):active,
+  a.bg-indigo-600:active {
+    box-shadow: 0 1px 2px rgba(67, 56, 202, 0.18);
+  }
+}
+
 /* Custom Scrollbar using v4 syntax */
 @layer utilities {
   ::-webkit-scrollbar {
