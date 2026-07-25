@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { bucketKey } from "@/lib/dashboardWidgets/compute";
-import type { ChartGranularity } from "@/lib/dashboardWidgets/types";
+import type { ChartGranularity, ChartType } from "@/lib/dashboardWidgets/types";
 
 interface SeriesProp {
   label: string;
@@ -18,6 +18,9 @@ interface SeriesProp {
 interface Props {
   series: SeriesProp[];
   granularity: ChartGranularity;
+  // Undefined means 'bar', today's only look -- see ChartWidget.config's doc
+  // comment in lib/dashboardWidgets/types.ts.
+  chartType?: ChartType;
   // The filter bar's current value for this chart's own date field (if any)
   // -- highlights the matching bucket so it's clear which day the rest of
   // the dashboard is currently scoped to.
@@ -60,7 +63,7 @@ function formatValue(v: number, fieldType: string): string {
     : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export default function DashboardActivityChart({ series, granularity, selectedBucket, onBucketClick }: Props) {
+export default function DashboardActivityChart({ series, granularity, chartType = 'bar', selectedBucket, onBucketClick }: Props) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -236,7 +239,46 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
           {hasAxes ? 'No series matches this combination' : 'Every series is hidden — click a legend item to show it'}
         </div>
       ) : (
-      <div className="relative flex items-end gap-[3px] h-32">
+      <div className="relative h-32">
+        {/* Line/area draw once, as one SVG path per visible series, behind
+            the per-slot hover/click columns below (unchanged for every
+            chart type -- tooltip and "click to filter the dashboard to
+            this bucket" work identically regardless of how the values are
+            drawn). viewBox height 100 matches the bars' own height-percent
+            math (heightPct below) so both marks agree on where 0..max
+            sits; preserveAspectRatio="none" stretches the path to the
+            container's actual box, same as the bars already implicitly
+            do via percentage heights. */}
+        {chartType !== 'bar' && (
+          <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox={`0 0 ${Math.max(1, slots.length - 1)} 100`} preserveAspectRatio="none">
+            {visibleIndexes.map(i => {
+              const color = isSingleSeries ? BAR_COLOR : SERIES_COLORS[i % SERIES_COLORS.length];
+              const coords = slots.map((slot, idx) => {
+                const value = byBucketPerSeries[i].get(slot.bucket) || 0;
+                const y = 100 - Math.max(0, Math.min(100, (value / maxValue) * 100));
+                return `${idx},${y}`;
+              });
+              const linePoints = coords.join(' ');
+              return (
+                <g key={i}>
+                  {chartType === 'area' && (
+                    <polygon points={`0,100 ${linePoints} ${slots.length - 1},100`} fill={color} fillOpacity={0.15} stroke="none" />
+                  )}
+                  <polyline
+                    points={linePoints}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                </g>
+              );
+            })}
+          </svg>
+        )}
+      <div className="relative flex items-end gap-[3px] h-full">
         {slots.map(slot => {
           const isCurrent = slot.bucket === todayBucket;
           const isSelected = slot.bucket === selectedBucket;
@@ -271,26 +313,29 @@ export default function DashboardActivityChart({ series, granularity, selectedBu
               ) : (!isSingleSeries && isCurrent) && (
                 <div className="absolute inset-y-0 left-0 right-0 bg-slate-100/70 rounded pointer-events-none" />
               )}
-              <div className="relative flex items-end justify-center gap-[2px] h-full w-full">
-                {series.map((s, i) => {
-                  if (!visibleIndexes.includes(i)) return null;
-                  const value = byBucketPerSeries[i].get(slot.bucket) || 0;
-                  const heightPct = Math.max(2, (value / maxValue) * 100);
-                  const color = isSingleSeries
-                    ? (value > 0 ? (isCurrent ? TODAY_COLOR : BAR_COLOR) : TRACK_COLOR)
-                    : (value > 0 ? SERIES_COLORS[i % SERIES_COLORS.length] : TRACK_COLOR);
-                  return (
-                    <div
-                      key={i}
-                      className="flex-1 max-w-[24px] rounded-t transition-all"
-                      style={{ height: `${heightPct}%`, backgroundColor: color, minHeight: 2 }}
-                    />
-                  );
-                })}
-              </div>
+              {chartType === 'bar' && (
+                <div className="relative flex items-end justify-center gap-[2px] h-full w-full">
+                  {series.map((s, i) => {
+                    if (!visibleIndexes.includes(i)) return null;
+                    const value = byBucketPerSeries[i].get(slot.bucket) || 0;
+                    const heightPct = Math.max(2, (value / maxValue) * 100);
+                    const color = isSingleSeries
+                      ? (value > 0 ? (isCurrent ? TODAY_COLOR : BAR_COLOR) : TRACK_COLOR)
+                      : (value > 0 ? SERIES_COLORS[i % SERIES_COLORS.length] : TRACK_COLOR);
+                    return (
+                      <div
+                        key={i}
+                        className="flex-1 max-w-[24px] rounded-t transition-all"
+                        style={{ height: `${heightPct}%`, backgroundColor: color, minHeight: 2 }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
+      </div>
       </div>
       )}
 

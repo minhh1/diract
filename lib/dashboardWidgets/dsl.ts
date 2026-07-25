@@ -41,7 +41,9 @@
 // which must match (AND) -- <cond> is `<key>:<op>:<value>`, e.g.
 // `when=billable:eq:false` or `when=billable:eq:false,type:eq:TimeBased`
 // for "non-billable time entries". <op> is one of eq/neq/contains/gt/gte/
-// lt/lte/is_set/is_empty (is_set and is_empty take no value: `matter:is_set`).
+// lt/lte/is_set/is_empty (is_set and is_empty take no value: `matter:is_set`)/
+// date_relative (date fields only -- <value> is a relative-range token from
+// lib/dashboardWidgets/relativeDates.ts, e.g. `dueDate:date_relative:$this_week`).
 // Bare `when=<key>` (no colon) is shorthand for `<key>:eq:true`, kept for
 // backward compatibility with the original boolean-only syntax.
 //
@@ -143,7 +145,7 @@ export function parseDSL(source: string, fields: CustomTableField[]): DslParseRe
   // backward-compat shorthand. Unresolved field tokens are dropped (the
   // "Unknown field" error already came from resolveFieldToken above), so a
   // typo in one condition doesn't discard every other condition on the line.
-  const VALID_OPERATORS = new Set(['eq', 'neq', 'contains', 'gt', 'gte', 'lt', 'lte', 'is_set', 'is_empty']);
+  const VALID_OPERATORS = new Set(['eq', 'neq', 'contains', 'gt', 'gte', 'lt', 'lte', 'is_set', 'is_empty', 'date_relative']);
   const parseConditions = (whenStr: string | undefined, lineNo: number): TileCondition[] => {
     if (!whenStr) return [];
     const conditions: TileCondition[] = [];

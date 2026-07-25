@@ -5,6 +5,7 @@
 // independently-positioned widget. See components/dashboard/DashboardWidgetRenderer.tsx.
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import type { SummaryTileWidget, ChartWidget, ChartSeriesConfig, ChartGranularity, TileCondition } from "./types";
+import { matchesRelativeDate, type RelativeDateRange } from "./relativeDates";
 
 function isEmptyValue(v: any): boolean {
   if (Array.isArray(v)) return v.length === 0; // allow_multiple relation fields
@@ -45,6 +46,7 @@ export function evaluateCondition(cond: TileCondition, rawValue: any): boolean {
     case 'gte': return Number(rawValue) >= Number(cond.value);
     case 'lt': return Number(rawValue) < Number(cond.value);
     case 'lte': return Number(rawValue) <= Number(cond.value);
+    case 'date_relative': return matchesRelativeDate(rawValue, cond.value as RelativeDateRange);
     default: return true;
   }
 }

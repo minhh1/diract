@@ -60,7 +60,7 @@ export function isDateType(fieldType: string): boolean {
   return (DATE_FIELD_TYPES as string[]).includes(fieldType);
 }
 
-export type TileOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_empty';
+export type TileOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_empty' | 'date_relative';
 
 // Which comparisons make sense for a field type -- e.g. "contains" only for
 // free text, "is set"/"is empty" for relations (an empty relation is a
@@ -80,6 +80,10 @@ export function operatorsForType(fieldType: string): { value: TileOperator; labe
     { value: 'is_set', label: 'is set' }, { value: 'is_empty', label: 'is empty' },
   ];
   if (isDateType(fieldType)) return [
+    // 'is in' (date_relative) is listed first -- the no-literal-date-needed
+    // option (This week/This month/...) is the common case this exists for;
+    // an exact 'on'/'after'/'before' date is still available right after it.
+    { value: 'date_relative', label: 'is in' },
     { value: 'eq', label: 'on' }, { value: 'neq', label: 'not on' },
     { value: 'gt', label: 'after' }, { value: 'gte', label: 'on or after' }, { value: 'lt', label: 'before' }, { value: 'lte', label: 'on or before' },
     { value: 'is_set', label: 'is set' }, { value: 'is_empty', label: 'is empty' },

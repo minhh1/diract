@@ -9,7 +9,8 @@
 // saved dashboard's widgets get rendered on the view page.
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2, LayoutGrid, Code2 } from "lucide-react";
+import { Loader2, Trash2, LayoutGrid, Code2, LayoutDashboard } from "lucide-react";
+import * as LucideIcons from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
@@ -17,6 +18,7 @@ import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
 import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
+import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { ensureDashboardWidgetsMigrated, type RawCompanyDashboardRow } from "@/lib/dashboardWidgets/ensureMigrated";
 import { serializeToDSL, type DslParseError } from "@/lib/dashboardWidgets/dsl";
@@ -26,6 +28,20 @@ import CodeEditor from "@/components/dashboard/builder/CodeEditor";
 
 const ICON_OPTIONS = ['LayoutDashboard', 'Clock', 'Receipt', 'BarChart2', 'Table2', 'Briefcase'];
 const COLOR_OPTIONS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6'];
+
+// The builder's Canvas/Code previews render through the exact same
+// DashboardWidgetRenderer the live view page uses -- if it were handed the
+// real fetched `records`, a grid widget would render every real row (a
+// 1000-entry table renders 1000 rows just to preview a column layout) and
+// summary tiles/charts would show real, possibly sensitive, aggregate
+// figures (e.g. billable amounts) to whoever is editing the dashboard's
+// structure, not just its owner. A stable empty array -- not the real
+// `records` state -- means every widget preview renders its own already-
+// established "no data" look (grid: "No entries yet"; summary tile: 0;
+// chart: empty). Module-level so it's the same reference across renders,
+// not a fresh [] literal each time that would otherwise cascade into
+// needless re-renders downstream.
+const EMPTY_PREVIEW_RECORDS: CustomTableRecord[] = [];
 
 // Default plural labels for the 3 system tables, overridden per company by
 // companies.table_label_overrides (see components/CustomTableBuilder.tsx's
@@ -75,7 +91,9 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     companyId,
     isSystemSource ? (tableLabelOverrides[sourceTableKey]?.plural || DEFAULT_SYSTEM_TABLE_LABELS[sourceTableKey as SystemTableName]) : undefined,
   );
-  const { fields, records } = isSystemSource ? systemTableResult : customTableResult;
+  // Only `fields` (the schema) is used here -- the builder's Canvas/Code
+  // previews deliberately never see real row data; see EMPTY_PREVIEW_RECORDS.
+  const { fields } = isSystemSource ? systemTableResult : customTableResult;
   const fieldById = useMemo(() => new Map(fields.map(f => [f.id, f])), [fields]);
 
   useEffect(() => {
@@ -178,6 +196,18 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     }
   };
 
+  // Every edit here (name/icon/colour/widgets/code) only ever lives in this
+  // component's own state until handleSave actually writes it -- so
+  // "discard" is just "leave without calling handleSave", not an undo of
+  // anything already persisted. Existing only-way-out was the browser's own
+  // back button, which works but isn't discoverable as "cancel this edit"
+  // the way an explicit button is. Confirms first since there's no undo for
+  // a discard itself (unlike handleDelete's, which moves to Trash).
+  const handleDiscard = () => {
+    if (!window.confirm('Discard your unsaved changes to this dashboard?')) return;
+    router.push(isNew ? '/dashboard/properties' : `/dashboard/${slugParam}`);
+  };
+
   const handleDelete = async () => {
     if (!dashboardId || !companyId || !before) return;
     if (!window.confirm(`Delete "${name}"? This moves it to Trash and can be restored later.`)) return;
@@ -208,10 +238,25 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Icon</label>
-            <select value={icon} onChange={e => setIcon(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none">
-              {ICON_OPTIONS.map(i => <option key={i} value={i}>{i}</option>)}
-            </select>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Icon</label>
+            <div className="flex gap-1.5 pt-1.5">
+              {ICON_OPTIONS.map(i => {
+                const Icon = (LucideIcons as any)[i] || LayoutDashboard;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setIcon(i)}
+                    title={i}
+                    className={`w-9 h-9 flex items-center justify-center rounded-full border transition-all ${
+                      icon === i ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon size={16} />
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Colour</label>
@@ -263,7 +308,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               onChange={setWidgets}
               fields={fields}
               fieldById={fieldById}
-              records={records}
+              records={EMPTY_PREVIEW_RECORDS}
               tableId={sourceTableKey}
               sourceKind={sourceKind}
               companyId={companyId}
@@ -277,7 +322,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               onErrorsChange={setCodeErrors}
               fields={fields}
               fieldById={fieldById}
-              records={records}
+              records={EMPTY_PREVIEW_RECORDS}
               tableId={sourceTableKey}
               sourceKind={sourceKind}
               companyId={companyId}
@@ -292,6 +337,9 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       <div className="flex gap-3">
         <button onClick={handleSave} disabled={!canSave} className="flex-1 py-3.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2">
           {saving ? <Loader2 size={14} className="animate-spin" /> : 'Save dashboard'}
+        </button>
+        <button onClick={handleDiscard} disabled={saving} className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-full text-[11px] font-bold uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50">
+          Discard changes
         </button>
         {!isNew && (
           <button onClick={handleDelete} className="p-3.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"><Trash2 size={16} /></button>

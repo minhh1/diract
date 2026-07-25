@@ -7,6 +7,7 @@ import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName }
 import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMigrated";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
+import { toRelativeDateToken, relativeDateFromToken, matchesRelativeDate } from "@/lib/dashboardWidgets/relativeDates";
 
 export type DashboardSourceKind = 'custom' | SystemTableName;
 
@@ -95,22 +96,25 @@ export function useDashboardData(dashboardSlug: string) {
   // Any date-type field in the filter bar defaults to today the first time
   // the dashboard's config + fields are both available -- e.g. a Time Entry
   // dashboard should open already scoped to today's entries (grid, summary
-  // tiles) rather than showing everything, and since "today" is computed
-  // fresh on each load, it changes every day without any stored state.
-  // Seeded once (defaultsSeededRef), not on every fields/dashboard change,
-  // so it never overwrites a filter the user has since cleared or changed.
+  // tiles) rather than showing everything. Seeded as the "$today" relative
+  // token (see relativeDates.ts), not a literal ISO date -- it's the exact
+  // same value the filter bar's own "Today" preset produces, so "today"
+  // stays fresh if the tab is left open across midnight instead of being
+  // frozen at whatever date the page happened to load on. Seeded once
+  // (defaultsSeededRef), not on every fields/dashboard change, so it never
+  // overwrites a filter the user has since cleared or changed.
   const defaultsSeededRef = useRef(false);
   useEffect(() => {
     if (defaultsSeededRef.current || !dashboard || fields.length === 0) return;
     defaultsSeededRef.current = true;
     const filterBarWidget = dashboard.widgets.find(w => w.type === 'filter_bar');
     if (!filterBarWidget || filterBarWidget.type !== 'filter_bar') return;
-    const today = new Date().toISOString().slice(0, 10);
+    const todayToken = toRelativeDateToken('today');
     const dateFieldIds = filterBarWidget.config.fieldIds.filter(id => fields.find(f => f.id === id)?.field_type === 'date');
     if (dateFieldIds.length) {
       setFilters(prev => {
         const next = { ...prev };
-        for (const id of dateFieldIds) if (next[id] === undefined) next[id] = today;
+        for (const id of dateFieldIds) if (next[id] === undefined) next[id] = todayToken;
         return next;
       });
     }
@@ -146,12 +150,22 @@ export function useDashboardData(dashboardSlug: string) {
     [filters]
   );
 
+  // A date field's filter value can be a literal 'YYYY-MM-DD' (exact-match,
+  // the original behavior) OR a relative-range token like "$this_week" (see
+  // relativeDates.ts) -- matched by range instead of equality. Shared by
+  // filteredRecords and chartRecords' nonDateFilters loop below.
+  const matchesFilterValue = (fieldType: string, rawValue: any, filterValue: any): boolean => {
+    const range = fieldType === 'date' ? relativeDateFromToken(filterValue) : null;
+    if (range) return matchesRelativeDate(rawValue, range);
+    return String(rawValue ?? '') === String(filterValue);
+  };
+
   const filteredRecords = useMemo(() => {
     if (activeFilters.length === 0) return records;
     return records.filter(r => activeFilters.every(([fieldId, val]) => {
       const field = fieldById.get(fieldId);
       if (!field) return true;
-      return String(r.values[field.field_key] ?? '') === String(val);
+      return matchesFilterValue(field.field_type, r.values[field.field_key], val);
     }));
   }, [records, activeFilters, fieldById]);
 
@@ -166,7 +180,7 @@ export function useDashboardData(dashboardSlug: string) {
     return records.filter(r => nonDateFilters.every(([fieldId, val]) => {
       const field = fieldById.get(fieldId);
       if (!field) return true;
-      return String(r.values[field.field_key] ?? '') === String(val);
+      return matchesFilterValue(field.field_type, r.values[field.field_key], val);
     }));
   }, [records, activeFilters, fieldById]);
 

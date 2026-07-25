@@ -163,6 +163,7 @@ export default function DashboardWidgetRenderer({
         <DashboardActivityChart
           series={series}
           granularity={widget.config.granularity ?? 'day'}
+          chartType={widget.config.chartType}
           selectedBucket={selectedBucket}
           // Clicking the already-selected bucket clears it (toggle) instead
           // of re-setting the same value -- lets the viewer get back to

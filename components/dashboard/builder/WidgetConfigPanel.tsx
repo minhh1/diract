@@ -13,6 +13,7 @@ import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { DashboardWidget, SummaryTileWidget, TileCondition, ChartSeriesConfig } from "@/lib/dashboardWidgets/types";
 import { isRelationType, isNumericType, isDateType, operatorsForType, aggregatesForType } from "@/lib/schema/fieldCapabilities";
 import { PILL_SIZE_LABELS, PILL_GAP_LABELS, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
+import { RELATIVE_DATE_RANGES, RELATIVE_DATE_LABELS } from "@/lib/dashboardWidgets/relativeDates";
 
 // Grid columns store a raw pixel width (GridWidget.config.columnWidths),
 // unlike filter_bar/quick_add_form's category-based fieldLayout -- these
@@ -81,6 +82,11 @@ function PillStyleControls({
 interface Props {
   widget: DashboardWidget;
   fields: CustomTableField[];
+  // Every OTHER widget on this dashboard -- today only used to list summary
+  // tiles a chart's "add from an existing tile" button can promote into a
+  // series (see addSeriesFromTile below). Not filtered before being passed
+  // in; this component does its own filtering per use.
+  allWidgets: DashboardWidget[];
   onSave: (widget: DashboardWidget) => void;
   onClose: () => void;
 }
@@ -162,6 +168,15 @@ function ConditionRow({
               onSelect={id => onChange({ value: id })}
               placeholder="Value..."
             />
+          ) : field.field_type === 'date' && condition.operator === 'date_relative' ? (
+            <select
+              value={condition.value ?? ''}
+              onChange={e => onChange({ value: e.target.value })}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none appearance-none"
+            >
+              <option value="">Range...</option>
+              {RELATIVE_DATE_RANGES.map(r => <option key={r} value={r}>{RELATIVE_DATE_LABELS[r]}</option>)}
+            </select>
           ) : field.field_type === 'date' ? (
             <input
               type="date"
@@ -216,7 +231,7 @@ function normalizeWidget(widget: DashboardWidget): DashboardWidget {
   return widget;
 }
 
-export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: Props) {
+export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<DashboardWidget>(() => normalizeWidget(widget));
 
   const numericFields = fields.filter(f => isNumericType(f.field_type));
@@ -311,6 +326,26 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
     if (draft.type !== 'chart') return;
     const series = draft.config.series || [];
     updateSeries(seriesIndex, { axis: (series[seriesIndex]?.axis || []).filter((_, i) => i !== axisIndex) });
+  };
+
+  // Every summary tile on this dashboard whose aggregate a chart series can
+  // actually represent -- 'net' (A minus B) has no equivalent here since
+  // ChartSeriesConfig only ever plots ONE field's aggregate, not a
+  // difference of two, so a net tile is left off the list entirely rather
+  // than silently promoting it into a series that would plot the wrong
+  // number. sum/count/count-distinct all map straight across.
+  const promotableTiles = allWidgets.filter(
+    (w): w is SummaryTileWidget => w.type === 'summary_tile' && w.config.aggregate !== 'net'
+  );
+  const addSeriesFromTile = (tile: SummaryTileWidget) => {
+    if (draft.type !== 'chart') return;
+    const newSeries: ChartSeriesConfig = {
+      label: tile.config.label || '',
+      valueFieldId: tile.config.fieldId,
+      aggregate: tile.config.aggregate as ChartSeriesConfig['aggregate'],
+      conditions: tile.config.conditions || [],
+    };
+    updateConfig({ series: [...(draft.config.series || []), newSeries] });
   };
 
   return (
@@ -615,6 +650,23 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
               </div>
             </div>
 
+            <div>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Chart type</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['bar', 'line', 'area'] as const).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => updateConfig({ chartType: t })}
+                    className={`py-2 rounded-full text-[11px] font-bold capitalize transition-all ${
+                      (draft.config.chartType || 'bar') === t ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Series</label>
@@ -624,6 +676,22 @@ export default function WidgetConfigPanel({ widget, fields, onSave, onClose }: P
                   </button>
                 )}
               </div>
+              {promotableTiles.length > 0 && (draft.config.series?.length || 0) < 8 && (
+                <div className="space-y-1">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Or add from an existing tile</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {promotableTiles.map(tile => (
+                      <button
+                        key={tile.id}
+                        onClick={() => addSeriesFromTile(tile)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-full text-[10px] font-bold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                      >
+                        <Plus size={10} /> {tile.config.label || 'Untitled tile'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {(draft.config.series || []).map((s, si) => (
                 <div key={si} className="p-3 bg-slate-50/60 border border-slate-200 rounded-2xl space-y-2">
                   <div className="flex items-center gap-1.5">

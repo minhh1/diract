@@ -116,7 +116,11 @@ export interface GridWidget extends BaseWidget {
 // non-numeric text) rather than erroring.
 export interface TileCondition {
   fieldId: string;
-  operator: 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_empty';
+  // 'date_relative' is date-field-only: `value` is a RelativeDateRange
+  // token from lib/dashboardWidgets/relativeDates.ts (e.g. "$this_week")
+  // instead of a literal 'YYYY-MM-DD' string -- see that module's doc
+  // comment for why a token, not a new value shape.
+  operator: 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_empty' | 'date_relative';
   value?: any;
 }
 
@@ -182,10 +186,18 @@ export interface ChartSeriesConfig {
   axis?: { name: string; choice: string }[];
 }
 
+export type ChartType = 'bar' | 'line' | 'area';
+
 export interface ChartWidget extends BaseWidget {
   type: 'chart';
   config: {
     dateFieldId: string; // shared x-axis across every series -- never per-series
+    // Absent/undefined = 'bar' (today's only behavior, zero migration needed).
+    // 'line'/'area' plot the same bucketed points as an SVG path instead of
+    // bars -- same data, same interactive per-bucket hover/click, just a
+    // different mark. No 'pie' -- this chart's x-axis is always the date
+    // field bucketed by granularity, a shape pie charts don't represent.
+    chartType?: ChartType;
     // Absent/undefined = 'day' (today's only behavior, zero migration needed).
     granularity?: ChartGranularity;
     // Preferred going forward. Absent/empty falls back to the deprecated

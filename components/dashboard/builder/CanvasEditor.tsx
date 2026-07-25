@@ -131,6 +131,7 @@ export default function CanvasEditor({ widgets, onChange, fields, fieldById, rec
         <WidgetConfigPanel
           widget={configuringWidget}
           fields={fields}
+          allWidgets={widgets}
           onClose={() => setConfiguringId(null)}
           onSave={(updated) => {
             onChange(widgets.map(w => w.id === updated.id ? updated : w));

@@ -6,6 +6,46 @@ import RelationPicker from "./RelationPicker";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import { isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
 import { PILL_SIZE_CLASSES, PILL_GAP_CLASSES, FIELD_WIDTH_CLASSES, defaultFieldWidth, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
+import { toRelativeDateToken, relativeDateFromToken, RELATIVE_DATE_LABELS, type RelativeDateRange } from "@/lib/dashboardWidgets/relativeDates";
+
+// The filter bar's own quick-pick set -- a deliberately short list (the
+// full RELATIVE_DATE_RANGES also has Yesterday/Last week/Last month/etc.,
+// better suited to a condition builder than a toolbar control meant to be
+// glanced at). "Custom date..." below covers everything else.
+const FILTER_BAR_DATE_PRESETS: RelativeDateRange[] = ['today', 'this_week', 'this_month'];
+
+// A viewer usually means "this week's entries", not one specific literal
+// date -- see relativeDates.ts's doc comment. Fully derived from `value`
+// (no local state to fall out of sync with it): a relative-range token
+// shows as its preset; a literal 'YYYY-MM-DD' shows as "Custom date..."
+// plus the native date input to adjust it; empty is "All". Picking "Custom
+// date..." seeds today's date immediately (rather than an ambiguous
+// "custom but no value yet" state) so the date input has something to
+// start adjusting from the moment it appears.
+function DateFilterControl({ value, onChange, className }: { value: any; onChange: (v: any) => void; className: string }) {
+  const range = relativeDateFromToken(value);
+  const isCustom = !!value && !range;
+  const presetValue = isCustom ? 'custom' : (range ? toRelativeDateToken(range) : '');
+  return (
+    <div className="space-y-1">
+      <select
+        value={presetValue}
+        onChange={e => {
+          const v = e.target.value;
+          onChange(v === 'custom' ? new Date().toISOString().slice(0, 10) : (v || null));
+        }}
+        className={`${className} appearance-none`}
+      >
+        <option value="">All</option>
+        {FILTER_BAR_DATE_PRESETS.map(r => <option key={r} value={toRelativeDateToken(r)}>{RELATIVE_DATE_LABELS[r]}</option>)}
+        <option value="custom">Custom date...</option>
+      </select>
+      {isCustom && (
+        <input type="date" value={value} onChange={e => onChange(e.target.value || null)} className={className} />
+      )}
+    </div>
+  );
+}
 
 interface Props {
   fields: CustomTableField[];
@@ -77,10 +117,9 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
             {field.label}
           </label>
           {field.field_type === 'date' ? (
-            <input
-              type="date"
-              value={filters[field.id] || ''}
-              onChange={e => onFilterChange(field.id, e.target.value || null)}
+            <DateFilterControl
+              value={filters[field.id]}
+              onChange={v => onFilterChange(field.id, v)}
               className={controlClass}
             />
           ) : isRelationType(field.field_type) ? (
