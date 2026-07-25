@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, Check, X, ClipboardCheck, ArrowUpDown, Clock, AlertTriangle, RotateCw, Search,
+  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, ArrowUpDown, Clock, AlertTriangle, RotateCw, Search,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import HeartbeatStatusList from "@/components/admin/HeartbeatStatusList";
@@ -111,15 +111,6 @@ interface ArchivedProject {
   job_status: string | null; // status of the archive job, if one is tracked
 }
 
-interface ArchiveRequest {
-  id: string;
-  project_id: string;
-  project_name: string;
-  requester_name: string;
-  created_at: string;
-  error: string | null;
-}
-
 const JOB_STATUS_STYLES: Record<string, string> = {
   pending: "bg-slate-100 text-slate-500",
   processing: "bg-amber-50 text-amber-600",
@@ -158,7 +149,7 @@ const HEARTBEAT_DEFS: Record<string, { label: string; intervalMs: number }> = {
 const ACTIVITY_PAGE_SIZE = 50;
 
 export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps) {
-  const [section, setSection] = useState<"labels" | "queue" | "activity" | "health" | "archived" | "requests" | "failures">("labels");
+  const [section, setSection] = useState<"labels" | "queue" | "activity" | "health" | "archived" | "failures">("labels");
   const [loading, setLoading] = useState(true);
 
   const [sharedLabels, setSharedLabels] = useState<SharedLabel[]>([]);
@@ -166,10 +157,6 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
   const [archiveEmails, setArchiveEmails] = useState<string[]>([]);
   const [archivingProjectId, setArchivingProjectId] = useState<string | null>(null);
   const [archivedProjects, setArchivedProjects] = useState<ArchivedProject[]>([]);
-
-  const [archiveRequests, setArchiveRequests] = useState<ArchiveRequest[]>([]);
-  const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(new Set());
-  const [reviewingRequests, setReviewingRequests] = useState(false);
 
   const [queue, setQueue] = useState<QueueJob[]>([]);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
@@ -214,7 +201,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
 
-    const [{ data: memberships }, { data: labels }, { data: archived }, { data: jobs }, { data: archiveJobs }, { data: hb }, { data: comp }, { data: requests }, { data: failures }] = await Promise.all([
+    const [{ data: memberships }, { data: labels }, { data: archived }, { data: jobs }, { data: archiveJobs }, { data: hb }, { data: comp }, { data: failures }] = await Promise.all([
       supabase.from("company_memberships").select("user_id").eq("company_id", companyId),
       supabase.from("project_gmail_labels")
         .select("project_id, gmail_label_name, label_code")
@@ -236,10 +223,6 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
         .order("updated_at", { ascending: false }),
       supabase.from("cron_heartbeats").select("name, last_run_at, last_result"),
       supabase.from("companies").select("gmail_archive_emails").eq("id", companyId).single(),
-      supabase.from("gmail_archive_requests")
-        .select("id, project_id, requested_by, created_at, error")
-        .eq("company_id", companyId).eq("status", "pending")
-        .order("created_at", { ascending: false }),
       supabase.from("gmail_sync_failures")
         .select("id, job_id, job_type, project_id, user_id, status, attempts, last_error, first_failed_at, last_attempted_at")
         .eq("company_id", companyId)
@@ -272,7 +255,6 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
       ...(labels || []).map((l: any) => l.project_id),
       ...(jobs || []).map((j: any) => j.project_id),
       ...(archived || []).map((a: any) => a.project_id),
-      ...(requests || []).map((r: any) => r.project_id),
       ...(failures || []).map((f: any) => f.project_id),
     ]));
     let projectNameById = new Map<string, string>();
@@ -332,23 +314,6 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
       job_status: latestJobStatusByProject.get(a.project_id) || null,
     })));
 
-    // Resolve requester names for pending archive requests
-    const requesterIds = Array.from(new Set((requests || []).map((r: any) => r.requested_by).filter(Boolean)));
-    let requesterNameById = new Map<string, string>();
-    if (requesterIds.length) {
-      const { data: profiles } = await supabase.from("profiles").select("id, full_name, email").in("id", requesterIds);
-      requesterNameById = new Map((profiles || []).map((p: any) => [p.id, p.full_name || p.email || "Unknown"]));
-    }
-    setArchiveRequests((requests || []).map((r: any) => ({
-      id: r.id,
-      project_id: r.project_id,
-      project_name: projectNameById.get(r.project_id) || r.project_id,
-      requester_name: r.requested_by ? (requesterNameById.get(r.requested_by) || "Unknown") : "Unknown",
-      created_at: r.created_at,
-      error: r.error,
-    })));
-    setSelectedRequestIds(new Set());
-
     // Resolve label names (via each failure's parent job) + user names for the Persistent Failures tab
     const failureJobIds = Array.from(new Set((failures || []).map((f: any) => f.job_id).filter(Boolean)));
     let labelNameByJobId = new Map<string, string>();
@@ -398,58 +363,6 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     } finally {
       setRetryingFailureId(null);
     }
-  };
-
-  const toggleRequestSelected = (id: string) => {
-    setSelectedRequestIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAllRequests = () => {
-    setSelectedRequestIds(prev =>
-      prev.size === archiveRequests.length ? new Set() : new Set(archiveRequests.map(r => r.id))
-    );
-  };
-
-  const handleApproveSelected = async () => {
-    if (!selectedRequestIds.size) return;
-    if (!window.confirm(
-      `Approve ${selectedRequestIds.size} archive request${selectedRequestIds.size !== 1 ? "s" : ""}?\n\n` +
-      `Each project's emails will be copied to the nominated archive account(s), verified, then deleted ` +
-      `from every other member's mailbox.`
-    )) return;
-
-    setReviewingRequests(true);
-    const res = await fetch("/api/gmail/archive-requests/approve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request_ids: Array.from(selectedRequestIds) }),
-    });
-    const result = await res.json();
-    setReviewingRequests(false);
-    if (!res.ok) { alert(result.error || "Failed to approve requests"); return; }
-    const failed = (result.results || []).filter((r: any) => !r.ok);
-    if (failed.length) alert(`${failed.length} request(s) could not be approved:\n` + failed.map((f: any) => f.error).join("\n"));
-    load();
-  };
-
-  const handleRejectSelected = async () => {
-    if (!selectedRequestIds.size) return;
-    if (!window.confirm(`Reject ${selectedRequestIds.size} archive request${selectedRequestIds.size !== 1 ? "s" : ""}?`)) return;
-
-    setReviewingRequests(true);
-    const res = await fetch("/api/gmail/archive-requests/reject", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request_ids: Array.from(selectedRequestIds) }),
-    });
-    const result = await res.json();
-    setReviewingRequests(false);
-    if (!res.ok) { alert(result.error || "Failed to reject requests"); return; }
-    load();
   };
 
   const handleArchive = async (projectId: string, labelName: string) => {
@@ -547,7 +460,6 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
   const sections = [
     { id: "labels" as const, label: "Shared labels", icon: Tag },
-    { id: "requests" as const, label: `Requests${archiveRequests.length ? ` (${archiveRequests.length})` : ""}`, icon: ClipboardCheck },
     { id: "archived" as const, label: "Archived", icon: Archive },
     { id: "queue" as const, label: "Live queue", icon: ListOrdered },
     { id: "failures" as const, label: `Failures${syncFailures.length ? ` (${syncFailures.length})` : ""}`, icon: AlertTriangle },
@@ -640,72 +552,6 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                 </div>
               </div>
             ))
-          )}
-        </div>
-      )}
-
-      {section === "requests" && (
-        <div className="space-y-3">
-          {archiveRequests.length === 0 ? (
-            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
-              No pending archive requests
-            </p>
-          ) : (
-            <>
-              <div className="flex items-center justify-between px-1">
-                <button
-                  onClick={toggleSelectAllRequests}
-                  className="text-[11px] font-bold text-slate-500 hover:text-slate-800"
-                >
-                  {selectedRequestIds.size === archiveRequests.length ? "Deselect all" : "Select all"}
-                </button>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleRejectSelected}
-                    disabled={!selectedRequestIds.size || reviewingRequests}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    <X size={11} /> Reject
-                  </button>
-                  <button
-                    onClick={handleApproveSelected}
-                    disabled={!selectedRequestIds.size || reviewingRequests}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    {reviewingRequests ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-                    Approve selected
-                  </button>
-                </div>
-              </div>
-
-              {archiveRequests.map(r => (
-                <div
-                  key={r.id}
-                  onClick={() => toggleRequestSelected(r.id)}
-                  className={`bg-white border rounded-[28px] p-5 flex items-center gap-4 cursor-pointer transition-all ${
-                    selectedRequestIds.has(r.id) ? "border-purple-300 ring-2 ring-purple-100" : "border-slate-100"
-                  }`}
-                >
-                  <div className={`h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
-                    selectedRequestIds.has(r.id) ? "bg-purple-600 border-purple-600" : "border-slate-300"
-                  }`}>
-                    {selectedRequestIds.has(r.id) && <Check size={12} className="text-white" />}
-                  </div>
-                  <div className="h-10 w-10 rounded-2xl bg-purple-50 flex items-center justify-center shrink-0">
-                    <ClipboardCheck size={16} className="text-purple-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-bold text-slate-800 truncate">{r.project_name}</p>
-                    <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                      Requested by {r.requester_name} — {new Date(r.created_at).toLocaleString()}
-                    </p>
-                    {r.error && (
-                      <p className="text-[10px] text-red-500 mt-1">Last attempt failed: {r.error}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </>
           )}
         </div>
       )}

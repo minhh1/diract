@@ -43,6 +43,75 @@ function isEmptyFieldValue(v: unknown): boolean {
   return v === undefined || v === null || v === '';
 }
 
+// Relation field types that resolve to one of the three fixed system
+// tables, each with an obvious single identifying text column — table_relation
+// and link are excluded (no established identifying-column convention, and
+// unused on system-table custom fields as of writing) and stay blocked.
+const RESOLVABLE_RELATION_TABLES: Record<string, { table: string; nameColumn: string }> = {
+  entity: { table: 'entities', nameColumn: 'name' },
+  property: { table: 'properties', nameColumn: 'street_address' },
+  project: { table: 'projects', nameColumn: 'name' },
+};
+function isResolvableRelationType(fieldType: string): boolean {
+  return fieldType in RESOLVABLE_RELATION_TABLES;
+}
+
+// Resolves a typed name (or, for "property", a typed address) to a row in
+// the relevant system table without a search-and-pick UI (Google CardService
+// can't do live search) — mirrors lib/ai/actions.ts's
+// resolveEntityByName/resolveProjectByName + pickBestMatch (used by the
+// Teams bot for the identical "no picker available" problem): a single
+// ilike candidate, or an exact case-insensitive match among several, is
+// treated as confident and linked directly. Anything less certain (no
+// match, or several similarly-named candidates with none an exact match)
+// creates a new row rather than guessing which existing one was meant, and
+// flags it needs_review=true so it surfaces in that table's review banner
+// (components/GenericMasterTable.tsx) — the existing duplicate-
+// reconciliation tool (Settings → Reconciliation) is what a user would then
+// use to merge it if it does turn out to be a duplicate.
+async function resolveOrCreateRelation(
+  companyId: string, fieldType: string, name: string, createdBy: string | null
+): Promise<{ id: string; flagged: boolean }> {
+  const config = RESOLVABLE_RELATION_TABLES[fieldType];
+  if (!config) throw new Error(`Unsupported relation field type: ${fieldType}`);
+  const trimmed = name.trim();
+
+  const { data: candidates } = await db
+    .from(config.table)
+    .select(`id, ${config.nameColumn}`)
+    .eq('company_id', companyId)
+    .is('deleted_at', null)
+    .ilike(config.nameColumn, `%${trimmed}%`);
+
+  const list = (candidates || []) as any[];
+  let match: any = null;
+  if (list.length === 1) {
+    match = list[0];
+  } else if (list.length > 1) {
+    match = list.find((c) => String(c[config.nameColumn]).toLowerCase() === trimmed.toLowerCase()) || null;
+  }
+  if (match) return { id: match.id, flagged: false };
+
+  const reason = list.length > 1
+    ? `Created from Gmail — "${trimmed}" matched several existing records, none exactly: ${list.map((c) => c[config.nameColumn]).join(', ')}`
+    : `Created from Gmail — "${trimmed}" didn't match any existing record`;
+  const insertRow: Record<string, unknown> = {
+    company_id: companyId,
+    [config.nameColumn]: trimmed,
+    needs_review: true,
+    review_reason: reason,
+  };
+  if (fieldType === 'entity') insertRow.entity_type = 'Company';
+  if (fieldType === 'project') { insertRow.status = 'active'; insertRow.created_by = createdBy; }
+
+  const { data: created, error } = await db
+    .from(config.table)
+    .insert(insertRow)
+    .select('id').single();
+  if (error || !created) throw new Error(error?.message || `Failed to create ${fieldType}`);
+  return { id: created.id, flagged: true };
+}
+
 async function logTaskActivity(params: { taskId: string; companyId: string; actorId: string | null; action: string; detail?: string | null }) {
   await db.from('task_activity_log').insert({
     task_id: params.taskId,
@@ -566,12 +635,29 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Required-field check — relation-type fields (property/entity/project/
-      // link) have no input widget in the add-on, so they're excluded from
-      // this check; a company with such a field marked required can only
-      // create projects from the web app, not from Gmail.
+      // Resolvable relation fields (entity/property/project — e.g. "Client
+      // Name") arrive here as a typed name, not a record id — there's no
+      // search-and-pick UI in the add-on for relation fields. Resolve each
+      // to a real row (creating one, flagged for review, when there's no
+      // confident match) before the required-field check below and the
+      // company_custom_field_values insert further down, both of which
+      // expect a real id.
+      const flaggedNames: string[] = [];
+      for (const field of allFields) {
+        if (!isResolvableRelationType(field.field_type)) continue;
+        const typedName = fieldValues[field.id];
+        if (isEmptyFieldValue(typedName)) continue;
+        const resolved = await resolveOrCreateRelation(companyId, field.field_type, typedName, profile.id);
+        fieldValues[field.id] = resolved.id;
+        if (resolved.flagged) flaggedNames.push(typedName);
+      }
+
+      // Required-field check — relation-type fields OTHER than the
+      // resolvable ones (link/table_relation) have no input widget in the
+      // add-on, so they're excluded from this check; a company with one of
+      // those marked required can only create projects from the web app.
       const missingRequired = allFields.find((f: any) =>
-        f.is_required && !isRelationFieldType(f.field_type) && isEmptyFieldValue(fieldValues[f.id])
+        f.is_required && (!isRelationFieldType(f.field_type) || isResolvableRelationType(f.field_type)) && isEmptyFieldValue(fieldValues[f.id])
       );
       if (missingRequired) {
         return json({ error: `"${missingRequired.label}" is required.` }, 400, headers);
@@ -669,7 +755,7 @@ Deno.serve(async (req) => {
         }, { onConflict: 'company_id,user_id,gmail_message_id', ignoreDuplicates: true });
       }
 
-      return json({ ok: true, projectId: project.id, labelName: fullLabelName, labelCode }, 200, headers);
+      return json({ ok: true, projectId: project.id, labelName: fullLabelName, labelCode, flaggedNames }, 200, headers);
     }
 
     // ── GET /project-field-settings ─────────────────────────────────
@@ -700,6 +786,7 @@ Deno.serve(async (req) => {
           isUnique: f.is_unique,
           selectOptions: f.select_options || [],
           isRelationType: isRelationFieldType(f.field_type),
+          isResolvableRelation: isResolvableRelationType(f.field_type),
         })),
       }, 200, headers);
     }
@@ -759,12 +846,16 @@ Deno.serve(async (req) => {
         .order('display_order');
       const allFields = fields || [];
 
-      // Relation fields (need a search-and-pick UI against other records)
-      // and formula fields (computed, not hand-entered — and this endpoint
-      // doesn't evaluate formulas) have no input widget in the add-on. A
-      // required field of either kind means this table can't be completed
-      // from Gmail at all.
-      const blocked = allFields.find((f: any) => f.is_required && (isRelationFieldType(f.field_type) || f.formula_type));
+      // Relation fields other than entity/property/project (need a
+      // search-and-pick UI against other records, or in table_relation's
+      // case an arbitrary custom table with no established identifying
+      // column) and formula fields (computed, not hand-entered — and this
+      // endpoint doesn't evaluate formulas) have no input widget in the
+      // add-on. A required field of either kind means this table can't be
+      // completed from Gmail at all.
+      const blocked = allFields.find((f: any) =>
+        f.is_required && ((isRelationFieldType(f.field_type) && !isResolvableRelationType(f.field_type)) || f.formula_type)
+      );
       const canCreate = !blocked;
 
       return json({
@@ -781,6 +872,7 @@ Deno.serve(async (req) => {
           isAutoNumber: f.auto_number_prefix != null,
           isFormula: !!f.formula_type,
           isRelationType: isRelationFieldType(f.field_type),
+          isResolvableRelation: isResolvableRelationType(f.field_type),
         })),
       }, 200, headers);
     }
@@ -806,9 +898,26 @@ Deno.serve(async (req) => {
         .is('deleted_at', null);
       const allFields = fields || [];
 
-      const blocked = allFields.find((f: any) => f.is_required && (isRelationFieldType(f.field_type) || f.formula_type));
+      const blocked = allFields.find((f: any) =>
+        f.is_required && ((isRelationFieldType(f.field_type) && !isResolvableRelationType(f.field_type)) || f.formula_type)
+      );
       if (blocked) {
         return json({ error: `"${blocked.label}" is required but its field type can only be set from the web app.` }, 400, headers);
+      }
+
+      // Resolvable relation fields (entity/property/project) arrive as a
+      // typed name, not a record id — resolve each to a real row before the
+      // required-field/unique checks and value inserts below, which all
+      // expect a real id (see resolveOrCreateRelation for the matching
+      // logic and why it creates-and-flags rather than guessing).
+      const flaggedNames: string[] = [];
+      for (const field of allFields) {
+        if (!isResolvableRelationType(field.field_type)) continue;
+        const typedName = values[field.id];
+        if (isEmptyFieldValue(typedName)) continue;
+        const resolved = await resolveOrCreateRelation(companyId, field.field_type, typedName, profile.id);
+        values[field.id] = resolved.id;
+        if (resolved.flagged) flaggedNames.push(typedName);
       }
 
       const hasContent = allFields.some((f: any) => f.auto_number_prefix == null && !f.formula_type && !isEmptyFieldValue(values[f.id]));
@@ -874,7 +983,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      return json({ ok: true, recordId: record.id }, 200, headers);
+      return json({ ok: true, recordId: record.id, flaggedNames }, 200, headers);
     }
 
     // ── POST /import-label ─────────────────────────────────────────
@@ -994,8 +1103,13 @@ Deno.serve(async (req) => {
 
     // ── POST /request-archive ────────────────────────────────────
     // Submits a closed-matter archive request for admin approval — never
-    // archives directly. An admin approves/rejects from the admin "Gmail
-    // sync" tab, which is what actually enqueues gmail_sync_jobs.
+    // archives directly. Lives in the generic archive_requests table (see
+    // supabase/archive_requests.sql) as entity_table='gmail_project_archive',
+    // reviewed from the unified Admin → Archive requests tab; approving one
+    // calls enqueueProjectArchive (app/api/archive-requests/approve), which
+    // is what actually enqueues gmail_sync_jobs. Was gmail_archive_requests,
+    // a Gmail-only silo — migrated onto the shared request/approval system
+    // so admins have one place to review every kind of pending request.
     if (req.method === 'POST' && path === '/request-archive') {
       const body = await req.json();
       const { projectId, companyId } = body;
@@ -1004,14 +1118,18 @@ Deno.serve(async (req) => {
       const requesterId = await getProfileId(userEmail);
       if (!requesterId) return json({ error: 'User not found' }, 404, headers);
 
-      const { data: existing } = await db.from('gmail_archive_requests')
-        .select('id').eq('project_id', projectId).eq('company_id', companyId)
+      const { data: existing } = await db.from('archive_requests')
+        .select('id').eq('entity_table', 'gmail_project_archive').eq('entity_id', projectId).eq('company_id', companyId)
         .eq('status', 'pending').maybeSingle();
       if (existing) return json({ ok: true, alreadyRequested: true }, 200, headers);
 
-      const { error: insertErr } = await db.from('gmail_archive_requests').insert({
+      const { data: project } = await db.from('projects').select('name').eq('id', projectId).maybeSingle();
+
+      const { error: insertErr } = await db.from('archive_requests').insert({
         company_id: companyId,
-        project_id: projectId,
+        entity_table: 'gmail_project_archive',
+        entity_id: projectId,
+        entity_label: project?.name || 'Untitled project',
         requested_by: requesterId,
         status: 'pending',
       });

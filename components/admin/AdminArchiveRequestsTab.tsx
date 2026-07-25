@@ -1,8 +1,11 @@
 // components/admin/AdminArchiveRequestsTab.tsx
 // Company-admin review queue for archive_requests (see
-// supabase/archive_requests.sql) -- generalizes the existing Gmail
-// "Requests" section (components/admin/AdminGmailSyncTab.tsx) to every
-// record type + schema structure a non-admin might ask to have removed.
+// supabase/archive_requests.sql) -- one place for every kind of pending
+// request: records and schema structure a non-admin asked to have removed,
+// plus the Gmail closed-matter archive flow (entity_table =
+// 'gmail_project_archive'), migrated in from what used to be a separate
+// gmail_archive_requests table + its own "Requests" tab in
+// AdminGmailSyncTab.tsx.
 "use client";
 
 import { useState, useEffect } from "react";
@@ -21,6 +24,7 @@ interface ArchiveRequestRow {
   entity_label: string;
   requester_name: string;
   created_at: string;
+  error: string | null;
 }
 
 const ENTITY_TABLE_LABELS: Record<string, string> = {
@@ -32,6 +36,11 @@ const ENTITY_TABLE_LABELS: Record<string, string> = {
   company_tables: "Custom table",
   company_table_fields: "Custom table field",
   company_custom_fields: "Custom field",
+  // Not a real soft-delete -- "archiving" here moves the project's Gmail
+  // messages into a nominated archive account instead (see
+  // app/api/archive-requests/approve's gmail_project_archive special case).
+  // The project itself stays fully active.
+  gmail_project_archive: "Gmail closed-matter archive",
 };
 
 export default function AdminArchiveRequestsTab({ companyId }: Props) {
@@ -47,14 +56,14 @@ export default function AdminArchiveRequestsTab({ companyId }: Props) {
     setLoading(true);
     const { data: rows } = await supabase
       .from("archive_requests")
-      .select("id, entity_table, entity_id, entity_label, requested_by, created_at")
+      .select("id, entity_table, entity_id, entity_label, requested_by, created_at, error")
       .eq("company_id", companyId)
       .eq("status", "pending")
       .order("created_at", { ascending: false });
 
     const requestRows = (rows || []) as {
       id: string; entity_table: string; entity_id: string; entity_label: string;
-      requested_by: string | null; created_at: string;
+      requested_by: string | null; created_at: string; error: string | null;
     }[];
 
     const requesterIds = Array.from(new Set(requestRows.map(r => r.requested_by).filter((id): id is string => !!id)));
@@ -71,6 +80,7 @@ export default function AdminArchiveRequestsTab({ companyId }: Props) {
       entity_label: r.entity_label,
       requester_name: r.requested_by ? (nameById.get(r.requested_by) || "Unknown") : "Unknown",
       created_at: r.created_at,
+      error: r.error,
     })));
     setSelectedIds(new Set());
     setLoading(false);
@@ -166,6 +176,9 @@ export default function AdminArchiveRequestsTab({ companyId }: Props) {
                 <p className="text-[11px] text-slate-400 truncate mt-0.5">
                   {ENTITY_TABLE_LABELS[r.entity_table] || r.entity_table} — requested by {r.requester_name} — {new Date(r.created_at).toLocaleString()}
                 </p>
+                {r.error && (
+                  <p className="text-[10px] text-red-500 mt-1">Last attempt failed: {r.error}</p>
+                )}
               </div>
             </div>
           ))}

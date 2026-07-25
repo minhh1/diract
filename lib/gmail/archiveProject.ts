@@ -1,7 +1,8 @@
 // lib/gmail/archiveProject.ts
 // Shared enqueue logic for closed-matter archiving — used by both the
-// admin-direct trigger (app/api/gmail/archive-project) and the add-on
-// request-approval flow (app/api/gmail/archive-requests/approve). Stamps
+// admin-direct trigger (app/api/gmail/archive-project) and the unified
+// archive-request approval flow (app/api/archive-requests/approve's
+// 'gmail_project_archive' entity_table case). Stamps
 // project_gmail_labels.archived_at and inserts a gmail_sync_jobs row that
 // gmail-archive-worker will pick up on its next tick.
 import type { SupabaseClient } from "@supabase/supabase-js";
