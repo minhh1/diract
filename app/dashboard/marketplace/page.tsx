@@ -18,7 +18,16 @@ interface Template {
   is_published: boolean; suggested_label_overrides: Record<string, { singular: string; plural: string }>;
 }
 
-interface TemplateTableField { label: string; fieldType: string; linksTo: string | null }
+interface TemplateTableField {
+  label: string; fieldType: string; linksTo: string | null;
+  // Best-practice settings the template configures on this field, surfaced
+  // so the admin approves exactly what they'll get (see the preview route).
+  required?: boolean; unique?: boolean;
+  autoNumber?: string | null;   // the real first number, e.g. "260001"
+  formula?: string | null;      // e.g. "Rate × Duration Hours"
+  helpText?: string | null;
+  selectOptions?: string[] | null;
+}
 
 interface PreviewConflict {
   slug?: string; tableName?: string; fieldKey?: string; name?: string; label?: string;
@@ -32,10 +41,16 @@ interface PreviewConflict {
   // table -- e.g. new fields added to the catalog after this company
   // installed it. Empty when the table itself isn't owned yet.
   newFields?: TemplateTableField[];
+  // Table-only: append-only ledger table (consecutive receipt numbers,
+  // running balances, overdraw guard -- see company_table_ledger.sql).
+  isLedger?: boolean;
+  // System-field-only settings (same idea as TemplateTableField's).
+  required?: boolean; unique?: boolean; helpText?: string | null; selectOptions?: string[] | null;
   conflict: { existingId: string; existingName?: string; existingLabel?: string } | null;
 }
 
-interface PreviewDashboard { slug: string; name: string; icon: string; color: string; owned: boolean }
+interface PreviewWidget { id: string; type: string; layout?: { x: number; y: number; w: number; h: number }; config?: Record<string, any> }
+interface PreviewDashboard { slug: string; name: string; icon: string; color: string; owned: boolean; widgets?: PreviewWidget[] }
 
 interface PreviewResult {
   templateName: string;
@@ -54,6 +69,73 @@ interface PreviewResult {
 
 const SYSTEM_TABLE_LABELS: Record<string, string> = { projects: 'Projects', entities: 'Entities', properties: 'Properties' };
 
+// ── Field setting badges + dashboard wireframe (install review) ────────
+
+// Compact inline badges for the settings a template field ships with.
+// Partial so both custom-table fields and system fields (PreviewConflict)
+// can pass straight through.
+function FieldSettingBadges({ f }: { f: Partial<TemplateTableField> }) {
+  return (
+    <>
+      {f.required && <span className="ml-1 text-[9px] font-bold text-rose-500 uppercase">required</span>}
+      {f.unique && <span className="ml-1 text-[9px] font-bold text-violet-500 uppercase">unique</span>}
+      {f.autoNumber && <span className="ml-1 text-[9px] font-bold text-emerald-600">auto № {f.autoNumber}…</span>}
+      {f.formula && <span className="ml-1 text-[9px] font-bold text-indigo-500">= {f.formula}</span>}
+    </>
+  );
+}
+
+function fieldTooltip(f: Partial<TemplateTableField>): string | undefined {
+  const parts = [];
+  if (f.helpText) parts.push(f.helpText);
+  if (f.selectOptions?.length) parts.push(`Options: ${f.selectOptions.slice(0, 12).join(', ')}${f.selectOptions.length > 12 ? '…' : ''}`);
+  return parts.length ? parts.join(' — ') : undefined;
+}
+
+const WIREFRAME_WIDGETS: Record<string, { label: string; cls: string }> = {
+  filter_bar:     { label: 'Filters',      cls: 'bg-slate-100 text-slate-500' },
+  quick_add_form: { label: 'Quick add',    cls: 'bg-indigo-50 text-indigo-500' },
+  summary_tile:   { label: 'Tile',         cls: 'bg-emerald-50 text-emerald-600' },
+  chart:          { label: 'Chart',        cls: 'bg-sky-50 text-sky-600' },
+  grid:           { label: 'Records grid', cls: 'bg-amber-50 text-amber-700' },
+};
+
+// Scaled-down schematic of the dashboard's real 12-column widget layout, so
+// the admin sees what the dashboard looks like before agreeing to it.
+function DashboardWireframe({ widgets }: { widgets: PreviewWidget[] }) {
+  if (!widgets.length) return null;
+  const ROW_PX = 9;
+  const MAX_ROWS = 26; // deep dashboards (e.g. Trust Account) get truncated with a note
+  const shown = widgets.filter(w => (w.layout?.y ?? 0) < MAX_ROWS);
+  const hidden = widgets.length - shown.length;
+  const rows = Math.min(MAX_ROWS, Math.max(...shown.map(w => (w.layout?.y ?? 0) + (w.layout?.h ?? 2))));
+  return (
+    <div>
+      <div className="relative w-full rounded-xl border border-slate-100 bg-white overflow-hidden" style={{ height: rows * ROW_PX + 6 }}>
+        {shown.map(w => {
+          const l = w.layout || { x: 0, y: 0, w: 12, h: 2 };
+          const s = WIREFRAME_WIDGETS[w.type] || { label: w.type.replace(/_/g, ' '), cls: 'bg-slate-50 text-slate-400' };
+          return (
+            <div
+              key={w.id}
+              className={`absolute rounded flex items-center justify-center text-[7px] font-bold uppercase tracking-wider overflow-hidden ${s.cls}`}
+              style={{
+                left: `calc(${(l.x / 12) * 100}% + 2px)`,
+                width: `calc(${(l.w / 12) * 100}% - 4px)`,
+                top: l.y * ROW_PX + 3,
+                height: Math.max(l.h * ROW_PX - 4, 8),
+              }}
+            >
+              {w.config?.label || s.label}
+            </div>
+          );
+        })}
+      </div>
+      {hidden > 0 && <p className="text-[9px] text-slate-400 mt-1 px-1">+ {hidden} more widget{hidden === 1 ? '' : 's'} below</p>}
+    </div>
+  );
+}
+
 export default function MarketplacePage() {
   const { companyId, userId, isAdmin } = useCompany();
   const [tab, setTab] = useState<'browse' | 'mine'>('browse');
@@ -65,6 +147,9 @@ export default function MarketplacePage() {
   const [installing, setInstalling] = useState<Template | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [resolutions, setResolutions] = useState<{ tables: Record<string, string>; systemFields: Record<string, string>; applyLabelOverrides: boolean }>({ tables: {}, systemFields: {}, applyLabelOverrides: false });
+  // Bundled dashboards are opt-in (see install_company_template's
+  // p_install_dashboards) -- tables always install, dashboards only if asked.
+  const [installDashboards, setInstallDashboards] = useState(false);
   const [installBusy, setInstallBusy] = useState(false);
   const [installError, setInstallError] = useState('');
 
@@ -98,6 +183,7 @@ export default function MarketplacePage() {
     setInstalling(template);
     setInstallError('');
     setPreview(null);
+    setInstallDashboards(false);
     const res = await fetch(`/api/templates/${template.slug}/preview`, { method: 'POST' });
     const data = await res.json();
     if (!res.ok) { setInstallError(data.error || 'Could not load preview'); return; }
@@ -119,7 +205,7 @@ export default function MarketplacePage() {
     const endpoint = preview?.alreadyInstalled ? 'upgrade' : 'install';
     const res = await fetch(`/api/templates/${installing.slug}/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resolutions }),
+      body: JSON.stringify({ resolutions, installDashboards }),
     });
     const data = await res.json();
     setInstallBusy(false);
@@ -321,15 +407,31 @@ export default function MarketplacePage() {
                             {t.owned ? `— ${t.newFields!.length} new field${t.newFields!.length === 1 ? '' : 's'}` : '— new table'}
                           </span>
                         </p>
-                        {!t.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
+                        <span className="flex items-center gap-2">
+                          {t.isLedger && (
+                            <span
+                              className="text-[9px] font-bold text-teal-700 uppercase bg-teal-50 px-2 py-0.5 rounded-full"
+                              title="Append-only ledger: consecutive receipt numbers assigned server-side, per-matter running balances, entries can never be edited or deleted, overdraws refused"
+                            >
+                              Ledger
+                            </span>
+                          )}
+                          {!t.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
+                        </span>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {(t.owned ? t.newFields! : (t.fields || [])).map((f, i) => (
-                          <span key={i} className="px-2 py-1 bg-slate-50 rounded-full text-[10px] font-medium text-slate-600">
-                            {f.label} <span className="text-slate-400">· {f.fieldType}{f.linksTo ? ` → ${f.linksTo}` : ''}</span>
+                          <span key={i} title={fieldTooltip(f)} className="px-2 py-1 bg-slate-50 rounded-full text-[10px] font-medium text-slate-600">
+                            {f.label} <span className="text-slate-400">· {f.fieldType}{f.linksTo ? ` → ${f.linksTo}` : ''}{f.selectOptions?.length ? ` · ${f.selectOptions.length} options` : ''}</span>
+                            <FieldSettingBadges f={f} />
                           </span>
                         ))}
                       </div>
+                      {t.isLedger && (
+                        <p className="text-[10px] text-teal-700">
+                          Statutory trust ledger: append-only entries, consecutive receipt numbers, per-matter running balances and an overdraw guard.
+                        </p>
+                      )}
                       {t.conflict && (
                         <>
                           <p className="text-[11px] text-amber-700">You already have a table called "{t.conflict.existingName}"</p>
@@ -359,7 +461,10 @@ export default function MarketplacePage() {
                         {fields.map(f => (
                           <div key={f.fieldKey} className={`p-2 rounded-xl ${f.conflict ? 'bg-amber-50' : ''}`}>
                             <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-medium text-slate-700">{f.label} <span className="text-slate-400">· {f.fieldType}</span></span>
+                              <span className="text-[11px] font-medium text-slate-700" title={fieldTooltip(f)}>
+                                {f.label} <span className="text-slate-400">· {f.fieldType}{f.selectOptions?.length ? ` · ${f.selectOptions.length} options` : ''}</span>
+                                <FieldSettingBadges f={f} />
+                              </span>
                               {!f.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
                             </div>
                             {f.conflict && (
@@ -381,15 +486,25 @@ export default function MarketplacePage() {
                     </div>
                   ))}
 
+                  {preview.dashboards.some(d => !d.owned) && (
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">
+                      Ready-made dashboards <span className="font-normal normal-case">— created only if ticked below</span>
+                    </p>
+                  )}
                   {preview.dashboards.filter(d => !d.owned).map(d => {
                     const DashIcon = (LucideIcons as any)[d.icon] || Store;
                     return (
-                      <div key={d.slug} className="p-3 bg-white border border-slate-200 rounded-2xl flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${d.color}20` }}>
-                          <DashIcon size={14} style={{ color: d.color }} />
+                      <div key={d.slug} className={`p-3 bg-white border border-slate-200 rounded-2xl space-y-2 ${installDashboards ? '' : 'opacity-60'}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${d.color}20` }}>
+                            <DashIcon size={14} style={{ color: d.color }} />
+                          </div>
+                          <p className="text-[12px] font-bold text-slate-800 flex-1">
+                            {d.name} <span className="font-normal text-slate-400">— dashboard · {(d.widgets || []).length} widgets</span>
+                          </p>
+                          <span className="text-[9px] font-bold text-emerald-600 uppercase">{installDashboards ? 'New' : 'Skipped'}</span>
                         </div>
-                        <p className="text-[12px] font-bold text-slate-800 flex-1">{d.name} <span className="font-normal text-slate-400">— dashboard</span></p>
-                        <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>
+                        <DashboardWireframe widgets={d.widgets || []} />
                       </div>
                     );
                   })}
@@ -398,6 +513,11 @@ export default function MarketplacePage() {
                     <p className="text-center text-[11px] text-slate-300 italic py-4">Nothing pending — you have everything this template currently offers.</p>
                   )}
                 </div>
+
+                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                  <input type="checkbox" checked={installDashboards} onChange={e => setInstallDashboards(e.target.checked)} />
+                  Also create the template&apos;s ready-made dashboards
+                </label>
 
                 {Object.keys(preview.suggestedLabelOverrides || {}).length > 0 && (
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">

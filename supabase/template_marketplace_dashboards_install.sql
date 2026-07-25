@@ -88,10 +88,16 @@ $$;
 -- Full redeclaration of install/uninstall_company_template (same approach as
 -- template_marketplace_formula_ledger.sql) -- Pass 4 (dashboards) is new,
 -- everything else carried over unchanged from that file.
+-- Dashboards are OPT-IN (p_install_dashboards, default false): installing a
+-- template creates its tables/fields, but bundled dashboards only when the
+-- user ticks the option in the install dialog. The old 3-arg signature must
+-- be dropped first or PostgREST sees two ambiguous overloads.
+DROP FUNCTION IF EXISTS install_company_template(uuid, uuid, jsonb);
 CREATE OR REPLACE FUNCTION install_company_template(
   p_company_id uuid,
   p_template_id uuid,
-  p_resolutions jsonb DEFAULT '{}'::jsonb
+  p_resolutions jsonb DEFAULT '{}'::jsonb,
+  p_install_dashboards boolean DEFAULT false
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   p_actor uuid := auth.uid();
@@ -235,8 +241,11 @@ BEGIN
     END LOOP;
   END LOOP;
 
-  -- Pass 4: dashboards (see install_template_dashboards above).
-  SELECT install_template_dashboards(p_company_id, p_template_id) INTO v_dashboards_created;
+  -- Pass 4: dashboards (see install_template_dashboards above) -- only when
+  -- the user opted in.
+  IF p_install_dashboards THEN
+    SELECT install_template_dashboards(p_company_id, p_template_id) INTO v_dashboards_created;
+  END IF;
 
   -- System fields (entities/projects/properties)
   FOR v_sf IN SELECT * FROM template_definition_system_fields WHERE template_id = p_template_id ORDER BY display_order LOOP

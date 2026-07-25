@@ -10,6 +10,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 
+// Human-readable first auto number (mirrors next_field_sequence's
+// formatting in supabase/company_table_field_sequences.sql: date tokens in
+// the prefix, zero-padded counter, configurable start).
+function autoNumberExample(f: any): string | null {
+  if (f.auto_number_prefix == null) return null;
+  const now = new Date();
+  const prefix = String(f.auto_number_prefix)
+    .replace('{YYYY}', String(now.getFullYear()))
+    .replace('{YY}', String(now.getFullYear()).slice(-2))
+    .replace('{MM}', String(now.getMonth() + 1).padStart(2, '0'));
+  const n = String(f.auto_number_start ?? 1);
+  return prefix + n.padStart(Math.max(f.auto_number_pad ?? 6, n.length), '0');
+}
+
+// "Rate × Duration Hours", "10% of Subtotal (Ex. GST)", "Sum of Time & Fee
+// Entries" -- so the install review can say what a computed field does
+// instead of just flagging that it's computed.
+function formulaDescription(
+  f: any,
+  labelByKey: Map<string, string>,
+  tableNameBySlug: Map<string, string>
+): string | null {
+  if (!f.formula_type) return null;
+  const a = f.formula_field_a_key ? (labelByKey.get(f.formula_field_a_key) || f.formula_field_a_key) : '';
+  const b = f.formula_field_b_key ? (labelByKey.get(f.formula_field_b_key) || f.formula_field_b_key) : '';
+  switch (f.formula_type) {
+    case 'multiply': return `${a} × ${b}`;
+    case 'add': return `${a} + ${b}`;
+    case 'percentage_of': return `${f.formula_percent ?? 0}% of ${a}`;
+    case 'sum_related': {
+      const rel = f.formula_related_table_slug
+        ? (tableNameBySlug.get(f.formula_related_table_slug) || f.formula_related_table_slug)
+        : 'related records';
+      return `Sum of ${rel}`;
+    }
+    default: return f.formula_type;
+  }
+}
+
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
@@ -48,11 +87,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     : { data: [] as any[] };
 
   const tableNameById = new Map((tables || []).map(t => [t.id, t.name]));
+  const tableNameBySlug = new Map((tables || []).map(t => [t.slug, t.name]));
 
   const tableConflicts = await Promise.all(
     (tables || []).map(async t => {
       const fieldRows = (allFields || []).filter(f => f.template_table_id === t.id);
-      const fields = fieldRows.map(f => ({
+      // Full per-field settings manifest, so the review shows exactly what
+      // gets configured -- required/unique flags, auto-numbering with its
+      // real first number, computed-field formulas, dropdown options.
+      const labelByKey = new Map(fieldRows.map(f => [f.field_key, f.label]));
+      const describe = (f: any) => ({
         label: f.label,
         fieldType: f.field_type,
         linksTo: f.linked_system_table
@@ -60,7 +104,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
           : f.linked_template_table_id
             ? tableNameById.get(f.linked_template_table_id) || null
             : null,
-      }));
+        required: !!f.is_required,
+        unique: !!f.is_unique,
+        autoNumber: autoNumberExample(f),
+        formula: formulaDescription(f, labelByKey, tableNameBySlug),
+        helpText: f.help_text || null,
+        selectOptions: Array.isArray(f.select_options) ? f.select_options : null,
+      });
+      const fields = fieldRows.map(describe);
 
       if (ownedTableIds.has(t.id)) {
         const installedTableId = installedTableIdByTemplateTableId.get(t.id);
@@ -69,19 +120,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
           const { data: installedFields } = await admin
             .from("company_table_fields").select("field_key").eq("table_id", installedTableId).is("deleted_at", null);
           const installedKeys = new Set((installedFields || []).map(f => f.field_key));
-          newFields = fieldRows
-            .filter(f => !installedKeys.has(f.field_key))
-            .map(f => ({
-              label: f.label,
-              fieldType: f.field_type,
-              linksTo: f.linked_system_table
-                ? f.linked_system_table.charAt(0).toUpperCase() + f.linked_system_table.slice(1)
-                : f.linked_template_table_id
-                  ? tableNameById.get(f.linked_template_table_id) || null
-                  : null,
-            }));
+          newFields = fieldRows.filter(f => !installedKeys.has(f.field_key)).map(describe);
         }
-        return { slug: t.slug, name: t.name, icon: t.icon, color: t.color, fields, owned: true, newFields, conflict: null };
+        return { slug: t.slug, name: t.name, icon: t.icon, color: t.color, isLedger: !!t.is_ledger, fields, owned: true, newFields, conflict: null };
       }
 
       const { data: existing } = await admin
@@ -91,6 +132,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
         name: t.name,
         icon: t.icon,
         color: t.color,
+        isLedger: !!t.is_ledger,
         fields,
         owned: false,
         newFields: [] as typeof fields,
@@ -100,12 +142,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
   );
 
   const { data: dashboardDefs } = await admin
-    .from("template_definition_dashboards").select("id, slug, name, icon, color").eq("template_id", template.id).order("display_order");
+    .from("template_definition_dashboards").select("id, slug, name, icon, color, widgets_template").eq("template_id", template.id).order("display_order");
   const { data: dashboardMap } = await admin
     .from("company_template_dashboard_map").select("source_template_dashboard_id").eq("company_id", companyId).eq("template_id", template.id);
   const ownedDashboardIds = new Set((dashboardMap || []).map(m => m.source_template_dashboard_id));
   const dashboards = (dashboardDefs || []).map(d => ({
     slug: d.slug, name: d.name, icon: d.icon, color: d.color, owned: ownedDashboardIds.has(d.id),
+    // Full widget list (type + 12-col layout + config) so the review can
+    // draw a wireframe of what the dashboard will actually look like.
+    widgets: Array.isArray(d.widgets_template) ? d.widgets_template : [],
   }));
 
   // Whether there's anything for upgrade_company_template to actually do --
@@ -117,15 +162,22 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
 
   const fieldConflicts = await Promise.all(
     (systemFields || []).map(async f => {
-      if (ownedFieldIds.has(f.id)) return { tableName: f.table_name, fieldKey: f.field_key, label: f.label, fieldType: f.field_type, owned: true, conflict: null };
-      const { data: existing } = await admin
-        .from("company_custom_fields").select("id, label")
-        .eq("company_id", companyId).eq("table_name", f.table_name).eq("field_key", f.field_key).is("deleted_at", null).maybeSingle();
-      return {
+      const detail = {
         tableName: f.table_name,
         fieldKey: f.field_key,
         label: f.label,
         fieldType: f.field_type,
+        required: !!f.is_required,
+        unique: !!f.is_unique,
+        helpText: f.help_text || null,
+        selectOptions: Array.isArray(f.select_options) ? f.select_options : null,
+      };
+      if (ownedFieldIds.has(f.id)) return { ...detail, owned: true, conflict: null };
+      const { data: existing } = await admin
+        .from("company_custom_fields").select("id, label")
+        .eq("company_id", companyId).eq("table_name", f.table_name).eq("field_key", f.field_key).is("deleted_at", null).maybeSingle();
+      return {
+        ...detail,
         owned: false,
         conflict: existing ? { existingId: existing.id, existingLabel: existing.label } : null,
       };
