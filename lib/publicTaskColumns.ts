@@ -19,4 +19,8 @@ export const SCOPE_LABELS: Record<string, string> = {
   self: "Just my tasks",
   team: "My team's tasks",
   company: "Everyone's tasks",
+  // Creatable only from a dashboard's "public task page" widget, not the
+  // Settings -> Public task pages form -- see lib/dashboardWidgets/types.ts's
+  // PublicTaskPageWidget.
+  my_and_unassigned: "My tasks + unallocated (open assignment)",
 };

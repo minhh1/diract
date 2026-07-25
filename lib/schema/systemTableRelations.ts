@@ -22,6 +22,10 @@ export const SYSTEM_TABLE_RELATION_MAP: Record<string, { table: string; displayC
   parent_project_id: { table: 'projects', displayCol: 'name' },
   // Entities
   type_id: { table: 'entity_types', displayCol: 'label' },
+  // Tasks -- project_id is already covered above (shared with properties).
+  assignee_id: { table: 'profiles', displayCol: 'full_name' },
+  status_id: { table: 'task_statuses', displayCol: 'label' },
+  assigned_team_id: { table: 'teams', displayCol: 'team_name' },
 };
 
 // Free-text columns that identify a person but aren't a real FK relation --

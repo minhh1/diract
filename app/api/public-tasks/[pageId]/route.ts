@@ -222,6 +222,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const { data: teams } = await admin
     .from("teams").select("id, team_name").eq("company_id", page.company_id).eq("is_active", true);
 
+  // 'my_and_unassigned' can assign to anyone in the company (enforced above
+  // in POST), so the picker needs the full roster, not just targetProfiles
+  // (== [page.created_by] for this scope).
+  let assigneeProfiles = targetProfiles;
+  if (page.scope === "my_and_unassigned") {
+    const { data: companyMembers } = await admin
+      .from("company_memberships").select("user_id").eq("company_id", page.company_id);
+    const { data: allProfiles } = await admin
+      .from("profiles").select("id, full_name, email").in("id", (companyMembers || []).map((m: any) => m.user_id));
+    assigneeProfiles = allProfiles;
+  }
+
   return NextResponse.json({
     title: page.title,
     scopeName,
@@ -233,7 +245,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       projects: (allProjects || []).map((p: any) => ({ id: p.id, name: p.name, matterNumber: matterByProjectCatalog[p.id] || null })),
       statuses: statuses || [],
       teams: teams || [],
-      assignees: (targetProfiles || []).map((p: any) => ({ id: p.id, name: p.full_name || p.email || "Unknown" })),
+      assignees: (assigneeProfiles || []).map((p: any) => ({ id: p.id, name: p.full_name || p.email || "Unknown" })),
     },
   });
 }
@@ -266,7 +278,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   }
 
   let finalAssigneeId: string | null = assigneeId || null;
-  if (finalAssigneeId && !targetUserIds.includes(finalAssigneeId)) {
+  if (finalAssigneeId && page.scope === "my_and_unassigned") {
+    // The whole point of this scope: unlike self/team/company, the viewer
+    // can hand a task to anyone in the company, not just whoever the page's
+    // own tabs are about (targetUserIds is just [page.created_by] here).
+    const { data: assigneeMembership } = await admin
+      .from("company_memberships").select("user_id").eq("company_id", page.company_id).eq("user_id", finalAssigneeId).maybeSingle();
+    if (!assigneeMembership) {
+      return NextResponse.json({ error: "Assignee is outside this company" }, { status: 400 });
+    }
+  } else if (finalAssigneeId && !targetUserIds.includes(finalAssigneeId)) {
     return NextResponse.json({ error: "Assignee is outside this page's scope" }, { status: 400 });
   }
   // Only auto-assign to the creator when they had no way to choose

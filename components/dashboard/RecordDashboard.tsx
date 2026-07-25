@@ -19,10 +19,13 @@ import EmailsTab from "./tabs/EmailsTab";
 import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
 import RecordDashboardTab from "./tabs/RecordDashboardTab";
 import TeamMemberLinkCard from "./TeamMemberLinkCard";
+import SendSmsCard from "./SendSmsCard";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import {
   SYSTEM_TABLE_HIDDEN_COLS, SYSTEM_TABLE_RELATION_MAP, SYSTEM_TABLE_PERSON_LINK_COLS,
 } from "@/lib/schema/systemTableRelations";
+import { buildMissingDefaultProjectDashboardTabs } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
+import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import { getCompanyId } from "@/lib/services/schemaService";
 import { createArchiveRequest, type ArchiveEntityTable } from "@/lib/archiveRequests";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
@@ -30,7 +33,7 @@ import { useProgressBarWhile } from "@/components/TopProgressBar";
 // ── Types ──────────────────────────────────────────────────────────
 
 interface Props {
-  systemTable?: 'properties' | 'entities' | 'projects';
+  systemTable?: 'properties' | 'entities' | 'projects' | 'tasks';
   tableId?: string;
   tableSlug?: string;
   tableName?: string;
@@ -301,6 +304,21 @@ export default function RecordDashboard({
     }
   };
 
+  // Persists the pre-built widgets (quick-add form + totals-row grid) for
+  // any newly-inserted default project-dashboard tabs -- record_tabs itself
+  // has no widgets column, that lives in the separate
+  // record_tab_dashboard_widgets table (see RecordDashboardTab.tsx's own
+  // saveWidgets, which this mirrors for the one-time default-seed case).
+  const seedDefaultDashboardWidgets = async (
+    insertedTabs: { id: string; linked_table_id: string | null }[],
+    widgetsByLinkedTableId: Map<string, DashboardWidget[]>,
+  ) => {
+    const rows = insertedTabs
+      .filter(t => t.linked_table_id && widgetsByLinkedTableId.has(t.linked_table_id))
+      .map(t => ({ tab_id: t.id, widgets: widgetsByLinkedTableId.get(t.linked_table_id!), updated_at: new Date().toISOString() }));
+    if (rows.length) await supabase.from('record_tab_dashboard_widgets').upsert(rows, { onConflict: 'tab_id' });
+  };
+
   const loadTabs = async (cid: string) => {
     const { data: tabData } = await supabase
       .from('record_tabs')
@@ -322,8 +340,29 @@ export default function RecordDashboard({
       if (dupeIds.length > 0) {
         await supabase.from('record_tabs').delete().in('id', dupeIds);
       }
-      setTabs(uniqueTabs);
-      setActiveTabId(uniqueTabs[0].id);
+
+      // Top up any default project-dashboard tabs (Time & Fees,
+      // Disbursements) this record doesn't have yet -- covers matters that
+      // were first opened (and so already got their "Details" tab) before
+      // these defaults existed, not just brand-new ones. Idempotent: a
+      // matter that already has both is a no-op every subsequent load.
+      let finalTabs = uniqueTabs;
+      if (systemTable === 'projects') {
+        const existingLinkedTableIds = new Set(uniqueTabs.map(t => t.linked_table_id).filter(Boolean));
+        const { tabs: missingTabs, widgetsByLinkedTableId } = await buildMissingDefaultProjectDashboardTabs(
+          cid, recordId, uniqueTabs.length, existingLinkedTableIds
+        );
+        if (missingTabs.length) {
+          const { data: insertedTabs } = await supabase.from('record_tabs').insert(missingTabs).select();
+          if (insertedTabs?.length) {
+            await seedDefaultDashboardWidgets(insertedTabs, widgetsByLinkedTableId);
+            finalTabs = [...uniqueTabs, ...insertedTabs];
+          }
+        }
+      }
+
+      setTabs(finalTabs);
+      setActiveTabId(finalTabs[0].id);
 
       const fieldTabIds = tabData
         .filter(t => t.tab_type === 'fields')
@@ -366,12 +405,20 @@ export default function RecordDashboard({
         }] : []),
       ];
 
+      let widgetsByLinkedTableId = new Map<string, DashboardWidget[]>();
+      if (systemTable === 'projects') {
+        const result = await buildMissingDefaultProjectDashboardTabs(cid, recordId, defaultTabs.length, new Set());
+        defaultTabs.push(...result.tabs);
+        widgetsByLinkedTableId = result.widgetsByLinkedTableId;
+      }
+
       const { data: newTabs } = await supabase
         .from('record_tabs')
         .insert(defaultTabs)
         .select();
 
       if (newTabs?.length) {
+        await seedDefaultDashboardWidgets(newTabs, widgetsByLinkedTableId);
         setTabs(newTabs);
         setActiveTabId(newTabs[0].id);
       }
@@ -771,7 +818,13 @@ export default function RecordDashboard({
           recordId={recordId}
           companyId={companyId}
           isEditing={isEditingLayout}
-          recordSystemTable={systemTable}
+          // Tasks aren't a relation *target* other tables link back to (no
+          // 'task' field type exists), unlike properties/entities/projects
+          // -- so there's no ParentSystemTable value for it; leave the
+          // auto-detection unset for a task record, same as a custom-table-
+          // backed one (computeRelationCandidates already handles "unknown
+          // parent" by falling back to the broad candidate set).
+          recordSystemTable={systemTable !== 'tasks' ? systemTable : undefined}
         />
       )}
       {activeTabId === '__access__' && systemTable === 'projects' && (
@@ -1022,6 +1075,15 @@ export default function RecordDashboard({
             entityName={record.name || ''}
             linkedProfileId={record.linked_profile_id || null}
             onLinked={profileId => setRecord(prev => prev ? { ...prev, linked_profile_id: profileId } : prev)}
+          />
+        )}
+
+        {/* Send SMS — entities only */}
+        {systemTable === 'entities' && (
+          <SendSmsCard
+            entityId={recordId}
+            entityName={record.name || ''}
+            phoneNumber={record.mobile_phone || record.phone || null}
           />
         )}
 

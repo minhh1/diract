@@ -12,7 +12,12 @@ export async function POST(req: NextRequest) {
 
   const { title, scope, teamId, columns, expiresAt } = body;
   if (!title?.trim()) return NextResponse.json({ error: "Title is required" }, { status: 400 });
-  if (!["self", "team", "company"].includes(scope)) {
+  // 'my_and_unassigned' is only ever created from a dashboard's public-task-
+  // page widget (see lib/dashboardWidgets/types.ts's PublicTaskPageWidget),
+  // not the Settings -> Public task pages form -- no extra permission check
+  // needed for it below, unlike "company" (admin-only) or "team" (must be a
+  // member): it's inherently private to its own creator, same as "self".
+  if (!["self", "team", "company", "my_and_unassigned"].includes(scope)) {
     return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
   }
   if (scope === "team" && !teamId) {

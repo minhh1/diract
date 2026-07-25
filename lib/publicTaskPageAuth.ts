@@ -24,7 +24,11 @@ export async function loadPageAndAuthorize(admin: any, pageId: string, userId: s
   const isAdmin = membership.role === "company_admin";
 
   let targetUserIds: string[] = [];
-  if (page.scope === "self") {
+  // 'my_and_unassigned' (see app/api/public-tasks/[pageId]/route.ts) is
+  // private to its creator exactly like 'self' -- it only differs in also
+  // surfacing unallocated tasks and allowing any assignee on new tasks,
+  // both handled in that route, not here.
+  if (page.scope === "self" || page.scope === "my_and_unassigned") {
     targetUserIds = [page.created_by];
     if (!isAdmin && userId !== page.created_by) {
       return { error: NextResponse.json({ error: "This page is private to its creator" }, { status: 403 }) };
@@ -49,7 +53,7 @@ export async function loadPageAndAuthorize(admin: any, pageId: string, userId: s
   if (page.scope === "team") {
     const { data: team } = await admin.from("teams").select("team_name").eq("id", page.team_id).maybeSingle();
     scopeName = team?.team_name || "Team";
-  } else if (page.scope === "self") {
+  } else if (page.scope === "self" || page.scope === "my_and_unassigned") {
     const { data: creator } = await admin.from("profiles").select("full_name, email").eq("id", page.created_by).maybeSingle();
     scopeName = creator?.full_name || creator?.email || "Me";
   } else {

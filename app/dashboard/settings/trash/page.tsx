@@ -46,9 +46,9 @@ const CATEGORY_META: Record<Category, { label: string; className: string }> = {
 
 // Icons/colours for the 3 built-in tables -- mirrors Sidebar.tsx's
 // ALL_SYSTEM_TABLES and CustomTableBuilder.tsx's SYSTEM_TABLE_DEFS.
-const SYSTEM_TABLE_ICONS: Record<string, string> = { properties: 'MapPin', entities: 'Building2', projects: 'LayoutGrid' };
-const SYSTEM_TABLE_COLORS: Record<string, string> = { properties: '#6366f1', entities: '#8b5cf6', projects: '#ec4899' };
-const SYSTEM_TABLE_DEFAULT_LABELS: Record<string, string> = { properties: 'Properties', entities: 'Entities', projects: 'Projects' };
+const SYSTEM_TABLE_ICONS: Record<string, string> = { properties: 'MapPin', entities: 'Building2', projects: 'LayoutGrid', tasks: 'CheckSquare' };
+const SYSTEM_TABLE_COLORS: Record<string, string> = { properties: '#6366f1', entities: '#8b5cf6', projects: '#ec4899', tasks: '#0ea5e9' };
+const SYSTEM_TABLE_DEFAULT_LABELS: Record<string, string> = { properties: 'Properties', entities: 'Entities', projects: 'Projects', tasks: 'Tasks' };
 
 const TIME_RANGES = [
   { key: "all", label: "All time", ms: null },

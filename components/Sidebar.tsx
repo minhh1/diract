@@ -8,7 +8,7 @@ import {
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
-  Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare,
+  Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -41,6 +41,7 @@ const ALL_SYSTEM_TABLES = [
   { slug: 'projects',   label: 'Projects',   icon: LayoutGrid },
   { slug: 'properties', label: 'Properties', icon: MapPin },
   { slug: 'entities',   label: 'Entities',   icon: Building2 },
+  { slug: 'tasks',      label: 'Tasks',      icon: CheckSquare },
 ];
 
 const SYSTEM_TABLE_FIELDS: Record<string, { key: string; label: string }[]> = {
@@ -115,6 +116,7 @@ const ADMIN_LINKS = [
   { tab: 'whatsapp', icon: MessageCircle, label: 'WhatsApp' },
   { tab: 'msTeams', icon: Users2, label: 'Microsoft Teams' },
   { tab: 'oneDrive', icon: FolderOpen, label: 'OneDrive' },
+  { tab: 'email', icon: Send, label: 'Email' },
   { tab: 'aiAssistant', icon: Sparkles, label: 'AI Assistant' },
   { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },
   { tab: 'archiveRequests', icon: Archive, label: 'Archive requests' },

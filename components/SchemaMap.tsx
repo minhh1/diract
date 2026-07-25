@@ -53,6 +53,7 @@ const SYSTEM_TABLE_COLORS: Record<string, string> = {
   properties: '#6366f1',
   entities:   '#8b5cf6',
   projects:   '#ec4899',
+  tasks:      '#0ea5e9',
 };
 
 const FIELD_TYPE_COLORS: Record<string, string> = {
@@ -179,7 +180,7 @@ export default function SchemaMap() {
   const loadSchema = async () => {
     setLoading(true);
     const companyId = await getCompanyId();
-    const systemTables = ['properties', 'entities', 'projects'].filter(t => !disabledSystemTables[t]);
+    const systemTables = ['properties', 'entities', 'projects', 'tasks'].filter(t => !disabledSystemTables[t]);
 
     const [schemaResults, { data: sysCustomFields }, ...customTableFieldResults] =
       await Promise.all([

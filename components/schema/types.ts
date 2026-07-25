@@ -1,6 +1,6 @@
 import {
   Type, Hash, Calendar, ToggleLeft, List, Link2,
-  Fingerprint, Mail, Globe, DollarSign, MapPin, Building2
+  Fingerprint, Mail, Globe, DollarSign, MapPin, Building2, Briefcase
 } from "lucide-react";
 
 export type FieldType =
@@ -85,6 +85,7 @@ export const FIELD_TYPES: {
   { type: 'currency',      label: 'Currency',    icon: DollarSign,  color: 'bg-emerald-50 text-emerald-600' },
   { type: 'property',      label: 'Property',    icon: MapPin,      color: 'bg-violet-50 text-violet-600' },
   { type: 'entity',        label: 'Entity',      icon: Building2,   color: 'bg-pink-50 text-pink-600' },
+  { type: 'project',       label: 'Project',     icon: Briefcase,   color: 'bg-amber-50 text-amber-600' },
   { type: 'table_relation',label: 'Relation',    icon: Link2,       color: 'bg-slate-50 text-slate-600' },
 ];
 
@@ -92,5 +93,5 @@ export function getFieldTypeConfig(type: string) {
   return FIELD_TYPES.find(f => f.type === type) || FIELD_TYPES[0];
 }
 
-export const SYSTEM_TABLES = ['properties', 'entities', 'projects'] as const;
+export const SYSTEM_TABLES = ['properties', 'entities', 'projects', 'tasks'] as const;
 export type SystemTable = typeof SYSTEM_TABLES[number];

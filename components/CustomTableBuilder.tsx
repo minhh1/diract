@@ -2,25 +2,27 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, Store, RotateCcw, MapPin, Building2, LayoutGrid } from "lucide-react";
+import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, Store, RotateCcw, MapPin, Building2, LayoutGrid, CheckSquare } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { useCompany, type TableLabelOverride } from "@/components/CompanyContext";
 import { createArchiveRequest, usePendingArchiveRequests } from "@/lib/archiveRequests";
 
-// The 3 built-in tables every company starts with -- shown in the same list
+// The 4 built-in tables every company starts with -- shown in the same list
 // as a company's own tables (see the header comment below for why) rather
 // than a separate "system" section. Icons mirror Sidebar.tsx's ALL_SYSTEM_TABLES.
 const SYSTEM_TABLE_DEFS = [
   { slug: 'properties', icon: MapPin,      color: '#6366f1' },
   { slug: 'entities',   icon: Building2,   color: '#8b5cf6' },
   { slug: 'projects',   icon: LayoutGrid,  color: '#ec4899' },
+  { slug: 'tasks',      icon: CheckSquare, color: '#0ea5e9' },
 ];
 const DEFAULT_LABELS: Record<string, TableLabelOverride> = {
   projects: { singular: "Project", plural: "Projects" },
   properties: { singular: "Property", plural: "Properties" },
   entities: { singular: "Entity", plural: "Entities" },
+  tasks: { singular: "Task", plural: "Tasks" },
 };
 
 const ICON_OPTIONS = [

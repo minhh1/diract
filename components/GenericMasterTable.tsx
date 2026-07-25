@@ -33,7 +33,7 @@ import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 
 
 interface GenericMasterTableProps {
-  tableName: "properties" | "entities" | "projects";
+  tableName: "properties" | "entities" | "projects" | "tasks";
   pageTitle: string;
   newButtonLabel: string;
   renderDashboard?: (id: string, onBack: () => void, initialRecord?: any) => React.ReactNode;
@@ -579,7 +579,7 @@ function GenericMasterTableInner({
       const linkedId = item[alias]?.id || item[colId];
       if (!linkedId) return null;
       const pageMap: Record<string, string> = {
-        properties: 'properties', entities: 'entities', projects: 'projects',
+        properties: 'properties', entities: 'entities', projects: 'projects', tasks: 'tasks',
       };
       const target = pageMap[col.relation_table];
       return target ? `/dashboard/${target}?id=${linkedId}` : null;
@@ -861,12 +861,18 @@ function GenericMasterTableInner({
                   </span>
                 )}
               </button>
-              <button
-                onClick={() => setIsSpreadsheetOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
-              >
-                <LayoutGrid size={16} /> Spreadsheet
-              </button>
+              {/* Legacy bulk field-spreadsheet editor -- predates the unified
+                  schema editor (components/SchemaVisualisation.tsx), which
+                  already covers tasks' custom fields; SpreadsheetEditor's
+                  own tableName type isn't widened to include it. */}
+              {tableName !== 'tasks' && (
+                <button
+                  onClick={() => setIsSpreadsheetOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
+                >
+                  <LayoutGrid size={16} /> Spreadsheet
+                </button>
+              )}
               <button
                 onClick={() => setIsModalOpen(true)}
                 className="bg-slate-900 text-white px-6 py-2 rounded-full text-[11px] font-bold shadow-sm"
@@ -1013,7 +1019,7 @@ function GenericMasterTableInner({
         />
       </main>
 
-      {isSpreadsheetOpen && (
+      {isSpreadsheetOpen && tableName !== 'tasks' && (
         <div className="fixed inset-0 z-50 flex flex-col bg-white font-sans">
           <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
             <h2 className="text-xl font-light uppercase tracking-tight text-slate-900">
