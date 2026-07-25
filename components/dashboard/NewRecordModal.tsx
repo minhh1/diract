@@ -46,6 +46,14 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose }:
   const isEmpty = (v: any) => v === null || v === undefined || v === '';
   const missingCount = fields.filter(f => isEmpty(values[f.field_key])).length;
 
+  // Not a native `disabled` button (see below) -- text/number fields in
+  // FieldValueInput commit onBlur, not on every keystroke, so `values` (and
+  // therefore missingCount) lags one field behind while it still has focus.
+  // A disabled button can't receive the click that would blur that field,
+  // so the first click did nothing and the user had to click twice. This
+  // still refuses to submit incomplete -- it just does that check here,
+  // AFTER the click's own blur has already flushed the real value in, not
+  // via an attribute that blocks the click from happening at all.
   const handleCreate = async () => {
     if (missingCount || saving) return;
     setSaving(true);
@@ -83,8 +91,10 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose }:
         {error && <p className="text-[11px] text-red-500 mt-3 px-1">{error}</p>}
         <button
           onClick={handleCreate}
-          disabled={!!missingCount || saving}
-          className="w-full mt-6 py-3 bg-slate-900 text-white rounded-full text-[11px] font-bold disabled:opacity-40 flex items-center justify-center gap-2 hover:bg-slate-700 transition-colors"
+          aria-disabled={!!missingCount || saving}
+          className={`w-full mt-6 py-3 bg-slate-900 text-white rounded-full text-[11px] font-bold flex items-center justify-center gap-2 transition-colors ${
+            missingCount || saving ? 'opacity-40 cursor-default' : 'hover:bg-slate-700'
+          }`}
         >
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
           Create
