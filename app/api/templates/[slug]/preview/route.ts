@@ -98,6 +98,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
       const labelByKey = new Map(fieldRows.map(f => [f.field_key, f.label]));
       const describe = (f: any) => ({
         label: f.label,
+        fieldKey: f.field_key,
         fieldType: f.field_type,
         linksTo: f.linked_system_table
           ? f.linked_system_table.charAt(0).toUpperCase() + f.linked_system_table.slice(1)
@@ -142,15 +143,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
   );
 
   const { data: dashboardDefs } = await admin
-    .from("template_definition_dashboards").select("id, slug, name, icon, color, widgets_template").eq("template_id", template.id).order("display_order");
+    .from("template_definition_dashboards").select("id, slug, name, icon, color, widgets_template, source_template_table_id").eq("template_id", template.id).order("display_order");
   const { data: dashboardMap } = await admin
     .from("company_template_dashboard_map").select("source_template_dashboard_id").eq("company_id", companyId).eq("template_id", template.id);
   const ownedDashboardIds = new Set((dashboardMap || []).map(m => m.source_template_dashboard_id));
   const dashboards = (dashboardDefs || []).map(d => ({
     slug: d.slug, name: d.name, icon: d.icon, color: d.color, owned: ownedDashboardIds.has(d.id),
     // Full widget list (type + 12-col layout + config) so the review can
-    // draw a wireframe of what the dashboard will actually look like.
+    // draw a wireframe of what the dashboard will actually look like, plus
+    // the source table's slug so widget field keys resolve to real labels.
     widgets: Array.isArray(d.widgets_template) ? d.widgets_template : [],
+    sourceTableSlug: (tables || []).find(t => t.id === d.source_template_table_id)?.slug ?? null,
   }));
 
   // Whether there's anything for upgrade_company_template to actually do --
