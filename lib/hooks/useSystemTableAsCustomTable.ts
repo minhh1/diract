@@ -200,6 +200,7 @@ export function useSystemTableAsCustomTable(
     primary_field_key: systemTablePrimaryDisplayColumn(tableName),
     display_order: 0,
     is_ledger: false,
+    disable_record_dashboard: false,
   } : null;
 
   return { tableDef, fields, records, loading, refetch: load };

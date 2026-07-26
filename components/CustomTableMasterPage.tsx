@@ -414,7 +414,13 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     if (rec && 'error' in rec) return rec.error;
     if (rec) {
       refetch();
-      router.push(`/dashboard/${tableSlug}?id=${rec.id}`);
+      // Pure line-item tables (Time & Fee Entries etc.) have nowhere
+      // meaningful to navigate to -- see disable_record_dashboard's doc
+      // comment in lib/hooks/useCustomTables.ts. Staying on the list (which
+      // refetch() above already brings up to date) is the correct landing
+      // spot, same as every other table would show once you closed the
+      // record dashboard anyway.
+      if (!tableDef.disable_record_dashboard) router.push(`/dashboard/${tableSlug}?id=${rec.id}`);
       return null;
     }
     return 'Could not create the record.';
@@ -656,7 +662,9 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                 <React.Fragment key={record.id}>
                   <div
                     className="flex items-center border-b border-slate-50 hover:bg-indigo-50/20 transition-all cursor-pointer group"
-                    onClick={() => router.push(`/dashboard/${tableSlug}?id=${record.id}`)}
+                    onClick={() => tableDef?.disable_record_dashboard
+                      ? setExpandedId(isExpanded ? null : record.id)
+                      : router.push(`/dashboard/${tableSlug}?id=${record.id}`)}
                   >
                     {tableColumns.map((col, idx) => (
                       <div

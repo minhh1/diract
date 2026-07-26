@@ -160,8 +160,12 @@ BEGIN
 
   -- ── Time & Fee Entries ───────────────────────────────────────────────
   -- Billed vs unbilled from the source export = Invoice link present/absent.
-  INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order)
-  SELECT v_template_id, 'time-fee-entries', 'Time & Fee Entries', 'Clock', '#7c3aed', 'description', 1
+  -- disable_record_dashboard=true: this is pure line-item data, meaningfully
+  -- edited only from the "Time Entry" dashboard's inline grid (te8 below),
+  -- never as its own full record-dashboard drill-down -- see
+  -- supabase/company_tables_disable_record_dashboard.sql.
+  INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order, disable_record_dashboard)
+  SELECT v_template_id, 'time-fee-entries', 'Time & Fee Entries', 'Clock', '#7c3aed', 'description', 1, true
   WHERE NOT EXISTS (SELECT 1 FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'time-fee-entries');
 
   SELECT id INTO v_timefees_table_id FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'time-fee-entries';

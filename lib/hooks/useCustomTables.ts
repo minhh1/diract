@@ -15,6 +15,11 @@ export interface CustomTable {
   // Append-only statutory ledger (see supabase/company_table_ledger.sql):
   // rows can only be added, never edited or deleted.
   is_ledger: boolean;
+  // Pure line-item data, meaningfully edited only from a dashboard's inline
+  // grid (see supabase/company_tables_disable_record_dashboard.sql) -- this
+  // table's own master page (CustomTableMasterPage.tsx) skips navigating to
+  // a full RecordDashboard on row click / after creating a record.
+  disable_record_dashboard: boolean;
 }
 
 const cache = new Map<string, CustomTable[]>();
