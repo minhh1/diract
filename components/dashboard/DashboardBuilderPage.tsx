@@ -9,7 +9,7 @@
 // saved dashboard's widgets get rendered on the view page.
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2, LayoutGrid, Code2, LayoutDashboard } from "lucide-react";
+import { Loader2, Trash2, LayoutGrid, Code2, LayoutDashboard, Table2, Share2 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { supabase } from "@/lib/supabase";
@@ -29,12 +29,14 @@ import CodeEditor from "@/components/dashboard/builder/CodeEditor";
 const ICON_OPTIONS = ['LayoutDashboard', 'Clock', 'Receipt', 'BarChart2', 'Table2', 'Briefcase'];
 const COLOR_OPTIONS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6'];
 
-// Sentinel Source-table value for a dashboard with no bound table at all --
-// only ever meaningful for table-independent widgets like
-// public_task_page/public_document_page (see AddWidgetMenu's filtering for
-// them). Distinct from both real company_tables ids and SYSTEM_TABLE_NAMES,
-// so it can share the same flat <select> without colliding.
-const NONE_SOURCE_KEY = '__none__';
+// A dashboard is either bound to a real table ('data', the original/default
+// kind -- Source table picker below) or holds only table-independent link
+// widgets ('public_pages' -- public_task_page/public_document_page, see
+// AddWidgetMenu's filtering for them). A distinct top-level choice, not an
+// option buried inside the Source table <select>, so switching to it reads
+// as "this dashboard has no table" rather than looking like just another
+// table to pick.
+type DashboardKind = 'data' | 'public_pages';
 
 // The builder's Canvas/Code previews render through the exact same
 // DashboardWidgetRenderer the live view page uses -- if it were handed the
@@ -70,9 +72,11 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('LayoutDashboard');
   const [color, setColor] = useState('#6366f1');
+  const [dashboardKind, setDashboardKind] = useState<DashboardKind>('data');
   // Either a company_tables.id (custom table) or a system table name
   // ('projects'/'properties'/'entities') -- one flat picker, no visual
   // distinction between the two kinds of table (see the <select> below).
+  // Only meaningful when dashboardKind === 'data'.
   const [sourceTableKey, setSourceTableKey] = useState('');
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [codeSource, setCodeSource] = useState('');
@@ -82,8 +86,8 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const isSystemSource = (SYSTEM_TABLE_NAMES as readonly string[]).includes(sourceTableKey);
-  const isNoneSource = sourceTableKey === NONE_SOURCE_KEY;
+  const isNoneSource = dashboardKind === 'public_pages';
+  const isSystemSource = !isNoneSource && (SYSTEM_TABLE_NAMES as readonly string[]).includes(sourceTableKey);
   const sourceKind: DashboardSourceKind = isNoneSource ? 'none' : isSystemSource ? (sourceTableKey as SystemTableName) : 'custom';
   const sourceTableSlug = useMemo(
     () => (isSystemSource || isNoneSource ? null : tables.find(t => t.id === sourceTableKey)?.slug || null),
@@ -123,11 +127,13 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         setName(row.name);
         setIcon(row.icon);
         setColor(row.color);
-        setSourceTableKey(
-          row.source_table_type === 'custom' ? (row.source_table_id || '')
-          : row.source_table_type === 'none' ? NONE_SOURCE_KEY
-          : row.source_table_type
-        );
+        if (row.source_table_type === 'none') {
+          setDashboardKind('public_pages');
+          setSourceTableKey('');
+        } else {
+          setDashboardKind('data');
+          setSourceTableKey(row.source_table_type === 'custom' ? (row.source_table_id || '') : row.source_table_type);
+        }
         setWidgets(row.widgets || []);
         setCodeSource(row.code_source || '');
         setBuilderMode(row.builder_mode || 'canvas');
@@ -140,6 +146,14 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
 
   const handleSourceTableChange = (key: string) => {
     setSourceTableKey(key);
+    setWidgets([]);
+    setCodeSource('');
+  };
+
+  const handleDashboardKindChange = (kind: DashboardKind) => {
+    if (kind === dashboardKind) return;
+    setDashboardKind(kind);
+    setSourceTableKey('');
     setWidgets([]);
     setCodeSource('');
   };
@@ -161,7 +175,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   };
 
   const handleSave = async () => {
-    if (!name.trim() || !sourceTableKey || !companyId) return;
+    if (!name.trim() || (!isNoneSource && !sourceTableKey) || !companyId) return;
     if (builderMode === 'code' && codeErrors.length > 0) return;
     setSaving(true);
     setError('');
@@ -235,7 +249,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     return <p className="text-center text-[12px] text-slate-400 py-20">Only company admins can build or delete dashboards.</p>;
   }
 
-  const canSave = !saving && !!name.trim() && !!sourceTableKey && !(builderMode === 'code' && codeErrors.length > 0);
+  const canSave = !saving && !!name.trim() && (isNoneSource || !!sourceTableKey) && !(builderMode === 'code' && codeErrors.length > 0);
 
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-6">
@@ -280,25 +294,55 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
           </div>
         </div>
         <div>
-          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Source table</label>
-          <select
-            value={sourceTableKey}
-            onChange={e => handleSourceTableChange(e.target.value)}
-            disabled={!isNew && !!dashboardId}
-            className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none appearance-none disabled:opacity-60"
-          >
-            <option value="">Select a table...</option>
-            <option value={NONE_SOURCE_KEY}>No table — public links only</option>
-            {SYSTEM_TABLE_NAMES.map(t => (
-              <option key={t} value={t}>{tableLabelOverrides[t]?.plural || DEFAULT_SYSTEM_TABLE_LABELS[t]}</option>
-            ))}
-            {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation — delete and recreate to switch tables.</p>}
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Dashboard type</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleDashboardKindChange('data')}
+              disabled={!isNew && !!dashboardId}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-[11px] font-bold border transition-all disabled:opacity-60 ${
+                dashboardKind === 'data' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <Table2 size={13} /> Data
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDashboardKindChange('public_pages')}
+              disabled={!isNew && !!dashboardId}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-[11px] font-bold border transition-all disabled:opacity-60 ${
+                dashboardKind === 'public_pages' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <Share2 size={13} /> Public pages
+            </button>
+          </div>
+          {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation — delete and recreate to switch.</p>}
         </div>
+
+        {dashboardKind === 'data' ? (
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Source table</label>
+            <select
+              value={sourceTableKey}
+              onChange={e => handleSourceTableChange(e.target.value)}
+              disabled={!isNew && !!dashboardId}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none appearance-none disabled:opacity-60"
+            >
+              <option value="">Select a table...</option>
+              {SYSTEM_TABLE_NAMES.map(t => (
+                <option key={t} value={t}>{tableLabelOverrides[t]?.plural || DEFAULT_SYSTEM_TABLE_LABELS[t]}</option>
+              ))}
+              {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation — delete and recreate to switch tables.</p>}
+          </div>
+        ) : (
+          <p className="text-[10px] text-slate-400 px-1">No table needed — add Public task page / Public document page widgets below to link to pages you've already created.</p>
+        )}
       </div>
 
-      {sourceTableKey && companyId && userId && (
+      {(isNoneSource || sourceTableKey) && companyId && userId && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-full w-fit">
             <button
