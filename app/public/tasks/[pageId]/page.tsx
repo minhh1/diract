@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
 import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker";
@@ -17,6 +17,11 @@ import { getRelativeDateLabel } from "@/lib/relativeDate";
 import { splitCompletedByRecency } from "@/lib/completedBucket";
 import { classifyTask, TaskGroup, TASK_GROUP_LABELS } from "@/lib/taskGroup";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
+import NewRecordModal from "@/components/dashboard/NewRecordModal";
+import { createRecord } from "@/lib/services/customTableService";
+import { relationCandidates } from "@/lib/dashboardWidgets/linkField";
+import type { CustomTableField } from "@/lib/hooks/useCustomTable";
+import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
 interface Task {
   id: string; name: string; isCompleted: boolean; completedAt: string | null;
@@ -67,6 +72,13 @@ export default function PublicTaskPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
   const [organisedView, setOrganisedView] = useState(false);
+  // Time & Fee Entries is a law-firm-only custom table (installed from the Law Firm
+  // template, slug 'time-fee-entries') — most companies won't have it at all, in which
+  // case timeFeesTable stays null and the per-task "Add to Time & Fees" action is hidden
+  // entirely rather than shown disabled. Same convention as ChecklistTab.tsx.
+  const [timeFeesTable, setTimeFeesTable] = useState<CustomTable | null>(null);
+  const [timeFeesFields, setTimeFeesFields] = useState<CustomTableField[]>([]);
+  const [convertingTask, setConvertingTask] = useState<Task | null>(null);
 
   // Persist the organised-view preference per browser (it's a display
   // choice, not something that needs to sync across viewers).
@@ -127,6 +139,26 @@ export default function PublicTaskPage() {
     return () => { supabase.removeChannel(channel); };
   }, [data?.companyId, pageId, refresh]);
 
+  // Relies on RLS to scope to the signed-in viewer's own company, same as every
+  // other direct company_tables query in the app — no need to filter by companyId.
+  useEffect(() => {
+    if (!data?.companyId) return;
+    (async () => {
+      const { data: tbl } = await supabase
+        .from("company_tables").select("*")
+        .eq("slug", "time-fee-entries").is("deleted_at", null).maybeSingle();
+      setTimeFeesTable(tbl || null);
+      if (tbl) {
+        const { data: flds } = await supabase
+          .from("company_table_fields").select("*")
+          .eq("table_id", tbl.id).is("deleted_at", null).order("display_order");
+        setTimeFeesFields(flds || []);
+      } else {
+        setTimeFeesFields([]);
+      }
+    })();
+  }, [data?.companyId]);
+
   const isEmbedded = typeof window !== "undefined" && window.self !== window.top;
 
   const openInNewTab = () => {
@@ -159,6 +191,24 @@ export default function PublicTaskPage() {
     } : prev);
     const res = await fetch(`/api/public-tasks/${pageId}/tasks/${task.id}`, { method: "DELETE" });
     if (!res.ok) refresh(); // revert to server truth on failure
+  };
+
+  // Single project-relation field on Time & Fee Entries (see relationCandidates'
+  // convention — the same one RecordDashboardTab auto-detects a matter field by).
+  // description is matched by field_key rather than auto-detected since text fields
+  // aren't uniquely typed; if a company renamed/removed it, the entry still opens
+  // with the matter locked in, just without a prefilled/AI-rewritable description.
+  const timeFeesMatterFieldKey = relationCandidates(timeFeesFields, "projects")[0]?.field_key;
+  const timeFeesDescriptionFieldKey = timeFeesFields.find(f => f.field_key === "description")?.field_key;
+
+  const handleCreateTimeEntry = async (values: Record<string, any>): Promise<string | null> => {
+    if (!timeFeesTable || !data) return "Time & Fee Entries table not found.";
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return "Not signed in.";
+    const rec = await createRecord(timeFeesTable.id, data.companyId, user.id, values, timeFeesFields);
+    if (rec && "error" in rec) return rec.error;
+    if (rec) { setConvertingTask(null); return null; }
+    return "Could not create the record.";
   };
 
   const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -410,6 +460,9 @@ export default function PublicTaskPage() {
               </select>
             )}
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {timeFeesTable && t.projectId && (
+                <button onClick={() => setConvertingTask(t)} title="Add to Time & Fees" className="p-1.5 text-slate-300 hover:text-emerald-600"><DollarSign size={13} /></button>
+              )}
               <button onClick={() => setEditingTask(t)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600"><Pencil size={13} /></button>
               <button onClick={() => deleteTask(t)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
             </div>
@@ -575,6 +628,20 @@ export default function PublicTaskPage() {
           projects={data.formOptions.projects}
           onClose={() => setShowTemplates(false)}
           onApplied={() => { setShowTemplates(false); refresh(); }}
+        />
+      )}
+
+      {convertingTask && timeFeesTable && (
+        <NewRecordModal
+          tableName={timeFeesTable.name}
+          fields={timeFeesFields}
+          initialValues={{
+            ...(timeFeesMatterFieldKey && convertingTask.projectId ? { [timeFeesMatterFieldKey]: convertingTask.projectId } : {}),
+            ...(timeFeesDescriptionFieldKey ? { [timeFeesDescriptionFieldKey]: convertingTask.notes || convertingTask.name } : {}),
+          }}
+          aiRewriteFieldKey={timeFeesDescriptionFieldKey}
+          onCreate={handleCreateTimeEntry}
+          onClose={() => setConvertingTask(null)}
         />
       )}
     </div>
