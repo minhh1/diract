@@ -117,7 +117,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
 
       const [{ data: invFields }, { data: project }] = await Promise.all([
         supabase.from('company_table_fields').select('*').eq('table_id', invTableId).is('deleted_at', null),
-        supabase.from('projects').select('client, debtor').eq('id', matterId).maybeSingle(),
+        supabase.from('projects').select('name, client, debtor').eq('id', matterId).maybeSingle(),
       ]);
       if (!active) return;
       setInvoiceFields((invFields || []) as CustomTableField[]);
@@ -131,6 +131,21 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
         setDebtorId(defaultDebtor);
         const { data: entity } = await supabase.from('entities').select('name').eq('id', defaultDebtor).maybeSingle();
         if (active) setDebtorLabel(entity?.name || null);
+      }
+
+      // "Our Reference" auto-fill (Settings -> Invoice template -> Terms &
+      // payment) -- 'name' reads the matter's own name, 'cf:<id>' reads a
+      // custom field on the matter (e.g. Huynh Lawyers' Matter Number).
+      // Still just a normal text input afterward, not locked to this value.
+      const ourRefKey = invoiceSettings.ourReferenceFieldKey;
+      if (ourRefKey === 'name') {
+        if (project?.name) setOurReference(project.name);
+      } else if (ourRefKey?.startsWith('cf:')) {
+        const { data: cfValue } = await supabase
+          .from('company_custom_field_values').select('value_text, value_number')
+          .eq('field_id', ourRefKey.slice(3)).eq('record_id', matterId).maybeSingle();
+        const val = cfValue?.value_text ?? cfValue?.value_number;
+        if (val != null && active) setOurReference(String(val));
       }
 
       const defaultTemplate = invoiceSettings.templates.find(t => t.isDefault) || invoiceSettings.templates[0];

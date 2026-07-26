@@ -540,30 +540,45 @@ async function saveValues(
     // routed to company_table_value_links instead (see
     // supabase/company_table_field_allow_multiple.sql).
     const multiWrites: { field: CustomTableField; ids: string[] }[] = [];
-    const upserts = Object.entries(values)
-    .map(([key, value]) => {
-        const field = fieldMap.get(key);
-        if (!field) return null;
-        if (field.allow_multiple) {
-          if (Array.isArray(value)) multiWrites.push({ field, ids: value.filter(Boolean) });
-          return null;
-        }
-        if (value === undefined || value === null || value === '') return null;
-        const valueCol = getValueColumn(field.field_type);
-        return {
-        company_id: companyId,
-        table_id: tableId,
-        record_id: recordId,
-        field_id: field.id,
-        [valueCol]: value,
-        };
-    })
-    .filter((u): u is NonNullable<typeof u> => u !== null);
+    // A field explicitly present in `values` as null/undefined/'' means
+    // "clear this field" (e.g. InvoicesTab.tsx's Void handler unbilling a
+    // line item via `{ invoice: null }`), not "leave it alone" -- a field
+    // the caller doesn't want to touch simply isn't a key in `values` at
+    // all, so it never reaches this loop either way. Previously these were
+    // silently skipped instead of clearing the existing row, which left a
+    // stale value (e.g. a voided invoice's line items still pointing at it)
+    // -- confirmed live: voiding an invoice didn't actually make its fees/
+    // disbursements unbilled again.
+    const upserts: Record<string, any>[] = [];
+    const clearFieldIds: string[] = [];
+    for (const [key, value] of Object.entries(values)) {
+      const field = fieldMap.get(key);
+      if (!field) continue;
+      if (field.allow_multiple) {
+        if (Array.isArray(value)) multiWrites.push({ field, ids: value.filter(Boolean) });
+        continue;
+      }
+      if (value === undefined || value === null || value === '') {
+        clearFieldIds.push(field.id);
+        continue;
+      }
+      const valueCol = getValueColumn(field.field_type);
+      upserts.push({ company_id: companyId, table_id: tableId, record_id: recordId, field_id: field.id, [valueCol]: value });
+    }
 
   if (upserts.length) {
     const { error } = await supabase
       .from('company_table_values')
       .upsert(upserts, { onConflict: 'record_id,field_id' });
+    if (error) return { error };
+  }
+
+  if (clearFieldIds.length) {
+    const { error } = await supabase
+      .from('company_table_values')
+      .delete()
+      .eq('record_id', recordId)
+      .in('field_id', clearFieldIds);
     if (error) return { error };
   }
 

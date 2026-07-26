@@ -149,7 +149,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
       const { data: rec } = await supabase.from('company_table_records').select('table_id').eq('id', li.source_record_id).maybeSingle();
       if (!rec) continue;
       const { data: sourceFields } = await supabase.from('company_table_fields').select('*').eq('table_id', rec.table_id).is('deleted_at', null);
-      await updateCustomRecord(li.source_record_id, rec.table_id, companyId, { invoice: null, invoiced_amount: null }, (sourceFields || []) as CustomTableField[]);
+      await updateCustomRecord(li.source_record_id, rec.table_id, companyId, { invoice: null, invoiced_amount: null, invoiced_gst_amount: null }, (sourceFields || []) as CustomTableField[]);
     }
     await updateCustomRecord(invoiceId, linkedTableId, companyId, { status: 'Void' }, invoiceFields);
     setVoidingId(null);

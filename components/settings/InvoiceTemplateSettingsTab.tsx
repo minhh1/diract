@@ -11,7 +11,7 @@
 // PrecedentsSettingsTab.tsx's formatting-defaults section.
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Upload, Trash2, Loader2, Check, Plus, Lock, LayoutTemplate } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { supabase } from "@/lib/supabase";
@@ -130,6 +130,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
   const [creditTerms, setCreditTerms] = useState(invoiceSettings.creditTerms || '');
   const [otherTerms, setOtherTerms] = useState(invoiceSettings.otherTerms || '');
   const [paymentTermsDays, setPaymentTermsDays] = useState(invoiceSettings.paymentTermsDays ?? 14);
+  const [ourReferenceFieldKey, setOurReferenceFieldKey] = useState(invoiceSettings.ourReferenceFieldKey || '');
   const [accountName, setAccountName] = useState(invoiceSettings.bankDetails?.accountName || '');
   const [bsb, setBsb] = useState(invoiceSettings.bankDetails?.bsb || '');
   const [accountNumber, setAccountNumber] = useState(invoiceSettings.bankDetails?.accountNumber || '');
@@ -137,14 +138,40 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const save = async () => {
+  // Matter fields available to auto-fill "Our Reference" from -- the
+  // matter's own name plus every custom field on `projects` (e.g. Huynh
+  // Lawyers' "Matter Number"). 'cf:<id>' mirrors the same convention
+  // RelationPicker.tsx's displayField2/searchFieldKeys already use to tell
+  // a native column apart from a custom field.
+  const [projectFieldOptions, setProjectFieldOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    if (!companyId) return;
+    (async () => {
+      const { data } = await supabase
+        .from('company_custom_fields').select('id, label, field_type')
+        .eq('company_id', companyId).eq('table_name', 'projects').is('deleted_at', null)
+        .in('field_type', ['text', 'number']).order('display_order');
+      setProjectFieldOptions([
+        { value: 'name', label: 'Matter Name' },
+        ...(data || []).map(f => ({ value: `cf:${f.id}`, label: f.label })),
+      ]);
+    })();
+  }, [companyId]);
+
+  // `overrides` lets a caller (the "Our Reference" select below) pass the
+  // just-picked value straight through instead of relying on its own state
+  // setter having landed before this reads it from the closure -- state
+  // updates aren't synchronous, so `setOurReferenceFieldKey(x); save()`
+  // back-to-back would save the value from BEFORE the change.
+  const save = async (overrides: Partial<{ ourReferenceFieldKey: string | null }> = {}) => {
     if (!companyId) return;
     setSaving(true);
     setSaved(false);
     const next = {
       ...invoiceSettings,
-      creditTerms, otherTerms, paymentTermsDays,
+      creditTerms, otherTerms, paymentTermsDays, ourReferenceFieldKey: ourReferenceFieldKey || null,
       bankDetails: { accountName, bsb, accountNumber, reference },
+      ...overrides,
     };
     await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
     await refreshInvoiceSettings();
@@ -168,13 +195,13 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
       <fieldset disabled={!isAdmin} className="space-y-4 disabled:opacity-60">
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Credit terms</label>
-          <textarea value={creditTerms} onChange={e => setCreditTerms(e.target.value)} onBlur={save} rows={2}
+          <textarea value={creditTerms} onChange={e => setCreditTerms(e.target.value)} onBlur={() => save()} rows={2}
             placeholder="Payment is due within 14 days of the date of this invoice."
             className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
         </div>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Other terms</label>
-          <textarea value={otherTerms} onChange={e => setOtherTerms(e.target.value)} onBlur={save} rows={2}
+          <textarea value={otherTerms} onChange={e => setOtherTerms(e.target.value)} onBlur={() => save()} rows={2}
             placeholder="Any additional notices to include on every invoice."
             className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
         </div>
@@ -183,21 +210,33 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
           <input
             type="number" min={0} max={365} value={paymentTermsDays}
             onChange={e => setPaymentTermsDays(Math.max(0, Math.min(365, Number(e.target.value) || 0)))}
-            onBlur={save}
+            onBlur={() => save()}
             className="w-24 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
           />
           <p className="text-[10px] text-slate-400 mt-1">Default due date on a new invoice = issue date + this many days. Still adjustable per invoice.</p>
         </div>
         <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">"Our Reference" auto-fills from</label>
+          <select
+            value={ourReferenceFieldKey}
+            onChange={e => { setOurReferenceFieldKey(e.target.value); save({ ourReferenceFieldKey: e.target.value || null }); }}
+            className="w-full bg-white border border-slate-200 rounded-full py-2.5 px-4 text-[12px] font-medium outline-none appearance-none"
+          >
+            <option value="">None — leave blank, fill in manually per invoice</option>
+            {projectFieldOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <p className="text-[10px] text-slate-400 mt-1">Still editable on each invoice — this just sets the starting value from the matter.</p>
+        </div>
+        <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Bank details</p>
           <div className="grid grid-cols-2 gap-2">
-            <input value={accountName} onChange={e => setAccountName(e.target.value)} onBlur={save} placeholder="Account name"
+            <input value={accountName} onChange={e => setAccountName(e.target.value)} onBlur={() => save()} placeholder="Account name"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-            <input value={bsb} onChange={e => setBsb(e.target.value)} onBlur={save} placeholder="BSB"
+            <input value={bsb} onChange={e => setBsb(e.target.value)} onBlur={() => save()} placeholder="BSB"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-            <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} onBlur={save} placeholder="Account number"
+            <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} onBlur={() => save()} placeholder="Account number"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-            <input value={reference} onChange={e => setReference(e.target.value)} onBlur={save} placeholder="Payment reference note (optional)"
+            <input value={reference} onChange={e => setReference(e.target.value)} onBlur={() => save()} placeholder="Payment reference note (optional)"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
           </div>
         </div>

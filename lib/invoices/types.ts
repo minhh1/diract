@@ -41,6 +41,13 @@ export interface InvoiceSettings {
   // rather than here, so an old company row with this column simply absent
   // still behaves exactly as if it were set to 14.
   paymentTermsDays?: number;
+  // Which matter field to auto-fill "Our Reference" from when creating an
+  // invoice (e.g. Huynh Lawyers uses their Matter Number custom field) --
+  // a native `projects` column name, or 'cf:<company_custom_fields.id>' for
+  // a custom field, matching the convention RelationPicker.tsx's
+  // displayField2/searchFieldKeys already use for the same distinction.
+  // Unset = no auto-fill, "Our Reference" stays blank until typed in.
+  ourReferenceFieldKey?: string | null;
   templates: InvoiceTemplateConfig[];
 }
 
