@@ -37,6 +37,7 @@ const SERVICE_HEARTBEAT_DEFS: Record<string, HeartbeatDef> = {
   "virtual-computers-sweep": { label: "Virtual computers sweep (every 5-10 min)", intervalMs: 10 * 60 * 1000 },
   "ai-usage-sweep": { label: "AI usage → Stripe sweep (every 5-10 min)", intervalMs: 10 * 60 * 1000 },
   "platform-cost-refresh": { label: "Platform cost refresh (daily)", intervalMs: 24 * 60 * 60 * 1000 },
+  "gotenberg-heartbeat": { label: "Gotenberg (doc conversion) heartbeat (every 10 min)", intervalMs: 10 * 60 * 1000 },
 };
 
 // ── Secrets ──────────────────────────────────────────────────────────

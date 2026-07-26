@@ -1,0 +1,19 @@
+name: Gotenberg heartbeat
+
+# Vercel Cron on the Hobby plan only supports once-daily jobs (see
+# vm-sweep.yml's comment), which isn't frequent enough to catch a docservice
+# outage promptly or keep its Services sub-tab row from going stale. This
+# workflow just curls app/api/gotenberg/heartbeat on a schedule.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger heartbeat
+        run: |
+          curl -sf -X GET "https://diract.io/api/gotenberg/heartbeat" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
