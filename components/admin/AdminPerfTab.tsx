@@ -6,7 +6,7 @@
 // its own (everything here is local to whichever browser loaded the page).
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Activity, Trash2, RefreshCw, Gauge } from "lucide-react";
 import { getPerfLogEntries, clearPerfLog, type PerfLogEntry } from "@/lib/perfLog";
 
@@ -52,7 +52,7 @@ function groupEntries(entries: PerfLogEntry[]): Group[] {
 // "what happened during this one page load" vs "how has this URL performed
 // over time."
 const PAGE_EVENT_RE = /^PAGE (\w+)\(([^)]*)\): (start|ready)$/;
-const KIND_LABEL: Record<string, string> = { dashboard: "Dashboard", table: "Table", settings: "Settings", admin: "Admin", marketplace: "Marketplace" };
+const KIND_LABEL: Record<string, string> = { dashboard: "Dashboard", table: "Table", settings: "Settings", admin: "Admin", marketplace: "Marketplace", page: "Page (auto)" };
 
 interface PageSample { at: number; durationMs: number }
 interface PageStat { kind: string; name: string; samples: PageSample[] }
@@ -104,10 +104,37 @@ function durationColor(ms: number): string {
   return "text-emerald-600";
 }
 
+// Full load-time history for one URL, newest first -- what a row in "Load
+// times by URL" expands into on click. `stat.samples` already holds every
+// sample still in the ring buffer for this exact kind+name, not just the
+// last RECENT_SAMPLES used for the row's own avg/max.
+const HISTORY_DISPLAY_LIMIT = 50;
+function PageLoadHistory({ stat }: { stat: PageStat }) {
+  const all = stat.samples;
+  const shown = all.slice(-HISTORY_DISPLAY_LIMIT).reverse();
+  return (
+    <div>
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+        {all.length} load{all.length !== 1 ? "s" : ""} recorded
+        {all.length > HISTORY_DISPLAY_LIMIT ? ` — showing most recent ${HISTORY_DISPLAY_LIMIT}` : ""}
+      </p>
+      <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+        {shown.map((sample, i) => (
+          <div key={i} className="flex items-center justify-between text-[11px] px-3 py-1.5 bg-white rounded-lg border border-slate-100">
+            <span className="text-slate-400">{new Date(sample.at).toLocaleString()}</span>
+            <span className={`font-mono font-bold ${durationColor(sample.durationMs)}`}>{sample.durationMs.toLocaleString()}ms</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPerfTab() {
   const [entries, setEntries] = useState<PerfLogEntry[]>([]);
   const [live, setLive] = useState(true);
   const [expanded, setExpanded] = useState<number>(0); // index of expanded group, newest = 0
+  const [expandedStatKey, setExpandedStatKey] = useState<string | null>(null); // "<kind>:<name>" of the URL row showing its full load history
 
   useEffect(() => {
     setEntries(getPerfLogEntries());
@@ -126,7 +153,7 @@ export default function AdminPerfTab() {
           <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-50">
             <Gauge size={14} className="text-slate-400" />
             <span className="text-[11px] font-bold text-slate-700">Load times by URL</span>
-            <span className="text-[10px] text-slate-400 ml-auto">avg/max over last {RECENT_SAMPLES} loads</span>
+            <span className="text-[10px] text-slate-400 ml-auto">avg/max over last {RECENT_SAMPLES} loads · click a row for its full history</span>
           </div>
           <table className="w-full text-[11px]">
             <thead>
@@ -142,17 +169,31 @@ export default function AdminPerfTab() {
             </thead>
             <tbody>
               {pageStats.map(stat => {
+                const key = `${stat.kind}:${stat.name}`;
                 const s = statSummary(stat);
+                const isOpen = expandedStatKey === key;
                 return (
-                  <tr key={`${stat.kind}:${stat.name}`} className="border-t border-slate-50">
-                    <td className="px-4 py-2 text-slate-700 font-medium">{stat.name}</td>
-                    <td className="px-4 py-2 text-slate-400">{KIND_LABEL[stat.kind] || stat.kind}</td>
-                    <td className={`px-4 py-2 text-right font-mono font-bold ${durationColor(s.last)}`}>{s.last.toLocaleString()}ms</td>
-                    <td className={`px-4 py-2 text-right font-mono ${durationColor(s.avg)}`}>{s.avg.toLocaleString()}ms</td>
-                    <td className="px-4 py-2 text-right font-mono text-slate-400">{s.max.toLocaleString()}ms</td>
-                    <td className="px-4 py-2 text-right text-slate-400">{s.count}</td>
-                    <td className="px-4 py-2 text-right text-slate-400">{new Date(s.lastAt).toLocaleTimeString()}</td>
-                  </tr>
+                  <Fragment key={key}>
+                    <tr
+                      onClick={() => setExpandedStatKey(isOpen ? null : key)}
+                      className={`border-t border-slate-50 cursor-pointer hover:bg-slate-50 ${isOpen ? 'bg-slate-50' : ''}`}
+                    >
+                      <td className="px-4 py-2 text-slate-700 font-medium">{stat.name}</td>
+                      <td className="px-4 py-2 text-slate-400">{KIND_LABEL[stat.kind] || stat.kind}</td>
+                      <td className={`px-4 py-2 text-right font-mono font-bold ${durationColor(s.last)}`}>{s.last.toLocaleString()}ms</td>
+                      <td className={`px-4 py-2 text-right font-mono ${durationColor(s.avg)}`}>{s.avg.toLocaleString()}ms</td>
+                      <td className="px-4 py-2 text-right font-mono text-slate-400">{s.max.toLocaleString()}ms</td>
+                      <td className="px-4 py-2 text-right text-slate-400">{s.count}</td>
+                      <td className="px-4 py-2 text-right text-slate-400">{new Date(s.lastAt).toLocaleTimeString()}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="border-t border-slate-50 bg-slate-50/60">
+                        <td colSpan={7} className="px-4 py-3">
+                          <PageLoadHistory stat={stat} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

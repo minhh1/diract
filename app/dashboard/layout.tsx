@@ -3,12 +3,14 @@ import Sidebar from "@/components/Sidebar";
 import QueryProvider from "@/components/QueryProvider";
 import { CompanyProvider } from "@/components/CompanyContext";
 import { ProgressBarProvider } from "@/components/TopProgressBar";
+import PerfRouteTracker from "@/components/PerfRouteTracker";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <QueryProvider>
       <CompanyProvider>
         <ProgressBarProvider>
+          <PerfRouteTracker />
           <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans antialiased text-slate-900">
             {/* COLUMN 1: Sidebar — Sidebar itself controls width so it can collapse */}
             <aside className="flex-shrink-0">

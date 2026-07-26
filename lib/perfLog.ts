@@ -22,7 +22,12 @@ export interface PerfLogEntry {
 }
 
 const STORAGE_KEY = "nk_perf_log";
-const MAX_ENTRIES = 1000;
+// Bumped from 1000 now that PerfRouteTracker logs a start/ready pair for
+// EVERY navigation automatically (see components/PerfRouteTracker.tsx) --
+// meaningfully more volume than only the hand-instrumented pages used to
+// produce, so the ring buffer needs more headroom to still hold a useful
+// per-URL history.
+const MAX_ENTRIES = 3000;
 
 // Client-side (App Router) navigation never reloads the tab, so a plain
 // performance.now() keeps climbing across every dashboard/table/settings
@@ -83,7 +88,12 @@ export function perfLog(label: string, detail?: string): void {
 // these "PAGE ..." labelled entries out to show one clean "this URL took
 // Nms" row per route, keyed on `path`, instead of making the admin eyeball
 // a whole raw waterfall to find the number that matters.
-export type PerfPageKind = "dashboard" | "table" | "settings" | "admin" | "marketplace";
+// "page" is the generic, automatic kind PerfRouteTracker logs for every
+// route by pathname -- distinct from the other kinds, which are hand-placed
+// in specific pages and use a view/slug/table name (not necessarily the
+// literal URL) because they know that page's own real loading-state
+// semantics.
+export type PerfPageKind = "dashboard" | "table" | "settings" | "admin" | "marketplace" | "page";
 export function perfLogPageStart(kind: PerfPageKind, name: string): void {
   perfLog(`PAGE ${kind}(${name}): start`);
 }
