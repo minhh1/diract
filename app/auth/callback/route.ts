@@ -1,6 +1,7 @@
 // app/auth/callback/route.ts
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { ensureStaffEntity } from '@/lib/services/staffEntityService'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -74,6 +75,8 @@ export async function GET(request: NextRequest) {
             user_id: user.id,
             role: 'operator',
           }, { onConflict: 'user_id,company_id' })
+
+          await ensureStaffEntity(supabase, companyId, user.id)
 
           // Set active company
           await supabase.from('profiles')

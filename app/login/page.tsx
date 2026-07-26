@@ -4,6 +4,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 import {
   Lock, Mail, Loader2, Globe, Fingerprint, ArrowRight,
   Eye, EyeOff, CheckCircle2, Building2, AlertCircle
@@ -145,6 +146,8 @@ function LoginPageInner() {
         role: 'member',
       }, { onConflict: 'company_id,user_id' });
 
+      await ensureStaffEntity(supabase, tokenData.company_id, userId);
+
       // Switch active company
       await supabase.from('profiles')
         .update({ active_company_id: tokenData.company_id })
@@ -233,6 +236,8 @@ function LoginPageInner() {
 
         if (memberErr) console.error('membership error:', memberErr);
 
+        await ensureStaffEntity(supabase, tokenData.company_id, userId);
+
         // Switch active company to the invited company
         await supabase.from('profiles')
           .update({ active_company_id: tokenData.company_id })
@@ -309,6 +314,8 @@ function LoginPageInner() {
           role: 'member',
         }, { onConflict: 'company_id,user_id' });
 
+        await ensureStaffEntity(supabase, tokenData.company_id, userId);
+
         // Mark token used
         await supabase.from('registration_tokens')
           .update({ used_at: new Date().toISOString() })
@@ -331,6 +338,12 @@ function LoginPageInner() {
 
         if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
         if (result && !result.success) throw new Error(result.error || 'Registration failed');
+
+        // register_company_and_profile's own return shape isn't relied on
+        // elsewhere in this file -- reading the company id back off the
+        // profile it just set avoids assuming one.
+        const { data: newProfile } = await supabase.from('profiles').select('active_company_id').eq('id', userId).maybeSingle();
+        if (newProfile?.active_company_id) await ensureStaffEntity(supabase, newProfile.active_company_id, userId);
       }
 
       const needsConfirmation = !authData.session;
