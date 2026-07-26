@@ -38,6 +38,16 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   my_tasks_button: { w: 3, h: 2 },
 };
 
+// The only widget types that render meaningfully with no bound source table
+// at all (DashboardSourceKind 'none' -- see
+// components/dashboard/DashboardBuilderPage.tsx's "No table" option) --
+// everything else reads `fields`/`records` from a real table, which a
+// tableless dashboard never has. Used by AddWidgetMenu to hide the rest
+// rather than let someone add a grid/chart/etc. that can never do anything.
+export const TABLE_INDEPENDENT_WIDGET_TYPES: DashboardWidgetType[] = [
+  'heading', 'text', 'public_task_page', 'public_document_page',
+];
+
 export function createWidget(type: DashboardWidgetType, existingWidgets: DashboardWidget[]): DashboardWidget {
   const y = existingWidgets.reduce((max, w) => Math.max(max, w.layout.y + w.layout.h), 0);
   const layout: WidgetLayout = { x: 0, y, ...DEFAULT_LAYOUT_BY_TYPE[type] };

@@ -10,7 +10,13 @@ import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import { toRelativeDateToken, relativeDateFromToken, matchesRelativeDate } from "@/lib/dashboardWidgets/relativeDates";
 
-export type DashboardSourceKind = 'custom' | SystemTableName;
+// 'none' is a dashboard with no source table at all -- only ever meaningful
+// for table-independent widgets like public_task_page/public_document_page
+// (see components/dashboard/DashboardBuilderPage.tsx's "No table" option
+// and AddWidgetMenu's filtering for it). fields/records for it are always
+// empty, same shape as any other source kind whose table lookup found
+// nothing.
+export type DashboardSourceKind = 'custom' | SystemTableName | 'none';
 
 export interface SummaryTileConfig {
   label: string;
@@ -94,7 +100,7 @@ export function useDashboardData(dashboardSlug: string) {
   }, [dashboardSlug]);
 
   const sourceKind: DashboardSourceKind = dashboard?.source_table_type ?? 'custom';
-  const systemTableName = sourceKind !== 'custom' ? sourceKind : null;
+  const systemTableName = (sourceKind !== 'custom' && sourceKind !== 'none') ? sourceKind : null;
 
   // Both hooks are always called (Rules of Hooks) -- each tolerates a null
   // table identifier by no-op'ing, and only the one matching this

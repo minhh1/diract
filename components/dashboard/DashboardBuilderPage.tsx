@@ -29,6 +29,13 @@ import CodeEditor from "@/components/dashboard/builder/CodeEditor";
 const ICON_OPTIONS = ['LayoutDashboard', 'Clock', 'Receipt', 'BarChart2', 'Table2', 'Briefcase'];
 const COLOR_OPTIONS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6'];
 
+// Sentinel Source-table value for a dashboard with no bound table at all --
+// only ever meaningful for table-independent widgets like
+// public_task_page/public_document_page (see AddWidgetMenu's filtering for
+// them). Distinct from both real company_tables ids and SYSTEM_TABLE_NAMES,
+// so it can share the same flat <select> without colliding.
+const NONE_SOURCE_KEY = '__none__';
+
 // The builder's Canvas/Code previews render through the exact same
 // DashboardWidgetRenderer the live view page uses -- if it were handed the
 // real fetched `records`, a grid widget would render every real row (a
@@ -76,10 +83,11 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const [error, setError] = useState('');
 
   const isSystemSource = (SYSTEM_TABLE_NAMES as readonly string[]).includes(sourceTableKey);
-  const sourceKind: DashboardSourceKind = isSystemSource ? (sourceTableKey as SystemTableName) : 'custom';
+  const isNoneSource = sourceTableKey === NONE_SOURCE_KEY;
+  const sourceKind: DashboardSourceKind = isNoneSource ? 'none' : isSystemSource ? (sourceTableKey as SystemTableName) : 'custom';
   const sourceTableSlug = useMemo(
-    () => (isSystemSource ? null : tables.find(t => t.id === sourceTableKey)?.slug || null),
-    [tables, sourceTableKey, isSystemSource]
+    () => (isSystemSource || isNoneSource ? null : tables.find(t => t.id === sourceTableKey)?.slug || null),
+    [tables, sourceTableKey, isSystemSource, isNoneSource]
   );
 
   // Both hooks are always called (Rules of Hooks) -- each tolerates a null
@@ -115,7 +123,11 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         setName(row.name);
         setIcon(row.icon);
         setColor(row.color);
-        setSourceTableKey(row.source_table_type === 'custom' ? (row.source_table_id || '') : row.source_table_type);
+        setSourceTableKey(
+          row.source_table_type === 'custom' ? (row.source_table_id || '')
+          : row.source_table_type === 'none' ? NONE_SOURCE_KEY
+          : row.source_table_type
+        );
         setWidgets(row.widgets || []);
         setCodeSource(row.code_source || '');
         setBuilderMode(row.builder_mode || 'canvas');
@@ -161,7 +173,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       icon,
       color,
       source_table_type: sourceKind,
-      source_table_id: isSystemSource ? null : sourceTableKey,
+      source_table_id: (isSystemSource || isNoneSource) ? null : sourceTableKey,
       widgets: finalWidgets,
       code_source: builderMode === 'code' ? codeSource : serializeToDSL(finalWidgets, fields),
       builder_mode: builderMode,
@@ -276,6 +288,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
             className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none appearance-none disabled:opacity-60"
           >
             <option value="">Select a table...</option>
+            <option value={NONE_SOURCE_KEY}>No table — public links only</option>
             {SYSTEM_TABLE_NAMES.map(t => (
               <option key={t} value={t}>{tableLabelOverrides[t]?.plural || DEFAULT_SYSTEM_TABLE_LABELS[t]}</option>
             ))}

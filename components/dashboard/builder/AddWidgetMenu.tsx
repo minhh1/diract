@@ -6,9 +6,19 @@ import { Plus } from "lucide-react";
 import { WIDGET_TYPE_META } from "@/lib/dashboardWidgets/defaults";
 import type { DashboardWidgetType } from "@/lib/dashboardWidgets/types";
 
-const TYPES = Object.keys(WIDGET_TYPE_META) as DashboardWidgetType[];
+const ALL_TYPES = Object.keys(WIDGET_TYPE_META) as DashboardWidgetType[];
 
-export default function AddWidgetMenu({ onAdd }: { onAdd: (type: DashboardWidgetType) => void }) {
+interface Props {
+  onAdd: (type: DashboardWidgetType) => void;
+  // Narrows the menu to only these types -- see
+  // lib/dashboardWidgets/defaults.ts's TABLE_INDEPENDENT_WIDGET_TYPES,
+  // passed in by CanvasEditor for a tableless (sourceKind 'none') dashboard.
+  // Undefined (the common case) shows every widget type.
+  allowedTypes?: DashboardWidgetType[];
+}
+
+export default function AddWidgetMenu({ onAdd, allowedTypes }: Props) {
+  const TYPES = allowedTypes ? ALL_TYPES.filter(t => allowedTypes.includes(t)) : ALL_TYPES;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

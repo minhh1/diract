@@ -21,7 +21,7 @@ import { GripVertical, Settings, Trash2 } from "lucide-react";
 import DashboardWidgetRenderer from "../DashboardWidgetRenderer";
 import AddWidgetMenu from "./AddWidgetMenu";
 import WidgetConfigPanel from "./WidgetConfigPanel";
-import { createWidget } from "@/lib/dashboardWidgets/defaults";
+import { createWidget, TABLE_INDEPENDENT_WIDGET_TYPES } from "@/lib/dashboardWidgets/defaults";
 import type { DashboardWidget, DashboardWidgetType } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
@@ -66,7 +66,7 @@ export default function CanvasEditor({ widgets, onChange, fields, fieldById, rec
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <AddWidgetMenu onAdd={handleAdd} />
+        <AddWidgetMenu onAdd={handleAdd} allowedTypes={sourceKind === 'none' ? TABLE_INDEPENDENT_WIDGET_TYPES : undefined} />
       </div>
 
       {widgets.length === 0 ? (
