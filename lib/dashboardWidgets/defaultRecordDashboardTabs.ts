@@ -43,7 +43,11 @@ export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
     slug: 'disbursements',
     title: 'Disbursements',
     icon: 'Receipt',
-    gridFieldKeys: ['date', 'staff', 'supplier_name', 'description', 'rate', 'quantity', 'gst_status', 'billable', 'amount'],
+    // Supplier deliberately left off the default grid -- it's still on the
+    // quick-add form (so it's always captured), but most firms don't need
+    // it as its own column in the everyday summary view. Anyone who wants
+    // it there can add it back via the grid's own column customization.
+    gridFieldKeys: ['date', 'staff', 'description', 'rate', 'quantity', 'gst_status', 'billable', 'amount'],
     quickAddFieldKeys: ['date', 'staff', 'supplier_name', 'expense_code', 'description', 'rate', 'quantity', 'gst_status', 'billable'],
   },
 ];

@@ -24,6 +24,7 @@ import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
 // `activeTab === ...` condition below actually renders it.
 const AdminTeamsTab = dynamic(() => import("@/components/admin/AdminTeamsTab"));
 const AdminDefaultViewsTab = dynamic(() => import("@/components/admin/AdminDefaultViewsTab"));
+const AdminDefaultTabsTab = dynamic(() => import("@/components/admin/AdminDefaultTabsTab"));
 const AdminVirtualComputersTab = dynamic(() => import("@/components/admin/AdminVirtualComputersTab"));
 const AdminGmailSyncTab = dynamic(() => import("@/components/admin/AdminGmailSyncTab"));
 const AdminWhatsAppTab = dynamic(() => import("@/components/admin/AdminWhatsAppTab"));
@@ -223,10 +224,10 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
+type AdminTab = 'members' | 'teams' | 'views' | 'defaultTabs' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'defaultTabs', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
-  members: 'Members', teams: 'Teams', views: 'Default views', invites: 'Invite links',
+  members: 'Members', teams: 'Teams', views: 'Default views', defaultTabs: 'Default tabs', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
   oneDrive: 'OneDrive', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
@@ -846,6 +847,11 @@ export default function AdminPage() {
           {/* ── Default views ── */}
           {activeTab === 'views' && companyId && (
             <AdminDefaultViewsTab companyId={companyId} />
+          )}
+
+          {/* ── Default tabs ── */}
+          {activeTab === 'defaultTabs' && companyId && (
+            <AdminDefaultTabsTab companyId={companyId} />
           )}
 
           {/* ── Gmail source of truth ── */}

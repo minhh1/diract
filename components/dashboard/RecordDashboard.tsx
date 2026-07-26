@@ -833,6 +833,13 @@ export default function RecordDashboard({
 
   const activeTab = tabs.find(t => t.id === activeTabId);
 
+  // Data-grid tabs (Time & Fees/Disbursements and any other custom_dashboard,
+  // plus Invoices) need much more horizontal room than a field-list tab --
+  // the shared max-w-4xl wrapper below was clipping grid columns on every
+  // one of them. Everything else stays at the narrower, more readable width.
+  const isGridTab = activeTab?.tab_type === 'custom_dashboard' || activeTab?.tab_type === 'invoice_dashboard';
+  const tabContentMaxWidthClass = isGridTab ? 'max-w-[1600px]' : 'max-w-4xl';
+
   // ── Shared tab content renderer ────────────────────────────────
 
   const renderTabContent = () => (
@@ -1125,7 +1132,7 @@ export default function RecordDashboard({
           />
         </div>
         <div className="p-8 bg-[#F9FAFB]">
-          <div className="max-w-4xl mx-auto">
+          <div className={`${tabContentMaxWidthClass} mx-auto`}>
             {renderTabContent()}
           </div>
         </div>
@@ -1286,7 +1293,7 @@ export default function RecordDashboard({
         <div className={`p-8 ${
           activeSubProjectId ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'
         }`}>
-          <div className="max-w-4xl mx-auto">
+          <div className={`${tabContentMaxWidthClass} mx-auto`}>
             {renderTabContent()}
           </div>
         </div>
