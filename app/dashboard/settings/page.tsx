@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -11,16 +12,21 @@ import {
   CheckCircle2, ChevronRight, AlertCircle,
   Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare, Receipt
 } from "lucide-react";
-import ImportModal from "@/components/ImportModal";
-import DataFormattingTool from "@/components/DataFormattingTool";
-import SchemaVisualisation from "@/components/SchemaVisualisation";
-import SpreadsheetEditor from "@/components/SpreadsheetEditor";
-import CustomTableBuilder from "@/components/CustomTableBuilder";
-import PublicTaskPagesTab from "@/components/settings/PublicTaskPagesTab";
-import PrecedentsSettingsTab from "@/components/settings/PrecedentsSettingsTab";
-import InvoiceTemplateSettingsTab from "@/components/settings/InvoiceTemplateSettingsTab";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
+
+// Deferred: the menu (this page's default landing view) doesn't need any of
+// these -- each one only renders once its own view/modal is actually open,
+// so there's no reason their combined ~5,000 lines (SpreadsheetEditor alone
+// is 1,300) should load before the menu can even show its buttons.
+const ImportModal = dynamic(() => import("@/components/ImportModal"));
+const DataFormattingTool = dynamic(() => import("@/components/DataFormattingTool"));
+const SchemaVisualisation = dynamic(() => import("@/components/SchemaVisualisation"));
+const SpreadsheetEditor = dynamic(() => import("@/components/SpreadsheetEditor"));
+const CustomTableBuilder = dynamic(() => import("@/components/CustomTableBuilder"));
+const PublicTaskPagesTab = dynamic(() => import("@/components/settings/PublicTaskPagesTab"));
+const PrecedentsSettingsTab = dynamic(() => import("@/components/settings/PrecedentsSettingsTab"));
+const InvoiceTemplateSettingsTab = dynamic(() => import("@/components/settings/InvoiceTemplateSettingsTab"));
 
 
 type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents" | "invoice_template";
@@ -446,8 +452,12 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-      <ImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onRefresh={() => refetchHistory()} />
-      <DataFormattingTool isOpen={isFormatterOpen} onClose={() => setIsFormatterOpen(false)} onRefresh={() => {}} />
+      {isImportOpen && (
+        <ImportModal isOpen onClose={() => setIsImportOpen(false)} onRefresh={() => refetchHistory()} />
+      )}
+      {isFormatterOpen && (
+        <DataFormattingTool isOpen onClose={() => setIsFormatterOpen(false)} onRefresh={() => {}} />
+      )}
     </div>
   );
 }

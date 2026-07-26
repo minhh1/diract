@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -14,18 +15,25 @@ import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
-import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
-import AdminDefaultViewsTab from "@/components/admin/AdminDefaultViewsTab";
-import AdminVirtualComputersTab from "@/components/admin/AdminVirtualComputersTab";
-import AdminGmailSyncTab from "@/components/admin/AdminGmailSyncTab";
-import AdminWhatsAppTab from "@/components/admin/AdminWhatsAppTab";
-import AdminMsTeamsTab from "@/components/admin/AdminMsTeamsTab";
-import AdminOneDriveTab from "@/components/admin/AdminOneDriveTab";
-import AdminEmailTab from "@/components/admin/AdminEmailTab";
-import AdminAiAssistantTab from "@/components/admin/AdminAiAssistantTab";
-import AdminPerfTab from "@/components/admin/AdminPerfTab";
-import AdminPlatformHealthTab from "@/components/admin/AdminPlatformHealthTab";
-import AdminArchiveRequestsTab from "@/components/admin/AdminArchiveRequestsTab";
+
+// Deferred: each tab is only ever one of these at a time, so there's no
+// reason the other 11 tabs' JS (several thousand lines combined, including
+// AdminVirtualComputersTab/AdminGmailSyncTab/AdminMsTeamsTab at 900+ lines
+// each) should load and execute before the page can even show its default
+// Members tab. next/dynamic defers each tab's own chunk until its
+// `activeTab === ...` condition below actually renders it.
+const AdminTeamsTab = dynamic(() => import("@/components/admin/AdminTeamsTab"));
+const AdminDefaultViewsTab = dynamic(() => import("@/components/admin/AdminDefaultViewsTab"));
+const AdminVirtualComputersTab = dynamic(() => import("@/components/admin/AdminVirtualComputersTab"));
+const AdminGmailSyncTab = dynamic(() => import("@/components/admin/AdminGmailSyncTab"));
+const AdminWhatsAppTab = dynamic(() => import("@/components/admin/AdminWhatsAppTab"));
+const AdminMsTeamsTab = dynamic(() => import("@/components/admin/AdminMsTeamsTab"));
+const AdminOneDriveTab = dynamic(() => import("@/components/admin/AdminOneDriveTab"));
+const AdminEmailTab = dynamic(() => import("@/components/admin/AdminEmailTab"));
+const AdminAiAssistantTab = dynamic(() => import("@/components/admin/AdminAiAssistantTab"));
+const AdminPerfTab = dynamic(() => import("@/components/admin/AdminPerfTab"));
+const AdminPlatformHealthTab = dynamic(() => import("@/components/admin/AdminPlatformHealthTab"));
+const AdminArchiveRequestsTab = dynamic(() => import("@/components/admin/AdminArchiveRequestsTab"));
 
 interface Member {
   id: string;
