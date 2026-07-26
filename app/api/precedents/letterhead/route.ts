@@ -3,8 +3,8 @@
 // company, company_letterheads). Mirrors app/api/document-templates/upload/route.ts's
 // validation shape (.docx/.doc accept, legacy .doc -> .docx via Gotenberg,
 // magic-byte checks) but is company-scoped, not project-scoped, and auto-inserts
-// the {{address}}/{{content}} tags via lib/precedents/letterheadTag.ts instead
-// of leaving the firm to author their own tags.
+// the {{address}}/{{content}}/{{signoff}} tags via lib/precedents/letterheadTag.ts
+// instead of leaving the firm to author their own tags.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { convertDocToDocx } from "@/lib/gotenberg";
@@ -21,7 +21,7 @@ export async function GET() {
 
   const { data } = await admin
     .from("company_letterheads")
-    .select("id, original_filename, address_tag_key, content_tag_key, created_at, updated_at")
+    .select("id, original_filename, address_tag_key, content_tag_key, signoff_tag_key, created_at, updated_at")
     .eq("company_id", companyId)
     .maybeSingle();
 
@@ -58,9 +58,10 @@ export async function POST(req: NextRequest) {
 
   const addressTagKey = "address";
   const contentTagKey = "content";
+  const signoffTagKey = "signoff";
   let tagged: Buffer;
   try {
-    tagged = insertLetterTags(bytes, addressTagKey, contentTagKey);
+    tagged = insertLetterTags(bytes, [addressTagKey, contentTagKey, signoffTagKey]);
   } catch {
     return NextResponse.json({ error: "Could not read this file as a .docx" }, { status: 400 });
   }
@@ -82,9 +83,10 @@ export async function POST(req: NextRequest) {
     original_filename: file.name,
     address_tag_key: addressTagKey,
     content_tag_key: contentTagKey,
+    signoff_tag_key: signoffTagKey,
     uploaded_by: user.id,
     updated_at: new Date().toISOString(),
-  }, { onConflict: "company_id" }).select("id, original_filename, address_tag_key, content_tag_key, created_at, updated_at").single();
+  }, { onConflict: "company_id" }).select("id, original_filename, address_tag_key, content_tag_key, signoff_tag_key, created_at, updated_at").single();
 
   if (dbErr || !letterhead) {
     await admin.storage.from(BUCKET).remove([storagePath]);

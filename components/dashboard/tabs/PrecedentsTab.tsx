@@ -8,7 +8,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Plus, Check } from "lucide-react";
+import Link from "next/link";
+import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check } from "lucide-react";
 
 interface Props {
   recordId: string;
@@ -206,26 +207,32 @@ const SALUTATION_OPTIONS = [
   { value: "client_full_name", label: "Dear [Full name]" },
 ] as const;
 
-interface Signer { name: string; position: string }
+interface StaffOption { userId: string; accountName: string; name: string; position: string; hasSignoff: boolean }
 interface SettingsRow {
   subject_line_style: typeof SUBJECT_OPTIONS[number]["value"];
   date_format: string;
   salutation_style: typeof SALUTATION_OPTIONS[number]["value"];
-  signers: Signer[];
+  signers: string[]; // staff_signoffs user_ids, up to 4
   include_firm_reference: boolean;
 }
 
 function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const [companyDefault, setCompanyDefault] = useState<SettingsRow | null>(null);
   const [override, setOverride] = useState<SettingsRow | null>(null);
+  const [staff, setStaff] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/precedents/settings?projectId=${projectId}`);
-    const json = await res.json();
-    setCompanyDefault(json.companyDefault || null);
-    setOverride(json.projectOverride || null);
+    const [settingsRes, staffRes] = await Promise.all([
+      fetch(`/api/precedents/settings?projectId=${projectId}`),
+      fetch("/api/precedents/staff-signoffs"),
+    ]);
+    const settingsJson = await settingsRes.json();
+    const staffJson = await staffRes.json();
+    setCompanyDefault(settingsJson.companyDefault || null);
+    setOverride(settingsJson.projectOverride || null);
+    setStaff(staffJson.staff || []);
     setLoading(false);
   }, [projectId]);
 
@@ -263,13 +270,11 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
     setSaving(false);
   };
 
-  const updateSigner = (i: number, patch: Partial<Signer>) =>
-    save({ ...effective, signers: effective.signers.map((s, idx) => idx === i ? { ...s, ...patch } : s) });
-  const addSigner = () => {
-    if (effective.signers.length >= 4) return;
-    setOverride({ ...effective, signers: [...effective.signers, { name: "", position: "" }] });
+  const toggleSigner = (userId: string) => {
+    const already = effective.signers.includes(userId);
+    if (!already && effective.signers.length >= 4) return;
+    save({ ...effective, signers: already ? effective.signers.filter(id => id !== userId) : [...effective.signers, userId] });
   };
-  const removeSigner = (i: number) => save({ ...effective, signers: effective.signers.filter((_, idx) => idx !== i) });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -319,24 +324,36 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Signers for this matter</p>
-                <button onClick={addSigner} disabled={effective.signers.length >= 4}
-                  className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 disabled:opacity-30">
-                  <Plus size={12} /> Add
-                </button>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                  Signers for this matter <span className="text-slate-300 normal-case font-normal">(up to 4)</span>
+                </p>
+                <Link href="/dashboard/profile" target="_blank" className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 shrink-0">
+                  Add your signoff details →
+                </Link>
               </div>
-              <div className="space-y-2">
-                {effective.signers.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input value={s.name} onChange={e => updateSigner(i, { name: e.target.value })} placeholder="Name"
-                      className="flex-1 px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-                    <input value={s.position} onChange={e => updateSigner(i, { position: e.target.value })} placeholder="Position"
-                      className="flex-1 px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-                    <button onClick={() => removeSigner(i)} className="p-1.5 text-slate-300 hover:text-red-500 shrink-0"><X size={14} /></button>
-                  </div>
-                ))}
-                {effective.signers.length === 0 && <p className="text-[11px] text-slate-300 italic">No signers for this matter yet</p>}
-              </div>
+              {staff.length === 0 ? (
+                <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet — add one in your profile</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {staff.map(s => {
+                    const checked = effective.signers.includes(s.userId);
+                    return (
+                      <label key={s.userId} className={`flex items-center gap-3 px-3 py-2 rounded-2xl border cursor-pointer transition-colors ${checked ? "border-indigo-400 bg-indigo-50" : "border-slate-200 hover:border-slate-300"}`}>
+                        <input type="checkbox" checked={checked} disabled={!checked && effective.signers.length >= 4}
+                          onChange={() => toggleSigner(s.userId)} />
+                        <span className="text-[12px] font-medium text-slate-700">{s.name || s.accountName}</span>
+                        {s.position && <span className="text-[11px] text-slate-400">— {s.position}</span>}
+                        {!s.hasSignoff && (
+                          <Link href="/dashboard/profile" target="_blank" onClick={e => e.stopPropagation()}
+                            className="ml-auto text-[10px] font-bold text-amber-600 hover:text-amber-700 shrink-0">
+                            Add signoff →
+                          </Link>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

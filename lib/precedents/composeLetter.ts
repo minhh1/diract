@@ -2,10 +2,13 @@
 // Turns an AI-drafted {subject, body} plus a company/matter's resolved
 // precedent_settings into the single string that fills the letterhead's
 // {{content}} tag (see app/api/precedents/[id]/issue/route.ts) — date,
-// subject line, salutation, the drafted body, a closing, and the signer
-// block. Docxtemplater renders this with `linebreaks: true` (the same option
-// already used by app/api/document-templates/public/[pageId]/submit/route.ts),
-// which turns each \n here into a real paragraph break in the generated .docx.
+// subject line, salutation, the drafted body, and a closing. Docxtemplater
+// renders this with `linebreaks: true` (the same option already used by
+// app/api/document-templates/public/[pageId]/submit/route.ts), which turns
+// each \n here into a real paragraph break in the generated .docx. The
+// signer block is NOT part of this string — it needs the signer's name in
+// bold, which a single flat-text tag can't do, so it's rendered separately
+// into its own {{signoff}} tag as raw OOXML (see lib/precedents/signoffXml.ts).
 export type SubjectLineStyle = "all_caps" | "sentence_case" | "with_re";
 export type SalutationStyle = "generic" | "client_first_name" | "client_full_name";
 
@@ -16,7 +19,7 @@ export function formatSubjectLine(subject: string, style: SubjectLineStyle): str
   return trimmed;
 }
 
-// Only the 3 presets offered in the admin UI (AdminPrecedentsTab.tsx's
+// Only the 3 presets offered in the settings UI (PrecedentsSettingsTab.tsx's
 // DATE_OPTIONS) are recognized as exact tokens; anything else (a firm's own
 // hand-typed value, or unset) falls back to the long form.
 export function formatLetterDate(dateFormat: string, date: Date = new Date()): string {
@@ -38,7 +41,6 @@ export interface ComposeLetterInput {
   clientFirstName?: string | null;
   clientFullName?: string | null;
   body: string;
-  signers: { name: string; position: string }[];
   matterReference?: string | null; // only rendered as "Our Ref" when includeFirmReference is on AND this is set
 }
 
@@ -51,11 +53,6 @@ function resolveSalutation(input: ComposeLetterInput): string {
 export function composeLetterContent(input: ComposeLetterInput): string {
   const lines: string[] = [formatLetterDate(input.dateFormat)];
   if (input.matterReference) lines.push(`Our Ref: ${input.matterReference}`);
-  lines.push("", formatSubjectLine(input.subject, input.subjectLineStyle), "", resolveSalutation(input), "", input.body.trim(), "", "Yours faithfully,", "");
-  for (const s of input.signers) {
-    lines.push(s.name);
-    if (s.position) lines.push(s.position);
-    lines.push("");
-  }
+  lines.push("", formatSubjectLine(input.subject, input.subjectLineStyle), "", resolveSalutation(input), "", input.body.trim(), "", "Yours faithfully,");
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }

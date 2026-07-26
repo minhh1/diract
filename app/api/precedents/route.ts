@@ -1,10 +1,10 @@
 // app/api/precedents/route.ts
 // The firm's precedent library (see supabase/migrations/..._precedents.sql).
-// GET is used both by the admin "Precedent library" management UI and by the
-// record-page "Precedent" tab (components/dashboard/tabs/PrecedentsTab.tsx) —
-// scoped by recordTable, defaulting to 'projects' (Matters). Only a company
-// admin can create/reorder/edit — any company member can read the list to
-// issue from it (see app/api/precedents/[id]/issue/route.ts).
+// GET is used both by the Precedents settings screen's library section and
+// by the record-page "Precedent" tab (components/dashboard/tabs/PrecedentsTab.tsx) —
+// scoped by recordTable, defaulting to 'projects' (Matters). Any company
+// member can add a new precedent; editing/reordering/deleting an existing
+// one is admin-only (see app/api/precedents/[id]/route.ts).
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 
@@ -29,8 +29,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, user, companyId, isAdmin } = auth;
-  if (!isAdmin) return NextResponse.json({ error: "Only a company admin can add precedents" }, { status: 403 });
+  const { admin, user, companyId } = auth;
 
   let body: any;
   try { body = await req.json(); } catch {

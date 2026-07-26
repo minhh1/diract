@@ -1,7 +1,9 @@
 // app/api/precedents/[id]/issue/route.ts
 // Issues a precedent document: drafts subject+body from the staff member's
 // prompt (lib/ai/precedentDraft.ts), composes the full letter text
-// (lib/precedents/composeLetter.ts), fills the firm's letterhead's
+// (lib/precedents/composeLetter.ts), splices the selected signers' signoff
+// blocks into the letterhead's {{signoff}} tag as raw OOXML
+// (lib/precedents/signoffXml.ts, so the name can be bold), fills the
 // {{address}}/{{content}} tags via docxtemplater, converts to PDF, stores it,
 // and logs a precedent_issuances row. Same token-cap/usage-logging shape as
 // app/api/ai/rewrite-text/route.ts, same docxtemplater render + storage
@@ -10,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { draftPrecedentContent } from "@/lib/ai/precedentDraft";
 import { composeLetterContent, formatSubjectLine } from "@/lib/precedents/composeLetter";
+import { insertSignoffBlock, type SignoffPerson } from "@/lib/precedents/signoffXml";
 import { convertDocxToPdf } from "@/lib/gotenberg";
 import { resolveSourceTypes } from "@/lib/ai/retrieval";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
@@ -26,9 +29,39 @@ const DEFAULT_SETTINGS = {
   subject_line_style: "sentence_case" as const,
   date_format: "D MMMM YYYY",
   salutation_style: "generic" as const,
-  signers: [] as { name: string; position: string }[],
+  signers: [] as string[], // staff_signoffs.user_id, up to 4
   include_firm_reference: false,
 };
+
+// Resolves each selected signer (a user_id, see precedent_settings.signers)
+// to their saved staff_signoffs row -- falling back to just their account
+// name if they haven't filled one in yet, same fallback the staff-signoffs
+// directory GET route uses, so a signer is never silently dropped from the
+// document just because their signoff block is incomplete.
+async function resolveSignoffs(admin: any, companyId: string, userIds: string[]): Promise<SignoffPerson[]> {
+  if (!userIds.length) return [];
+  const [{ data: signoffs }, { data: profiles }] = await Promise.all([
+    admin.from("staff_signoffs").select("*").eq("company_id", companyId).in("user_id", userIds),
+    admin.from("profiles").select("id, full_name, email").in("id", userIds),
+  ]);
+  const signoffByUserId = new Map<string, any>((signoffs || []).map((s: any) => [s.user_id, s]));
+  const profileByUserId = new Map<string, any>((profiles || []).map((p: any) => [p.id, p]));
+  const people: SignoffPerson[] = [];
+  for (const userId of userIds) {
+    const signoff = signoffByUserId.get(userId);
+    const profile = profileByUserId.get(userId);
+    const name = signoff?.name || profile?.full_name || profile?.email;
+    if (!name) continue;
+    people.push({
+      name,
+      position: signoff?.position ?? null,
+      companyName: signoff?.company_name ?? null,
+      contactNumber: signoff?.contact_number ?? null,
+      contactEmail: signoff?.contact_email ?? profile?.email ?? null,
+    });
+  }
+  return people;
+}
 
 async function resolveClientNames(admin: any, companyId: string, projectId: string) {
   const { data: fields } = await admin
@@ -85,7 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!project || project.company_id !== companyId) return NextResponse.json({ error: "Invalid matter" }, { status: 400 });
 
   const { data: letterhead } = await admin
-    .from("company_letterheads").select("storage_path, address_tag_key, content_tag_key").eq("company_id", companyId).maybeSingle();
+    .from("company_letterheads").select("storage_path, address_tag_key, content_tag_key, signoff_tag_key").eq("company_id", companyId).maybeSingle();
   if (!letterhead) {
     return NextResponse.json({ error: "This firm hasn't set up a letterhead yet — an admin can upload one in Settings → Precedents." }, { status: 400 });
   }
@@ -120,9 +153,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     input_tokens: draft.inputTokens, output_tokens: draft.outputTokens, cost_usd: cost,
   });
 
-  const [{ clientFirstName, clientFullName }, matterReference] = await Promise.all([
+  const [{ clientFirstName, clientFullName }, matterReference, signoffs] = await Promise.all([
     resolveClientNames(admin, companyId, projectId),
     settings.include_firm_reference ? resolveMatterReference(admin, companyId, projectId) : Promise.resolve(null),
+    resolveSignoffs(admin, companyId, settings.signers || []),
   ]);
 
   const formattedSubject = formatSubjectLine(draft.subject, settings.subject_line_style);
@@ -133,7 +167,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     salutationStyle: settings.salutation_style,
     clientFirstName, clientFullName,
     body: draft.body,
-    signers: settings.signers || [],
     matterReference,
   });
 
@@ -142,7 +175,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   let docxBuffer: Buffer;
   try {
-    const zip = new PizZip(Buffer.from(await fileData.arrayBuffer()));
+    const sourceBytes = insertSignoffBlock(Buffer.from(await fileData.arrayBuffer()), letterhead.signoff_tag_key, signoffs);
+    const zip = new PizZip(sourceBytes);
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,

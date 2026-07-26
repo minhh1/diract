@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProfile } from "@/lib/hooks/useProfile";
 import {
-  ArrowLeft, Loader2, Camera, Trash2, CheckCircle2, AlertCircle, User,
+  ArrowLeft, Loader2, Camera, Trash2, CheckCircle2, AlertCircle, User, PenSquare,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
@@ -35,13 +35,16 @@ export default function ProfilePage() {
       <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="max-w-2xl mx-auto space-y-4 pb-20">
           {profileLoading || !email ? null : (
-            <ProfileForm
-              // Remount with fresh initial state if the signed-in user ever changes.
-              key={profile?.id || "anon"}
-              initialFullName={profile?.full_name || ""}
-              initialAvatarUrl={profile?.avatar_url || null}
-              email={email}
-            />
+            <>
+              <ProfileForm
+                // Remount with fresh initial state if the signed-in user ever changes.
+                key={profile?.id || "anon"}
+                initialFullName={profile?.full_name || ""}
+                initialAvatarUrl={profile?.avatar_url || null}
+                email={email}
+              />
+              {profile?.id && <SignoffSection key={profile.id} userId={profile.id} />}
+            </>
           )}
         </div>
       </main>
@@ -270,6 +273,89 @@ function ProfileForm({ initialFullName, initialAvatarUrl, email }: {
         {passwordMessage && <MessageRow message={passwordMessage} />}
       </div>
     </>
+  );
+}
+
+// ── SIGNOFF DETAILS ──────────────────────────────────────────────
+// What appears (Name in bold, then Position/Company Name/Contact Number/
+// Contact Email) under this person's name when someone picks them as a
+// signer on an issued Precedent document (see
+// components/dashboard/tabs/PrecedentsTab.tsx, which links here when a
+// selected staff member hasn't filled this in yet). Self-service: PUT
+// /api/precedents/staff-signoffs always allows editing your own row (see
+// that route's auth check), no admin needed.
+function SignoffSection({ userId }: { userId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [position, setPosition] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const res = await fetch("/api/precedents/staff-signoffs");
+      const json = await res.json();
+      const mine = (json.staff || []).find((s: any) => s.userId === userId);
+      if (mine) {
+        setName(mine.name || "");
+        setPosition(mine.position || "");
+        setCompanyName(mine.companyName || "");
+        setContactNumber(mine.contactNumber || "");
+        setContactEmail(mine.contactEmail || "");
+      }
+      setLoading(false);
+    })();
+  }, [userId]);
+
+  const save = async () => {
+    setMessage(null);
+    if (!name.trim()) { setMessage({ type: "error", text: "Name is required" }); return; }
+    setSaving(true);
+    const res = await fetch("/api/precedents/staff-signoffs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, name, position, companyName, contactNumber, contactEmail }),
+    });
+    const json = await res.json();
+    setSaving(false);
+    if (!res.ok) { setMessage({ type: "error", text: json.error || "Failed to save" }); return; }
+    setMessage({ type: "ok", text: "Signoff details saved" });
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-[32px] p-8 shadow-sm">
+      <div className="flex items-center gap-2">
+        <PenSquare size={16} className="text-amber-600" />
+        <h2 className="text-[15px] font-medium text-slate-900">Signoff details</h2>
+      </div>
+      <p className="text-[12px] text-slate-400 mt-1">
+        Shown under your name when you&apos;re picked as a signer on an issued Precedent document.
+      </p>
+      {loading ? (
+        <div className="mt-4 flex justify-center"><Loader2 size={16} className="animate-spin text-slate-300" /></div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (shown in bold)"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-[14px] font-medium text-slate-900 focus:outline-none focus:border-indigo-500 transition-all" />
+          <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Position, e.g. Partner"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-[14px] text-slate-900 focus:outline-none focus:border-indigo-500 transition-all" />
+          <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Company name"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-[14px] text-slate-900 focus:outline-none focus:border-indigo-500 transition-all" />
+          <input value={contactNumber} onChange={e => setContactNumber(e.target.value)} placeholder="Contact number"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-[14px] text-slate-900 focus:outline-none focus:border-indigo-500 transition-all" />
+          <input value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="Contact email"
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-[14px] text-slate-900 focus:outline-none focus:border-indigo-500 transition-all" />
+          <button onClick={save} disabled={saving}
+            className="px-5 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all disabled:opacity-40 disabled:cursor-default">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : "Save"}
+          </button>
+          {message && <MessageRow message={message} />}
+        </div>
+      )}
+    </div>
   );
 }
 

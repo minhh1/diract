@@ -104,6 +104,7 @@ const SETTINGS_LINKS = [
   { href: '/dashboard/settings?view=duplicates_menu', icon: Copy, label: 'Reconciliation tool' },
   { href: '/dashboard/settings?view=public_pages', icon: Share2, label: 'Public task pages' },
   { href: '/dashboard/settings/history', icon: Clock, label: 'Schema history' },
+  { href: '/dashboard/settings?view=precedents', icon: PenSquare, label: 'Precedents' },
 ];
 
 const ADMIN_LINKS = [
@@ -120,7 +121,6 @@ const ADMIN_LINKS = [
   { tab: 'aiAssistant', icon: Sparkles, label: 'AI Assistant' },
   { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },
   { tab: 'archiveRequests', icon: Archive, label: 'Archive requests' },
-  { tab: 'precedents', icon: PenSquare, label: 'Precedents' },
   { tab: 'company', icon: Settings, label: 'Company' },
 ] as const;
 

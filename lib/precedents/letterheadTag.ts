@@ -1,7 +1,8 @@
 // lib/precedents/letterheadTag.ts
-// Auto-inserts the two mail-merge tags an uploaded letterhead needs, so a firm
-// never has to hand-edit their Word letterhead to add {{tag}} placeholders
-// themselves (see app/api/precedents/letterhead/route.ts, the only caller).
+// Auto-inserts the three mail-merge tags an uploaded letterhead needs, so a
+// firm never has to hand-edit their Word letterhead to add {{tag}}
+// placeholders themselves (see app/api/precedents/letterhead/route.ts, the
+// only caller).
 // A letterhead's logo/address/footer artwork almost always lives either in
 // Word's real Header/Footer parts (untouched by anything here) or as the
 // leading content of the body (a logo image, firm name/address lines) with
@@ -24,22 +25,22 @@ function hasTag(docXml: string, tagKey: string): boolean {
   return re.test(textOnly);
 }
 
-// Inserts <w:p> paragraphs for whichever of addressTagKey/contentTagKey
-// aren't already present somewhere in the document (a firm that hand-authored
-// its own {{address}}/{{content}} tags keeps them as-is), immediately before
-// the body's own trailing <w:sectPr> (or at the very end of the body if this
-// document has none, which shouldn't happen for a real Word doc but is
-// handled defensively). Address is inserted above content, matching a formal
-// letter's layout (inside address, then the rest of the letter).
-export function insertLetterTags(docxBytes: Buffer, addressTagKey: string, contentTagKey: string): Buffer {
+// Inserts <w:p> paragraphs for whichever of the given tag keys aren't already
+// present somewhere in the document (a firm that hand-authored its own
+// {{address}}/{{content}}/{{signoff}} tags keeps them as-is), immediately
+// before the body's own trailing <w:sectPr> (or at the very end of the body
+// if this document has none, which shouldn't happen for a real Word doc but
+// is handled defensively). Tags are inserted in the given order -- callers
+// pass [address, content, signoff] to match a formal letter's layout (inside
+// address, then the letter itself, then the signoff block).
+export function insertLetterTags(docxBytes: Buffer, tagKeys: string[]): Buffer {
   const zip = new PizZip(docxBytes);
   const docFile = zip.file("word/document.xml");
   if (!docFile) return docxBytes;
   const xml = docFile.asText();
 
-  const needsAddress = !hasTag(xml, addressTagKey);
-  const needsContent = !hasTag(xml, contentTagKey);
-  if (!needsAddress && !needsContent) return docxBytes;
+  const missing = tagKeys.filter(key => !hasTag(xml, key));
+  if (!missing.length) return docxBytes;
 
   const bodyOpenMatch = xml.match(/<w:body\b[^>]*>/);
   const bodyCloseIdx = xml.lastIndexOf("</w:body>");
@@ -54,7 +55,7 @@ export function insertLetterTags(docxBytes: Buffer, addressTagKey: string, conte
   const sectPrIdx = bodyInner.lastIndexOf("<w:sectPr");
   const insertAt = sectPrIdx === -1 ? bodyInner.length : sectPrIdx;
 
-  const toInsert = [needsAddress ? tagParagraphXml(addressTagKey) : "", needsContent ? tagParagraphXml(contentTagKey) : ""].join("");
+  const toInsert = missing.map(tagParagraphXml).join("");
   const newBodyInner = bodyInner.slice(0, insertAt) + toInsert + bodyInner.slice(insertAt);
   const newXml = xml.slice(0, bodyContentStart) + newBodyInner + xml.slice(bodyCloseIdx);
 
