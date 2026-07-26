@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -25,6 +26,27 @@ import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents" | "invoice_template";
 type DupType = "properties" | "entities" | "projects";
 
+// Cached via useQuery (see SettingsPage below) so revisiting either view
+// within staleTime -- even just switching sub-views and back, no full
+// reload needed -- shows the last result immediately instead of
+// re-querying every single time.
+async function fetchImportHistory() {
+  const { data } = await supabase
+    .from("import_history")
+    .select(`*, profiles:user_id(full_name)`)
+    .is("deleted_at", null)
+    .order('created_at', { ascending: false });
+  return data || [];
+}
+
+async function fetchDuplicatesData(companyId: string, dupType: DupType): Promise<any[]> {
+  const rpcName = dupType === 'properties' ? 'find_potential_duplicates'
+    : dupType === 'entities' ? 'find_entity_duplicates'
+    : 'find_project_duplicates';
+  const { data } = await supabase.rpc(rpcName, { similarity_threshold: 0.4, target_company_id: companyId });
+  return data || [];
+}
+
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const { companyId } = useCompany();
@@ -42,77 +64,79 @@ export default function SettingsPage() {
   }, [searchParams.get("view")]);
 
   const [activeDupType, setActiveDupType] = useState<DupType>("properties");
-  const [items, setItems] = useState<any[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isFormatterOpen, setIsFormatterOpen] = useState(false);
   const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
 
-  useEffect(() => {
-    if (view === "history") fetchHistory();
-    if (view === "duplicates_view" && companyId) fetchDuplicates();
-  }, [view, activeDupType, companyId]);
+  const queryClient = useQueryClient();
+  const historyQueryKey = ['settings-history', companyId] as const;
+  const { data: history = [], isLoading: historyLoading, refetch: refetchHistory } = useQuery({
+    queryKey: historyQueryKey,
+    queryFn: fetchImportHistory,
+    enabled: view === "history",
+    staleTime: 60 * 1000,
+  });
+  const duplicatesQueryKey = ['settings-duplicates', companyId, activeDupType] as const;
+  const { data: items = [], isLoading: duplicatesLoading, refetch: refetchDuplicates } = useQuery({
+    queryKey: duplicatesQueryKey,
+    queryFn: () => fetchDuplicatesData(companyId as string, activeDupType),
+    enabled: view === "duplicates_view" && !!companyId,
+    staleTime: 60 * 1000,
+  });
+  const loading = view === "history" ? historyLoading : view === "duplicates_view" ? duplicatesLoading : false;
 
   useProgressBarWhile(loading);
 
   // Each sub-view here is switched client-side (no real navigation), not a
   // separate URL -- so this tracks per-view rather than per-mount, same
-  // ref-keyed start/ready pattern DashboardViewPage/CustomTableMasterPage
-  // use for their own slug-keyed navigation. Views with nothing to fetch
-  // (menu, schema, duplicates_menu, public_pages -- `loading` is already
-  // false for these) log ready on the very next render, correctly showing
-  // as ~instant rather than not being tracked at all.
+  // ref-keyed start pattern DashboardViewPage/CustomTableMasterPage use for
+  // their own slug-keyed navigation. Unlike the old plain-useState version
+  // of this, `historyLoading`/`duplicatesLoading` come from useQuery and are
+  // computed synchronously as part of that hook's own render (not via a
+  // subsequent effect+setState), so watching them here doesn't have the
+  // stale-closure race the old "ready fires 1ms after start" bug had --
+  // and it correctly reports ~0ms when a revisit is served straight from
+  // the query cache instead of hitting the network again.
   const perfStartedForRef = React.useRef<string | null>(null);
-  const perfReadyForRef = React.useRef<string | null>(null);
+  const perfPendingReadyRef = React.useRef<SettingsView | null>(null);
   useEffect(() => {
-    if (perfStartedForRef.current !== view) {
-      perfStartedForRef.current = view;
-      perfLogPageStart("settings", view);
-    }
-  }, [view]);
-  useEffect(() => {
-    if (!loading && perfReadyForRef.current !== view) {
-      perfReadyForRef.current = view;
+    if (perfStartedForRef.current === view) return;
+    perfStartedForRef.current = view;
+    perfLogPageStart("settings", view);
+    if (view === "history" || view === "duplicates_view") {
+      perfPendingReadyRef.current = view;
+    } else {
+      // Nothing to fetch for this view -- ready immediately.
       perfLogPageReady("settings", view);
     }
-  }, [loading, view]);
+  }, [view]);
 
-  const fetchHistory = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("import_history")
-      .select(`*, profiles:user_id(full_name)`)
-      .is("deleted_at", null)
-      .order('created_at', { ascending: false });
-    setHistory(data || []);
-    setLoading(false);
-  };
+  useEffect(() => {
+    if (view === "history" && !historyLoading && perfPendingReadyRef.current === "history") {
+      perfPendingReadyRef.current = null;
+      perfLogPageReady("settings", "history");
+    }
+  }, [historyLoading, view]);
+  useEffect(() => {
+    if (view === "duplicates_view" && !duplicatesLoading && perfPendingReadyRef.current === "duplicates_view") {
+      perfPendingReadyRef.current = null;
+      perfLogPageReady("settings", "duplicates_view");
+    }
+  }, [duplicatesLoading, view]);
 
   const handleArchiveLog = async (id: string) => {
     if (!window.confirm("Archive this import log? It will be hidden but not permanently deleted.")) return;
     const { error } = await supabase.from("import_history").update({ deleted_at: new Date().toISOString() }).eq("id", id);
-    if (!error) setHistory(prev => prev.filter(h => h.id !== id));
-  };
-
-  const fetchDuplicates = async () => {
-    if (!companyId) return;
-    setLoading(true);
-    const rpcName = activeDupType === 'properties' ? 'find_potential_duplicates'
-      : activeDupType === 'entities' ? 'find_entity_duplicates'
-      : 'find_project_duplicates';
-    const { data } = await supabase.rpc(rpcName, { similarity_threshold: 0.4, target_company_id: companyId });
-    setItems(data || []);
-    setLoading(false);
+    if (!error) queryClient.setQueryData(historyQueryKey, (old: any[] = []) => old.filter(h => h.id !== id));
   };
 
   const handleBulkDelete = async () => {
     if (!window.confirm(`Delete ${selected.length} records?`)) return;
     await supabase.from(activeDupType).update({ deleted_at: new Date().toISOString() }).in("id", selected);
     setSelected([]);
-    fetchDuplicates();
+    refetchDuplicates();
   };
 
   const formatTargetTable = (table: string) =>
@@ -422,7 +446,7 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-      <ImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onRefresh={fetchHistory} />
+      <ImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onRefresh={() => refetchHistory()} />
       <DataFormattingTool isOpen={isFormatterOpen} onClose={() => setIsFormatterOpen(false)} onRefresh={() => {}} />
     </div>
   );

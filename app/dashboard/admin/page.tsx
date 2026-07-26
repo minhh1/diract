@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
@@ -116,6 +117,103 @@ function SkeletonRows({ count, heightClass = 'h-16' }: { count: number; heightCl
   );
 }
 
+interface AdminData {
+  company: Company | null;
+  tokens: Token[];
+  customFields: ProjectCustomField[];
+  teams: { id: string; team_name: string }[];
+  members: Member[];
+  connectedEmails: string[];
+}
+
+// Cached via useQuery (see AdminPage below) so revisiting Admin within
+// staleTime shows the last result immediately instead of re-running this
+// whole batch every single time -- this data (company settings, member
+// list, invite tokens) rarely changes between visits.
+async function fetchAdminData(companyId: string): Promise<AdminData> {
+  perfLog("admin: batch fetch start");
+
+  // Everything below is independent of everything else (none of these
+  // queries depend on another's result), so it all runs in one batch
+  // instead of a multi-stage waterfall. The one true dependency —
+  // members' profiles needing the membership rows' user_ids — is fetched
+  // after this batch resolves.
+  const [
+    { data: comp },
+    { data: tokenData },
+    { data: customFieldData },
+    { data: teamsData },
+    { data: memberships },
+    { data: gmailTokens },
+  ] = await Promise.all([
+    supabase.from('companies').select('*').eq('id', companyId).single(),
+    supabase
+      .from('registration_tokens')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false }),
+    // This company's own custom fields on projects (calendar sync tokens
+    // depend on what this specific company has configured, not a
+    // hardcoded list — e.g. a law firm might have "Matter Number" while
+    // another company has nothing extra at all).
+    supabase
+      .from('company_custom_fields')
+      .select('id, field_key, label')
+      .eq('company_id', companyId)
+      .eq('table_name', 'projects')
+      .is('deleted_at', null)
+      .order('display_order'),
+    supabase
+      .from('teams')
+      .select('id, team_name')
+      .eq('is_active', true)
+      .order('team_name'),
+    supabase
+      .from('company_memberships')
+      .select('user_id, role')
+      .eq('company_id', companyId),
+    // Connected Gmail emails for source-of-truth / archive pickers.
+    // Queries the company_gmail_connections view, not user_gmail_tokens
+    // directly — that table's RLS (user_id = auth.uid()) only ever
+    // returns your own row, so this is the only way to see who else in
+    // the company is connected without exposing anyone's OAuth tokens.
+    supabase.from('company_gmail_connections').select('email'),
+  ]);
+  perfLog("admin: batch fetch resolved");
+
+  // Members — two separate queries to avoid FK join issues
+  let members: Member[] = [];
+  if (memberships && memberships.length > 0) {
+    const userIds = memberships.map((m: any) => m.user_id);
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, is_active')
+      .in('id', userIds);
+
+    members = memberships.map((m: any) => {
+      const prof = profiles?.find((p: any) => p.id === m.user_id);
+      return {
+        id: m.user_id,
+        full_name: prof?.full_name || '',
+        email: prof?.email || '',
+        role: m.role || 'operator',
+        is_active: prof?.is_active ?? true,
+        is_admin: m.role === 'company_admin',
+      };
+    });
+  }
+  perfLog("admin: members resolved");
+
+  return {
+    company: comp || null,
+    tokens: tokenData || [],
+    customFields: customFieldData || [],
+    teams: teamsData || [],
+    members,
+    connectedEmails: (gmailTokens || []).map((t: any) => t.email).filter(Boolean),
+  };
+}
+
 type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
 const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
@@ -134,14 +232,30 @@ export default function AdminPage() {
   // horizontal tab bar crammed with 12 items on this page itself.
   const tabParam = searchParams.get('tab');
   const activeTab: AdminTab = (tabParam && ADMIN_TABS.includes(tabParam as AdminTab)) ? (tabParam as AdminTab) : 'members';
-  const [loading, setLoading] = useState(true);
-  const [unauthorized, setUnauthorized] = useState(false);
-  const [company, setCompany] = useState<Company | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [tokens, setTokens] = useState<Token[]>([]);
   const { companyId, companyName: contextCompanyName, userId, isAdmin, isSiteAdmin, loading: companyLoading } = useCompany();
+  // CompanyContext already resolved companyId + isAdmin (per-company role
+  // check) once for the whole dashboard shell -- once that's settled, no
+  // company or no admin role means this page just isn't reachable for this
+  // user. Derived rather than its own state since it only ever depends on
+  // values CompanyContext already tracks.
+  const unauthorized = !companyLoading && (!companyId || !isAdmin);
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  const queryClient = useQueryClient();
+  const adminQueryKey = ['admin', companyId] as const;
+  const { data: adminData, isLoading: loading } = useQuery({
+    queryKey: adminQueryKey,
+    queryFn: () => fetchAdminData(companyId!),
+    enabled: !!companyId && isAdmin,
+    staleTime: 60 * 1000,
+  });
+  const company = adminData?.company ?? null;
+  const members = adminData?.members ?? [];
+  const tokens = adminData?.tokens ?? [];
+  const allTeams = adminData?.teams ?? [];
+  const connectedEmails = adminData?.connectedEmails ?? [];
+  const projectCustomFields = adminData?.customFields ?? [];
 
   // Company edit
   const [companyName, setCompanyName] = useState('');
@@ -155,7 +269,6 @@ export default function AdminPage() {
 
   // Source of truth emails
   const [sourceEmails, setSourceEmails] = useState<string[]>([]);
-  const [connectedEmails, setConnectedEmails] = useState<string[]>([]);
 
   // Closed-matter archiving
   const [archiveEmails, setArchiveEmails] = useState<string[]>([]);
@@ -169,138 +282,47 @@ export default function AdminPage() {
   const [calendarDuration, setCalendarDuration] = useState(30);
   const [syncToCompanyCalendar, setSyncToCompanyCalendar] = useState(false);
   const [savingCalendar, setSavingCalendar] = useState(false);
-  const [projectCustomFields, setProjectCustomFields] = useState<ProjectCustomField[]>([]);
   const [addingCustomField, setAddingCustomField] = useState(false);
   const [newCustomFieldLabel, setNewCustomFieldLabel] = useState('');
   const [savingNewCustomField, setSavingNewCustomField] = useState(false);
 
   // Invite token default team
   const [newTokenTeamId, setNewTokenTeamId] = useState<string>('');
-  const [allTeams, setAllTeams] = useState<{ id: string; team_name: string }[]>([]);
 
   useEffect(() => { perfLogPageStart("admin", "admin"); }, []);
   useEffect(() => {
     if (!loading) perfLogPageReady("admin", "admin");
   }, [loading]);
-
-  useEffect(() => {
-    if (companyLoading) return;
-    load(companyId, isAdmin);
-  }, [companyLoading, companyId, isAdmin]);
   useProgressBarWhile(loading);
 
-  const load = async (companyId: string | null, isAdmin: boolean) => {
-    if (!companyId || !isAdmin) {
-      perfLog("admin: unauthorized (no companyId or not admin)");
-      setUnauthorized(true);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    perfLog("admin: batch fetch start");
-
-    // CompanyContext already resolved companyId + isAdmin (per-company role
-    // check) once for the whole dashboard shell — no need to re-derive them
-    // here via auth.getUser()/profiles/company_memberships.
-    //
-    // Everything below is independent of everything else (none of these
-    // queries depend on another's result), so it all runs in one batch
-    // instead of a multi-stage waterfall. The one true dependency —
-    // members' profiles needing the membership rows' user_ids — is fetched
-    // after this batch resolves.
-    const [
-      { data: comp },
-      { data: tokenData },
-      { data: customFieldData },
-      { data: teamsData },
-      { data: memberships },
-      { data: gmailTokens },
-    ] = await Promise.all([
-      supabase.from('companies').select('*').eq('id', companyId).single(),
-      supabase
-        .from('registration_tokens')
-        .select('*')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false }),
-      // This company's own custom fields on projects (calendar sync tokens
-      // depend on what this specific company has configured, not a
-      // hardcoded list — e.g. a law firm might have "Matter Number" while
-      // another company has nothing extra at all).
-      supabase
-        .from('company_custom_fields')
-        .select('id, field_key, label')
-        .eq('company_id', companyId)
-        .eq('table_name', 'projects')
-        .is('deleted_at', null)
-        .order('display_order'),
-      supabase
-        .from('teams')
-        .select('id, team_name')
-        .eq('is_active', true)
-        .order('team_name'),
-      supabase
-        .from('company_memberships')
-        .select('user_id, role')
-        .eq('company_id', companyId),
-      // Connected Gmail emails for source-of-truth / archive pickers.
-      // Queries the company_gmail_connections view, not user_gmail_tokens
-      // directly — that table's RLS (user_id = auth.uid()) only ever
-      // returns your own row, so this is the only way to see who else in
-      // the company is connected without exposing anyone's OAuth tokens.
-      supabase.from('company_gmail_connections').select('email'),
-    ]);
-    perfLog("admin: batch fetch resolved");
-
-    setProjectCustomFields(customFieldData || []);
-
-    if (comp) {
-      setCompany(comp);
-      setCompanyName(comp.name);
-      setCompanyAbn(comp.abn || '');
-      setCompanyAcn(comp.acn || '');
-    }
-    setTokens(tokenData || []);
-    setAllTeams(teamsData || []);
-    setConnectedEmails((gmailTokens || []).map((t: any) => t.email).filter(Boolean));
-
-    // Load source emails from company
-    setSourceEmails(comp?.gmail_source_emails || []);
-    setArchiveEmails(comp?.gmail_archive_emails || []);
-    setArchiveLabel(comp?.gmail_archive_label || '');
-    setAutoArchiveOnClose(!!comp?.gmail_auto_archive_on_close);
-    const knownTokenIds = [...CALENDAR_BASE_TOKENS.map(t => t.id), ...(customFieldData || []).map(f => f.field_key)];
-    const parsedFormat = parseCalendarFormat(comp?.calendar_event_title_format || '{task_name}', knownTokenIds);
+  // The editable form fields below (company name/ABN/ACN, calendar
+  // settings, source/archive emails) start as local drafts once `company`
+  // arrives, then diverge as the admin edits them -- re-syncing them on
+  // every render would stomp on in-progress edits, so this only runs when
+  // `company`'s own reference actually changes (React's documented pattern
+  // for "adjust state when a prop changes," done during render rather than
+  // in an effect). Thanks to react-query's structural sharing, that
+  // reference only changes on a genuine refetch that found different data,
+  // not on every background revalidation, so this won't reset the form
+  // under someone's fingers just because the cache silently re-validated.
+  const [lastSyncedCompany, setLastSyncedCompany] = useState<Company | null>(null);
+  if (company && company !== lastSyncedCompany) {
+    setLastSyncedCompany(company);
+    setCompanyName(company.name);
+    setCompanyAbn(company.abn || '');
+    setCompanyAcn(company.acn || '');
+    const comp = company as any;
+    setSourceEmails(comp.gmail_source_emails || []);
+    setArchiveEmails(comp.gmail_archive_emails || []);
+    setArchiveLabel(comp.gmail_archive_label || '');
+    setAutoArchiveOnClose(!!comp.gmail_auto_archive_on_close);
+    const knownTokenIds = [...CALENDAR_BASE_TOKENS.map(t => t.id), ...projectCustomFields.map(f => f.field_key)];
+    const parsedFormat = parseCalendarFormat(comp.calendar_event_title_format || '{task_name}', knownTokenIds);
     setCalendarTokens(parsedFormat.tokens);
     setCalendarSeparator(parsedFormat.separator);
-    setCalendarDuration(comp?.calendar_event_duration_mins || 30);
-    setSyncToCompanyCalendar(!!comp?.sync_tasks_to_company_calendar);
-
-    // Members — two separate queries to avoid FK join issues
-    if (memberships && memberships.length > 0) {
-      const userIds = memberships.map((m: any) => m.user_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, is_active')
-        .in('id', userIds);
-
-      setMembers(memberships.map((m: any) => {
-        const prof = profiles?.find((p: any) => p.id === m.user_id);
-        return {
-          id: m.user_id,
-          full_name: prof?.full_name || '',
-          email: prof?.email || '',
-          role: m.role || 'operator',
-          is_active: prof?.is_active ?? true,
-          is_admin: m.role === 'company_admin',
-        };
-      }));
-    } else {
-      setMembers([]);
-    }
-    perfLog("admin: members resolved");
-
-    setLoading(false);
-  };
+    setCalendarDuration(comp.calendar_event_duration_mins || 30);
+    setSyncToCompanyCalendar(!!comp.sync_tasks_to_company_calendar);
+  }
 
   const handleToggleAdmin = async (member: Member) => {
     setSaving(member.id);
@@ -309,11 +331,14 @@ export default function AdminPage() {
       .update({ role: (newIsAdmin ? 'company_admin' : 'operator') as any })
       .eq('user_id', member.id)
       .eq('company_id', company!.id);
-    setMembers(prev => prev.map(m =>
-      m.id === member.id
-        ? { ...m, is_admin: newIsAdmin, role: newIsAdmin ? 'company_admin' : 'operator' }
-        : m
-    ));
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      members: old.members.map(m =>
+        m.id === member.id
+          ? { ...m, is_admin: newIsAdmin, role: newIsAdmin ? 'company_admin' : 'operator' }
+          : m
+      ),
+    }));
     setSaving(null);
   };
 
@@ -322,9 +347,10 @@ export default function AdminPage() {
     await supabase.from('profiles')
       .update({ is_active: !member.is_active })
       .eq('id', member.id);
-    setMembers(prev => prev.map(m =>
-      m.id === member.id ? { ...m, is_active: !m.is_active } : m
-    ));
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      members: old.members.map(m => m.id === member.id ? { ...m, is_active: !m.is_active } : m),
+    }));
     setSaving(null);
   };
 
@@ -335,7 +361,10 @@ export default function AdminPage() {
       .delete()
       .eq('user_id', member.id)
       .eq('company_id', company!.id);
-    setMembers(prev => prev.filter(m => m.id !== member.id));
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      members: old.members.filter(m => m.id !== member.id),
+    }));
     setSaving(null);
   };
 
@@ -347,7 +376,10 @@ export default function AdminPage() {
       abn: companyAbn || null,
       acn: companyAcn || null,
     }).eq('id', company.id);
-    setCompany(prev => prev ? { ...prev, name: companyName } : prev);
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && old.company && ({
+      ...old,
+      company: { ...old.company, name: companyName, abn: companyAbn || null, acn: companyAcn || null },
+    }));
     setSavingCompany(false);
   };
 
@@ -386,7 +418,10 @@ export default function AdminPage() {
       .single();
     setSavingNewCustomField(false);
     if (error || !data) return;
-    setProjectCustomFields(prev => [...prev, data]);
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      customFields: [...old.customFields, data],
+    }));
     setCalendarTokens(prev => [...prev, data.field_key]);
     setNewCustomFieldLabel('');
     setAddingCustomField(false);
@@ -429,7 +464,10 @@ export default function AdminPage() {
     setNewTokenNote('');
     setNewTokenTeamId('');
     setGeneratingToken(false);
-    if (data) setTokens(prev => [data, ...prev]);
+    if (data) queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      tokens: [data, ...old.tokens],
+    }));
   };
 
   const handleAssignTeam = async (memberId: string, teamId: string | null) => {
@@ -448,9 +486,10 @@ export default function AdminPage() {
     await supabase.from('registration_tokens')
       .update({ used_at: new Date().toISOString() })
       .eq('id', tokenId);
-    setTokens(prev => prev.map(t =>
-      t.id === tokenId ? { ...t, used_at: new Date().toISOString() } : t
-    ));
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      tokens: old.tokens.map(t => t.id === tokenId ? { ...t, used_at: new Date().toISOString() } : t),
+    }));
   };
 
   const getRegistrationLink = (token: string) =>
@@ -893,7 +932,10 @@ export default function AdminPage() {
                       await supabase.from('companies')
                         .update({ project_default_access: opt.value })
                         .eq('id', company.id);
-                      setCompany({ ...company, project_default_access: opt.value as Company["project_default_access"] });
+                      queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && old.company && ({
+                        ...old,
+                        company: { ...old.company, project_default_access: opt.value as Company["project_default_access"] },
+                      }));
                     }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${
                       company?.project_default_access === opt.value
