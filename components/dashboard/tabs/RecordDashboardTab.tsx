@@ -6,10 +6,12 @@
 // bound to a linked custom table's rows that point back at THIS record via
 // linked_table_id/link_field_id on the record_tabs row.
 import { useState, useEffect, useCallback } from "react";
+import { Maximize2, Minimize2, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import CanvasEditor from "../builder/CanvasEditor";
 import StaticWidgetGrid from "../builder/StaticWidgetGrid";
 import DashboardWidgetRenderer from "../DashboardWidgetRenderer";
+import CreateInvoiceModal from "../CreateInvoiceModal";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { relationCandidates as computeRelationCandidates, parentKindLabel, type ParentSystemTable } from "@/lib/dashboardWidgets/linkField";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -37,6 +39,9 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [linkFieldId, setLinkFieldId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Record<string, any>>({});
+  const [isFeeSource, setIsFeeSource] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false);
 
   const fieldById = new Map(fields.map(f => [f.id, f]));
 
@@ -49,7 +54,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
         supabase.auth.getUser(),
         supabase.from('company_table_fields').select('*').eq('table_id', linkedTableId).is('deleted_at', null).order('display_order'),
         supabase.from('company_tables').select('is_ledger').eq('id', linkedTableId).maybeSingle(),
-        supabase.from('record_tabs').select('link_field_id').eq('id', tabId).single(),
+        supabase.from('record_tabs').select('link_field_id, billing_role').eq('id', tabId).single(),
         supabase.from('record_tab_dashboard_widgets').select('widgets').eq('tab_id', tabId).maybeSingle(),
       ]);
       if (!active) return;
@@ -59,6 +64,10 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
       setIsLedger(!!tbl?.is_ledger);
       setUserId(user?.id || '');
       setWidgets(((widgetRow?.widgets as DashboardWidget[]) || []));
+      // "Create invoice" only ever makes sense from a fee-source tab (Time &
+      // Fees/Disbursements) -- see lib/dashboardWidgets/defaultRecordDashboardTabs.ts,
+      // the one place billing_role is set.
+      setIsFeeSource(tab?.billing_role === 'fee_source');
 
       // Auto-set link field — scoped to this record's own system table so
       // an unrelated relation field of a different kind on the linked table
@@ -105,6 +114,13 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
   useEffect(() => { loadRecords(); }, [loadRecords]);
 
   useProgressBarWhile(loading);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
 
   const setFilter = useCallback((fieldId: string, value: any) => {
     setFilters(prev => ({ ...prev, [fieldId]: value }));
@@ -199,26 +215,54 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
   }
 
   return (
-    <StaticWidgetGrid widgets={widgets}>
-      {(w) => (
-        <DashboardWidgetRenderer
-          widget={w}
-          sourceKind="custom"
-          fields={fields}
-          fieldById={fieldById}
-          records={filteredRecords}
-          allRecords={records}
-          tableId={linkedTableId}
+    <div className={fullscreen ? "fixed inset-0 z-50 bg-slate-50 overflow-y-auto p-8 space-y-3" : "space-y-3"}>
+      {(isFeeSource) && (
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={() => setFullscreen(p => !p)}
+            title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+            className="p-2.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all"
+          >
+            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+          <button
+            onClick={() => setShowCreateInvoice(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all"
+          >
+            <Plus size={14} /> Create invoice
+          </button>
+        </div>
+      )}
+      <StaticWidgetGrid widgets={widgets}>
+        {(w) => (
+          <DashboardWidgetRenderer
+            widget={w}
+            sourceKind="custom"
+            fields={fields}
+            fieldById={fieldById}
+            records={filteredRecords}
+            allRecords={records}
+            tableId={linkedTableId}
+            companyId={companyId}
+            userId={userId}
+            filters={filters}
+            setFilter={setFilter}
+            onChanged={loadRecords}
+            mode="view"
+            isLedger={isLedger}
+            fixedValues={linkField ? { [linkField.field_key]: recordId } : undefined}
+          />
+        )}
+      </StaticWidgetGrid>
+      {showCreateInvoice && (
+        <CreateInvoiceModal
+          matterId={recordId}
           companyId={companyId}
           userId={userId}
-          filters={filters}
-          setFilter={setFilter}
-          onChanged={loadRecords}
-          mode="view"
-          isLedger={isLedger}
-          fixedValues={linkField ? { [linkField.field_key]: recordId } : undefined}
+          onClose={() => setShowCreateInvoice(false)}
+          onCreated={() => { setShowCreateInvoice(false); loadRecords(); }}
         />
       )}
-    </StaticWidgetGrid>
+    </div>
   );
 }

@@ -19,13 +19,14 @@ import EmailsTab from "./tabs/EmailsTab";
 import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
 import PrecedentsTab from "./tabs/PrecedentsTab";
 import RecordDashboardTab from "./tabs/RecordDashboardTab";
+import InvoicesTab from "./tabs/InvoicesTab";
 import TeamMemberLinkCard from "./TeamMemberLinkCard";
 import SendSmsCard from "./SendSmsCard";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import {
   SYSTEM_TABLE_HIDDEN_COLS, SYSTEM_TABLE_RELATION_MAP, SYSTEM_TABLE_PERSON_LINK_COLS,
 } from "@/lib/schema/systemTableRelations";
-import { buildMissingDefaultProjectDashboardTabs } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
+import { buildMissingDefaultProjectDashboardTabs, buildMissingDefaultTabsFromCompanyDefaults } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import { getCompanyId } from "@/lib/services/schemaService";
 import { createArchiveRequest, type ArchiveEntityTable } from "@/lib/archiveRequests";
@@ -348,8 +349,8 @@ export default function RecordDashboard({
       // these defaults existed, not just brand-new ones. Idempotent: a
       // matter that already has both is a no-op every subsequent load.
       let finalTabs = uniqueTabs;
+      const existingLinkedTableIds = new Set(uniqueTabs.map(t => t.linked_table_id).filter(Boolean));
       if (systemTable === 'projects') {
-        const existingLinkedTableIds = new Set(uniqueTabs.map(t => t.linked_table_id).filter(Boolean));
         const { tabs: missingTabs, widgetsByLinkedTableId } = await buildMissingDefaultProjectDashboardTabs(
           cid, recordId, uniqueTabs.length, existingLinkedTableIds
         );
@@ -358,6 +359,22 @@ export default function RecordDashboard({
           if (insertedTabs?.length) {
             await seedDefaultDashboardWidgets(insertedTabs, widgetsByLinkedTableId);
             finalTabs = [...uniqueTabs, ...insertedTabs];
+            insertedTabs.forEach(t => t.linked_table_id && existingLinkedTableIds.add(t.linked_table_id));
+          }
+        }
+      }
+      // Template-installed record-tab defaults (company_record_tab_defaults,
+      // see supabase/template_record_tabs.sql) -- any record table, same
+      // idempotent top-up contract as the hardcoded project specs above.
+      {
+        const { tabs: defaultTabsMissing, widgetsByLinkedTableId } = await buildMissingDefaultTabsFromCompanyDefaults(
+          cid, recordTable, recordId, finalTabs.length, existingLinkedTableIds
+        );
+        if (defaultTabsMissing.length) {
+          const { data: insertedTabs } = await supabase.from('record_tabs').insert(defaultTabsMissing).select();
+          if (insertedTabs?.length) {
+            await seedDefaultDashboardWidgets(insertedTabs, widgetsByLinkedTableId);
+            finalTabs = [...finalTabs, ...insertedTabs];
           }
         }
       }
@@ -411,6 +428,14 @@ export default function RecordDashboard({
         const result = await buildMissingDefaultProjectDashboardTabs(cid, recordId, defaultTabs.length, new Set());
         defaultTabs.push(...result.tabs);
         widgetsByLinkedTableId = result.widgetsByLinkedTableId;
+      }
+      // Template-installed record-tab defaults, first-open path (see the
+      // same top-up in the tabs-exist branch above).
+      {
+        const covered = new Set(Array.from(widgetsByLinkedTableId.keys()));
+        const result = await buildMissingDefaultTabsFromCompanyDefaults(cid, recordTable, recordId, defaultTabs.length, covered);
+        defaultTabs.push(...result.tabs);
+        result.widgetsByLinkedTableId.forEach((v, k) => widgetsByLinkedTableId.set(k, v));
       }
 
       const { data: newTabs } = await supabase
@@ -829,6 +854,13 @@ export default function RecordDashboard({
           // backed one (computeRelationCandidates already handles "unknown
           // parent" by falling back to the broad candidate set).
           recordSystemTable={systemTable !== 'tasks' ? systemTable : undefined}
+        />
+      )}
+      {activeTab?.tab_type === 'invoice_dashboard' && activeTab.linked_table_id && (
+        <InvoicesTab
+          linkedTableId={activeTab.linked_table_id}
+          recordId={recordId}
+          companyId={companyId}
         />
       )}
       {activeTabId === '__access__' && systemTable === 'projects' && (

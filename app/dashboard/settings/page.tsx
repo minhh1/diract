@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import {
   Database, Clock, Copy, ArrowLeft,
   CheckCircle2, ChevronRight, AlertCircle,
-  Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare
+  Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare, Receipt
 } from "lucide-react";
 import ImportModal from "@/components/ImportModal";
 import DataFormattingTool from "@/components/DataFormattingTool";
@@ -16,11 +16,12 @@ import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import CustomTableBuilder from "@/components/CustomTableBuilder";
 import PublicTaskPagesTab from "@/components/settings/PublicTaskPagesTab";
 import PrecedentsSettingsTab from "@/components/settings/PrecedentsSettingsTab";
+import InvoiceTemplateSettingsTab from "@/components/settings/InvoiceTemplateSettingsTab";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 
-type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents";
+type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents" | "invoice_template";
 type DupType = "properties" | "entities" | "projects";
 
 export default function SettingsPage() {
@@ -33,7 +34,7 @@ export default function SettingsPage() {
   // button/menu clicks inside this page still just call setView directly.
   useEffect(() => {
     const v = searchParams.get("view");
-    if (v && ["menu", "history", "schema", "duplicates_menu", "duplicates_view", "public_pages", "precedents"].includes(v)) {
+    if (v && ["menu", "history", "schema", "duplicates_menu", "duplicates_view", "public_pages", "precedents", "invoice_template"].includes(v)) {
       setView(v as SettingsView);
     }
   }, [searchParams.get("view")]);
@@ -124,6 +125,7 @@ export default function SettingsPage() {
     if (view === 'duplicates_view') return `Duplicates — ${activeDupType}`;
     if (view === 'public_pages') return 'Public task pages';
     if (view === 'precedents') return 'Precedents';
+    if (view === 'invoice_template') return 'Invoice template';
     return 'Settings';
   };
 
@@ -225,11 +227,22 @@ export default function SettingsPage() {
                 </div>
                 <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
               </button>
+
+              <button onClick={() => setView("invoice_template")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
+                <div className="flex items-center gap-5">
+                  <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors"><Receipt size={20} /></div>
+                  <span className="text-[15px] font-medium text-slate-700">Invoice template</span>
+                </div>
+                <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
+              </button>
             </div>
           )}
 
           {/* ── PRECEDENTS ── */}
           {view === 'precedents' && <PrecedentsSettingsTab />}
+
+          {/* ── INVOICE TEMPLATE ── */}
+          {view === 'invoice_template' && <InvoiceTemplateSettingsTab />}
 
           {/* ── IMPORT HISTORY ── */}
           {view === "history" && (

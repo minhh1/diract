@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
+import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 
 // Per-company display-name overrides for the three system tables, e.g. a
 // law firm renaming "Projects" to "Matters" (see supabase/companies_table_labels.sql).
@@ -33,6 +34,10 @@ interface CompanyContextValue {
   refreshTableLabelOverrides: () => Promise<void>;
   disabledSystemTables: DisabledSystemTables;
   refreshDisabledSystemTables: () => Promise<void>;
+  invoiceSettings: InvoiceSettings;
+  refreshInvoiceSettings: () => Promise<void>;
+  logoUrl: string | null;
+  refreshLogoUrl: () => Promise<void>;
 }
 
 const CompanyContext = createContext<CompanyContextValue>({
@@ -47,6 +52,10 @@ const CompanyContext = createContext<CompanyContextValue>({
   refreshTableLabelOverrides: async () => {},
   disabledSystemTables: {},
   refreshDisabledSystemTables: async () => {},
+  invoiceSettings: emptyInvoiceSettings(),
+  refreshInvoiceSettings: async () => {},
+  logoUrl: null,
+  refreshLogoUrl: async () => {},
 });
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
@@ -59,6 +68,8 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>({});
   const [disabledSystemTables, setDisabledSystemTables] = useState<DisabledSystemTables>({});
+  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(emptyInvoiceSettings());
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,7 +110,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const [{ data: prof }, { data: allMemberships }] = await Promise.all([
         supabase
           .from("profiles")
-          .select("active_company_id, is_site_admin, companies:active_company_id(name, table_label_overrides, disabled_system_tables)")
+          .select("active_company_id, is_site_admin, companies:active_company_id(name, table_label_overrides, disabled_system_tables, invoice_settings, logo_url)")
           .eq("id", user.id)
           .single(),
         supabase
@@ -114,6 +125,8 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const cname = (prof?.companies as any)?.name || null;
       const overrides = (prof?.companies as any)?.table_label_overrides || {};
       const disabled = (prof?.companies as any)?.disabled_system_tables || {};
+      const invoiceSettingsData = (prof?.companies as any)?.invoice_settings;
+      const logo = (prof?.companies as any)?.logo_url || null;
 
       setUserId(user.id);
       setUserEmail(user.email ?? null);
@@ -121,6 +134,8 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       setCompanyName(cname);
       setTableLabelOverrides(overrides);
       setDisabledSystemTables(disabled);
+      setInvoiceSettings({ ...emptyInvoiceSettings(), ...invoiceSettingsData });
+      setLogoUrl(logo);
       setIsAdmin((allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin");
       setIsSiteAdmin(!!prof?.is_site_admin);
 
@@ -149,8 +164,29 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     setDisabledSystemTables((data as any)?.disabled_system_tables || {});
   };
 
+  // Re-fetches just the invoice branding/terms/template settings, so
+  // InvoiceTemplateSettingsTab can push a change out to CreateInvoiceModal/
+  // the PDF route without a full reload.
+  const refreshInvoiceSettings = async () => {
+    if (!companyId) return;
+    const { data } = await supabase.from("companies").select("invoice_settings").eq("id", companyId).single();
+    setInvoiceSettings({ ...emptyInvoiceSettings(), ...((data as any)?.invoice_settings || {}) });
+  };
+
+  // Re-fetches just the logo, so a fresh upload/removal via
+  // app/api/company/logo shows up immediately without a full reload.
+  const refreshLogoUrl = async () => {
+    if (!companyId) return;
+    const { data } = await supabase.from("companies").select("logo_url").eq("id", companyId).single();
+    setLogoUrl((data as any)?.logo_url || null);
+  };
+
   return (
-    <CompanyContext.Provider value={{ companyId, companyName, userId, userEmail, isAdmin, isSiteAdmin, loading, tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables }}>
+    <CompanyContext.Provider value={{
+      companyId, companyName, userId, userEmail, isAdmin, isSiteAdmin, loading,
+      tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables,
+      invoiceSettings, refreshInvoiceSettings, logoUrl, refreshLogoUrl,
+    }}>
       {children}
     </CompanyContext.Provider>
   );

@@ -1,0 +1,559 @@
+"use client";
+
+// Create Invoice: select this matter's unbilled fees/disbursements, optionally
+// apportion the selected fees, pick a debtor/template/dates, and save. On
+// save: creates the Invoices-table header record, links + freezes each
+// selected source entry (invoice relation + invoiced_amount, which fires the
+// existing sum_related rollup automatically -- see
+// supabase/invoiced_amount_field.sql), and snapshots invoice_line_items so
+// the PDF never drifts if a source entry is edited later.
+//
+// Which tables are "this matter's fees/disbursements/invoices" is resolved
+// via record_tabs.billing_role (see lib/dashboardWidgets/defaultRecordDashboardTabs.ts),
+// never a hardcoded slug -- portable to a company that's since renamed those
+// tables. Opened from RecordDashboardTab.tsx (Time & Fees/Disbursements) and
+// InvoicesTab.tsx, all three passing the same matterId/companyId/userId.
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { X, Loader2, Check, ExternalLink } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useCompany } from "@/components/CompanyContext";
+import RelationPicker from "./RelationPicker";
+import { createRecord as createCustomRecord, updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
+import { scaleToTarget, applyToSelectedLines, applyPercentOrAmount, type ApportionLine, type ApportionedLine } from "@/lib/invoices/apportionment";
+import type { CustomTableField } from "@/lib/hooks/useCustomTable";
+
+interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; rate: number; hours: number; amount: number }
+interface DisbRow { id: string; tableId: string; date: string | null; description: string; amount: number }
+
+interface Props {
+  matterId: string;
+  companyId: string;
+  userId: string;
+  onClose: () => void;
+  onCreated: (invoiceId: string) => void;
+}
+
+type ApportionMode = 'none' | 'pct_amount' | 'target';
+
+function money(n: number): string {
+  return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+}
+
+export default function CreateInvoiceModal({ matterId, companyId, userId, onClose, onCreated }: Props) {
+  const { invoiceSettings } = useCompany();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notReady, setNotReady] = useState(false);
+
+  const [invoicesTableId, setInvoicesTableId] = useState<string | null>(null);
+  const [invoiceFields, setInvoiceFields] = useState<CustomTableField[]>([]);
+  const [sourceFieldsByTable, setSourceFieldsByTable] = useState<Map<string, CustomTableField[]>>(new Map());
+
+  const [feeRows, setFeeRows] = useState<FeeRow[]>([]);
+  const [disbRows, setDisbRows] = useState<DisbRow[]>([]);
+  const [selectedFeeIds, setSelectedFeeIds] = useState<Set<string>>(new Set());
+  const [selectedDisbIds, setSelectedDisbIds] = useState<Set<string>>(new Set());
+
+  const [mode, setMode] = useState<ApportionMode>('none');
+  const [pctAmtType, setPctAmtType] = useState<'percent' | 'amount'>('percent');
+  const [pctAmtDirection, setPctAmtDirection] = useState<'discount' | 'markup'>('discount');
+  const [pctAmtValue, setPctAmtValue] = useState('');
+  const [targetTotal, setTargetTotal] = useState('');
+  const [targetDistribution, setTargetDistribution] = useState<'all' | 'largest'>('all');
+  const [largestSelectedIds, setLargestSelectedIds] = useState<Set<string>>(new Set());
+
+  const [debtorId, setDebtorId] = useState<string | null>(null);
+  const [debtorLabel, setDebtorLabel] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState('');
+  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState('');
+
+  const [success, setSuccess] = useState<{ id: string; invoiceNumber: string } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+
+      const { data: tabs } = await supabase
+        .from('record_tabs')
+        .select('linked_table_id, billing_role')
+        .eq('record_id', matterId).eq('record_table', 'projects')
+        .not('billing_role', 'is', null);
+
+      const invTableId = tabs?.find(t => t.billing_role === 'invoices')?.linked_table_id || null;
+      const feeSourceTableIds = (tabs || []).filter(t => t.billing_role === 'fee_source').map(t => t.linked_table_id!);
+      if (!active) return;
+
+      if (!invTableId || !feeSourceTableIds.length) {
+        setNotReady(true);
+        setLoading(false);
+        return;
+      }
+      setInvoicesTableId(invTableId);
+
+      const [{ data: invFields }, { data: project }] = await Promise.all([
+        supabase.from('company_table_fields').select('*').eq('table_id', invTableId).is('deleted_at', null),
+        supabase.from('projects').select('debtor').eq('id', matterId).maybeSingle(),
+      ]);
+      if (!active) return;
+      setInvoiceFields((invFields || []) as CustomTableField[]);
+
+      if (project?.debtor) {
+        setDebtorId(project.debtor);
+        const { data: entity } = await supabase.from('entities').select('name').eq('id', project.debtor).maybeSingle();
+        if (active) setDebtorLabel(entity?.name || null);
+      }
+
+      const defaultTemplate = invoiceSettings.templates.find(t => t.isDefault) || invoiceSettings.templates[0];
+      if (defaultTemplate) setTemplateId(defaultTemplate.id);
+
+      const fieldsByTable = new Map<string, CustomTableField[]>();
+      const newFeeRows: FeeRow[] = [];
+      const newDisbRows: DisbRow[] = [];
+
+      for (const tableId of feeSourceTableIds) {
+        const { data: fields } = await supabase.from('company_table_fields').select('*').eq('table_id', tableId).is('deleted_at', null);
+        const fieldList = (fields || []) as CustomTableField[];
+        fieldsByTable.set(tableId, fieldList);
+        const matterField = fieldList.find(f => f.field_key === 'matter');
+        if (!matterField) continue;
+        const isFeeTable = fieldList.some(f => f.field_key === 'duration_hours');
+
+        const { data: matterLinks } = await supabase
+          .from('company_table_values').select('record_id')
+          .eq('field_id', matterField.id).eq('value_record_id', matterId);
+        const candidateIds = [...new Set((matterLinks || []).map(l => l.record_id))];
+        if (!candidateIds.length) continue;
+
+        const { data: aliveRecs } = await supabase
+          .from('company_table_records').select('id').in('id', candidateIds).is('deleted_at', null);
+        const aliveIds = (aliveRecs || []).map(r => r.id);
+        if (!aliveIds.length) continue;
+
+        const { data: valueRows } = await supabase
+          .from('company_table_values')
+          .select('record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id')
+          .in('record_id', aliveIds);
+
+        const fieldById = new Map(fieldList.map(f => [f.id, f]));
+        const byRecord = new Map<string, Record<string, any>>();
+        (valueRows || []).forEach(v => {
+          const field = fieldById.get(v.field_id);
+          if (!field) return;
+          if (!byRecord.has(v.record_id)) byRecord.set(v.record_id, {});
+          byRecord.get(v.record_id)![field.field_key] = v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id ?? null;
+        });
+
+        const staffIds = new Set<string>();
+        byRecord.forEach(row => { if (row.staff) staffIds.add(row.staff); });
+        const { data: staffRows } = staffIds.size
+          ? await supabase.from('entities').select('id, name').in('id', [...staffIds])
+          : { data: [] as { id: string; name: string }[] };
+        const staffNameById = new Map((staffRows || []).map(s => [s.id, s.name]));
+
+        for (const [recordId, row] of byRecord) {
+          if (row.invoice) continue; // already billed -- not "unbilled"
+          if (isFeeTable) {
+            newFeeRows.push({
+              id: recordId, tableId, date: row.date || null, description: row.description || '',
+              staffLabel: staffNameById.get(row.staff) || '', rate: Number(row.rate) || 0,
+              hours: Number(row.duration_hours) || 0, amount: Number(row.amount) || 0,
+            });
+          } else {
+            newDisbRows.push({
+              id: recordId, tableId, date: row.date || null, description: row.description || '', amount: Number(row.amount) || 0,
+            });
+          }
+        }
+      }
+
+      if (!active) return;
+      newFeeRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      newDisbRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      setSourceFieldsByTable(fieldsByTable);
+      setFeeRows(newFeeRows);
+      setDisbRows(newDisbRows);
+      setSelectedFeeIds(new Set(newFeeRows.map(r => r.id)));
+      setSelectedDisbIds(new Set(newDisbRows.map(r => r.id)));
+      setLoading(false);
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matterId]);
+
+  const selectedFeeLines: ApportionLine[] = useMemo(
+    () => feeRows.filter(r => selectedFeeIds.has(r.id)).map(r => ({ id: r.id, amount: r.amount })),
+    [feeRows, selectedFeeIds]
+  );
+
+  // Default the "largest lines" checkbox set to just the single largest
+  // selected fee the first time that mode is picked -- the common case
+  // ("apply to the biggest amount") is then a one-click default; checking
+  // more boxes widens it to "the few largest" without a separate mode.
+  useEffect(() => {
+    if (targetDistribution !== 'largest' || largestSelectedIds.size > 0) return;
+    const sorted = [...selectedFeeLines].sort((a, b) => b.amount - a.amount);
+    if (sorted[0]) setLargestSelectedIds(new Set([sorted[0].id]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetDistribution, selectedFeeLines]);
+
+  const apportionedFees: ApportionedLine[] = useMemo(() => {
+    const unchanged = () => selectedFeeLines.map(l => ({ id: l.id, originalAmount: l.amount, billedAmount: l.amount }));
+    if (selectedFeeLines.length === 0) return [];
+    if (mode === 'pct_amount') {
+      const value = parseFloat(pctAmtValue);
+      if (!value) return unchanged();
+      return applyPercentOrAmount(selectedFeeLines, { mode: pctAmtType, direction: pctAmtDirection, value });
+    }
+    if (mode === 'target') {
+      const target = parseFloat(targetTotal);
+      if (Number.isNaN(target)) return unchanged();
+      return targetDistribution === 'all'
+        ? scaleToTarget(selectedFeeLines, target)
+        : applyToSelectedLines(selectedFeeLines, [...largestSelectedIds], target);
+    }
+    return unchanged();
+  }, [selectedFeeLines, mode, pctAmtType, pctAmtDirection, pctAmtValue, targetTotal, targetDistribution, largestSelectedIds]);
+
+  const hasNegativeBilled = apportionedFees.some(l => l.billedAmount < 0);
+  const feesSubtotal = apportionedFees.reduce((s, l) => s + l.billedAmount, 0);
+  const disbSubtotal = disbRows.filter(r => selectedDisbIds.has(r.id)).reduce((s, r) => s + r.amount, 0);
+  const subtotal = Math.round((feesSubtotal + disbSubtotal) * 100) / 100;
+  const gst = Math.round(subtotal * 0.1 * 100) / 100;
+  const totalIncGst = Math.round((subtotal + gst) * 100) / 100;
+
+  const toggleFee = (id: string) => setSelectedFeeIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+  const toggleDisb = (id: string) => setSelectedDisbIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+  const toggleLargest = (id: string) => setLargestSelectedIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+
+  const handleSave = async () => {
+    if (!invoicesTableId) return;
+    if (selectedFeeIds.size === 0 && selectedDisbIds.size === 0) {
+      setError('Select at least one fee or disbursement to invoice.');
+      return;
+    }
+    if (hasNegativeBilled) {
+      setError('One or more fees would be billed at a negative amount — adjust the discount or target.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+
+    const record = await createCustomRecord(invoicesTableId, companyId, userId, {
+      matter: matterId,
+      debtor: debtorId,
+      issue_date: issueDate,
+      due_date: dueDate || null,
+      status: 'Under Review',
+      template_id: templateId || null,
+    }, invoiceFields);
+
+    if (!record || 'error' in record) {
+      setError((record as any)?.error || 'Could not create the invoice.');
+      setSaving(false);
+      return;
+    }
+
+    const lineItemRows: any[] = [];
+    for (const line of apportionedFees) {
+      const row = feeRows.find(r => r.id === line.id);
+      if (!row) continue;
+      const fields = sourceFieldsByTable.get(row.tableId) || [];
+      await updateCustomRecord(row.id, row.tableId, companyId, { invoice: record.id, invoiced_amount: line.billedAmount }, fields);
+      lineItemRows.push({
+        company_id: companyId, invoice_record_id: record.id, source_type: 'fee', source_record_id: row.id,
+        description: row.description, original_amount: line.originalAmount, billed_amount: line.billedAmount,
+        entry_date: row.date, staff_name: row.staffLabel || null, rate: row.rate, hours: row.hours,
+      });
+    }
+    for (const row of disbRows.filter(r => selectedDisbIds.has(r.id))) {
+      const fields = sourceFieldsByTable.get(row.tableId) || [];
+      await updateCustomRecord(row.id, row.tableId, companyId, { invoice: record.id, invoiced_amount: row.amount }, fields);
+      lineItemRows.push({
+        company_id: companyId, invoice_record_id: record.id, source_type: 'disbursement', source_record_id: row.id,
+        description: row.description, original_amount: row.amount, billed_amount: row.amount,
+        entry_date: row.date, staff_name: null, rate: null, hours: null,
+      });
+    }
+    if (lineItemRows.length) {
+      const { error: liError } = await supabase.from('invoice_line_items').insert(lineItemRows);
+      if (liError) { setError(liError.message); setSaving(false); return; }
+    }
+
+    // amount_due isn't a formula field (unlike subtotal/gst/total_inc_gst,
+    // which just cascaded via the sum_related rollups the invoice/
+    // invoiced_amount updates above triggered) -- read the now-current
+    // total_inc_gst and set amount_due = it (payments/trust_applied are
+    // both 0 at creation time; edited later via InvoicesTab's Edit action,
+    // which recomputes amount_due itself).
+    const invNumberField = invoiceFields.find(f => f.field_key === 'invoice_number');
+    const totalField = invoiceFields.find(f => f.field_key === 'total_inc_gst');
+    const amountDueField = invoiceFields.find(f => f.field_key === 'amount_due');
+    let invoiceNumber = '';
+    if (invNumberField) {
+      const { data: numRow } = await supabase
+        .from('company_table_values').select('value_text').eq('record_id', record.id).eq('field_id', invNumberField.id).maybeSingle();
+      invoiceNumber = numRow?.value_text || '';
+    }
+    if (totalField && amountDueField) {
+      const { data: totalRow } = await supabase
+        .from('company_table_values').select('value_number').eq('record_id', record.id).eq('field_id', totalField.id).maybeSingle();
+      await updateCustomRecord(record.id, invoicesTableId, companyId, { amount_due: totalRow?.value_number || 0 }, invoiceFields);
+    }
+
+    setSaving(false);
+    setSuccess({ id: record.id, invoiceNumber });
+    onCreated(record.id);
+  };
+
+  if (success) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
+        <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl p-8 text-center space-y-5">
+          <div className="mx-auto h-14 w-14 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center">
+            <Check size={26} />
+          </div>
+          <div>
+            <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Invoice created</h3>
+            <p className="text-[12px] text-slate-400 mt-1">{success.invoiceNumber || 'Invoice'} is ready.</p>
+          </div>
+          <div className="flex gap-3">
+            <a
+              href={`/api/invoices/${success.id}/pdf`}
+              target="_blank" rel="noreferrer"
+              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+            >
+              Preview PDF
+            </a>
+            <button onClick={onClose} className="flex-1 py-3 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
+      <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="shrink-0 flex items-center justify-between p-6 pb-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Create invoice</h3>
+            <Link href="/dashboard/settings?view=invoice_template" className="text-[10px] text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-0.5">
+              Manage invoice template <ExternalLink size={10} />
+            </Link>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-black"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {loading ? (
+            <div className="py-16 flex justify-center"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
+          ) : notReady ? (
+            <p className="text-center text-[12px] text-slate-400 py-12">
+              This matter doesn't have any billable line-item tables set up yet.
+            </p>
+          ) : (
+            <>
+              {/* Header fields */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Debtor</label>
+                  <RelationPicker
+                    linkedSystemTable="entities"
+                    value={debtorId}
+                    initialLabel={debtorLabel || undefined}
+                    onSelect={(id, label) => { setDebtorId(id); setDebtorLabel(label); }}
+                    placeholder="Select debtor..."
+                  />
+                </div>
+                {invoiceSettings.templates.length > 0 && (
+                  <div className="col-span-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Template</label>
+                    <select
+                      value={templateId}
+                      onChange={e => setTemplateId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                    >
+                      {invoiceSettings.templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Issue date</label>
+                  <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Due date</label>
+                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                </div>
+              </div>
+
+              {/* Fees */}
+              {feeRows.length > 0 && (
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                    Unbilled fees ({selectedFeeIds.size}/{feeRows.length} selected)
+                  </p>
+                  <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 max-h-52 overflow-y-auto">
+                    {feeRows.map(r => (
+                      <label key={r.id} className="flex items-center gap-3 px-4 py-2.5 text-[12px] cursor-pointer hover:bg-slate-50">
+                        <input type="checkbox" checked={selectedFeeIds.has(r.id)} onChange={() => toggleFee(r.id)} className="shrink-0" />
+                        <span className="text-slate-400 w-20 shrink-0">{r.date || '—'}</span>
+                        <span className="flex-1 truncate text-slate-700">{r.description || '(no description)'}</span>
+                        <span className="text-slate-500 shrink-0">{r.hours.toFixed(2)}h</span>
+                        <span className="font-bold text-slate-800 w-20 text-right shrink-0">{money(r.amount)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Apportionment */}
+              {selectedFeeLines.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-2xl space-y-3">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Apportion selected fees</p>
+                  <div className="flex flex-col gap-2">
+                    {([
+                      ['none', 'No change'],
+                      ['pct_amount', 'Discount / markup by % or $'],
+                      ['target', 'Target a fixed fee total'],
+                    ] as const).map(([v, label]) => (
+                      <label key={v} className="flex items-center gap-2 text-[12px] font-medium text-slate-700 cursor-pointer">
+                        <input type="radio" name="apportion-mode" checked={mode === v} onChange={() => setMode(v)} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+
+                  {mode === 'pct_amount' && (
+                    <div className="flex items-center gap-2 pl-6">
+                      <select value={pctAmtDirection} onChange={e => setPctAmtDirection(e.target.value as any)}
+                        className="bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none">
+                        <option value="discount">Discount</option>
+                        <option value="markup">Markup</option>
+                      </select>
+                      <input type="number" step="0.01" value={pctAmtValue} onChange={e => setPctAmtValue(e.target.value)}
+                        placeholder="0" className="w-28 bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none" />
+                      <select value={pctAmtType} onChange={e => setPctAmtType(e.target.value as any)}
+                        className="bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none">
+                        <option value="percent">%</option>
+                        <option value="amount">$</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {mode === 'target' && (
+                    <div className="pl-6 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] text-slate-500">Target fee total $</span>
+                        <input type="number" step="0.01" value={targetTotal} onChange={e => setTargetTotal(e.target.value)}
+                          placeholder={feesSubtotal.toFixed(2)} className="w-32 bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none" />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="flex items-center gap-2 text-[12px] text-slate-700 cursor-pointer">
+                          <input type="radio" name="target-dist" checked={targetDistribution === 'all'} onChange={() => setTargetDistribution('all')} />
+                          Spread the adjustment across all fees
+                        </label>
+                        <label className="flex items-center gap-2 text-[12px] text-slate-700 cursor-pointer">
+                          <input type="radio" name="target-dist" checked={targetDistribution === 'largest'} onChange={() => setTargetDistribution('largest')} />
+                          Apply the adjustment to the largest fee(s) only
+                        </label>
+                      </div>
+                      {targetDistribution === 'largest' && (
+                        <div className="border border-slate-200 bg-white rounded-2xl divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                          {[...feeRows].filter(r => selectedFeeIds.has(r.id)).sort((a, b) => b.amount - a.amount).map(r => (
+                            <label key={r.id} className="flex items-center gap-3 px-4 py-2 text-[11px] cursor-pointer hover:bg-slate-50">
+                              <input type="checkbox" checked={largestSelectedIds.has(r.id)} onChange={() => toggleLargest(r.id)} />
+                              <span className="flex-1 truncate">{r.description || '(no description)'}</span>
+                              <span className="font-bold">{money(r.amount)}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {mode !== 'none' && (
+                    <div className="pl-6 pt-1 space-y-1 border-t border-slate-200">
+                      {apportionedFees.filter(l => Math.abs(l.billedAmount - l.originalAmount) > 0.004).map(l => {
+                        const row = feeRows.find(r => r.id === l.id)!;
+                        return (
+                          <div key={l.id} className="flex items-center justify-between text-[11px] text-slate-500">
+                            <span className="truncate">{row?.description || '(no description)'}</span>
+                            <span>{money(l.originalAmount)} → <span className={l.billedAmount < l.originalAmount ? 'text-rose-500 font-bold' : 'text-emerald-600 font-bold'}>{money(l.billedAmount)}</span></span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Disbursements */}
+              {disbRows.length > 0 && (
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                    Unbilled disbursements ({selectedDisbIds.size}/{disbRows.length} selected)
+                  </p>
+                  <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100 max-h-52 overflow-y-auto">
+                    {disbRows.map(r => (
+                      <label key={r.id} className="flex items-center gap-3 px-4 py-2.5 text-[12px] cursor-pointer hover:bg-slate-50">
+                        <input type="checkbox" checked={selectedDisbIds.has(r.id)} onChange={() => toggleDisb(r.id)} className="shrink-0" />
+                        <span className="text-slate-400 w-20 shrink-0">{r.date || '—'}</span>
+                        <span className="flex-1 truncate text-slate-700">{r.description || '(no description)'}</span>
+                        <span className="font-bold text-slate-800 w-20 text-right shrink-0">{money(r.amount)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {feeRows.length === 0 && disbRows.length === 0 && (
+                <p className="text-center text-[12px] text-slate-400 py-8">No unbilled fees or disbursements on this matter.</p>
+              )}
+
+              {/* Totals preview */}
+              {(feeRows.length > 0 || disbRows.length > 0) && (
+                <div className="p-4 bg-slate-50 rounded-2xl space-y-1.5">
+                  <div className="flex justify-between text-[12px] text-slate-500"><span>Subtotal (ex. GST)</span><span>{money(subtotal)}</span></div>
+                  <div className="flex justify-between text-[12px] text-slate-500"><span>GST (10%)</span><span>{money(gst)}</span></div>
+                  <div className="flex justify-between text-[13px] font-bold text-slate-800"><span>Total (inc. GST)</span><span>{money(totalIncGst)}</span></div>
+                </div>
+              )}
+            </>
+          )}
+
+          {error && (
+            <div className="text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>
+          )}
+        </div>
+
+        <div className="shrink-0 flex gap-3 p-6 pt-4 border-t border-slate-100">
+          <button onClick={onClose} className="flex-1 py-3.5 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold uppercase tracking-widest hover:bg-slate-100 transition-all">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || loading || notReady || (feeRows.length === 0 && disbRows.length === 0)}
+            className="flex-1 py-3.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Create invoice'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
