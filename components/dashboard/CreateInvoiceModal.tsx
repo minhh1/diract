@@ -117,20 +117,28 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
 
       const [{ data: invFields }, { data: project }] = await Promise.all([
         supabase.from('company_table_fields').select('*').eq('table_id', invTableId).is('deleted_at', null),
-        supabase.from('projects').select('name, client, debtor').eq('id', matterId).maybeSingle(),
+        supabase.from('projects').select('name').eq('id', matterId).maybeSingle(),
       ]);
       if (!active) return;
       setInvoiceFields((invFields || []) as CustomTableField[]);
 
-      // debtor wins when the matter has explicitly set one; falling back to
-      // client covers the common case where it hasn't -- most matters only
-      // ever set Client, so defaulting Debtor to it here is what actually
-      // makes this field auto-fill in practice.
-      const defaultDebtor = project?.debtor || project?.client || null;
-      if (defaultDebtor) {
-        setDebtorId(defaultDebtor);
-        const { data: entity } = await supabase.from('entities').select('name').eq('id', defaultDebtor).maybeSingle();
-        if (active) setDebtorLabel(entity?.name || null);
+      // Debtor auto-fill (Settings -> Invoice template -> Terms & payment)
+      // -- `projects` has no built-in "client"/"debtor" column, only
+      // whatever entity-relation custom field a company actually uses to
+      // record who's on a matter (e.g. Huynh Lawyers' "Client Name"), so
+      // this has to be configured the same way "Our Reference" is below
+      // rather than assumed. Still just a normal RelationPicker afterward,
+      // not locked to this value.
+      const debtorKey = invoiceSettings.debtorFieldKey;
+      if (debtorKey?.startsWith('cf:')) {
+        const { data: cfValue } = await supabase
+          .from('company_custom_field_values').select('value_record_id')
+          .eq('field_id', debtorKey.slice(3)).eq('record_id', matterId).maybeSingle();
+        if (cfValue?.value_record_id && active) {
+          setDebtorId(cfValue.value_record_id);
+          const { data: entity } = await supabase.from('entities').select('name').eq('id', cfValue.value_record_id).maybeSingle();
+          if (active) setDebtorLabel(entity?.name || null);
+        }
       }
 
       // "Our Reference" auto-fill (Settings -> Invoice template -> Terms &

@@ -25,6 +25,10 @@ export type DisabledSystemTables = Record<string, DisabledSystemTable>;
 interface CompanyContextValue {
   companyId: string | null;
   companyName: string | null;
+  // e.g. 'Law Firm' -- null for a general/unspecified business. Gates
+  // industry-specific features (currently just the detailed law-firm
+  // invoice template) rather than being read as a display label anywhere.
+  companyType: string | null;
   userId: string | null;
   userEmail: string | null;
   isAdmin: boolean;
@@ -43,6 +47,7 @@ interface CompanyContextValue {
 const CompanyContext = createContext<CompanyContextValue>({
   companyId: null,
   companyName: null,
+  companyType: null,
   userId: null,
   userEmail: null,
   isAdmin: false,
@@ -61,6 +66,7 @@ const CompanyContext = createContext<CompanyContextValue>({
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
+  const [companyType, setCompanyType] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -110,7 +116,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const [{ data: prof }, { data: allMemberships }] = await Promise.all([
         supabase
           .from("profiles")
-          .select("active_company_id, is_site_admin, companies:active_company_id(name, table_label_overrides, disabled_system_tables, invoice_settings, logo_url)")
+          .select("active_company_id, is_site_admin, companies:active_company_id(name, company_type, table_label_overrides, disabled_system_tables, invoice_settings, logo_url)")
           .eq("id", user.id)
           .single(),
         supabase
@@ -123,6 +129,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       const cid = prof?.active_company_id || null;
       const cname = (prof?.companies as any)?.name || null;
+      const ctype = (prof?.companies as any)?.company_type || null;
       const overrides = (prof?.companies as any)?.table_label_overrides || {};
       const disabled = (prof?.companies as any)?.disabled_system_tables || {};
       const invoiceSettingsData = (prof?.companies as any)?.invoice_settings;
@@ -132,6 +139,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       setUserEmail(user.email ?? null);
       setCompanyId(cid);
       setCompanyName(cname);
+      setCompanyType(ctype);
       setTableLabelOverrides(overrides);
       setDisabledSystemTables(disabled);
       setInvoiceSettings({ ...emptyInvoiceSettings(), ...invoiceSettingsData });
@@ -183,7 +191,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   return (
     <CompanyContext.Provider value={{
-      companyId, companyName, userId, userEmail, isAdmin, isSiteAdmin, loading,
+      companyId, companyName, companyType, userId, userEmail, isAdmin, isSiteAdmin, loading,
       tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables,
       invoiceSettings, refreshInvoiceSettings, logoUrl, refreshLogoUrl,
     }}>

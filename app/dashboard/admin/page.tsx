@@ -41,6 +41,7 @@ interface Company {
   name: string;
   abn: string | null;
   acn: string | null;
+  company_type: string | null;
   status: string;
   created_at: string;
   project_default_access: 'all_members' | 'specific_teams' | 'specific_members';
@@ -261,6 +262,7 @@ export default function AdminPage() {
   const [companyName, setCompanyName] = useState('');
   const [companyAbn, setCompanyAbn] = useState('');
   const [companyAcn, setCompanyAcn] = useState('');
+  const [companyType, setCompanyType] = useState('');
   const [savingCompany, setSavingCompany] = useState(false);
 
   // Token generation
@@ -311,6 +313,7 @@ export default function AdminPage() {
     setCompanyName(company.name);
     setCompanyAbn(company.abn || '');
     setCompanyAcn(company.acn || '');
+    setCompanyType(company.company_type || '');
     const comp = company as any;
     setSourceEmails(comp.gmail_source_emails || []);
     setArchiveEmails(comp.gmail_archive_emails || []);
@@ -375,10 +378,11 @@ export default function AdminPage() {
       name: companyName,
       abn: companyAbn || null,
       acn: companyAcn || null,
+      company_type: companyType || null,
     }).eq('id', company.id);
     queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && old.company && ({
       ...old,
-      company: { ...old.company, name: companyName, abn: companyAbn || null, acn: companyAcn || null },
+      company: { ...old.company, name: companyName, abn: companyAbn || null, acn: companyAcn || null, company_type: companyType || null },
     }));
     setSavingCompany(false);
   };
@@ -1000,6 +1004,23 @@ export default function AdminPage() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                  Company type
+                </label>
+                <select
+                  value={companyType}
+                  onChange={e => setCompanyType(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100 appearance-none"
+                >
+                  <option value="">General business</option>
+                  <option value="Law Firm">Law Firm</option>
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  Unlocks industry-specific features, like the detailed law-firm invoice template.
+                </p>
               </div>
 
               <button

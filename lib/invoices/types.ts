@@ -48,6 +48,13 @@ export interface InvoiceSettings {
   // displayField2/searchFieldKeys already use for the same distinction.
   // Unset = no auto-fill, "Our Reference" stays blank until typed in.
   ourReferenceFieldKey?: string | null;
+  // Which entity-type matter field to auto-fill "Debtor" from when creating
+  // an invoice -- always 'cf:<company_custom_fields.id>' (never a native
+  // column: `projects` has no built-in "client"/"debtor" columns, only
+  // whatever entity-relation custom fields a company happens to have
+  // configured, e.g. a "Client Name" field). Unset = no auto-fill, Debtor
+  // stays blank until picked manually, same as before this existed.
+  debtorFieldKey?: string | null;
   templates: InvoiceTemplateConfig[];
 }
 

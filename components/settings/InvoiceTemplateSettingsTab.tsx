@@ -83,8 +83,15 @@ function BrandingSection({ isAdmin }: { isAdmin: boolean }) {
     if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
     setSavingAddress(true);
     setError(null);
-    const next = { ...invoiceSettings, firmAddress: address };
-    const { error: updateError } = await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
+    // merge_company_invoice_settings does a server-side jsonb `||` merge of
+    // just this patch, rather than a client-side {...invoiceSettings, ...}
+    // spread + whole-object update -- the latter raced against the Terms &
+    // Templates sections saving around the same time off their own stale
+    // snapshots of invoiceSettings, each silently clobbering the other's
+    // just-written fields. See supabase/invoice_settings_merge.sql.
+    const { error: updateError } = await supabase.rpc('merge_company_invoice_settings', {
+      p_company_id: companyId, p_patch: { firmAddress: address },
+    });
     setSavingAddress(false);
     if (updateError) { setError(updateError.message); return; }
     await refreshInvoiceSettings();
@@ -150,6 +157,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
   const [otherTerms, setOtherTerms] = useState(invoiceSettings.otherTerms || '');
   const [paymentTermsDays, setPaymentTermsDays] = useState(invoiceSettings.paymentTermsDays ?? 14);
   const [ourReferenceFieldKey, setOurReferenceFieldKey] = useState(invoiceSettings.ourReferenceFieldKey || '');
+  const [debtorFieldKey, setDebtorFieldKey] = useState(invoiceSettings.debtorFieldKey || '');
   const [accountName, setAccountName] = useState(invoiceSettings.bankDetails?.accountName || '');
   const [bsb, setBsb] = useState(invoiceSettings.bankDetails?.bsb || '');
   const [accountNumber, setAccountNumber] = useState(invoiceSettings.bankDetails?.accountNumber || '');
@@ -179,17 +187,41 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
     })();
   }, [companyId]);
 
+  // Matter fields available to auto-fill "Debtor" from -- entity-type
+  // custom fields on `projects` only (Debtor needs an entity id to select,
+  // unlike "Our Reference" which just needs displayable text). `projects`
+  // has no built-in "client"/"debtor" column -- whatever a company actually
+  // uses to record who's on a matter (e.g. a "Client Name" field) is just
+  // another custom field, so this has to be configured the same way "Our
+  // Reference" is rather than assumed.
+  const [entityFieldOptions, setEntityFieldOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    if (!companyId) return;
+    (async () => {
+      const { data } = await supabase
+        .from('company_custom_fields').select('id, label, field_type')
+        .eq('company_id', companyId).eq('table_name', 'projects').is('deleted_at', null)
+        .eq('field_type', 'entity').order('display_order');
+      setEntityFieldOptions((data || []).map(f => ({ value: `cf:${f.id}`, label: f.label })));
+    })();
+  }, [companyId]);
+
   const save = async () => {
     if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
     setSaving(true);
     setSaved(false);
     setError(null);
-    const next = {
-      ...invoiceSettings,
-      creditTerms, otherTerms, paymentTermsDays, ourReferenceFieldKey: ourReferenceFieldKey || null,
+    const patch = {
+      creditTerms, otherTerms, paymentTermsDays,
+      ourReferenceFieldKey: ourReferenceFieldKey || null,
+      debtorFieldKey: debtorFieldKey || null,
       bankDetails: { accountName, bsb, accountNumber, reference },
     };
-    const { error: updateError } = await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
+    // Server-side partial merge -- see saveAddress above for why this isn't
+    // a client-side {...invoiceSettings, ...patch} spread anymore.
+    const { error: updateError } = await supabase.rpc('merge_company_invoice_settings', {
+      p_company_id: companyId, p_patch: patch,
+    });
     setSaving(false);
     if (updateError) { setError(updateError.message); return; }
     await refreshInvoiceSettings();
@@ -248,6 +280,21 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
           <p className="text-[10px] text-slate-400 mt-1">Still editable on each invoice — this just sets the starting value from the matter.</p>
         </div>
         <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">"Debtor" auto-fills from</label>
+          <select
+            value={debtorFieldKey}
+            onChange={e => onField(setDebtorFieldKey)(e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-full py-2.5 px-4 text-[12px] font-medium outline-none appearance-none"
+          >
+            <option value="">None — leave blank, select manually per invoice</option>
+            {entityFieldOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <p className="text-[10px] text-slate-400 mt-1">
+            Whichever matter field holds "who's the client" (e.g. a "Client Name" field) — Debtor defaults to it, still editable per invoice.
+            {entityFieldOptions.length === 0 && ' No entity-relation fields found on Matters yet.'}
+          </p>
+        </div>
+        <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Bank details</p>
           <div className="grid grid-cols-2 gap-2">
             <input value={accountName} onChange={e => onField(setAccountName)(e.target.value)} placeholder="Account name"
@@ -280,7 +327,8 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
 
 // ── Templates & what to include ───────────────────────────────────
 function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
-  const { invoiceSettings, refreshInvoiceSettings, companyId } = useCompany();
+  const { invoiceSettings, refreshInvoiceSettings, companyId, companyType } = useCompany();
+  const isLawFirm = companyType === 'Law Firm';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [layoutEditorId, setLayoutEditorId] = useState<string | null>(null);
@@ -289,8 +337,11 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
     if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
     setSaving(true);
     setError(null);
-    const next = { ...invoiceSettings, templates };
-    const { error: updateError } = await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
+    // Server-side partial merge -- see BrandingSection.saveAddress for why
+    // this isn't a client-side {...invoiceSettings, templates} spread.
+    const { error: updateError } = await supabase.rpc('merge_company_invoice_settings', {
+      p_company_id: companyId, p_patch: { templates },
+    });
     setSaving(false);
     if (updateError) { setError(updateError.message); return; }
     await refreshInvoiceSettings();
@@ -342,10 +393,12 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
               className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
               <Plus size={13} /> {invoiceSettings.templates.length === 0 ? 'Create default template' : 'Add template'}
             </button>
-            <button onClick={createDetailed} disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 text-slate-500 text-[11px] font-bold rounded-full hover:bg-slate-100 disabled:opacity-40 transition-colors">
-              <Plus size={13} /> Add detailed (law firm) template
-            </button>
+            {isLawFirm && (
+              <button onClick={createDetailed} disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 text-slate-500 text-[11px] font-bold rounded-full hover:bg-slate-100 disabled:opacity-40 transition-colors">
+                <Plus size={13} /> Add detailed (law firm) template
+              </button>
+            )}
           </div>
         )}
       </div>
