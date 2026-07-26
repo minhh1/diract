@@ -15,13 +15,16 @@ const SUBJECT_STYLES = ["all_caps", "sentence_case", "with_re"];
 const SALUTATION_STYLES = ["generic", "client_first_name", "client_full_name"];
 const SETTINGS_COLUMNS = "id, project_id, subject_line_style, date_format, salutation_style, signers, include_firm_reference, updated_at";
 
-function validSigners(input: any): { name: string; position: string }[] | null {
+// signers is an array of staff_signoffs.user_id strings (up to 4), picked
+// from the staff picker -- not the free-text {name, position} shape this
+// used to be before signers became a staff selection (see
+// supabase/migrations/20260726070200_precedent_settings_signers_reset.sql).
+function validSigners(input: any): string[] | null {
   if (!Array.isArray(input) || input.length > 4) return null;
-  const out: { name: string; position: string }[] = [];
+  const out: string[] = [];
   for (const s of input) {
-    const name = String(s?.name || "").trim();
-    if (!name) continue;
-    out.push({ name, position: String(s?.position || "").trim() });
+    const userId = String(s || "").trim();
+    if (userId) out.push(userId);
   }
   return out;
 }
@@ -90,11 +93,22 @@ export async function PATCH(req: NextRequest) {
   if (signers !== undefined) update.signers = signers;
   if ("includeFirmReference" in body) update.include_firm_reference = !!body.includeFirmReference;
 
-  const { data, error } = await admin
-    .from("precedent_settings")
-    .upsert(update, { onConflict: projectId ? "company_id,project_id" : "company_id" })
-    .select(SETTINGS_COLUMNS)
-    .single();
+  // Not a single .upsert(..., {onConflict}) call: the company-default row
+  // (project_id IS NULL) and a matter-override row (project_id = X) are each
+  // enforced unique by a PARTIAL index (see
+  // supabase/migrations/20260726060100_precedent_settings.sql), and Postgres
+  // only honours a partial index as an ON CONFLICT arbiter when the conflict
+  // clause repeats that index's WHERE predicate -- which Supabase's JS client
+  // has no way to express, and fails with "no unique or exclusion constraint
+  // matching the ON CONFLICT specification" (42P10). Select-then-update-or-
+  // insert sidesteps needing an arbiter at all.
+  let existingQuery = admin.from("precedent_settings").select("id").eq("company_id", companyId);
+  existingQuery = projectId ? existingQuery.eq("project_id", projectId) : existingQuery.is("project_id", null);
+  const { data: existing } = await existingQuery.maybeSingle();
+
+  const { data, error } = existing
+    ? await admin.from("precedent_settings").update(update).eq("id", existing.id).select(SETTINGS_COLUMNS).single()
+    : await admin.from("precedent_settings").insert(update).select(SETTINGS_COLUMNS).single();
 
   if (error || !data) return NextResponse.json({ error: error?.message || "Failed to save settings" }, { status: 500 });
   return NextResponse.json({ ok: true, settings: data });
