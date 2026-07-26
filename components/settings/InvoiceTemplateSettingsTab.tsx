@@ -129,6 +129,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
   const { invoiceSettings, refreshInvoiceSettings, companyId } = useCompany();
   const [creditTerms, setCreditTerms] = useState(invoiceSettings.creditTerms || '');
   const [otherTerms, setOtherTerms] = useState(invoiceSettings.otherTerms || '');
+  const [paymentTermsDays, setPaymentTermsDays] = useState(invoiceSettings.paymentTermsDays ?? 14);
   const [accountName, setAccountName] = useState(invoiceSettings.bankDetails?.accountName || '');
   const [bsb, setBsb] = useState(invoiceSettings.bankDetails?.bsb || '');
   const [accountNumber, setAccountNumber] = useState(invoiceSettings.bankDetails?.accountNumber || '');
@@ -142,7 +143,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
     setSaved(false);
     const next = {
       ...invoiceSettings,
-      creditTerms, otherTerms,
+      creditTerms, otherTerms, paymentTermsDays,
       bankDetails: { accountName, bsb, accountNumber, reference },
     };
     await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
@@ -176,6 +177,16 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
           <textarea value={otherTerms} onChange={e => setOtherTerms(e.target.value)} onBlur={save} rows={2}
             placeholder="Any additional notices to include on every invoice."
             className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+        </div>
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Payment terms (days)</label>
+          <input
+            type="number" min={0} max={365} value={paymentTermsDays}
+            onChange={e => setPaymentTermsDays(Math.max(0, Math.min(365, Number(e.target.value) || 0)))}
+            onBlur={save}
+            className="w-24 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+          />
+          <p className="text-[10px] text-slate-400 mt-1">Default due date on a new invoice = issue date + this many days. Still adjustable per invoice.</p>
         </div>
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Bank details</p>
@@ -212,7 +223,17 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
 
   const createDefault = () => saveTemplates([
     ...invoiceSettings.templates,
-    { id: crypto.randomUUID(), name: invoiceSettings.templates.length ? 'New template' : 'Standard', isDefault: invoiceSettings.templates.length === 0, display: DEFAULT_INVOICE_DISPLAY },
+    { id: crypto.randomUUID(), name: invoiceSettings.templates.length ? 'New template' : 'Standard', isDefault: invoiceSettings.templates.length === 0, display: DEFAULT_INVOICE_DISPLAY, style: 'flexible' },
+  ]);
+
+  // 'detailed' -- the fixed multi-page law-firm style (see
+  // generateDetailedInvoicePdf.ts) -- doesn't use `layout` or (beyond a
+  // couple of fields) `display` at all, so it's created with no layout and
+  // the flexible template's DEFAULT_INVOICE_DISPLAY purely as an inert
+  // starting shape (kept for schema consistency, not because it's read).
+  const createDetailed = () => saveTemplates([
+    ...invoiceSettings.templates,
+    { id: crypto.randomUUID(), name: 'Detailed', isDefault: invoiceSettings.templates.length === 0, display: DEFAULT_INVOICE_DISPLAY, style: 'detailed' },
   ]);
 
   const updateTemplate = (id: string, patch: Partial<InvoiceTemplateConfig>) =>
@@ -241,10 +262,16 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
           <p className="text-[11px] text-slate-400 mt-1">Sensible defaults are already selected — only change these if you want to trim what's shown.</p>
         </div>
         {isAdmin && (
-          <button onClick={createDefault} disabled={saving}
-            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors shrink-0">
-            <Plus size={13} /> {invoiceSettings.templates.length === 0 ? 'Create default template' : 'Add template'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={createDefault} disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+              <Plus size={13} /> {invoiceSettings.templates.length === 0 ? 'Create default template' : 'Add template'}
+            </button>
+            <button onClick={createDetailed} disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 text-slate-500 text-[11px] font-bold rounded-full hover:bg-slate-100 disabled:opacity-40 transition-colors">
+              <Plus size={13} /> Add detailed (law firm) template
+            </button>
+          </div>
         )}
       </div>
 
@@ -264,7 +291,7 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
               <label className="flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
                 <input type="radio" checked={!!t.isDefault} disabled={!isAdmin} onChange={() => setDefault(t.id)} /> Default
               </label>
-              {isAdmin && (
+              {isAdmin && t.style !== 'detailed' && (
                 <select
                   defaultValue=""
                   onChange={e => {
@@ -282,7 +309,7 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
                   {INVOICE_LAYOUT_PRESETS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               )}
-              {isAdmin && (
+              {isAdmin && t.style !== 'detailed' && (
                 <button onClick={() => setLayoutEditorId(t.id)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-500 text-[11px] font-bold rounded-full hover:bg-slate-100 shrink-0">
                   <LayoutTemplate size={12} /> Edit layout
                 </button>
@@ -291,14 +318,20 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
                 <button onClick={() => removeTemplate(t.id)} className="p-1.5 text-slate-300 hover:text-red-500 shrink-0"><Trash2 size={14} /></button>
               )}
             </div>
-            <fieldset disabled={!isAdmin} className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 disabled:opacity-60">
-              {DISPLAY_TOGGLES.map(opt => (
-                <label key={opt.key} className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
-                  <input type="checkbox" checked={t.display[opt.key]} onChange={() => toggleDisplay(t.id, opt.key)} />
-                  {opt.label}
-                </label>
-              ))}
-            </fieldset>
+            {t.style === 'detailed' ? (
+              <p className="text-[11px] text-slate-400 bg-slate-50 rounded-2xl px-4 py-2.5">
+                Uses a fixed detailed layout (summary + itemised appendix + remittance advice + notice of rights) — not customizable via the layout editor. Set "Responsible partner"/"Our reference"/"Your reference" per invoice in Create Invoice.
+              </p>
+            ) : (
+              <fieldset disabled={!isAdmin} className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 disabled:opacity-60">
+                {DISPLAY_TOGGLES.map(opt => (
+                  <label key={opt.key} className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
+                    <input type="checkbox" checked={t.display[opt.key]} onChange={() => toggleDisplay(t.id, opt.key)} />
+                    {opt.label}
+                  </label>
+                ))}
+              </fieldset>
+            )}
           </div>
         ))}
       </div>

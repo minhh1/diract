@@ -20,6 +20,14 @@ export interface InvoiceTemplateConfig {
   // template saved before InvoiceLayoutEditor.tsx existed keeps rendering
   // via DEFAULT_INVOICE_LAYOUT exactly as before (see generateInvoicePdf.ts).
   layout?: InvoiceLayout;
+  // 'flexible' (default, absent = 'flexible') is the draggable-anchor/
+  // configurable-column template InvoiceLayoutEditor.tsx edits, rendered by
+  // generateInvoicePdf.ts. 'detailed' is the fixed, multi-page law-firm
+  // style (summary + itemised appendix + remittance advice + notice of
+  // rights) rendered by generateDetailedInvoicePdf.ts -- it doesn't use
+  // `layout` at all, so InvoiceLayoutEditor.tsx/INVOICE_LAYOUT_PRESETS are
+  // hidden for a template with this style.
+  style?: 'flexible' | 'detailed';
 }
 
 export interface InvoiceSettings {
@@ -27,9 +35,15 @@ export interface InvoiceSettings {
   creditTerms?: string;
   otherTerms?: string;
   bankDetails?: InvoiceBankDetails | null;
+  // Days from issue date to default due date -- company-wide business
+  // policy, not a per-template visual concern (unlike `layout`). Defaults
+  // to 14 wherever read (CreateInvoiceModal.tsx, the settings input)
+  // rather than here, so an old company row with this column simply absent
+  // still behaves exactly as if it were set to 14.
+  paymentTermsDays?: number;
   templates: InvoiceTemplateConfig[];
 }
 
 export function emptyInvoiceSettings(): InvoiceSettings {
-  return { firmAddress: '', creditTerms: '', otherTerms: '', bankDetails: null, templates: [] };
+  return { firmAddress: '', creditTerms: '', otherTerms: '', bankDetails: null, paymentTermsDays: 14, templates: [] };
 }

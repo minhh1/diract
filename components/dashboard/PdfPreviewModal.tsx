@@ -4,16 +4,19 @@
 // generated document in the tab instead of leaving the page (see
 // InvoicesTab.tsx's "Preview PDF" row action). Not specific to invoices --
 // any `src` works.
-import { X, Download } from "lucide-react";
+import { X, Download, FileText } from "lucide-react";
 
 interface Props {
   src: string;
   downloadSrc?: string;
+  // Invoices only, for now -- see generateInvoiceDocx.ts. Optional so every
+  // other caller of this generic PDF-preview modal is unaffected.
+  wordDownloadSrc?: string;
   title?: string;
   onClose: () => void;
 }
 
-export default function PdfPreviewModal({ src, downloadSrc, title, onClose }: Props) {
+export default function PdfPreviewModal({ src, downloadSrc, wordDownloadSrc, title, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-slate-900/70 backdrop-blur-sm p-6">
       <div className="flex items-center justify-between mb-3 shrink-0">
@@ -24,7 +27,15 @@ export default function PdfPreviewModal({ src, downloadSrc, title, onClose }: Pr
               href={downloadSrc}
               className="flex items-center gap-2 px-3 py-2 bg-white/10 text-white rounded-full text-[11px] font-bold hover:bg-white/20 transition-all"
             >
-              <Download size={13} /> Download
+              <Download size={13} /> PDF
+            </a>
+          )}
+          {wordDownloadSrc && (
+            <a
+              href={wordDownloadSrc}
+              className="flex items-center gap-2 px-3 py-2 bg-white/10 text-white rounded-full text-[11px] font-bold hover:bg-white/20 transition-all"
+            >
+              <FileText size={13} /> Word
             </a>
           )}
           <button onClick={onClose} className="p-2 text-white/70 hover:text-white"><X size={18} /></button>

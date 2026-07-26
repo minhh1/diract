@@ -17,6 +17,7 @@
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-query": "^5.101.2",
+    "docx": "^9.7.1",
     "docxtemplater": "^3.69.0",
     "isomorphic-dompurify": "^3.18.0",
     "jose": "^6.2.3",

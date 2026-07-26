@@ -7,7 +7,7 @@
 // status/date filtering the generic DashboardFilterBar doesn't support
 // (multi-select and date-range are both new here, not just unwired).
 import { useState, useEffect, useCallback } from "react";
-import { Maximize2, Minimize2, Plus, Eye, Download, Pencil, Ban, Loader2, X, Check } from "lucide-react";
+import { Maximize2, Minimize2, Plus, Eye, Download, FileText, Pencil, Ban, Loader2, X, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
@@ -236,7 +236,8 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
                   <td className="px-2 py-2.5">
                     <div className="flex items-center gap-1 justify-end">
                       <button onClick={() => setPreviewId(inv.id)} title="Preview PDF" className="p-1.5 text-slate-300 hover:text-indigo-600"><Eye size={14} /></button>
-                      <a href={`/api/invoices/${inv.id}/pdf?download=1`} title="Download" className="p-1.5 text-slate-300 hover:text-indigo-600"><Download size={14} /></a>
+                      <a href={`/api/invoices/${inv.id}/pdf?download=1`} title="Download PDF" className="p-1.5 text-slate-300 hover:text-indigo-600"><Download size={14} /></a>
+                      <a href={`/api/invoices/${inv.id}/docx?download=1`} title="Download Word" className="p-1.5 text-slate-300 hover:text-indigo-600"><FileText size={14} /></a>
                       <button onClick={() => setEditingId(inv.id)} title="Edit" className="p-1.5 text-slate-300 hover:text-slate-700"><Pencil size={14} /></button>
                       {inv.status !== 'Void' && (
                         <button onClick={() => handleVoid(inv.id)} title="Void" disabled={voidingId === inv.id} className="p-1.5 text-slate-300 hover:text-rose-500 disabled:opacity-50">
@@ -266,6 +267,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
         <PdfPreviewModal
           src={`/api/invoices/${previewId}/pdf`}
           downloadSrc={`/api/invoices/${previewId}/pdf?download=1`}
+          wordDownloadSrc={`/api/invoices/${previewId}/docx?download=1`}
           title={invoices.find(i => i.id === previewId)?.invoiceNumber}
           onClose={() => setPreviewId(null)}
         />

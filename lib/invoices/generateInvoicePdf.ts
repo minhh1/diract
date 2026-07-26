@@ -112,6 +112,15 @@ export interface InvoiceFeeLine {
   // what feeds fees_total/subtotal), so a GST Inclusive line's full charged
   // amount is billedAmount + gstAmount, not billedAmount alone.
   gstAmount: number;
+  // Both optional -- generateInvoicePdf() (the flexible/single-page
+  // renderer) never reads either; generateDetailedInvoicePdf.ts's "Summary
+  // Fees by Lawyer" table (staffPosition, from entities.timekeeper_level,
+  // snapshotted onto invoice_line_items) and its GST-split disbursement
+  // summary (gstStatus) do. Kept here rather than on a separate type so
+  // both renderers can share one hydration step (lib/invoices/hydrateInvoice.ts).
+  staffPosition?: string | null;
+  gstStatus?: string | null;
+  staffName?: string | null;
 }
 
 export interface InvoiceDisbursementLine {
@@ -119,6 +128,7 @@ export interface InvoiceDisbursementLine {
   description: string | null;
   amount: number;
   gstAmount: number;
+  gstStatus?: string | null;
 }
 
 export interface GenerateInvoicePdfInput {
@@ -141,6 +151,13 @@ export interface GenerateInvoicePdfInput {
     payments: number;
     amountDue: number;
     priorBalance: number;
+    // Detailed-template-only fields (generateDetailedInvoicePdf.ts) -- the
+    // flexible renderer below never reads these.
+    responsiblePartnerName?: string | null;
+    ourReference?: string | null;
+    yourReference?: string | null;
+    periodEnd?: string | null;
+    paymentTermsDays?: number;
   };
   feeLines: InvoiceFeeLine[];
   disbursementLines: InvoiceDisbursementLine[];

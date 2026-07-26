@@ -23,7 +23,7 @@ import { createRecord as createCustomRecord, updateRecord as updateCustomRecord 
 import { scaleToTarget, applyToSelectedLines, applyPercentOrAmount, splitGst, type ApportionLine, type ApportionedLine } from "@/lib/invoices/apportionment";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 
-interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; rate: number; hours: number; amount: number; gstStatus: string }
+interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; staffPosition: string | null; rate: number; hours: number; amount: number; gstStatus: string }
 interface DisbRow { id: string; tableId: string; date: string | null; description: string; amount: number; gstStatus: string }
 
 interface Props {
@@ -66,9 +66,30 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
 
   const [debtorId, setDebtorId] = useState<string | null>(null);
   const [debtorLabel, setDebtorLabel] = useState<string | null>(null);
+  const [responsiblePartnerId, setResponsiblePartnerId] = useState<string | null>(null);
+  const [responsiblePartnerLabel, setResponsiblePartnerLabel] = useState<string | null>(null);
+  const [ourReference, setOurReference] = useState('');
+  const [yourReference, setYourReference] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState('');
+  // False until the viewer picks a due date themselves -- same "auto-fill
+  // until deliberately overridden" idea as RelationPicker's userClearedRef.
+  // Without this, the effect below would keep stomping a manual pick every
+  // time issueDate itself re-renders for an unrelated reason.
+  const [dueDateTouched, setDueDateTouched] = useState(false);
+
+  // Defaults due date to issue date + the company's payment terms (Settings
+  // -> Invoice template -> Terms & payment, default 14 days if unset) --
+  // still just a normal date input underneath, so picking a different date
+  // "adjusts" it same as always.
+  useEffect(() => {
+    if (dueDateTouched || !issueDate) return;
+    const days = invoiceSettings.paymentTermsDays ?? 14;
+    const d = new Date(issueDate + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    setDueDate(d.toISOString().slice(0, 10));
+  }, [issueDate, invoiceSettings.paymentTermsDays, dueDateTouched]);
 
   const [success, setSuccess] = useState<{ id: string; invoiceNumber: string } | null>(null);
 
@@ -159,12 +180,33 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
           : { data: [] as { id: string; name: string }[] };
         const staffNameById = new Map((staffRows || []).map(s => [s.id, s.name]));
 
+        // "Position" for the Detailed template's Summary Fees by Lawyer
+        // table -- entities.timekeeper_level (an existing custom field,
+        // e.g. Partner/Senior Associate/Associate), snapshotted onto
+        // invoice_line_items.staff_position at save time below so the
+        // table never drifts if a timekeeper's level changes later.
+        let staffPositionById = new Map<string, string>();
+        if (isFeeTable && staffIds.size) {
+          const { data: levelFieldDef } = await supabase
+            .from('company_custom_fields').select('id')
+            .eq('company_id', companyId).eq('table_name', 'entities').eq('field_key', 'timekeeper_level').is('deleted_at', null).maybeSingle();
+          if (levelFieldDef) {
+            const { data: levelValues } = await supabase
+              .from('company_custom_field_values').select('record_id, value_text')
+              .eq('field_id', levelFieldDef.id).in('record_id', [...staffIds]);
+            staffPositionById = new Map(
+              (levelValues || []).filter(v => v.value_text).map(v => [v.record_id, v.value_text as string])
+            );
+          }
+        }
+
         for (const [recordId, row] of byRecord) {
           if (row.invoice) continue; // already billed -- not "unbilled"
           if (isFeeTable) {
             newFeeRows.push({
               id: recordId, tableId, date: row.date || null, description: row.description || '',
-              staffLabel: staffNameById.get(row.staff) || '', rate: Number(row.rate) || 0,
+              staffLabel: staffNameById.get(row.staff) || '', staffPosition: staffPositionById.get(row.staff) || null,
+              rate: Number(row.rate) || 0,
               hours: Number(row.duration_hours) || 0, amount: Number(row.amount) || 0,
               gstStatus: row.gst_status || 'GST Exclusive',
             });
@@ -266,6 +308,9 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     const record = await createCustomRecord(invoicesTableId, companyId, userId, {
       matter: matterId,
       debtor: debtorId,
+      responsible_partner: responsiblePartnerId,
+      our_reference: ourReference || null,
+      your_reference: yourReference || null,
       issue_date: issueDate,
       due_date: dueDate || null,
       status: 'Under Review',
@@ -298,7 +343,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
       lineItemRows.push({
         company_id: companyId, invoice_record_id: record.id, source_type: 'fee', source_record_id: row.id,
         description: row.description, original_amount: originalSplit.exGst, billed_amount: billedSplit.exGst,
-        entry_date: row.date, staff_name: row.staffLabel || null, rate: row.rate, hours: row.hours,
+        entry_date: row.date, staff_name: row.staffLabel || null, staff_position: row.staffPosition, rate: row.rate, hours: row.hours,
         gst_status: row.gstStatus, gst_amount: billedSplit.gst,
       });
     }
@@ -365,6 +410,12 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
             >
               Preview PDF
             </a>
+            <a
+              href={`/api/invoices/${success.id}/docx?download=1`}
+              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+            >
+              Word
+            </a>
             <button onClick={onClose} className="flex-1 py-3 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all">
               Done
             </button>
@@ -409,6 +460,28 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     allowCreateEntity
                   />
                 </div>
+                <div className="col-span-2">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Responsible partner</label>
+                  <RelationPicker
+                    linkedSystemTable="entities"
+                    filterColumn="entity_type"
+                    filterValue="Staff"
+                    value={responsiblePartnerId}
+                    initialLabel={responsiblePartnerLabel || undefined}
+                    onSelect={(id, label) => { setResponsiblePartnerId(id); setResponsiblePartnerLabel(label); }}
+                    placeholder="Select responsible partner (optional)..."
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Our reference</label>
+                  <input value={ourReference} onChange={e => setOurReference(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Your reference</label>
+                  <input value={yourReference} onChange={e => setYourReference(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                </div>
                 {invoiceSettings.templates.length > 0 && (
                   <div className="col-span-2">
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Template</label>
@@ -428,7 +501,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Due date</label>
-                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+                  <input type="date" value={dueDate} onChange={e => { setDueDate(e.target.value); setDueDateTouched(true); }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
                 </div>
               </div>
