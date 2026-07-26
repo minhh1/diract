@@ -11,16 +11,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { callHostedModel } from "@/lib/ai/modelCall";
-import { costUsd } from "@/lib/billing/aiModels";
+import { HOSTED_MODELS, costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 
-// Always the small/cheap hosted model, never the company's own chat
-// provider preference (self-hosted Ollama models vary too much in
-// instruction-following quality to build a fixed-shape rewrite on top of --
-// see modelCall.ts's identical reasoning for skipping self-hosted in the
-// Teams bot's tool-calling path) -- a rewrite is short, low-stakes, and
-// doesn't need a 70B model's reasoning depth.
-const REWRITE_MODEL_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo";
+// Always a hosted model, never the company's own chat provider preference
+// (self-hosted Ollama models vary too much in instruction-following quality
+// to build a fixed-shape rewrite on top of -- see modelCall.ts's identical
+// reasoning for skipping self-hosted in the Teams bot's tool-calling path).
+// Specifically HOSTED_MODELS[0] -- the same model app/api/ai/models/route.ts
+// hands the chat page as ITS default (models[0].id, picked automatically on
+// load) -- rather than a separately hand-picked id: Together periodically
+// retires a model from serverless (pay-per-token) availability onto
+// dedicated-endpoint-only (confirmed live: the smaller 3.1-8B-Turbo this
+// used to point at started 400ing with "model_not_available" even though
+// it's still listed in the catalog), and whichever model the chat feature
+// actually exercises day-to-day is the one most likely to still be live.
+const REWRITE_MODEL_ID = HOSTED_MODELS[0].id;
 
 const SYSTEM_PROMPT = `You rewrite short, informal work-task notes into a single, concise, professional time-entry description suitable for a client-facing legal invoice. Rules:
 - Output ONLY the rewritten description text, nothing else -- no preamble, no quotes, no explanation.
