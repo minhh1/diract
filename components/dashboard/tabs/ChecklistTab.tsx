@@ -15,6 +15,11 @@ import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
 import { splitCompletedByRecency } from "@/lib/completedBucket";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
 import TemplateManager, { type Template } from "@/components/dashboard/TemplateManager";
+import NewRecordModal from "@/components/dashboard/NewRecordModal";
+import { createRecord } from "@/lib/services/customTableService";
+import { relationCandidates } from "@/lib/dashboardWidgets/linkField";
+import type { CustomTableField } from "@/lib/hooks/useCustomTable";
+import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
 interface Task {
   id: string; project_id: string; name: string; is_completed: boolean;
@@ -32,7 +37,7 @@ interface Team { id: string; team_name: string; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, canLogTimeEntry, onLogTimeEntry }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
@@ -102,6 +107,9 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
           </div>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          {canLogTimeEntry && (
+            <button onClick={() => onLogTimeEntry(task)} title="Add to Time & Fees" className="p-1.5 text-slate-300 hover:text-emerald-600 transition-colors"><DollarSign size={12} /></button>
+          )}
           <button onClick={() => onAddSubtask(task.id)} title="Add subtask" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors"><Plus size={12} /></button>
           <button onClick={() => onEdit(task)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors"><Pencil size={12} /></button>
           <button onClick={() => onDelete(task.id)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
@@ -113,7 +121,8 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             <TaskRow key={sub.id} task={sub} subtasks={allTasks.filter((t: any) => t.parent_task_id === sub.id)} allTasks={allTasks}
               profiles={profiles} teams={teams} depth={depth + 1} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit}
-              onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} onMarkFollowUpDone={onMarkFollowUpDone} />
+              onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} onMarkFollowUpDone={onMarkFollowUpDone}
+              canLogTimeEntry={canLogTimeEntry} onLogTimeEntry={onLogTimeEntry} />
           ))}
         </div>
       )}
@@ -315,18 +324,26 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showCompletedThisWeek, setShowCompletedThisWeek] = useState(false);
   const [showCompletedOlder, setShowCompletedOlder] = useState(false);
+  // Time & Fee Entries is a law-firm-only custom table (installed from the Law Firm
+  // template, slug 'time-fee-entries') — most companies won't have it at all, in which
+  // case timeFeesTable stays null and the per-task "Add to Time & Fees" action is hidden
+  // entirely rather than shown disabled.
+  const [timeFeesTable, setTimeFeesTable] = useState<CustomTable | null>(null);
+  const [timeFeesFields, setTimeFeesFields] = useState<CustomTableField[]>([]);
+  const [convertingTask, setConvertingTask] = useState<Task | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const [
       { data: taskData }, { data: profileData }, { data: teamData },
-      { data: templateData }, { data: projectData },
+      { data: templateData }, { data: projectData }, { data: timeFeesTableData },
     ] = await Promise.all([
       supabase.from('tasks').select('*').eq('project_id', recordId).is('deleted_at', null).order('date_entered'),
       supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
       supabase.from('teams').select('id, team_name').eq('is_active', true),
       supabase.from('checklist_templates').select('*, items:checklist_template_items(*)').eq('company_id', companyId).order('created_at'),
       supabase.from('projects').select('created_at, estimated_completion_date').eq('id', recordId).single(),
+      supabase.from('company_tables').select('*').eq('slug', 'time-fee-entries').is('deleted_at', null).maybeSingle(),
     ]);
     setTasks(taskData || []);
     setProfiles(profileData || []);
@@ -335,6 +352,15 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     setTemplates((templateData || []).map((t: any) => ({
       ...t, items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
     })));
+    setTimeFeesTable(timeFeesTableData || null);
+    if (timeFeesTableData) {
+      const { data: fieldData } = await supabase
+        .from('company_table_fields').select('*')
+        .eq('table_id', timeFeesTableData.id).is('deleted_at', null).order('display_order');
+      setTimeFeesFields(fieldData || []);
+    } else {
+      setTimeFeesFields([]);
+    }
 
     const taskIds = (taskData || []).map((t: any) => t.id);
     if (taskIds.length) {
@@ -364,6 +390,24 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
 
   const handleAddTask = (parentId?: string) => {
     setEditingTask({ project_id: recordId, company_id: companyId, parent_task_id: parentId || null, is_completed: false, is_monetary: false, estimated_cost: 0, due_time: '09:00', reminder_settings: { days: 0, time: '09:00' } });
+  };
+
+  // Single project-relation field on Time & Fee Entries (see relationCandidates'
+  // convention — the same one RecordDashboardTab auto-detects a matter field by).
+  // description is matched by field_key rather than auto-detected since text fields
+  // aren't uniquely typed; if a company renamed/removed it, the entry still opens
+  // with the matter locked in, just without a prefilled/AI-rewritable description.
+  const timeFeesMatterFieldKey = relationCandidates(timeFeesFields, 'projects')[0]?.field_key;
+  const timeFeesDescriptionFieldKey = timeFeesFields.find(f => f.field_key === 'description')?.field_key;
+
+  const handleCreateTimeEntry = async (values: Record<string, any>): Promise<string | null> => {
+    if (!timeFeesTable) return 'Time & Fee Entries table not found.';
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return 'Not signed in.';
+    const rec = await createRecord(timeFeesTable.id, companyId, user.id, values, timeFeesFields);
+    if (rec && 'error' in rec) return rec.error;
+    if (rec) { setConvertingTask(null); return null; }
+    return 'Could not create the record.';
   };
 
   const saveWatchers = async (taskId: string, newIds: string[], oldIds: string[], actorId: string | null) => {
@@ -603,7 +647,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
             <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
               allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
-              onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone} />
+              onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
+              canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)} />
           ))}
         </div>
       )}
@@ -620,7 +665,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
                   allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
-                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone} />
+                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
+                  canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)} />
               ))}
             </div>
           )}
@@ -639,7 +685,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                 <TaskRow key={task.id} task={task} subtasks={tasks.filter(t => t.parent_task_id === task.id)}
                   allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
-                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone} />
+                  onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
+                  canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)} />
               ))}
             </div>
           )}
@@ -663,6 +710,19 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
           projectDueDate={project?.estimated_completion_date || null}
           onApply={handleApplyTemplate} onCreateTemplate={handleCreateTemplate}
           onClose={() => { setShowTemplates(false); }}
+        />
+      )}
+      {convertingTask && timeFeesTable && (
+        <NewRecordModal
+          tableName={timeFeesTable.name}
+          fields={timeFeesFields}
+          initialValues={{
+            ...(timeFeesMatterFieldKey ? { [timeFeesMatterFieldKey]: recordId } : {}),
+            ...(timeFeesDescriptionFieldKey ? { [timeFeesDescriptionFieldKey]: convertingTask.notes || convertingTask.name } : {}),
+          }}
+          aiRewriteFieldKey={timeFeesDescriptionFieldKey}
+          onCreate={handleCreateTimeEntry}
+          onClose={() => setConvertingTask(null)}
         />
       )}
     </div>

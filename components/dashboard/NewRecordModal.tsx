@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Loader2, Plus } from "lucide-react";
+import { X, Loader2, Plus, Sparkles } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 
@@ -30,6 +30,16 @@ interface Props {
   // (the caller navigates away / closes the modal on success).
   onCreate: (values: Record<string, any>) => Promise<string | null>;
   onClose: () => void;
+  // Pre-fills `values` before the user touches anything (e.g. locking the
+  // matter to a project the caller already knows, or seeding a description
+  // from elsewhere) — omit for the plain empty-record prompt every existing
+  // caller still gets.
+  initialValues?: Record<string, any>;
+  // Field to show a "Rewrite with AI" button under, calling
+  // /api/ai/rewrite-text on that field's current value and committing the
+  // result back into it — same one-shot rewrite MyTasksButtonWidget uses,
+  // just inline in the full field list instead of a separate drafts panel.
+  aiRewriteFieldKey?: string;
 }
 
 // Asks for the primary field plus every other required field before
@@ -38,10 +48,32 @@ interface Props {
 // lib/services/customTableService.ts refuses valueless/invalid creates
 // outright — this just surfaces that requirement up front instead of after
 // a failed submit).
-export default function NewRecordModal({ tableName, fields, onCreate, onClose }: Props) {
-  const [values, setValues] = useState<Record<string, any>>({});
+export default function NewRecordModal({ tableName, fields, onCreate, onClose, initialValues, aiRewriteFieldKey }: Props) {
+  const [values, setValues] = useState<Record<string, any>>(initialValues || {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
+
+  const handleRewrite = async () => {
+    if (!aiRewriteFieldKey) return;
+    setRewriting(true);
+    setRewriteError(null);
+    try {
+      const res = await fetch('/api/ai/rewrite-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: values[aiRewriteFieldKey] || '' }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Rewrite failed');
+      setValues(p => ({ ...p, [aiRewriteFieldKey]: json.text }));
+    } catch (err) {
+      setRewriteError(err instanceof Error ? err.message : 'Rewrite failed');
+    } finally {
+      setRewriting(false);
+    }
+  };
 
   const isEmpty = (v: any) => v === null || v === undefined || v === '';
   const missingCount = fields.filter(f => isEmpty(values[f.field_key])).length;
@@ -85,6 +117,18 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose }:
                 value={values[field.field_key] ?? null}
                 onCommit={v => setValues(p => ({ ...p, [field.field_key]: v }))}
               />
+              {field.field_key === aiRewriteFieldKey && (
+                <>
+                  <button
+                    onClick={handleRewrite}
+                    disabled={rewriting}
+                    className="mt-1.5 flex items-center gap-1 py-1 px-2.5 bg-slate-50 text-slate-600 rounded-full text-[10px] font-bold hover:bg-slate-100 disabled:opacity-50 transition-all"
+                  >
+                    {rewriting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Rewrite with AI
+                  </button>
+                  {rewriteError && <p className="text-[10px] text-red-500 font-medium mt-1">{rewriteError}</p>}
+                </>
+              )}
             </div>
           ))}
         </div>
