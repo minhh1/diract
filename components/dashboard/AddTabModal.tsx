@@ -112,8 +112,8 @@ export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-      <div className="bg-white rounded-[40px] p-8 w-full max-w-xl shadow-2xl">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-white rounded-[40px] p-8 w-full max-w-xl shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between mb-6 shrink-0">
           <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">
             Add tab
           </h3>
@@ -122,6 +122,7 @@ export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
           </button>
         </div>
 
+        <div className="flex-1 overflow-y-auto -mx-2 px-2">
         {/* Templates */}
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
           Templates
@@ -207,8 +208,9 @@ export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
             />
           </div>
         )}
+        </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 pt-6 shrink-0">
           <button
             onClick={onClose}
             className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold"

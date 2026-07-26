@@ -103,26 +103,100 @@ function AdminOnlyNote() {
   );
 }
 
+// Ticks once a second while `active`, resetting to 0 whenever it turns on --
+// drives the status text below with real elapsed time instead of guessed
+// fixed-duration steps, since upload/preview latency varies a lot (whether
+// docservice's Fly machine was already warm, whether a legacy .doc needed
+// converting first).
+function useElapsedSeconds(active: boolean): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!active) { setSeconds(0); return; }
+    const startedAt = Date.now();
+    setSeconds(0);
+    const interval = setInterval(() => setSeconds(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(interval);
+  }, [active]);
+  return seconds;
+}
+
+function uploadStatusText(seconds: number): string {
+  if (seconds < 4) return "Uploading your letterhead…";
+  if (seconds < 15) return "Reading the document and classifying its fields with AI…";
+  return "Still working — this takes longer right after the document conversion service has been idle. Feel free to check other pages; this will keep going.";
+}
+
+function previewStatusText(seconds: number): string {
+  if (seconds < 3) return "Rendering preview…";
+  if (seconds < 12) return "Converting your letterhead to PDF…";
+  return "Still working — the conversion service can take longer if it's been idle for a while.";
+}
+
+// So leaving this page mid-upload (the fetch itself isn't cancelled by
+// navigating away) and coming back still shows accurate status instead of a
+// plain "Upload letterhead" button as if nothing had happened.
+function pendingUploadKey(companyId: string): string {
+  return `precedent_letterhead_upload_pending:${companyId}`;
+}
+const PENDING_UPLOAD_MAX_AGE_MS = 3 * 60 * 1000;
+
 // ── Letterhead ────────────────────────────────────────────────────
 function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
+  const { companyId } = useCompany();
   const [letterhead, setLetterhead] = useState<Letterhead | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // cached blob, kept across hide/show
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const uploadSeconds = useElapsedSeconds(uploading || resuming);
+  const previewSeconds = useElapsedSeconds(previewing);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/precedents/letterhead");
     const json = await res.json();
     setLetterhead(json.letterhead || null);
     setLoading(false);
+    return json.letterhead || null;
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  // Revoke the blob URL on unmount / when a new preview replaces it, so we
-  // don't leak object URLs across re-uploads.
+  // Revoke the blob URL on unmount, so we don't leak object URLs.
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  // Resume: if an upload was still going when this page was last left, keep
+  // polling until it finishes (or the marker is old enough to assume
+  // something went wrong) instead of just silently forgetting about it.
+  useEffect(() => {
+    if (!companyId) return;
+    const key = pendingUploadKey(companyId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    let startedAt: number;
+    try { startedAt = JSON.parse(raw).startedAt; } catch { localStorage.removeItem(key); return; }
+    if (!startedAt || Date.now() - startedAt > PENDING_UPLOAD_MAX_AGE_MS) { localStorage.removeItem(key); return; }
+
+    setResuming(true);
+    const poll = setInterval(async () => {
+      const lh = await load();
+      const finished = (lh && new Date(lh.updated_at).getTime() > startedAt) || Date.now() - startedAt > PENDING_UPLOAD_MAX_AGE_MS;
+      if (finished) {
+        setResuming(false);
+        localStorage.removeItem(key);
+        clearInterval(poll);
+      }
+    }, 3000);
+    return () => clearInterval(poll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run once per companyId, not on every `load` identity change
+  }, [companyId]);
+
+  const invalidatePreviewCache = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewVisible(false);
+  };
 
   const handleUpload = async (file: File) => {
     const lower = file.name.toLowerCase();
@@ -132,26 +206,33 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
     }
     setError(null);
     setUploading(true);
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch("/api/precedents/letterhead", { method: "POST", body: form });
-    const json = await res.json();
-    setUploading(false);
-    if (!res.ok) { setError(json.error || "Upload failed"); return; }
-    setLetterhead(json.letterhead);
+    invalidatePreviewCache(); // stale once the source file changes
+    const key = companyId ? pendingUploadKey(companyId) : null;
+    if (key) localStorage.setItem(key, JSON.stringify({ startedAt: Date.now() }));
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/precedents/letterhead", { method: "POST", body: form });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error || "Upload failed"); return; }
+      setLetterhead(json.letterhead);
+    } finally {
+      setUploading(false);
+      if (key) localStorage.removeItem(key);
+    }
   };
 
   const handleRemove = async () => {
     if (!window.confirm("Remove the firm letterhead? Documents can't be issued until a new one is uploaded.")) return;
     await fetch("/api/precedents/letterhead", { method: "DELETE" });
     setLetterhead(null);
+    invalidatePreviewCache();
   };
 
   const handlePreview = async () => {
-    // Toggle closed if it's already open, rather than re-fetching — the
-    // point is staying on this page while previewing, not re-rendering
-    // every click.
-    if (previewUrl) { setPreviewUrl(null); return; }
+    // Already fetched once -- just toggle visibility, don't pay for another
+    // docx→PDF conversion just to show the same thing again.
+    if (previewUrl) { setPreviewVisible(v => !v); return; }
     setPreviewing(true);
     try {
       const res = await fetch("/api/precedents/letterhead/preview");
@@ -162,6 +243,7 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
       }
       const blob = await res.blob();
       setPreviewUrl(URL.createObjectURL(blob));
+      setPreviewVisible(true);
     } finally {
       setPreviewing(false);
     }
@@ -176,6 +258,13 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
         {!isAdmin && <AdminOnlyNote />}
       </div>
 
+      {(uploading || resuming) && (
+        <div className="flex items-center gap-2 px-4 py-3 mb-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
+          <Loader2 size={14} className="animate-spin text-indigo-500 shrink-0" />
+          <p className="text-[11px] text-indigo-700">{uploadStatusText(uploadSeconds)} <span className="text-indigo-400">({uploadSeconds}s)</span></p>
+        </div>
+      )}
+
       {letterhead ? (
         <div className="flex items-center gap-4 p-5 bg-slate-50 rounded-[24px]">
           <FileText size={18} className="text-indigo-600 shrink-0" />
@@ -185,7 +274,7 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
           </div>
           <button onClick={handlePreview} disabled={previewing} title="Preview where issued content will land"
             className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-[11px] font-bold rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-40">
-            {previewing ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} {previewUrl ? "Hide preview" : "Preview"}
+            {previewing ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} {previewVisible ? "Hide preview" : "Preview"}
           </button>
           {isAdmin && (
             <>
@@ -218,7 +307,13 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
           )}
         </div>
       )}
-      {previewUrl && (
+      {previewing && (
+        <div className="flex items-center gap-2 px-4 py-3 mt-4 bg-slate-50 border border-slate-200 rounded-2xl">
+          <Loader2 size={14} className="animate-spin text-slate-400 shrink-0" />
+          <p className="text-[11px] text-slate-500">{previewStatusText(previewSeconds)} <span className="text-slate-400">({previewSeconds}s)</span></p>
+        </div>
+      )}
+      {previewVisible && previewUrl && (
         <div className="mt-4 border border-slate-200 rounded-[24px] overflow-hidden">
           <iframe src={previewUrl} title="Letterhead preview" className="w-full h-[600px]" />
         </div>
