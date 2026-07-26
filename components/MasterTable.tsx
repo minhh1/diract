@@ -420,7 +420,7 @@ export default function MasterTable({
                             <span className="min-w-0 truncate flex-1">{cellValue}</span>
                             <button
                               onClick={(e) => { e.stopPropagation(); toggleExpandRow(key); }}
-                              className="p-1 -m-1 rounded-full text-slate-300 opacity-0 group-hover/expand:opacity-100 hover:text-indigo-600 hover:bg-indigo-50 shrink-0 transition-all"
+                              className="p-1 -m-1 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 shrink-0 transition-all"
                               title={isExpanded ? 'Collapse' : 'Expand'}
                             >
                               {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
