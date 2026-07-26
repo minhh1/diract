@@ -1036,13 +1036,17 @@ export default function Sidebar() {
       )}
 
       <div
-        className={`flex h-screen shrink-0 font-sans select-none antialiased text-slate-600 fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 md:static md:translate-x-0 ${
+        className={`flex h-dvh shrink-0 font-sans select-none antialiased text-slate-600 fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 md:static md:translate-x-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
 
       {/* ── Rail (always visible, icon-only) ── */}
-      <div className="w-16 shrink-0 flex flex-col h-screen bg-white border-r border-slate-100 items-center py-4">
+      {/* h-dvh, not h-screen -- mobile Safari's 100vh is the height with
+          the address bar hidden, so the bottom-pinned profile/sign-out
+          buttons (below the flex-1 spacer) would render below the actual
+          visible viewport whenever the address bar is showing. */}
+      <div className="w-16 shrink-0 flex flex-col h-dvh bg-white border-r border-slate-100 items-center py-4">
         <div className="h-9 w-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-sm shrink-0 mb-4">
           <div className="h-3.5 w-3.5 rounded-full border-2 border-white" />
         </div>
@@ -1201,7 +1205,7 @@ export default function Sidebar() {
 
       {/* ── Second-level panel ── */}
       {activeRailSection && (
-        <div className="w-72 shrink-0 flex flex-col h-screen bg-white border-r border-slate-100 overflow-hidden relative">
+        <div className="w-72 shrink-0 flex flex-col h-dvh bg-white border-r border-slate-100 overflow-hidden relative">
 
           {activeRailSection === 'tables' && (
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
