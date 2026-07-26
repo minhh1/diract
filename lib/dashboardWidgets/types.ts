@@ -273,6 +273,20 @@ export interface PublicTaskPageWidget extends BaseWidget {
   config: { pageId: string | null };
 }
 
+// Shortcut card for an EXISTING document_fill_pages link (see
+// app/api/document-templates/create-page/route.ts and
+// components/dashboard/tabs/DocumentTemplatesTab.tsx's "Client links",
+// which is still the only place one is actually created -- a fill page
+// needs a project + selected templates chosen up front, which a
+// standalone/record-scoped dashboard widget has no context for). Unlike
+// PublicTaskPageWidget this never creates a page itself; the config panel
+// just picks one of the company's existing active pages by id, company-wide
+// (not limited to whatever record this dashboard happens to be scoped to).
+export interface PublicDocumentPageWidget extends BaseWidget {
+  type: 'public_document_page';
+  config: { pageId: string | null };
+}
+
 // A button that opens a drawer listing the viewer's own assigned tasks
 // (tasks.assignee_id = the signed-in user, not company-wide) and lets them
 // turn one into a record on THIS dashboard's bound table in one click --
@@ -297,6 +311,6 @@ export type DashboardWidget =
   | GridWidget | SummaryTileWidget | ChartWidget
   | TrustReconciliationWidget | LedesExportWidget
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
-  | PublicTaskPageWidget | MyTasksButtonWidget;
+  | PublicTaskPageWidget | PublicDocumentPageWidget | MyTasksButtonWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];

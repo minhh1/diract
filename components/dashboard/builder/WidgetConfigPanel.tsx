@@ -5,7 +5,7 @@
 // had for each config type (quick-add/grid/filter field pickers, summary
 // tile label/field/aggregate/condition, chart date/value/aggregate) --
 // just scoped to one widget at a time instead of one long form.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Plus } from "lucide-react";
 import FieldPickerList from "./FieldPickerList";
 import RelationPicker from "../RelationPicker";
@@ -175,6 +175,78 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// Points a PublicDocumentPageWidget at one of the company's existing active
+// document_fill_pages rows (see lib/dashboardWidgets/types.ts). Unlike
+// PublicTaskPageConfig above, this never creates a page itself -- a fill
+// page needs a project + selected templates chosen up front (see
+// DocumentTemplatesTab.tsx's "Generate client link"), which this panel has
+// no context for. It only lists+links to ones that already exist.
+function PublicDocumentPageConfig({ pageId, onPageIdChange }: { pageId: string | null; onPageIdChange: (id: string) => void }) {
+  const [pages, setPages] = useState<{ id: string; title: string; clientName: string | null; projectName: string | null }[] | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/document-templates/pages').then(res => res.json()).then(json => {
+      if (active) setPages(json.pages || []);
+    });
+    return () => { active = false; };
+  }, []);
+
+  if (!pageId) {
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-slate-400">
+          Links to an existing client document link. Generate one first from a matter's Documents tab, then pick it here.
+        </p>
+        {pages === null ? (
+          <p className="text-[11px] text-slate-300 italic py-2">Loading...</p>
+        ) : pages.length === 0 ? (
+          <p className="text-[11px] text-slate-300 italic py-2">No active document links yet — generate one from a matter's Documents tab first.</p>
+        ) : (
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {pages.map(p => (
+              <button
+                key={p.id}
+                onClick={() => onPageIdChange(p.id)}
+                className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
+              >
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.clientName ? ` — ${p.clientName}` : ''}</p>
+                {p.projectName && <p className="text-[10px] text-slate-400 truncate">{p.projectName}</p>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const selected = pages?.find(p => p.id === pageId);
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/public/documents/${pageId}` : `/public/documents/${pageId}`;
+  return (
+    <div className="space-y-3">
+      {selected && <p className="text-[12px] font-bold text-slate-800">{selected.title}{selected.clientName ? ` — ${selected.clientName}` : ''}</p>}
+      <div className="px-4 py-3 bg-slate-50 rounded-2xl">
+        <code className="text-[11px] text-slate-600 break-all">{url}</code>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+        >
+          {copied ? 'Copied' : 'Copy link'}
+        </button>
+        <button
+          onClick={() => onPageIdChange('')}
+          className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-slate-300 transition-all"
+        >
+          Change
+        </button>
+      </div>
     </div>
   );
 }
@@ -891,6 +963,13 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
           <PublicTaskPageConfig
             pageId={draft.config.pageId}
             onPageIdChange={pageId => updateConfig({ pageId })}
+          />
+        )}
+
+        {draft.type === 'public_document_page' && (
+          <PublicDocumentPageConfig
+            pageId={draft.config.pageId}
+            onPageIdChange={pageId => updateConfig({ pageId: pageId || null })}
           />
         )}
 

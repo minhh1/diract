@@ -22,6 +22,7 @@
 //   trust_cash_book
 //   trust_aged_balances [dormant_days=<n>]
 //   public_task_page
+//   public_document_page
 //   my_tasks_button [label="<text>"] [description=<key>] [matter=<key>]
 //
 // One or more `series` lines directly after a `chart` line add measures to
@@ -82,6 +83,7 @@ const KEYWORD_TO_TYPE: Record<string, DashboardWidgetType> = {
   trust_cash_book: 'trust_cash_book',
   trust_aged_balances: 'trust_aged_balances',
   public_task_page: 'public_task_page',
+  public_document_page: 'public_document_page',
   my_tasks_button: 'my_tasks_button',
 };
 
@@ -341,6 +343,11 @@ export function parseDSL(source: string, fields: CustomTableField[]): DslParseRe
       case 'public_task_page':
         widgets.push({ id, type, layout, config: { pageId: null } });
         break;
+      // Same reasoning as public_task_page above -- pageId (which
+      // document_fill_pages row this widget links to) is canvas-only state.
+      case 'public_document_page':
+        widgets.push({ id, type, layout, config: { pageId: null } });
+        break;
       case 'my_tasks_button': {
         const descriptionFieldId = kv.description ? resolveFieldToken(kv.description, lineNo) : null;
         const matterFieldId = kv.matter ? resolveFieldToken(kv.matter, lineNo) : null;
@@ -440,6 +447,8 @@ export function serializeToDSL(widgets: DashboardWidget[], fields: CustomTableFi
         // pageId dropped -- canvas-only state, see the parse side above.
         case 'public_task_page':
           return `public_task_page${widthSuffix(w.layout.w)}`;
+        case 'public_document_page':
+          return `public_document_page${widthSuffix(w.layout.w)}`;
         case 'my_tasks_button': {
           const label = w.config.label ? ` label="${w.config.label}"` : '';
           const description = w.config.descriptionFieldId ? ` description=${fieldKey(w.config.descriptionFieldId)}` : '';

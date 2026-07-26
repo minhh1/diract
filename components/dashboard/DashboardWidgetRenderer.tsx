@@ -16,6 +16,7 @@ import TrustLedgerStatementWidget from "./TrustLedgerStatementWidget";
 import TrustCashBookWidget from "./TrustCashBookWidget";
 import TrustAgedBalancesWidget from "./TrustAgedBalancesWidget";
 import PublicTaskPageWidget from "./PublicTaskPageWidget";
+import DocumentPublicPageWidget from "./DocumentPublicPageWidget";
 import MyTasksButtonWidget from "./MyTasksButtonWidget";
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
@@ -206,6 +207,9 @@ export default function DashboardWidgetRenderer({
 
     case 'public_task_page':
       return <PublicTaskPageWidget pageId={widget.config.pageId} />;
+
+    case 'public_document_page':
+      return <DocumentPublicPageWidget pageId={widget.config.pageId} />;
 
     case 'my_tasks_button': {
       if (mode === 'preview') {
