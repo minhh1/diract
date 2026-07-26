@@ -54,6 +54,11 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose, i
   const [error, setError] = useState<string | null>(null);
   const [rewriting, setRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
+  // FieldValueInput's text control is an uncontrolled <input defaultValue={...}> (commits
+  // onBlur, not on every keystroke, so typing doesn't fight external updates) — bumping this
+  // remounts just that one field after a rewrite so the new text actually shows on screen;
+  // setValues alone updates what gets submitted but never what's rendered.
+  const [rewriteVersion, setRewriteVersion] = useState(0);
 
   const handleRewrite = async () => {
     if (!aiRewriteFieldKey) return;
@@ -68,6 +73,7 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose, i
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Rewrite failed');
       setValues(p => ({ ...p, [aiRewriteFieldKey]: json.text }));
+      setRewriteVersion(v => v + 1);
     } catch (err) {
       setRewriteError(err instanceof Error ? err.message : 'Rewrite failed');
     } finally {
@@ -113,6 +119,7 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose, i
                 {field.label}{field.is_required && <span className="text-red-400 ml-1">*</span>}
               </label>
               <FieldValueInput
+                key={field.field_key === aiRewriteFieldKey ? `${field.id}-${rewriteVersion}` : field.id}
                 field={field}
                 value={values[field.field_key] ?? null}
                 onCommit={v => setValues(p => ({ ...p, [field.field_key]: v }))}

@@ -399,12 +399,14 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   // with the matter locked in, just without a prefilled/AI-rewritable description.
   const timeFeesMatterFieldKey = relationCandidates(timeFeesFields, 'projects')[0]?.field_key;
   const timeFeesDescriptionFieldKey = timeFeesFields.find(f => f.field_key === 'description')?.field_key;
+  // Invoice is assigned during billing, not when logging the entry — never asked for here.
+  const timeEntryFields = timeFeesFields.filter(f => f.field_key !== 'invoice');
 
   const handleCreateTimeEntry = async (values: Record<string, any>): Promise<string | null> => {
     if (!timeFeesTable) return 'Time & Fee Entries table not found.';
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return 'Not signed in.';
-    const rec = await createRecord(timeFeesTable.id, companyId, user.id, values, timeFeesFields);
+    const rec = await createRecord(timeFeesTable.id, companyId, user.id, values, timeEntryFields);
     if (rec && 'error' in rec) return rec.error;
     if (rec) { setConvertingTask(null); return null; }
     return 'Could not create the record.';
@@ -715,7 +717,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       {convertingTask && timeFeesTable && (
         <NewRecordModal
           tableName={timeFeesTable.name}
-          fields={timeFeesFields}
+          fields={timeEntryFields}
           initialValues={{
             ...(timeFeesMatterFieldKey ? { [timeFeesMatterFieldKey]: recordId } : {}),
             ...(timeFeesDescriptionFieldKey ? { [timeFeesDescriptionFieldKey]: convertingTask.notes || convertingTask.name } : {}),
