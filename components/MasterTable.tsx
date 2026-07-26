@@ -92,6 +92,7 @@ export default function MasterTable({
   } | null>(null);
 
   const activeRelations = relations.filter(rel => expandRelations.includes(rel.key));
+  const hasExpandContent = expandCols.length > 0 || activeRelations.length > 0;
   const canEdit = !!(baseTable && parentType && companyId && editableCols);
 
   // Close address sort dropdown on outside click
@@ -318,13 +319,16 @@ export default function MasterTable({
                   className="border-b border-slate-50 hover:bg-indigo-50/20 transition-all cursor-pointer group"
                   onClick={() => { if (baseTable) router.push(`/dashboard/${baseTable}?id=${item.id}`); }}
                 >
-                  <td className="p-6" onClick={(e) => { e.stopPropagation(); toggleExpandRow(key); }}>
-                    <button
-                      className="p-1.5 -m-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                      title={isExpanded ? 'Collapse' : 'Expand'}
-                    >
-                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
+                  <td className="p-6">
+                    {hasExpandContent && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleExpandRow(key); }}
+                        className="p-1.5 -m-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                        title={isExpanded ? 'Collapse' : 'Expand'}
+                      >
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </button>
+                    )}
                   </td>
                   {tableCols.map(colId => {
                     const linkTarget = getLinkTarget(colId, item);
