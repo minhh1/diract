@@ -144,6 +144,40 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, letterhead });
 }
 
+// Lets an admin review/correct what the classifier found — e.g. drop a
+// wrongly-detected field entirely (it just falls back to being folded into
+// the flat {{content}} composition, same as a letterhead with nothing
+// detected at all — see composeLetterContent's include* flags) or fix up
+// the delivery-mode wording without re-uploading the whole document.
+export async function PATCH(req: NextRequest) {
+  const auth = await authorizeCompanyMember();
+  if (auth.error) return auth.error;
+  const { admin, companyId, isAdmin } = auth;
+  if (!isAdmin) return NextResponse.json({ error: "Only a company admin can change the letterhead" }, { status: 403 });
+
+  let body: any;
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+  if (!Array.isArray(body?.detectedFields)) return NextResponse.json({ error: "detectedFields must be an array" }, { status: 400 });
+  const detectedFields = body.detectedFields
+    .filter((f: any) => typeof f?.role === "string" && f.role)
+    .map((f: any) => ({
+      role: f.role,
+      options: Array.isArray(f.options) ? f.options.map((o: any) => String(o)).filter(Boolean) : undefined,
+    }));
+
+  const { data: letterhead, error } = await admin
+    .from("company_letterheads")
+    .update({ detected_fields: detectedFields, updated_at: new Date().toISOString() })
+    .eq("company_id", companyId)
+    .select("id, original_filename, address_tag_key, content_tag_key, signoff_tag_key, detected_fields, created_at, updated_at")
+    .single();
+
+  if (error || !letterhead) return NextResponse.json({ error: error?.message || "Failed to save" }, { status: 500 });
+  return NextResponse.json({ ok: true, letterhead });
+}
+
 export async function DELETE() {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;

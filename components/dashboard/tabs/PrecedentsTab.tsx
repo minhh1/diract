@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check } from "lucide-react";
+import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput } from "lucide-react";
 
 interface Props {
   recordId: string;
@@ -78,7 +78,7 @@ export default function PrecedentsTab({ recordId }: Props) {
               </div>
               <button onClick={() => setIssuing(p)}
                 className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors shrink-0">
-                <Sparkles size={13} /> Issue
+                <FileOutput size={13} /> Issue
               </button>
             </div>
           ))}
@@ -116,13 +116,20 @@ export default function PrecedentsTab({ recordId }: Props) {
 }
 
 // ── Issue modal ───────────────────────────────────────────────────
+// The default flow is entirely manual — you write the subject and body
+// yourself, no AI involved. "Draft with AI" is a separate, optional assist
+// that pre-fills those two fields from a brief for you to then review/edit;
+// it never runs on its own as part of issuing. AI in this feature is
+// otherwise only used to identify fields in an uploaded letterhead template
+// (see Settings → Precedents → "Fields identified in this template").
 function IssueModal({ precedent, recordId, onClose, onIssued }: {
   precedent: Precedent; recordId: string; onClose: () => void; onIssued: () => void;
 }) {
   const [recipientAddress, setRecipientAddress] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [deliveryMode, setDeliveryMode] = useState("");
-  const [prompt, setPrompt] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
   const [issuing, setIssuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ subject: string; url: string | null } | null>(null);
@@ -132,6 +139,12 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   // (Our Ref, date, salutation, subject) is filled automatically.
   const [detectedFields, setDetectedFields] = useState<{ role: string; options?: string[] }[]>([]);
 
+  // Optional AI drafting assist -- collapsed by default.
+  const [showAiAssist, setShowAiAssist] = useState(false);
+  const [brief, setBrief] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/precedents/letterhead").then(res => res.json())
       .then(json => setDetectedFields(json.letterhead?.detected_fields || []));
@@ -140,9 +153,26 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   const needsRecipientName = detectedFields.some(f => f.role === "recipient_name");
   const deliveryModeField = detectedFields.find(f => f.role === "delivery_mode");
 
+  const handleDraftWithAi = async () => {
+    if (!brief.trim()) { setDraftError("Describe what this document should say"); return; }
+    setDrafting(true);
+    setDraftError(null);
+    const res = await fetch(`/api/precedents/${precedent.id}/draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordId, prompt: brief }),
+    });
+    const json = await res.json();
+    setDrafting(false);
+    if (!res.ok) { setDraftError(json.error || "Failed to draft"); return; }
+    setSubject(json.subject || "");
+    setBody(json.body || "");
+  };
+
   const handleIssue = async () => {
     if (!recipientAddress.trim()) { setError("Enter the recipient's name and address"); return; }
-    if (!prompt.trim()) { setError("Describe what this document should say"); return; }
+    if (!subject.trim()) { setError("Enter a subject line"); return; }
+    if (!body.trim()) { setError("Write the document's body text"); return; }
     if (needsRecipientName && !recipientName.trim()) { setError("Enter the recipient's name"); return; }
     if (deliveryModeField && !deliveryMode) { setError("Select a delivery mode"); return; }
     setIssuing(true);
@@ -150,7 +180,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
     const res = await fetch(`/api/precedents/${precedent.id}/issue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recordId, prompt, recipientAddress, recipientName, deliveryMode }),
+      body: JSON.stringify({ recordId, subject, body, prompt: brief, recipientAddress, recipientName, deliveryMode }),
     });
     const json = await res.json();
     setIssuing(false);
@@ -214,9 +244,43 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
             </div>
           )}
           <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">What should this document say?</p>
-            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
-              placeholder="e.g. Confirm settlement of the claim for $50,000, payable within 14 days..."
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subject line</p>
+              {!showAiAssist && (
+                <button type="button" onClick={() => setShowAiAssist(true)}
+                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">
+                  <Sparkles size={11} /> Draft with AI instead
+                </button>
+              )}
+            </div>
+            <input value={subject} onChange={e => setSubject(e.target.value)}
+              placeholder="e.g. Settlement of your claim"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+          </div>
+
+          {showAiAssist && (
+            <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-2xl space-y-2">
+              <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest flex items-center gap-1">
+                <Sparkles size={11} /> Draft with AI
+              </p>
+              <p className="text-[10px] text-indigo-400">
+                Describe what this document should say — the subject and body above will be pre-filled for you to review and edit before issuing.
+              </p>
+              <textarea value={brief} onChange={e => setBrief(e.target.value)} rows={3}
+                placeholder="e.g. Confirm settlement of the claim for $50,000, payable within 14 days..."
+                className="w-full px-4 py-2.5 border border-indigo-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none bg-white" />
+              {draftError && <p className="text-[11px] text-red-500">{draftError}</p>}
+              <button type="button" onClick={handleDraftWithAi} disabled={drafting}
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                {drafting ? <><Loader2 size={13} className="animate-spin" /> Drafting...</> : <><Sparkles size={13} /> Generate draft</>}
+              </button>
+            </div>
+          )}
+
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Body</p>
+            <textarea value={body} onChange={e => setBody(e.target.value)} rows={8}
+              placeholder="Write the letter's content here..."
               className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
           </div>
           {error && <p className="text-[11px] text-red-500">{error}</p>}
@@ -224,7 +288,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
         <div className="px-8 py-5 border-t border-slate-100 shrink-0">
           <button onClick={handleIssue} disabled={issuing}
             className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
-            {issuing ? <><Loader2 size={14} className="animate-spin" /> Drafting...</> : <><Sparkles size={14} /> Issue document</>}
+            {issuing ? <><Loader2 size={14} className="animate-spin" /> Issuing...</> : <><FileOutput size={14} /> Issue document</>}
           </button>
         </div>
       </div>

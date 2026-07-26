@@ -10,15 +10,31 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Upload, FileText, Eye, Trash2, Loader2, Check, Plus, ChevronUp, ChevronDown, Lock,
+  Upload, FileText, Eye, Trash2, Loader2, Check, Plus, ChevronUp, ChevronDown, Lock, X,
 } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
+
+interface DetectedField { role: string; options?: string[] }
 
 interface Letterhead {
   id: string;
   original_filename: string | null;
   updated_at: string;
+  detected_fields?: DetectedField[];
 }
+
+// Only these 7 ever appear in detected_fields — address/body/signoff are the
+// always-present core tags and never reported here (see
+// lib/precedents/letterheadClassify.ts's applyClassification).
+const FIELD_ROLE_LABELS: Record<string, string> = {
+  our_ref: "Our Ref line",
+  date: "Date line",
+  delivery_mode: "Delivery mode",
+  recipient_name: "Recipient name",
+  salutation: "Salutation (“Dear …”)",
+  subject: "Subject / RE line",
+  closing: "Closing phrase",
+};
 
 interface Settings {
   subject_line_style: "all_caps" | "sentence_case" | "with_re";
@@ -318,7 +334,78 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
           <iframe src={previewUrl} title="Letterhead preview" className="w-full h-[600px]" />
         </div>
       )}
+      {letterhead && <DetectedFieldsSection isAdmin={isAdmin} letterhead={letterhead} onChanged={setLetterhead} />}
       {error && <p className="text-[11px] text-red-500 mt-3">{error}</p>}
+    </div>
+  );
+}
+
+// Where a firm reviews/corrects what got automatically identified in their
+// uploaded letterhead (Our Ref, date, delivery mode, etc. — see
+// lib/precedents/letterheadClassify.ts) — this is the answer to "where can
+// the user edit the fields": nowhere until this section existed. Recognising
+// these fields is the one place this feature uses AI at all; issuing a
+// document itself doesn't require it (see PrecedentsTab.tsx's Issue modal).
+function DetectedFieldsSection({ isAdmin, letterhead, onChanged }: {
+  isAdmin: boolean; letterhead: Letterhead; onChanged: (lh: Letterhead) => void;
+}) {
+  const fields = letterhead.detected_fields || [];
+  const [savingRole, setSavingRole] = useState<string | null>(null);
+
+  const save = async (next: DetectedField[]) => {
+    const res = await fetch("/api/precedents/letterhead", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ detectedFields: next }),
+    });
+    const json = await res.json();
+    if (res.ok && json.letterhead) onChanged(json.letterhead);
+  };
+
+  const remove = async (role: string) => {
+    setSavingRole(role);
+    await save(fields.filter(f => f.role !== role));
+    setSavingRole(null);
+  };
+
+  const updateOptions = async (role: string, optionsText: string) => {
+    setSavingRole(role);
+    const options = optionsText.split(",").map(s => s.trim()).filter(Boolean);
+    await save(fields.map(f => f.role === role ? { ...f, options } : f));
+    setSavingRole(null);
+  };
+
+  return (
+    <div className="mt-5 pt-5 border-t border-slate-100">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Fields identified in this template</p>
+      <p className="text-[11px] text-slate-400 mb-3">
+        When this letterhead was uploaded, these fields were automatically recognised from its layout (not written by AI — just identified). Remove one if it was picked up incorrectly; the rest of the letter keeps working either way.
+      </p>
+      {fields.length === 0 ? (
+        <p className="text-[11px] text-slate-300 italic">No extra fields identified — this letterhead just uses the standard address/content/signoff areas.</p>
+      ) : (
+        <div className="space-y-2">
+          {fields.map(f => (
+            <div key={f.role} className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">
+              <span className="text-[12px] font-medium text-slate-700 flex-1">{FIELD_ROLE_LABELS[f.role] || f.role}</span>
+              {f.role === "delivery_mode" && isAdmin && (
+                <input
+                  defaultValue={(f.options || []).join(", ")}
+                  onBlur={e => updateOptions(f.role, e.target.value)}
+                  placeholder="By Hand, By Email, By Post"
+                  className="w-56 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400"
+                />
+              )}
+              {isAdmin && (
+                <button onClick={() => remove(f.role)} disabled={savingRole === f.role} title="Remove this field"
+                  className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0">
+                  {savingRole === f.role ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -683,7 +770,7 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
         placeholder="Description shown to staff on the Precedent tab (optional)"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
       <textarea value={aiInstructions} onChange={e => setAiInstructions(e.target.value)} rows={3}
-        placeholder="AI drafting instructions — e.g. 'This is a formal letter of demand. State a clear deadline and the consequences of non-payment.'"
+        placeholder="Instructions for the optional AI drafting assist — e.g. 'This is a formal letter of demand. State a clear deadline and the consequences of non-payment.'"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
       {error && <p className="text-[11px] text-red-500">{error}</p>}
       <div className="flex items-center justify-end gap-2">

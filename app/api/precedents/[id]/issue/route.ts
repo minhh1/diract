@@ -1,27 +1,23 @@
 // app/api/precedents/[id]/issue/route.ts
-// Issues a precedent document: drafts subject+body from the staff member's
-// prompt (lib/ai/precedentDraft.ts), composes the full letter text
-// (lib/precedents/composeLetter.ts), splices the selected signers' signoff
-// blocks into the letterhead's {{signoff}} tag as raw OOXML
-// (lib/precedents/signoffXml.ts, so the name can be bold), fills the
-// {{address}}/{{content}} tags via docxtemplater, converts to PDF, stores it,
-// and logs a precedent_issuances row. Same token-cap/usage-logging shape as
-// app/api/ai/rewrite-text/route.ts, same docxtemplater render + storage
-// pattern as app/api/document-templates/public/[pageId]/submit/route.ts.
+// Issues a precedent document from a subject + body the staff member wrote
+// themselves (or pre-filled via the separate, optional AI drafting assist --
+// see app/api/precedents/[id]/draft/route.ts -- and then edited). Composes
+// the full letter text (lib/precedents/composeLetter.ts), splices the
+// selected signers' signoff blocks into the letterhead's {{signoff}} tag as
+// raw OOXML (lib/precedents/signoffXml.ts, so the name can be bold), fills
+// the {{address}}/{{content}} tags via docxtemplater, converts to PDF,
+// stores it, and logs a precedent_issuances row. No AI call happens in this
+// route at all -- same docxtemplater render + storage pattern as
+// app/api/document-templates/public/[pageId]/submit/route.ts.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { draftPrecedentContent } from "@/lib/ai/precedentDraft";
 import { composeLetterContent, formatSubjectLine, formatLetterDate, resolveSalutation } from "@/lib/precedents/composeLetter";
 import { insertSignoffBlock, type SignoffPerson } from "@/lib/precedents/signoffXml";
 import { convertDocxToPdf } from "@/lib/gotenberg";
-import { resolveSourceTypes } from "@/lib/ai/retrieval";
-import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
-import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { randomUUID } from "crypto";
 
-const DEFAULT_MODEL_ID = HOSTED_MODELS[0].id;
 const BUCKET = "precedent-documents";
 const SIGNED_URL_TTL = 3600;
 
@@ -104,16 +100,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
   const projectId = String(body?.recordId || "");
-  const prompt = String(body?.prompt || "").trim();
+  const subjectInput = String(body?.subject || "").trim();
+  const bodyInput = String(body?.body || "").trim();
+  // Purely informational -- the brief given to the optional AI drafting
+  // assist, if the user used it, kept only for this issuance's history.
+  const draftBrief = String(body?.prompt || "").trim();
   const recipientAddress = String(body?.recipientAddress || "").trim();
   const recipientName = String(body?.recipientName || "").trim();
   const deliveryMode = String(body?.deliveryMode || "").trim();
   if (!projectId) return NextResponse.json({ error: "recordId is required" }, { status: 400 });
-  if (!prompt) return NextResponse.json({ error: "A prompt describing the document is required" }, { status: 400 });
+  if (!subjectInput) return NextResponse.json({ error: "A subject line is required" }, { status: 400 });
+  if (!bodyInput) return NextResponse.json({ error: "The document's body text is required" }, { status: 400 });
   if (!recipientAddress) return NextResponse.json({ error: "A recipient address is required" }, { status: 400 });
 
   const { data: precedent } = await admin
-    .from("precedents").select("id, company_id, name, ai_instructions").eq("id", precedentId).is("deleted_at", null).maybeSingle();
+    .from("precedents").select("id, company_id, name").eq("id", precedentId).is("deleted_at", null).maybeSingle();
   if (!precedent || precedent.company_id !== companyId) return NextResponse.json({ error: "Precedent not found" }, { status: 404 });
 
   const { data: project } = await admin.from("projects").select("id, company_id, name").eq("id", projectId).maybeSingle();
@@ -153,29 +154,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   ]);
   const settings = projectSettings || companySettings || DEFAULT_SETTINGS;
 
-  const { data: aiSettings } = await admin
-    .from("ai_chat_settings")
-    .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, monthly_token_cap")
-    .eq("company_id", companyId).maybeSingle();
-  const tokenCap = aiSettings?.monthly_token_cap ?? 2000000;
-  if (await isTokenCapReached(admin, companyId, tokenCap)) {
-    return NextResponse.json({ error: "Monthly AI token cap reached for this company" }, { status: 429 });
-  }
-  const sourceTypes = resolveSourceTypes(aiSettings);
-
-  let draft;
-  try {
-    draft = await draftPrecedentContent(admin, companyId, DEFAULT_MODEL_ID, sourceTypes, precedent.name, precedent.ai_instructions, prompt, project.name);
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Failed to draft document content" }, { status: 502 });
-  }
-
-  const cost = costUsd("hosted", DEFAULT_MODEL_ID, draft);
-  await admin.from("ai_usage_events").insert({
-    company_id: companyId, user_id: user.id, model_id: DEFAULT_MODEL_ID, provider: "hosted",
-    input_tokens: draft.inputTokens, output_tokens: draft.outputTokens, cost_usd: cost,
-  });
-
   const needsMatterReference = settings.include_firm_reference || detectedRoles.has("our_ref");
   const [{ clientFirstName, clientFullName }, matterReference, signoffs] = await Promise.all([
     resolveClientNames(admin, companyId, projectId),
@@ -183,14 +161,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     resolveSignoffs(admin, companyId, settings.signers || []),
   ]);
 
-  const formattedSubject = formatSubjectLine(draft.subject, settings.subject_line_style);
+  const formattedSubject = formatSubjectLine(subjectInput, settings.subject_line_style);
   const composedContent = composeLetterContent({
-    subject: draft.subject,
+    subject: subjectInput,
     subjectLineStyle: settings.subject_line_style,
     dateFormat: settings.date_format,
     salutationStyle: settings.salutation_style,
     clientFirstName, clientFullName,
-    body: draft.body,
+    body: bodyInput,
     matterReference,
     // A smart-classified letterhead has its own dedicated tag for these --
     // omit them from the flat content string so they aren't duplicated.
@@ -245,7 +223,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { error: insertErr } = await admin.from("precedent_issuances").insert({
     id: issuanceId, precedent_id: precedentId, company_id: companyId, project_id: projectId,
-    created_by: user.id, prompt, subject_line: formattedSubject, storage_path: storagePath,
+    created_by: user.id, prompt: draftBrief, subject_line: formattedSubject, storage_path: storagePath,
   });
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
 

@@ -69,7 +69,7 @@ const TEMPLATES: TabTemplate[] = [
     type: 'precedents',
     title: 'Precedent',
     icon: 'PenSquare',
-    description: 'Issue AI-drafted documents on the firm\'s letterhead from a prompt',
+    description: 'Issue documents on the firm\'s letterhead, with an optional AI drafting assist',
     color: 'bg-amber-50 text-amber-600',
     iconComponent: PenSquare,
   },
