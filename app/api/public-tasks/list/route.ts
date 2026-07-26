@@ -1,24 +1,11 @@
 // app/api/public-tasks/list/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from "next/server";
+import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 
-export async function GET(req: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-
-  const { data: profile } = await admin.from("profiles").select("active_company_id").eq("id", user.id).single();
-  const companyId = profile?.active_company_id;
-  if (!companyId) return NextResponse.json({ pages: [] });
-
-  const { data: membership } = await admin
-    .from("company_memberships").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
-  const isAdmin = membership?.role === "company_admin";
+export async function GET() {
+  const auth = await authorizeCompanyMember();
+  if (auth.error) return auth.error;
+  const { admin, user, companyId, isAdmin } = auth;
 
   let query = admin
     .from("public_task_pages")

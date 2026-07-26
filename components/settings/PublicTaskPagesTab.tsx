@@ -1,8 +1,10 @@
 // components/settings/PublicTaskPagesTab.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { useCompany } from "@/components/CompanyContext";
 import {
   Plus, Copy, Check, Trash2, ExternalLink, X,
 } from "lucide-react";
@@ -22,56 +24,53 @@ function defaultExpiry(): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Cached via useQuery so revisiting this tab within staleTime shows the
+// last result immediately instead of re-running this whole batch every
+// time -- companyId/isAdmin come from CompanyContext (already resolved
+// once for the whole dashboard shell), not re-derived here.
+async function fetchPublicTaskPagesData(userId: string): Promise<{ allTeams: Team[]; myTeams: Team[]; pages: Page[] }> {
+  // teams has no company_id column — teams aren't scoped to a company in
+  // this schema (see components/admin/AdminTeamsTab.tsx, which loads them
+  // the same unfiltered way). Independent of the pages fetch, so both run
+  // in the same batch instead of one after the other.
+  const [{ data: teams }, { data: myMemberships }, res] = await Promise.all([
+    supabase.from("teams").select("id, team_name, leader_id").eq("is_active", true).order("team_name"),
+    supabase.from("team_members").select("team_id").eq("profile_id", userId),
+    fetch("/api/public-tasks/list"),
+  ]);
+  const json = await res.json();
+  const myTeamIds = new Set([
+    ...(myMemberships || []).map(m => m.team_id),
+    ...(teams || []).filter(t => t.leader_id === userId).map(t => t.id),
+  ]);
+  return {
+    allTeams: teams || [],
+    myTeams: (teams || []).filter(t => myTeamIds.has(t.id)),
+    pages: json.pages || [],
+  };
+}
+
 export default function PublicTaskPagesTab() {
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [myTeams, setMyTeams] = useState<Team[]>([]);
-  const [allTeams, setAllTeams] = useState<Team[]>([]);
-  const [pages, setPages] = useState<Page[]>([]);
+  const { userId, isAdmin } = useCompany();
   const [showCreate, setShowCreate] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const { data, isLoading: loading, refetch } = useQuery({
+    queryKey: ["public-task-pages", userId],
+    queryFn: () => fetchPublicTaskPagesData(userId!),
+    enabled: !!userId,
+    staleTime: 60 * 1000,
+  });
+  const allTeams = data?.allTeams ?? [];
+  const myTeams = data?.myTeams ?? [];
+  const pages = data?.pages ?? [];
+
   useProgressBarWhile(loading);
-
-  useEffect(() => { load(); }, []);
-
-  const load = async () => {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoading(false); return; }
-    const { data: profile } = await supabase.from("profiles").select("active_company_id").eq("id", user.id).single();
-    const companyId = profile?.active_company_id;
-    if (!companyId) { setLoading(false); return; }
-
-    const { data: membership } = await supabase
-      .from("company_memberships").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
-    const admin = membership?.role === "company_admin";
-    setIsAdmin(admin);
-
-    // teams has no company_id column — teams aren't scoped to a company in
-    // this schema (see components/admin/AdminTeamsTab.tsx, which loads them
-    // the same unfiltered way).
-    const [{ data: teams }, { data: myMemberships }] = await Promise.all([
-      supabase.from("teams").select("id, team_name, leader_id").eq("is_active", true).order("team_name"),
-      supabase.from("team_members").select("team_id").eq("profile_id", user.id),
-    ]);
-    setAllTeams(teams || []);
-    const myTeamIds = new Set([
-      ...(myMemberships || []).map(m => m.team_id),
-      ...(teams || []).filter(t => t.leader_id === user.id).map(t => t.id),
-    ]);
-    setMyTeams((teams || []).filter(t => myTeamIds.has(t.id)));
-
-    const res = await fetch("/api/public-tasks/list");
-    const json = await res.json();
-    setPages(json.pages || []);
-    setLoading(false);
-  };
 
   const handleRevoke = async (id: string) => {
     if (!window.confirm("Revoke this page? The link will stop working immediately.")) return;
     await fetch(`/api/public-tasks/${id}/revoke`, { method: "PATCH" });
-    load();
+    refetch();
   };
 
   const copyLink = (id: string) => {
@@ -129,7 +128,7 @@ export default function PublicTaskPagesTab() {
       </div>
 
       {showCreate && (
-        <CreatePageModal isAdmin={isAdmin} teamOptions={teamOptions} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); load(); }} />
+        <CreatePageModal isAdmin={isAdmin} teamOptions={teamOptions} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetch(); }} />
       )}
     </div>
   );
