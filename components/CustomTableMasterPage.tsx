@@ -713,7 +713,6 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
             {/* Table header */}
             <div className="flex bg-slate-50 border-b border-slate-100">
-              <div className="w-10 shrink-0" />
               {tableColumns.map(col => (
                 <div
                   key={col.id}
@@ -742,32 +741,42 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                       ? setExpandedId(isExpanded ? null : record.id)
                       : router.push(`/dashboard/${tableSlug}?id=${record.id}`)}
                   >
-                    <div className="w-10 shrink-0 flex items-center justify-center">
-                      {expandFields.length > 0 && (
-                        <button
-                          onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : record.id); }}
-                          className="p-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                          title={isExpanded ? 'Collapse' : 'Expand'}
+                    {tableColumns.map((col, idx) => {
+                      const value = col.kind === 'native' ? formatValue(record, col.field) : formatRelatedValue(record, col.def, relatedValues);
+                      // Expand toggle lives inside the first column, to the
+                      // right of its value — where the old "open record"
+                      // icon used to sit, since the whole row opens the
+                      // record now instead.
+                      const showExpandToggle = idx === 0 && expandFields.length > 0;
+                      return (
+                        <div
+                          key={col.id}
+                          className="flex-1 px-6 py-5 text-[13px] font-medium text-slate-700 truncate min-w-0"
                         >
-                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                        </button>
-                      )}
-                    </div>
-                    {tableColumns.map((col, idx) => (
-                      <div
-                        key={col.id}
-                        className="flex-1 px-6 py-5 text-[13px] font-medium text-slate-700 truncate min-w-0"
-                      >
-                        {idx === 0 ? (
-                          // Primary column — styled as a link
-                          <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
-                            {col.kind === 'native' ? formatValue(record, col.field) : formatRelatedValue(record, col.def, relatedValues)}
-                          </span>
-                        ) : (
-                          col.kind === 'native' ? formatValue(record, col.field) : formatRelatedValue(record, col.def, relatedValues)
-                        )}
-                      </div>
-                    ))}
+                          {idx === 0 ? (
+                            showExpandToggle ? (
+                              <span className="flex items-center justify-between gap-2 group/expand">
+                                <span className="min-w-0 truncate flex-1 font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                                  {value}
+                                </span>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : record.id); }}
+                                  className="p-1 -m-1 rounded-full text-slate-300 opacity-0 group-hover/expand:opacity-100 hover:text-indigo-600 hover:bg-indigo-50 shrink-0 transition-all"
+                                  title={isExpanded ? 'Collapse' : 'Expand'}
+                                >
+                                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                </button>
+                              </span>
+                            ) : (
+                              // Primary column — styled as a link
+                              <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                                {value}
+                              </span>
+                            )
+                          ) : value}
+                        </div>
+                      );
+                    })}
 
                     {/* Actions */}
                     <div

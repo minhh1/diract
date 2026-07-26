@@ -206,7 +206,6 @@ export default function MasterTable({
       <DataTable minWidth={minWidth}>
         <thead className="bg-slate-50 border-b border-slate-200 text-slate-400">
           <tr>
-            <th className="w-10"></th>
             {tableCols.map((colId, idx) => {
               const isAddressCol = colId === 'street_address';
               const isActiveSortCol = sort?.colId === colId;
@@ -319,18 +318,7 @@ export default function MasterTable({
                   className="border-b border-slate-50 hover:bg-indigo-50/20 transition-all cursor-pointer group"
                   onClick={() => { if (baseTable) router.push(`/dashboard/${baseTable}?id=${item.id}`); }}
                 >
-                  <td className="p-6">
-                    {hasExpandContent && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleExpandRow(key); }}
-                        className="p-1.5 -m-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                        title={isExpanded ? 'Collapse' : 'Expand'}
-                      >
-                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      </button>
-                    )}
-                  </td>
-                  {tableCols.map(colId => {
+                  {tableCols.map((colId, idx) => {
                     const linkTarget = getLinkTarget(colId, item);
                     const relationalConfig = relationalEditCols?.[colId];
                     const canEditThisCol = canEdit && editableCols!.includes(colId);
@@ -365,61 +353,80 @@ export default function MasterTable({
                       }
                     };
 
+                    const cellValue = isEditing && !relationalConfig ? (
+                      <input
+                        autoFocus
+                        defaultValue={rawValue ?? ''}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={(e) => handleCellSave(item, colId, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
+                        className="w-full p-1.5 -m-1.5 border border-indigo-300 rounded-lg text-sm outline-none"
+                      />
+                    ) : cellError ? (
+                      // Error state — original value stays, shown red with tooltip
+                      <div className="relative group/error">
+                        <span
+                          onClick={canEditThisCol ? startEdit : undefined}
+                          className={`block truncate text-red-500 border-b border-dashed border-red-300 ${canEditThisCol ? 'cursor-text' : ''}`}
+                        >
+                          {String(rawValue || '-')}
+                        </span>
+                        <div className="absolute bottom-full left-0 mb-2 z-50 hidden group-hover/error:block pointer-events-none">
+                          <div className="bg-red-600 text-white text-[10px] font-medium rounded-xl px-3 py-2 max-w-[240px] leading-relaxed shadow-lg whitespace-normal">
+                            {cellError}
+                          </div>
+                          <div className="w-2 h-2 bg-red-600 rotate-45 ml-4 -mt-1" />
+                        </div>
+                      </div>
+                    ) : linkTarget ? (
+                      <span className="flex items-center justify-between gap-2 group/cell">
+                        <span
+                          className={`truncate ${canEditThisCol ? 'cursor-text hover:bg-slate-100 -m-1.5 p-1.5 rounded-lg' : ''} ${isSaving ? 'opacity-40' : ''}`}
+                          onClick={canEditThisCol ? startEdit : undefined}
+                        >
+                          {String(rawValue || '-')}
+                        </span>
+                        <ExternalLink
+                          size={11}
+                          className="text-slate-300 opacity-0 group-hover/cell:opacity-100 hover:text-indigo-500 shrink-0 transition-all cursor-pointer"
+                          onClick={openRelinkPicker}
+                        />
+                      </span>
+                    ) : canEditThisCol ? (
+                      <span
+                        onClick={startEdit}
+                        className={`hover:bg-slate-100 -m-1.5 p-1.5 rounded-lg block cursor-text ${isSaving ? 'opacity-40' : ''}`}
+                      >
+                        {String(rawValue || '-')}
+                      </span>
+                    ) : (
+                      String(rawValue || '-')
+                    );
+
+                    // Expand toggle lives inside the first column, to the
+                    // right of its value — where the old "open record" icon
+                    // used to sit, since that's gone now that the whole row
+                    // opens the record (see the row's own onClick above).
+                    const showExpandToggle = idx === 0 && hasExpandContent;
+
                     return (
                       <td
                         key={colId}
                         title={!isEditing && rawValue != null && rawValue !== '' ? String(rawValue) : undefined}
                         className="p-6 truncate font-medium text-slate-700"
                       >
-                        {isEditing && !relationalConfig ? (
-                          <input
-                            autoFocus
-                            defaultValue={rawValue ?? ''}
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => handleCellSave(item, colId, e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
-                            className="w-full p-1.5 -m-1.5 border border-indigo-300 rounded-lg text-sm outline-none"
-                          />
-                        ) : cellError ? (
-                          // Error state — original value stays, shown red with tooltip
-                          <div className="relative group/error">
-                            <span
-                              onClick={canEditThisCol ? startEdit : undefined}
-                              className={`block truncate text-red-500 border-b border-dashed border-red-300 ${canEditThisCol ? 'cursor-text' : ''}`}
+                        {showExpandToggle ? (
+                          <span className="flex items-center justify-between gap-2 group/expand">
+                            <span className="min-w-0 truncate flex-1">{cellValue}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleExpandRow(key); }}
+                              className="p-1 -m-1 rounded-full text-slate-300 opacity-0 group-hover/expand:opacity-100 hover:text-indigo-600 hover:bg-indigo-50 shrink-0 transition-all"
+                              title={isExpanded ? 'Collapse' : 'Expand'}
                             >
-                              {String(rawValue || '-')}
-                            </span>
-                            <div className="absolute bottom-full left-0 mb-2 z-50 hidden group-hover/error:block pointer-events-none">
-                              <div className="bg-red-600 text-white text-[10px] font-medium rounded-xl px-3 py-2 max-w-[240px] leading-relaxed shadow-lg whitespace-normal">
-                                {cellError}
-                              </div>
-                              <div className="w-2 h-2 bg-red-600 rotate-45 ml-4 -mt-1" />
-                            </div>
-                          </div>
-                        ) : linkTarget ? (
-                          <span className="flex items-center justify-between gap-2 group/cell">
-                            <span
-                              className={`truncate ${canEditThisCol ? 'cursor-text hover:bg-slate-100 -m-1.5 p-1.5 rounded-lg' : ''} ${isSaving ? 'opacity-40' : ''}`}
-                              onClick={canEditThisCol ? startEdit : undefined}
-                            >
-                              {String(rawValue || '-')}
-                            </span>
-                            <ExternalLink
-                              size={11}
-                              className="text-slate-300 opacity-0 group-hover/cell:opacity-100 hover:text-indigo-500 shrink-0 transition-all cursor-pointer"
-                              onClick={openRelinkPicker}
-                            />
+                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
                           </span>
-                        ) : canEditThisCol ? (
-                          <span
-                            onClick={startEdit}
-                            className={`hover:bg-slate-100 -m-1.5 p-1.5 rounded-lg block cursor-text ${isSaving ? 'opacity-40' : ''}`}
-                          >
-                            {String(rawValue || '-')}
-                          </span>
-                        ) : (
-                          String(rawValue || '-')
-                        )}
+                        ) : cellValue}
                       </td>
                     );
                   })}
@@ -443,7 +450,7 @@ export default function MasterTable({
 
                 {isExpanded && (expandCols.length > 0 || activeRelations.length > 0) && (
                   <tr className="border-b border-slate-100 bg-slate-50/60">
-                    <td colSpan={tableCols.length + 2} className="p-8 space-y-8">
+                    <td colSpan={tableCols.length + 1} className="p-8 space-y-8">
                       {expandCols.length > 0 && (
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                           {expandCols.map(colId => {
