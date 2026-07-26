@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check, Pencil } from "lucide-react";
+import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
 // Same deferral as CustomTableMasterPage.tsx's RecordDashboard/
@@ -895,17 +895,6 @@ function GenericMasterTableInner({
             </h1>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={toggleInlineEdit}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold transition-all ${
-                  inlineEditEnabled
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100'
-                }`}
-                title={inlineEditEnabled ? 'Inline editing on — click a cell to edit it' : 'Inline editing off — click a row to open it'}
-              >
-                <Pencil size={16} /> Inline edit
-              </button>
-              <button
                 onClick={() => setIsConfigOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
               >
@@ -1034,6 +1023,8 @@ function GenericMasterTableInner({
         filterableFields={filterableFields}
         onFiltersChange={setFilters}
         isAdmin={ctxIsAdmin}
+        inlineEditEnabled={inlineEditEnabled}
+        onToggleInlineEdit={toggleInlineEdit}
       />
 
       <main className={`flex-1 flex flex-col min-h-0 overflow-x-auto ${TABLE_AREA_CLASS}`}>

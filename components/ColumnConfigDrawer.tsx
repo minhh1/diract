@@ -57,6 +57,8 @@ interface Props {
   filterableFields?: FilterableField[];
   onFiltersChange?: (filters: ActiveFilter[]) => void;
   isAdmin?: boolean;
+  inlineEditEnabled?: boolean;
+  onToggleInlineEdit?: () => void;
 }
 
 type ActiveTab = 'columns' | 'filters';
@@ -160,6 +162,7 @@ export default function ColumnConfigDrawer({
   activePresetName, onToggle,
   filters = [], filterableFields = [], onFiltersChange,
   isAdmin = false,
+  inlineEditEnabled = false, onToggleInlineEdit,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('columns');
 
@@ -281,6 +284,22 @@ export default function ColumnConfigDrawer({
         {/* ── Columns tab ── */}
         {activeTab === 'columns' && (
           <div className="flex-1 overflow-y-auto pt-4">
+            {atRoot && onToggleInlineEdit && (
+              <div className="mx-6 mb-3 flex items-center justify-between gap-3 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-2xl">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-bold text-slate-700">Inline editing</p>
+                  <p className="text-[10px] text-slate-400">Click a cell to edit it, instead of opening the record</p>
+                </div>
+                <button
+                  onClick={onToggleInlineEdit}
+                  className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all shrink-0 ${
+                    inlineEditEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                  }`}
+                >
+                  {inlineEditEnabled ? 'On' : 'Off'}
+                </button>
+              </div>
+            )}
             {!isAdmin && (
               <div className="mx-6 mb-2 flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-2xl">
                 <Lock size={12} className="text-slate-400 shrink-0" />
