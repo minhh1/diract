@@ -15,7 +15,7 @@ import { useState, useRef } from "react";
 import { Upload, Trash2, Loader2, Check, Plus, Lock, LayoutTemplate } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { supabase } from "@/lib/supabase";
-import { DEFAULT_INVOICE_DISPLAY, type InvoiceTemplateDisplay } from "@/lib/invoices/generateInvoicePdf";
+import { DEFAULT_INVOICE_DISPLAY, INVOICE_LAYOUT_PRESETS, type InvoiceTemplateDisplay } from "@/lib/invoices/generateInvoicePdf";
 import type { InvoiceTemplateConfig } from "@/lib/invoices/types";
 import InvoiceLayoutEditor from "./InvoiceLayoutEditor";
 
@@ -264,6 +264,24 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
               <label className="flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
                 <input type="radio" checked={!!t.isDefault} disabled={!isAdmin} onChange={() => setDefault(t.id)} /> Default
               </label>
+              {isAdmin && (
+                <select
+                  defaultValue=""
+                  onChange={e => {
+                    const preset = INVOICE_LAYOUT_PRESETS.find(p => p.id === e.target.value);
+                    e.target.value = '';
+                    if (!preset) return;
+                    if (window.confirm(`Apply the "${preset.name}" layout preset? This replaces this template's current position, columns, margin, and fonts.`)) {
+                      updateTemplate(t.id, { layout: preset.layout });
+                    }
+                  }}
+                  title="Apply a layout preset as a starting point"
+                  className="px-3 py-1.5 border border-slate-200 rounded-full text-[11px] font-bold text-slate-500 bg-white shrink-0 outline-none cursor-pointer"
+                >
+                  <option value="" disabled>Apply preset…</option>
+                  {INVOICE_LAYOUT_PRESETS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              )}
               {isAdmin && (
                 <button onClick={() => setLayoutEditorId(t.id)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-500 text-[11px] font-bold rounded-full hover:bg-slate-100 shrink-0">
                   <LayoutTemplate size={12} /> Edit layout

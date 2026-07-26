@@ -9,7 +9,7 @@
 // is served inline for the in-tab preview.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { generateInvoicePdf, DEFAULT_INVOICE_DISPLAY, type InvoiceTemplateDisplay } from "@/lib/invoices/generateInvoicePdf";
+import { generateInvoicePdf, DEFAULT_INVOICE_DISPLAY, DEFAULT_INVOICE_LAYOUT, type InvoiceTemplateDisplay, type InvoiceLayout } from "@/lib/invoices/generateInvoicePdf";
 
 type ValueRow = { record_id: string; field_id: string; value_text: string | null; value_number: number | null; value_date: string | null; value_boolean: boolean | null; value_record_id: string | null };
 
@@ -59,9 +59,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ invo
   ]);
 
   const invoiceSettings = (company?.invoice_settings as any) || {};
-  const templates: { id: string; name: string; display?: Partial<InvoiceTemplateDisplay> }[] = invoiceSettings.templates || [];
+  const templates: { id: string; name: string; display?: Partial<InvoiceTemplateDisplay>; layout?: InvoiceLayout }[] = invoiceSettings.templates || [];
   const selectedTemplate = templates.find(t => t.id === invoice.template_id) || templates.find((t: any) => t.isDefault) || templates[0];
   const display: InvoiceTemplateDisplay = { ...DEFAULT_INVOICE_DISPLAY, ...(selectedTemplate?.display || {}) };
+  // Was missing entirely before this change -- a saved layout (header
+  // position, columns, and now margin/typography) only ever affected
+  // InvoiceLayoutEditor.tsx's own live preview (app/api/invoices/template-preview),
+  // never a real issued invoice.
+  const layout: InvoiceLayout = { ...DEFAULT_INVOICE_LAYOUT, ...(selectedTemplate?.layout || {}) };
 
   let logoBytes: Uint8Array | null = null;
   let logoIsPng = true;
@@ -97,6 +102,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ invo
     otherTerms: invoiceSettings.otherTerms || '',
     bankDetails: invoiceSettings.bankDetails || null,
     display,
+    layout,
     invoice: {
       invoiceNumber: invoice.invoice_number || '', issueDate: invoice.issue_date || null, dueDate: invoice.due_date || null,
       matterName: (matter as any)?.name || null, debtorName: (debtor as any)?.name || null,

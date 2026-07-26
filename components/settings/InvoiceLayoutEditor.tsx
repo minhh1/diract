@@ -21,6 +21,7 @@ import { X, Loader2, GripVertical, RotateCcw } from "lucide-react";
 import { loadPdfDocument } from "@/lib/pdfeditor/loadPdf";
 import {
   DEFAULT_INVOICE_LAYOUT, type InvoiceLayout, type InvoiceLayoutColumn, type InvoiceTemplateDisplay,
+  type InvoiceTypography, type InvoiceFontFamily,
 } from "@/lib/invoices/generateInvoicePdf";
 import type { InvoiceTemplateConfig } from "@/lib/invoices/types";
 
@@ -50,6 +51,31 @@ const PREVIEW_DEBOUNCE_MS = 400;
 const COLUMN_LABELS: Record<InvoiceLayoutColumn['key'], string> = {
   amount: 'Amount', gst: 'GST', hours: 'Hours', rate: 'Rate',
 };
+
+const FONT_FAMILY_OPTIONS: { value: InvoiceFontFamily; label: string }[] = [
+  { value: 'helvetica', label: 'Helvetica' },
+  { value: 'times', label: 'Times' },
+  { value: 'courier', label: 'Courier' },
+];
+
+// Every independently-restylable "part" of the invoice -- see
+// lib/invoices/generateInvoicePdf.ts's InvoiceTypography for what each key
+// actually governs.
+const TYPOGRAPHY_LABELS: Record<keyof InvoiceTypography, string> = {
+  firmName: 'Firm name',
+  firmSubDetails: 'Firm ABN / address',
+  title: 'Invoice title',
+  invoiceMeta: 'Invoice number / dates / matter',
+  billToLabel: '"Bill to" label',
+  debtorName: 'Debtor name',
+  sectionHeading: 'Section headings',
+  tableRow: 'Table line items',
+  subtotal: 'Subtotals',
+  totals: 'Totals',
+  footer: 'Terms / bank details',
+  complianceNotice: 'Compliance notice',
+};
+const TYPOGRAPHY_KEYS = Object.keys(TYPOGRAPHY_LABELS) as (keyof InvoiceTypography)[];
 
 function isColumnVisible(key: InvoiceLayoutColumn['key'], display: InvoiceTemplateDisplay): boolean {
   if (key === 'rate') return display.showRatePerLine;
@@ -226,6 +252,48 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
           <div className="w-72 shrink-0 border-l border-slate-100 p-5 space-y-5 overflow-y-auto">
             {columnEditor('Fee table columns', 'feeColumns')}
             {columnEditor('Disbursement table columns', 'disbColumns')}
+
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Margin</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={20} max={100} value={layout.margin}
+                  onChange={e => setLayout(prev => ({ ...prev, margin: Math.max(20, Math.min(100, Number(e.target.value) || 0)) }))}
+                  className="w-20 px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
+                />
+                <span className="text-[11px] text-slate-400">pt, all sides</span>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Typography</p>
+              <div className="space-y-2.5">
+                {TYPOGRAPHY_KEYS.map(key => (
+                  <div key={key}>
+                    <p className="text-[10px] text-slate-500 mb-1">{TYPOGRAPHY_LABELS[key]}</p>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={layout.typography[key].family}
+                        onChange={e => setLayout(prev => ({
+                          ...prev, typography: { ...prev.typography, [key]: { ...prev.typography[key], family: e.target.value as InvoiceFontFamily } },
+                        }))}
+                        className="flex-1 min-w-0 px-2 py-1 border border-slate-200 rounded-full text-[10px] outline-none bg-white"
+                      >
+                        {FONT_FAMILY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      <input
+                        type="number" min={6} max={40} value={layout.typography[key].size}
+                        onChange={e => setLayout(prev => ({
+                          ...prev, typography: { ...prev.typography, [key]: { ...prev.typography[key], size: Math.max(6, Math.min(40, Number(e.target.value) || 0)) } },
+                        }))}
+                        className="w-14 shrink-0 px-2 py-1 border border-slate-200 rounded-full text-[10px] outline-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={() => setLayout(DEFAULT_INVOICE_LAYOUT)}
               className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-600"
