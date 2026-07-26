@@ -389,16 +389,48 @@ export default function RecordDashboard({
         ? supabase.from('record_tab_fields').select('*').in('tab_id', fieldTabIds).order('row_order')
         : Promise.resolve({ data: [] as any[] });
 
+      let finalTabs = uniqueTabs;
+      const existingLinkedTableIds = new Set(uniqueTabs.map(t => t.linked_table_id).filter(Boolean));
+
+      // Backfill 'Details' (and, for projects, 'Checklist') if this record
+      // has other tabs but neither of these -- normally both are seeded
+      // together the very first time a record is ever opened (the
+      // empty-tabs branch below), but a record can end up with tabs
+      // WITHOUT ever going through that path: Admin > Default Tabs' "Add
+      // default tab" eagerly backfills its new tab onto every existing
+      // Matter, including ones that had zero tabs -- which then never
+      // takes the empty-tabs branch again, so it never gets a Details tab.
+      // Matched by tab_type, not title, since a user may have renamed
+      // their Details tab. Idempotent, same contract as every other
+      // top-up here.
+      const missingCoreTabs: any[] = [];
+      if (!uniqueTabs.some(t => t.tab_type === 'fields')) {
+        missingCoreTabs.push({
+          company_id: cid, record_id: recordId, record_table: recordTable,
+          title: 'Details', icon: 'FileText', tab_type: 'fields',
+          display_order: finalTabs.length + missingCoreTabs.length,
+        });
+      }
+      if (systemTable === 'projects' && !uniqueTabs.some(t => t.tab_type === 'checklist')) {
+        missingCoreTabs.push({
+          company_id: cid, record_id: recordId, record_table: recordTable,
+          title: 'Checklist', icon: 'CheckSquare', tab_type: 'checklist',
+          display_order: finalTabs.length + missingCoreTabs.length,
+        });
+      }
+      if (missingCoreTabs.length) {
+        const { data: insertedCoreTabs } = await supabase.from('record_tabs').insert(missingCoreTabs).select();
+        if (insertedCoreTabs?.length) finalTabs = [...finalTabs, ...insertedCoreTabs];
+      }
+
       // Top up any default project-dashboard tabs (Time & Fees,
       // Disbursements) this record doesn't have yet -- covers matters that
       // were first opened (and so already got their "Details" tab) before
       // these defaults existed, not just brand-new ones. Idempotent: a
       // matter that already has both is a no-op every subsequent load.
-      let finalTabs = uniqueTabs;
-      const existingLinkedTableIds = new Set(uniqueTabs.map(t => t.linked_table_id).filter(Boolean));
       if (systemTable === 'projects') {
         const { tabs: missingTabs, widgetsByLinkedTableId } = await buildMissingDefaultProjectDashboardTabs(
-          cid, recordId, uniqueTabs.length, existingLinkedTableIds, customTables
+          cid, recordId, finalTabs.length, existingLinkedTableIds, customTables
         );
         if (missingTabs.length) {
           const { data: insertedTabs } = await supabase.from('record_tabs').insert(missingTabs).select();
