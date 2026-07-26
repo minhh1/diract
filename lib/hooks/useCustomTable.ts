@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import type { CustomTable } from "./useCustomTables";
+
+interface CachedTableShell {
+  tableDef: CustomTable;
+  fields: CustomTableField[];
+}
+const tableShellKey = (slug: string) => `table:${slug}`;
 
 export interface CustomTableField {
   id: string;
@@ -225,6 +232,7 @@ export function useCustomTable(
     const fieldList = (flds || []) as CustomTableField[];
     setFields(fieldList);
     setLoading(false);
+    writeShellCache(tableShellKey(tableSlug), { tableDef: tbl, fields: fieldList });
 
     // Build a field_id → field_key map for resolving values
     const fieldMap = new Map(fieldList.map(f => [f.id, f]));
@@ -278,10 +286,22 @@ export function useCustomTable(
 
   useEffect(() => {
     if (!tableSlug) return;
-    setLoading(true);
+    // Paint the shell from the last-seen copy of this table's fields
+    // immediately, before the network fetch below even starts -- on a
+    // repeat visit this is the difference between "shell ready" waiting on
+    // a fields round trip vs. waiting on nothing at all. load() still runs
+    // right after and silently corrects/refreshes this from the network.
+    const cached = preloadedTable?.slug === tableSlug ? null : readShellCache<CachedTableShell>(tableShellKey(tableSlug));
+    if (cached) {
+      setTableDef(cached.tableDef);
+      setFields(cached.fields);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setRecordsLoading(true);
     load();
-  }, [tableSlug, load]);
+  }, [tableSlug, load, preloadedTable]);
 
   return {
     tableDef,

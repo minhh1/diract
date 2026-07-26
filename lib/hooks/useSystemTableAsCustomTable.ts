@@ -15,6 +15,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { getSchemaMetadata } from "@/lib/services/schemaService";
 import { resolveRelationLabels, type CustomTableField, type CustomTableRecord } from "./useCustomTable";
 import type { CustomTable } from "./useCustomTables";
@@ -25,6 +26,8 @@ import {
 
 export type SystemTableName = 'projects' | 'properties' | 'entities';
 export const SYSTEM_TABLE_NAMES: SystemTableName[] = ['projects', 'properties', 'entities'];
+
+const systemTableShellKey = (tableName: string, companyId: string) => `system-table:${companyId}:${tableName}`;
 
 const SYSTEM_TABLE_ICON: Record<SystemTableName, string> = {
   properties: 'MapPin', entities: 'Building2', projects: 'LayoutGrid',
@@ -55,18 +58,17 @@ export function useSystemTableAsCustomTable(
   fields: CustomTableField[];
   records: CustomTableRecord[];
   loading: boolean;
-  // Always mirrors `loading` -- unlike useCustomTable.ts's own fields/
-  // records split, this hook's schema-metadata fetch and its record fetch
-  // aren't decoupled, so there's no separate "fields are ready, records
-  // aren't yet" moment here to report. Exists so useDashboardData.ts can
-  // read the same field name regardless of which of these two hooks is
-  // actually backing a given dashboard's source table.
+  // True until fields are known; mirrors useCustomTable.ts's own split so
+  // useDashboardData.ts can read the same two field names regardless of
+  // which of these two hooks is actually backing a given dashboard's
+  // source table -- see load() below for how fields resolves first.
   recordsLoading: boolean;
   refetch: () => void;
 } {
   const [fields, setFields] = useState<CustomTableField[]>([]);
   const [records, setRecords] = useState<CustomTableRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!tableName || !companyId) return;
@@ -160,6 +162,8 @@ export function useSystemTableAsCustomTable(
 
     const fieldList = [...nativeFields, ...cfFields];
     setFields(fieldList);
+    setLoading(false);
+    writeShellCache(systemTableShellKey(tableName, companyId), fieldList);
 
     const { data: baseRows } = await supabase.from(tableName).select('*').is('deleted_at', null);
 
@@ -188,14 +192,20 @@ export function useSystemTableAsCustomTable(
 
     await resolveRelationLabels(fieldList, hydratedRecords);
     setRecords(hydratedRecords);
+    setRecordsLoading(false);
   }, [tableName, companyId]);
 
   useEffect(() => {
-    if (!tableName || !companyId) { setLoading(false); return; }
-    let active = true;
-    setLoading(true);
-    load().finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    if (!tableName || !companyId) { setLoading(false); setRecordsLoading(false); return; }
+    const cached = readShellCache<CustomTableField[]>(systemTableShellKey(tableName, companyId));
+    if (cached) {
+      setFields(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    setRecordsLoading(true);
+    load();
   }, [tableName, companyId, load]);
 
   const tableDef: CustomTable | null = tableName ? {
@@ -210,5 +220,5 @@ export function useSystemTableAsCustomTable(
     disable_record_dashboard: false,
   } : null;
 
-  return { tableDef, fields, records, loading, recordsLoading: loading, refetch: load };
+  return { tableDef, fields, records, loading, recordsLoading, refetch: load };
 }

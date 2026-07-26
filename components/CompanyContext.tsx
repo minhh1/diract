@@ -6,6 +6,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
+import { readShellCache, writeShellCache, clearShellCache } from "@/lib/shellCache";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
@@ -63,19 +64,43 @@ const CompanyContext = createContext<CompanyContextValue>({
   refreshLogoUrl: async () => {},
 });
 
+// Bootstrap identity/company info -- everything CompanyProvider resolves
+// before `loading` goes false. Cached in localStorage (see shellCache.ts)
+// so a repeat visit can paint with yesterday's answer instantly instead of
+// blocking every page's shell behind auth.getSession + the profiles/
+// memberships round trip. Every real query downstream is still enforced by
+// RLS using the live JWT, so a stale cached companyId can't grant access to
+// anything -- it can at most show slightly-stale identity for a moment
+// before the real fetch below corrects it.
+interface CachedCompanyState {
+  companyId: string | null;
+  companyName: string | null;
+  companyType: string | null;
+  userId: string | null;
+  userEmail: string | null;
+  isAdmin: boolean;
+  isSiteAdmin: boolean;
+  tableLabelOverrides: TableLabelOverrides;
+  disabledSystemTables: DisabledSystemTables;
+  invoiceSettings: InvoiceSettings;
+  logoUrl: string | null;
+}
+const COMPANY_CACHE_KEY = "company-context";
+
 export function CompanyProvider({ children }: { children: ReactNode }) {
-  const [companyId, setCompanyId] = useState<string | null>(null);
-  const [companyName, setCompanyName] = useState<string | null>(null);
-  const [companyType, setCompanyType] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isSiteAdmin, setIsSiteAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>({});
-  const [disabledSystemTables, setDisabledSystemTables] = useState<DisabledSystemTables>({});
-  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(emptyInvoiceSettings());
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [cachedBoot] = useState<CachedCompanyState | null>(() => readShellCache<CachedCompanyState>(COMPANY_CACHE_KEY));
+  const [companyId, setCompanyId] = useState<string | null>(cachedBoot?.companyId ?? null);
+  const [companyName, setCompanyName] = useState<string | null>(cachedBoot?.companyName ?? null);
+  const [companyType, setCompanyType] = useState<string | null>(cachedBoot?.companyType ?? null);
+  const [userId, setUserId] = useState<string | null>(cachedBoot?.userId ?? null);
+  const [userEmail, setUserEmail] = useState<string | null>(cachedBoot?.userEmail ?? null);
+  const [isAdmin, setIsAdmin] = useState(cachedBoot?.isAdmin ?? false);
+  const [isSiteAdmin, setIsSiteAdmin] = useState(cachedBoot?.isSiteAdmin ?? false);
+  const [loading, setLoading] = useState(!cachedBoot);
+  const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>(cachedBoot?.tableLabelOverrides ?? {});
+  const [disabledSystemTables, setDisabledSystemTables] = useState<DisabledSystemTables>(cachedBoot?.disabledSystemTables ?? {});
+  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(cachedBoot?.invoiceSettings ?? emptyInvoiceSettings());
+  const [logoUrl, setLogoUrl] = useState<string | null>(cachedBoot?.logoUrl ?? null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +116,18 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       const user = session?.user;
       perfLog("CompanyContext: auth.getSession resolved");
-      if (!user || cancelled) return;
+      if (cancelled) return;
+      if (!user) {
+        // Logged out (or cache left over from a previous account on a
+        // shared browser) -- don't leave a stale cached identity showing.
+        clearShellCache(COMPANY_CACHE_KEY);
+        setCompanyId(null); setCompanyName(null); setCompanyType(null);
+        setUserId(null); setUserEmail(null); setIsAdmin(false); setIsSiteAdmin(false);
+        setTableLabelOverrides({}); setDisabledSystemTables({});
+        setInvoiceSettings(emptyInvoiceSettings()); setLogoUrl(null);
+        setLoading(false);
+        return;
+      }
 
       // Fire the moment we have a real session, not after profile+membership
       // resolve too -- RelationPicker's cache is company-scoped by RLS, not
@@ -144,11 +180,18 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       setDisabledSystemTables(disabled);
       setInvoiceSettings({ ...emptyInvoiceSettings(), ...invoiceSettingsData });
       setLogoUrl(logo);
-      setIsAdmin((allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin");
-      setIsSiteAdmin(!!prof?.is_site_admin);
+      const admin = (allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin";
+      const siteAdmin = !!prof?.is_site_admin;
+      setIsAdmin(admin);
+      setIsSiteAdmin(siteAdmin);
 
       setLoading(false);
       perfLog("CompanyContext: done");
+      writeShellCache<CachedCompanyState>(COMPANY_CACHE_KEY, {
+        companyId: cid, companyName: cname, companyType: ctype, userId: user.id, userEmail: user.email ?? null,
+        isAdmin: admin, isSiteAdmin: siteAdmin, tableLabelOverrides: overrides, disabledSystemTables: disabled,
+        invoiceSettings: { ...emptyInvoiceSettings(), ...invoiceSettingsData }, logoUrl: logo,
+      });
     }
     load();
     return () => { cancelled = true; };

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { useCustomTable } from "./useCustomTable";
 import type { CustomTable } from "./useCustomTables";
 import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "./useSystemTableAsCustomTable";
@@ -51,6 +52,12 @@ export interface CompanyDashboard {
   builder_mode: 'canvas' | 'code';
 }
 
+interface CachedDashboardShell {
+  dashboard: CompanyDashboard;
+  sourceTableDef: CustomTable | null;
+}
+const dashboardShellKey = (slug: string) => `dashboard:${slug}`;
+
 // Loads a dashboard's config, resolves its source custom table via
 // useCustomTable, and computes filtered records + summary tile values +
 // daily chart series client-side over that table's full (unpaginated)
@@ -80,7 +87,18 @@ export function useDashboardData(dashboardSlug: string) {
 
   useEffect(() => {
     let active = true;
-    setDashboardLoading(true);
+    // Same reasoning as useCustomTable.ts's own cache read: paint this
+    // dashboard's last-seen config + source table def immediately, so
+    // sourceTableSlug (below) is already known on the very first render
+    // instead of sitting behind this effect's dashboard-row round trip.
+    const cached = readShellCache<CachedDashboardShell>(dashboardShellKey(dashboardSlug));
+    if (cached) {
+      setDashboard(cached.dashboard);
+      setSourceTableDef(cached.sourceTableDef);
+      setDashboardLoading(false);
+    } else {
+      setDashboardLoading(true);
+    }
     (async () => {
       const { data: dash } = await supabase
         .from('company_dashboards').select('*').eq('slug', dashboardSlug).is('deleted_at', null).maybeSingle();
@@ -90,11 +108,16 @@ export function useDashboardData(dashboardSlug: string) {
       }
       if (!active) return;
       setDashboard(dash);
+      let tbl: CustomTable | null = null;
       if (dash?.source_table_type === 'custom' && dash?.source_table_id) {
-        const { data: tbl } = await supabase.from('company_tables').select('*').eq('id', dash.source_table_id).maybeSingle();
+        const { data } = await supabase.from('company_tables').select('*').eq('id', dash.source_table_id).maybeSingle();
+        tbl = data ?? null;
         if (active) setSourceTableDef(tbl);
+      } else if (active) {
+        setSourceTableDef(null);
       }
       setDashboardLoading(false);
+      if (dash) writeShellCache(dashboardShellKey(dashboardSlug), { dashboard: dash, sourceTableDef: tbl });
     })();
     return () => { active = false; };
   }, [dashboardSlug]);
