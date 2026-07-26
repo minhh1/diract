@@ -5,19 +5,30 @@
 // StaticWidgetGrid) and the builder's Canvas editor (via react-grid-layout)
 // and Code editor's preview pane -- so view-mode and every builder preview
 // share one rendering code path.
+import dynamic from "next/dynamic";
 import DashboardFilterBar from "./DashboardFilterBar";
 import DashboardQuickAddForm from "./DashboardQuickAddForm";
 import DashboardGrid from "./DashboardGrid";
 import { SummaryTile } from "./DashboardSummaryTiles";
 import DashboardActivityChart from "./DashboardActivityChart";
-import TrustReconciliationWidget from "./TrustReconciliationWidget";
-import LedesExportWidget from "./LedesExportWidget";
-import TrustLedgerStatementWidget from "./TrustLedgerStatementWidget";
-import TrustCashBookWidget from "./TrustCashBookWidget";
-import TrustAgedBalancesWidget from "./TrustAgedBalancesWidget";
-import PublicTaskPageWidget from "./PublicTaskPageWidget";
-import DocumentPublicPageWidget from "./DocumentPublicPageWidget";
-import MyTasksButtonWidget from "./MyTasksButtonWidget";
+// Every dashboard imports this ONE renderer regardless of which widget
+// types it actually uses (see the switch below) -- filter_bar/quick_add_
+// form/grid/summary_tile/chart stay static imports since nearly every
+// dashboard in this app uses at least one of them, but the rest here are
+// genuinely niche (trust accounting, a public-link share card, task
+// conversion) and were costing every OTHER dashboard their bytes for
+// nothing. Confirmed via a production build's client-reference-manifest:
+// /dashboard/[tableSlug] (dashboards + custom tables, the single
+// most-visited route in the app) referenced 1708.7KB across 15 chunks
+// with these all statically imported.
+const TrustReconciliationWidget = dynamic(() => import("./TrustReconciliationWidget"));
+const LedesExportWidget = dynamic(() => import("./LedesExportWidget"));
+const TrustLedgerStatementWidget = dynamic(() => import("./TrustLedgerStatementWidget"));
+const TrustCashBookWidget = dynamic(() => import("./TrustCashBookWidget"));
+const TrustAgedBalancesWidget = dynamic(() => import("./TrustAgedBalancesWidget"));
+const PublicTaskPageWidget = dynamic(() => import("./PublicTaskPageWidget"));
+const DocumentPublicPageWidget = dynamic(() => import("./DocumentPublicPageWidget"));
+const MyTasksButtonWidget = dynamic(() => import("./MyTasksButtonWidget"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";

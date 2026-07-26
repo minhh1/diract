@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Search, Settings2, LayoutGrid, X, Plus, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Loader2, Trash2, Download } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -10,12 +11,19 @@ import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { createRecord, deleteRecord } from "@/lib/services/customTableService";
 import { useCompany } from "@/components/CompanyContext";
 import { createArchiveRequest, usePendingArchiveRequests } from "@/lib/archiveRequests";
-import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
-import RecordDashboard from "@/components/dashboard/RecordDashboard";
-import NewRecordModal, { pickCreateFields } from "@/components/dashboard/NewRecordModal";
+import { pickCreateFields } from "@/components/dashboard/NewRecordModal";
 import { useProgressBar } from "@/components/TopProgressBar";
+// All three only ever render conditionally (a record selected, "New
+// record" clicked, or the spreadsheet panel opened) -- none of them are
+// needed for this page's own initial list view, so none of them need to
+// ship with it. RecordDashboard in particular is large (many tabs -- see
+// its own file); SpreadsheetEditor and NewRecordModal are smaller but
+// still pure "not needed until clicked" weight.
+const RecordDashboard = dynamic(() => import("@/components/dashboard/RecordDashboard"));
+const NewRecordModal = dynamic(() => import("@/components/dashboard/NewRecordModal"));
+const SpreadsheetEditor = dynamic(() => import("@/components/SpreadsheetEditor"));
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 interface Props {
