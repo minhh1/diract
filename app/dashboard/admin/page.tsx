@@ -19,6 +19,7 @@ import AdminGmailSyncTab from "@/components/admin/AdminGmailSyncTab";
 import AdminWhatsAppTab from "@/components/admin/AdminWhatsAppTab";
 import AdminMsTeamsTab from "@/components/admin/AdminMsTeamsTab";
 import AdminOneDriveTab from "@/components/admin/AdminOneDriveTab";
+import AdminEmailTab from "@/components/admin/AdminEmailTab";
 import AdminAiAssistantTab from "@/components/admin/AdminAiAssistantTab";
 import AdminPerfTab from "@/components/admin/AdminPerfTab";
 import AdminPlatformHealthTab from "@/components/admin/AdminPlatformHealthTab";
@@ -100,12 +101,12 @@ function buildCalendarFormat(tokens: string[], separator: string): string {
   return tokens.map(t => `{${t}}`).join(separator);
 }
 
-type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
+type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', views: 'Default views', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
-  oneDrive: 'OneDrive',
+  oneDrive: 'OneDrive', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
   platformHealth: 'Platform health', archiveRequests: 'Archive requests',
 };
@@ -123,7 +124,7 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const { isSiteAdmin } = useCompany();
+  const { companyId, userId, isAdmin, isSiteAdmin, loading: companyLoading } = useCompany();
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -162,55 +163,47 @@ export default function AdminPage() {
   const [newTokenTeamId, setNewTokenTeamId] = useState<string>('');
   const [allTeams, setAllTeams] = useState<{ id: string; team_name: string }[]>([]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (companyLoading) return;
+    load(companyId, isAdmin);
+  }, [companyLoading, companyId, isAdmin]);
   useProgressBarWhile(loading);
 
-  const load = async () => {
+  const load = async (companyId: string | null, isAdmin: boolean) => {
+    if (!companyId || !isAdmin) {
+      setUnauthorized(true);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.replace('/login'); return; }
-
-    // Get profile
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('active_company_id')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile?.active_company_id) {
-      setUnauthorized(true);
-      setLoading(false);
-      return;
-    }
-
-    const companyId = profile.active_company_id;
-
-    // Check admin via membership role (per-company)
-    const { data: myMembership } = await supabase
-      .from('company_memberships')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('company_id', companyId)
-      .single();
-
-    if (myMembership?.role !== 'company_admin') {
-      setUnauthorized(true);
-      setLoading(false);
-      return;
-    }
-
-    // Load company + tokens + this company's own custom fields on projects
-    // (calendar sync tokens depend on what this specific company has
-    // configured, not a hardcoded list — e.g. a law firm might have
-    // "Matter Number" while another company has nothing extra at all).
-    const [{ data: comp }, { data: tokenData }, { data: customFieldData }] = await Promise.all([
+    // CompanyContext already resolved companyId + isAdmin (per-company role
+    // check) once for the whole dashboard shell — no need to re-derive them
+    // here via auth.getUser()/profiles/company_memberships.
+    //
+    // Everything below is independent of everything else (none of these
+    // queries depend on another's result), so it all runs in one batch
+    // instead of a multi-stage waterfall. The one true dependency —
+    // members' profiles needing the membership rows' user_ids — is fetched
+    // after this batch resolves.
+    const [
+      { data: comp },
+      { data: tokenData },
+      { data: customFieldData },
+      { data: teamsData },
+      { data: memberships },
+      { data: gmailTokens },
+    ] = await Promise.all([
       supabase.from('companies').select('*').eq('id', companyId).single(),
       supabase
         .from('registration_tokens')
         .select('*')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false }),
+      // This company's own custom fields on projects (calendar sync tokens
+      // depend on what this specific company has configured, not a
+      // hardcoded list — e.g. a law firm might have "Matter Number" while
+      // another company has nothing extra at all).
       supabase
         .from('company_custom_fields')
         .select('id, field_key, label')
@@ -218,7 +211,23 @@ export default function AdminPage() {
         .eq('table_name', 'projects')
         .is('deleted_at', null)
         .order('display_order'),
+      supabase
+        .from('teams')
+        .select('id, team_name')
+        .eq('is_active', true)
+        .order('team_name'),
+      supabase
+        .from('company_memberships')
+        .select('user_id, role')
+        .eq('company_id', companyId),
+      // Connected Gmail emails for source-of-truth / archive pickers.
+      // Queries the company_gmail_connections view, not user_gmail_tokens
+      // directly — that table's RLS (user_id = auth.uid()) only ever
+      // returns your own row, so this is the only way to see who else in
+      // the company is connected without exposing anyone's OAuth tokens.
+      supabase.from('company_gmail_connections').select('email'),
     ]);
+
     setProjectCustomFields(customFieldData || []);
 
     if (comp) {
@@ -228,14 +237,8 @@ export default function AdminPage() {
       setCompanyAcn(comp.acn || '');
     }
     setTokens(tokenData || []);
-
-    // Load teams for invite default team selector
-    const { data: teamsData } = await supabase
-      .from('teams')
-      .select('id, team_name')
-      .eq('is_active', true)
-      .order('team_name');
     setAllTeams(teamsData || []);
+    setConnectedEmails((gmailTokens || []).map((t: any) => t.email).filter(Boolean));
 
     // Load source emails from company
     setSourceEmails(comp?.gmail_source_emails || []);
@@ -250,27 +253,12 @@ export default function AdminPage() {
     setSyncToCompanyCalendar(!!comp?.sync_tasks_to_company_calendar);
 
     // Members — two separate queries to avoid FK join issues
-    const { data: memberships } = await supabase
-      .from('company_memberships')
-      .select('user_id, role')
-      .eq('company_id', companyId);
-
     if (memberships && memberships.length > 0) {
       const userIds = memberships.map((m: any) => m.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, full_name, email, is_active')
         .in('id', userIds);
-
-      // Load connected Gmail emails for source-of-truth / archive pickers.
-      // Queries the company_gmail_connections view, not user_gmail_tokens
-      // directly — that table's RLS (user_id = auth.uid()) only ever
-      // returns your own row, so this is the only way to see who else in
-      // the company is connected without exposing anyone's OAuth tokens.
-      const { data: gmailTokens } = await supabase
-        .from('company_gmail_connections')
-        .select('email');
-      setConnectedEmails((gmailTokens || []).map((t: any) => t.email).filter(Boolean));
 
       setMembers(memberships.map((m: any) => {
         const prof = profiles?.find((p: any) => p.id === m.user_id);
@@ -401,13 +389,12 @@ export default function AdminPage() {
   };
 
   const handleGenerateToken = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !company) return;
+    if (!userId || !company) return;
     setGeneratingToken(true);
     const { data } = await supabase
       .from('registration_tokens')
       .insert({
-        created_by: user.id,
+        created_by: userId,
         company_id: company.id,
         note: newTokenNote.trim() || null,
         default_team_id: newTokenTeamId || null,
@@ -817,6 +804,11 @@ export default function AdminPage() {
           {/* ── OneDrive / SharePoint ── */}
           {activeTab === 'oneDrive' && company?.id && (
             <AdminOneDriveTab companyId={company.id} />
+          )}
+
+          {/* ── Email ── */}
+          {activeTab === 'email' && company?.id && (
+            <AdminEmailTab companyId={company.id} />
           )}
 
           {/* ── AI Assistant ── */}

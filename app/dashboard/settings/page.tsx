@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useCompany } from "@/components/CompanyContext";
 import {
   Database, Clock, Copy, ArrowLeft,
   CheckCircle2, ChevronRight, AlertCircle,
@@ -26,6 +27,7 @@ type DupType = "properties" | "entities" | "projects";
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
+  const { companyId } = useCompany();
   const [view, setView] = useState<SettingsView>("menu");
 
   // The sidebar's Settings panel deep-links straight to a view (e.g.
@@ -51,8 +53,8 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (view === "history") fetchHistory();
-    if (view === "duplicates_view") fetchDuplicates();
-  }, [view, activeDupType]);
+    if (view === "duplicates_view" && companyId) fetchDuplicates();
+  }, [view, activeDupType, companyId]);
 
   useProgressBarWhile(loading);
 
@@ -96,13 +98,12 @@ export default function SettingsPage() {
   };
 
   const fetchDuplicates = async () => {
+    if (!companyId) return;
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: prof } = await supabase.from("profiles").select("active_company_id").eq("id", user?.id).single();
     const rpcName = activeDupType === 'properties' ? 'find_potential_duplicates'
       : activeDupType === 'entities' ? 'find_entity_duplicates'
       : 'find_project_duplicates';
-    const { data } = await supabase.rpc(rpcName, { similarity_threshold: 0.4, target_company_id: prof?.active_company_id });
+    const { data } = await supabase.rpc(rpcName, { similarity_threshold: 0.4, target_company_id: companyId });
     setItems(data || []);
     setLoading(false);
   };

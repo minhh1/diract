@@ -3,7 +3,8 @@
 // Template marketplace: browse + install published templates (any company's,
 // see supabase/template_marketplace.sql's install_company_template), and
 // author/manage the ones your own company owns via TemplateTableBuilder.
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import * as LucideIcons from "lucide-react";
 import { Store, Plus, Loader2, Check, X, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -178,13 +179,35 @@ function DashboardWireframe({ widgets, labelFor }: { widgets: PreviewWidget[]; l
   );
 }
 
+// Rarely changes (a company's own template catalog + install list), so it's
+// cached like useProfile.ts's pattern instead of a plain useState/useEffect
+// fetch -- revisiting the page within staleTime shows the last result
+// immediately while a background refetch keeps it fresh.
+async function fetchMarketplaceData(companyId: string) {
+  const [{ data: pub }, { data: own }, { data: installs }] = await Promise.all([
+    supabase.from('template_definitions').select('*').eq('is_published', true).order('name'),
+    supabase.from('template_definitions').select('*').eq('owner_company_id', companyId).order('created_at', { ascending: false }),
+    supabase.from('company_template_installs').select('template_id').eq('company_id', companyId),
+  ]);
+  return {
+    published: (pub || []) as Template[],
+    mine: (own || []) as Template[],
+    installedIds: new Set((installs || []).map(i => i.template_id)) as Set<string>,
+  };
+}
+
 export default function MarketplacePage() {
   const { companyId, userId, isAdmin } = useCompany();
   const [tab, setTab] = useState<'browse' | 'mine'>('browse');
-  const [published, setPublished] = useState<Template[]>([]);
-  const [mine, setMine] = useState<Template[]>([]);
-  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading: loading, refetch } = useQuery({
+    queryKey: ['marketplace', companyId],
+    queryFn: () => fetchMarketplaceData(companyId!),
+    enabled: !!companyId,
+    staleTime: 60 * 1000,
+  });
+  const published = data?.published ?? [];
+  const mine = data?.mine ?? [];
+  const installedIds = data?.installedIds ?? new Set<string>();
 
   const [installing, setInstalling] = useState<Template | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -201,22 +224,6 @@ export default function MarketplacePage() {
   const [newDescription, setNewDescription] = useState('');
   const [newIndustry, setNewIndustry] = useState('');
   const [creatingSaving, setCreatingSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!companyId) return;
-    setLoading(true);
-    const [{ data: pub }, { data: own }, { data: installs }] = await Promise.all([
-      supabase.from('template_definitions').select('*').eq('is_published', true).order('name'),
-      supabase.from('template_definitions').select('*').eq('owner_company_id', companyId).order('created_at', { ascending: false }),
-      supabase.from('company_template_installs').select('template_id').eq('company_id', companyId),
-    ]);
-    setPublished(pub || []);
-    setMine(own || []);
-    setInstalledIds(new Set((installs || []).map(i => i.template_id)));
-    setLoading(false);
-  }, [companyId]);
-
-  useEffect(() => { load(); }, [load]);
 
   useProgressBarWhile(loading);
   useProgressBarWhile(!!installing && !preview);
@@ -253,7 +260,7 @@ export default function MarketplacePage() {
     setInstallBusy(false);
     if (!res.ok) { setInstallError(data.error || (preview?.alreadyInstalled ? 'Upgrade failed' : 'Install failed')); return; }
     setInstalling(null);
-    load();
+    refetch();
   };
 
   // Owner-only: push this company's live dashboards (fields, layout, empty
@@ -274,7 +281,7 @@ export default function MarketplacePage() {
     const res = await fetch(`/api/templates/${template.slug}/uninstall`, { method: 'POST' });
     const data = await res.json();
     if (!res.ok) { alert(data.error || 'Uninstall failed'); return; }
-    load();
+    refetch();
   };
 
   const handleCreateTemplate = async () => {
@@ -292,7 +299,7 @@ export default function MarketplacePage() {
     }
     setCreating(false);
     setNewName(''); setNewDescription(''); setNewIndustry('');
-    load();
+    refetch();
     if (data) setManaging(data);
   };
 
@@ -303,7 +310,7 @@ export default function MarketplacePage() {
     if (data && companyId) {
       logSchemaChange({ companyId, actorId: userId, entityType: 'template_definition', entityId: template.id, entityLabel: template.name, action: 'update', before: template, after: data });
     }
-    load();
+    refetch();
   };
 
   const deleteTemplate = async (template: Template) => {
@@ -311,7 +318,7 @@ export default function MarketplacePage() {
     await supabase.from('template_definitions').delete().eq('id', template.id);
     if (companyId) logSchemaChange({ companyId, actorId: userId, entityType: 'template_definition', entityId: template.id, entityLabel: template.name, action: 'delete', before: template });
     if (managing?.id === template.id) setManaging(null);
-    load();
+    refetch();
   };
 
   const renderCard = (template: Template, mode: 'browse' | 'mine') => {
