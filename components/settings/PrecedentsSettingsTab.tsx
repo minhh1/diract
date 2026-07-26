@@ -13,6 +13,7 @@ import {
   Upload, FileText, Eye, Trash2, Loader2, Check, Plus, ChevronUp, ChevronDown, Lock, X,
 } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
+import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 
 interface DetectedField { role: string; options?: string[] }
 
@@ -725,6 +726,153 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+interface BodyExample { id: string; original_filename: string | null; created_at: string }
+
+// Lets an admin upload real past documents of this precedent's type so the
+// app can auto-detect a reusable body -- fixed wording plus fill-in fields
+// for what changes each time (see lib/precedents/bodyTemplateDetect.ts and
+// app/api/precedents/[id]/body-template/**). Once detected, this is what
+// makes the Issue modal default to a generated form instead of a blank Body
+// textarea (see PrecedentsTab.tsx's IssueModal).
+function BodyTemplateSection({ precedentId, canEdit }: { precedentId: string; canEdit: boolean }) {
+  const [examples, setExamples] = useState<BodyExample[]>([]);
+  const [segments, setSegments] = useState<BodyTemplateSegment[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const elapsed = useElapsedSeconds(uploading);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/precedents/${precedentId}/body-template`);
+    const json = await res.json();
+    setExamples(json.examples || []);
+    setSegments(json.template?.segments || null);
+    setLoading(false);
+  }, [precedentId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleUpload = async (fileList: FileList | null) => {
+    if (!fileList || !fileList.length) return;
+    setUploading(true);
+    setError(null);
+    const form = new FormData();
+    Array.from(fileList).forEach(f => form.append("files", f));
+    const res = await fetch(`/api/precedents/${precedentId}/body-template/examples`, { method: "POST", body: form });
+    const json = await res.json();
+    setUploading(false);
+    if (!res.ok) { setError(json.error || "Failed to process these documents"); return; }
+    setExamples(json.examples || []);
+    setSegments(json.template?.segments || null);
+  };
+
+  const removeExample = async (exampleId: string) => {
+    setSavingKey(exampleId);
+    const res = await fetch(`/api/precedents/${precedentId}/body-template/examples/${exampleId}`, { method: "DELETE" });
+    const json = await res.json();
+    setSavingKey(null);
+    if (res.ok) { setExamples(json.examples || []); setSegments(json.template?.segments || null); }
+  };
+
+  const saveSegments = async (next: BodyTemplateSegment[]) => {
+    const res = await fetch(`/api/precedents/${precedentId}/body-template`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments: next }),
+    });
+    const json = await res.json();
+    if (res.ok) setSegments(json.template?.segments || null);
+  };
+
+  const renameField = (key: string, label: string) => {
+    if (!segments) return;
+    saveSegments(segments.map(s => (s.type === "field" && s.key === key ? { ...s, label } : s)));
+  };
+
+  // Removing a field merges its example value back into the surrounding
+  // text as plain wording, rather than deleting that part of the letter.
+  const removeField = (key: string) => {
+    if (!segments) return;
+    saveSegments(segments.map(s => (s.type === "field" && s.key === key ? { type: "text" as const, text: s.example } : s)));
+  };
+
+  if (loading) return null;
+
+  return (
+    <div className="pt-3 border-t border-slate-100 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Body template</p>
+        {canEdit && (
+          <label className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer">
+            <Upload size={11} /> Upload example document(s)
+            <input type="file" accept=".docx,.doc" multiple className="hidden"
+              onChange={e => { handleUpload(e.target.files); e.target.value = ""; }} />
+          </label>
+        )}
+      </div>
+      <p className="text-[11px] text-slate-400">
+        Upload one or more real past documents of this type — the app compares them (and the firm's letterhead) to build a reusable body with fill-in fields for what changes each time, e.g. a property address or settlement date.
+      </p>
+
+      {uploading && (
+        <p className="text-[11px] text-indigo-500 flex items-center gap-1.5">
+          <Loader2 size={12} className="animate-spin" />
+          {elapsed < 5 ? "Uploading…" : "Reading the documents and building a template with AI…"}
+        </p>
+      )}
+      {error && <p className="text-[11px] text-red-500">{error}</p>}
+
+      {examples.length > 0 && (
+        <div className="space-y-1.5">
+          {examples.map(ex => (
+            <div key={ex.id} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-2xl">
+              <FileText size={13} className="text-slate-300 shrink-0" />
+              <span className="text-[11px] text-slate-600 flex-1 truncate">{ex.original_filename || "Untitled document"}</span>
+              {canEdit && (
+                <button onClick={() => removeExample(ex.id)} disabled={savingKey === ex.id}
+                  className="p-1 text-slate-300 hover:text-red-500 transition-colors shrink-0">
+                  {savingKey === ex.id ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {segments && (
+        <div className="p-4 bg-slate-50 rounded-2xl space-y-3">
+          <p className="text-[11px] leading-relaxed text-slate-600">
+            {segments.map((s, i) => s.type === "text"
+              ? <span key={i}>{s.text}</span>
+              : <span key={i} className="inline-block px-1.5 py-0.5 mx-0.5 bg-indigo-100 text-indigo-700 rounded font-bold text-[10px] align-middle">{s.label}</span>
+            )}
+          </p>
+          <div className="space-y-1.5">
+            {segments
+              .filter((s): s is Extract<BodyTemplateSegment, { type: "field" }> => s.type === "field")
+              .map(s => (
+                <div key={s.key} className="flex items-center gap-2">
+                  <input defaultValue={s.label} disabled={!canEdit}
+                    onBlur={e => {
+                      const label = e.target.value.trim();
+                      if (canEdit && label && label !== s.label) renameField(s.key, label);
+                    }}
+                    className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400 disabled:bg-transparent disabled:border-transparent" />
+                  {canEdit && (
+                    <button onClick={() => removeField(s.key)} title="Remove this field"
+                      className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0">
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel }: {
   precedent: Precedent; isNew?: boolean; canEdit: boolean; onSaved: () => void; onDelete: () => void; onCancel?: () => void;
 }) {
@@ -772,6 +920,7 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
       <textarea value={aiInstructions} onChange={e => setAiInstructions(e.target.value)} rows={3}
         placeholder="Instructions for the optional AI drafting assist — e.g. 'This is a formal letter of demand. State a clear deadline and the consequences of non-payment.'"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+      {!isNew && <BodyTemplateSection precedentId={precedent.id} canEdit={canEdit} />}
       {error && <p className="text-[11px] text-red-500">{error}</p>}
       <div className="flex items-center justify-end gap-2">
         {isNew && onCancel && <button onClick={onCancel} className="px-4 py-2 text-[11px] text-slate-400 hover:text-slate-700">Cancel</button>}

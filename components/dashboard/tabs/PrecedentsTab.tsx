@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput } from "lucide-react";
+import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 
 interface Props {
   recordId: string;
@@ -126,6 +127,11 @@ export default function PrecedentsTab({ recordId }: Props) {
 // (see "Customize for this matter") but are editable per document here --
 // not every letter in a matter is addressed the same way or signed by the
 // same person.
+// If this precedent has a body_template (auto-detected from uploaded example
+// documents, see Settings → Precedents → "Body template"), the Body field
+// defaults to a generated fill-in form instead of a blank textarea --
+// "Write freeform instead" switches back to typing/AI-draft for the one-off
+// letter that needs different wording than the detected boilerplate.
 function IssueModal({ precedent, recordId, onClose, onIssued }: {
   precedent: Precedent; recordId: string; onClose: () => void; onIssued: () => void;
 }) {
@@ -155,6 +161,16 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
 
+  // Body template auto-detected from uploaded example documents (see
+  // Settings → Precedents → "Body template"). When set, the Body field
+  // defaults to this generated fill-in form instead of a blank textarea --
+  // "Write freeform instead" switches back to today's exact typing/AI-draft
+  // flow for the letters where the boilerplate doesn't fit.
+  const [bodyTemplate, setBodyTemplate] = useState<BodyTemplateSegment[] | null>(null);
+  const [useFreeform, setUseFreeform] = useState(false);
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const usingTemplate = !!bodyTemplate && !useFreeform;
+
   useEffect(() => {
     fetch("/api/precedents/letterhead").then(res => res.json())
       .then(json => setDetectedFields(json.letterhead?.detected_fields || []));
@@ -162,7 +178,9 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
       .then(json => setSignerIds((json.projectOverride || json.companyDefault)?.signers || []));
     fetch("/api/precedents/staff-signoffs").then(res => res.json())
       .then(json => setStaff(json.staff || []));
-  }, [recordId]);
+    fetch(`/api/precedents/${precedent.id}/body-template`).then(res => res.json())
+      .then(json => setBodyTemplate(json.template?.segments || null));
+  }, [recordId, precedent.id]);
 
   const needsRecipientName = detectedFields.some(f => f.role === "recipient_name");
   const deliveryModeField = detectedFields.find(f => f.role === "delivery_mode");
@@ -192,7 +210,13 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   const handleIssue = async () => {
     if (!recipientAddress.trim()) { setError("Enter the recipient's name and address"); return; }
     if (!subject.trim()) { setError("Enter a subject line"); return; }
-    if (!body.trim()) { setError("Write the document's body text"); return; }
+    if (usingTemplate) {
+      if (bodyTemplate!.some(s => s.type === "field" && !fieldValues[s.key]?.trim())) {
+        setError("Fill in every field"); return;
+      }
+    } else if (!body.trim()) {
+      setError("Write the document's body text"); return;
+    }
     if (needsRecipientName && !recipientName.trim()) { setError("Enter the recipient's name"); return; }
     if (deliveryModeField && !deliveryMode) { setError("Select a delivery mode"); return; }
     setIssuing(true);
@@ -200,7 +224,10 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
     const res = await fetch(`/api/precedents/${precedent.id}/issue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recordId, subject, body, prompt: brief, recipientAddress, recipientName, deliveryMode, salutation, signerIds }),
+      body: JSON.stringify({
+        recordId, subject, prompt: brief, recipientAddress, recipientName, deliveryMode, salutation, signerIds,
+        ...(usingTemplate ? { fieldValues } : { body }),
+      }),
     });
     const json = await res.json();
     setIssuing(false);
@@ -274,7 +301,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subject line</p>
-              {!showAiAssist && (
+              {!showAiAssist && !usingTemplate && (
                 <button type="button" onClick={() => setShowAiAssist(true)}
                   className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">
                   <Sparkles size={11} /> Draft with AI instead
@@ -286,7 +313,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
           </div>
 
-          {showAiAssist && (
+          {showAiAssist && !usingTemplate && (
             <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-2xl space-y-2">
               <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest flex items-center gap-1">
                 <Sparkles size={11} /> Draft with AI
@@ -306,10 +333,31 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
           )}
 
           <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Body</p>
-            <textarea value={body} onChange={e => setBody(e.target.value)} rows={8}
-              placeholder="Write the letter's content here..."
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Body</p>
+              {bodyTemplate && (
+                <button type="button" onClick={() => setUseFreeform(!useFreeform)}
+                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700">
+                  {useFreeform ? "Use template fields instead" : "Write freeform instead"}
+                </button>
+              )}
+            </div>
+            {usingTemplate ? (
+              <div className="space-y-3">
+                {bodyTemplate!.filter((s): s is Extract<BodyTemplateSegment, { type: "field" }> => s.type === "field").map(s => (
+                  <div key={s.key}>
+                    <p className="text-[10px] font-bold text-slate-500 mb-1">{s.label}</p>
+                    <input value={fieldValues[s.key] || ""} onChange={e => setFieldValues({ ...fieldValues, [s.key]: e.target.value })}
+                      placeholder={s.example || undefined}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <textarea value={body} onChange={e => setBody(e.target.value)} rows={8}
+                placeholder="Write the letter's content here..."
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+            )}
           </div>
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">

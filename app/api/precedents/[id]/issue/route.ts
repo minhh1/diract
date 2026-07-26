@@ -1,7 +1,12 @@
 // app/api/precedents/[id]/issue/route.ts
-// Issues a precedent document from a subject + body the staff member wrote
-// themselves (or pre-filled via the separate, optional AI drafting assist --
-// see app/api/precedents/[id]/draft/route.ts -- and then edited). Splices
+// Issues a precedent document from a subject + body. The body is either a
+// plain string the staff member wrote/edited themselves (freeform, or
+// pre-filled via the separate optional AI drafting assist -- see
+// app/api/precedents/[id]/draft/route.ts) OR, when this precedent has a
+// detected body_template (see lib/precedents/bodyTemplateDetect.ts) and the
+// Issue modal's field form was used, reconstructed server-side from
+// fieldValues via buildBodyFromTemplate -- see the fieldValuesInput handling
+// below. Splices
 // the selected signers' signoff blocks into the letterhead's {{signoff}} tag
 // (lib/precedents/signoffXml.ts) and the composed date/Our-Ref/subject/
 // salutation/body/closing into its {{content}} tag (lib/precedents/contentXml.ts)
@@ -16,6 +21,7 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { formatSubjectLine, formatLetterDate, resolveSalutation } from "@/lib/precedents/composeLetter";
 import { insertSignoffBlock, type SignoffPerson } from "@/lib/precedents/signoffXml";
 import { insertContentBlock } from "@/lib/precedents/contentXml";
+import { buildBodyFromTemplate } from "@/lib/precedents/bodyTemplateDetect";
 import { convertDocxToPdf } from "@/lib/gotenberg";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
@@ -104,7 +110,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   const projectId = String(body?.recordId || "");
   const subjectInput = String(body?.subject || "").trim();
-  const bodyInput = String(body?.body || "").trim();
   // Purely informational -- the brief given to the optional AI drafting
   // assist, if the user used it, kept only for this issuance's history.
   const draftBrief = String(body?.prompt || "").trim();
@@ -117,14 +122,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const signerIdsOverride = Array.isArray(body?.signerIds)
     ? body.signerIds.map((id: any) => String(id || "").trim()).filter(Boolean).slice(0, 4)
     : undefined;
+  const fieldValuesInput = body?.fieldValues && typeof body.fieldValues === "object" ? body.fieldValues : null;
   if (!projectId) return NextResponse.json({ error: "recordId is required" }, { status: 400 });
   if (!subjectInput) return NextResponse.json({ error: "A subject line is required" }, { status: 400 });
-  if (!bodyInput) return NextResponse.json({ error: "The document's body text is required" }, { status: 400 });
   if (!recipientAddress) return NextResponse.json({ error: "A recipient address is required" }, { status: 400 });
 
   const { data: precedent } = await admin
-    .from("precedents").select("id, company_id, name").eq("id", precedentId).is("deleted_at", null).maybeSingle();
+    .from("precedents").select("id, company_id, name, body_template").eq("id", precedentId).is("deleted_at", null).maybeSingle();
   if (!precedent || precedent.company_id !== companyId) return NextResponse.json({ error: "Precedent not found" }, { status: 404 });
+
+  // A field-value form (see the Issue modal's template mode) always wins
+  // over a client-sent `body` string when this precedent has a detected
+  // template -- the body is reconstructed from the firm's own boilerplate
+  // server-side so a form submission can't be tampered with into arbitrary
+  // content. Falls back to the freeform `body` string otherwise (no
+  // template detected yet, or the staff member toggled "Write freeform").
+  let bodyInput: string;
+  if (fieldValuesInput && precedent.body_template?.segments) {
+    const values: Record<string, string> = {};
+    for (const [key, value] of Object.entries(fieldValuesInput)) values[key] = String(value ?? "");
+    bodyInput = buildBodyFromTemplate(precedent.body_template.segments, values).trim();
+  } else {
+    bodyInput = String(body?.body || "").trim();
+  }
+  if (!bodyInput) return NextResponse.json({ error: "The document's body text is required" }, { status: 400 });
 
   const { data: project } = await admin.from("projects").select("id, company_id, name").eq("id", projectId).maybeSingle();
   if (!project || project.company_id !== companyId) return NextResponse.json({ error: "Invalid matter" }, { status: 400 });
