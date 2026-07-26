@@ -587,12 +587,11 @@ function GenericMasterTableInner({
     return resolveColLabel(colId);
   }, [relationPathLabel, resolveColLabel]);
 
-  const getLinkTarget = useCallback((colId: string, item: any, firstVisibleColId?: string): string | null => {
-    const primaryCol = tableName === 'properties' ? 'street_address' : 'name';
-    // Primary col, first visible col, and all custom fields link to the record
-    if (colId === primaryCol || colId === firstVisibleColId || colId.startsWith('custom_field:')) {
-      return `/dashboard/${tableName}?id=${item.id}`;
-    }
+  // Only genuine cross-table relation columns get a link now — clicking
+  // anywhere on the row itself opens *this* record (see MasterTable's row
+  // onClick), so a column no longer needs its own "open this record" link
+  // just because it's the primary/first-visible/custom-field column.
+  const getLinkTarget = useCallback((colId: string, item: any): string | null => {
     if (colId.includes('.')) return null;
     const col = schemaAll.find(c => c.column_name === colId);
     if (col?.category === 'relation' && col.relation_table) {
@@ -606,7 +605,7 @@ function GenericMasterTableInner({
       return target ? `/dashboard/${target}?id=${linkedId}` : null;
     }
     return null;
-  }, [tableName, schema.all]);
+  }, [schema.all]);
 
   // ── Derived data ───────────────────────────────────────────────────
 
@@ -1015,12 +1014,7 @@ function GenericMasterTableInner({
           expandedRow={t.expandedRow}
           toggleExpandRow={t.toggleExpandRow}
           resolveValue={resolveValue}
-          getLinkTarget={(colId, item) => getLinkTarget(
-            colId,
-            item,
-            // Use first visible col from prefs, fall back to primary col immediately
-            t.tableCols[0] ?? (tableName === 'properties' ? 'street_address' : 'name')
-          )}
+          getLinkTarget={getLinkTarget}
           resolveColLabel={resolveColLabel}
           resolveColTooltip={resolveColTooltip}
           relations={relations}

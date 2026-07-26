@@ -713,6 +713,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
             {/* Table header */}
             <div className="flex bg-slate-50 border-b border-slate-100">
+              <div className="w-10 shrink-0" />
               {tableColumns.map(col => (
                 <div
                   key={col.id}
@@ -741,6 +742,14 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                       ? setExpandedId(isExpanded ? null : record.id)
                       : router.push(`/dashboard/${tableSlug}?id=${record.id}`)}
                   >
+                    <div className="w-10 shrink-0 flex items-center justify-center" onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : record.id); }}>
+                      <button
+                        className="p-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                        title={isExpanded ? 'Collapse' : 'Expand'}
+                      >
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </button>
+                    </div>
                     {tableColumns.map((col, idx) => (
                       <div
                         key={col.id}
@@ -778,15 +787,6 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                           <Trash2 size={14} />
                         </button>
                       )}
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          setExpandedId(isExpanded ? null : record.id);
-                        }}
-                        className="p-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                      >
-                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      </button>
                     </div>
                   </div>
 

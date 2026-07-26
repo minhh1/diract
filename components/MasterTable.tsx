@@ -205,6 +205,7 @@ export default function MasterTable({
       <DataTable minWidth={minWidth}>
         <thead className="bg-slate-50 border-b border-slate-200 text-slate-400">
           <tr>
+            <th className="w-10"></th>
             {tableCols.map((colId, idx) => {
               const isAddressCol = colId === 'street_address';
               const isActiveSortCol = sort?.colId === colId;
@@ -315,8 +316,16 @@ export default function MasterTable({
               <React.Fragment key={key}>
                 <tr
                   className="border-b border-slate-50 hover:bg-indigo-50/20 transition-all cursor-pointer group"
-                  onClick={() => toggleExpandRow(key)}
+                  onClick={() => { if (baseTable) router.push(`/dashboard/${baseTable}?id=${item.id}`); }}
                 >
+                  <td className="p-6" onClick={(e) => { e.stopPropagation(); toggleExpandRow(key); }}>
+                    <button
+                      className="p-1.5 -m-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                      title={isExpanded ? 'Collapse' : 'Expand'}
+                    >
+                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                  </td>
                   {tableCols.map(colId => {
                     const linkTarget = getLinkTarget(colId, item);
                     const relationalConfig = relationalEditCols?.[colId];
@@ -425,18 +434,12 @@ export default function MasterTable({
                         <Trash2 size={14} />
                       </button>
                     )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleExpandRow(key); }}
-                      className="p-1.5 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                    >
-                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
                   </td>
                 </tr>
 
                 {isExpanded && (expandCols.length > 0 || activeRelations.length > 0) && (
                   <tr className="border-b border-slate-100 bg-slate-50/60">
-                    <td colSpan={tableCols.length + 1} className="p-8 space-y-8">
+                    <td colSpan={tableCols.length + 2} className="p-8 space-y-8">
                       {expandCols.length > 0 && (
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                           {expandCols.map(colId => {
