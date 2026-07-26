@@ -1006,7 +1006,62 @@ export default function RecordDashboard({
 
   // ── Early returns ──────────────────────────────────────────────
 
-  if (loading) return null;
+  if (loading) {
+    // Mirrors the shape of the real header + TabBar below (rather than a
+    // bare spinner) so the tab row doesn't pop into existence once data
+    // arrives — same intent as GenericMasterTable's row skeleton.
+    const tabSkeleton = (
+      <div className="flex items-center gap-1 border-b border-slate-100 px-6 -mx-8 bg-white animate-pulse">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="flex items-center gap-2 px-4 py-3.5">
+            <div className="h-3.5 w-3.5 rounded bg-slate-100" />
+            <div className="h-2.5 w-14 rounded bg-slate-100" />
+          </div>
+        ))}
+      </div>
+    );
+
+    if (embedded) {
+      return (
+        <div className="font-sans antialiased">
+          <div className="px-8 pt-6 pb-0 border-b border-slate-100 bg-white">
+            <div className="animate-pulse h-6 w-56 rounded bg-slate-100 mb-3" />
+            <div className="animate-pulse h-2.5 w-28 rounded bg-slate-100 mb-3" />
+            {tabSkeleton}
+          </div>
+          <div className="p-8 bg-[#F9FAFB]">
+            <div className="max-w-4xl mx-auto space-y-3 animate-pulse">
+              <div className="h-4 w-full rounded bg-slate-100" />
+              <div className="h-4 w-5/6 rounded bg-slate-100" />
+              <div className="h-4 w-2/3 rounded bg-slate-100" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col h-screen bg-white font-sans antialiased overflow-hidden">
+        <header className="px-8 pt-6 pb-0 border-b border-slate-100 shrink-0 bg-white">
+          <div className="flex items-center justify-between mb-4 animate-pulse">
+            <div className="h-6 w-20 rounded-full bg-slate-100" />
+            <div className="h-8 w-8 rounded-full bg-slate-100" />
+          </div>
+          <div className="animate-pulse h-8 w-72 rounded bg-slate-100 mb-2" />
+          <div className="animate-pulse h-2.5 w-32 rounded bg-slate-100 mb-4" />
+          {tabSkeleton}
+        </header>
+        <main className="flex-1 overflow-y-auto p-8 bg-[#F9FAFB]">
+          <div className="max-w-4xl mx-auto space-y-3 animate-pulse">
+            <div className="h-4 w-full rounded bg-slate-100" />
+            <div className="h-4 w-5/6 rounded bg-slate-100" />
+            <div className="h-4 w-2/3 rounded bg-slate-100" />
+            <div className="h-4 w-1/2 rounded bg-slate-100" />
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (!record) return (
     <div className="flex flex-col items-center justify-center h-screen gap-3">
