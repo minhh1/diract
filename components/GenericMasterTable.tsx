@@ -885,12 +885,15 @@ function GenericMasterTableInner({
       <header className="bg-white border-b border-slate-100 shrink-0">
         <div className="p-8 pb-4">
 
-          {/* Title + actions */}
-          <div className="flex justify-between items-center mb-8">
+          {/* Title + actions — wrap instead of overflowing on narrow
+              (mobile) widths; the page shell clips overflow, so a
+              non-wrapping row here just pushes buttons off-screen rather
+              than squeezing them. */}
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-8">
             <h1 className="text-3xl font-light uppercase tracking-tight text-slate-900">
               {pageTitle}
             </h1>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={toggleInlineEdit}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold transition-all ${

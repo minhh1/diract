@@ -502,7 +502,10 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       {/* ── Header ── */}
       <header className="bg-white border-b border-slate-100 shrink-0">
         <div className="p-8 pb-4">
-          <div className="flex justify-between items-center mb-8">
+          {/* Wrap instead of overflowing on narrow (mobile) widths -- the
+              page shell clips overflow, so a non-wrapping row here just
+              pushes buttons off-screen rather than squeezing them. */}
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-8">
             <div className="flex items-center gap-4">
               <div
                 className="h-10 w-10 rounded-2xl flex items-center justify-center shrink-0"
@@ -515,7 +518,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
               </h1>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setIsConfigOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
