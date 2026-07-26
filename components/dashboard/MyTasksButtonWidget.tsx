@@ -13,7 +13,7 @@
 // (and a chance to fill in whatever this widget doesn't know about, like
 // Rate/Duration) before it becomes a real record.
 import { useState, useEffect } from "react";
-import { ListChecks, X, Loader2, Sparkles, ArrowRight } from "lucide-react";
+import { ListChecks, X, Loader2, Sparkles, ArrowRight, Check, Trash2, CalendarDays } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 
@@ -24,6 +24,11 @@ interface TaskRow {
   due_date: string | null;
   project_id: string | null;
 }
+
+// tasks.due_date is a full timestamptz -- an <input type="date"> needs the
+// bare YYYY-MM-DD portion, same convention the public task page's edit form
+// uses (see app/public/tasks/[pageId]/page.tsx's TaskModal).
+const toDateInputValue = (dueDate: string | null) => (dueDate ? dueDate.slice(0, 10) : '');
 
 interface Props {
   label: string;
@@ -111,22 +116,62 @@ export default function MyTasksButtonWidget({ label, companyId, userId, descript
     const values: Record<string, any> = { [descriptionFieldKey]: drafts[task.id] ?? task.notes ?? task.name };
     if (matterFieldKey && task.project_id) values[matterFieldKey] = task.project_id;
     onConvert(values);
-    setOpen(false);
+    // Deliberately NOT closing the drawer here -- converting one task while
+    // the rest of the dashboard (in particular the quick-add form this just
+    // prefilled) stays open and usable is the whole point; the viewer may
+    // want to convert several tasks in a row without reopening this each
+    // time. The task itself stays in the list too (still open) until
+    // explicitly ticked complete below -- logging time against it isn't the
+    // same as finishing it.
+  };
+
+  // Optimistic -- this list only shows open tasks, so completing one just
+  // removes it locally right away; confirmed with the server after. Mirrors
+  // the public task page's own toggleComplete (see
+  // app/public/tasks/[pageId]/page.tsx), minus the un-complete direction --
+  // this widget never shows completed tasks to toggle back.
+  const toggleComplete = async (task: TaskRow) => {
+    setTasks(prev => prev.filter(t => t.id !== task.id));
+    const { error } = await supabase
+      .from('tasks')
+      .update({ is_completed: true, completed_at: new Date().toISOString() })
+      .eq('id', task.id);
+    if (error) setTasks(prev => [...prev, task].sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999')));
+  };
+
+  const handleDeleteTask = async (task: TaskRow) => {
+    if (!window.confirm(`Delete "${task.name}"?`)) return;
+    setTasks(prev => prev.filter(t => t.id !== task.id));
+    const { error } = await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', task.id);
+    if (error) setTasks(prev => [...prev, task].sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999')));
+  };
+
+  const handleDueDateChange = async (task: TaskRow, value: string) => {
+    const nextDueDate = value || null;
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, due_date: nextDueDate } : t));
+    await supabase.from('tasks').update({ due_date: nextDueDate }).eq('id', task.id);
   };
 
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen(v => !v)}
         className="w-full h-full min-h-[56px] flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-[12px] font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-600 transition-all"
       >
         <ListChecks size={16} /> {label}
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          <div className="relative ml-auto w-[420px] max-w-full bg-white h-full shadow-2xl flex flex-col">
+        // No full-screen backdrop here (unlike most other drawers in this
+        // app) -- deliberately, so this can stay open WHILE the viewer
+        // works elsewhere on the dashboard (e.g. the quick-add form a
+        // Convert just prefilled) instead of intercepting every click
+        // outside it and forcing a close. pointer-events-none on this
+        // outer layer + pointer-events-auto on the panel itself keeps the
+        // right-docked layout without blocking anything behind it; only
+        // the X button (or the toggle button again) closes it.
+        <div className="fixed inset-0 z-40 flex pointer-events-none">
+          <div className="relative ml-auto w-[420px] max-w-full bg-white h-full shadow-2xl flex flex-col pointer-events-auto border-l border-slate-200">
             <div className="flex items-center justify-between px-6 pt-8 pb-4 border-b border-slate-100 shrink-0">
               <h2 className="text-[13px] font-bold text-slate-800 uppercase tracking-wide">{label}</h2>
               <button onClick={() => setOpen(false)} className="p-1.5 text-slate-300 hover:text-slate-700 transition-colors">
@@ -148,19 +193,35 @@ export default function MyTasksButtonWidget({ label, companyId, userId, descript
               ) : tasks.map(task => (
                 <div key={task.id} className="border border-slate-200 rounded-2xl p-3 space-y-2">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-[12px] font-bold text-slate-800">{task.name}</p>
-                    {task.due_date && (
-                      <span className="shrink-0 text-[9px] font-bold text-slate-400 uppercase tracking-wide">
-                        {/* tasks.due_date is a full timestamptz ('2026-07-25T00:00:00+00:00'),
-                            not a bare date -- unlike this app's custom-table date fields
-                            (see bucketKey's comment on THOSE needing a manual
-                            local-midnight T00:00:00 append), so it parses directly. */}
-                        {new Date(task.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </span>
-                    )}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <button
+                        onClick={() => toggleComplete(task)}
+                        title="Mark complete"
+                        className="group mt-0.5 w-5 h-5 shrink-0 rounded-full border-2 border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-all"
+                      >
+                        <Check size={11} className="text-transparent group-hover:text-emerald-500" />
+                      </button>
+                      <p className="text-[12px] font-bold text-slate-800 leading-snug">{task.name}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteTask(task)}
+                      title="Delete task"
+                      className="shrink-0 p-1 text-slate-300 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5 pl-7">
+                    <CalendarDays size={11} className="text-slate-300 shrink-0" />
+                    <input
+                      type="date"
+                      value={toDateInputValue(task.due_date)}
+                      onChange={e => handleDueDateChange(task, e.target.value)}
+                      className="text-[10px] font-bold text-slate-500 bg-transparent outline-none cursor-pointer"
+                    />
                   </div>
                   {task.project_id && projectNames[task.project_id] && (
-                    <p className="text-[10px] text-slate-400 font-medium">{matterLabel}: {projectNames[task.project_id]}</p>
+                    <p className="text-[10px] text-slate-400 font-medium pl-7">{matterLabel}: {projectNames[task.project_id]}</p>
                   )}
                   <textarea
                     value={drafts[task.id] ?? ''}
