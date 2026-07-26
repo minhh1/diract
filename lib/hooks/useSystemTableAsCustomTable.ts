@@ -92,6 +92,7 @@ export function useSystemTableAsCustomTable(
         const relTable = SYSTEM_TABLE_RELATION_MAP[c.column_name]?.table || c.relation_table || undefined;
         const relDisplayCol = SYSTEM_TABLE_RELATION_MAP[c.column_name]?.displayCol || c.relation_display_column || undefined;
         const relationFieldType = relTable ? RELATION_FIELD_TYPE_BY_TABLE[relTable] : undefined;
+        const junction = SYSTEM_TABLE_RELATION_MAP[c.column_name]?.junction;
         const isPersonLink = SYSTEM_TABLE_PERSON_LINK_COLS.includes(c.column_name);
         const field_type = relationFieldType || (isPersonLink ? 'text' : deriveNativeFieldType(c.data_type));
         const field: CustomTableField = {
@@ -121,7 +122,7 @@ export function useSystemTableAsCustomTable(
           formula_percent: null,
           formula_relation_field_id: null,
           auto_number_prefix: null,
-          allow_multiple: false,
+          allow_multiple: !!junction,
           field_source: 'native',
         };
         return field;
@@ -168,6 +169,25 @@ export function useSystemTableAsCustomTable(
 
     const { data: baseRows } = await supabase.from(tableName).select('*').is('deleted_at', null);
 
+    // Junction-backed native relations (e.g. parent_property_id) hold their
+    // links outside the row itself -- fetch each one's junction table once
+    // for every record, same batching shape as cfValuesByRecord below.
+    const multiFields = nativeFields.filter(f => f.allow_multiple);
+    const multiValuesByRecord = new Map<string, Record<string, string[]>>();
+    if (multiFields.length) {
+      await Promise.all(multiFields.map(async f => {
+        const junction = SYSTEM_TABLE_RELATION_MAP[f.field_key]?.junction;
+        if (!junction) return;
+        const { data: links } = await supabase.from(junction.table).select(`${junction.sourceCol}, ${junction.targetCol}`);
+        (links || []).forEach((row: any) => {
+          const recId = row[junction.sourceCol];
+          if (!multiValuesByRecord.has(recId)) multiValuesByRecord.set(recId, {});
+          const rec = multiValuesByRecord.get(recId)!;
+          (rec[f.field_key] ||= []).push(row[junction.targetCol]);
+        });
+      }));
+    }
+
     const cfIds = cfFields.map(f => f.id);
     const cfValuesByRecord = new Map<string, Record<string, any>>();
     if (cfIds.length) {
@@ -183,7 +203,11 @@ export function useSystemTableAsCustomTable(
 
     const hydratedRecords: CustomTableRecord[] = (baseRows || []).map((row: any) => {
       const values: Record<string, any> = {};
-      for (const f of nativeFields) values[f.field_key] = row[f.field_key] ?? null;
+      for (const f of nativeFields) {
+        values[f.field_key] = f.allow_multiple
+          ? (multiValuesByRecord.get(row.id)?.[f.field_key] || [])
+          : (row[f.field_key] ?? null);
+      }
       Object.assign(values, cfValuesByRecord.get(row.id) || {});
       // properties has no created_at column -- fall back so callers that sort/
       // display by it (e.g. useCustomTable's own record ordering convention)

@@ -18,6 +18,7 @@ export interface FieldLayout {
   selectOptions?: string[];
   relationTable?: string;          // for base relation fields e.g. 'properties', 'entities'
   relationDisplayColumn?: string;  // e.g. 'street_address', 'name'
+  relationJunction?: { table: string; sourceCol: string; targetCol: string }; // multi-valued base relations
 }
 
 interface Props {
@@ -287,8 +288,10 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   };
 
   const displayVal = (): string | null => {
-    // For base relation fields (single linked record stored as UUID)
-    if (field.fieldType === 'relation') {
+    // For base relation fields (single linked record stored as UUID) —
+    // junction-backed relations (e.g. parent_property_id) fall through to
+    // the multi-value join below instead.
+    if (field.fieldType === 'relation' && !field.relationJunction) {
       return linkedItems.length > 0 ? linkedItems[0].name : null;
     }
     if (isLinked) return linkedItems.length > 0 ? linkedItems.map(i => i.name).join(', ') : null;
@@ -373,7 +376,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
           {linkedItems.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {/* For relation (single) — click chip to change */}
-              {field.fieldType === 'relation' ? (
+              {field.fieldType === 'relation' && !field.relationJunction ? (
                 <div className="flex items-center gap-1.5">
                   <span className="px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-[12px] font-medium">
                     {linkedItems[0].name}

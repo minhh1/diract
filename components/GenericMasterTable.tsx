@@ -36,6 +36,7 @@ import { savedViewsService } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
+import { SYSTEM_TABLE_RELATION_MAP } from "@/lib/schema/systemTableRelations";
 
 
 interface GenericMasterTableProps {
@@ -283,6 +284,34 @@ function GenericMasterTableInner({
       return byRecord;
     };
 
+    // Junction-backed relation columns (e.g. projects.parent_property_id)
+    // hold their links in a separate table instead of the FK column itself
+    // -- fetched once per column here and merged in as an array under the
+    // same alias buildDynamicSelectQuery/resolveValue use for a normal
+    // single-valued relation embed, so the rest of this table's rendering
+    // (search/sort/resolveValue) can treat it as "just another relation".
+    const junctionCols = schemaAll.filter(c => c.category === 'relation' && SYSTEM_TABLE_RELATION_MAP[c.column_name]?.junction);
+    const fetchJunctionRelations = async () => {
+      if (!junctionCols.length) return {} as Record<string, Record<string, any[]>>;
+      const byRecord: Record<string, Record<string, any[]>> = {};
+      await Promise.all(junctionCols.map(async (col) => {
+        const relConfig = SYSTEM_TABLE_RELATION_MAP[col.column_name];
+        if (!relConfig?.junction) return;
+        const { junction, table: relTable, displayCol } = relConfig;
+        const alias = col.column_name.replace(/_id$/, '');
+        const nameCol = col.relation_display_column || displayCol;
+        const { data } = await supabase
+          .from(junction.table)
+          .select(`${junction.sourceCol}, linked:${relTable}(id, ${nameCol})`);
+        (data || []).forEach((row: any) => {
+          const recId = row[junction.sourceCol];
+          if (!byRecord[recId]) byRecord[recId] = {};
+          (byRecord[recId][alias] ||= []).push(row.linked);
+        });
+      }));
+      return byRecord;
+    };
+
     if (tableName === 'properties') {
       fetchedCategoriesRef.current = new Set(
         visibleColumns.map(getCategoryKeyForColumn).filter((k): k is string => k !== null)
@@ -310,12 +339,13 @@ function GenericMasterTableInner({
       const cached = await swr(
         cacheKeyBase,
         async () => {
-          const [{ data, error }, byRecord] = await Promise.all([
+          const [{ data, error }, byRecord, junctionByRecord] = await Promise.all([
             supabase.from(tableName).select(selectQuery).is('deleted_at', null),
             fetchCustomFields(),
+            fetchJunctionRelations(),
           ]);
           if (error) { console.error(`fetchItems(${tableName}):`, error); return []; }
-          const baseItems = data || [];
+          const baseItems = (data || []).map((item: any) => ({ ...item, ...(junctionByRecord[item.id] || {}) }));
 
           return visibleCustomFieldIds.length
             ? baseItems.map((item: any) => ({ ...item, __customFields: byRecord[item.id] || {} }))
@@ -555,7 +585,12 @@ function GenericMasterTableInner({
     const col = schema.all.find(c => c.column_name === path);
     if (col?.category === 'relation' && col.relation_display_column) {
       const alias = path.replace(/_id$/, '');
-      return item[alias]?.[col.relation_display_column] ?? item[alias]?.name ?? '';
+      const displayCol = col.relation_display_column;
+      const val = item[alias];
+      if (Array.isArray(val)) {
+        return val.map(v => v?.[displayCol] ?? v?.name ?? '').filter(Boolean).join(', ');
+      }
+      return val?.[displayCol] ?? val?.name ?? '';
     }
 
     const value = path.split('.').reduce((obj: any, key: string) => obj?.[key], item);

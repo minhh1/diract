@@ -9,7 +9,17 @@
 
 export const SYSTEM_TABLE_HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id'];
 
-export const SYSTEM_TABLE_RELATION_MAP: Record<string, { table: string; displayCol: string }> = {
+export interface SystemRelationConfig {
+  table: string;
+  displayCol: string;
+  // Multi-valued relations (a project can have 2+ properties) are backed by
+  // a junction table instead of the column holding a single UUID directly.
+  // sourceCol/targetCol are the junction table's FK columns pointing back
+  // at the record being edited / at the linked table, respectively.
+  junction?: { table: string; sourceCol: string; targetCol: string };
+}
+
+export const SYSTEM_TABLE_RELATION_MAP: Record<string, SystemRelationConfig> = {
   // Properties
   holding_entity_id: { table: 'entities', displayCol: 'name' },
   purchase_entity_id: { table: 'entities', displayCol: 'name' },
@@ -18,7 +28,10 @@ export const SYSTEM_TABLE_RELATION_MAP: Record<string, { table: string; displayC
   property_id: { table: 'properties', displayCol: 'street_address' },
   project_id: { table: 'projects', displayCol: 'name' },
   // Projects
-  parent_property_id: { table: 'properties', displayCol: 'street_address' },
+  parent_property_id: {
+    table: 'properties', displayCol: 'street_address',
+    junction: { table: 'project_properties', sourceCol: 'project_id', targetCol: 'property_id' },
+  },
   parent_project_id: { table: 'projects', displayCol: 'name' },
   // Entities
   type_id: { table: 'entity_types', displayCol: 'label' },

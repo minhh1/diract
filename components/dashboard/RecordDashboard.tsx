@@ -291,11 +291,26 @@ export default function RecordDashboard({
       f.field_source === 'base' && f.fieldType === 'relation'
     );
     await Promise.all(baseRelationFields.map(async f => {
-      const storedId = currentRecord?.[f.field_key];
-      if (!storedId) return;
       const table = f.relationTable;
       const nameCol = f.relationDisplayColumn || 'name';
       if (!table) return;
+
+      // Junction-backed relations (e.g. parent_property_id) — multiple linked records
+      if (f.relationJunction) {
+        const { table: junctionTable, sourceCol, targetCol } = f.relationJunction;
+        const { data } = await supabase
+          .from(junctionTable)
+          .select(`${targetCol}, linked:${table}(id, ${nameCol})`)
+          .eq(sourceCol, recordId);
+        map[f.field_key] = (data || [])
+          .map((row: any) => row.linked)
+          .filter(Boolean)
+          .map((linked: any) => ({ id: linked.id, name: linked[nameCol] || linked.id }));
+        return;
+      }
+
+      const storedId = currentRecord?.[f.field_key];
+      if (!storedId) return;
       const { data } = await supabase
         .from(table).select(`id, ${nameCol}`).eq('id', storedId).single();
       if (data) map[f.field_key] = [{ id: storedId, name: (data as any)[nameCol] || storedId }];
@@ -335,6 +350,7 @@ export default function RecordDashboard({
               : 'text',
             relationTable: relOverride?.table || c.relation_table || undefined,
             relationDisplayColumn: relOverride?.displayCol || c.relation_display_column || undefined,
+            relationJunction: relOverride?.junction || undefined,
             col_start: 1,
             col_span: 6,
             row_order: i,
@@ -645,6 +661,16 @@ export default function RecordDashboard({
     const field = fields.find(f => f.id === fieldId || f.field_key === fieldId);
     if (!field) return;
 
+    // Junction-backed base relation fields (e.g. parent_property_id) — insert a link row
+    if (field.field_source === 'base' && field.fieldType === 'relation' && field.relationJunction) {
+      const { table: junctionTable, sourceCol, targetCol } = field.relationJunction;
+      await supabase.from(junctionTable).insert({
+        company_id: companyId, [sourceCol]: recordId, [targetCol]: item.id,
+      });
+      setLinkedItems(prev => ({ ...prev, [field.field_key]: [...(prev[field.field_key] || []), item] }));
+      return;
+    }
+
     // Base relation fields — save UUID directly to the record column
     if (field.field_source === 'base' && field.fieldType === 'relation') {
       await supabase.from(systemTable!).update({ [field.field_key]: item.id }).eq('id', recordId);
@@ -695,6 +721,16 @@ export default function RecordDashboard({
 
   const handleRemoveLinked = async (fieldId: string, linkedRecordId: string) => {
     const field = fields.find(f => f.id === fieldId || f.field_key === fieldId);
+
+    if (field?.field_source === 'base' && field.fieldType === 'relation' && field.relationJunction) {
+      const { table: junctionTable, sourceCol, targetCol } = field.relationJunction;
+      await supabase.from(junctionTable).delete().eq(sourceCol, recordId).eq(targetCol, linkedRecordId);
+      setLinkedItems(prev => ({
+        ...prev,
+        [fieldId]: (prev[fieldId] || []).filter(i => i.id !== linkedRecordId),
+      }));
+      return;
+    }
 
     if (field?.field_source === 'base' && field.fieldType === 'relation') {
       await supabase.from(systemTable!).update({ [field.field_key]: null }).eq('id', recordId);
