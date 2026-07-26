@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Loader2, GripVertical } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
+import { supabase } from "@/lib/supabase";
 import { createRecord } from "@/lib/services/customTableService";
 import { createRecord as createSystemTableRecord } from "@/lib/services/systemTableRecordService";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
@@ -201,9 +202,37 @@ export default function DashboardQuickAddForm({
     }
   };
 
+  // After a "signed-in user only" Staff field auto-selects itself (see
+  // RelationPicker's own auto-select effect, which calls this field's
+  // onSelect the moment it resolves), pulls that entity's own default_rate
+  // (see supabase/migrations/20260726065536_entities_default_rate.sql) into
+  // a sibling Rate field -- saves re-entering the same rate on every time
+  // entry. Only ever fills an EMPTY Rate, checked again after the fetch
+  // resolves in case the viewer typed one in the meantime.
+  const applyDefaultRate = async (entityId: string) => {
+    const rateField = quickAddFields.find(f => f.field_key === 'rate' && f.field_type === 'currency');
+    if (!rateField || values[rateField.field_key] !== undefined) return;
+    const { data } = await supabase.from('entities').select('default_rate').eq('id', entityId).maybeSingle();
+    if (data?.default_rate == null) return;
+    setValues(prev => {
+      if (prev[rateField.field_key] !== undefined) return prev;
+      return { ...prev, [rateField.field_key]: data.default_rate };
+    });
+    // Rate's own input is uncontrolled (see FieldSlot/formGeneration's doc
+    // comment above) -- without this, the value above lands in state but
+    // never shows up in the field itself.
+    setFormGeneration(g => g + 1);
+  };
+
+  const isCurrentUserStaffField = (field: CustomTableField) =>
+    field.field_type === 'entity' && field.linked_filter_column === 'linked_profile_id' && field.linked_filter_value === '$current_user';
+
   const previews = computeAllPreviews(fields, values);
   const valueFor = (field: CustomTableField) => field.formula_type ? previews[field.field_key] ?? null : values[field.field_key];
-  const commitFor = (field: CustomTableField) => (v: any) => setValues(prev => ({ ...prev, [field.field_key]: v }));
+  const commitFor = (field: CustomTableField) => (v: any) => {
+    setValues(prev => ({ ...prev, [field.field_key]: v }));
+    if (v && isCurrentUserStaffField(field)) applyDefaultRate(v);
+  };
 
   const AddButton = (
     <button
