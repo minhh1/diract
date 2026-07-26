@@ -122,6 +122,10 @@ export default function PrecedentsTab({ recordId }: Props) {
 // it never runs on its own as part of issuing. AI in this feature is
 // otherwise only used to identify fields in an uploaded letterhead template
 // (see Settings → Precedents → "Fields identified in this template").
+// Salutation and Sign off both default to this matter's precedent_settings
+// (see "Customize for this matter") but are editable per document here --
+// not every letter in a matter is addressed the same way or signed by the
+// same person.
 function IssueModal({ precedent, recordId, onClose, onIssued }: {
   precedent: Precedent; recordId: string; onClose: () => void; onIssued: () => void;
 }) {
@@ -139,6 +143,12 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   // (Our Ref, date, salutation, subject) is filled automatically.
   const [detectedFields, setDetectedFields] = useState<{ role: string; options?: string[] }[]>([]);
 
+  // Optional per-issuance overrides of the matter/company's precedent_settings
+  // defaults -- who signs THIS document, and how it addresses the recipient.
+  const [staff, setStaff] = useState<StaffOption[]>([]);
+  const [signerIds, setSignerIds] = useState<string[]>([]);
+  const [salutation, setSalutation] = useState("");
+
   // Optional AI drafting assist -- collapsed by default.
   const [showAiAssist, setShowAiAssist] = useState(false);
   const [brief, setBrief] = useState("");
@@ -148,10 +158,20 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   useEffect(() => {
     fetch("/api/precedents/letterhead").then(res => res.json())
       .then(json => setDetectedFields(json.letterhead?.detected_fields || []));
-  }, []);
+    fetch(`/api/precedents/settings?projectId=${recordId}`).then(res => res.json())
+      .then(json => setSignerIds((json.projectOverride || json.companyDefault)?.signers || []));
+    fetch("/api/precedents/staff-signoffs").then(res => res.json())
+      .then(json => setStaff(json.staff || []));
+  }, [recordId]);
 
   const needsRecipientName = detectedFields.some(f => f.role === "recipient_name");
   const deliveryModeField = detectedFields.find(f => f.role === "delivery_mode");
+
+  const toggleSigner = (userId: string) => {
+    const already = signerIds.includes(userId);
+    if (!already && signerIds.length >= 4) return;
+    setSignerIds(already ? signerIds.filter(id => id !== userId) : [...signerIds, userId]);
+  };
 
   const handleDraftWithAi = async () => {
     if (!brief.trim()) { setDraftError("Describe what this document should say"); return; }
@@ -180,7 +200,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
     const res = await fetch(`/api/precedents/${precedent.id}/issue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recordId, subject, body, prompt: brief, recipientAddress, recipientName, deliveryMode }),
+      body: JSON.stringify({ recordId, subject, body, prompt: brief, recipientAddress, recipientName, deliveryMode, salutation, signerIds }),
     });
     const json = await res.json();
     setIssuing(false);
@@ -244,6 +264,14 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
             </div>
           )}
           <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+              Salutation <span className="text-slate-300 normal-case font-normal">(optional — leave blank to use the firm's default)</span>
+            </p>
+            <input value={salutation} onChange={e => setSalutation(e.target.value)}
+              placeholder="e.g. Dear Mr Smith,"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+          </div>
+          <div>
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subject line</p>
               {!showAiAssist && (
@@ -282,6 +310,28 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
             <textarea value={body} onChange={e => setBody(e.target.value)} rows={8}
               placeholder="Write the letter's content here..."
               className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+          </div>
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+              Sign off <span className="text-slate-300 normal-case font-normal">(up to 4, defaults to this matter's usual signers)</span>
+            </p>
+            {staff.length === 0 ? (
+              <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet — add one in your profile</p>
+            ) : (
+              <div className="space-y-1.5">
+                {staff.map(s => {
+                  const checked = signerIds.includes(s.userId);
+                  return (
+                    <label key={s.userId} className={`flex items-center gap-3 px-3 py-2 rounded-2xl border cursor-pointer transition-colors ${checked ? "border-indigo-400 bg-indigo-50" : "border-slate-200 hover:border-slate-300"}`}>
+                      <input type="checkbox" checked={checked} disabled={!checked && signerIds.length >= 4}
+                        onChange={() => toggleSigner(s.userId)} />
+                      <span className="text-[12px] font-medium text-slate-700">{s.name || s.accountName}</span>
+                      {s.position && <span className="text-[11px] text-slate-400">— {s.position}</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
           {error && <p className="text-[11px] text-red-500">{error}</p>}
         </div>

@@ -146,9 +146,9 @@ export async function POST(req: NextRequest) {
 
 // Lets an admin review/correct what the classifier found — e.g. drop a
 // wrongly-detected field entirely (it just falls back to being folded into
-// the flat {{content}} composition, same as a letterhead with nothing
-// detected at all — see composeLetterContent's include* flags) or fix up
-// the delivery-mode wording without re-uploading the whole document.
+// the {{content}} block, same as a letterhead with nothing detected at all —
+// see lib/precedents/contentXml.ts) or fix up the delivery-mode wording
+// without re-uploading the whole document.
 export async function PATCH(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;

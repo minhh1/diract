@@ -147,10 +147,23 @@ function parseOptionsFromText(text: string): string[] | undefined {
   return parts.length > 1 ? parts : undefined;
 }
 
+// The paragraph's OWN visible run(s) are being replaced entirely, but the
+// paragraph mark's rPr (nested inside pPr -- the formatting Word applies to
+// text newly typed into an otherwise-empty paragraph) still carries the
+// font size/family the firm actually designed this line with, e.g. a
+// smaller "Our Ref:" line. Reusing it for the new run (rather than building
+// a bare <w:b/>-only rPr from scratch, which silently reset every classified
+// line to the document's default font size) is what keeps the tagged line
+// looking like the rest of the letterhead.
 function rebuildParagraph(originalParaXml: string, newText: string, bold: boolean): string {
   const pPrMatch = originalParaXml.match(/<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/);
   const pPr = pPrMatch ? pPrMatch[0] : "";
-  const rPr = bold ? "<w:rPr><w:b/></w:rPr>" : "";
+  const markRprMatch = pPr.match(/<w:rPr>([\s\S]*?)<\/w:rPr>/);
+  let innerRpr = (markRprMatch ? markRprMatch[1] : "")
+    .replace(/<w:b\s*\/?>|<w:b\s+[^>]*?\/?>/g, "")
+    .replace(/<w:bCs\s*\/?>|<w:bCs\s+[^>]*?\/?>/g, "");
+  if (bold) innerRpr = `<w:b/><w:bCs/>${innerRpr}`;
+  const rPr = innerRpr ? `<w:rPr>${innerRpr}</w:rPr>` : "";
   return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(newText)}</w:t></w:r></w:p>`;
 }
 

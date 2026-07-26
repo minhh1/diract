@@ -1,18 +1,21 @@
 // app/api/precedents/[id]/issue/route.ts
 // Issues a precedent document from a subject + body the staff member wrote
 // themselves (or pre-filled via the separate, optional AI drafting assist --
-// see app/api/precedents/[id]/draft/route.ts -- and then edited). Composes
-// the full letter text (lib/precedents/composeLetter.ts), splices the
-// selected signers' signoff blocks into the letterhead's {{signoff}} tag as
-// raw OOXML (lib/precedents/signoffXml.ts, so the name can be bold), fills
-// the {{address}}/{{content}} tags via docxtemplater, converts to PDF,
-// stores it, and logs a precedent_issuances row. No AI call happens in this
-// route at all -- same docxtemplater render + storage pattern as
-// app/api/document-templates/public/[pageId]/submit/route.ts.
+// see app/api/precedents/[id]/draft/route.ts -- and then edited). Splices
+// the selected signers' signoff blocks into the letterhead's {{signoff}} tag
+// (lib/precedents/signoffXml.ts) and the composed date/Our-Ref/subject/
+// salutation/body/closing into its {{content}} tag (lib/precedents/contentXml.ts)
+// as raw OOXML BEFORE Docxtemplater runs -- both need per-run formatting
+// (bold names/headings, real paragraph spacing) a flat text tag can't give.
+// Docxtemplater then only fills the remaining plain-text tags (address, and
+// any of our_ref/date/delivery_mode/recipient_name/subject/salutation the
+// letterhead has its own dedicated tag for), converts to PDF, stores it, and
+// logs a precedent_issuances row. No AI call happens in this route at all.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { composeLetterContent, formatSubjectLine, formatLetterDate, resolveSalutation } from "@/lib/precedents/composeLetter";
+import { formatSubjectLine, formatLetterDate, resolveSalutation } from "@/lib/precedents/composeLetter";
 import { insertSignoffBlock, type SignoffPerson } from "@/lib/precedents/signoffXml";
+import { insertContentBlock } from "@/lib/precedents/contentXml";
 import { convertDocxToPdf } from "@/lib/gotenberg";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
@@ -108,6 +111,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const recipientAddress = String(body?.recipientAddress || "").trim();
   const recipientName = String(body?.recipientName || "").trim();
   const deliveryMode = String(body?.deliveryMode || "").trim();
+  // Per-issuance overrides -- default to the matter/company's configured
+  // precedent_settings when omitted, same as before this existed.
+  const salutationOverride = String(body?.salutation || "").trim();
+  const signerIdsOverride = Array.isArray(body?.signerIds)
+    ? body.signerIds.map((id: any) => String(id || "").trim()).filter(Boolean).slice(0, 4)
+    : undefined;
   if (!projectId) return NextResponse.json({ error: "recordId is required" }, { status: 400 });
   if (!subjectInput) return NextResponse.json({ error: "A subject line is required" }, { status: 400 });
   if (!bodyInput) return NextResponse.json({ error: "The document's body text is required" }, { status: 400 });
@@ -158,36 +167,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const [{ clientFirstName, clientFullName }, matterReference, signoffs] = await Promise.all([
     resolveClientNames(admin, companyId, projectId),
     needsMatterReference ? resolveMatterReference(admin, companyId, projectId) : Promise.resolve(null),
-    resolveSignoffs(admin, companyId, settings.signers || []),
+    // A per-issuance signer selection overrides the matter/company default
+    // list -- lets a firm pick who signs THIS document instead of always
+    // using the same fixed signers for every letter (see Issue modal's
+    // "Sign off" section).
+    resolveSignoffs(admin, companyId, signerIdsOverride ?? settings.signers ?? []),
   ]);
 
   const formattedSubject = formatSubjectLine(subjectInput, settings.subject_line_style);
-  const composedContent = composeLetterContent({
-    subject: subjectInput,
-    subjectLineStyle: settings.subject_line_style,
-    dateFormat: settings.date_format,
-    salutationStyle: settings.salutation_style,
-    clientFirstName, clientFullName,
-    body: bodyInput,
-    matterReference,
-    // A smart-classified letterhead has its own dedicated tag for these --
-    // omit them from the flat content string so they aren't duplicated.
-    includeDate: !detectedRoles.has("date"),
-    includeOurRef: !detectedRoles.has("our_ref"),
-    includeSubject: !detectedRoles.has("subject"),
-    includeSalutation: !detectedRoles.has("salutation"),
-    includeClosing: !detectedRoles.has("closing"),
-  });
+  // A typed-in override replaces the resolved default salutation either way
+  // -- whether the letterhead has its own {{salutation}} tag or not (see
+  // Issue modal's optional "Salutation" field).
+  const resolvedSalutation = salutationOverride || resolveSalutation(settings.salutation_style, clientFirstName, clientFullName);
 
   const fillData: Record<string, string> = {
     [letterhead.address_tag_key]: recipientAddress,
-    [letterhead.content_tag_key]: composedContent,
   };
   if (detectedRoles.has("our_ref")) fillData.our_ref = matterReference || "";
   if (detectedRoles.has("date")) fillData.date = formatLetterDate(settings.date_format);
   if (detectedRoles.has("delivery_mode")) fillData.delivery_mode = deliveryMode;
   if (detectedRoles.has("recipient_name")) fillData.recipient_name = recipientName;
-  if (detectedRoles.has("salutation")) fillData.salutation = resolveSalutation(settings.salutation_style, clientFirstName, clientFullName);
+  if (detectedRoles.has("salutation")) fillData.salutation = resolvedSalutation;
   if (detectedRoles.has("subject")) fillData.subject = formattedSubject;
 
   const { data: fileData, error: dlErr } = await admin.storage.from(BUCKET).download(letterhead.storage_path);
@@ -195,7 +195,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   let docxBuffer: Buffer;
   try {
-    const sourceBytes = insertSignoffBlock(Buffer.from(await fileData.arrayBuffer()), letterhead.signoff_tag_key, signoffs);
+    let sourceBytes = insertSignoffBlock(Buffer.from(await fileData.arrayBuffer()), letterhead.signoff_tag_key, signoffs);
+    // Spliced in as real OOXML paragraphs BEFORE Docxtemplater runs -- same
+    // reason as insertSignoffBlock above: a flat text tag can't give the
+    // subject line its own bold run or give each section real paragraph
+    // spacing (see lib/precedents/contentXml.ts).
+    sourceBytes = insertContentBlock(sourceBytes, letterhead.content_tag_key, {
+      date: detectedRoles.has("date") ? null : formatLetterDate(settings.date_format),
+      ourRef: !detectedRoles.has("our_ref") && matterReference ? matterReference : null,
+      subject: detectedRoles.has("subject") ? null : formattedSubject,
+      salutation: detectedRoles.has("salutation") ? null : resolvedSalutation,
+      body: bodyInput,
+      closing: detectedRoles.has("closing") ? null : "Yours faithfully,",
+    });
     const zip = new PizZip(sourceBytes);
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
