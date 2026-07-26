@@ -1,7 +1,7 @@
 // components/Sidebar.tsx
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   MapPin, Building2, Plus, LogOut, LayoutGrid,
   Settings, Shield, ChevronsUpDown, Loader2, Mail, Menu,
@@ -730,13 +730,24 @@ export default function Sidebar() {
     fetchTreeData().then(() => perfLog(`Sidebar(${treeTableSlug}): fetchTreeData resolved`));
   }, [treeTableSlug, treeConfig, treeOpen]);
 
+  // full_name/avatar_url only ever change from /dashboard/profile (see
+  // fetchProfile below and app/dashboard/profile/page.tsx) -- so this only
+  // needs to re-fetch once, on mount, plus again on navigating AWAY from
+  // that one page, not on every single route change. This layout persists
+  // across navigation (doesn't remount), so without any re-fetch a profile
+  // edit would never show up in the rail until a full reload; the previous
+  // "re-fetch on every pathname change" cast a much wider net than that one
+  // actual case needed, costing a real network round trip on every click.
+  const prevPathnameRef = useRef<string | null>(null);
   useEffect(() => {
     if (!ctxUserId) return;
+    const prev = prevPathnameRef.current;
+    prevPathnameRef.current = pathname;
+    const isInitialLoad = prev === null;
+    const leftProfilePage = prev === '/dashboard/profile' && pathname !== '/dashboard/profile';
+    if (!isInitialLoad && !leftProfilePage) return;
     perfLog("Sidebar: fetchProfile start");
     fetchProfile().then(() => perfLog("Sidebar: fetchProfile resolved"));
-    // Re-fetch on route change too, so edits made on /dashboard/profile (name, photo)
-    // show up in the rail as soon as the user navigates back — this layout persists
-    // across route changes so it wouldn't otherwise remount to pick them up.
   }, [ctxUserId, pathname]);
 
   useEffect(() => {

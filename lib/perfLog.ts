@@ -9,7 +9,7 @@
 // output was invisible exactly where it was most needed.
 
 export interface PerfLogEntry {
-  t: number; // ms since navigation start (performance.now() at call time)
+  t: number; // ms since this page's own load started (see currentT below)
   at: number; // Date.now() — wall-clock, for grouping entries by page load
   label: string;
   detail?: string;
@@ -23,6 +23,30 @@ export interface PerfLogEntry {
 
 const STORAGE_KEY = "nk_perf_log";
 const MAX_ENTRIES = 1000;
+
+// Client-side (App Router) navigation never reloads the tab, so a plain
+// performance.now() keeps climbing across every dashboard/table/settings
+// click instead of restarting -- e.g. showing "47000ms" for a click that
+// actually took 300ms, because it's still counting from whenever the tab
+// was first opened. This tracks each page visit's own start so `t` reads as
+// "ms into loading the page I'm currently on," which is what's actually
+// useful both in the console and in Admin > Performance. Detected lazily
+// (not via a React navigation hook -- this file has no React dependency) by
+// comparing the pathname on every call against the last one seen; the FIRST
+// call ever (epochPath still null) is left alone so a genuine full page
+// load still measures from real navigation start, not from whenever React
+// happened to first call perfLog.
+let epochPath: string | null = null;
+let epochStart = 0;
+
+function currentT(path: string | undefined): number {
+  const now = performance.now();
+  if (path !== undefined && path !== epochPath) {
+    if (epochPath !== null) epochStart = now; // a real navigation, not the first-ever call
+    epochPath = path;
+  }
+  return Math.round(now - epochStart);
+}
 
 function readEntries(): PerfLogEntry[] {
   if (typeof localStorage === "undefined") return [];
@@ -42,8 +66,8 @@ function writeEntries(entries: PerfLogEntry[]): void {
 
 export function perfLog(label: string, detail?: string): void {
   if (typeof performance === "undefined") return;
-  const t = Math.round(performance.now());
   const path = typeof window !== "undefined" ? window.location.pathname : undefined;
+  const t = currentT(path);
 
   console.log(`[timing] ${t}ms  ${label}${detail ? `  — ${detail}` : ""}`);
 
