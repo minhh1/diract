@@ -1,0 +1,12 @@
+-- Optional fields the smart letterhead classifier (lib/precedents/letterheadClassify.ts)
+-- found beyond the 3 always-present core tags (address_tag_key/content_tag_key/
+-- signoff_tag_key) -- e.g. a real hand-authored letterhead with its own
+-- "Our Ref:"/date/delivery-mode/recipient-name/salutation/subject lines
+-- already laid out, not just logo/header art. Each entry is
+-- { role: string, options?: string[] } -- options only populated for
+-- delivery_mode, parsed from that letterhead's own bracket-list (e.g.
+-- "[By Hand/By Email/By Post/By Express Post]") since firms word it
+-- differently. Empty array (the default) means classification found
+-- nothing extra -- the letterhead behaves exactly as it did before this
+-- column existed.
+ALTER TABLE company_letterheads ADD COLUMN IF NOT EXISTS detected_fields jsonb NOT NULL DEFAULT '[]';

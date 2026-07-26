@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { draftPrecedentContent } from "@/lib/ai/precedentDraft";
-import { composeLetterContent, formatSubjectLine } from "@/lib/precedents/composeLetter";
+import { composeLetterContent, formatSubjectLine, formatLetterDate, resolveSalutation } from "@/lib/precedents/composeLetter";
 import { insertSignoffBlock, type SignoffPerson } from "@/lib/precedents/signoffXml";
 import { convertDocxToPdf } from "@/lib/gotenberg";
 import { resolveSourceTypes } from "@/lib/ai/retrieval";
@@ -106,6 +106,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const projectId = String(body?.recordId || "");
   const prompt = String(body?.prompt || "").trim();
   const recipientAddress = String(body?.recipientAddress || "").trim();
+  const recipientName = String(body?.recipientName || "").trim();
+  const deliveryMode = String(body?.deliveryMode || "").trim();
   if (!projectId) return NextResponse.json({ error: "recordId is required" }, { status: 400 });
   if (!prompt) return NextResponse.json({ error: "A prompt describing the document is required" }, { status: 400 });
   if (!recipientAddress) return NextResponse.json({ error: "A recipient address is required" }, { status: 400 });
@@ -118,9 +120,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!project || project.company_id !== companyId) return NextResponse.json({ error: "Invalid matter" }, { status: 400 });
 
   const { data: letterhead } = await admin
-    .from("company_letterheads").select("storage_path, address_tag_key, content_tag_key, signoff_tag_key").eq("company_id", companyId).maybeSingle();
+    .from("company_letterheads")
+    .select("storage_path, address_tag_key, content_tag_key, signoff_tag_key, detected_fields")
+    .eq("company_id", companyId).maybeSingle();
   if (!letterhead) {
     return NextResponse.json({ error: "This firm hasn't set up a letterhead yet — an admin can upload one in Settings → Precedents." }, { status: 400 });
+  }
+
+  // Fields lib/precedents/letterheadClassify.ts found beyond the always-
+  // present address/content/signoff tags -- e.g. a real letterhead with its
+  // own Our Ref/date/delivery-mode/recipient/salutation/subject lines
+  // already laid out, not just logo/header art. A plain letterhead has none
+  // of these, and every check below is a no-op.
+  const detectedRoles = new Map<string, { role: string; options?: string[] }>(
+    (letterhead.detected_fields || []).map((f: any) => [f.role, f])
+  );
+  if (detectedRoles.has("recipient_name") && !recipientName) {
+    return NextResponse.json({ error: "Recipient name is required" }, { status: 400 });
+  }
+  if (detectedRoles.has("delivery_mode")) {
+    if (!deliveryMode) return NextResponse.json({ error: "Delivery mode is required" }, { status: 400 });
+    const options = detectedRoles.get("delivery_mode")?.options || [];
+    if (options.length && !options.includes(deliveryMode)) {
+      return NextResponse.json({ error: "Invalid delivery mode" }, { status: 400 });
+    }
   }
 
   // Resolve settings: matter override ?? company default ?? hard-coded fallback.
@@ -153,9 +176,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     input_tokens: draft.inputTokens, output_tokens: draft.outputTokens, cost_usd: cost,
   });
 
+  const needsMatterReference = settings.include_firm_reference || detectedRoles.has("our_ref");
   const [{ clientFirstName, clientFullName }, matterReference, signoffs] = await Promise.all([
     resolveClientNames(admin, companyId, projectId),
-    settings.include_firm_reference ? resolveMatterReference(admin, companyId, projectId) : Promise.resolve(null),
+    needsMatterReference ? resolveMatterReference(admin, companyId, projectId) : Promise.resolve(null),
     resolveSignoffs(admin, companyId, settings.signers || []),
   ]);
 
@@ -168,7 +192,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     clientFirstName, clientFullName,
     body: draft.body,
     matterReference,
+    // A smart-classified letterhead has its own dedicated tag for these --
+    // omit them from the flat content string so they aren't duplicated.
+    includeDate: !detectedRoles.has("date"),
+    includeOurRef: !detectedRoles.has("our_ref"),
+    includeSubject: !detectedRoles.has("subject"),
+    includeSalutation: !detectedRoles.has("salutation"),
+    includeClosing: !detectedRoles.has("closing"),
   });
+
+  const fillData: Record<string, string> = {
+    [letterhead.address_tag_key]: recipientAddress,
+    [letterhead.content_tag_key]: composedContent,
+  };
+  if (detectedRoles.has("our_ref")) fillData.our_ref = matterReference || "";
+  if (detectedRoles.has("date")) fillData.date = formatLetterDate(settings.date_format);
+  if (detectedRoles.has("delivery_mode")) fillData.delivery_mode = deliveryMode;
+  if (detectedRoles.has("recipient_name")) fillData.recipient_name = recipientName;
+  if (detectedRoles.has("salutation")) fillData.salutation = resolveSalutation(settings.salutation_style, clientFirstName, clientFullName);
+  if (detectedRoles.has("subject")) fillData.subject = formattedSubject;
 
   const { data: fileData, error: dlErr } = await admin.storage.from(BUCKET).download(letterhead.storage_path);
   if (dlErr || !fileData) return NextResponse.json({ error: "Could not load the firm's letterhead" }, { status: 500 });
@@ -183,7 +225,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       delimiters: { start: "{{", end: "}}" },
       nullGetter: () => "",
     });
-    doc.render({ [letterhead.address_tag_key]: recipientAddress, [letterhead.content_tag_key]: composedContent });
+    doc.render(fillData);
     docxBuffer = doc.getZip().generate({ type: "nodebuffer" });
   } catch (e: any) {
     return NextResponse.json({ error: `Failed to fill the letterhead: ${e?.message || "render error"}` }, { status: 500 });

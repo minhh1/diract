@@ -110,6 +110,7 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/precedents/letterhead");
@@ -119,6 +120,9 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Revoke the blob URL on unmount / when a new preview replaces it, so we
+  // don't leak object URLs across re-uploads.
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   const handleUpload = async (file: File) => {
     const lower = file.name.toLowerCase();
@@ -144,6 +148,10 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const handlePreview = async () => {
+    // Toggle closed if it's already open, rather than re-fetching — the
+    // point is staying on this page while previewing, not re-rendering
+    // every click.
+    if (previewUrl) { setPreviewUrl(null); return; }
     setPreviewing(true);
     try {
       const res = await fetch("/api/precedents/letterhead/preview");
@@ -153,7 +161,7 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
         return;
       }
       const blob = await res.blob();
-      window.open(URL.createObjectURL(blob), "_blank");
+      setPreviewUrl(URL.createObjectURL(blob));
     } finally {
       setPreviewing(false);
     }
@@ -177,7 +185,7 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
           </div>
           <button onClick={handlePreview} disabled={previewing} title="Preview where issued content will land"
             className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-[11px] font-bold rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-40">
-            {previewing ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} Preview
+            {previewing ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} {previewUrl ? "Hide preview" : "Preview"}
           </button>
           {isAdmin && (
             <>
@@ -208,6 +216,11 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
             </label>
           )}
+        </div>
+      )}
+      {previewUrl && (
+        <div className="mt-4 border border-slate-200 rounded-[24px] overflow-hidden">
+          <iframe src={previewUrl} title="Letterhead preview" className="w-full h-[600px]" />
         </div>
       )}
       {error && <p className="text-[11px] text-red-500 mt-3">{error}</p>}

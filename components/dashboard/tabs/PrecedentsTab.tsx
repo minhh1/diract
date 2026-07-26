@@ -120,20 +120,37 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   precedent: Precedent; recordId: string; onClose: () => void; onIssued: () => void;
 }) {
   const [recipientAddress, setRecipientAddress] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [deliveryMode, setDeliveryMode] = useState("");
   const [prompt, setPrompt] = useState("");
   const [issuing, setIssuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ subject: string; url: string | null } | null>(null);
+  // What lib/precedents/letterheadClassify.ts found in this firm's
+  // letterhead beyond the always-present address/content/signoff tags --
+  // only recipient_name and delivery_mode need input here, everything else
+  // (Our Ref, date, salutation, subject) is filled automatically.
+  const [detectedFields, setDetectedFields] = useState<{ role: string; options?: string[] }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/precedents/letterhead").then(res => res.json())
+      .then(json => setDetectedFields(json.letterhead?.detected_fields || []));
+  }, []);
+
+  const needsRecipientName = detectedFields.some(f => f.role === "recipient_name");
+  const deliveryModeField = detectedFields.find(f => f.role === "delivery_mode");
 
   const handleIssue = async () => {
     if (!recipientAddress.trim()) { setError("Enter the recipient's name and address"); return; }
     if (!prompt.trim()) { setError("Describe what this document should say"); return; }
+    if (needsRecipientName && !recipientName.trim()) { setError("Enter the recipient's name"); return; }
+    if (deliveryModeField && !deliveryMode) { setError("Select a delivery mode"); return; }
     setIssuing(true);
     setError(null);
     const res = await fetch(`/api/precedents/${precedent.id}/issue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recordId, prompt, recipientAddress }),
+      body: JSON.stringify({ recordId, prompt, recipientAddress, recipientName, deliveryMode }),
     });
     const json = await res.json();
     setIssuing(false);
@@ -170,12 +187,32 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+          {needsRecipientName && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Recipient name</p>
+              <input value={recipientName} onChange={e => setRecipientName(e.target.value)}
+                placeholder="e.g. Acme Pty Ltd"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+            </div>
+          )}
           <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Recipient</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+              {needsRecipientName ? "Address" : "Recipient"}
+            </p>
             <textarea value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)} rows={3}
-              placeholder={"Jane Smith\n123 Example Street\nSuburb VIC 3000"}
+              placeholder={needsRecipientName ? "Attention: Jane Smith\n123 Example Street\nSuburb VIC 3000" : "Jane Smith\n123 Example Street\nSuburb VIC 3000"}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
           </div>
+          {deliveryModeField && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Delivery mode</p>
+              <select value={deliveryMode} onChange={e => setDeliveryMode(e.target.value)}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 bg-white">
+                <option value="">Select...</option>
+                {(deliveryModeField.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">What should this document say?</p>
             <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}

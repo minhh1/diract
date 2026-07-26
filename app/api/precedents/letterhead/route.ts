@@ -2,17 +2,27 @@
 // Company-admin-only: upload/replace/clear the firm's letterhead (one row per
 // company, company_letterheads). Mirrors app/api/document-templates/upload/route.ts's
 // validation shape (.docx/.doc accept, legacy .doc -> .docx via Gotenberg,
-// magic-byte checks) but is company-scoped, not project-scoped, and auto-inserts
-// the {{address}}/{{content}}/{{signoff}} tags via lib/precedents/letterheadTag.ts
-// instead of leaving the firm to author their own tags.
+// magic-byte checks) but is company-scoped, not project-scoped. Runs the
+// uploaded letterhead through lib/precedents/letterheadClassify.ts first —
+// AI-classifies each paragraph's semantic role (Our Ref, date, delivery
+// mode, recipient, salutation, subject, body, signoff, closing) and rewrites
+// placeholders in place — then lib/precedents/letterheadTag.ts's blind
+// append still runs afterward as a safety net (it no-ops on tags that
+// already exist), so a classification failure or a plain logo-only
+// letterhead with nothing to classify both still end up with working
+// address/content/signoff tags.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { convertDocToDocx } from "@/lib/gotenberg";
 import { insertLetterTags } from "@/lib/precedents/letterheadTag";
+import { extractParagraphs, classifyParagraphs, applyClassification } from "@/lib/precedents/letterheadClassify";
+import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
+import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { randomUUID } from "crypto";
 
 const OLE2_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 const BUCKET = "precedent-documents";
+const DEFAULT_MODEL_ID = HOSTED_MODELS[0].id;
 
 export async function GET() {
   const auth = await authorizeCompanyMember();
@@ -21,7 +31,7 @@ export async function GET() {
 
   const { data } = await admin
     .from("company_letterheads")
-    .select("id, original_filename, address_tag_key, content_tag_key, signoff_tag_key, created_at, updated_at")
+    .select("id, original_filename, address_tag_key, content_tag_key, signoff_tag_key, detected_fields, created_at, updated_at")
     .eq("company_id", companyId)
     .maybeSingle();
 
@@ -59,9 +69,40 @@ export async function POST(req: NextRequest) {
   const addressTagKey = "address";
   const contentTagKey = "content";
   const signoffTagKey = "signoff";
+
+  // Smart classification — best-effort. A model outage, a letterhead with
+  // nothing recognizable (pure logo/header art), or an unexpected shape all
+  // just mean detectedFields stays empty; insertLetterTags below still runs
+  // regardless.
+  let classified: Buffer = bytes;
+  let detectedFields: { role: string; options?: string[] }[] = [];
+  try {
+    const { data: aiSettings } = await admin
+      .from("ai_chat_settings").select("monthly_token_cap").eq("company_id", companyId).maybeSingle();
+    const tokenCap = aiSettings?.monthly_token_cap ?? 2000000;
+    if (!(await isTokenCapReached(admin, companyId, tokenCap))) {
+      const paragraphs = extractParagraphs(bytes);
+      const { classifications, inputTokens, outputTokens } = await classifyParagraphs(paragraphs, DEFAULT_MODEL_ID);
+      if (classifications.length) {
+        const applied = applyClassification(bytes, classifications, { addressTagKey, contentTagKey, signoffTagKey });
+        classified = applied.bytes;
+        detectedFields = applied.detectedFields;
+      }
+      if (inputTokens || outputTokens) {
+        const cost = costUsd("hosted", DEFAULT_MODEL_ID, { inputTokens, outputTokens });
+        await admin.from("ai_usage_events").insert({
+          company_id: companyId, user_id: user.id, model_id: DEFAULT_MODEL_ID, provider: "hosted",
+          input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: cost,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Letterhead smart classification failed, falling back to plain tagging:", e);
+  }
+
   let tagged: Buffer;
   try {
-    tagged = insertLetterTags(bytes, [addressTagKey, contentTagKey, signoffTagKey]);
+    tagged = insertLetterTags(classified, [addressTagKey, contentTagKey, signoffTagKey]);
   } catch {
     return NextResponse.json({ error: "Could not read this file as a .docx" }, { status: 400 });
   }
@@ -84,9 +125,10 @@ export async function POST(req: NextRequest) {
     address_tag_key: addressTagKey,
     content_tag_key: contentTagKey,
     signoff_tag_key: signoffTagKey,
+    detected_fields: detectedFields,
     uploaded_by: user.id,
     updated_at: new Date().toISOString(),
-  }, { onConflict: "company_id" }).select("id, original_filename, address_tag_key, content_tag_key, signoff_tag_key, created_at, updated_at").single();
+  }, { onConflict: "company_id" }).select("id, original_filename, address_tag_key, content_tag_key, signoff_tag_key, detected_fields, created_at, updated_at").single();
 
   if (dbErr || !letterhead) {
     await admin.storage.from(BUCKET).remove([storagePath]);
