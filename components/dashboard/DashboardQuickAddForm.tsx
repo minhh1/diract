@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plus, Loader2, GripVertical } from "lucide-react";
 import FieldValueInput from "./FieldValueInput";
 import { supabase } from "@/lib/supabase";
@@ -165,6 +165,11 @@ export default function DashboardQuickAddForm({
   // resetting `values` state alone doesn't touch what's actually showing in
   // the DOM. Forcing a remount is what actually clears them after Add.
   const [formGeneration, setFormGeneration] = useState(0);
+  // The last value applyDefaultRate itself set Rate to -- lets it tell "the
+  // viewer typed their own rate, leave it alone" apart from "Rate still
+  // holds whatever WE last auto-filled it with, safe to overwrite again"
+  // when staff changes a second time. See applyDefaultRate below.
+  const lastAutoRateRef = useRef<number | null>(null);
 
   // See Props.prefill's doc comment -- applies once, then immediately hands
   // the "consumed" signal back so the caller clears its own pending state.
@@ -209,20 +214,25 @@ export default function DashboardQuickAddForm({
     }
   };
 
-  // After a "signed-in user only" Staff field auto-selects itself (see
-  // RelationPicker's own auto-select effect, which calls this field's
-  // onSelect the moment it resolves), pulls that entity's own default_rate
-  // (see supabase/migrations/20260726065536_entities_default_rate.sql) into
-  // a sibling Rate field -- saves re-entering the same rate on every time
-  // entry. Only ever fills an EMPTY Rate, checked again after the fetch
-  // resolves in case the viewer typed one in the meantime.
+  // Pulls the selected staff entity's own default_rate (see
+  // supabase/migrations/20260726065536_entities_default_rate.sql) into a
+  // sibling Rate field -- fires on every Staff commit, not just the first
+  // (auto-select or a deliberate re-pick both trigger this via commitFor
+  // below), so switching staff on the same in-progress entry updates Rate
+  // to match. Only refuses to overwrite when the viewer has actually typed
+  // their OWN rate -- i.e. Rate's current value isn't empty AND doesn't
+  // match what THIS function itself last set it to; still-untouched or
+  // still-our-own-last-fill are both fair game to update again.
   const applyDefaultRate = async (entityId: string) => {
     const rateField = quickAddFields.find(f => f.field_key === 'rate' && f.field_type === 'currency');
-    if (!rateField || values[rateField.field_key] !== undefined) return;
+    if (!rateField) return;
+    const current = values[rateField.field_key];
+    if (current !== undefined && current !== lastAutoRateRef.current) return;
     const { data } = await supabase.from('entities').select('default_rate').eq('id', entityId).maybeSingle();
     if (data?.default_rate == null) return;
+    lastAutoRateRef.current = data.default_rate;
     setValues(prev => {
-      if (prev[rateField.field_key] !== undefined) return prev;
+      if (prev[rateField.field_key] !== current) return prev; // changed while we awaited -- leave it
       return { ...prev, [rateField.field_key]: data.default_rate };
     });
     // Rate's own input is uncontrolled (see FieldSlot/formGeneration's doc

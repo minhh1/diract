@@ -23,10 +23,10 @@ interface RelationOption {
 // query time instead.
 const CURRENT_USER_SENTINEL = '$current_user';
 
-// Sentinel filterValue for a role/team-aware "Staff" relation: a company
-// admin sees every Staff entity, a team leader sees their team(s)' members,
-// everyone else sees only themselves -- see lib/teamScope.ts. Unlike
-// $current_user this can resolve to MANY rows, not one, so it's handled as
+// Sentinel filterValue for a role-aware "Staff" relation: a company admin
+// can bill as anyone (sees every Staff entity), everyone else can only bill
+// as themselves -- see lib/teamScope.ts. Unlike $current_user this CAN
+// resolve to many rows (for an admin), so it's handled as
 // an `.in('id', ...)` restriction rather than a single `.eq()`, and it
 // always implies `entity_type = 'Staff'` on top (this sentinel only makes
 // sense for a Staff-typed field) -- that companion filter is what actually

@@ -489,11 +489,11 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                           className="w-full mt-2 bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
                         >
                           <option value={CURRENT_USER_SENTINEL}>Signed-in user only</option>
-                          <option value={TEAM_SCOPE_SENTINEL}>Company members — role &amp; team scoped</option>
+                          <option value={TEAM_SCOPE_SENTINEL}>Company members — admin sees all, others see only themselves</option>
                         </select>
                         <p className="mt-2 bg-indigo-50 border border-indigo-100 rounded-2xl py-2 px-3 text-[11px] font-medium text-indigo-700">
                           {draft.linked_filter_value === TEAM_SCOPE_SENTINEL
-                            ? 'Restricted to entity_type = Staff, then: admins see everyone, team leaders see their team(s), everyone else sees only themselves.'
+                            ? 'Restricted to entity_type = Staff. A company admin can pick anyone (bill as someone else); everyone else can only pick themselves.'
                             : 'Only shows (and auto-fills) the entity linked to whoever is signed in — each person only sees their own, via the entity’s “Link to a team member” on its detail page.'}
                         </p>
                       </>
