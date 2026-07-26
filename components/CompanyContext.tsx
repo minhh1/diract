@@ -7,6 +7,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
+import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 
 // Per-company display-name overrides for the three system tables, e.g. a
 // law firm renaming "Projects" to "Matters" (see supabase/companies_table_labels.sql).
@@ -83,6 +84,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       // head start (the gap between "auth.getSession resolved" and
       // "profiles+memberships resolved" in this file's own perfLog marks).
       warmRelationOptionsCache();
+      // Same reasoning, same early spot -- every custom-table page blocks
+      // on this exact list just to tell a custom table apart from a
+      // dashboard (see app/dashboard/[tableSlug]/page.tsx), so warming it
+      // here removes a whole blank-screen stage before that page even
+      // starts rendering anything.
+      warmCustomTables();
 
       // Membership lookup only needs user_id, not active_company_id — so it
       // doesn't actually have to wait on the profile fetch to resolve first.
