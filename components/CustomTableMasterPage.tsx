@@ -4,10 +4,12 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Search, Settings2, LayoutGrid, X, Plus, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Loader2, Trash2, Download } from "lucide-react";
+import { Search, Settings2, LayoutGrid, X, Plus, ChevronDown, ChevronUp, ChevronsUpDown, GripVertical, Loader2, Trash2, Download } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import DataTable from "@/components/DataTable";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
+import { useTableColumnConfig } from "@/lib/hooks/useTableColumnConfig";
 import { createRecord, deleteRecord } from "@/lib/services/customTableService";
 import { useCompany } from "@/components/CompanyContext";
 import { createArchiveRequest, usePendingArchiveRequests } from "@/lib/archiveRequests";
@@ -15,15 +17,19 @@ import type { CustomTable } from "@/lib/hooks/useCustomTables";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { pickCreateFields } from "@/components/dashboard/NewRecordModal";
 import { useProgressBar } from "@/components/TopProgressBar";
-// All three only ever render conditionally (a record selected, "New
-// record" clicked, or the spreadsheet panel opened) -- none of them are
+// All four only ever render conditionally (a record selected, "New record"/
+// "Setup" clicked, or the spreadsheet panel opened) -- none of them are
 // needed for this page's own initial list view, so none of them need to
 // ship with it. RecordDashboard in particular is large (many tabs -- see
-// its own file); SpreadsheetEditor and NewRecordModal are smaller but
-// still pure "not needed until clicked" weight.
+// its own file); the others are smaller but still pure "not needed until
+// clicked" weight. ColumnConfigDrawer is the same "Setup" UI system tables
+// use (see GenericMasterTable.tsx) -- shared here too so both table kinds
+// get identical reorder/resize/table-expand-none column config instead of
+// two different pickers.
 const RecordDashboard = dynamic(() => import("@/components/dashboard/RecordDashboard"));
 const NewRecordModal = dynamic(() => import("@/components/dashboard/NewRecordModal"));
 const SpreadsheetEditor = dynamic(() => import("@/components/SpreadsheetEditor"));
+const ColumnConfigDrawer = dynamic(() => import("@/components/ColumnConfigDrawer"));
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 interface Props {
@@ -31,22 +37,6 @@ interface Props {
 }
 
 const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
-
-// A column pulled from a relation field's target table/row rather than a
-// field native to this table -- e.g. showing a Matter relation's "Client
-// Email" alongside this table's own columns. Scoped to one hop only (the
-// target's own fields, not fields related to THOSE) and, for a
-// system-table target, only its custom fields (not full native-column
-// parity) -- see loadRelationSubFields below.
-interface RelatedColumnDef {
-  id: string; // related:<relationFieldId>:<custom|system>:<targetFieldId>
-  label: string;
-  relationField: CustomTableField;
-  targetKind: 'custom' | 'system';
-  targetFieldId: string;
-  targetFieldKey: string;
-  targetFieldType: string;
-}
 
 interface DrillField {
   id: string;
@@ -60,7 +50,9 @@ interface DrillField {
 // Fetches the fields available on a relation field's target -- another
 // custom table (via company_table_fields) or a system table (via
 // company_custom_fields, since a system table's native columns aren't
-// exposed here).
+// exposed here). Feeds ColumnConfigDrawer's `loadSubFields` -- its own top
+// comment already anticipated this exact case ("a lazy loader (custom
+// tables, which have no such precomputed data)").
 async function loadRelationSubFields(field: CustomTableField): Promise<DrillField[]> {
   if (field.field_type === 'table_relation' && field.linked_table_id) {
     const { data } = await supabase
@@ -97,179 +89,16 @@ async function loadRelationSubFields(field: CustomTableField): Promise<DrillFiel
   return [];
 }
 
-// ── Column config drawer — file-explorer-style drill-in for relation
-// fields, mirroring ColumnConfigDrawer.tsx's pattern but with this page's
-// simpler single-Set toggle model (no separate table/expand placement).
-function CustomColumnDrawer({
-  isOpen, onClose, fields, visibleFieldIds, onToggleNative,
-  visibleRelated, onToggleRelated,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  fields: CustomTableField[];
-  visibleFieldIds: Set<string>;
-  onToggleNative: (fieldId: string) => void;
-  visibleRelated: RelatedColumnDef[];
-  onToggleRelated: (def: RelatedColumnDef) => void;
-}) {
-  const [drillField, setDrillField] = useState<CustomTableField | null>(null);
-  const [subFields, setSubFields] = useState<DrillField[]>([]);
-  const [drillLoading, setDrillLoading] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) setDrillField(null);
-  }, [isOpen]);
-
-  const handleDrillIn = async (field: CustomTableField) => {
-    setDrillField(field);
-    setDrillLoading(true);
-    try {
-      setSubFields(await loadRelationSubFields(field));
-    } finally {
-      setDrillLoading(false);
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-40 flex">
-      <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative ml-auto w-80 bg-white h-full shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-slate-100">
-          <h2 className="text-[13px] font-bold text-slate-800 uppercase tracking-wide">
-            Column setup
-          </h2>
-          <button onClick={onClose} className="p-1.5 text-slate-300 hover:text-slate-700">
-            <X size={18} />
-          </button>
-        </div>
-
-        {drillField && (
-          <div className="px-6 pt-4 flex items-center gap-1.5">
-            <button
-              onClick={() => setDrillField(null)}
-              className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700"
-            >
-              <ChevronLeft size={12} /> Back
-            </button>
-            <span className="text-[10px] text-slate-300">/</span>
-            <span className="text-[10px] font-bold text-slate-500">{drillField.label}</span>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-2">
-          {!drillField ? (
-            <>
-              {fields.map(field => {
-                const visible = visibleFieldIds.has(field.id);
-                const canDrillIn = RELATION_FIELD_TYPES.includes(field.field_type)
-                  && !!(field.linked_table_id || field.linked_system_table);
-                // allow_multiple means this record can link to MANY target
-                // records -- a single table cell can't meaningfully show a
-                // many-valued relation, so it can't be added as a column
-                // itself (its own fields drilled into below still can be,
-                // since those get joined across every linked record).
-                const isMany = field.allow_multiple;
-                return (
-                  <div
-                    key={field.id}
-                    className={`w-full flex items-center gap-2 px-4 py-3 rounded-2xl border transition-all ${
-                      visible ? 'border-indigo-200 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'
-                    }`}
-                  >
-                    <button
-                      onClick={isMany ? undefined : () => onToggleNative(field.id)}
-                      disabled={isMany}
-                      title={isMany ? 'Multi-value relations can\'t be added as a table column' : undefined}
-                      className={`flex items-center gap-3 flex-1 min-w-0 text-left ${isMany ? 'cursor-default opacity-60' : ''}`}
-                    >
-                      {!isMany && (
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                          visible ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
-                        }`}>
-                          {visible && <div className="w-2 h-2 bg-white rounded-sm" />}
-                        </div>
-                      )}
-                      <span className={`text-[12px] font-medium truncate ${visible ? 'text-indigo-700' : 'text-slate-600'}`}>
-                        {field.label}
-                      </span>
-                      {isMany && (
-                        <span className="text-[8px] font-bold uppercase tracking-wide text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">
-                          Many
-                        </span>
-                      )}
-                      <span className="ml-auto text-[9px] font-bold text-slate-300 uppercase shrink-0">
-                        {field.field_type}
-                      </span>
-                    </button>
-                    {canDrillIn && (
-                      <button
-                        onClick={() => handleDrillIn(field)}
-                        title={`Explore ${field.label}'s fields`}
-                        className="p-1 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all shrink-0"
-                      >
-                        <ChevronRight size={14} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {fields.length === 0 && (
-                <p className="text-center text-[11px] text-slate-300 italic py-8">
-                  No fields defined yet — add fields in Schema settings
-                </p>
-              )}
-            </>
-          ) : drillLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 size={18} className="animate-spin text-slate-300" />
-            </div>
-          ) : (
-            <>
-              {subFields.map(sf => {
-                const visible = visibleRelated.some(d => d.id === sf.id);
-                return (
-                  <button
-                    key={sf.id}
-                    onClick={() => onToggleRelated({
-                      id: sf.id,
-                      label: `${drillField.label} · ${sf.label}`,
-                      relationField: drillField,
-                      targetKind: sf.targetKind!,
-                      targetFieldId: sf.targetFieldId!,
-                      targetFieldKey: sf.targetFieldKey!,
-                      targetFieldType: sf.fieldType || 'text',
-                    })}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
-                      visible ? 'border-indigo-200 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                      visible ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
-                    }`}>
-                      {visible && <div className="w-2 h-2 bg-white rounded-sm" />}
-                    </div>
-                    <span className={`text-[12px] font-medium truncate ${visible ? 'text-indigo-700' : 'text-slate-600'}`}>
-                      {sf.label}
-                    </span>
-                    <span className="ml-auto text-[9px] font-bold text-slate-300 uppercase shrink-0">
-                      {sf.fieldType}
-                    </span>
-                  </button>
-                );
-              })}
-              {subFields.length === 0 && (
-                <p className="text-center text-[11px] text-slate-300 italic py-8">
-                  No fields on this table yet
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+// A drilled-in column's id encodes everything needed to resolve its value
+// later without re-fetching the drill-in list: related:<relationFieldId>:
+// <custom|system>:<targetFieldId>.
+function parseRelatedColId(colId: string): { relationFieldId: string; targetKind: 'custom' | 'system'; targetFieldId: string } | null {
+  if (!colId.startsWith('related:')) return null;
+  const parts = colId.split(':');
+  if (parts.length !== 4) return null;
+  const [, relationFieldId, targetKind, targetFieldId] = parts;
+  if (targetKind !== 'custom' && targetKind !== 'system') return null;
+  return { relationFieldId, targetKind, targetFieldId };
 }
 
 // ── Format a cell value for display ───────────────────────────────
@@ -288,27 +117,6 @@ function formatValue(record: CustomTableRecord, field: CustomTableField): string
   return String(value);
 }
 
-// Same idea as formatValue, but for a RelatedColumnDef column -- the value
-// lives on the relation's TARGET record, pre-resolved into `relatedValues`
-// by the effect in the main component below (a single batched query per
-// visible related column beats one per row/record).
-function formatRelatedValue(
-  record: CustomTableRecord,
-  def: RelatedColumnDef,
-  relatedValues: Map<string, Map<string, string>>
-): string {
-  const raw = record.values[def.relationField.field_key];
-  const targetIds: string[] = Array.isArray(raw) ? raw : (raw ? [raw] : []);
-  if (targetIds.length === 0) return '—';
-  const byTarget = relatedValues.get(def.id);
-  const labels = targetIds.map(id => byTarget?.get(id)).filter((l): l is string => !!l);
-  return labels.length ? labels.join(', ') : '—';
-}
-
-type TableColumn =
-  | { kind: 'native'; id: string; label: string; field: CustomTableField }
-  | { kind: 'related'; id: string; label: string; def: RelatedColumnDef };
-
 // ── Main component ─────────────────────────────────────────────────
 function CustomTableMasterPageInner({ tableSlug }: Props) {
   const router = useRouter();
@@ -316,7 +124,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const selectedId = searchParams.get('id');
 
   const { tableDef, fields, records, loading, recordsLoading, refetch } = useCustomTable(tableSlug);
-  const { isAdmin } = useCompany();
+  const { isAdmin, companyId: ctxCompanyId } = useCompany();
 
   // ── Top progress bar ───────────────────────────────────────────────────
   // Matches GenericMasterTable's own loading treatment (see that file) so
@@ -362,65 +170,138 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const [isCreating, setIsCreating] = useState(false);
   const { pendingIds: pendingArchiveIds, refreshPendingArchiveRequests } = usePendingArchiveRequests("company_table_records", companyId);
 
-  // Which fields are visible as table columns
-  const [visibleFieldIds, setVisibleFieldIds] = useState<Set<string> | null>(null);
-  // Columns pulled from a relation field's target table (see
-  // RelatedColumnDef) -- none by default, added via the drill-in picker.
-  const [visibleRelated, setVisibleRelated] = useState<RelatedColumnDef[]>([]);
-
-  // Default: first 6 show_in_table fields, or first 6 fields -- excluding
-  // allow_multiple relations, which can't be shown as a table column at all
-  // (see CustomColumnDrawer's isMany).
-  const defaultVisibleIds = useMemo(() => {
+  // Default column layout before any company_default_views row exists yet --
+  // first 6 show_in_table fields (or first 6 fields), the rest start in the
+  // expand panel. allow_multiple relations are excluded entirely (a single
+  // table cell can't meaningfully show a many-valued relation) -- their
+  // fields are still reachable via the drill-in folder in drawerSections.
+  const { defaultCols, defaultExpandCols } = useMemo(() => {
     const eligible = fields.filter(f => !f.allow_multiple);
-    const preferred = eligible.filter(f => f.show_in_table).slice(0, 6);
-    const fallback = eligible.slice(0, 6);
-    return new Set((preferred.length > 0 ? preferred : fallback).map(f => f.id));
+    const preferred = eligible.filter(f => f.show_in_table);
+    const chosen = (preferred.length > 0 ? preferred : eligible).slice(0, 6);
+    const chosenIds = new Set(chosen.map(f => f.id));
+    const rest = eligible.filter(f => !chosenIds.has(f.id)).map(f => f.id);
+    return { defaultCols: chosen.map(f => f.id), defaultExpandCols: rest };
   }, [fields]);
 
-  const effectiveVisibleIds = visibleFieldIds || defaultVisibleIds;
+  // Column config (tableCols/expandCols/colWidths/sort), persisted to the
+  // same company_default_views row + admin-only reorder/resize/three-state
+  // toggle system tables use (see useTableColumnConfig.ts / usePresetTable.ts)
+  // -- previously this page kept its own local-only visible/hidden Set that
+  // reset on every reload and never reached other team members.
+  const cc = useTableColumnConfig({
+    tableSlug,
+    defaultCols,
+    defaultExpandCols,
+    companyId: ctxCompanyId,
+    isAdmin,
+    schemaReady: !loading,
+  });
 
-  const tableColumns: TableColumn[] = useMemo(() => [
-    ...fields.filter(f => effectiveVisibleIds.has(f.id)).map(f => ({ kind: 'native' as const, id: f.id, label: f.label, field: f })),
-    ...visibleRelated.map(def => ({ kind: 'related' as const, id: def.id, label: def.label, def })),
-  ], [fields, effectiveVisibleIds, visibleRelated]);
+  // ── Column setup drawer sections ────────────────────────────────────
+  // One "Fields" section listing every native field, plus a drill-in
+  // "folder" per relation field (mirrors GenericMasterTable's crossFolders/
+  // relationFolders) -- a many-valued relation only gets the folder (its
+  // own combined value can't be a column), a single-valued one gets both a
+  // plain toggle row AND a folder into its target's fields.
+  const drawerSections = useMemo(() => {
+    const leaf = fields
+      .filter(f => !f.allow_multiple)
+      .map(f => ({ id: f.id, label: f.label, fieldType: f.field_type }));
 
-  // Batch-resolves every visible related column's values in one query each
-  // (not one per row) whenever the selected related columns or the record
-  // set changes -- same batching approach as resolveRelationLabels in
-  // useCustomTable.ts, just against the relation's TARGET field instead of
-  // its display field.
+    const folders = fields
+      .filter(f => RELATION_FIELD_TYPES.includes(f.field_type) && (f.linked_table_id || f.linked_system_table))
+      .map(f => ({
+        id: `__related__:${f.id}`,
+        label: f.label,
+        navigateOnly: true as const,
+        manyRelation: f.allow_multiple || undefined,
+        loadSubFields: async () => {
+          const subs = await loadRelationSubFields(f);
+          return f.allow_multiple ? subs.map(s => ({ ...s, expandOnly: true })) : subs;
+        },
+      }));
+
+    return [{ label: 'Fields', fields: [...leaf, ...folders] }];
+  }, [fields]);
+
+  // ── Drilled-in related column values ────────────────────────────────
+  // Batch-resolves every visible related column's values (and target
+  // field's own label, for the header) in one query pair per column, not
+  // one per row -- same batching approach as resolveRelationLabels in
+  // useCustomTable.ts.
+  const relatedColIds = useMemo(
+    () => Array.from(new Set([...cc.tableCols, ...cc.expandCols].filter(id => id.startsWith('related:')))),
+    [cc.tableCols, cc.expandCols]
+  );
+
   const [relatedValues, setRelatedValues] = useState<Map<string, Map<string, string>>>(new Map());
+  const [relatedColMeta, setRelatedColMeta] = useState<Map<string, { headerLabel: string }>>(new Map());
   useEffect(() => {
-    if (visibleRelated.length === 0) { setRelatedValues(new Map()); return; }
+    if (relatedColIds.length === 0) {
+      setRelatedValues(new Map());
+      setRelatedColMeta(new Map());
+      return;
+    }
     let active = true;
     (async () => {
-      const next = new Map<string, Map<string, string>>();
-      await Promise.all(visibleRelated.map(async def => {
+      const nextValues = new Map<string, Map<string, string>>();
+      const nextMeta = new Map<string, { headerLabel: string }>();
+      await Promise.all(relatedColIds.map(async colId => {
+        const parsed = parseRelatedColId(colId);
+        if (!parsed) return;
+        const relationField = fields.find(f => f.id === parsed.relationFieldId);
+        if (!relationField) return;
+        const valuesTable = parsed.targetKind === 'custom' ? 'company_table_values' : 'company_custom_field_values';
+        const metaTable = parsed.targetKind === 'custom' ? 'company_table_fields' : 'company_custom_fields';
         const targetIds = Array.from(new Set(
           records.flatMap(r => {
-            const v = r.values[def.relationField.field_key];
+            const v = r.values[relationField.field_key];
             return Array.isArray(v) ? v : (v ? [v] : []);
           })
         ));
-        if (targetIds.length === 0) { next.set(def.id, new Map()); return; }
-        const table = def.targetKind === 'custom' ? 'company_table_values' : 'company_custom_field_values';
-        const { data } = await supabase
-          .from(table)
-          .select('record_id, value_text, value_number, value_date, value_boolean')
-          .eq('field_id', def.targetFieldId)
-          .in('record_id', targetIds);
+        const [{ data: targetField }, { data: values }] = await Promise.all([
+          supabase.from(metaTable).select('label').eq('id', parsed.targetFieldId).maybeSingle(),
+          targetIds.length
+            ? supabase.from(valuesTable).select('record_id, value_text, value_number, value_date, value_boolean').eq('field_id', parsed.targetFieldId).in('record_id', targetIds)
+            : Promise.resolve({ data: [] as any[] }),
+        ]);
+        nextMeta.set(colId, { headerLabel: `${relationField.label} · ${targetField?.label ?? 'Field'}` });
         const byTarget = new Map<string, string>();
-        (data || []).forEach((v: any) => {
+        (values || []).forEach((v: any) => {
           const val = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? String(v.value_boolean) : null);
           if (val !== null && val !== undefined) byTarget.set(v.record_id, String(val));
         });
-        next.set(def.id, byTarget);
+        nextValues.set(colId, byTarget);
       }));
-      if (active) setRelatedValues(next);
+      if (active) { setRelatedValues(nextValues); setRelatedColMeta(nextMeta); }
     })();
     return () => { active = false; };
-  }, [visibleRelated, records]);
+  }, [relatedColIds, records, fields]);
+
+  const resolveValue = useCallback((record: CustomTableRecord, colId: string): string => {
+    const parsed = parseRelatedColId(colId);
+    if (parsed) {
+      const relationField = fields.find(f => f.id === parsed.relationFieldId);
+      if (!relationField) return '—';
+      const raw = record.values[relationField.field_key];
+      const targetIds: string[] = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+      if (targetIds.length === 0) return '—';
+      const byTarget = relatedValues.get(colId);
+      const labels = targetIds.map(id => byTarget?.get(id)).filter((l): l is string => !!l);
+      return labels.length ? labels.join(', ') : '—';
+    }
+    const field = fields.find(f => f.id === colId);
+    if (!field) return '—';
+    return formatValue(record, field);
+  }, [fields, relatedValues]);
+
+  const resolveColLabel = useCallback((colId: string): string => {
+    const parsed = parseRelatedColId(colId);
+    if (parsed) return relatedColMeta.get(colId)?.headerLabel ?? 'Related field';
+    const field = fields.find(f => f.id === colId);
+    return field?.label ?? 'Deleted field';
+  }, [fields, relatedColMeta]);
 
   // Primary display field
   const primaryField = useMemo(
@@ -430,14 +311,24 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
   // Filtered + sorted records
   const filteredRecords = useMemo(() => {
-    if (!search.trim()) return records;
-    const q = search.toLowerCase();
-    return records.filter(r => {
-      const primary = String(r.values[primaryField?.field_key] || '');
-      return primary.toLowerCase().includes(q) ||
-        Object.values(r.values).some(v => String(v || '').toLowerCase().includes(q));
+    let result = records;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(r => {
+        const primary = String(r.values[primaryField?.field_key] || '');
+        return primary.toLowerCase().includes(q) ||
+          Object.values(r.values).some(v => String(v || '').toLowerCase().includes(q));
+      });
+    }
+    const sort = cc.sort;
+    if (!sort) return result;
+    return [...result].sort((a, b) => {
+      const va = resolveValue(a, sort.colId);
+      const vb = resolveValue(b, sort.colId);
+      const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
+      return sort.direction === 'asc' ? cmp : -cmp;
     });
-  }, [records, search, primaryField]);
+  }, [records, search, primaryField, cc.sort, resolveValue]);
 
   // Fields the NewRecordModal prompts for -- the primary field plus every
   // other required field, so creating a record here never starts from an
@@ -511,7 +402,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       ...filteredRecords.map(r => fields.map(f => esc(csvValue(r, f))).join(',')),
     ];
     // BOM so Excel/Sheets detect UTF-8
-    const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -520,22 +411,8 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  const handleToggleField = (fieldId: string) => {
-    setVisibleFieldIds(prev => {
-      const current = prev || defaultVisibleIds;
-      const next = new Set(current);
-      if (next.has(fieldId)) {
-        if (next.size <= 1) return current; // always keep at least 1 column
-        next.delete(fieldId);
-      } else {
-        next.add(fieldId);
-      }
-      return next;
-    });
-  };
-
-  const handleToggleRelated = (def: RelatedColumnDef) => {
-    setVisibleRelated(prev => prev.some(d => d.id === def.id) ? prev.filter(d => d.id !== def.id) : [...prev, def]);
+  const handleSort = (colId: string, direction: 'asc' | 'desc') => {
+    cc.handleSort(colId, direction);
   };
 
   // ── Dashboard view ─────────────────────────────────────────────
@@ -553,7 +430,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       />
     );
   }
-  if (loading || !tableDef) {
+  if (loading || !tableDef || !cc.loaded) {
     // Mirrors GenericMasterTable's own loading skeleton so a custom table
     // and a system table (Properties/Entities/Projects/Tasks) look the same
     // while loading, not just once loaded -- the top progress bar above
@@ -602,6 +479,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   }
 
   const IconComp = (LucideIcons as any)[tableDef.icon] || LucideIcons.Table2;
+  const tableContentWidth = cc.tableCols.reduce((sum, colId) => sum + (cc.colWidths[colId] || 250), 0) + 96;
 
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
@@ -683,19 +561,21 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         />
       )}
 
-      {/* ── Column config drawer ── */}
-      <CustomColumnDrawer
+      {/* ── Column config drawer -- same component + persisted shape as
+          system tables (see GenericMasterTable.tsx) ── */}
+      <ColumnConfigDrawer
         isOpen={isConfigOpen}
         onClose={() => setIsConfigOpen(false)}
-        fields={fields}
-        visibleFieldIds={effectiveVisibleIds}
-        onToggleNative={handleToggleField}
-        visibleRelated={visibleRelated}
-        onToggleRelated={handleToggleRelated}
+        sections={drawerSections}
+        tableCols={cc.tableCols}
+        expandCols={cc.expandCols}
+        activePresetName={cc.activePreset}
+        onToggle={cc.handleToggleColumn}
+        isAdmin={isAdmin}
       />
 
       {/* ── Main table ── */}
-      <main className="flex-1 overflow-auto p-8">
+      <main className="flex-1 flex flex-col min-h-0 overflow-x-auto bg-[#F9FAFB] p-8">
         {filteredRecords.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <div
@@ -717,120 +597,167 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
             )}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <DataTable minWidth={Math.max(600, tableContentWidth)}>
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-400">
+              <tr>
+                {cc.tableCols.map((colId, idx) => {
+                  const isActiveSortCol = cc.sort?.colId === colId;
+                  return (
+                    <th key={colId} style={{ width: cc.colWidths[colId] || 250 }} className="relative group/header select-none p-0">
+                      <div className="relative flex items-center h-full">
+                        {isAdmin && (
+                          <div
+                            draggable
+                            onDragStart={() => cc.setDraggedIdx(idx)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={() => {
+                              if (cc.draggedIdx === null) return;
+                              const next = [...cc.tableCols];
+                              const [moved] = next.splice(cc.draggedIdx, 1);
+                              next.splice(idx, 0, moved);
+                              cc.handleReorder(next);
+                              cc.setDraggedIdx(null);
+                            }}
+                            className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded cursor-move opacity-40 group-hover/header:opacity-100 hover:bg-slate-200 transition-opacity z-10"
+                            title="Reorder column (admin only)"
+                          >
+                            <GripVertical size={13} />
+                          </div>
+                        )}
 
-            {/* Table header */}
-            <div className="flex bg-slate-50 border-b border-slate-100">
-              {tableColumns.map(col => (
-                <div
-                  key={col.id}
-                  className="flex-1 px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-slate-400 min-w-0"
-                >
-                  {col.label}
-                </div>
-              ))}
-              <div className="w-24 shrink-0" />
-            </div>
-
-            {/* Rows */}
-            {filteredRecords.map(record => {
-              const isExpanded = expandedId === record.id;
-              const isDeleting = deletingId === record.id;
-              const primaryValue = record.values[primaryField?.field_key] || 'Untitled';
-
-              // Non-visible fields shown in expand panel
-              const expandFields = fields.filter(f => !effectiveVisibleIds.has(f.id));
-
-              return (
-                <React.Fragment key={record.id}>
-                  <div
-                    className="flex items-center border-b border-slate-50 hover:bg-indigo-50/20 transition-all cursor-pointer group"
-                    onClick={() => tableDef?.disable_record_dashboard
-                      ? setExpandedId(isExpanded ? null : record.id)
-                      : router.push(`/dashboard/${tableSlug}?id=${record.id}`)}
-                  >
-                    {tableColumns.map((col, idx) => {
-                      const value = col.kind === 'native' ? formatValue(record, col.field) : formatRelatedValue(record, col.def, relatedValues);
-                      // Expand toggle lives inside the first column, to the
-                      // right of its value — where the old "open record"
-                      // icon used to sit, since the whole row opens the
-                      // record now instead.
-                      const showExpandToggle = idx === 0 && expandFields.length > 0;
-                      return (
-                        <div
-                          key={col.id}
-                          className="flex-1 px-6 py-5 text-[13px] font-medium text-slate-700 truncate min-w-0"
+                        <button
+                          onClick={() => {
+                            if (!isActiveSortCol) handleSort(colId, 'asc');
+                            else if (cc.sort?.direction === 'asc') handleSort(colId, 'desc');
+                            else handleSort(colId, 'asc');
+                          }}
+                          title={resolveColLabel(colId)}
+                          className={`flex-1 flex items-center gap-1.5 py-5 pl-6 pr-2 uppercase text-[10px] font-bold tracking-widest truncate text-left ${isActiveSortCol ? 'text-indigo-600' : ''}`}
                         >
-                          {idx === 0 ? (
-                            showExpandToggle ? (
-                              <span className="flex items-center justify-between gap-2 group/expand">
-                                <span className="min-w-0 truncate flex-1 font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                          <span className="truncate">{resolveColLabel(colId)}</span>
+                          {isActiveSortCol
+                            ? (cc.sort?.direction === 'asc' ? <ChevronUp size={12} className="shrink-0" /> : <ChevronDown size={12} className="shrink-0" />)
+                            : <ChevronsUpDown size={12} className="text-slate-300 shrink-0" />
+                          }
+                        </button>
+
+                        {isAdmin && (
+                          <div
+                            onMouseDown={(e) => cc.startResizing(colId, e)}
+                            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-500 z-10"
+                            title="Resize column (admin only)"
+                          />
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
+                <th className="w-24" />
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRecords.map(record => {
+                const isExpanded = expandedId === record.id;
+                const isDeleting = deletingId === record.id;
+
+                return (
+                  <React.Fragment key={record.id}>
+                    <tr
+                      className="border-b border-slate-50 hover:bg-indigo-50/20 transition-all cursor-pointer group"
+                      onClick={() => tableDef?.disable_record_dashboard
+                        ? setExpandedId(isExpanded ? null : record.id)
+                        : router.push(`/dashboard/${tableSlug}?id=${record.id}`)}
+                    >
+                      {cc.tableCols.map((colId, idx) => {
+                        const value = resolveValue(record, colId);
+                        // Expand toggle lives inside the first column, to the
+                        // right of its value — where the old "open record"
+                        // icon used to sit, since the whole row opens the
+                        // record now instead.
+                        const showExpandToggle = idx === 0 && cc.expandCols.length > 0;
+                        return (
+                          <td
+                            key={colId}
+                            title={value !== '—' ? value : undefined}
+                            className="p-6 truncate font-medium text-slate-700"
+                          >
+                            {idx === 0 ? (
+                              showExpandToggle ? (
+                                <span className="flex items-center justify-between gap-2 group/expand">
+                                  <span className="min-w-0 truncate flex-1 font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                                    {value}
+                                  </span>
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : record.id); }}
+                                    className="p-1 -m-1 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 shrink-0 transition-all"
+                                    title={isExpanded ? 'Collapse' : 'Expand'}
+                                  >
+                                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                  </button>
+                                </span>
+                              ) : (
+                                <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
                                   {value}
                                 </span>
-                                <button
-                                  onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : record.id); }}
-                                  className="p-1 -m-1 rounded-full text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 shrink-0 transition-all"
-                                  title={isExpanded ? 'Collapse' : 'Expand'}
-                                >
-                                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                </button>
-                              </span>
-                            ) : (
-                              // Primary column — styled as a link
-                              <span className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
-                                {value}
-                              </span>
-                            )
-                          ) : value}
+                              )
+                            ) : value}
+                          </td>
+                        );
+                      })}
+                      <td className="p-6" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          {pendingArchiveIds.has(record.id) && (
+                            <span className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase bg-amber-50 text-amber-600 whitespace-nowrap">
+                              Archive requested
+                            </span>
+                          )}
+                          {isDeleting ? (
+                            <Loader2 size={14} className="animate-spin text-slate-300" />
+                          ) : (
+                            <button
+                              onClick={e => handleDelete(record, e)}
+                              className="p-1.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                              title="Archive"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
-                      );
-                    })}
+                      </td>
+                    </tr>
 
-                    {/* Actions */}
-                    <div
-                      className="w-24 shrink-0 flex items-center justify-end gap-1 px-4"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      {pendingArchiveIds.has(record.id) && (
-                        <span className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase bg-amber-50 text-amber-600 whitespace-nowrap">
-                          Archive requested
-                        </span>
-                      )}
-                      {isDeleting ? (
-                        <LucideIcons.Loader2 size={14} className="animate-spin text-slate-300" />
-                      ) : (
-                        <button
-                          onClick={e => handleDelete(record, e)}
-                          className="p-1.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                          title="Archive"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Expanded row — shows hidden fields */}
-                  {isExpanded && expandFields.length > 0 && (
-                    <div className="border-b border-slate-100 bg-slate-50/60 px-8 py-6">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-                        {expandFields.map(col => (
-                          <div key={col.id}>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                              {col.label}
-                            </p>
-                            <p className="text-[13px] font-medium text-slate-700 truncate">
-                              {formatValue(record, col) || '—'}
-                            </p>
+                    {isExpanded && cc.expandCols.length > 0 && (
+                      <tr className="border-b border-slate-100 bg-slate-50/60">
+                        <td colSpan={cc.tableCols.length + 1} className="p-8">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                            {cc.expandCols.map(colId => {
+                              const expandValue = resolveValue(record, colId);
+                              return (
+                                <div key={colId}>
+                                  <p
+                                    title={resolveColLabel(colId)}
+                                    className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 truncate"
+                                  >
+                                    {resolveColLabel(colId)}
+                                  </p>
+                                  <p
+                                    title={expandValue !== '—' ? expandValue : undefined}
+                                    className="text-[13px] font-medium text-slate-800 truncate"
+                                  >
+                                    {expandValue}
+                                  </p>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </DataTable>
         )}
       </main>
 
