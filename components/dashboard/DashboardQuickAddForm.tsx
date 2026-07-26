@@ -89,6 +89,10 @@ function computeAllPreviews(fields: CustomTableField[], values: Record<string, a
 // unset -- either way the key is always present in `values`, since the
 // required-field check in customTableService can't tell "left blank" from
 // "the user picked No" otherwise, blocking a legitimate submission.
+// number/currency fields also honor a configured `default_value` (e.g.
+// Disbursements' quantity defaulting to 1) -- unlike date/boolean this is
+// opt-in per field (no default_value means no default, stays blank), since
+// unlike "today"/"false" there's no universally-sensible number to assume.
 // Recomputed after each successful add so the next entry starts from these
 // same defaults again instead of resetting to blank/undefined.
 function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, any> {
@@ -98,6 +102,9 @@ function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, an
       defaults[field.field_key] = new Date().toISOString().slice(0, 10);
     } else if (field.field_type === 'boolean' && !field.formula_type) {
       defaults[field.field_key] = field.default_value === 'true';
+    } else if ((field.field_type === 'number' || field.field_type === 'currency') && !field.formula_type && field.default_value != null) {
+      const n = Number(field.default_value);
+      if (!Number.isNaN(n)) defaults[field.field_key] = n;
     }
   }
   return defaults;

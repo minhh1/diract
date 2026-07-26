@@ -20,11 +20,11 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import RelationPicker from "./RelationPicker";
 import { createRecord as createCustomRecord, updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
-import { scaleToTarget, applyToSelectedLines, applyPercentOrAmount, type ApportionLine, type ApportionedLine } from "@/lib/invoices/apportionment";
+import { scaleToTarget, applyToSelectedLines, applyPercentOrAmount, splitGst, type ApportionLine, type ApportionedLine } from "@/lib/invoices/apportionment";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 
-interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; rate: number; hours: number; amount: number }
-interface DisbRow { id: string; tableId: string; date: string | null; description: string; amount: number }
+interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; rate: number; hours: number; amount: number; gstStatus: string }
+interface DisbRow { id: string; tableId: string; date: string | null; description: string; amount: number; gstStatus: string }
 
 interface Props {
   matterId: string;
@@ -96,14 +96,19 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
 
       const [{ data: invFields }, { data: project }] = await Promise.all([
         supabase.from('company_table_fields').select('*').eq('table_id', invTableId).is('deleted_at', null),
-        supabase.from('projects').select('debtor').eq('id', matterId).maybeSingle(),
+        supabase.from('projects').select('client, debtor').eq('id', matterId).maybeSingle(),
       ]);
       if (!active) return;
       setInvoiceFields((invFields || []) as CustomTableField[]);
 
-      if (project?.debtor) {
-        setDebtorId(project.debtor);
-        const { data: entity } = await supabase.from('entities').select('name').eq('id', project.debtor).maybeSingle();
+      // debtor wins when the matter has explicitly set one; falling back to
+      // client covers the common case where it hasn't -- most matters only
+      // ever set Client, so defaulting Debtor to it here is what actually
+      // makes this field auto-fill in practice.
+      const defaultDebtor = project?.debtor || project?.client || null;
+      if (defaultDebtor) {
+        setDebtorId(defaultDebtor);
+        const { data: entity } = await supabase.from('entities').select('name').eq('id', defaultDebtor).maybeSingle();
         if (active) setDebtorLabel(entity?.name || null);
       }
 
@@ -161,10 +166,12 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
               id: recordId, tableId, date: row.date || null, description: row.description || '',
               staffLabel: staffNameById.get(row.staff) || '', rate: Number(row.rate) || 0,
               hours: Number(row.duration_hours) || 0, amount: Number(row.amount) || 0,
+              gstStatus: row.gst_status || 'GST Exclusive',
             });
           } else {
             newDisbRows.push({
               id: recordId, tableId, date: row.date || null, description: row.description || '', amount: Number(row.amount) || 0,
+              gstStatus: row.gst_status || 'GST Exclusive',
             });
           }
         }
@@ -221,8 +228,16 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const hasNegativeBilled = apportionedFees.some(l => l.billedAmount < 0);
   const feesSubtotal = apportionedFees.reduce((s, l) => s + l.billedAmount, 0);
   const disbSubtotal = disbRows.filter(r => selectedDisbIds.has(r.id)).reduce((s, r) => s + r.amount, 0);
-  const subtotal = Math.round((feesSubtotal + disbSubtotal) * 100) / 100;
-  const gst = Math.round(subtotal * 0.1 * 100) / 100;
+
+  // Per-line GST split (see lib/invoices/apportionment.ts's splitGst) drives
+  // the totals preview below -- mirrors exactly what handleSave freezes onto
+  // invoiced_amount/invoiced_gst_amount, so this preview never disagrees
+  // with what actually gets saved.
+  const feeGstSplits = apportionedFees.map(l => splitGst(l.billedAmount, feeRows.find(r => r.id === l.id)?.gstStatus));
+  const disbGstSplits = disbRows.filter(r => selectedDisbIds.has(r.id)).map(r => splitGst(r.amount, r.gstStatus));
+  const allGstSplits = [...feeGstSplits, ...disbGstSplits];
+  const subtotal = Math.round(allGstSplits.reduce((s, l) => s + l.exGst, 0) * 100) / 100;
+  const gst = Math.round(allGstSplits.reduce((s, l) => s + l.gst, 0) * 100) / 100;
   const totalIncGst = Math.round((subtotal + gst) * 100) / 100;
 
   const toggleFee = (id: string) => setSelectedFeeIds(prev => {
@@ -263,25 +278,41 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
       return;
     }
 
+    // Both invoiced_amount (feeds fees_total/disbursements_total ->
+    // subtotal) and invoice_line_items' original_amount/billed_amount are
+    // the EX-GST portion of each figure -- see lib/invoices/apportionment.ts's
+    // splitGst(). For a GST Exclusive/Free line this equals the raw dollar
+    // amount as before; for GST Inclusive it's the amount with GST backed
+    // out, with gst_amount carrying the difference separately (what
+    // InvoiceTemplateDisplay.showAmountAndGstPerLine is for).
     const lineItemRows: any[] = [];
     for (const line of apportionedFees) {
       const row = feeRows.find(r => r.id === line.id);
       if (!row) continue;
       const fields = sourceFieldsByTable.get(row.tableId) || [];
-      await updateCustomRecord(row.id, row.tableId, companyId, { invoice: record.id, invoiced_amount: line.billedAmount }, fields);
+      const originalSplit = splitGst(line.originalAmount, row.gstStatus);
+      const billedSplit = splitGst(line.billedAmount, row.gstStatus);
+      await updateCustomRecord(row.id, row.tableId, companyId, {
+        invoice: record.id, invoiced_amount: billedSplit.exGst, invoiced_gst_amount: billedSplit.gst,
+      }, fields);
       lineItemRows.push({
         company_id: companyId, invoice_record_id: record.id, source_type: 'fee', source_record_id: row.id,
-        description: row.description, original_amount: line.originalAmount, billed_amount: line.billedAmount,
+        description: row.description, original_amount: originalSplit.exGst, billed_amount: billedSplit.exGst,
         entry_date: row.date, staff_name: row.staffLabel || null, rate: row.rate, hours: row.hours,
+        gst_status: row.gstStatus, gst_amount: billedSplit.gst,
       });
     }
     for (const row of disbRows.filter(r => selectedDisbIds.has(r.id))) {
       const fields = sourceFieldsByTable.get(row.tableId) || [];
-      await updateCustomRecord(row.id, row.tableId, companyId, { invoice: record.id, invoiced_amount: row.amount }, fields);
+      const split = splitGst(row.amount, row.gstStatus);
+      await updateCustomRecord(row.id, row.tableId, companyId, {
+        invoice: record.id, invoiced_amount: split.exGst, invoiced_gst_amount: split.gst,
+      }, fields);
       lineItemRows.push({
         company_id: companyId, invoice_record_id: record.id, source_type: 'disbursement', source_record_id: row.id,
-        description: row.description, original_amount: row.amount, billed_amount: row.amount,
+        description: row.description, original_amount: split.exGst, billed_amount: split.exGst,
         entry_date: row.date, staff_name: null, rate: null, hours: null,
+        gst_status: row.gstStatus, gst_amount: split.gst,
       });
     }
     if (lineItemRows.length) {
@@ -375,6 +406,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     initialLabel={debtorLabel || undefined}
                     onSelect={(id, label) => { setDebtorId(id); setDebtorLabel(label); }}
                     placeholder="Select debtor..."
+                    allowCreateEntity
                   />
                 </div>
                 {invoiceSettings.templates.length > 0 && (
@@ -529,7 +561,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
               {(feeRows.length > 0 || disbRows.length > 0) && (
                 <div className="p-4 bg-slate-50 rounded-2xl space-y-1.5">
                   <div className="flex justify-between text-[12px] text-slate-500"><span>Subtotal (ex. GST)</span><span>{money(subtotal)}</span></div>
-                  <div className="flex justify-between text-[12px] text-slate-500"><span>GST (10%)</span><span>{money(gst)}</span></div>
+                  <div className="flex justify-between text-[12px] text-slate-500"><span>GST</span><span>{money(gst)}</span></div>
                   <div className="flex justify-between text-[13px] font-bold text-slate-800"><span>Total (inc. GST)</span><span>{money(totalIncGst)}</span></div>
                 </div>
               )}

@@ -45,12 +45,18 @@ export interface InvoiceFeeLine {
   hours: number | null;
   originalAmount: number;
   billedAmount: number;
+  // GST portion of billedAmount -- see lib/invoices/apportionment.ts's
+  // splitGst(). billedAmount itself is always the ex-GST figure (matches
+  // what feeds fees_total/subtotal), so a GST Inclusive line's full charged
+  // amount is billedAmount + gstAmount, not billedAmount alone.
+  gstAmount: number;
 }
 
 export interface InvoiceDisbursementLine {
   date: string | null;
   description: string | null;
   amount: number;
+  gstAmount: number;
 }
 
 export interface GenerateInvoicePdfInput {
@@ -232,7 +238,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
   }
   if (input.display.showPriorBalance && input.invoice.priorBalance) totalRow('Opening balance', input.invoice.priorBalance);
   totalRow('Subtotal (ex. GST)', input.invoice.subtotal);
-  totalRow('GST (10%)', input.invoice.gst);
+  totalRow('GST', input.invoice.gst);
   totalRow('Total (inc. GST)', input.invoice.totalIncGst, { bold: true });
   if (input.display.showPaymentSummary) {
     y -= 4;
@@ -287,12 +293,33 @@ function truncate(str: string, maxWidth: number, font: PDFFont, size: number): s
   return str.slice(0, end) + '…';
 }
 
+// Lays out the right-aligned numeric columns (Rate, Hours, GST, Amount)
+// right-to-left so each column's reserved width is derived once instead of
+// hardcoded per-column offsets that silently collide whenever a column is
+// added/widened (confirmed live: GST and Hours previously landed on the
+// same x when both were shown). Returns each shown column's right-edge x
+// (for `x - font.widthOfTextAtSize(str, size)` right-alignment) plus the
+// total reserved width, so the description column knows how much room it
+// has left.
+function rightColumnLayout(display: InvoiceTemplateDisplay) {
+  const AMOUNT_W = 70, GST_W = 60, HOURS_W = 50, RATE_W = 60;
+  let edge = 0;
+  const amountX = PAGE_W - MARGIN - edge; edge += AMOUNT_W;
+  const gstX = display.showAmountAndGstPerLine ? PAGE_W - MARGIN - edge : null;
+  if (display.showAmountAndGstPerLine) edge += GST_W;
+  const hoursX = display.showHoursPerLine ? PAGE_W - MARGIN - edge : null;
+  if (display.showHoursPerLine) edge += HOURS_W;
+  const rateX = display.showRatePerLine ? PAGE_W - MARGIN - edge : null;
+  if (display.showRatePerLine) edge += RATE_W;
+  return { amountX, gstX, hoursX, rateX, totalWidth: edge };
+}
+
 function drawLineItemTable(
   pdfDoc: PDFDocument, startPage: PDFPage, startY: number, input: GenerateInvoicePdfInput, font: PDFFont
 ): { page: PDFPage; y: number } {
   let page = startPage, y = startY;
   const size = 9;
-  const rightAlignedWidth = (input.display.showRatePerLine ? 60 : 0) + (input.display.showHoursPerLine ? 50 : 0) + (input.display.showAmountAndGstPerLine ? 70 : 0);
+  const cols = rightColumnLayout(input.display);
 
   for (const line of input.feeLines) {
     let x = MARGIN;
@@ -303,20 +330,22 @@ function drawLineItemTable(
       x += 34;
     }
     if (input.display.showLineDescriptions && line.description) {
-      const descMaxWidth = PAGE_W - MARGIN - x - rightAlignedWidth - 8;
+      const descMaxWidth = PAGE_W - MARGIN - x - cols.totalWidth - 8;
       page.drawText(truncate(line.description, descMaxWidth, font, size), { x, y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showRatePerLine && line.rate != null) {
+    if (input.display.showRatePerLine && line.rate != null && cols.rateX != null) {
       const str = money(line.rate);
-      page.drawText(str, { x: PAGE_W - MARGIN - 120 - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+      page.drawText(str, { x: cols.rateX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showHoursPerLine && line.hours != null) {
+    if (input.display.showHoursPerLine && line.hours != null && cols.hoursX != null) {
       const str = line.hours.toFixed(2);
-      page.drawText(str, { x: PAGE_W - MARGIN - 70 - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+      page.drawText(str, { x: cols.hoursX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showAmountAndGstPerLine) {
+    if (input.display.showAmountAndGstPerLine && cols.gstX != null) {
+      const gstStr = money(line.gstAmount);
+      page.drawText(gstStr, { x: cols.gstX - font.widthOfTextAtSize(gstStr, size), y, size, font, color: rgb(0.5, 0.5, 0.55) });
       const str = money(line.billedAmount);
-      page.drawText(str, { x: PAGE_W - MARGIN - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+      page.drawText(str, { x: cols.amountX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
     y -= 14;
     if (y < MIN_Y) { page = pdfDoc.addPage([PAGE_W, PAGE_H]); y = PAGE_H - MARGIN; }
@@ -329,14 +358,24 @@ function drawDisbursementTable(
 ): { page: PDFPage; y: number } {
   let page = startPage, y = startY;
   const size = 9;
+  const cols = rightColumnLayout(input.display);
+  // Disbursements only ever show Amount(+GST) -- unlike drawLineItemTable,
+  // never Rate/Hours -- so the description column's reserved width is just
+  // those two, not cols.totalWidth (which also budgets for Rate/Hours on
+  // the fee table above).
+  const disbRightWidth = input.display.showAmountAndGstPerLine ? 130 : 70;
   for (const line of input.disbursementLines) {
     page.drawText(formatDate(line.date), { x: MARGIN, y, size, font, color: rgb(0.15, 0.15, 0.18) });
     if (line.description) {
-      const descMaxWidth = PAGE_W - MARGIN * 2 - 62 - 90;
+      const descMaxWidth = PAGE_W - MARGIN * 2 - 62 - disbRightWidth;
       page.drawText(truncate(line.description, descMaxWidth, font, size), { x: MARGIN + 62, y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
+    if (input.display.showAmountAndGstPerLine && cols.gstX != null) {
+      const gstStr = money(line.gstAmount);
+      page.drawText(gstStr, { x: cols.gstX - font.widthOfTextAtSize(gstStr, size), y, size, font, color: rgb(0.5, 0.5, 0.55) });
+    }
     const str = money(line.amount);
-    page.drawText(str, { x: PAGE_W - MARGIN - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+    page.drawText(str, { x: cols.amountX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     y -= 14;
     if (y < MIN_Y) { page = pdfDoc.addPage([PAGE_W, PAGE_H]); y = PAGE_H - MARGIN; }
   }

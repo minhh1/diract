@@ -8,7 +8,13 @@ import { supabase } from "@/lib/supabase";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onRefresh: () => void;
+  // Called after a successful create -- passed the newly-created entity's id
+  // (the trust's own id, not the trustee's, when isTrust) so a caller that
+  // wants to auto-select the new entity (see RelationPicker's
+  // allowCreateEntity) can do so without a second lookup. Optional/ignored
+  // by every existing caller that just wants a "something changed, refetch"
+  // signal.
+  onRefresh: (newEntityId?: string) => void;
 }
 
 export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
@@ -136,7 +142,7 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
       await supabase.from('audit_logs').insert({ entity_id: mainEntityId, user_id: user?.id, action: `Created ${entityType}`, details: { entity_name: name } });
 
       setSaved(true);
-      setTimeout(() => { onRefresh(); handleClose(); }, 700);
+      setTimeout(() => { onRefresh(mainEntityId); handleClose(); }, 700);
     } catch (err: any) {
       alert(err.message);
     } finally {

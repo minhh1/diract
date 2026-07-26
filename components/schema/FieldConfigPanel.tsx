@@ -33,6 +33,11 @@ const FILTER_COLUMNS: Record<string, string[]> = {
 // current user's own), it's picked automatically instead of making the
 // user search for themselves.
 const CURRENT_USER_SENTINEL = '$current_user';
+// Role/team-aware sibling of CURRENT_USER_SENTINEL -- see lib/teamScope.ts.
+// Unlike $current_user (always exactly the signed-in user), this can
+// resolve to many rows: a company admin sees everyone, a team leader sees
+// their team(s), everyone else sees just themselves.
+const TEAM_SCOPE_SENTINEL = '$team_scope';
 // Mirrors components/NewEntityModal.tsx's ENTITY_TYPES -- offered as a
 // convenience dropdown when filtering entities by entity_type (e.g. a
 // "Staff" field restricted to entity_type = 'Staff').
@@ -477,9 +482,21 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                         {ENTITY_TYPE_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                       </select>
                     ) : draft.linked_filter_column === 'linked_profile_id' ? (
-                      <p className="mt-2 bg-indigo-50 border border-indigo-100 rounded-2xl py-2 px-3 text-[11px] font-medium text-indigo-700">
-                        Only shows (and auto-fills) the entity linked to whoever is signed in — each person only sees their own, via the entity&rsquo;s &ldquo;Link to a team member&rdquo; on its detail page.
-                      </p>
+                      <>
+                        <select
+                          value={draft.linked_filter_value || CURRENT_USER_SENTINEL}
+                          onChange={e => update('linked_filter_value', e.target.value)}
+                          className="w-full mt-2 bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                        >
+                          <option value={CURRENT_USER_SENTINEL}>Signed-in user only</option>
+                          <option value={TEAM_SCOPE_SENTINEL}>Company members — role &amp; team scoped</option>
+                        </select>
+                        <p className="mt-2 bg-indigo-50 border border-indigo-100 rounded-2xl py-2 px-3 text-[11px] font-medium text-indigo-700">
+                          {draft.linked_filter_value === TEAM_SCOPE_SENTINEL
+                            ? 'Restricted to entity_type = Staff, then: admins see everyone, team leaders see their team(s), everyone else sees only themselves.'
+                            : 'Only shows (and auto-fills) the entity linked to whoever is signed in — each person only sees their own, via the entity’s “Link to a team member” on its detail page.'}
+                        </p>
+                      </>
                     ) : draft.linked_filter_column ? (
                       <input
                         value={draft.linked_filter_value || ''}

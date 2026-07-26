@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, X, Check } from "lucide-react";
+import { Loader2, X, Check, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSize";
+import NewEntityModal from "@/components/NewEntityModal";
+import { getStaffScopeIds } from "@/lib/teamScope";
 
 interface RelationOption {
   id: string;
@@ -20,6 +22,17 @@ interface RelationOption {
 // for "whoever is signed in", so it's resolved to the real auth uid here at
 // query time instead.
 const CURRENT_USER_SENTINEL = '$current_user';
+
+// Sentinel filterValue for a role/team-aware "Staff" relation: a company
+// admin sees every Staff entity, a team leader sees their team(s)' members,
+// everyone else sees only themselves -- see lib/teamScope.ts. Unlike
+// $current_user this can resolve to MANY rows, not one, so it's handled as
+// an `.in('id', ...)` restriction rather than a single `.eq()`, and it
+// always implies `entity_type = 'Staff'` on top (this sentinel only makes
+// sense for a Staff-typed field) -- that companion filter is what actually
+// fixes a picker showing non-staff entities (e.g. property-owning
+// companies) even for an admin, who gets no id restriction at all.
+const TEAM_SCOPE_SENTINEL = '$team_scope';
 
 // Module-level (not per-component) dedup + short-lived cache for the two
 // mount-time fetches below (label resolution, "signed-in user" auto-select).
@@ -146,6 +159,14 @@ interface Props {
   // fallback text -- see FieldValueInput's Variant doc comment. Undefined
   // means 'pill', what every existing caller already renders at.
   variant?: 'pill' | 'plain';
+  // Single-select + linkedSystemTable="entities" only -- adds a pinned
+  // "+ Add new entity" row at the bottom of the dropdown that opens
+  // NewEntityModal inline (same onRefresh-wraps-onSelect precedent
+  // UniversalSelectionModal already uses) and auto-selects the newly
+  // created entity. Opt-in per caller (e.g. CreateInvoiceModal's Debtor
+  // field) rather than a blanket default, since most relation pickers on
+  // this component have no business creating new rows.
+  allowCreateEntity?: boolean;
 }
 
 // Resolves the primary display field's value (plus an optional second
@@ -243,7 +264,11 @@ async function fetchAllSystemTableOptions(
   const nativeCols = Array.from(new Set([col, ...nativeExtra, ...(col2Native ? [col2Native] : [])]));
 
   let q = supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null).order(col).limit(5000);
-  if (filterColumn) {
+  if (filterColumn && filterValue === TEAM_SCOPE_SENTINEL) {
+    q = q.eq('entity_type', 'Staff');
+    const scopeIds = await dedupedFetch('team-scope-ids', getStaffScopeIds);
+    if (scopeIds !== null) q = scopeIds.length ? q.in('id', scopeIds) : q.eq('id', '__none__');
+  } else if (filterColumn) {
     const resolvedValue = await resolveFilterValue(filterValue);
     q = resolvedValue ? q.eq(filterColumn, resolvedValue) : q.eq(filterColumn, '__none__');
   }
@@ -347,6 +372,7 @@ export async function warmRelationOptionsCache(): Promise<void> {
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md', variant = 'pill',
+  allowCreateEntity,
 }: Props) {
   const plain = variant === 'plain';
   const sizeClass = plain ? 'py-1 px-0.5 text-[12px]' : PILL_SIZE_CLASSES[size];
@@ -364,6 +390,8 @@ export default function RelationPicker({
   // only needs to cover ids selected before their label was ever seen in
   // `options` (e.g. on initial load of a record with existing links).
   const [multiLabels, setMultiLabels] = useState<Record<string, string>>({});
+  // allowCreateEntity only -- whether the inline NewEntityModal is open.
+  const [showCreateEntity, setShowCreateEntity] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   // Which value id `currentLabel` is already known-correct for -- set
   // synchronously by the picker's own click handler (it already knows the
@@ -669,6 +697,27 @@ export default function RelationPicker({
     setOpen(false);
   };
 
+  // allowCreateEntity only -- after NewEntityModal creates a row, invalidate
+  // this field's cached candidate list (same key the "fetch on open" effect
+  // reads) and refetch it so the new entity is actually findable, then
+  // auto-select it via the same path a normal click would -- otherwise the
+  // viewer would have to close and reopen the dropdown just to find the row
+  // they were staring at a moment ago.
+  const handleEntityCreated = async (newId?: string) => {
+    setShowCreateEntity(false);
+    if (!linkedSystemTable) return;
+    const key = optionsCacheKey(linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
+    cache.delete(key);
+    setLoading(true);
+    const list = await fetchAllSystemTableOptions(linkedSystemTable, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
+    cache.set(key, { value: list, expiresAt: Date.now() + OPTIONS_CACHE_TTL_MS });
+    setFullOptions(list);
+    setLoading(false);
+    const match = newId && list.find(o => o.id === newId);
+    if (match) selectOption(match);
+    else setOpen(true);
+  };
+
   return (
     <div ref={containerRef} className="relative w-full">
       <div
@@ -748,7 +797,20 @@ export default function RelationPicker({
               </button>
             ))
           )}
+          {allowCreateEntity && linkedSystemTable === 'entities' && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setShowCreateEntity(true); }}
+              className="w-full text-left px-4 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 border-t border-slate-100 flex items-center gap-1.5"
+            >
+              <Plus size={12} /> Add new entity
+            </button>
+          )}
         </div>
+      )}
+
+      {allowCreateEntity && (
+        <NewEntityModal isOpen={showCreateEntity} onClose={() => setShowCreateEntity(false)} onRefresh={handleEntityCreated} />
       )}
     </div>
   );

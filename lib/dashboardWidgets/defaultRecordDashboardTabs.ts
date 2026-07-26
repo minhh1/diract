@@ -36,15 +36,15 @@ export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
     slug: 'time-fee-entries',
     title: 'Time & Fees',
     icon: 'Clock',
-    gridFieldKeys: ['date', 'staff', 'type', 'description', 'rate', 'duration_hours', 'billable', 'amount'],
-    quickAddFieldKeys: ['date', 'staff', 'type', 'task_code', 'description', 'activity_code', 'rate', 'duration_hours', 'billable'],
+    gridFieldKeys: ['date', 'staff', 'type', 'description', 'rate', 'duration_hours', 'billable', 'gst_status', 'amount'],
+    quickAddFieldKeys: ['date', 'staff', 'type', 'task_code', 'description', 'activity_code', 'rate', 'duration_hours', 'billable', 'gst_status'],
   },
   {
     slug: 'disbursements',
     title: 'Disbursements',
     icon: 'Receipt',
-    gridFieldKeys: ['date', 'staff', 'supplier_name', 'description', 'rate', 'quantity', 'gst_inclusive', 'billable', 'amount'],
-    quickAddFieldKeys: ['date', 'staff', 'supplier_name', 'expense_code', 'description', 'rate', 'quantity', 'gst_inclusive', 'billable'],
+    gridFieldKeys: ['date', 'staff', 'supplier_name', 'description', 'rate', 'quantity', 'gst_status', 'billable', 'amount'],
+    quickAddFieldKeys: ['date', 'staff', 'supplier_name', 'expense_code', 'description', 'rate', 'quantity', 'gst_status', 'billable'],
   },
 ];
 

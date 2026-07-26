@@ -86,3 +86,26 @@ export function applyPercentOrAmount(
 export function totalDiscount(results: ApportionedLine[]): number {
   return roundCents(results.reduce((s, r) => s + (r.originalAmount - r.billedAmount), 0));
 }
+
+// Splits a line's dollar amount into its ex-GST and GST portions based on
+// gst_status (see supabase/migrations/..._gst_status_fields.sql):
+//   GST Exclusive -- `amount` is already ex-GST; GST is added on top.
+//   GST Free      -- no GST at all.
+//   GST Inclusive -- `amount` already includes GST; back it out (÷1.1).
+// Called once per selected line at invoice-creation time (CreateInvoiceModal)
+// to freeze invoiced_amount (exGst) + invoiced_gst_amount (gst), which
+// Invoices' fees_gst/disbursements_gst sum_related rollups then aggregate --
+// see 20260726072500_invoices_gst_rollup_fields.sql. Unrecognized/missing
+// status falls back to GST Exclusive (today's only prior behavior, so an
+// existing entry with no status yet keeps computing the same way it always
+// has).
+export interface GstSplit { exGst: number; gst: number }
+
+export function splitGst(amount: number, gstStatus: string | null | undefined): GstSplit {
+  if (gstStatus === 'GST Free') return { exGst: roundCents(amount), gst: 0 };
+  if (gstStatus === 'GST Inclusive') {
+    const exGst = roundCents(amount / 1.1);
+    return { exGst, gst: roundCents(amount - exGst) };
+  }
+  return { exGst: roundCents(amount), gst: roundCents(amount * 0.1) };
+}
