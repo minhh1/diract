@@ -40,12 +40,49 @@ export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
 interface RecordTabInsert {
   company_id: string;
   record_id: string;
-  record_table: 'projects';
+  record_table: string; // system table name, or company_tables.id for custom-table records
   title: string;
   icon: string;
   tab_type: 'custom_dashboard';
   linked_table_id: string;
   display_order: number;
+}
+
+// Company-level record-tab defaults (company_record_tab_defaults -- written
+// by template installs when the dashboards opt-in is ticked, see
+// supabase/template_record_tabs.sql): the data-driven generalization of the
+// hardcoded project specs above. Same lazy-materialization contract --
+// returns not-yet-inserted record_tabs rows + their widgets for every
+// default this record doesn't already have a tab for -- but works for ANY
+// record table (system or custom), so any template can ship record
+// dashboards, not just the Law Firm one.
+export async function buildMissingDefaultTabsFromCompanyDefaults(
+  companyId: string,
+  recordTable: string,
+  recordId: string,
+  startDisplayOrder: number,
+  existingLinkedTableIds: Set<string>,
+): Promise<{ tabs: RecordTabInsert[]; widgetsByLinkedTableId: Map<string, DashboardWidget[]> }> {
+  const tabs: RecordTabInsert[] = [];
+  const widgetsByLinkedTableId = new Map<string, DashboardWidget[]>();
+  const { data: defaults } = await supabase
+    .from('company_record_tab_defaults')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('record_table', recordTable)
+    .order('display_order');
+
+  let order = startDisplayOrder;
+  for (const d of defaults || []) {
+    if (existingLinkedTableIds.has(d.linked_table_id) || widgetsByLinkedTableId.has(d.linked_table_id)) continue;
+    tabs.push({
+      company_id: companyId, record_id: recordId, record_table: recordTable,
+      title: d.title, icon: d.icon || 'LayoutGrid', tab_type: 'custom_dashboard',
+      linked_table_id: d.linked_table_id, display_order: order++,
+    });
+    widgetsByLinkedTableId.set(d.linked_table_id, (d.widgets || []) as DashboardWidget[]);
+  }
+  return { tabs, widgetsByLinkedTableId };
 }
 
 // Builds the record_tabs rows (not yet inserted) + matching widgets array

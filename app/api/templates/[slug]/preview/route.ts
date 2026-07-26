@@ -89,6 +89,28 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
   const tableNameById = new Map((tables || []).map(t => [t.id, t.name]));
   const tableNameBySlug = new Map((tables || []).map(t => [t.slug, t.name]));
 
+  // Labels for field keys that appear in synced dashboard widgets but
+  // aren't in the template's field catalog (custom fields the owner added
+  // to their live table without templating them) -- resolved from the OWNER
+  // company's live tables so the review reads "Time Logged", not a
+  // prettified "Field 1784713137612".
+  const { data: ownerTableMap } = await admin
+    .from("company_template_table_map")
+    .select("source_template_table_id, installed_company_table_id")
+    .eq("company_id", template.owner_company_id)
+    .eq("template_id", template.id);
+  const ownerInstalledByTemplateTableId = new Map((ownerTableMap || []).map(m => [m.source_template_table_id, m.installed_company_table_id]));
+  const ownerInstalledIds = (ownerTableMap || []).map(m => m.installed_company_table_id).filter(Boolean);
+  const { data: ownerFieldRows } = ownerInstalledIds.length
+    ? await admin.from("company_table_fields").select("table_id, field_key, label").in("table_id", ownerInstalledIds).is("deleted_at", null)
+    : { data: [] as any[] };
+  const ownerLabelsByTableId = new Map<string, Record<string, string>>();
+  for (const f of ownerFieldRows || []) {
+    const rec = ownerLabelsByTableId.get(f.table_id) || {};
+    rec[f.field_key] = f.label;
+    ownerLabelsByTableId.set(f.table_id, rec);
+  }
+
   const tableConflicts = await Promise.all(
     (tables || []).map(async t => {
       const fieldRows = (allFields || []).filter(f => f.template_table_id === t.id);
@@ -113,6 +135,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
         selectOptions: Array.isArray(f.select_options) ? f.select_options : null,
       });
       const fields = fieldRows.map(describe);
+      // Catalog labels win; owner-live labels fill the gaps.
+      const fieldLabels = {
+        ...(ownerLabelsByTableId.get(ownerInstalledByTemplateTableId.get(t.id) as string) || {}),
+        ...Object.fromEntries(fieldRows.map((f: any) => [f.field_key, f.label])),
+      };
 
       if (ownedTableIds.has(t.id)) {
         const installedTableId = installedTableIdByTemplateTableId.get(t.id);
@@ -123,7 +150,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
           const installedKeys = new Set((installedFields || []).map(f => f.field_key));
           newFields = fieldRows.filter(f => !installedKeys.has(f.field_key)).map(describe);
         }
-        return { slug: t.slug, name: t.name, icon: t.icon, color: t.color, isLedger: !!t.is_ledger, fields, owned: true, newFields, conflict: null };
+        return { slug: t.slug, name: t.name, icon: t.icon, color: t.color, isLedger: !!t.is_ledger, fields, fieldLabels, owned: true, newFields, conflict: null };
       }
 
       const { data: existing } = await admin
@@ -135,6 +162,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
         color: t.color,
         isLedger: !!t.is_ledger,
         fields,
+        fieldLabels,
         owned: false,
         newFields: [] as typeof fields,
         conflict: existing ? { existingId: existing.id, existingName: existing.name } : null,
@@ -155,6 +183,31 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     widgets: Array.isArray(d.widgets_template) ? d.widgets_template : [],
     sourceTableSlug: (tables || []).find(t => t.id === d.source_template_table_id)?.slug ?? null,
   }));
+
+  // Record-dashboard tabs the template ships (template_definition_record_tabs,
+  // see supabase/template_record_tabs.sql) -- shown with the same wireframe
+  // treatment as table dashboards. `owned` = this company already has the
+  // matching materialized default.
+  const { data: recordTabDefs } = await admin
+    .from("template_definition_record_tabs").select("*").eq("template_id", template.id).order("display_order");
+  const { data: companyTabDefaults } = (recordTabDefs || []).length
+    ? await admin.from("company_record_tab_defaults").select("title, linked_table_id").eq("company_id", companyId)
+    : { data: [] as any[] };
+  const installedLinkedIdByTemplateTableId = installedTableIdByTemplateTableId;
+  const recordTabs = (recordTabDefs || []).map(rt => {
+    const installedLinkedId = installedLinkedIdByTemplateTableId.get(rt.linked_template_table_id);
+    return {
+      title: rt.title,
+      icon: rt.icon,
+      appearsOn: rt.record_table_name
+        ? rt.record_table_name.charAt(0).toUpperCase() + rt.record_table_name.slice(1)
+        : tableNameById.get(rt.record_template_table_id) || "records",
+      linkedTable: tableNameById.get(rt.linked_template_table_id) || null,
+      linkedTableSlug: (tables || []).find(t => t.id === rt.linked_template_table_id)?.slug ?? null,
+      widgets: Array.isArray(rt.widgets_template) ? rt.widgets_template : [],
+      owned: !!(companyTabDefaults || []).some(d => d.title === rt.title && d.linked_table_id === installedLinkedId),
+    };
+  });
 
   // Whether there's anything for upgrade_company_template to actually do --
   // only meaningful when alreadyInstalled (a fresh install always "has
@@ -215,6 +268,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     tables: tableConflicts,
     systemFields: fieldConflicts,
     dashboards,
+    recordTabs,
     suggestedLabelOverrides: template.suggested_label_overrides || {},
   });
 }

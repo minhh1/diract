@@ -44,6 +44,9 @@ interface PreviewConflict {
   // Table-only: append-only ledger table (consecutive receipt numbers,
   // running balances, overdraw guard -- see company_table_ledger.sql).
   isLedger?: boolean;
+  // Table-only: field_key -> label for wireframe rendering. Catalog labels
+  // plus the OWNER company's live labels for keys not (yet) in the catalog.
+  fieldLabels?: Record<string, string>;
   // System-field-only settings (same idea as TemplateTableField's).
   required?: boolean; unique?: boolean; helpText?: string | null; selectOptions?: string[] | null;
   conflict: { existingId: string; existingName?: string; existingLabel?: string } | null;
@@ -51,6 +54,10 @@ interface PreviewConflict {
 
 interface PreviewWidget { id: string; type: string; layout?: { x: number; y: number; w: number; h: number }; config?: Record<string, any> }
 interface PreviewDashboard { slug: string; name: string; icon: string; color: string; owned: boolean; widgets?: PreviewWidget[]; sourceTableSlug?: string | null }
+// Record-dashboard tab the template ships -- appears on every record of
+// `appearsOn`, showing linked rows of `linkedTable` (see
+// supabase/template_record_tabs.sql).
+interface PreviewRecordTab { title: string; icon: string | null; appearsOn: string; linkedTable: string | null; linkedTableSlug: string | null; widgets: PreviewWidget[]; owned: boolean }
 
 interface PreviewResult {
   templateName: string;
@@ -64,6 +71,7 @@ interface PreviewResult {
   tables: PreviewConflict[];
   systemFields: PreviewConflict[];
   dashboards: PreviewDashboard[];
+  recordTabs?: PreviewRecordTab[];
   suggestedLabelOverrides: Record<string, { singular: string; plural: string }>;
 }
 
@@ -248,6 +256,19 @@ export default function MarketplacePage() {
     load();
   };
 
+  // Owner-only: push this company's live dashboards (fields, layout, empty
+  // rows, conditions, widths, highlights) into the template catalog -- see
+  // supabase/template_dashboards_owner_sync.sql.
+  const [syncingDashboards, setSyncingDashboards] = useState<string | null>(null);
+  const syncDashboards = async (template: Template) => {
+    setSyncingDashboards(template.id);
+    const res = await fetch(`/api/templates/${template.slug}/sync-dashboards`, { method: 'POST' });
+    const data = await res.json();
+    setSyncingDashboards(null);
+    if (!res.ok) { alert(data.error || 'Sync failed'); return; }
+    alert(`Dashboards synced into the template: ${data.updated} updated, ${data.created} added${data.skipped ? `, ${data.skipped} skipped (no template table binding)` : ''}.`);
+  };
+
   const uninstall = async (template: Template) => {
     if (!window.confirm(`Uninstall "${template.name}"? This moves everything it created for your company (tables it made and the records in them) to Trash, where it can be restored. Anything you told it to "use existing" for is untouched.`)) return;
     const res = await fetch(`/api/templates/${template.slug}/uninstall`, { method: 'POST' });
@@ -326,6 +347,14 @@ export default function MarketplacePage() {
         )}
         {mode === 'mine' && isAdmin && (
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => syncDashboards(template)}
+              disabled={syncingDashboards === template.id}
+              title="Copy this workspace's live dashboards (fields, layout, empty rows, conditions, widths, highlights) into the template"
+              className="px-3 py-2 bg-slate-50 text-slate-600 rounded-full text-[10px] font-bold hover:bg-slate-100 transition-all disabled:opacity-50"
+            >
+              {syncingDashboards === template.id ? <Loader2 size={12} className="animate-spin" /> : 'Sync dashboards'}
+            </button>
             <button onClick={() => togglePublish(template)} className="px-3 py-2 bg-slate-50 text-slate-600 rounded-full text-[10px] font-bold hover:bg-slate-100 transition-all">
               {template.is_published ? 'Unpublish' : 'Publish'}
             </button>
@@ -430,15 +459,17 @@ export default function MarketplacePage() {
                     actually pending. */}
                 <div className="space-y-3">
                   <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">
-                    {preview.alreadyInstalled ? "What's pending" : 'This template will add'}
+                    {preview.alreadyInstalled ? 'Template contents — live status' : 'This template will add'}
                   </p>
 
-                  {preview.tables.filter(t => !t.owned || (t.newFields?.length ?? 0) > 0).map(t => (
+                  {preview.tables.map(t => (
                     <div key={t.slug} className={`p-3 rounded-2xl border space-y-2 ${t.conflict ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-200'}`}>
                       <div className="flex items-center justify-between">
                         <p className="text-[12px] font-bold text-slate-800">
                           {t.name} <span className="font-normal text-slate-400">
-                            {t.owned ? `— ${t.newFields!.length} new field${t.newFields!.length === 1 ? '' : 's'}` : '— new table'}
+                            {t.owned
+                              ? (t.newFields!.length ? `— ${t.newFields!.length} new field${t.newFields!.length === 1 ? '' : 's'}` : '— installed')
+                              : '— new table'}
                           </span>
                         </p>
                         <span className="flex items-center gap-2">
@@ -450,16 +481,20 @@ export default function MarketplacePage() {
                               Ledger
                             </span>
                           )}
-                          {!t.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
+                          {t.owned && !t.newFields?.length && <span className="text-[9px] font-bold text-slate-400 uppercase">Installed</span>}
+                          {!t.conflict && (!t.owned || !!t.newFields?.length) && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {(t.owned ? t.newFields! : (t.fields || [])).map((f, i) => (
-                          <span key={i} title={fieldTooltip(f)} className="px-2 py-1 bg-slate-50 rounded-full text-[10px] font-medium text-slate-600">
-                            {f.label} <span className="text-slate-400">· {f.fieldType}{f.linksTo ? ` → ${f.linksTo}` : ''}{f.selectOptions?.length ? ` · ${f.selectOptions.length} options` : ''}</span>
-                            <FieldSettingBadges f={f} />
-                          </span>
-                        ))}
+                        {(t.fields || []).map((f, i) => {
+                          const isNew = !t.owned || !!t.newFields?.some(nf => nf.label === f.label);
+                          return (
+                            <span key={i} title={fieldTooltip(f)} className={`px-2 py-1 rounded-full text-[10px] font-medium text-slate-600 ${isNew && t.owned ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-slate-50'}`}>
+                              {f.label} <span className="text-slate-400">· {f.fieldType}{f.linksTo ? ` → ${f.linksTo}` : ''}{f.selectOptions?.length ? ` · ${f.selectOptions.length} options` : ''}</span>
+                              <FieldSettingBadges f={f} />
+                            </span>
+                          );
+                        })}
                       </div>
                       {t.isLedger && (
                         <p className="text-[10px] text-teal-700">
@@ -483,7 +518,7 @@ export default function MarketplacePage() {
                   ))}
 
                   {Object.entries(
-                    preview.systemFields.filter(f => !f.owned).reduce<Record<string, PreviewConflict[]>>((acc, f) => {
+                    preview.systemFields.reduce<Record<string, PreviewConflict[]>>((acc, f) => {
                       const key = f.tableName!;
                       (acc[key] ||= []).push(f);
                       return acc;
@@ -499,7 +534,9 @@ export default function MarketplacePage() {
                                 {f.label} <span className="text-slate-400">· {f.fieldType}{f.selectOptions?.length ? ` · ${f.selectOptions.length} options` : ''}</span>
                                 <FieldSettingBadges f={f} />
                               </span>
-                              {!f.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
+                              {f.owned
+                                ? <span className="text-[9px] font-bold text-slate-400 uppercase">Installed</span>
+                                : !f.conflict && <span className="text-[9px] font-bold text-emerald-600 uppercase">New</span>}
                             </div>
                             {f.conflict && (
                               <>
@@ -520,20 +557,20 @@ export default function MarketplacePage() {
                     </div>
                   ))}
 
-                  {preview.dashboards.some(d => !d.owned) && (
+                  {preview.dashboards.length > 0 && (
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">
-                      Ready-made dashboards <span className="font-normal normal-case">— created only if ticked below</span>
+                      Ready-made dashboards <span className="font-normal normal-case">— new ones created only if ticked below</span>
                     </p>
                   )}
-                  {preview.dashboards.filter(d => !d.owned).map(d => {
+                  {preview.dashboards.map(d => {
                     const DashIcon = (LucideIcons as any)[d.icon] || Store;
                     // Resolve widget field keys against the source table's
-                    // real field labels; prettified key as fallback.
-                    const srcFields = preview.tables.find(t => t.slug === d.sourceTableSlug)?.fields || [];
-                    const labelByKey = new Map(srcFields.filter(f => f.fieldKey).map(f => [f.fieldKey!, f.label]));
-                    const labelFor = (k: string) => labelByKey.get(k) || k.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+                    // real field labels (catalog + owner-live, see the
+                    // preview route's fieldLabels); prettified key fallback.
+                    const labels = preview.tables.find(t => t.slug === d.sourceTableSlug)?.fieldLabels || {};
+                    const labelFor = (k: string) => labels[k] || k.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
                     return (
-                      <div key={d.slug} className={`p-3 bg-white border border-slate-200 rounded-2xl space-y-2 ${installDashboards ? '' : 'opacity-60'}`}>
+                      <div key={d.slug} className={`p-3 bg-white border border-slate-200 rounded-2xl space-y-2 ${d.owned || installDashboards ? '' : 'opacity-60'}`}>
                         <div className="flex items-center gap-3">
                           <div className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${d.color}20` }}>
                             <DashIcon size={14} style={{ color: d.color }} />
@@ -541,9 +578,40 @@ export default function MarketplacePage() {
                           <p className="text-[12px] font-bold text-slate-800 flex-1">
                             {d.name} <span className="font-normal text-slate-400">— dashboard · {(d.widgets || []).length} widgets</span>
                           </p>
-                          <span className="text-[9px] font-bold text-emerald-600 uppercase">{installDashboards ? 'New' : 'Skipped'}</span>
+                          {d.owned
+                            ? <span className="text-[9px] font-bold text-slate-400 uppercase">Installed</span>
+                            : <span className="text-[9px] font-bold text-emerald-600 uppercase">{installDashboards ? 'New' : 'Skipped'}</span>}
                         </div>
                         <DashboardWireframe widgets={d.widgets || []} labelFor={labelFor} />
+                      </div>
+                    );
+                  })}
+
+                  {(preview.recordTabs || []).length > 0 && (
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">
+                      Record dashboards <span className="font-normal normal-case">— tabs shown on each record's page</span>
+                    </p>
+                  )}
+                  {(preview.recordTabs || []).map((rt, i) => {
+                    const TabIcon = (LucideIcons as any)[rt.icon || ''] || Store;
+                    const labels = preview.tables.find(t => t.slug === rt.linkedTableSlug)?.fieldLabels || {};
+                    const labelFor = (k: string) => labels[k] || k.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+                    return (
+                      <div key={i} className={`p-3 bg-white border border-slate-200 rounded-2xl space-y-2 ${rt.owned || installDashboards ? '' : 'opacity-60'}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
+                            <TabIcon size={14} className="text-slate-500" />
+                          </div>
+                          <p className="text-[12px] font-bold text-slate-800 flex-1">
+                            {rt.title} <span className="font-normal text-slate-400">
+                              — tab on every {rt.appearsOn} record{rt.linkedTable ? `, showing its ${rt.linkedTable}` : ''}
+                            </span>
+                          </p>
+                          {rt.owned
+                            ? <span className="text-[9px] font-bold text-slate-400 uppercase">Installed</span>
+                            : <span className="text-[9px] font-bold text-emerald-600 uppercase">{installDashboards ? 'New' : 'Skipped'}</span>}
+                        </div>
+                        <DashboardWireframe widgets={rt.widgets} labelFor={labelFor} />
                       </div>
                     );
                   })}
