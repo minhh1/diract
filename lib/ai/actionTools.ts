@@ -235,6 +235,34 @@ const UPDATE_FILE_TOOL = {
   },
 };
 
+// Precedent issuing has more moving parts than create_file -- which extra
+// fields are needed depends on the firm's letterhead and the specific
+// precedent's own detected body_template (see lib/ai/precedentAction.ts),
+// which can't be known until the precedent/matter are resolved. This tool
+// call only ever needs to capture what the first message actually mentions;
+// lib/ai/precedentAction.ts asks for everything else afterward the same way
+// create_task/create_project ask for whatever's still missing.
+const ISSUE_PRECEDENT_TOOL = {
+  type: "function",
+  function: {
+    name: "issue_precedent",
+    description: "Issue a precedent document (a letter/document from the firm's precedent library, on its letterhead) for a matter.",
+    parameters: {
+      type: "object",
+      properties: {
+        precedent_name: { type: "string", description: "Which precedent/document type to issue, e.g. \"Letter of Demand\" -- only if actually stated." },
+        project_name: { type: "string", description: "Which matter this is for -- name or matter number, only if mentioned." },
+        recipient_name: { type: "string", description: "The recipient's name or company name, if mentioned." },
+        recipient_address: { type: "string", description: "The recipient's postal address, if mentioned." },
+        delivery_mode: { type: "string", description: "How it's being delivered (e.g. By Email, By Post), if mentioned." },
+        subject: { type: "string", description: "A subject line for the letter, if the user actually gave one." },
+        instructions: { type: "string", description: "What the document should say, ONLY if the user gave real instructions -- never invented. Not needed if the precedent has its own fill-in fields instead." },
+      },
+      required: [],
+    },
+  },
+};
+
 // Built with this company's field config so create_task/create_project's
 // schemas reflect its custom fields -- called once per bot message (see
 // app/api/teams/bot/[companyId]/route.ts). update_task/update_project are
@@ -307,6 +335,7 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
     UPDATE_PROJECT_TOOL,
     CREATE_FILE_TOOL,
     UPDATE_FILE_TOOL,
+    ISSUE_PRECEDENT_TOOL,
   ];
 }
 

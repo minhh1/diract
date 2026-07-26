@@ -375,6 +375,18 @@ export async function resolveOnedriveFileByName(admin: any, companyId: string, n
   return pickBestMatch(name, candidates);
 }
 
+// Used by the bot's issue_precedent action (lib/ai/precedentAction.ts) to
+// find which entry in the firm's precedent library ("Letter of Demand",
+// "Release of Deposit", ...) a chat message meant. Scoped to record_table =
+// 'projects' -- the only value used anywhere today (see precedents.sql).
+export async function resolvePrecedentByName(admin: any, companyId: string, name: string): Promise<ResolveResult> {
+  const { data } = await admin
+    .from("precedents").select("id, name").eq("company_id", companyId).eq("record_table", "projects")
+    .is("deleted_at", null).ilike("name", `%${name}%`);
+  const candidates: ResolvedMatch[] = (data ?? []) as ResolvedMatch[];
+  return pickBestMatch(name, candidates);
+}
+
 async function getOnedriveGraphContext(admin: any, companyId: string): Promise<{ token: string; driveId: string }> {
   const { data: creds } = await admin.from("company_onedrive_credentials").select("credentials, drive_id").eq("company_id", companyId).maybeSingle();
   if (!creds?.drive_id) throw new Error("OneDrive isn't connected for this company -- ask an admin to connect it in Admin -> OneDrive.");
