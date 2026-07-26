@@ -1092,7 +1092,7 @@ export default function RecordDashboard({
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={onBack}
-              className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase hover:text-black transition-all tracking-widest shrink-0"
+              className="flex items-center gap-2 -ml-2.5 pl-2.5 pr-3 py-1.5 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-900 hover:bg-slate-100 active:bg-slate-200 active:scale-95 transition-all shrink-0"
             >
               <ArrowLeft size={14} />
               {parentRecord ? parentRecord.name : 'Back'}

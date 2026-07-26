@@ -999,6 +999,18 @@ export default function Sidebar() {
     !pathname.includes('settings') &&
     !pathname.includes('admin');
 
+  // Clicking a Tables nav link should always land on that table's plain
+  // list. isTableActive alone can't distinguish "already on the list" from
+  // "viewing one record via ?id=" or "a saved view's ?view= filter applied"
+  // — neither changes the pathname — so guarding navigation on isTableActive
+  // by itself made clicking the same table while inside a record's
+  // dashboard a no-op; you had to hit that page's own back button instead.
+  const goToTableList = (slug: string) => {
+    if (isTableActive(slug) && !currentId && !activeViewId) return;
+    startNavigation();
+    router.push(`/dashboard/${slug}`);
+  };
+
   const availableFields = SYSTEM_TABLE_FIELDS[treeTableSlug] || SYSTEM_TABLE_FIELDS.projects;
   const hasActiveFilters = treeConfig.filters.length > 0;
   const currentAdminTab = searchParams.get('tab') || 'members';
@@ -1233,7 +1245,7 @@ export default function Sidebar() {
                 {visibleSystemTables.map(({ slug, label, icon: Icon }) => (
                   <button
                     key={slug}
-                    onClick={() => { if (!isTableActive(slug)) { startNavigation(); router.push(`/dashboard/${slug}`); } }}
+                    onClick={() => goToTableList(slug)}
                     aria-label={label}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
                       isTableActive(slug)
@@ -1251,7 +1263,7 @@ export default function Sidebar() {
                   return (
                     <button
                       key={table.id}
-                      onClick={() => { if (!isTableActive(table.slug)) { startNavigation(); router.push(`/dashboard/${table.slug}`); } }}
+                      onClick={() => goToTableList(table.slug)}
                       aria-label={table.name}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
                         isTableActive(table.slug)
