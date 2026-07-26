@@ -54,7 +54,9 @@ function BrandingSection({ isAdmin }: { isAdmin: boolean }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [address, setAddress] = useState(invoiceSettings.firmAddress || '');
+  const [addressDirty, setAddressDirty] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
+  const [addressSaved, setAddressSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
@@ -71,17 +73,24 @@ function BrandingSection({ isAdmin }: { isAdmin: boolean }) {
 
   const handleRemove = async () => {
     if (!window.confirm('Remove the invoice logo?')) return;
-    await fetch('/api/company/logo', { method: 'DELETE' });
+    setError(null);
+    const res = await fetch('/api/company/logo', { method: 'DELETE' });
+    if (!res.ok) { setError('Could not remove the logo.'); return; }
     await refreshLogoUrl();
   };
 
   const saveAddress = async () => {
-    if (!companyId) return;
+    if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
     setSavingAddress(true);
+    setError(null);
     const next = { ...invoiceSettings, firmAddress: address };
-    await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
-    await refreshInvoiceSettings();
+    const { error: updateError } = await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
     setSavingAddress(false);
+    if (updateError) { setError(updateError.message); return; }
+    await refreshInvoiceSettings();
+    setAddressDirty(false);
+    setAddressSaved(true);
+    setTimeout(() => setAddressSaved(false), 1500);
   };
 
   return (
@@ -109,17 +118,27 @@ function BrandingSection({ isAdmin }: { isAdmin: boolean }) {
           </div>
         )}
       </div>
-      {error && <p className="text-[11px] text-red-500">{error}</p>}
 
       <div>
         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Firm address (shown on invoices)</label>
         <textarea
-          value={address} onChange={e => setAddress(e.target.value)} onBlur={saveAddress} disabled={!isAdmin} rows={2}
+          value={address} onChange={e => { setAddress(e.target.value); setAddressDirty(true); }} disabled={!isAdmin} rows={2}
           placeholder="Level 4, 123 Example St, Sydney NSW 2000"
           className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none disabled:opacity-60"
         />
-        {savingAddress && <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Saving...</p>}
+        {isAdmin && (
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={saveAddress} disabled={!addressDirty || savingAddress}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white text-[11px] font-bold rounded-full hover:bg-slate-700 disabled:opacity-40 transition-colors"
+            >
+              {savingAddress ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save address
+            </button>
+            {addressSaved && <span className="text-[11px] text-emerald-500 flex items-center gap-1"><Check size={12} /> Saved</span>}
+          </div>
+        )}
       </div>
+      {error && <p className="text-[11px] text-red-500">{error}</p>}
     </div>
   );
 }
@@ -135,8 +154,10 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
   const [bsb, setBsb] = useState(invoiceSettings.bankDetails?.bsb || '');
   const [accountNumber, setAccountNumber] = useState(invoiceSettings.bankDetails?.accountNumber || '');
   const [reference, setReference] = useState(invoiceSettings.bankDetails?.reference || '');
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Matter fields available to auto-fill "Our Reference" from -- the
   // matter's own name plus every custom field on `projects` (e.g. Huynh
@@ -158,50 +179,50 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
     })();
   }, [companyId]);
 
-  // `overrides` lets a caller (the "Our Reference" select below) pass the
-  // just-picked value straight through instead of relying on its own state
-  // setter having landed before this reads it from the closure -- state
-  // updates aren't synchronous, so `setOurReferenceFieldKey(x); save()`
-  // back-to-back would save the value from BEFORE the change.
-  const save = async (overrides: Partial<{ ourReferenceFieldKey: string | null }> = {}) => {
-    if (!companyId) return;
+  const save = async () => {
+    if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
     setSaving(true);
     setSaved(false);
+    setError(null);
     const next = {
       ...invoiceSettings,
       creditTerms, otherTerms, paymentTermsDays, ourReferenceFieldKey: ourReferenceFieldKey || null,
       bankDetails: { accountName, bsb, accountNumber, reference },
-      ...overrides,
     };
-    await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
-    await refreshInvoiceSettings();
+    const { error: updateError } = await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
     setSaving(false);
+    if (updateError) { setError(updateError.message); return; }
+    await refreshInvoiceSettings();
+    setDirty(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
+
+  // Every field below only updates local state -- nothing persists until
+  // "Save changes" is clicked. Previously each field saved individually on
+  // blur, which silently no-op'd (no error shown) whenever `companyId`
+  // hadn't loaded yet or the request failed, making saves look like they'd
+  // gone through when they hadn't. One explicit save action + visible
+  // saving/saved/error state removes that ambiguity.
+  const onField = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setDirty(true); };
 
   return (
     <div className="bg-white border border-slate-200 rounded-[40px] p-8 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Terms & payment</p>
-        {!isAdmin ? <AdminOnlyNote /> : (saving || saved) && (
-          <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} className="text-emerald-500" />}
-            {saving ? 'Saving...' : 'Saved'}
-          </span>
-        )}
+        {!isAdmin && <AdminOnlyNote />}
       </div>
 
       <fieldset disabled={!isAdmin} className="space-y-4 disabled:opacity-60">
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Credit terms</label>
-          <textarea value={creditTerms} onChange={e => setCreditTerms(e.target.value)} onBlur={() => save()} rows={2}
+          <textarea value={creditTerms} onChange={e => onField(setCreditTerms)(e.target.value)} rows={2}
             placeholder="Payment is due within 14 days of the date of this invoice."
             className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
         </div>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Other terms</label>
-          <textarea value={otherTerms} onChange={e => setOtherTerms(e.target.value)} onBlur={() => save()} rows={2}
+          <textarea value={otherTerms} onChange={e => onField(setOtherTerms)(e.target.value)} rows={2}
             placeholder="Any additional notices to include on every invoice."
             className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
         </div>
@@ -209,8 +230,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Payment terms (days)</label>
           <input
             type="number" min={0} max={365} value={paymentTermsDays}
-            onChange={e => setPaymentTermsDays(Math.max(0, Math.min(365, Number(e.target.value) || 0)))}
-            onBlur={() => save()}
+            onChange={e => onField(setPaymentTermsDays)(Math.max(0, Math.min(365, Number(e.target.value) || 0)))}
             className="w-24 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
           />
           <p className="text-[10px] text-slate-400 mt-1">Default due date on a new invoice = issue date + this many days. Still adjustable per invoice.</p>
@@ -219,7 +239,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">"Our Reference" auto-fills from</label>
           <select
             value={ourReferenceFieldKey}
-            onChange={e => { setOurReferenceFieldKey(e.target.value); save({ ourReferenceFieldKey: e.target.value || null }); }}
+            onChange={e => onField(setOurReferenceFieldKey)(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-full py-2.5 px-4 text-[12px] font-medium outline-none appearance-none"
           >
             <option value="">None — leave blank, fill in manually per invoice</option>
@@ -230,17 +250,30 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Bank details</p>
           <div className="grid grid-cols-2 gap-2">
-            <input value={accountName} onChange={e => setAccountName(e.target.value)} onBlur={() => save()} placeholder="Account name"
+            <input value={accountName} onChange={e => onField(setAccountName)(e.target.value)} placeholder="Account name"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-            <input value={bsb} onChange={e => setBsb(e.target.value)} onBlur={() => save()} placeholder="BSB"
+            <input value={bsb} onChange={e => onField(setBsb)(e.target.value)} placeholder="BSB"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-            <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} onBlur={() => save()} placeholder="Account number"
+            <input value={accountNumber} onChange={e => onField(setAccountNumber)(e.target.value)} placeholder="Account number"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-            <input value={reference} onChange={e => setReference(e.target.value)} onBlur={() => save()} placeholder="Payment reference note (optional)"
+            <input value={reference} onChange={e => onField(setReference)(e.target.value)} placeholder="Payment reference note (optional)"
               className="px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
           </div>
         </div>
       </fieldset>
+
+      {isAdmin && (
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            onClick={save} disabled={!dirty || saving}
+            className="flex items-center gap-1.5 px-5 py-2 bg-slate-900 text-white text-[11px] font-bold rounded-full hover:bg-slate-700 disabled:opacity-40 transition-colors"
+          >
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save changes
+          </button>
+          {saved && <span className="text-[11px] text-emerald-500 flex items-center gap-1"><Check size={12} /> Saved</span>}
+          {error && <span className="text-[11px] text-red-500">{error}</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -249,15 +282,18 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
 function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
   const { invoiceSettings, refreshInvoiceSettings, companyId } = useCompany();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [layoutEditorId, setLayoutEditorId] = useState<string | null>(null);
 
   const saveTemplates = async (templates: InvoiceTemplateConfig[]) => {
-    if (!companyId) return;
+    if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
     setSaving(true);
+    setError(null);
     const next = { ...invoiceSettings, templates };
-    await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
-    await refreshInvoiceSettings();
+    const { error: updateError } = await supabase.from('companies').update({ invoice_settings: next }).eq('id', companyId);
     setSaving(false);
+    if (updateError) { setError(updateError.message); return; }
+    await refreshInvoiceSettings();
   };
 
   const createDefault = () => saveTemplates([
@@ -314,6 +350,8 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
         )}
       </div>
 
+      {error && <p className="text-[11px] text-red-500">{error}</p>}
+
       {invoiceSettings.templates.length === 0 && (
         <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">No template configured yet</p>
       )}
@@ -322,10 +360,9 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
         {invoiceSettings.templates.map(t => (
           <div key={t.id} className="border border-slate-200 rounded-[24px] p-5 space-y-3">
             <div className="flex items-center gap-3">
-              <input
-                value={t.name} disabled={!isAdmin}
-                onChange={e => updateTemplate(t.id, { name: e.target.value })}
-                className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[13px] font-bold outline-none focus:border-indigo-400 disabled:opacity-60"
+              <TemplateNameInput
+                name={t.name} disabled={!isAdmin}
+                onCommit={name => updateTemplate(t.id, { name })}
               />
               <label className="flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
                 <input type="radio" checked={!!t.isDefault} disabled={!isAdmin} onChange={() => setDefault(t.id)} /> Default
@@ -348,9 +385,9 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
                   {INVOICE_LAYOUT_PRESETS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               )}
-              {isAdmin && t.style !== 'detailed' && (
+              {isAdmin && (
                 <button onClick={() => setLayoutEditorId(t.id)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-500 text-[11px] font-bold rounded-full hover:bg-slate-100 shrink-0">
-                  <LayoutTemplate size={12} /> Edit layout
+                  <LayoutTemplate size={12} /> {t.style === 'detailed' ? 'Edit logo' : 'Edit layout'}
                 </button>
               )}
               {isAdmin && invoiceSettings.templates.length > 1 && (
@@ -359,7 +396,7 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
             </div>
             {t.style === 'detailed' ? (
               <p className="text-[11px] text-slate-400 bg-slate-50 rounded-2xl px-4 py-2.5">
-                Uses a fixed detailed layout (summary + itemised appendix + remittance advice + notice of rights) — not customizable via the layout editor. Set "Responsible partner"/"Our reference"/"Your reference" per invoice in Create Invoice.
+                Uses a fixed detailed layout (summary + itemised appendix + remittance advice + notice of rights). Only the logo's position and size are customizable — use "Edit logo" above. Set "Responsible partner"/"Our reference"/"Your reference" per invoice in Create Invoice.
               </p>
             ) : (
               <fieldset disabled={!isAdmin} className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 disabled:opacity-60">
@@ -387,5 +424,31 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
         );
       })()}
     </div>
+  );
+}
+
+// Local-state + debounced commit, so typing a template name doesn't fire a
+// network save (and a companies-table round trip) on every keystroke --
+// that raced under normal typing speed: an earlier keystroke's save could
+// resolve/refetch AFTER a later one, snapping the field back mid-word.
+function TemplateNameInput({ name, disabled, onCommit }: { name: string; disabled: boolean; onCommit: (name: string) => void }) {
+  const [value, setValue] = useState(name);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { setValue(name); }, [name]);
+  return (
+    <input
+      value={value} disabled={disabled}
+      onChange={e => {
+        const v = e.target.value;
+        setValue(v);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => onCommit(v), 500);
+      }}
+      onBlur={e => {
+        if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+        onCommit(e.target.value);
+      }}
+      className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[13px] font-bold outline-none focus:border-indigo-400 disabled:opacity-60"
+    />
   );
 }

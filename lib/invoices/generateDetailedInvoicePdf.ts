@@ -8,9 +8,11 @@
 // flexible, layout-editable template) rather than a mode inside it: the
 // two structures don't share enough (fixed multi-page sections vs one
 // flowing page with draggable anchors) to unify without contorting the
-// flexible one. Does not use InvoiceLayout at all -- see
-// InvoiceTemplateSettingsTab.tsx, which hides the layout editor/presets for
-// a template with `style: 'detailed'`.
+// flexible one. Everything is fixed EXCEPT the logo -- `input.layout.logo`
+// (the same field the flexible template's InvoiceLayoutEditor.tsx already
+// edits, reused as-is since the shape is identical) lets an admin drag/
+// resize just the logo for this style too, see InvoiceLayoutEditor.tsx's
+// `style` prop.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import type { GenerateInvoicePdfInput } from "./generateInvoicePdf";
 
@@ -150,10 +152,10 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   }
 
   // ── Page 1: letterhead ────────────────────────────────────────────
+  const logoCfg = input.layout?.logo ?? { x: MARGIN, y: PAGE_H - MARGIN, maxWidth: 150, maxHeight: 55 };
   if (logoImage) {
-    const maxW = 150, maxH = 55;
-    const scale = Math.min(maxW / logoImage.width, maxH / logoImage.height, 1);
-    page.drawImage(logoImage, { x: MARGIN, y: y - logoImage.height * scale, width: logoImage.width * scale, height: logoImage.height * scale });
+    const scale = Math.min(logoCfg.maxWidth / logoImage.width, logoCfg.maxHeight / logoImage.height, 1);
+    page.drawImage(logoImage, { x: logoCfg.x, y: logoCfg.y - logoImage.height * scale, width: logoImage.width * scale, height: logoImage.height * scale });
   }
   text(input.company.name, PAGE_W - MARGIN, 15, { bold: true, align: 'right' });
   y -= 18;
@@ -327,6 +329,8 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   text('Date of Tax Invoice:', MARGIN + 260, 10); text(formatDate(input.invoice.issueDate, 'long'), MARGIN + 260 + 130, 10, { bold: true });
   y -= 24;
   text('Payor Name:', MARGIN, 10); text(input.invoice.debtorName || '', MARGIN + 100, 10, { bold: true });
+  y -= 20;
+  text('Amount Due:', MARGIN, 13, { bold: true }); text(money(input.invoice.amountDue), MARGIN + 100, 13, { bold: true });
   y -= 4; hr(y); y -= 24;
 
   text('1.', MARGIN, 11, { bold: true }); text('BANK TRANSFER', MARGIN + 20, 11, { bold: true });
@@ -341,6 +345,17 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   text('2.', MARGIN, 11, { bold: true }); text('CHEQUE', MARGIN + 20, 11, { bold: true });
   y -= 18;
   for (const line of wrapText(`Please return this advice with your cheque payable to ${input.company.name} for AUD ${money(input.invoice.amountDue).replace('$', '')}.`, regular, 10, CONTENT_W)) {
+    text(line, MARGIN, 10); y -= 13;
+  }
+  y -= 6; hr(y); y -= 22;
+
+  // Deliberately generic -- no surcharge percentage or fax number invented
+  // (the reference invoice's version had firm-specific processing details
+  // this app has no data source for); still tells the payor credit card is
+  // an option and exactly how much to pay.
+  text('3.', MARGIN, 11, { bold: true }); text('CREDIT CARD', MARGIN + 20, 11, { bold: true });
+  y -= 18;
+  for (const line of wrapText(`Please contact our office to arrange payment of AUD ${money(input.invoice.amountDue).replace('$', '')} by credit card.`, regular, 10, CONTENT_W)) {
     text(line, MARGIN, 10); y -= 13;
   }
   y -= 26;

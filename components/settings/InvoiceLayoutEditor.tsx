@@ -31,6 +31,12 @@ interface Props {
   onSave: (layout: InvoiceLayout) => void;
 }
 
+// The Detailed template style has a fixed layout (no InvoiceLayout anchors
+// for firmDetails/titleBlock/billTo, no configurable columns/margin/
+// typography -- see generateDetailedInvoicePdf.ts) except for the logo,
+// which it does read from input.layout.logo. So for 'detailed' this editor
+// narrows down to logo-only: one handle, no sidebar sections.
+
 type HandleId = 'logo' | 'firmDetails' | 'titleBlock' | 'billTo';
 
 // Fixed nominal size for each handle's drag box -- these aren't exact text
@@ -84,6 +90,8 @@ function isColumnVisible(key: InvoiceLayoutColumn['key'], display: InvoiceTempla
 }
 
 export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props) {
+  const isDetailed = template.style === 'detailed';
+  const visibleHandles = isDetailed ? HANDLES.filter(h => h.id === 'logo') : HANDLES;
   const [layout, setLayout] = useState<InvoiceLayout>(template.layout ?? DEFAULT_INVOICE_LAYOUT);
   const [pdfPage, setPdfPage] = useState<PDFPageProxy | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,13 +103,13 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
     const res = await fetch('/api/invoices/template-preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display: template.display, layout: draftLayout }),
+      body: JSON.stringify({ display: template.display, layout: draftLayout, style: template.style }),
     });
     if (!res.ok) throw new Error('preview request failed');
     const buf = new Uint8Array(await res.arrayBuffer());
     const doc = await loadPdfDocument(buf);
     return doc.getPage(1);
-  }, [template.display]);
+  }, [template.display, template.style]);
 
   // Initial load.
   useEffect(() => {
@@ -184,12 +192,47 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
     setLayout(prev => ({ ...prev, [ds.id]: { ...prev[ds.id], x: newX, y: newY } }));
   };
 
+  // ── Resize handling for the logo's maxWidth/maxHeight (the only handle
+  // with a size, not just a position) -- separate from the drag-to-move
+  // above since it adjusts layout.logo.maxWidth/maxHeight instead of x/y.
+  const logoResizeStateRef = useRef<{ startClientX: number; startClientY: number; startW: number; startH: number } | null>(null);
+  const [logoResizeOffsetPx, setLogoResizeOffsetPx] = useState<{ dx: number; dy: number } | null>(null);
+
+  const beginLogoResize = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    logoResizeStateRef.current = {
+      startClientX: e.clientX, startClientY: e.clientY,
+      startW: layout.logo.maxWidth, startH: layout.logo.maxHeight,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onLogoResizeMove = (e: React.PointerEvent) => {
+    if (!logoResizeStateRef.current) return;
+    const rs = logoResizeStateRef.current;
+    setLogoResizeOffsetPx({ dx: e.clientX - rs.startClientX, dy: e.clientY - rs.startClientY });
+  };
+  const onLogoResizeEnd = (e: React.PointerEvent) => {
+    const rs = logoResizeStateRef.current;
+    if (!rs || !viewport) return;
+    logoResizeStateRef.current = null;
+    setLogoResizeOffsetPx(null);
+    const dx = e.clientX - rs.startClientX, dy = e.clientY - rs.startClientY;
+    const maxWidth = Math.max(20, Math.round(rs.startW + dx / viewport.scale));
+    const maxHeight = Math.max(20, Math.round(rs.startH + dy / viewport.scale));
+    setLayout(prev => ({ ...prev, logo: { ...prev.logo, maxWidth, maxHeight } }));
+  };
+
   const handleScreenRect = (handle: typeof HANDLES[number]) => {
     if (!viewport) return null;
     const anchor = layout[handle.id];
-    const x0 = handle.align === 'right' ? anchor.x - handle.w : anchor.x;
+    // The logo's box tracks its actual configured maxWidth/maxHeight (so the
+    // resize grip sits at its true corner); every other handle just uses a
+    // fixed nominal box since it has no size, only a position.
+    const w = handle.id === 'logo' ? layout.logo.maxWidth : handle.w;
+    const h = handle.id === 'logo' ? layout.logo.maxHeight : handle.h;
+    const x0 = handle.align === 'right' ? anchor.x - w : anchor.x;
     const [sx1, sy1] = viewport.convertToViewportPoint(x0, anchor.y);
-    const [sx2, sy2] = viewport.convertToViewportPoint(x0 + handle.w, anchor.y - handle.h);
+    const [sx2, sy2] = viewport.convertToViewportPoint(x0 + w, anchor.y - h);
     return { left: Math.min(sx1, sx2), top: Math.min(sy1, sy2), width: Math.abs(sx2 - sx1), height: Math.abs(sy2 - sy1) };
   };
 
@@ -208,7 +251,11 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
         <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
             <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Edit layout — {template.name}</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">Drag the header blocks below, or reorder/resize the table columns on the right.</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {isDetailed
+                ? 'Drag the logo to reposition it, or drag its corner to resize.'
+                : 'Drag the header blocks below, or reorder/resize the table columns on the right.'}
+            </p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-black"><X size={18} /></button>
         </div>
@@ -225,10 +272,13 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
                 {refreshing && (
                   <div className="absolute top-2 right-2 bg-white/90 rounded-full p-1.5 shadow"><Loader2 size={14} className="animate-spin text-indigo-500" /></div>
                 )}
-                {viewport && HANDLES.map(h => {
+                {viewport && visibleHandles.map(h => {
                   const rect = handleScreenRect(h);
                   if (!rect) return null;
                   const offset = dragOffsetPx?.id === h.id ? dragOffsetPx : null;
+                  const isLogo = h.id === 'logo';
+                  const width = rect.width + (isLogo ? (logoResizeOffsetPx?.dx ?? 0) : 0);
+                  const height = rect.height + (isLogo ? (logoResizeOffsetPx?.dy ?? 0) : 0);
                   return (
                     <div
                       key={h.id}
@@ -238,10 +288,19 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
                       className="absolute border-2 border-dashed border-indigo-400 bg-indigo-400/10 hover:bg-indigo-400/20 transition-colors cursor-move flex items-start justify-start"
                       style={{
                         left: rect.left + (offset?.dx ?? 0), top: rect.top + (offset?.dy ?? 0),
-                        width: rect.width, height: rect.height,
+                        width, height,
                       }}
                     >
                       <span className="text-[9px] font-bold text-indigo-700 bg-white/95 px-1.5 py-0.5 rounded-br-md pointer-events-none">{h.label}</span>
+                      {isLogo && (
+                        <div
+                          onPointerDown={beginLogoResize}
+                          onPointerMove={onLogoResizeMove}
+                          onPointerUp={onLogoResizeEnd}
+                          title="Drag to resize"
+                          className="absolute -right-1.5 -bottom-1.5 w-3.5 h-3.5 rounded-full bg-indigo-600 border-2 border-white cursor-nwse-resize"
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -250,6 +309,16 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
           </div>
 
           <div className="w-72 shrink-0 border-l border-slate-100 p-5 space-y-5 overflow-y-auto">
+            {isDetailed ? (
+              <div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Logo</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Drag the logo box on the preview to reposition it, or drag the handle on its corner to resize.
+                  Everything else on this template is fixed and not editable.
+                </p>
+              </div>
+            ) : (
+            <>
             {columnEditor('Fee table columns', 'feeColumns')}
             {columnEditor('Disbursement table columns', 'disbColumns')}
 
@@ -293,6 +362,8 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
                 ))}
               </div>
             </div>
+            </>
+            )}
 
             <button
               onClick={() => setLayout(DEFAULT_INVOICE_LAYOUT)}

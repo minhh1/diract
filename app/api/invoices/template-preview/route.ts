@@ -11,6 +11,7 @@ import {
   generateInvoicePdf, DEFAULT_INVOICE_DISPLAY, DEFAULT_INVOICE_LAYOUT,
   type InvoiceTemplateDisplay, type InvoiceLayout,
 } from "@/lib/invoices/generateInvoicePdf";
+import { generateDetailedInvoicePdf } from "@/lib/invoices/generateDetailedInvoicePdf";
 import { splitGst } from "@/lib/invoices/apportionment";
 
 export async function POST(req: NextRequest) {
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
   const subtotal = feeSplit.exGst + disbFreeSplit.exGst + disbIncSplit.exGst;
   const gst = feeSplit.gst + disbFreeSplit.gst + disbIncSplit.gst;
 
-  const bytes = await generateInvoicePdf({
+  const input = {
     company: {
       name: company?.name || 'Your Company', abn: company?.abn || null,
       address: invoiceSettings.firmAddress || null, logoBytes, logoIsPng,
@@ -63,15 +64,22 @@ export async function POST(req: NextRequest) {
       invoiceNumber: 'SAMPLE-0001', issueDate: today, dueDate: today,
       matterName: 'Sample Matter', debtorName: 'Sample Client',
       subtotal, gst, totalIncGst: subtotal + gst, trustApplied: 0, payments: 0, amountDue: subtotal + gst, priorBalance: 0,
+      responsiblePartnerName: 'Sample Partner', ourReference: 'REF-001', yourReference: 'YOUR-REF-99',
+      periodEnd: today, paymentTermsDays: invoiceSettings.paymentTermsDays ?? 14,
     },
     feeLines: [
-      { date: today, staffInitials: 'AB', description: 'Sample professional fee line', rate: 100, hours: 2, originalAmount: 200, billedAmount: feeSplit.exGst, gstAmount: feeSplit.gst },
+      { date: today, staffInitials: 'AB', staffName: 'Alex Bright', staffPosition: 'Associate', description: 'Sample professional fee line', rate: 100, hours: 2, originalAmount: 200, billedAmount: feeSplit.exGst, gstAmount: feeSplit.gst, gstStatus: 'GST Exclusive' },
     ],
     disbursementLines: [
-      { date: today, description: 'Sample disbursement (GST free)', amount: disbFreeSplit.exGst, gstAmount: disbFreeSplit.gst },
-      { date: today, description: 'Sample disbursement (GST inclusive)', amount: disbIncSplit.exGst, gstAmount: disbIncSplit.gst },
+      { date: today, description: 'Sample disbursement (GST free)', amount: disbFreeSplit.exGst, gstAmount: disbFreeSplit.gst, gstStatus: 'GST Free' },
+      { date: today, description: 'Sample disbursement (GST inclusive)', amount: disbIncSplit.exGst, gstAmount: disbIncSplit.gst, gstStatus: 'GST Inclusive' },
     ],
-  });
+  };
+
+  // `style` -- passed through explicitly by InvoiceLayoutEditor.tsx rather
+  // than looked up server-side, since this route only ever sees a DRAFT
+  // (possibly unsaved) display/layout, not a saved InvoiceTemplateConfig.
+  const bytes = body.style === 'detailed' ? await generateDetailedInvoicePdf(input) : await generateInvoicePdf(input);
 
   return new NextResponse(bytes as any, { headers: { 'Content-Type': 'application/pdf' } });
 }
