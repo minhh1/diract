@@ -232,7 +232,12 @@ export default function MasterTable({
                           onReorder(next);
                           setDraggedIdx(null);
                         }}
-                        className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded cursor-move opacity-0 group-hover/header:opacity-100 hover:bg-slate-200 transition-opacity z-10"
+                        // Dimmed rather than fully hidden at rest — opacity-0
+                        // relied on hover to ever become visible/reachable at
+                        // all, which doesn't exist on touch devices (iPad
+                        // Safari). Full opacity on hover still gives desktop
+                        // users the same "fades in" affordance as before.
+                        className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded cursor-move opacity-40 group-hover/header:opacity-100 hover:bg-slate-200 transition-opacity z-10"
                         title="Reorder column (admin only)"
                       >
                         <GripVertical size={13} />
@@ -251,7 +256,7 @@ export default function MasterTable({
                         <div className="relative mr-2 shrink-0" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={() => onAddressSortOpenChange?.(!addressSortOpen)}
-                            className={`p-1.5 rounded-lg transition-all ${isActiveSortCol ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100 opacity-0 group-hover/header:opacity-100'}`}
+                            className={`p-1.5 rounded-lg transition-all ${isActiveSortCol ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}`}
                             title="Sort options"
                           >
                             <ChevronsUpDown size={13} />
@@ -287,7 +292,7 @@ export default function MasterTable({
                             else if (sort?.direction === 'asc') onSort(colId, 'desc');
                             else onSort(colId, 'asc');
                           }}
-                          className={`p-1.5 rounded-lg mr-2 shrink-0 transition-all ${isActiveSortCol ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100 opacity-0 group-hover/header:opacity-100'}`}
+                          className={`p-1.5 rounded-lg mr-2 shrink-0 transition-all ${isActiveSortCol ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}`}
                           title={isActiveSortCol ? (sort?.direction === 'asc' ? 'Sort descending' : 'Sort ascending') : 'Sort'}
                         >
                           {isActiveSortCol
@@ -388,7 +393,7 @@ export default function MasterTable({
                         </span>
                         <ExternalLink
                           size={11}
-                          className="text-slate-300 opacity-0 group-hover/cell:opacity-100 hover:text-indigo-500 shrink-0 transition-all cursor-pointer"
+                          className="text-slate-300 hover:text-indigo-500 shrink-0 transition-all cursor-pointer"
                           onClick={openRelinkPicker}
                         />
                       </span>
@@ -439,7 +444,7 @@ export default function MasterTable({
                     {canEdit && (
                       <button
                         onClick={(e) => handleRowDelete(item, e)}
-                        className="p-1.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                        className="p-1.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
                         title="Archive this record"
                       >
                         <Trash2 size={14} />

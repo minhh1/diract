@@ -793,7 +793,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                       ) : (
                         <button
                           onClick={e => handleDelete(record, e)}
-                          className="p-1.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                          className="p-1.5 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
                           title="Archive"
                         >
                           <Trash2 size={14} />
