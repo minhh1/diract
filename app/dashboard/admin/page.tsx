@@ -23,6 +23,7 @@ import AdminAiAssistantTab from "@/components/admin/AdminAiAssistantTab";
 import AdminPerfTab from "@/components/admin/AdminPerfTab";
 import AdminPlatformHealthTab from "@/components/admin/AdminPlatformHealthTab";
 import AdminArchiveRequestsTab from "@/components/admin/AdminArchiveRequestsTab";
+import AdminPrecedentsTab from "@/components/admin/AdminPrecedentsTab";
 
 interface Member {
   id: string;
@@ -100,14 +101,14 @@ function buildCalendarFormat(tokens: string[], separator: string): string {
   return tokens.map(t => `{${t}}`).join(separator);
 }
 
-type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
+type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'precedents';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'precedents'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', views: 'Default views', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
   oneDrive: 'OneDrive',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
-  platformHealth: 'Platform health', archiveRequests: 'Archive requests',
+  platformHealth: 'Platform health', archiveRequests: 'Archive requests', precedents: 'Precedents',
 };
 
 export default function AdminPage() {
@@ -822,6 +823,11 @@ export default function AdminPage() {
           {/* ── AI Assistant ── */}
           {activeTab === 'aiAssistant' && company?.id && (
             <AdminAiAssistantTab companyId={company.id} />
+          )}
+
+          {/* ── Precedents ── */}
+          {activeTab === 'precedents' && company?.id && (
+            <AdminPrecedentsTab companyId={company.id} />
           )}
 
           {/* ── Performance (internal — site-admin only) ── */}

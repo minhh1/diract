@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   X, FileText, ListChecks, Calendar, Mail,
-  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard
+  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard, PenSquare
 } from "lucide-react";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
@@ -64,6 +64,14 @@ const TEMPLATES: TabTemplate[] = [
     description: 'Upload Word mail-merge docs and share client fill-in links',
     color: 'bg-violet-50 text-violet-600',
     iconComponent: FileSignature,
+  },
+  {
+    type: 'precedents',
+    title: 'Precedent',
+    icon: 'PenSquare',
+    description: 'Issue AI-drafted documents on the firm\'s letterhead from a prompt',
+    color: 'bg-amber-50 text-amber-600',
+    iconComponent: PenSquare,
   },
 ];
 

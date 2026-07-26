@@ -17,6 +17,7 @@ import ChecklistTab from "./tabs/ChecklistTab";
 import CalendarTab from "./tabs/CalendarTab";
 import EmailsTab from "./tabs/EmailsTab";
 import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
+import PrecedentsTab from "./tabs/PrecedentsTab";
 import RecordDashboardTab from "./tabs/RecordDashboardTab";
 import TeamMemberLinkCard from "./TeamMemberLinkCard";
 import SendSmsCard from "./SendSmsCard";
@@ -810,6 +811,9 @@ export default function RecordDashboard({
       )}
       {activeTab?.tab_type === 'document_templates' && (
         <DocumentTemplatesTab recordId={recordId} companyId={companyId} />
+      )}
+      {activeTab?.tab_type === 'precedents' && (
+        <PrecedentsTab recordId={recordId} companyId={companyId} />
       )}
       {activeTab?.tab_type === 'custom_dashboard' && activeTab.linked_table_id && (
         <RecordDashboardTab

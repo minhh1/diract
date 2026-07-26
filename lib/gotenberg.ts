@@ -14,12 +14,12 @@
 // a small VPS) and set GOTENBERG_URL to its reachable address.
 const GOTENBERG_URL = process.env.GOTENBERG_URL || "http://localhost:3033";
 
-export async function convertDocToDocx(bytes: Buffer, filename: string): Promise<Buffer> {
+async function convert(bytes: Buffer, filename: string, targetFormat: "docx" | "pdf"): Promise<Buffer> {
   let res: Response;
   try {
     res = await fetch(`${GOTENBERG_URL}/convert`, {
       method: "POST",
-      headers: { "Content-Type": "application/octet-stream", "X-Filename": filename },
+      headers: { "Content-Type": "application/octet-stream", "X-Filename": filename, "X-Target-Format": targetFormat },
       body: new Uint8Array(bytes),
     });
   } catch {
@@ -33,4 +33,17 @@ export async function convertDocToDocx(bytes: Buffer, filename: string): Promise
     throw new Error(`Document conversion failed (${res.status}): ${text.slice(0, 200) || "unknown error"}`);
   }
   return Buffer.from(await res.arrayBuffer());
+}
+
+export async function convertDocToDocx(bytes: Buffer, filename: string): Promise<Buffer> {
+  return convert(bytes, filename, "docx");
+}
+
+// Renders an issued precedent's filled-in .docx (letterhead + composed
+// letter text, see app/api/precedents/[id]/issue/route.ts) to PDF for
+// delivery, and the raw letterhead upload to PDF for the admin "Preview"
+// action (see app/api/precedents/letterhead/route.ts) so a tag-placement
+// mistake is visible before it's relied on.
+export async function convertDocxToPdf(bytes: Buffer, filename = "document.docx"): Promise<Buffer> {
+  return convert(bytes, filename, "pdf");
 }

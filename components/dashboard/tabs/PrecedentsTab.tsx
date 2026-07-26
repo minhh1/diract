@@ -1,0 +1,346 @@
+// components/dashboard/tabs/PrecedentsTab.tsx
+// The "Precedent" record tab (Matters): the firm's precedent library (see
+// app/api/precedents, managed from Settings → Precedents) with an "Issue"
+// action per document that drafts content from a staff prompt via
+// app/api/precedents/[id]/issue, plus this matter's own issuance history and
+// an optional per-matter override of the firm's formatting defaults (see
+// app/api/precedents/settings).
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Plus, Check } from "lucide-react";
+
+interface Props {
+  recordId: string;
+  companyId: string;
+}
+
+interface Precedent {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+interface Issuance {
+  id: string;
+  precedentId: string;
+  precedentName: string;
+  subjectLine: string | null;
+  createdAt: string;
+}
+
+export default function PrecedentsTab({ recordId }: Props) {
+  const [precedents, setPrecedents] = useState<Precedent[]>([]);
+  const [issuances, setIssuances] = useState<Issuance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [issuing, setIssuing] = useState<Precedent | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const load = useCallback(async () => {
+    const [precRes, issRes] = await Promise.all([
+      fetch("/api/precedents?recordTable=projects"),
+      fetch(`/api/precedents/issuances?projectId=${recordId}`),
+    ]);
+    const precJson = await precRes.json();
+    const issJson = await issRes.json();
+    setPrecedents(precJson.precedents || []);
+    setIssuances(issJson.issuances || []);
+    setLoading(false);
+  }, [recordId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return null;
+
+  return (
+    <div className="space-y-8 animate-in fade-in p-1">
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Precedents</p>
+          <button onClick={() => setShowSettings(true)}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-indigo-600 transition-colors">
+            <Settings2 size={13} /> Customize for this matter
+          </button>
+        </div>
+        <div className="space-y-3">
+          {precedents.length === 0 && (
+            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">
+              No precedents set up yet — an admin can add some in Settings → Precedents
+            </p>
+          )}
+          {precedents.map(p => (
+            <div key={p.id} className="flex items-center gap-4 p-5 bg-white border border-slate-200 rounded-[24px]">
+              <PenSquare size={16} className="text-amber-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-slate-800">{p.name}</p>
+                {p.description && <p className="text-[11px] text-slate-400 mt-0.5">{p.description}</p>}
+              </div>
+              <button onClick={() => setIssuing(p)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors shrink-0">
+                <Sparkles size={13} /> Issue
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Recently issued</p>
+        <div className="space-y-2">
+          {issuances.length === 0 && (
+            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">Nothing issued yet</p>
+          )}
+          {issuances.map(i => (
+            <a key={i.id} href={`/api/precedents/issuances/${i.id}/download`} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-[20px] hover:border-indigo-300 transition-colors">
+              <Download size={14} className="text-slate-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-bold text-slate-700 truncate">{i.subjectLine || i.precedentName}</p>
+                <p className="text-[10px] text-slate-400">{i.precedentName} · {new Date(i.createdAt).toLocaleString()}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+
+      {issuing && (
+        <IssueModal precedent={issuing} recordId={recordId} onClose={() => setIssuing(null)}
+          onIssued={() => { setIssuing(null); load(); }} />
+      )}
+      {showSettings && (
+        <MatterSettingsModal projectId={recordId} onClose={() => setShowSettings(false)} />
+      )}
+    </div>
+  );
+}
+
+// ── Issue modal ───────────────────────────────────────────────────
+function IssueModal({ precedent, recordId, onClose, onIssued }: {
+  precedent: Precedent; recordId: string; onClose: () => void; onIssued: () => void;
+}) {
+  const [recipientAddress, setRecipientAddress] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [issuing, setIssuing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ subject: string; url: string | null } | null>(null);
+
+  const handleIssue = async () => {
+    if (!recipientAddress.trim()) { setError("Enter the recipient's name and address"); return; }
+    if (!prompt.trim()) { setError("Describe what this document should say"); return; }
+    setIssuing(true);
+    setError(null);
+    const res = await fetch(`/api/precedents/${precedent.id}/issue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordId, prompt, recipientAddress }),
+    });
+    const json = await res.json();
+    setIssuing(false);
+    if (!res.ok) { setError(json.error || "Failed to issue document"); return; }
+    setResult({ subject: json.subject, url: json.url });
+  };
+
+  if (result) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+        <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md mx-4 p-8 text-center space-y-4">
+          <Check size={32} className="text-emerald-500 mx-auto" />
+          <p className="text-[14px] font-bold text-slate-800">Document issued</p>
+          <p className="text-[12px] text-slate-500">{result.subject}</p>
+          {result.url && (
+            <a href={result.url} target="_blank" rel="noopener noreferrer"
+              className="block w-full py-3 bg-slate-900 text-white text-[12px] font-bold rounded-full hover:bg-slate-700">
+              Open document
+            </a>
+          )}
+          <button onClick={onIssued} className="w-full py-3 border border-slate-200 text-slate-600 text-[12px] font-bold rounded-full hover:bg-slate-50">
+            Done
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl w-full max-w-lg mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
+          <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Issue: {precedent.name}</h3>
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Recipient</p>
+            <textarea value={recipientAddress} onChange={e => setRecipientAddress(e.target.value)} rows={3}
+              placeholder={"Jane Smith\n123 Example Street\nSuburb VIC 3000"}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+          </div>
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">What should this document say?</p>
+            <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={5}
+              placeholder="e.g. Confirm settlement of the claim for $50,000, payable within 14 days..."
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+          </div>
+          {error && <p className="text-[11px] text-red-500">{error}</p>}
+        </div>
+        <div className="px-8 py-5 border-t border-slate-100 shrink-0">
+          <button onClick={handleIssue} disabled={issuing}
+            className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+            {issuing ? <><Loader2 size={14} className="animate-spin" /> Drafting...</> : <><Sparkles size={14} /> Issue document</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Per-matter settings override ─────────────────────────────────
+const SUBJECT_OPTIONS = [
+  { value: "sentence_case", label: "Sentence case" },
+  { value: "all_caps", label: "ALL CAPS" },
+  { value: "with_re", label: "RE: prefix" },
+] as const;
+const SALUTATION_OPTIONS = [
+  { value: "generic", label: "Dear Sir/Madam" },
+  { value: "client_first_name", label: "Dear [First name]" },
+  { value: "client_full_name", label: "Dear [Full name]" },
+] as const;
+
+interface Signer { name: string; position: string }
+interface SettingsRow {
+  subject_line_style: typeof SUBJECT_OPTIONS[number]["value"];
+  date_format: string;
+  salutation_style: typeof SALUTATION_OPTIONS[number]["value"];
+  signers: Signer[];
+  include_firm_reference: boolean;
+}
+
+function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const [companyDefault, setCompanyDefault] = useState<SettingsRow | null>(null);
+  const [override, setOverride] = useState<SettingsRow | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/precedents/settings?projectId=${projectId}`);
+    const json = await res.json();
+    setCompanyDefault(json.companyDefault || null);
+    setOverride(json.projectOverride || null);
+    setLoading(false);
+  }, [projectId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const effective: SettingsRow = override || companyDefault || {
+    subject_line_style: "sentence_case", date_format: "D MMMM YYYY", salutation_style: "generic", signers: [], include_firm_reference: false,
+  };
+
+  const save = async (next: SettingsRow) => {
+    setOverride(next);
+    setSaving(true);
+    await fetch("/api/precedents/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        subjectLineStyle: next.subject_line_style,
+        dateFormat: next.date_format,
+        salutationStyle: next.salutation_style,
+        signers: next.signers,
+        includeFirmReference: next.include_firm_reference,
+      }),
+    });
+    setSaving(false);
+  };
+
+  const revertToFirmDefault = async () => {
+    setSaving(true);
+    await fetch("/api/precedents/settings", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, clearOverride: true }),
+    });
+    setOverride(null);
+    setSaving(false);
+  };
+
+  const updateSigner = (i: number, patch: Partial<Signer>) =>
+    save({ ...effective, signers: effective.signers.map((s, idx) => idx === i ? { ...s, ...patch } : s) });
+  const addSigner = () => {
+    if (effective.signers.length >= 4) return;
+    setOverride({ ...effective, signers: [...effective.signers, { name: "", position: "" }] });
+  };
+  const removeSigner = (i: number) => save({ ...effective, signers: effective.signers.filter((_, idx) => idx !== i) });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
+          <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Precedent settings for this matter</h3>
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+        </div>
+        {loading ? (
+          <div className="p-8 flex justify-center"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
+        ) : (
+          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] text-slate-400">
+                {override ? "This matter has its own overrides." : "Currently using the firm-wide defaults."}
+              </p>
+              {override && (
+                <button onClick={revertToFirmDefault} disabled={saving} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700">
+                  Use firm default
+                </button>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Subject line</p>
+              <div className="grid grid-cols-3 gap-2">
+                {SUBJECT_OPTIONS.map(opt => (
+                  <button key={opt.value} onClick={() => save({ ...effective, subject_line_style: opt.value })}
+                    className={`p-2.5 rounded-2xl border text-[11px] font-medium transition-colors ${effective.subject_line_style === opt.value ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600"}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Salutation</p>
+              <div className="grid grid-cols-3 gap-2">
+                {SALUTATION_OPTIONS.map(opt => (
+                  <button key={opt.value} onClick={() => save({ ...effective, salutation_style: opt.value })}
+                    className={`p-2.5 rounded-2xl border text-[11px] font-medium transition-colors ${effective.salutation_style === opt.value ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600"}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Signers for this matter</p>
+                <button onClick={addSigner} disabled={effective.signers.length >= 4}
+                  className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 disabled:opacity-30">
+                  <Plus size={12} /> Add
+                </button>
+              </div>
+              <div className="space-y-2">
+                {effective.signers.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input value={s.name} onChange={e => updateSigner(i, { name: e.target.value })} placeholder="Name"
+                      className="flex-1 px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+                    <input value={s.position} onChange={e => updateSigner(i, { position: e.target.value })} placeholder="Position"
+                      className="flex-1 px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+                    <button onClick={() => removeSigner(i)} className="p-1.5 text-slate-300 hover:text-red-500 shrink-0"><X size={14} /></button>
+                  </div>
+                ))}
+                {effective.signers.length === 0 && <p className="text-[11px] text-slate-300 italic">No signers for this matter yet</p>}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

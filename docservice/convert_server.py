@@ -6,6 +6,11 @@
 # X-Filename: <original name with its real extension, e.g. input.doc> and
 # get back the converted .docx bytes.
 #
+# Also doubles as the .docx -> .pdf step for issued precedent documents (see
+# lib/gotenberg.ts's convertDocxToPdf) -- send header X-Target-Format: pdf to
+# get PDF bytes back instead of .docx. Default (header absent) stays .docx,
+# so the original doc-conversion callers are unaffected.
+#
 # Runs one soffice conversion at a time (headless LibreOffice doesn't handle
 # concurrent invocations against the same user profile reliably) — fine for
 # an admin-only template-upload feature with low, non-concurrent traffic.
@@ -41,6 +46,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         original_name = self.headers.get("X-Filename", "input.doc")
         ext = os.path.splitext(original_name)[1] or ".doc"
+        target = (self.headers.get("X-Target-Format") or "docx").strip().lower()
+        if target not in ("docx", "pdf"):
+            self._respond(400, b"X-Target-Format must be 'docx' or 'pdf'", "text/plain")
+            return
+        convert_to = "docx:MS Word 2007 XML" if target == "docx" else "pdf"
 
         workdir = tempfile.mkdtemp(prefix="docconv-")
         try:
@@ -52,13 +62,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 result = subprocess.run(
                     [
                         "soffice", "--headless", "--norestore",
-                        "--convert-to", "docx:MS Word 2007 XML",
+                        "--convert-to", convert_to,
                         "--outdir", workdir, in_path,
                     ],
                     capture_output=True, timeout=60,
                 )
 
-            out_path = os.path.join(workdir, "input.docx")
+            out_path = os.path.join(workdir, f"input.{target}")
             if result.returncode != 0 or not os.path.exists(out_path):
                 detail = (result.stderr or result.stdout or b"").decode("utf-8", "replace")[:500]
                 self._respond(502, f"conversion failed: {detail}".encode(), "text/plain")
@@ -66,10 +76,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             with open(out_path, "rb") as f:
                 out_bytes = f.read()
-            self._respond(
-                200, out_bytes,
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            content_type = (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                if target == "docx" else "application/pdf"
             )
+            self._respond(200, out_bytes, content_type)
         except subprocess.TimeoutExpired:
             self._respond(504, b"conversion timed out", "text/plain")
         finally:

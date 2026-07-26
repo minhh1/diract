@@ -120,6 +120,7 @@ const ADMIN_LINKS = [
   { tab: 'aiAssistant', icon: Sparkles, label: 'AI Assistant' },
   { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },
   { tab: 'archiveRequests', icon: Archive, label: 'Archive requests' },
+  { tab: 'precedents', icon: PenSquare, label: 'Precedents' },
   { tab: 'company', icon: Settings, label: 'Company' },
 ] as const;
 
