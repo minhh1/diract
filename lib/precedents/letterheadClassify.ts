@@ -211,7 +211,19 @@ export function applyClassification(
   for (const [role, group] of byRole) {
     const sorted = [...group].sort((a, b) => a.index - b.index);
     const anchor = sorted[0];
-    for (let i = 1; i < sorted.length; i++) toDelete.add(sorted[i].index);
+    // A paragraph the model grouped into this role but that's actually
+    // BLANK is very likely a spacer the firm placed on purpose (e.g. a gap
+    // before "Yours faithfully", or between the Our Ref/date/delivery-mode/
+    // recipient/address lines) -- the model reasonably lumps an adjacent
+    // blank line in with a field it can't otherwise classify, but deleting
+    // it as a "duplicate" would silently collapse spacing that was never a
+    // duplicate to begin with. Only delete extras that actually contain
+    // text (a genuine repeated placeholder line).
+    for (let i = 1; i < sorted.length; i++) {
+      const idx = sorted[i].index;
+      const text = matches[idx][0].replace(/<[^>]+>/g, "").trim();
+      if (text) toDelete.add(idx);
+    }
     if (role === "closing") { detectedFields.push({ role }); continue; }
 
     const tagKey = role === "address" ? tagKeys.addressTagKey
