@@ -20,12 +20,20 @@ export async function authorizeCompanyMember() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
 
-  const { data: profile } = await admin.from("profiles").select("active_company_id").eq("id", user.id).single();
+  // Membership lookup only needs user_id, not active_company_id -- so it
+  // doesn't actually have to wait on the profile fetch to resolve first.
+  // Fetching all of this user's memberships (not filtered to one company)
+  // and matching in-process lets both queries run in parallel instead of a
+  // sequential round-trip chain (same trick CompanyContext.tsx uses
+  // client-side for the same reason).
+  const [{ data: profile }, { data: memberships }] = await Promise.all([
+    admin.from("profiles").select("active_company_id").eq("id", user.id).single(),
+    admin.from("company_memberships").select("company_id, role").eq("user_id", user.id),
+  ]);
   const companyId = profile?.active_company_id;
   if (!companyId) return { error: NextResponse.json({ error: "No active company" }, { status: 400 }) };
 
-  const { data: membership } = await admin
-    .from("company_memberships").select("role").eq("company_id", companyId).eq("user_id", user.id).maybeSingle();
+  const membership = memberships?.find(m => m.company_id === companyId);
   if (!membership) return { error: NextResponse.json({ error: "You don't have access to this company" }, { status: 403 }) };
 
   return { admin, user, companyId, isAdmin: membership.role === "company_admin" };

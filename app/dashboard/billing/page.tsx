@@ -7,9 +7,10 @@
 // virtual-computer options depend on knowing the plan/status.
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
+import { useCompany } from "@/components/CompanyContext";
 import { CreditCard, CheckCircle2, AlertCircle } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
@@ -38,63 +39,58 @@ const STATUS_STYLES: Record<string, string> = {
   paused: "bg-slate-100 text-slate-500",
 };
 
+interface BillingStatus {
+  subscription: Subscription | null;
+  plans: Plan[];
+  usageThisMonthUsd: number | null;
+}
+
+async function fetchBillingStatus(): Promise<BillingStatus> {
+  const res = await fetch("/api/billing/status");
+  const json = await res.json();
+  return {
+    subscription: json.subscription,
+    plans: json.plans || [],
+    usageThisMonthUsd: typeof json.usageThisMonthUsd === "number" ? json.usageThisMonthUsd : null,
+  };
+}
+
 export default function BillingPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const checkoutResult = searchParams.get("checkout");
+  // CompanyContext already resolved isAdmin (per-company role check) once
+  // for the whole dashboard shell -- no need to re-derive it here via
+  // auth.getUser()/profiles/company_memberships, same fix already applied
+  // to app/dashboard/admin/page.tsx and settings/page.tsx.
+  const { isAdmin } = useCompany();
 
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [usageThisMonthUsd, setUsageThisMonthUsd] = useState<number | null>(null);
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   const [openingPortal, setOpeningPortal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadStatus = useCallback(async () => {
-    const res = await fetch("/api/billing/status");
-    const json = await res.json();
-    setSubscription(json.subscription);
-    setPlans(json.plans || []);
-    setUsageThisMonthUsd(typeof json.usageThisMonthUsd === "number" ? json.usageThisMonthUsd : null);
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace("/login"); return; }
-
-      const { data: profile } = await supabase
-        .from("profiles").select("active_company_id").eq("id", user.id).single();
-
-      if (profile?.active_company_id) {
-        const { data: membership } = await supabase
-          .from("company_memberships")
-          .select("role")
-          .eq("user_id", user.id)
-          .eq("company_id", profile.active_company_id)
-          .single();
-        setIsAdmin(membership?.role === "company_admin");
-      }
-
-      await loadStatus();
-      setLoading(false);
-    })();
-  }, [loadStatus, router]);
+  const { data, isLoading: loading, refetch } = useQuery({
+    queryKey: ["billing-status"],
+    queryFn: fetchBillingStatus,
+    staleTime: 60 * 1000,
+  });
+  const subscription = data?.subscription ?? null;
+  const plans = data?.plans ?? [];
+  const usageThisMonthUsd = data?.usageThisMonthUsd ?? null;
 
   useEffect(() => {
     if (checkoutResult !== "success") return;
     // The webhook lands a moment after the redirect -- re-poll briefly so
     // the status badge catches up without requiring a manual refresh.
+    // refetch() (not the cached query itself) so this always hits the
+    // network regardless of staleTime.
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts += 1;
-      await loadStatus();
+      await refetch();
       if (attempts >= 5) clearInterval(interval);
     }, 2000);
     return () => clearInterval(interval);
-  }, [checkoutResult, loadStatus]);
+  }, [checkoutResult, refetch]);
 
   useProgressBarWhile(loading);
 
