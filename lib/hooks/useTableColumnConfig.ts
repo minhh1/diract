@@ -85,13 +85,20 @@ export function useTableColumnConfig({
         .eq('table_slug', tableSlug)
         .maybeSingle();
       if (!active) return;
-      if (companyView) {
-        setTableCols(companyView.columns?.length ? companyView.columns : defaultCols);
-        setExpandCols(companyView.expansion_columns || defaultExpandCols);
-        setColWidths(companyView.column_widths || {});
-        setActivePreset(companyView.preset_name || DEFAULT_PRESET_NAME);
-        setSort(companyView.sort || null);
-      }
+      // No saved row yet (every table before its first admin visit to
+      // Setup) -- still need to push tableCols/expandCols to the properly-
+      // resolved defaults here, not leave them at whatever the initial
+      // useState(defaultCols) call saw. That call ran on this hook's very
+      // first mount, when the caller's own fields hadn't loaded yet (so
+      // defaultCols was still `[]`) -- useState ignores that argument on
+      // every render after the first, so without this the table would be
+      // stuck showing zero columns forever, only ever fixed by an admin
+      // happening to open Setup and change something. Confirmed live.
+      setTableCols(companyView?.columns?.length ? companyView.columns : defaultCols);
+      setExpandCols(companyView ? (companyView.expansion_columns || defaultExpandCols) : defaultExpandCols);
+      setColWidths(companyView?.column_widths || {});
+      setActivePreset(companyView?.preset_name || DEFAULT_PRESET_NAME);
+      setSort(companyView?.sort || null);
       setLoaded(true);
     })();
     return () => { active = false; };

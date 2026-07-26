@@ -17,24 +17,39 @@ import type { CustomTable } from "@/lib/hooks/useCustomTables";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { pickCreateFields } from "@/components/dashboard/NewRecordModal";
 import { useProgressBar } from "@/components/TopProgressBar";
-// All four only ever render conditionally (a record selected, "New record"/
-// "Setup" clicked, or the spreadsheet panel opened) -- none of them are
-// needed for this page's own initial list view, so none of them need to
-// ship with it. RecordDashboard in particular is large (many tabs -- see
-// its own file); the others are smaller but still pure "not needed until
-// clicked" weight. ColumnConfigDrawer is the same "Setup" UI system tables
-// use (see GenericMasterTable.tsx) -- shared here too so both table kinds
-// get identical reorder/resize/table-expand-none column config instead of
-// two different pickers.
-const RecordDashboard = dynamic(() => import("@/components/dashboard/RecordDashboard"));
+import RecordDashboard from "@/components/dashboard/RecordDashboard";
+import SpreadsheetEditor from "@/components/SpreadsheetEditor";
+import ColumnConfigDrawer from "@/components/ColumnConfigDrawer";
+// Only NewRecordModal stays deferred here -- it's not needed for this
+// page's own initial list view and, unlike the three above, isn't also
+// dynamic-imported from GenericMasterTable.tsx. RecordDashboard/
+// SpreadsheetEditor/ColumnConfigDrawer are imported statically instead of
+// via next/dynamic() specifically because GenericMasterTable.tsx now
+// dynamic-imports those same three components too (see its own history) --
+// two routes each lazily referencing the same chunk is exactly the pattern
+// that trips Turbopack dev-mode chunk-loading races on a client-side
+// transition between them (reported: navigating from a custom table to a
+// system table hangs). Static here removes this route's side of that
+// shared-chunk overlap; small components anyway (i.e. hardly hurt by not
+// deferring), so not worth the risk to keep deferred.
 const NewRecordModal = dynamic(() => import("@/components/dashboard/NewRecordModal"));
-const SpreadsheetEditor = dynamic(() => import("@/components/SpreadsheetEditor"));
-const ColumnConfigDrawer = dynamic(() => import("@/components/ColumnConfigDrawer"));
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
+import type { ActiveFilter } from "@/lib/types/filters";
 
 interface Props {
   tableSlug: string;
 }
+
+// Custom tables don't have a filters feature yet (see ColumnConfigDrawer's
+// own Filters tab, unused here) -- passed as a stable module-level constant
+// rather than omitted, since ColumnConfigDrawer's `filters` prop defaults to
+// a fresh `[]` on every render when left undefined, and its own effect
+// syncs draftFilters from that prop on every reference change. A new []
+// each render never stops "changing", so its effect never stops firing --
+// confirmed live as an infinite render loop ("Maximum update depth
+// exceeded") that pins the tab, which is what was actually behind the
+// reported "moving between table types freezes the site" bug.
+const NO_FILTERS: ActiveFilter[] = [];
 
 const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
 
@@ -571,6 +586,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         expandCols={cc.expandCols}
         activePresetName={cc.activePreset}
         onToggle={cc.handleToggleColumn}
+        filters={NO_FILTERS}
         isAdmin={isAdmin}
       />
 
