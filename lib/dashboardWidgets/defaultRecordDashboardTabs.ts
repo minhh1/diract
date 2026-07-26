@@ -64,6 +64,32 @@ interface RecordTabInsert {
   billing_role: 'fee_source' | 'invoices';
 }
 
+// company_record_tab_defaults only changes when a company (re-)installs a
+// template's dashboards opt-in -- a rare, admin-initiated action -- yet
+// buildMissingDefaultTabsFromCompanyDefaults was re-querying it on every
+// single record-dashboard open (every tab load, not just the first). Cached
+// per company+recordTable with a short TTL, same tradeoff as
+// useCustomTables' cache: long enough that opening records back-to-back
+// never re-hits the network, short enough that a template installed earlier
+// in the same session shows up without a full reload.
+const RECORD_TAB_DEFAULTS_CACHE_TTL_MS = 60_000;
+const recordTabDefaultsCache = new Map<string, { data: any[]; expiresAt: number }>();
+
+async function fetchCompanyRecordTabDefaults(companyId: string, recordTable: string): Promise<any[]> {
+  const key = `${companyId}:${recordTable}`;
+  const cached = recordTabDefaultsCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  const { data } = await supabase
+    .from('company_record_tab_defaults')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('record_table', recordTable)
+    .order('display_order');
+  const result = data || [];
+  recordTabDefaultsCache.set(key, { data: result, expiresAt: Date.now() + RECORD_TAB_DEFAULTS_CACHE_TTL_MS });
+  return result;
+}
+
 // Company-level record-tab defaults (company_record_tab_defaults -- written
 // by template installs when the dashboards opt-in is ticked, see
 // supabase/template_record_tabs.sql): the data-driven generalization of the
@@ -81,15 +107,10 @@ export async function buildMissingDefaultTabsFromCompanyDefaults(
 ): Promise<{ tabs: any[]; widgetsByLinkedTableId: Map<string, DashboardWidget[]> }> {
   const tabs: any[] = [];
   const widgetsByLinkedTableId = new Map<string, DashboardWidget[]>();
-  const { data: defaults } = await supabase
-    .from('company_record_tab_defaults')
-    .select('*')
-    .eq('company_id', companyId)
-    .eq('record_table', recordTable)
-    .order('display_order');
+  const defaults = await fetchCompanyRecordTabDefaults(companyId, recordTable);
 
   let order = startDisplayOrder;
-  for (const d of defaults || []) {
+  for (const d of defaults) {
     if (existingLinkedTableIds.has(d.linked_table_id) || widgetsByLinkedTableId.has(d.linked_table_id)) continue;
     tabs.push({
       company_id: companyId, record_id: recordId, record_table: recordTable,
@@ -105,19 +126,28 @@ export async function buildMissingDefaultTabsFromCompanyDefaults(
 // for every spec this company has a live table for AND doesn't already have
 // a tab for (existingLinkedTableIds) -- idempotent by design, so it's safe
 // to call every time a project's tabs load, not just once on first open.
+//
+// `customTables` is the company's already-loaded company_tables list (see
+// useCustomTables' shared, warmed cache) -- this used to re-query
+// company_tables by slug on every single project-dashboard open (up to 3
+// sequential round trips: two specs + invoices), even though every caller
+// already has this exact list sitting in memory from useCustomTables().
+// Looking it up locally instead means the common case (all default tabs
+// already exist) costs zero network calls here.
 export async function buildMissingDefaultProjectDashboardTabs(
   companyId: string,
   recordId: string,
   startDisplayOrder: number,
   existingLinkedTableIds: Set<string>,
+  customTables: { id: string; slug: string }[],
 ): Promise<{ tabs: RecordTabInsert[]; widgetsByLinkedTableId: Map<string, DashboardWidget[]> }> {
   const tabs: RecordTabInsert[] = [];
   const widgetsByLinkedTableId = new Map<string, DashboardWidget[]>();
   let order = startDisplayOrder;
+  const findTable = (slug: string) => customTables.find(t => t.slug === slug);
 
   for (const spec of DEFAULT_PROJECT_DASHBOARD_TAB_SPECS) {
-    const { data: table } = await supabase
-      .from('company_tables').select('id').eq('company_id', companyId).eq('slug', spec.slug).is('deleted_at', null).maybeSingle();
+    const table = findTable(spec.slug);
     if (!table || existingLinkedTableIds.has(table.id)) continue;
 
     const { data: fields } = await supabase
@@ -140,8 +170,7 @@ export async function buildMissingDefaultProjectDashboardTabs(
   }
 
   // Invoices -- bespoke tab_type, no widgets to seed.
-  const { data: invoicesTable } = await supabase
-    .from('company_tables').select('id').eq('company_id', companyId).eq('slug', INVOICES_TAB_SPEC.slug).is('deleted_at', null).maybeSingle();
+  const invoicesTable = findTable(INVOICES_TAB_SPEC.slug);
   if (invoicesTable && !existingLinkedTableIds.has(invoicesTable.id)) {
     tabs.push({
       company_id: companyId, record_id: recordId, record_table: 'projects',

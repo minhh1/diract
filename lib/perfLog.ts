@@ -93,7 +93,7 @@ export function perfLog(label: string, detail?: string): void {
 // in specific pages and use a view/slug/table name (not necessarily the
 // literal URL) because they know that page's own real loading-state
 // semantics.
-export type PerfPageKind = "dashboard" | "table" | "settings" | "admin" | "marketplace" | "page";
+export type PerfPageKind = "dashboard" | "table" | "settings" | "admin" | "marketplace" | "page" | "record";
 export function perfLogPageStart(kind: PerfPageKind, name: string): void {
   perfLog(`PAGE ${kind}(${name}): start`);
 }

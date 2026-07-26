@@ -23,14 +23,17 @@ import InvoicesTab from "./tabs/InvoicesTab";
 import TeamMemberLinkCard from "./TeamMemberLinkCard";
 import SendSmsCard from "./SendSmsCard";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import { fetchCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 import {
   SYSTEM_TABLE_HIDDEN_COLS, SYSTEM_TABLE_RELATION_MAP, SYSTEM_TABLE_PERSON_LINK_COLS,
 } from "@/lib/schema/systemTableRelations";
 import { buildMissingDefaultProjectDashboardTabs, buildMissingDefaultTabsFromCompanyDefaults } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
-import { getCompanyId } from "@/lib/services/schemaService";
+import { getCompanyId, getSchemaMetadata } from "@/lib/services/schemaService";
 import { createArchiveRequest, type ArchiveEntityTable } from "@/lib/archiveRequests";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { useCompany } from "@/components/CompanyContext";
+import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -52,6 +55,7 @@ export default function RecordDashboard({
   recordId, onBack, embedded = false, initialRecord,
 }: Props) {
   const { tables: customTables } = useCustomTables();
+  const { companyId: ctxCompanyId, isAdmin: ctxIsAdmin } = useCompany();
 
   const [record, setRecord] = useState<Record<string, any> | null>(initialRecord ?? null);
   const [fields, setFields] = useState<FieldLayout[]>([]);
@@ -111,42 +115,67 @@ export default function RecordDashboard({
 
   // ── Data loaders ───────────────────────────────────────────────
 
+  const perfName = systemTable || tableName || 'custom';
+
   const loadAll = async () => {
-    setLoading(true);
-    const cid = await getCompanyId();
-    if (!cid) { setLoading(false); return; }
-    setCompanyId(cid);
-    // Check admin status
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: mem } = await supabase
-        .from('company_memberships').select('role')
-        .eq('user_id', user.id).eq('company_id', cid).single();
-      setIsAdmin(mem?.role === 'company_admin');
+    // Skip the blank/loading gate when we already have this exact record's
+    // data pre-fetched from the master table row click (the common entry
+    // path) -- the header/fields can render immediately from it while tabs/
+    // fields/linked-items resolve underneath, instead of the whole screen
+    // going blank for the full waterfall even though most of it is already
+    // on screen. A genuinely different record (sub-project switch, direct
+    // load) still gets the normal loading gate.
+    const hasMatchingInitialData = !!initialRecord && initialRecord.id === recordId;
+    if (!hasMatchingInitialData) setLoading(true);
+    perfLogPageStart('record', perfName);
+
+    // companyId/isAdmin are already resolved once per session by
+    // CompanyContext (see app/dashboard/layout.tsx) -- reusing that instead
+    // of re-running getCompanyId()+auth.getUser()+a company_memberships
+    // query on every single record open removes 3 sequential round trips
+    // from the critical path in the common case. Falls back to the direct
+    // lookups only if context genuinely hasn't resolved yet (e.g. a very
+    // early deep link).
+    let cid = ctxCompanyId;
+    let admin = ctxIsAdmin;
+    if (!cid) {
+      cid = await getCompanyId();
+      if (!cid) { setLoading(false); return; }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: mem } = await supabase
+          .from('company_memberships').select('role')
+          .eq('user_id', user.id).eq('company_id', cid).single();
+        admin = mem?.role === 'company_admin';
+      }
     }
-    const [rec, , flds] = await Promise.all([loadRecord(cid), loadTabs(cid), loadFields(cid), loadSubProjects(), loadParent()]);
-    await resolveLinkedItems(rec, flds);
+    setCompanyId(cid);
+    setIsAdmin(admin);
+    perfLog(`RecordDashboard(${perfName}): companyId+admin resolved`);
+
+    const [rec, , flds] = await Promise.all([loadRecord(cid), loadTabs(cid), loadFields(cid), loadSubProjects()]);
+    perfLog(`RecordDashboard(${perfName}): record/tabs/fields/subProjects resolved`);
+    await Promise.all([resolveLinkedItems(rec, flds), loadParent(rec)]);
+    perfLog(`RecordDashboard(${perfName}): linked items + parent resolved`);
     setLoading(false);
+    perfLogPageReady('record', perfName);
   };
 
   const loadRecord = async (cid: string) => {
     if (systemTable) {
-      // Skip fetch if we already have initial data from master table
-      // Still fetch to get custom field values merged in
-      const { data } = await supabase
-        .from(systemTable)
-        .select('*')
-        .eq('id', recordId)
-        .single();
+      // Fetch the row + its custom field values in parallel -- both are
+      // independent lookups keyed only on recordId, no need to serialize
+      // them like before.
+      const [{ data }, { data: cfValues }] = await Promise.all([
+        supabase.from(systemTable).select('*').eq('id', recordId).single(),
+        supabase
+          .from('company_custom_field_values')
+          .select('field_id, value_text, value_number, value_date, value_boolean')
+          .eq('record_id', recordId)
+          .eq('table_name', systemTable),
+      ]);
 
       if (!data) return;
-
-      // Also load custom field values
-      const { data: cfValues } = await supabase
-        .from('company_custom_field_values')
-        .select('field_id, value_text, value_number, value_date, value_boolean')
-        .eq('record_id', recordId)
-        .eq('table_name', systemTable);
 
       // Merge custom field values into record using field_id as key
       const customValues: Record<string, any> = {};
@@ -230,16 +259,15 @@ export default function RecordDashboard({
   };
   const loadFields = async (cid: string) => {
     if (systemTable) {
-      const { data: schemaCols } = await supabase.rpc('get_schema_metadata', {
-        target_table: systemTable,
-        p_company_id: cid,
-      });
-      const { data: customFields } = await supabase
-        .from('company_custom_fields')
-        .select('*')
-        .eq('table_name', systemTable)
-        .is('deleted_at', null)
-        .order('display_order');
+      // Both are shared, cached lookups (schemaService caches the RPC by
+      // table+company; fetchCompanyCustomFields shares the same cache
+      // Sidebar/GenericMasterTable already warm for this table) -- most
+      // record opens hit warm cache on both and do zero network round
+      // trips here at all. Run in parallel regardless, for the cold case.
+      const [schemaCols, customFields] = await Promise.all([
+        getSchemaMetadata(systemTable, cid),
+        fetchCompanyCustomFields(systemTable),
+      ]);
 
       const baseFields: FieldLayout[] = (schemaCols || [])
         .filter((c: any) => ['data', 'relation'].includes(c.category) && !c.is_hidden && !SYSTEM_TABLE_HIDDEN_COLS.includes(c.column_name))
@@ -343,6 +371,16 @@ export default function RecordDashboard({
         await supabase.from('record_tabs').delete().in('id', dupeIds);
       }
 
+      // Fired immediately so it runs concurrently with the top-up logic
+      // below instead of waiting behind it -- it's independent of whether
+      // any default tabs get inserted.
+      const fieldTabIds = tabData
+        .filter(t => t.tab_type === 'fields')
+        .map(t => t.id);
+      const fieldLayoutsPromise = fieldTabIds.length > 0
+        ? supabase.from('record_tab_fields').select('*').in('tab_id', fieldTabIds).order('row_order')
+        : Promise.resolve({ data: [] as any[] });
+
       // Top up any default project-dashboard tabs (Time & Fees,
       // Disbursements) this record doesn't have yet -- covers matters that
       // were first opened (and so already got their "Details" tab) before
@@ -352,7 +390,7 @@ export default function RecordDashboard({
       const existingLinkedTableIds = new Set(uniqueTabs.map(t => t.linked_table_id).filter(Boolean));
       if (systemTable === 'projects') {
         const { tabs: missingTabs, widgetsByLinkedTableId } = await buildMissingDefaultProjectDashboardTabs(
-          cid, recordId, uniqueTabs.length, existingLinkedTableIds
+          cid, recordId, uniqueTabs.length, existingLinkedTableIds, customTables
         );
         if (missingTabs.length) {
           const { data: insertedTabs } = await supabase.from('record_tabs').insert(missingTabs).select();
@@ -382,19 +420,10 @@ export default function RecordDashboard({
       setTabs(finalTabs);
       setActiveTabId(finalTabs[0].id);
 
-      const fieldTabIds = tabData
-        .filter(t => t.tab_type === 'fields')
-        .map(t => t.id);
-
-      if (fieldTabIds.length > 0) {
-        const { data: layouts } = await supabase
-          .from('record_tab_fields')
-          .select('*')
-          .in('tab_id', fieldTabIds)
-          .order('row_order');
-
+      const { data: layouts } = await fieldLayoutsPromise;
+      if (layouts?.length) {
         const byTab: Record<string, FieldLayout[]> = {};
-        (layouts || []).forEach((l: any) => {
+        layouts.forEach((l: any) => {
           if (!byTab[l.tab_id]) byTab[l.tab_id] = [];
           byTab[l.tab_id].push(l);
         });
@@ -425,7 +454,7 @@ export default function RecordDashboard({
 
       let widgetsByLinkedTableId = new Map<string, DashboardWidget[]>();
       if (systemTable === 'projects') {
-        const result = await buildMissingDefaultProjectDashboardTabs(cid, recordId, defaultTabs.length, new Set());
+        const result = await buildMissingDefaultProjectDashboardTabs(cid, recordId, defaultTabs.length, new Set(), customTables);
         defaultTabs.push(...result.tabs);
         widgetsByLinkedTableId = result.widgetsByLinkedTableId;
       }
@@ -462,23 +491,20 @@ export default function RecordDashboard({
     setSubProjects(data || []);
   };
 
-  const loadParent = async () => {
+  // Takes the already-fetched record instead of re-fetching this same row
+  // by id just to read parent_project_id off it -- loadRecord's `select('*')`
+  // already has that column, so this used to spend a full extra round trip
+  // duplicating a fetch that had already happened moments earlier.
+  const loadParent = async (rec?: Record<string, any> | null) => {
     if (systemTable !== 'projects') return;
-    const { data } = await supabase
+    const parentId = rec?.parent_project_id;
+    if (!parentId) { setParentRecord(null); return; }
+    const { data: parent } = await supabase
       .from('projects')
-      .select('id, name, parent_project_id')
-      .eq('id', recordId)
+      .select('id, name')
+      .eq('id', parentId)
       .single();
-    if (data?.parent_project_id) {
-      const { data: parent } = await supabase
-        .from('projects')
-        .select('id, name')
-        .eq('id', data.parent_project_id)
-        .single();
-      setParentRecord(parent || null);
-    } else {
-      setParentRecord(null);
-    }
+    setParentRecord(parent || null);
   };
 
   // ── Tab handlers ───────────────────────────────────────────────
