@@ -75,6 +75,15 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       perfLog("CompanyContext: auth.getSession resolved");
       if (!user || cancelled) return;
 
+      // Fire the moment we have a real session, not after profile+membership
+      // resolve too -- RelationPicker's cache is company-scoped by RLS, not
+      // by anything CompanyContext itself computes (companyId etc.), so it
+      // has no real dependency on those still-pending queries. Confirmed
+      // live this was costing Matter/Staff pickers ~650ms of otherwise-free
+      // head start (the gap between "auth.getSession resolved" and
+      // "profiles+memberships resolved" in this file's own perfLog marks).
+      warmRelationOptionsCache();
+
       // Membership lookup only needs user_id, not active_company_id — so it
       // doesn't actually have to wait on the profile fetch to resolve first.
       // Fetching all of this user's memberships (not filtered to one company)
@@ -110,12 +119,6 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
       setLoading(false);
       perfLog("CompanyContext: done");
-
-      // Pre-warms RelationPicker's full-candidate-list cache (Matters/Staff/
-      // Properties search-and-choose bars) so the FIRST time a user opens
-      // one, not just the second, is instant -- fire-and-forget, doesn't
-      // block anything above. See RelationPicker.tsx's warmRelationOptionsCache.
-      warmRelationOptionsCache();
     }
     load();
     return () => { cancelled = true; };

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCustomTable } from "./useCustomTable";
+import type { CustomTable } from "./useCustomTables";
 import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "./useSystemTableAsCustomTable";
 import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMigrated";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
@@ -51,7 +52,13 @@ export interface CompanyDashboard {
 // elsewhere in the app.
 export function useDashboardData(dashboardSlug: string) {
   const [dashboard, setDashboard] = useState<CompanyDashboard | null>(null);
-  const [sourceTableSlug, setSourceTableSlug] = useState<string | null>(null);
+  // Full row, not just the slug -- fetched once source_table_id is known,
+  // handed straight to useCustomTable below as its preloadedTable so that
+  // hook can skip its own redundant table-by-slug fetch (see
+  // useCustomTable.ts's doc comment on that param). sourceTableSlug is
+  // derived from this, not a second piece of state.
+  const [sourceTableDef, setSourceTableDef] = useState<CustomTable | null>(null);
+  const sourceTableSlug = sourceTableDef?.slug ?? null;
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [filters, setFilters] = useState<Record<string, any>>({});
   // A field_key -> value map waiting to be picked up by this dashboard's
@@ -78,8 +85,8 @@ export function useDashboardData(dashboardSlug: string) {
       if (!active) return;
       setDashboard(dash);
       if (dash?.source_table_type === 'custom' && dash?.source_table_id) {
-        const { data: tbl } = await supabase.from('company_tables').select('slug').eq('id', dash.source_table_id).maybeSingle();
-        if (active) setSourceTableSlug(tbl?.slug || null);
+        const { data: tbl } = await supabase.from('company_tables').select('*').eq('id', dash.source_table_id).maybeSingle();
+        if (active) setSourceTableDef(tbl);
       }
       setDashboardLoading(false);
     })();
@@ -92,7 +99,7 @@ export function useDashboardData(dashboardSlug: string) {
   // Both hooks are always called (Rules of Hooks) -- each tolerates a null
   // table identifier by no-op'ing, and only the one matching this
   // dashboard's actual source_table_type ever has real data in it.
-  const customTableResult = useCustomTable(sourceKind === 'custom' ? sourceTableSlug : null);
+  const customTableResult = useCustomTable(sourceKind === 'custom' ? sourceTableSlug : null, sourceTableDef);
   const systemTableResult = useSystemTableAsCustomTable(systemTableName, dashboard?.company_id ?? null);
   const { tableDef, fields, records, loading: tableLoading, refetch: refetchTable } =
     sourceKind === 'custom' ? customTableResult : systemTableResult;

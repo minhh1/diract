@@ -139,7 +139,20 @@ export async function resolveRelationLabels(fieldList: CustomTableField[], recor
   }));
 }
 
-export function useCustomTable(tableSlug: string | null): {
+export function useCustomTable(
+  tableSlug: string | null,
+  // A caller that already has the full row (see useDashboardData.ts, which
+  // fetches it anyway to resolve source_table_id -> slug) can hand it over
+  // here to skip this hook's own table-by-slug lookup entirely -- a whole
+  // redundant round trip otherwise sitting in front of the fields/records
+  // fetch on every dashboard load. Ignored if its slug doesn't match
+  // tableSlug (stale/mismatched props); every other existing caller (the
+  // URL-slug-driven table pages) just omits this and behaves exactly as
+  // before. Relies on ordinary useState reference stability -- the caller's
+  // own state only changes identity when it actually re-fetches, not on
+  // every render -- so this doesn't need memoizing at the call site.
+  preloadedTable?: CustomTable | null
+): {
   tableDef: CustomTable | null;
   fields: CustomTableField[];
   records: CustomTableRecord[];
@@ -158,32 +171,43 @@ export function useCustomTable(tableSlug: string | null): {
   // showing the current data instead of unmounting into a spinner.
   const load = useCallback(async () => {
     if (!tableSlug) return;
-    const { data: tbl } = await supabase
-      .from('company_tables')
-      .select('*')
-      .eq('slug', tableSlug)
-      .is('deleted_at', null)
-      .single();
+    let tbl: CustomTable | null | undefined = preloadedTable?.slug === tableSlug ? preloadedTable : null;
+    if (!tbl) {
+      const { data } = await supabase
+        .from('company_tables')
+        .select('*')
+        .eq('slug', tableSlug)
+        .is('deleted_at', null)
+        .single();
+      tbl = data;
+    }
 
     if (!tbl) return;
     setTableDef(tbl);
 
-    const { data: flds } = await supabase
-      .from('company_table_fields')
-      .select('*')
-      .eq('table_id', tbl.id)
-      .is('deleted_at', null)
-      .order('display_order');
+    // Records don't actually reference field defs in their own query (the
+    // field_id -> field_key mapping only matters once hydrating rows below,
+    // client-side) -- fetching both at once instead of fields-then-records
+    // cuts a full sequential round trip off the load, confirmed live as a
+    // real chunk of "why does Time Entry take so long to show anything"
+    // (see the network waterfall this was diagnosed from).
+    const [{ data: flds }, { data: recs }] = await Promise.all([
+      supabase
+        .from('company_table_fields')
+        .select('*')
+        .eq('table_id', tbl.id)
+        .is('deleted_at', null)
+        .order('display_order'),
+      supabase
+        .from('company_table_records')
+        .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)')
+        .eq('table_id', tbl.id)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false }),
+    ]);
 
     const fieldList = (flds || []) as CustomTableField[];
     setFields(fieldList);
-
-    const { data: recs } = await supabase
-      .from('company_table_records')
-      .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)')
-      .eq('table_id', tbl.id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
 
     // Build a field_id → field_key map for resolving values
     const fieldMap = new Map(fieldList.map(f => [f.id, f]));
@@ -231,7 +255,7 @@ export function useCustomTable(tableSlug: string | null): {
 
     await resolveRelationLabels(fieldList, hydratedRecords);
     setRecords(hydratedRecords);
-  }, [tableSlug]);
+  }, [tableSlug, preloadedTable]);
 
   useEffect(() => {
     if (!tableSlug) return;
