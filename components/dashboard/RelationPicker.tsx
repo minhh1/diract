@@ -86,7 +86,12 @@ function dedupedFetch<T>(key: string, fetcher: () => Promise<T>, ttlMs: number =
 }
 
 async function resolveFilterValue(filterValue: string | null | undefined): Promise<string | null> {
-  if (filterValue !== CURRENT_USER_SENTINEL) return filterValue ?? null;
+  // $team_scope resolves to MANY rows for the candidate LIST (see
+  // getStaffScopeIds), but for "whose own row auto-selects" specifically,
+  // that always means the signed-in user's own -- same operation
+  // $current_user already does, and a team leader/admin still wants
+  // themselves picked as the sensible default, same as everyone else.
+  if (filterValue !== CURRENT_USER_SENTINEL && filterValue !== TEAM_SCOPE_SENTINEL) return filterValue ?? null;
   // Keyed on nothing but "current user" -- every field needing this shares
   // one cached/in-flight lookup regardless of which table/filter it's for.
   return dedupedFetch('current-user-id', async () => {
@@ -486,14 +491,23 @@ export default function RelationPicker({
   // request always resolved with the right row, just always into an
   // `active === false` closure.
   useEffect(() => {
-    if (multiple || value || userClearedRef.current || !linkedSystemTable || filterColumn !== 'linked_profile_id' || filterValue !== CURRENT_USER_SENTINEL) return;
+    if (
+      multiple || value || userClearedRef.current || !linkedSystemTable || filterColumn !== 'linked_profile_id' ||
+      (filterValue !== CURRENT_USER_SENTINEL && filterValue !== TEAM_SCOPE_SENTINEL)
+    ) return;
     let active = true;
     const col = displayField || 'name';
     const cacheKey = `autoSelect:${linkedSystemTable}:${filterColumn}:${filterValue}:${col}:${displayField2 ?? ''}`;
     dedupedFetch(cacheKey, async () => {
       const userId = await resolveFilterValue(filterValue);
       if (!userId) return null;
-      const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).eq('linked_profile_id', userId).is('deleted_at', null).maybeSingle();
+      let q = supabase.from(linkedSystemTable).select(`id, ${col}`).eq('linked_profile_id', userId).is('deleted_at', null);
+      // $team_scope's candidate list is entity_type='Staff' only (see
+      // fetchAllSystemTableOptions above) -- the auto-selected row has to
+      // come from that same set, or it'd pick something the picker's own
+      // search couldn't otherwise find.
+      if (filterValue === TEAM_SCOPE_SENTINEL) q = q.eq('entity_type', 'Staff');
+      const { data } = await q.maybeSingle();
       if (!data) return null;
       const primary = String((data as any)[col] ?? '');
       const [withSecondary] = await appendDisplayField2([{ id: (data as any).id, label: primary }], linkedSystemTable, displayField2);

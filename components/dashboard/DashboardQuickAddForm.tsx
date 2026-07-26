@@ -231,8 +231,13 @@ export default function DashboardQuickAddForm({
     setFormGeneration(g => g + 1);
   };
 
+  // '$team_scope' (role/team-aware Staff picker -- see RelationPicker.tsx)
+  // still auto-selects the signed-in user's own entity by default, same as
+  // the older '$current_user'-only config it replaced -- so this still
+  // applies to it too.
   const isCurrentUserStaffField = (field: CustomTableField) =>
-    field.field_type === 'entity' && field.linked_filter_column === 'linked_profile_id' && field.linked_filter_value === '$current_user';
+    field.field_type === 'entity' && field.linked_filter_column === 'linked_profile_id' &&
+    (field.linked_filter_value === '$current_user' || field.linked_filter_value === '$team_scope');
 
   const previews = computeAllPreviews(fields, values);
   const valueFor = (field: CustomTableField) => field.formula_type ? previews[field.field_key] ?? null : values[field.field_key];

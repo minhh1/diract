@@ -8,6 +8,14 @@
 // admin manually linking them first via components/dashboard/TeamMemberLinkCard.tsx.
 // Confirmed live this was a real, silent gap: 5 of Huynh Lawyers' 6 real
 // staff members had joined with no Staff entity at all.
+//
+// entity_type is always 'Staff' -- the $team_scope sentinel (see
+// RelationPicker.tsx / supabase/migrations/20260726071500_staff_field_team_scope_filter.sql)
+// hard-requires entity_type = 'Staff' on top of the linked_profile_id scope,
+// specifically to exclude non-staff Person/Company entities (e.g.
+// property-owning companies) from the Staff picker -- an entity created
+// here with any other entity_type would be invisible to that picker no
+// matter what, confirmed live as a real "no matches" bug.
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function ensureStaffEntity(
@@ -28,12 +36,20 @@ export async function ensureStaffEntity(
 
     const { data: existing } = await client
       .from("entities")
-      .select("id")
+      .select("id, entity_type")
       .eq("company_id", companyId)
       .eq("linked_profile_id", profileId)
       .is("deleted_at", null)
       .maybeSingle();
-    if (existing) return;
+    if (existing) {
+      // Self-healing: a linked entity created before entity_type='Staff'
+      // existed (or by some other path) would otherwise stay permanently
+      // invisible to the $team_scope-filtered Staff picker.
+      if (existing.entity_type !== "Staff") {
+        await client.from("entities").update({ entity_type: "Staff" }).eq("id", existing.id);
+      }
+      return;
+    }
 
     const { data: profile } = await client
       .from("profiles")
@@ -44,7 +60,7 @@ export async function ensureStaffEntity(
     await client.from("entities").insert({
       company_id: companyId,
       name: profile?.full_name?.trim() || "New team member",
-      entity_type: "Person",
+      entity_type: "Staff",
       linked_profile_id: profileId,
     });
   } catch (err) {
