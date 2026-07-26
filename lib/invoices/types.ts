@@ -2,7 +2,7 @@
 // supabase/companies_invoice_settings.sql) -- read by CompanyContext.tsx,
 // InvoiceTemplateSettingsTab.tsx, CreateInvoiceModal.tsx, and
 // app/api/invoices/[invoiceId]/pdf/route.ts.
-import type { InvoiceTemplateDisplay } from "./generateInvoicePdf";
+import type { InvoiceTemplateDisplay, InvoiceLayout } from "./generateInvoicePdf";
 
 export interface InvoiceBankDetails {
   accountName?: string;
@@ -16,6 +16,10 @@ export interface InvoiceTemplateConfig {
   name: string;
   isDefault?: boolean;
   display: InvoiceTemplateDisplay;
+  // Header-region positions + table column order/width -- optional so any
+  // template saved before InvoiceLayoutEditor.tsx existed keeps rendering
+  // via DEFAULT_INVOICE_LAYOUT exactly as before (see generateInvoicePdf.ts).
+  layout?: InvoiceLayout;
 }
 
 export interface InvoiceSettings {

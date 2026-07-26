@@ -12,11 +12,12 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, Trash2, Loader2, Check, Plus, Lock } from "lucide-react";
+import { Upload, Trash2, Loader2, Check, Plus, Lock, LayoutTemplate } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { supabase } from "@/lib/supabase";
 import { DEFAULT_INVOICE_DISPLAY, type InvoiceTemplateDisplay } from "@/lib/invoices/generateInvoicePdf";
 import type { InvoiceTemplateConfig } from "@/lib/invoices/types";
+import InvoiceLayoutEditor from "./InvoiceLayoutEditor";
 
 const DISPLAY_TOGGLES: { key: keyof InvoiceTemplateDisplay; label: string }[] = [
   { key: 'showStaffInitials', label: "Show fee-earner initials next to each entry" },
@@ -198,6 +199,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
 function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
   const { invoiceSettings, refreshInvoiceSettings, companyId } = useCompany();
   const [saving, setSaving] = useState(false);
+  const [layoutEditorId, setLayoutEditorId] = useState<string | null>(null);
 
   const saveTemplates = async (templates: InvoiceTemplateConfig[]) => {
     if (!companyId) return;
@@ -262,6 +264,11 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
               <label className="flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
                 <input type="radio" checked={!!t.isDefault} disabled={!isAdmin} onChange={() => setDefault(t.id)} /> Default
               </label>
+              {isAdmin && (
+                <button onClick={() => setLayoutEditorId(t.id)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 text-slate-500 text-[11px] font-bold rounded-full hover:bg-slate-100 shrink-0">
+                  <LayoutTemplate size={12} /> Edit layout
+                </button>
+              )}
               {isAdmin && invoiceSettings.templates.length > 1 && (
                 <button onClick={() => removeTemplate(t.id)} className="p-1.5 text-slate-300 hover:text-red-500 shrink-0"><Trash2 size={14} /></button>
               )}
@@ -277,6 +284,18 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
           </div>
         ))}
       </div>
+
+      {layoutEditorId && (() => {
+        const t = invoiceSettings.templates.find(x => x.id === layoutEditorId);
+        if (!t) return null;
+        return (
+          <InvoiceLayoutEditor
+            template={t}
+            onClose={() => setLayoutEditorId(null)}
+            onSave={layout => { updateTemplate(t.id, { layout }); setLayoutEditorId(null); }}
+          />
+        );
+      })()}
     </div>
   );
 }

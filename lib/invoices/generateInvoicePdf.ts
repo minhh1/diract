@@ -37,6 +37,25 @@ export const DEFAULT_INVOICE_DISPLAY: InvoiceTemplateDisplay = {
   showAccountSummary: false,
 };
 
+// Visual layout for the HEADER region only (logo, firm details, title/meta,
+// bill-to) -- everything drawn before the fee/disbursement tables. These are
+// the only freely-positionable elements (see InvoiceLayoutEditor.tsx): the
+// tables' start position stays fixed just below the header (their height is
+// row-count-dependent, so they can't be freely placed without risking
+// collision with whatever the user put below them), and totals/footer stay
+// sequential/flowing after the tables exactly as before -- only the header
+// anchors and the tables' own column order/width are configurable.
+export interface InvoiceLayoutAnchor { x: number; y: number; fontSize?: number }
+export interface InvoiceLayoutColumn { key: 'rate' | 'hours' | 'gst' | 'amount'; width: number }
+export interface InvoiceLayout {
+  logo: { x: number; y: number; maxWidth: number; maxHeight: number };
+  firmDetails: InvoiceLayoutAnchor; // firm name/ABN/address, right-aligned block
+  titleBlock: InvoiceLayoutAnchor; // "TAX INVOICE" + invoice number/dates/matter
+  billTo: InvoiceLayoutAnchor;
+  feeColumns: InvoiceLayoutColumn[]; // draw order, right-to-left
+  disbColumns: InvoiceLayoutColumn[];
+}
+
 export interface InvoiceFeeLine {
   date: string | null;
   staffInitials: string | null;
@@ -65,6 +84,7 @@ export interface GenerateInvoicePdfInput {
   otherTerms: string;
   bankDetails: { accountName?: string; bsb?: string; accountNumber?: string; reference?: string } | null;
   display: InvoiceTemplateDisplay;
+  layout?: InvoiceLayout;
   invoice: {
     invoiceNumber: string;
     issueDate: string | null;
@@ -87,6 +107,37 @@ const PAGE_W = 595.28, PAGE_H = 841.89; // A4, points
 const MARGIN = 50;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const MIN_Y = 90; // leave room for the footer notice on every page
+
+// Reproduces, as fixed constants, the exact y positions the OLD sequential
+// "y -= N" chain used to land each header section at (assuming a company has
+// both an ABN and a one-line address -- the common case): firm block is
+// 20(name gap)+13(abn)+13(address line)+20(trailing gap) = 66pt tall, title
+// block is 26+16+24 = 66pt, bill-to block is 14+26 = 40pt then +20 for the
+// hr()+gap = 60pt. This is what makes a template with no saved `layout`
+// (every template that existed before this editor) render pixel-identical
+// to before -- see InvoiceLayoutEditor.tsx, which is the only way these
+// anchors change from here on. A company with an unusually long (multi-line)
+// address will see it run slightly into the title block by default now,
+// since address height no longer auto-pushes the title down -- nudge
+// titleBlock down a little in the editor if that happens.
+const HEADER_TOP_Y = PAGE_H - MARGIN;
+const FIRM_BLOCK_H = 66;
+const TITLE_BLOCK_H = 66;
+const BILL_TO_BLOCK_H = 60;
+const TABLE_START_Y = HEADER_TOP_Y - FIRM_BLOCK_H - TITLE_BLOCK_H - BILL_TO_BLOCK_H;
+
+export const DEFAULT_INVOICE_LAYOUT: InvoiceLayout = {
+  logo: { x: MARGIN, y: HEADER_TOP_Y, maxWidth: 160, maxHeight: 60 },
+  firmDetails: { x: PAGE_W - MARGIN, y: HEADER_TOP_Y, fontSize: 16 },
+  titleBlock: { x: MARGIN, y: HEADER_TOP_Y - FIRM_BLOCK_H, fontSize: 20 },
+  billTo: { x: MARGIN, y: HEADER_TOP_Y - FIRM_BLOCK_H - TITLE_BLOCK_H, fontSize: 9 },
+  // Rightmost column first -- rightColumnLayout() assigns positions in this
+  // order starting from the page's right edge, so array order IS visual
+  // draw order right-to-left (matches the old hardcoded Amount, GST, Hours,
+  // Rate right-to-left sequence exactly).
+  feeColumns: [{ key: 'amount', width: 70 }, { key: 'gst', width: 60 }, { key: 'hours', width: 50 }, { key: 'rate', width: 60 }],
+  disbColumns: [{ key: 'amount', width: 70 }, { key: 'gst', width: 60 }],
+};
 
 function money(n: number): string {
   return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
@@ -117,6 +168,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
 }
 
 export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promise<Uint8Array> {
+  const layout: InvoiceLayout = { ...DEFAULT_INVOICE_LAYOUT, ...input.layout };
   const pdfDoc = await PDFDocument.create();
   const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -126,6 +178,10 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     : null;
 
   let page: PDFPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+  // Flowing cursor -- only used from the fee table onward. The header
+  // section (letterhead/title/bill-to) draws at its own independent
+  // `layout` anchors instead (see `text`'s optional `atY`), since those are
+  // now freely positioned rather than chained off each other.
   let y = PAGE_H - MARGIN;
 
   function newPage() {
@@ -137,61 +193,76 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     if (y - needed < MIN_Y) newPage();
   }
 
-  function text(str: string, x: number, size: number, opts: { bold?: boolean; color?: [number, number, number]; align?: 'left' | 'right' } = {}) {
+  function text(
+    str: string, x: number, size: number,
+    opts: { bold?: boolean; color?: [number, number, number]; align?: 'left' | 'right' } = {},
+    atY?: number
+  ) {
     const font = opts.bold ? bold : regular;
     const color = rgb(...(opts.color ?? [0.1, 0.1, 0.12]));
     const drawX = opts.align === 'right' ? x - font.widthOfTextAtSize(str, size) : x;
-    page.drawText(str, { x: drawX, y, size, font, color });
+    page.drawText(str, { x: drawX, y: atY ?? y, size, font, color });
   }
 
-  function hr(color: [number, number, number] = [0.85, 0.85, 0.87]) {
-    page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.75, color: rgb(...color) });
+  function hr(atY: number, color: [number, number, number] = [0.85, 0.85, 0.87]) {
+    page.drawLine({ start: { x: MARGIN, y: atY }, end: { x: PAGE_W - MARGIN, y: atY }, thickness: 0.75, color: rgb(...color) });
   }
 
   // ── Letterhead ─────────────────────────────────────────────────────
   if (logoImage) {
-    const maxW = 160, maxH = 60;
-    const scale = Math.min(maxW / logoImage.width, maxH / logoImage.height, 1);
+    const scale = Math.min(layout.logo.maxWidth / logoImage.width, layout.logo.maxHeight / logoImage.height, 1);
     const w = logoImage.width * scale, h = logoImage.height * scale;
-    page.drawImage(logoImage, { x: MARGIN, y: y - h, width: w, height: h });
+    page.drawImage(logoImage, { x: layout.logo.x, y: layout.logo.y - h, width: w, height: h });
   }
-  text(input.company.name, PAGE_W - MARGIN, 16, { bold: true, align: 'right' });
-  y -= 20;
-  if (input.company.abn) { text(`ABN ${input.company.abn}`, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }); y -= 13; }
-  if (input.company.address) {
-    for (const line of wrapText(input.company.address, regular, 10, 220)) {
-      text(line, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] });
-      y -= 13;
+  {
+    let fy = layout.firmDetails.y;
+    text(input.company.name, layout.firmDetails.x, layout.firmDetails.fontSize ?? 16, { bold: true, align: 'right' }, fy);
+    fy -= 20;
+    if (input.company.abn) {
+      text(`ABN ${input.company.abn}`, layout.firmDetails.x, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy);
+      fy -= 13;
+    }
+    if (input.company.address) {
+      for (const line of wrapText(input.company.address, regular, 10, 220)) {
+        text(line, layout.firmDetails.x, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy);
+        fy -= 13;
+      }
     }
   }
-  y -= 20;
 
   // ── Title + invoice meta ─────────────────────────────────────────────
-  text('TAX INVOICE', MARGIN, 20, { bold: true });
-  y -= 26;
-  text(`Invoice number: ${input.invoice.invoiceNumber}`, MARGIN, 11);
-  text(`Issue date: ${formatDate(input.invoice.issueDate)}`, MARGIN + 260, 11);
-  y -= 16;
-  if (input.display.showDueDate && input.invoice.dueDate) {
-    text(`Due date: ${formatDate(input.invoice.dueDate)}`, MARGIN + 260, 11);
+  {
+    let ty = layout.titleBlock.y;
+    text('TAX INVOICE', layout.titleBlock.x, layout.titleBlock.fontSize ?? 20, { bold: true }, ty);
+    ty -= 26;
+    text(`Invoice number: ${input.invoice.invoiceNumber}`, layout.titleBlock.x, 11, {}, ty);
+    text(`Issue date: ${formatDate(input.invoice.issueDate)}`, layout.titleBlock.x + 260, 11, {}, ty);
+    ty -= 16;
+    if (input.display.showDueDate && input.invoice.dueDate) {
+      text(`Due date: ${formatDate(input.invoice.dueDate)}`, layout.titleBlock.x + 260, 11, {}, ty);
+    }
+    if (input.invoice.matterName) text(`Matter: ${input.invoice.matterName}`, layout.titleBlock.x, 11, {}, ty);
   }
-  if (input.invoice.matterName) text(`Matter: ${input.invoice.matterName}`, MARGIN, 11);
-  y -= 24;
 
   // ── Bill to ───────────────────────────────────────────────────────
-  text('BILL TO', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] });
-  y -= 14;
-  text(input.invoice.debtorName || '—', MARGIN, 12, { bold: true });
-  y -= 26;
-  hr();
-  y -= 20;
+  text('BILL TO', layout.billTo.x, layout.billTo.fontSize ?? 9, { bold: true, color: [0.55, 0.55, 0.6] }, layout.billTo.y);
+  text(input.invoice.debtorName || '—', layout.billTo.x, 12, { bold: true }, layout.billTo.y - 14);
+  hr(layout.billTo.y - 40);
+
+  // Tables start a fixed gap below wherever bill-to actually landed (not an
+  // independent anchor of its own -- their height is row-count-dependent,
+  // so letting them float freely risked colliding with whatever's below
+  // them; deriving their start from bill-to instead of a hardcoded constant
+  // means moving bill-to up/down to compress/expand the header still works
+  // sensibly).
+  y = layout.billTo.y - 60;
 
   // ── Fee lines ─────────────────────────────────────────────────────
   if (input.feeLines.length) {
     text('PROFESSIONAL FEES', MARGIN, 10, { bold: true, color: [0.3, 0.3, 0.34] });
     y -= 18;
     ensureRoom(60);
-    ({ page, y } = drawLineItemTable(pdfDoc, page, y, input, regular));
+    ({ page, y } = drawLineItemTable(pdfDoc, page, y, input, regular, layout));
     if (input.display.showFeeSubtotal) {
       const feesTotal = input.feeLines.reduce((s, l) => s + l.billedAmount, 0);
       ensureRoom(20);
@@ -215,7 +286,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     ensureRoom(60);
     text('DISBURSEMENTS', MARGIN, 10, { bold: true, color: [0.3, 0.3, 0.34] });
     y -= 18;
-    ({ page, y } = drawDisbursementTable(pdfDoc, page, y, input, regular));
+    ({ page, y } = drawDisbursementTable(pdfDoc, page, y, input, regular, layout));
     if (input.display.showDisbursementSubtotal) {
       const disbTotal = input.disbursementLines.reduce((s, l) => s + l.amount, 0);
       ensureRoom(20);
@@ -228,7 +299,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
 
   // ── Totals ────────────────────────────────────────────────────────
   ensureRoom(140);
-  hr();
+  hr(y);
   y -= 20;
   const totalsX = PAGE_W - MARGIN - 160;
   function totalRow(label: string, value: number, opts: { bold?: boolean } = {}) {
@@ -250,7 +321,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
 
   // ── Terms / footer ────────────────────────────────────────────────
   ensureRoom(120);
-  hr();
+  hr(y);
   y -= 18;
   if (input.creditTerms) {
     for (const line of wrapText(input.creditTerms, regular, 9, CONTENT_W)) { text(line, MARGIN, 9, { color: [0.4, 0.4, 0.45] }); y -= 12; }
@@ -293,33 +364,47 @@ function truncate(str: string, maxWidth: number, font: PDFFont, size: number): s
   return str.slice(0, end) + '…';
 }
 
-// Lays out the right-aligned numeric columns (Rate, Hours, GST, Amount)
-// right-to-left so each column's reserved width is derived once instead of
-// hardcoded per-column offsets that silently collide whenever a column is
-// added/widened (confirmed live: GST and Hours previously landed on the
-// same x when both were shown). Returns each shown column's right-edge x
-// (for `x - font.widthOfTextAtSize(str, size)` right-alignment) plus the
-// total reserved width, so the description column knows how much room it
-// has left.
-function rightColumnLayout(display: InvoiceTemplateDisplay) {
-  const AMOUNT_W = 70, GST_W = 60, HOURS_W = 50, RATE_W = 60;
+// True if `key`'s column should be reserved space at all, per the display
+// toggles. `amount` is deliberately always reserved/positioned regardless of
+// showAmountAndGstPerLine -- matches this table's own pre-existing behavior
+// (disbursements draw their amount unconditionally; fees gate the actual
+// DRAW of amount on that toggle at the call site, but still reserve its
+// column width either way) -- only whether each column's *width* is
+// reserved changes here, not per-line draw gating, which stays exactly as
+// it was at each call site below.
+function columnVisible(key: InvoiceLayoutColumn['key'], display: InvoiceTemplateDisplay): boolean {
+  if (key === 'rate') return display.showRatePerLine;
+  if (key === 'hours') return display.showHoursPerLine;
+  if (key === 'gst') return display.showAmountAndGstPerLine;
+  return true; // 'amount'
+}
+
+// Lays out the right-aligned numeric columns right-to-left in the ORDER
+// `columns` gives them (reorderable/resizable per template -- see
+// InvoiceLayoutEditor.tsx), skipping any column its display toggle has
+// turned off. Deriving each column's x from a running `edge` (rather than
+// hardcoded per-column offsets) is what keeps two visible columns from
+// silently landing on the same x, whatever order/widths they're configured
+// with. Returns each visible column's right-edge x (for
+// `x - font.widthOfTextAtSize(str, size)` right-alignment) plus the total
+// reserved width, so the description column knows how much room it has left.
+function rightColumnLayout(display: InvoiceTemplateDisplay, columns: InvoiceLayoutColumn[]) {
   let edge = 0;
-  const amountX = PAGE_W - MARGIN - edge; edge += AMOUNT_W;
-  const gstX = display.showAmountAndGstPerLine ? PAGE_W - MARGIN - edge : null;
-  if (display.showAmountAndGstPerLine) edge += GST_W;
-  const hoursX = display.showHoursPerLine ? PAGE_W - MARGIN - edge : null;
-  if (display.showHoursPerLine) edge += HOURS_W;
-  const rateX = display.showRatePerLine ? PAGE_W - MARGIN - edge : null;
-  if (display.showRatePerLine) edge += RATE_W;
-  return { amountX, gstX, hoursX, rateX, totalWidth: edge };
+  const xByKey: Partial<Record<InvoiceLayoutColumn['key'], number>> = {};
+  for (const col of columns) {
+    if (!columnVisible(col.key, display)) continue;
+    xByKey[col.key] = PAGE_W - MARGIN - edge;
+    edge += col.width;
+  }
+  return { xByKey, totalWidth: edge };
 }
 
 function drawLineItemTable(
-  pdfDoc: PDFDocument, startPage: PDFPage, startY: number, input: GenerateInvoicePdfInput, font: PDFFont
+  pdfDoc: PDFDocument, startPage: PDFPage, startY: number, input: GenerateInvoicePdfInput, font: PDFFont, layout: InvoiceLayout
 ): { page: PDFPage; y: number } {
   let page = startPage, y = startY;
   const size = 9;
-  const cols = rightColumnLayout(input.display);
+  const cols = rightColumnLayout(input.display, layout.feeColumns);
 
   for (const line of input.feeLines) {
     let x = MARGIN;
@@ -333,19 +418,19 @@ function drawLineItemTable(
       const descMaxWidth = PAGE_W - MARGIN - x - cols.totalWidth - 8;
       page.drawText(truncate(line.description, descMaxWidth, font, size), { x, y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showRatePerLine && line.rate != null && cols.rateX != null) {
+    if (input.display.showRatePerLine && line.rate != null && cols.xByKey.rate != null) {
       const str = money(line.rate);
-      page.drawText(str, { x: cols.rateX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+      page.drawText(str, { x: cols.xByKey.rate - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showHoursPerLine && line.hours != null && cols.hoursX != null) {
+    if (input.display.showHoursPerLine && line.hours != null && cols.xByKey.hours != null) {
       const str = line.hours.toFixed(2);
-      page.drawText(str, { x: cols.hoursX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+      page.drawText(str, { x: cols.xByKey.hours - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showAmountAndGstPerLine && cols.gstX != null) {
+    if (input.display.showAmountAndGstPerLine && cols.xByKey.gst != null && cols.xByKey.amount != null) {
       const gstStr = money(line.gstAmount);
-      page.drawText(gstStr, { x: cols.gstX - font.widthOfTextAtSize(gstStr, size), y, size, font, color: rgb(0.5, 0.5, 0.55) });
+      page.drawText(gstStr, { x: cols.xByKey.gst - font.widthOfTextAtSize(gstStr, size), y, size, font, color: rgb(0.5, 0.5, 0.55) });
       const str = money(line.billedAmount);
-      page.drawText(str, { x: cols.amountX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+      page.drawText(str, { x: cols.xByKey.amount - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
     y -= 14;
     if (y < MIN_Y) { page = pdfDoc.addPage([PAGE_W, PAGE_H]); y = PAGE_H - MARGIN; }
@@ -354,28 +439,26 @@ function drawLineItemTable(
 }
 
 function drawDisbursementTable(
-  pdfDoc: PDFDocument, startPage: PDFPage, startY: number, input: GenerateInvoicePdfInput, font: PDFFont
+  pdfDoc: PDFDocument, startPage: PDFPage, startY: number, input: GenerateInvoicePdfInput, font: PDFFont, layout: InvoiceLayout
 ): { page: PDFPage; y: number } {
   let page = startPage, y = startY;
   const size = 9;
-  const cols = rightColumnLayout(input.display);
-  // Disbursements only ever show Amount(+GST) -- unlike drawLineItemTable,
-  // never Rate/Hours -- so the description column's reserved width is just
-  // those two, not cols.totalWidth (which also budgets for Rate/Hours on
-  // the fee table above).
-  const disbRightWidth = input.display.showAmountAndGstPerLine ? 130 : 70;
+  const cols = rightColumnLayout(input.display, layout.disbColumns);
+  const disbRightWidth = cols.totalWidth;
   for (const line of input.disbursementLines) {
     page.drawText(formatDate(line.date), { x: MARGIN, y, size, font, color: rgb(0.15, 0.15, 0.18) });
     if (line.description) {
       const descMaxWidth = PAGE_W - MARGIN * 2 - 62 - disbRightWidth;
       page.drawText(truncate(line.description, descMaxWidth, font, size), { x: MARGIN + 62, y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showAmountAndGstPerLine && cols.gstX != null) {
+    if (input.display.showAmountAndGstPerLine && cols.xByKey.gst != null) {
       const gstStr = money(line.gstAmount);
-      page.drawText(gstStr, { x: cols.gstX - font.widthOfTextAtSize(gstStr, size), y, size, font, color: rgb(0.5, 0.5, 0.55) });
+      page.drawText(gstStr, { x: cols.xByKey.gst - font.widthOfTextAtSize(gstStr, size), y, size, font, color: rgb(0.5, 0.5, 0.55) });
     }
-    const str = money(line.amount);
-    page.drawText(str, { x: cols.amountX - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+    if (cols.xByKey.amount != null) {
+      const str = money(line.amount);
+      page.drawText(str, { x: cols.xByKey.amount - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
+    }
     y -= 14;
     if (y < MIN_Y) { page = pdfDoc.addPage([PAGE_W, PAGE_H]); y = PAGE_H - MARGIN; }
   }
