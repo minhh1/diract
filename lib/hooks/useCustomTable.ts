@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import type { CustomTable } from "./useCustomTables";
 
 interface CachedTableShell {
@@ -284,16 +285,28 @@ export function useCustomTable(
     setRecordsLoading(false);
   }, [tableSlug, preloadedTable]);
 
-  useEffect(() => {
+  // Layout effect, not a plain effect -- when a caller reuses this hook's
+  // component instance across a slug change (e.g. clicking between two
+  // dashboards -- see DashboardViewPage.tsx's own doc comment on this),
+  // this needs to correct tableDef/fields/loading BEFORE the browser
+  // paints the new slug's first frame. A plain useEffect runs after that
+  // paint, which both flashes the OLD table's fields for a frame and (since
+  // `loading` would still read stale-false from the previous slug on that
+  // painted frame, then flip true once this effect finally runs) fires a
+  // second, spurious start/stop of the page's loading indicator.
+  useIsomorphicLayoutEffect(() => {
     if (!tableSlug) return;
-    // Paint the shell from the last-seen copy of this table's fields
-    // immediately, before the network fetch below even starts -- on a
-    // repeat visit this is the difference between "shell ready" waiting on
-    // a fields round trip vs. waiting on nothing at all. load() still runs
-    // right after and silently corrects/refreshes this from the network.
-    const cached = preloadedTable?.slug === tableSlug ? null : readShellCache<CachedTableShell>(tableShellKey(tableSlug));
+    // Fields are cached independently of preloadedTable -- a caller
+    // handing over a known tableDef (useDashboardData.ts's own cache) only
+    // means the table ROW lookup can be skipped inside load() below, not
+    // that this table's FIELDS are known too. Consulting this cache
+    // unconditionally is what lets a repeat visit paint the shell with zero
+    // network wait even on the dashboard-driven path.
+    const cached = readShellCache<CachedTableShell>(tableShellKey(tableSlug));
+    const preload = preloadedTable?.slug === tableSlug ? preloadedTable : null;
+    if (preload) setTableDef(preload);
+    else if (cached) setTableDef(cached.tableDef);
     if (cached) {
-      setTableDef(cached.tableDef);
       setFields(cached.fields);
       setLoading(false);
     } else {

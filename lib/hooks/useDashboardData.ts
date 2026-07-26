@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import { useCustomTable } from "./useCustomTable";
 import type { CustomTable } from "./useCustomTables";
 import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "./useSystemTableAsCustomTable";
@@ -85,12 +86,14 @@ export function useDashboardData(dashboardSlug: string) {
   // real value in the map meaning "active".
   const [quickAddPrefill, setQuickAddPrefill] = useState<Record<string, any> | null>(null);
 
-  useEffect(() => {
+  // Layout effect -- see useCustomTable.ts's matching doc comment. Clicking
+  // between two dashboards reuses this same hook instance (dashboardSlug is
+  // just a changed argument, not a remount), so the cache correction below
+  // has to land before the browser paints the new slug's first frame, or
+  // it briefly paints the OLD dashboard's widgets against data resolved for
+  // the NEW one.
+  useIsomorphicLayoutEffect(() => {
     let active = true;
-    // Same reasoning as useCustomTable.ts's own cache read: paint this
-    // dashboard's last-seen config + source table def immediately, so
-    // sourceTableSlug (below) is already known on the very first render
-    // instead of sitting behind this effect's dashboard-row round trip.
     const cached = readShellCache<CachedDashboardShell>(dashboardShellKey(dashboardSlug));
     if (cached) {
       setDashboard(cached.dashboard);

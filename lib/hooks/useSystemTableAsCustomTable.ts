@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import { getSchemaMetadata } from "@/lib/services/schemaService";
 import { resolveRelationLabels, type CustomTableField, type CustomTableRecord } from "./useCustomTable";
 import type { CustomTable } from "./useCustomTables";
@@ -195,7 +196,9 @@ export function useSystemTableAsCustomTable(
     setRecordsLoading(false);
   }, [tableName, companyId]);
 
-  useEffect(() => {
+  // Layout effect -- see useCustomTable.ts's matching doc comment (same
+  // reuse-across-slug-change reasoning applies here for tableName changes).
+  useIsomorphicLayoutEffect(() => {
     if (!tableName || !companyId) { setLoading(false); setRecordsLoading(false); return; }
     const cached = readShellCache<CustomTableField[]>(systemTableShellKey(tableName, companyId));
     if (cached) {
