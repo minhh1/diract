@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check } from "lucide-react";
+import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check, Pencil } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
 // Same deferral as CustomTableMasterPage.tsx's RecordDashboard/
@@ -155,6 +155,21 @@ function GenericMasterTableInner({
   const [filters, setFilters] = useState<ActiveFilter[]>([]);
   const [activeViewName, setActiveViewName] = useState<string | null>(null);
   const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
+  // Off by default -- row clicks open the record (see MasterTable's row
+  // onClick); inline cell editing is opt-in per table since it changes what
+  // clicking a cell does. Persisted per tableName so the choice sticks
+  // across visits instead of resetting every time.
+  const [inlineEditEnabled, setInlineEditEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try { return localStorage.getItem(`nk_inline_edit_${tableName}`) === '1'; } catch { return false; }
+  });
+  const toggleInlineEdit = () => {
+    setInlineEditEnabled(prev => {
+      const next = !prev;
+      try { localStorage.setItem(`nk_inline_edit_${tableName}`, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  };
 
   const schema = useTableSchema(tableName, ctxCompanyId);
   const relationalEditCols = useRelationalEditFields(schema.relationalEditCols);
@@ -877,6 +892,17 @@ function GenericMasterTableInner({
             </h1>
             <div className="flex gap-2">
               <button
+                onClick={toggleInlineEdit}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold transition-all ${
+                  inlineEditEnabled
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+                title={inlineEditEnabled ? 'Inline editing on — click a cell to edit it' : 'Inline editing off — click a row to open it'}
+              >
+                <Pencil size={16} /> Inline edit
+              </button>
+              <button
                 onClick={() => setIsConfigOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
               >
@@ -1030,7 +1056,7 @@ function GenericMasterTableInner({
           parentType={schema.parentType ?? undefined}
           companyId={companyId ?? undefined}
           isAdmin={ctxIsAdmin}
-          editableCols={schema.editableCols}
+          editableCols={inlineEditEnabled ? schema.editableCols : []}
           relationalEditCols={relationalEditCols}
           onRowMutated={t.refresh}
           sort={t.sort}
