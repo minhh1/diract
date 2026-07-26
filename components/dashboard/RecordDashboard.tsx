@@ -60,6 +60,12 @@ export default function RecordDashboard({
   const [record, setRecord] = useState<Record<string, any> | null>(initialRecord ?? null);
   const [fields, setFields] = useState<FieldLayout[]>([]);
   const [tabs, setTabs] = useState<RecordTab[]>([]);
+  // Distinguishes "still loading" from "genuinely has no tabs" -- tabs
+  // starts empty on every load (it isn't part of initialRecord), so without
+  // this the empty-state "No tabs yet / Add first tab" prompt flashes for
+  // the brief window between an instant render (see hasMatchingInitialData
+  // in loadAll) and record_tabs actually resolving.
+  const [tabsLoaded, setTabsLoaded] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [tabFieldLayouts, setTabFieldLayouts] = useState<Record<string, FieldLayout[]>>({});
   const [loading, setLoading] = useState(!initialRecord); // skip spinner if we have initial data
@@ -127,6 +133,7 @@ export default function RecordDashboard({
     // load) still gets the normal loading gate.
     const hasMatchingInitialData = !!initialRecord && initialRecord.id === recordId;
     if (!hasMatchingInitialData) setLoading(true);
+    setTabsLoaded(false);
     perfLogPageStart('record', perfName);
 
     // companyId/isAdmin are already resolved once per session by
@@ -154,6 +161,7 @@ export default function RecordDashboard({
     perfLog(`RecordDashboard(${perfName}): companyId+admin resolved`);
 
     const [rec, , flds] = await Promise.all([loadRecord(cid), loadTabs(cid), loadFields(cid), loadSubProjects()]);
+    setTabsLoaded(true);
     perfLog(`RecordDashboard(${perfName}): record/tabs/fields/subProjects resolved`);
     await Promise.all([resolveLinkedItems(rec, flds), loadParent(rec)]);
     perfLog(`RecordDashboard(${perfName}): linked items + parent resolved`);
@@ -900,7 +908,18 @@ export default function RecordDashboard({
         <ProjectDeletedTasksPanel projectId={recordId} />
       )}
 
-      {!activeTab && tabs.length === 0 && (
+      {!activeTab && tabs.length === 0 && !tabsLoaded && (
+        <div className="space-y-6 animate-pulse">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="grid grid-cols-6 gap-4 items-center">
+              <div className="col-span-2 h-3 bg-slate-100 rounded-full" />
+              <div className="col-span-4 h-9 bg-slate-100 rounded-xl" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!activeTab && tabs.length === 0 && tabsLoaded && (
         <div
           className="flex flex-col items-center justify-center py-20 gap-4 cursor-pointer"
           onClick={() => setShowAddTab(true)}
