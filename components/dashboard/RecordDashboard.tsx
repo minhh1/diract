@@ -5,7 +5,8 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   AlertCircle, ArrowLeft, Trash2,
-  Pencil, FolderKanban, Plus, X, ShieldCheck
+  Pencil, FolderKanban, Plus, X, ShieldCheck,
+  Columns2, Rows2, Maximize2, Minimize2,
 } from "lucide-react";
 import ProjectAccessPanel from "@/components/projects/ProjectAccessPanel";
 import ProjectDeletedTasksPanel from "@/components/projects/ProjectDeletedTasksPanel";
@@ -78,8 +79,25 @@ export default function RecordDashboard({
   const [parentRecord, setParentRecord] = useState<any | null>(null);
   const [showFieldPicker, setShowFieldPicker] = useState(false);
   const [fieldPickerTabId, setFieldPickerTabId] = useState<string | null>(null);
-  const [subProjectHeight, setSubProjectHeight] = useState(400);
-  const resizingRef = useRef<{ startY: number; startH: number } | null>(null);
+  // Sub-project split panel -- 'stack' shares the screen top/bottom (a
+  // horizontal divider), 'side' shares it left/right (a vertical divider).
+  // `subProjectRatio` is the sub-project pane's fraction of the shared
+  // space (not pixels) so it stays sane across orientation switches and
+  // window resizes. Fullscreen is a separate flag layered on top rather
+  // than a third ratio value, so toggling it back off restores exactly the
+  // split the user had -- "go fullscreen but can still get back".
+  const [subProjectOrientation, setSubProjectOrientation] = useState<'stack' | 'side'>('stack');
+  const [subProjectFullscreen, setSubProjectFullscreen] = useState(false);
+  const [subProjectRatio, setSubProjectRatio] = useState(0.45);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const subProjectPaneRef = useRef<HTMLDivElement>(null);
+  // Live-drags via direct style mutation on the ref (no setState per pixel)
+  // -- committing every mousemove to React state was re-rendering the
+  // entire embedded sub-project RecordDashboard tree dozens of times a
+  // second, which is what made the old height-drag handle feel laggy.
+  // `liveRatio` carries the in-progress value across to mouseup, where it's
+  // committed to state exactly once.
+  const dragRef = useRef<{ orientation: 'stack' | 'side'; startPos: number; startRatio: number; containerSize: number; liveRatio: number } | null>(null);
   const [linkedItems, setLinkedItems] = useState<Record<string, { id: string; name: string }[]>>({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasPendingArchiveRequest, setHasPendingArchiveRequest] = useState(false);
@@ -102,15 +120,22 @@ export default function RecordDashboard({
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const delta = e.clientY - resizingRef.current.startY;
-      const newH = Math.max(
-        200,
-        Math.min(window.innerHeight - 300, resizingRef.current.startH - delta)
-      );
-      setSubProjectHeight(newH);
+      const drag = dragRef.current;
+      const pane = subProjectPaneRef.current;
+      if (!drag || !pane) return;
+      const pos = drag.orientation === 'side' ? e.clientX : e.clientY;
+      // Sub-project pane sits AFTER the divider (to the right / below), so
+      // moving the handle further along the axis shrinks it and grows the
+      // main pane before it -- hence the negated delta.
+      const deltaRatio = -(pos - drag.startPos) / drag.containerSize;
+      const nextRatio = Math.min(0.8, Math.max(0.15, drag.startRatio + deltaRatio));
+      pane.style.flexBasis = `${nextRatio * 100}%`;
+      drag.liveRatio = nextRatio;
     };
-    const onUp = () => { resizingRef.current = null; };
+    const onUp = () => {
+      if (dragRef.current) setSubProjectRatio(dragRef.current.liveRatio);
+      dragRef.current = null;
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
@@ -118,6 +143,19 @@ export default function RecordDashboard({
       window.removeEventListener('mouseup', onUp);
     };
   }, []);
+
+  const startSubProjectDrag = (e: React.MouseEvent) => {
+    const container = splitContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    dragRef.current = {
+      orientation: subProjectOrientation,
+      startPos: subProjectOrientation === 'side' ? e.clientX : e.clientY,
+      startRatio: subProjectRatio,
+      containerSize: subProjectOrientation === 'side' ? rect.width : rect.height,
+      liveRatio: subProjectRatio,
+    };
+  };
 
   // ── Data loaders ───────────────────────────────────────────────
 
@@ -1319,91 +1357,109 @@ export default function RecordDashboard({
       </header>
 
       {/* ── Main content ── */}
-      <main className="flex-1 overflow-hidden bg-[#F9FAFB] flex flex-col min-h-0">
-
-        {/* Parent record content */}
-        <div className={`p-8 ${
-          activeSubProjectId ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'
-        }`}>
-          <div className={`${tabContentMaxWidthClass} mx-auto`}>
-            {renderTabContent()}
-          </div>
-        </div>
-
-        {/* Sub-project panel — resizable */}
-        {activeSubProjectId && (
+      <main className="flex-1 overflow-hidden bg-[#F9FAFB] relative min-h-0">
+        <div
+          ref={splitContainerRef}
+          className={`h-full min-h-0 flex ${
+            activeSubProjectId && !subProjectFullscreen && subProjectOrientation === 'side' ? 'flex-row' : 'flex-col'
+          }`}
+        >
+          {/* Parent record content -- hidden (not unmounted) rather than
+              removed when the sub-project goes fullscreen, so scroll
+              position and any in-progress edits survive going back. */}
           <div
-            className="flex flex-col border-t-2 border-indigo-100 bg-white shrink-0 relative"
-            style={{ height: subProjectHeight }}
+            className={`flex-1 min-w-0 min-h-0 overflow-y-auto p-8 ${
+              activeSubProjectId && subProjectFullscreen ? 'hidden' : ''
+            }`}
           >
-            {/* Drag handle */}
-            <div
-              className="h-5 flex items-center justify-center cursor-row-resize bg-indigo-50/80 border-b border-indigo-100 hover:bg-indigo-100 transition-colors group shrink-0 relative"
-              onMouseDown={e => {
-                resizingRef.current = {
-                  startY: e.clientY,
-                  startH: subProjectHeight,
-                };
-              }}
-            >
-              {/* Visual handle + label */}
-              <div className="flex items-center gap-3 pointer-events-none">
-                <div className="h-1 w-8 bg-indigo-300 rounded-full group-hover:bg-indigo-500 transition-colors" />
-                <div className="flex items-center gap-1.5">
-                  <FolderKanban size={12} className="text-indigo-500" />
-                  <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">
-                    Sub-project
-                  </p>
-                </div>
-                <div className="h-1 w-8 bg-indigo-300 rounded-full group-hover:bg-indigo-500 transition-colors" />
-              </div>
-
-              {/* Size presets */}
-              <div className="absolute right-16 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {[
-                  { label: 'S', h: 250 },
-                  { label: 'M', h: 400 },
-                  { label: 'L', h: 600 },
-                ].map(preset => (
-                  <button
-                    key={preset.label}
-                    onClick={e => {
-                      e.stopPropagation();
-                      setSubProjectHeight(preset.h);
-                    }}
-                    onMouseDown={e => e.stopPropagation()}
-                    className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all ${
-                      Math.abs(subProjectHeight - preset.h) < 50
-                        ? 'bg-indigo-500 text-white'
-                        : 'bg-white text-indigo-400 hover:bg-indigo-100'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Close */}
-              <button
-                onClick={() => setActiveSubProjectId(null)}
-                onMouseDown={e => e.stopPropagation()}
-                className="absolute right-4 p-1 text-indigo-300 hover:text-indigo-700 transition-colors"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            {/* Sub-project content */}
-            <div className="flex-1 overflow-y-auto">
-              <RecordDashboard
-                systemTable="projects"
-                recordId={activeSubProjectId}
-                onBack={() => setActiveSubProjectId(null)}
-                embedded={true}
-              />
+            <div className={`${tabContentMaxWidthClass} mx-auto`}>
+              {renderTabContent()}
             </div>
           </div>
-        )}
+
+          {/* Divider -- drags subProjectRatio via direct style mutation
+              (see the mousemove handler above) so dragging stays smooth
+              even though the sub-project pane renders a whole nested
+              RecordDashboard. */}
+          {activeSubProjectId && !subProjectFullscreen && (
+            <div
+              onMouseDown={startSubProjectDrag}
+              className={`shrink-0 bg-indigo-50/80 hover:bg-indigo-100 transition-colors group flex items-center justify-center ${
+                subProjectOrientation === 'side' ? 'w-1.5 cursor-col-resize' : 'h-1.5 cursor-row-resize'
+              }`}
+            >
+              <div className={`bg-indigo-300 rounded-full group-hover:bg-indigo-500 transition-colors ${
+                subProjectOrientation === 'side' ? 'w-0.5 h-10' : 'h-0.5 w-10'
+              }`} />
+            </div>
+          )}
+
+          {/* Sub-project pane */}
+          {activeSubProjectId && (
+            <div
+              ref={subProjectPaneRef}
+              className={`flex flex-col bg-white shrink-0 min-w-0 min-h-0 ${
+                subProjectFullscreen
+                  ? 'absolute inset-0 z-40'
+                  : subProjectOrientation === 'side' ? 'border-l-2 border-indigo-100' : 'border-t-2 border-indigo-100'
+              }`}
+              style={!subProjectFullscreen ? { flexBasis: `${subProjectRatio * 100}%` } : undefined}
+            >
+              {/* Toolbar */}
+              <div className="h-10 flex items-center gap-1 px-3 border-b border-indigo-100 bg-indigo-50/60 shrink-0">
+                <FolderKanban size={12} className="text-indigo-500 shrink-0" />
+                <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest mr-auto truncate">
+                  Sub-project
+                </p>
+                {!subProjectFullscreen && (
+                  <>
+                    <button
+                      onClick={() => setSubProjectOrientation('side')}
+                      title="Share the screen side by side"
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        subProjectOrientation === 'side' ? 'bg-indigo-500 text-white' : 'text-indigo-400 hover:bg-indigo-100'
+                      }`}
+                    >
+                      <Columns2 size={13} />
+                    </button>
+                    <button
+                      onClick={() => setSubProjectOrientation('stack')}
+                      title="Share the screen top and bottom"
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        subProjectOrientation === 'stack' ? 'bg-indigo-500 text-white' : 'text-indigo-400 hover:bg-indigo-100'
+                      }`}
+                    >
+                      <Rows2 size={13} />
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setSubProjectFullscreen(p => !p)}
+                  title={subProjectFullscreen ? 'Back to split view' : 'Fullscreen'}
+                  className="p-1.5 rounded-lg text-indigo-400 hover:bg-indigo-100 transition-colors"
+                >
+                  {subProjectFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                </button>
+                <button
+                  onClick={() => { setActiveSubProjectId(null); setSubProjectFullscreen(false); }}
+                  title="Close"
+                  className="p-1.5 rounded-lg text-indigo-400 hover:bg-indigo-100 transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <RecordDashboard
+                  systemTable="projects"
+                  recordId={activeSubProjectId}
+                  onBack={() => { setActiveSubProjectId(null); setSubProjectFullscreen(false); }}
+                  embedded={true}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </main>
 
       {renderModals()}

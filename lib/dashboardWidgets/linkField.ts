@@ -9,9 +9,9 @@ const FIELD_TYPE_BY_SYSTEM_TABLE: Record<ParentSystemTable, string> = {
 };
 
 // Fields on a linked custom table that could plausibly be "the" field that
-// points back at a record-dashboard tab's parent record -- used by both
-// GridTabEditor and RecordDashboardTab to auto-detect (and, when ambiguous,
-// let an admin manually pick) which field to filter/link by.
+// points back at a record-dashboard tab's parent record -- used by
+// RecordDashboardTab to auto-detect (and, when ambiguous, let an admin
+// manually pick) which field to filter/link by.
 //
 // Scoped to the parent's own system table when known: a tab on a PROJECT
 // record only offers project-relation fields, not some unrelated
