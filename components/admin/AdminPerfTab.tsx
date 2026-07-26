@@ -23,7 +23,19 @@ function groupEntries(entries: PerfLogEntry[]): Group[] {
   const groups: Group[] = [];
   for (const entry of entries) {
     const last = groups[groups.length - 1];
-    if (!last || entry.at - last.entries[last.entries.length - 1].at > SESSION_GAP_MS) {
+    const lastEntry = last?.entries[last.entries.length - 1];
+    // A new group starts on either a real wall-clock gap OR the path
+    // actually changing -- without the path check, clicking from one page
+    // to another inside the gap window (the common case -- SPA navigation
+    // is fast) would merge both pages' entries into one group. Since `t`
+    // resets per page (see perfLog.ts's currentT), that made the "+Δ"
+    // column show a big jump backwards mid-list and the group's own
+    // "total" reflect whichever page's entries happened to load last, not
+    // either page's real duration. Only splits when both entries actually
+    // have a path -- older buffered entries from before path tracking
+    // existed have none, and should keep falling back to gap-only grouping.
+    const pathChanged = !!lastEntry?.path && !!entry.path && entry.path !== lastEntry.path;
+    if (!last || pathChanged || entry.at - lastEntry!.at > SESSION_GAP_MS) {
       groups.push({ startedAt: entry.at, entries: [entry] });
     } else {
       last.entries.push(entry);
@@ -195,6 +207,7 @@ export default function AdminPerfTab() {
             >
               <span className="text-[11px] font-bold text-slate-700">
                 {new Date(group.startedAt).toLocaleString()}
+                {group.entries[0].path && <span className="ml-2 font-mono font-normal text-slate-400">{group.entries[0].path}</span>}
               </span>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 {group.entries.length} events · {total.toLocaleString()}ms total
