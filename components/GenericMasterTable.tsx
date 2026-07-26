@@ -28,7 +28,7 @@ import { swr, clearCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
 import { savedViewsService } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
-import { perfLog } from "@/lib/perfLog";
+import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 
 
@@ -350,6 +350,27 @@ function GenericMasterTableInner({
     }
   }, [schema.loading, t.loading, customFieldsLoading, startProgress, doneProgress]);
   useEffect(() => () => { if (wasLoadingRef.current) doneProgress(); }, [doneProgress]);
+
+  // Tracks this URL's own start->ready boundary for Admin > Performance --
+  // the 3 built-in tables (properties/entities/projects, plus tasks) each
+  // have their own static route rendering this component directly, unlike
+  // custom tables which share CustomTableMasterPage.tsx under [tableSlug]
+  // (that file has the equivalent pair for those).
+  const perfStartedForRef = useRef<string | null>(null);
+  const perfReadyForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (perfStartedForRef.current !== tableName) {
+      perfStartedForRef.current = tableName;
+      perfLogPageStart("table", tableName);
+    }
+  }, [tableName]);
+  useEffect(() => {
+    const isLoading = schema.loading || t.loading || customFieldsLoading;
+    if (!isLoading && perfReadyForRef.current !== tableName) {
+      perfReadyForRef.current = tableName;
+      perfLogPageReady("table", tableName);
+    }
+  }, [schema.loading, t.loading, customFieldsLoading, tableName]);
 
   // ── Filter persistence ───────────────────────────────────────────────
   // Filters always auto-save — either onto the selected named view

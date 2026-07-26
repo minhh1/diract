@@ -15,6 +15,8 @@ import type { CustomTable } from "@/lib/hooks/useCustomTables";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import RecordDashboard from "@/components/dashboard/RecordDashboard";
 import NewRecordModal, { pickCreateFields } from "@/components/dashboard/NewRecordModal";
+import { useProgressBar } from "@/components/TopProgressBar";
+import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 interface Props {
   tableSlug: string;
@@ -308,6 +310,41 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const { tableDef, fields, records, loading, refetch } = useCustomTable(tableSlug);
   const { isAdmin } = useCompany();
 
+  // ── Top progress bar ───────────────────────────────────────────────────
+  // Matches GenericMasterTable's own loading treatment (see that file) so
+  // switching between a system table and a custom one doesn't visibly
+  // change how "still loading" is communicated.
+  const { start: startProgress, done: doneProgress } = useProgressBar();
+  const wasLoadingRef = React.useRef(false);
+  useEffect(() => {
+    if (loading && !wasLoadingRef.current) {
+      wasLoadingRef.current = true;
+      startProgress();
+    } else if (!loading && wasLoadingRef.current) {
+      wasLoadingRef.current = false;
+      doneProgress();
+    }
+  }, [loading, startProgress, doneProgress]);
+  useEffect(() => () => { if (wasLoadingRef.current) doneProgress(); }, [doneProgress]);
+
+  // Tracks this URL's own start->ready boundary for Admin > Performance --
+  // keyed by tableSlug (not just mount) since navigating client-side between
+  // tables reuses this same component instance rather than remounting it.
+  const perfStartedForRef = React.useRef<string | null>(null);
+  const perfReadyForRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (perfStartedForRef.current !== tableSlug) {
+      perfStartedForRef.current = tableSlug;
+      perfLogPageStart("table", tableSlug);
+    }
+  }, [tableSlug]);
+  useEffect(() => {
+    if (!loading && tableDef && perfReadyForRef.current !== tableSlug) {
+      perfReadyForRef.current = tableSlug;
+      perfLogPageReady("table", tableSlug);
+    }
+  }, [loading, tableDef, tableSlug]);
+
   const [search, setSearch] = useState('');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
@@ -509,11 +546,49 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     );
   }
   if (loading || !tableDef) {
+    // Mirrors GenericMasterTable's own loading skeleton so a custom table
+    // and a system table (Properties/Entities/Projects/Tasks) look the same
+    // while loading, not just once loaded -- the top progress bar above
+    // covers the rest of the "something is happening" signal.
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-slate-400 text-[11px] uppercase font-bold tracking-widest animate-pulse">
-          Loading...
-        </p>
+      <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased overflow-hidden">
+        {/* Header skeleton */}
+        <div className="bg-white border-b border-slate-100 shrink-0 p-8 pb-4 space-y-6">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="h-10 w-10 bg-slate-100 animate-pulse rounded-2xl shrink-0" />
+              <div className="h-8 w-40 bg-slate-100 animate-pulse rounded-full" />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-9 w-20 bg-slate-100 animate-pulse rounded-full" />
+              <div className="h-9 w-28 bg-slate-100 animate-pulse rounded-full" />
+              <div className="h-9 w-24 bg-slate-100 animate-pulse rounded-full" />
+              <div className="h-9 w-28 bg-slate-100 animate-pulse rounded-full" />
+            </div>
+          </div>
+          {/* Search bar skeleton */}
+          <div className="h-12 w-full bg-slate-100 animate-pulse rounded-2xl" />
+        </div>
+        {/* Table skeleton */}
+        <div className="flex-1 overflow-hidden p-8">
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+            {/* Column headers */}
+            <div className="flex items-center gap-4 px-4 py-3 border-b border-slate-100 bg-slate-50">
+              {[120, 200, 160, 140, 180].map((w, i) => (
+                <div key={i} className="h-3 bg-slate-200 animate-pulse rounded-full shrink-0" style={{ width: w }} />
+              ))}
+            </div>
+            {/* Rows */}
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3.5 border-b border-slate-50 last:border-0">
+                {[120, 200, 160, 140, 180].map((w, j) => {
+                  const factor = [0.9, 0.7, 1, 0.6, 0.8, 0.95, 0.75, 0.85, 0.65, 0.9, 0.7, 1][(i + j) % 12];
+                  return <div key={j} className="h-3 bg-slate-100 animate-pulse rounded-full shrink-0" style={{ width: Math.round(w * factor) }} />;
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as LucideIcons from "lucide-react";
@@ -10,6 +10,7 @@ import { useCompany } from "@/components/CompanyContext";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import { supabase } from "@/lib/supabase";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
+import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import StaticWidgetGrid from "@/components/dashboard/builder/StaticWidgetGrid";
 import DashboardWidgetRenderer from "@/components/dashboard/DashboardWidgetRenderer";
 
@@ -20,6 +21,26 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
     dashboard, sourceKind, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, filters, setFilter,
     quickAddPrefill, setQuickAddPrefill, refetch, updateWidget,
   } = useDashboardData(slug);
+
+  const isPageLoading = loading || !companyId || !userId;
+  // Tracks this URL's own start->ready boundary for Admin > Performance --
+  // keyed by slug (not just mount) so navigating client-side from one
+  // dashboard to another, which reuses this same component instance rather
+  // than remounting it, still gets logged as its own page load.
+  const perfStartedForRef = useRef<string | null>(null);
+  const perfReadyForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (perfStartedForRef.current !== slug) {
+      perfStartedForRef.current = slug;
+      perfLogPageStart("dashboard", slug);
+    }
+  }, [slug]);
+  useEffect(() => {
+    if (!isPageLoading && perfReadyForRef.current !== slug) {
+      perfReadyForRef.current = slug;
+      perfLogPageReady("dashboard", slug);
+    }
+  }, [isPageLoading, slug]);
 
   // Fullscreen = the whole dashboard (every widget), not any single one --
   // covers the persistent Sidebar too (fixed + a high z-index, rather than
@@ -35,9 +56,9 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [fullscreen]);
 
-  useProgressBarWhile(loading || !companyId || !userId);
+  useProgressBarWhile(isPageLoading);
 
-  if (loading || !companyId || !userId) {
+  if (isPageLoading) {
     return null;
   }
   if (!dashboard) {

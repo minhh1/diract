@@ -16,6 +16,7 @@ import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import CustomTableBuilder from "@/components/CustomTableBuilder";
 import PublicTaskPagesTab from "@/components/settings/PublicTaskPagesTab";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 
 type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages";
@@ -52,6 +53,28 @@ export default function SettingsPage() {
   }, [view, activeDupType]);
 
   useProgressBarWhile(loading);
+
+  // Each sub-view here is switched client-side (no real navigation), not a
+  // separate URL -- so this tracks per-view rather than per-mount, same
+  // ref-keyed start/ready pattern DashboardViewPage/CustomTableMasterPage
+  // use for their own slug-keyed navigation. Views with nothing to fetch
+  // (menu, schema, duplicates_menu, public_pages -- `loading` is already
+  // false for these) log ready on the very next render, correctly showing
+  // as ~instant rather than not being tracked at all.
+  const perfStartedForRef = React.useRef<string | null>(null);
+  const perfReadyForRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (perfStartedForRef.current !== view) {
+      perfStartedForRef.current = view;
+      perfLogPageStart("settings", view);
+    }
+  }, [view]);
+  useEffect(() => {
+    if (!loading && perfReadyForRef.current !== view) {
+      perfReadyForRef.current = view;
+      perfLogPageReady("settings", view);
+    }
+  }, [loading, view]);
 
   const fetchHistory = async () => {
     setLoading(true);

@@ -7,11 +7,12 @@
 // supabase/schema_change_log.sql. This is schema *shape* history, not data
 // history -- reverting restores tables/fields existing/configured a certain
 // way again, not any data that had been stored against them.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Clock, Loader2, RotateCcw, Plus, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 interface LogEntry {
   seq: number;
@@ -56,6 +57,15 @@ export default function SchemaHistoryPage() {
   useEffect(() => { load(); }, [load]);
 
   useProgressBarWhile(loading);
+
+  useEffect(() => { perfLogPageStart("settings", "Schema History"); }, []);
+  const perfReadyRef = useRef(false);
+  useEffect(() => {
+    if (!loading && !perfReadyRef.current) {
+      perfReadyRef.current = true;
+      perfLogPageReady("settings", "Schema History");
+    }
+  }, [loading]);
 
   const handleRevert = async (entry: LogEntry) => {
     if (!window.confirm(`Revert to right after "${entry.entity_label || entry.entity_type}" (${entry.action})? This undoes every schema change made since then — table/field shape only, not data.`)) return;

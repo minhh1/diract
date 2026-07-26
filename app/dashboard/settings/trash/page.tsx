@@ -21,7 +21,7 @@
 // underlying table actually has a created_by column (table records,
 // projects). Every field that isn't available for a given item is simply
 // omitted rather than shown as a placeholder.
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, RotateCcw, Loader2, Table2, AlertTriangle, Search, Shield } from "lucide-react";
 import * as LucideIcons from "lucide-react";
@@ -29,6 +29,7 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 const RECORD_LIMIT = 50;
 
@@ -364,6 +365,15 @@ export default function TrashPage() {
   useEffect(() => { load(); }, [load]);
 
   useProgressBarWhile(loading);
+
+  useEffect(() => { perfLogPageStart("settings", "Trash"); }, []);
+  const perfReadyRef = useRef(false);
+  useEffect(() => {
+    if (!loading && !perfReadyRef.current) {
+      perfReadyRef.current = true;
+      perfLogPageReady("settings", "Trash");
+    }
+  }, [loading]);
 
   const filtered = useMemo(() => {
     const range = TIME_RANGES.find(r => r.key === timeRange);
