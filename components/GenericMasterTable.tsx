@@ -2,12 +2,19 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
-import ColumnConfigDrawer from "@/components/ColumnConfigDrawer";
-import UniversalSelectionModal from "@/components/UniversalSelectionModal";
+// Same deferral as CustomTableMasterPage.tsx's RecordDashboard/
+// NewRecordModal/SpreadsheetEditor split (see that file's comment) --
+// none of these three render anything until the config drawer, spreadsheet
+// panel, or "new record" modal is actually opened, so none of them need to
+// be in this table's own first-load JS.
+const ColumnConfigDrawer = dynamic(() => import("@/components/ColumnConfigDrawer"));
+const UniversalSelectionModal = dynamic(() => import("@/components/UniversalSelectionModal"));
+const SpreadsheetEditor = dynamic(() => import("@/components/SpreadsheetEditor"));
 
 import { usePresetTable } from "@/lib/hooks/usePresetTable";
 import type { SortDirection, SortMode } from "@/lib/hooks/usePresetTable";
@@ -21,7 +28,6 @@ import { deriveLabel } from "@/lib/services/schemaService";
 import { propertyService } from "@/lib/services/propertyService";
 import { buildCredentialColumnSections } from "@/lib/columnDefinitions";
 import { PROPERTY_RELATIONS, ENTITY_RELATIONS } from "@/lib/relationDefinitions";
-import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { useInvalidateRows } from "@/lib/hooks/useTableRows";
 import { swr, clearCache } from "@/lib/queryCache";
