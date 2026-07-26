@@ -45,6 +45,12 @@ interface Props {
   fields: CustomTableField[];
   fieldById: Map<string, CustomTableField>;
   records: CustomTableRecord[]; // already filtered by the active filter bar
+  // True while `records` hasn't landed yet even though the rest of the
+  // dashboard (this renderer's own widgets) is already showing -- see
+  // useCustomTable.ts's fields-first split. Passed straight through to the
+  // grid widget's own loading-vs-empty distinction; undefined (falsy) in
+  // builder-preview contexts, which never populate real records anyway.
+  recordsLoading?: boolean;
   // Filtered by every active filter EXCEPT date fields -- a chart plotting
   // activity over time is meaningless once narrowed to one specific date
   // (the filter bar's own default), so it always shows every date while
@@ -96,7 +102,7 @@ interface Props {
 }
 
 export default function DashboardWidgetRenderer({
-  widget, sourceKind, fields, fieldById, records, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
+  widget, sourceKind, fields, fieldById, records, recordsLoading, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
   isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill,
 }: Props) {
   switch (widget.type) {
@@ -158,6 +164,7 @@ export default function DashboardWidgetRenderer({
           fields={fields}
           gridFieldIds={widget.config.fieldIds}
           records={filterByConditions(records, widget.config.conditions, fieldById)}
+          recordsLoading={recordsLoading}
           onChanged={mode === 'preview' ? () => {} : onChanged}
           readOnly={isLedger}
           emptyRowCount={mode === 'preview' ? 0 : (widget.config.emptyRowCount || 0)}

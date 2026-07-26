@@ -74,6 +74,13 @@ interface Props {
   // (filtered) `records` prop -- see GridWidget.config in
   // lib/dashboardWidgets/types.ts.
   showTotalsRow?: boolean;
+  // True while `records` is still on its way but the rest of the dashboard
+  // (this grid's own header, the quick-add form beside it) is already
+  // showing -- see useCustomTable.ts's fields-first split. Distinguishes
+  // "genuinely no rows" from "rows just haven't landed yet" for the empty
+  // state below; an actually-empty table still says "No entries yet" once
+  // this flips false.
+  recordsLoading?: boolean;
 }
 
 // Same formatting as DashboardSummaryTiles' formatTileValue -- duplicated
@@ -93,7 +100,7 @@ function formatTotal(value: number, fieldType: string): string {
 // section of a composed dashboard, not a standalone page.
 export default function DashboardGrid({
   tableId, sourceKind, companyId, userId, fields, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
-  columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow,
+  columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow, recordsLoading,
 }: Props) {
   const gridFields = gridFieldIds
     .map(id => fields.find(f => f.id === id))
@@ -365,7 +372,7 @@ export default function DashboardGrid({
           {records.length === 0 && paddingRowCount === 0 && (
             <tr>
               <td colSpan={gridFields.length + (readOnly ? 0 : 1)} className="text-center py-8 text-[11px] text-slate-300 italic">
-                No entries yet
+                {recordsLoading ? "Loading…" : "No entries yet"}
               </td>
             </tr>
           )}

@@ -157,18 +157,27 @@ export function useCustomTable(
   fields: CustomTableField[];
   records: CustomTableRecord[];
   loading: boolean;
+  // True from the moment `loading` goes false until records actually land
+  // -- lets a caller show its real shell (a quick-add form's labeled
+  // inputs, a grid's own column headers) the instant fields are ready,
+  // with just the row/data area of its own still indicating "loading"
+  // rather than blocking that whole shell behind one combined flag. See
+  // `load` below for why fields reliably lands first.
+  recordsLoading: boolean;
   refetch: () => void;
 } {
   const [tableDef, setTableDef] = useState<CustomTable | null>(null);
   const [fields, setFields] = useState<CustomTableField[]>([]);
   const [records, setRecords] = useState<CustomTableRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(true);
 
   // Fetches table def + fields + records and swaps them in. Deliberately
-  // does not touch `loading` itself -- the mount effect below wraps the
-  // *first* call in a loading flag; a later `refetch()` (after adding/
-  // editing/deleting a record) calls this directly so the page keeps
-  // showing the current data instead of unmounting into a spinner.
+  // does not touch `loading`/`recordsLoading` itself on entry -- the mount
+  // effect below wraps the *first* call in both loading flags; a later
+  // `refetch()` (after adding/editing/deleting a record) calls this
+  // directly so the page keeps showing the current data instead of
+  // unmounting into a spinner.
   const load = useCallback(async () => {
     if (!tableSlug) return;
     let tbl: CustomTable | null | undefined = preloadedTable?.slug === tableSlug ? preloadedTable : null;
@@ -185,32 +194,41 @@ export function useCustomTable(
     if (!tbl) return;
     setTableDef(tbl);
 
-    // Records don't actually reference field defs in their own query (the
-    // field_id -> field_key mapping only matters once hydrating rows below,
-    // client-side) -- fetching both at once instead of fields-then-records
-    // cuts a full sequential round trip off the load, confirmed live as a
-    // real chunk of "why does Time Entry take so long to show anything"
-    // (see the network waterfall this was diagnosed from).
-    const [{ data: flds }, { data: recs }] = await Promise.all([
-      supabase
-        .from('company_table_fields')
-        .select('*')
-        .eq('table_id', tbl.id)
-        .is('deleted_at', null)
-        .order('display_order'),
-      supabase
+    // Both fire in the same tick (no new round trip vs. before), but only
+    // FIELDS is awaited up front -- records is wrapped in an immediately-
+    // invoked async function so its own request starts right away too,
+    // without forcing the caller to wait for it before painting anything.
+    // Fields is a handful of rows and reliably resolves first; records is
+    // a join across company_table_values for every row in the table, and
+    // was the real reason the page's whole shell (quick-add form, grid's
+    // own column headers -- neither of which needs a single row of data to
+    // render) sat behind one combined skeleton for as long as the slower
+    // of the two, even though a viewer spends a couple of seconds just
+    // orienting on a fresh page before touching anything anyway.
+    const recordsPromise = (async () => {
+      const { data } = await supabase
         .from('company_table_records')
         .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)')
-        .eq('table_id', tbl.id)
+        .eq('table_id', tbl!.id)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false }),
-    ]);
+        .order('created_at', { ascending: false });
+      return data;
+    })();
+
+    const { data: flds } = await supabase
+      .from('company_table_fields')
+      .select('*')
+      .eq('table_id', tbl.id)
+      .is('deleted_at', null)
+      .order('display_order');
 
     const fieldList = (flds || []) as CustomTableField[];
     setFields(fieldList);
+    setLoading(false);
 
     // Build a field_id → field_key map for resolving values
     const fieldMap = new Map(fieldList.map(f => [f.id, f]));
+    const recs = await recordsPromise;
 
     const hydratedRecords: CustomTableRecord[] = (recs || []).map(rec => {
       const values: Record<string, any> = {};
@@ -255,14 +273,14 @@ export function useCustomTable(
 
     await resolveRelationLabels(fieldList, hydratedRecords);
     setRecords(hydratedRecords);
+    setRecordsLoading(false);
   }, [tableSlug, preloadedTable]);
 
   useEffect(() => {
     if (!tableSlug) return;
-    let active = true;
     setLoading(true);
-    load().finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    setRecordsLoading(true);
+    load();
   }, [tableSlug, load]);
 
   return {
@@ -270,6 +288,7 @@ export function useCustomTable(
     fields,
     records,
     loading,
+    recordsLoading,
     refetch: load,
   };
 }

@@ -55,6 +55,13 @@ export function useSystemTableAsCustomTable(
   fields: CustomTableField[];
   records: CustomTableRecord[];
   loading: boolean;
+  // Always mirrors `loading` -- unlike useCustomTable.ts's own fields/
+  // records split, this hook's schema-metadata fetch and its record fetch
+  // aren't decoupled, so there's no separate "fields are ready, records
+  // aren't yet" moment here to report. Exists so useDashboardData.ts can
+  // read the same field name regardless of which of these two hooks is
+  // actually backing a given dashboard's source table.
+  recordsLoading: boolean;
   refetch: () => void;
 } {
   const [fields, setFields] = useState<CustomTableField[]>([]);
@@ -203,5 +210,5 @@ export function useSystemTableAsCustomTable(
     disable_record_dashboard: false,
   } : null;
 
-  return { tableDef, fields, records, loading, refetch: load };
+  return { tableDef, fields, records, loading, recordsLoading: loading, refetch: load };
 }

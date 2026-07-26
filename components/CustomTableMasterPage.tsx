@@ -315,7 +315,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const searchParams = useSearchParams();
   const selectedId = searchParams.get('id');
 
-  const { tableDef, fields, records, loading, refetch } = useCustomTable(tableSlug);
+  const { tableDef, fields, records, loading, recordsLoading, refetch } = useCustomTable(tableSlug);
   const { isAdmin } = useCompany();
 
   // ── Top progress bar ───────────────────────────────────────────────────
@@ -705,9 +705,9 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
               <IconComp size={28} style={{ color: tableDef.color }} />
             </div>
             <p className="text-slate-400 text-[11px] uppercase font-bold tracking-widest">
-              {search ? 'No records match your search' : 'No records yet'}
+              {recordsLoading ? 'Loading…' : search ? 'No records match your search' : 'No records yet'}
             </p>
-            {!search && (
+            {!search && !recordsLoading && (
               <button
                 onClick={handleCreate}
                 className="text-indigo-600 text-[11px] font-bold uppercase tracking-widest hover:underline"

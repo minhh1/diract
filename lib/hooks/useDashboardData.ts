@@ -107,7 +107,7 @@ export function useDashboardData(dashboardSlug: string) {
   // dashboard's actual source_table_type ever has real data in it.
   const customTableResult = useCustomTable(sourceKind === 'custom' ? sourceTableSlug : null, sourceTableDef);
   const systemTableResult = useSystemTableAsCustomTable(systemTableName, dashboard?.company_id ?? null);
-  const { tableDef, fields, records, loading: tableLoading, refetch: refetchTable } =
+  const { tableDef, fields, records, loading: tableLoading, recordsLoading, refetch: refetchTable } =
     sourceKind === 'custom' ? customTableResult : systemTableResult;
 
   const fieldById = useMemo(() => new Map(fields.map(f => [f.id, f])), [fields]);
@@ -253,6 +253,12 @@ export function useDashboardData(dashboardSlug: string) {
     chartRecords,
     allRecords: records,
     loading: dashboardLoading || tableLoading,
+    // Separate from `loading` -- see useCustomTable.ts's own doc comment.
+    // dashboardLoading is folded in here too: the dashboard's own config
+    // row (which widgets exist, in what order) has to be known before
+    // "are there records yet" is a meaningful question for anything that
+    // reads this.
+    recordsLoading: dashboardLoading || recordsLoading,
     filters,
     setFilter,
     quickAddPrefill,
