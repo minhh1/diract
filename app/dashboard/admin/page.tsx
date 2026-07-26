@@ -10,6 +10,7 @@ import {
   CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
 import AdminTeamsTab from "@/components/admin/AdminTeamsTab";
@@ -101,6 +102,20 @@ function buildCalendarFormat(tokens: string[], separator: string): string {
   return tokens.map(t => `{${t}}`).join(separator);
 }
 
+// Placeholder rows shown only for the handful of sections that actually need
+// this page's own fetch (members, invites, company details) -- everything
+// else on this page (header, tab labels, most tab components) already
+// renders immediately off data CompanyContext resolved earlier.
+function SkeletonRows({ count, heightClass = 'h-16' }: { count: number; heightClass?: string }) {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className={`bg-white border border-slate-100 rounded-[28px] ${heightClass} animate-pulse`} />
+      ))}
+    </div>
+  );
+}
+
 type AdminTab = 'members' | 'teams' | 'views' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
 const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
@@ -124,7 +139,7 @@ export default function AdminPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
-  const { companyId, userId, isAdmin, isSiteAdmin, loading: companyLoading } = useCompany();
+  const { companyId, companyName: contextCompanyName, userId, isAdmin, isSiteAdmin, loading: companyLoading } = useCompany();
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -163,6 +178,11 @@ export default function AdminPage() {
   const [newTokenTeamId, setNewTokenTeamId] = useState<string>('');
   const [allTeams, setAllTeams] = useState<{ id: string; team_name: string }[]>([]);
 
+  useEffect(() => { perfLogPageStart("admin", "admin"); }, []);
+  useEffect(() => {
+    if (!loading) perfLogPageReady("admin", "admin");
+  }, [loading]);
+
   useEffect(() => {
     if (companyLoading) return;
     load(companyId, isAdmin);
@@ -171,11 +191,13 @@ export default function AdminPage() {
 
   const load = async (companyId: string | null, isAdmin: boolean) => {
     if (!companyId || !isAdmin) {
+      perfLog("admin: unauthorized (no companyId or not admin)");
       setUnauthorized(true);
       setLoading(false);
       return;
     }
     setLoading(true);
+    perfLog("admin: batch fetch start");
 
     // CompanyContext already resolved companyId + isAdmin (per-company role
     // check) once for the whole dashboard shell — no need to re-derive them
@@ -227,6 +249,7 @@ export default function AdminPage() {
       // the company is connected without exposing anyone's OAuth tokens.
       supabase.from('company_gmail_connections').select('email'),
     ]);
+    perfLog("admin: batch fetch resolved");
 
     setProjectCustomFields(customFieldData || []);
 
@@ -274,6 +297,7 @@ export default function AdminPage() {
     } else {
       setMembers([]);
     }
+    perfLog("admin: members resolved");
 
     setLoading(false);
   };
@@ -438,9 +462,11 @@ export default function AdminPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  // ── Loading / unauthorized ─────────────────────────────────────
-
-  if (loading) return null;
+  // ── Unauthorized ─────────────────────────────────────
+  // Deliberately no blanket "if (loading) return null" here -- everything
+  // static (header, tab labels, most tabs' own components below) renders
+  // immediately; only the bits that actually need this page's own fetch
+  // (members, invites, company details) show a skeleton while `loading`.
 
   if (unauthorized) return (
     <div className="flex flex-col items-center justify-center h-screen gap-3">
@@ -479,7 +505,7 @@ export default function AdminPage() {
               Admin
             </h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              {company?.name} · {ADMIN_TAB_LABELS[activeTab]}
+              {contextCompanyName || company?.name} · {ADMIN_TAB_LABELS[activeTab]}
             </p>
           </div>
         </div>
@@ -494,7 +520,7 @@ export default function AdminPage() {
             <>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  {members.length} member{members.length !== 1 ? 's' : ''}
+                  {loading ? 'Loading members…' : `${members.length} member${members.length !== 1 ? 's' : ''}`}
                 </p>
                 <button
                   onClick={() => router.push('/dashboard/admin?tab=invites')}
@@ -504,7 +530,9 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              {members.length === 0 ? (
+              {loading ? (
+                <SkeletonRows count={4} />
+              ) : members.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
                   No members yet
                 </p>
@@ -664,7 +692,9 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {tokens.length === 0 ? (
+              {loading ? (
+                <SkeletonRows count={3} />
+              ) : tokens.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">
                   No invitation links generated yet
                 </p>
@@ -758,13 +788,13 @@ export default function AdminPage() {
           )}
 
           {/* ── Teams ── */}
-          {activeTab === 'teams' && company?.id && (
-            <AdminTeamsTab companyId={company.id} />
+          {activeTab === 'teams' && companyId && (
+            <AdminTeamsTab companyId={companyId} />
           )}
 
           {/* ── Default views ── */}
-          {activeTab === 'views' && company?.id && (
-            <AdminDefaultViewsTab companyId={company.id} />
+          {activeTab === 'views' && companyId && (
+            <AdminDefaultViewsTab companyId={companyId} />
           )}
 
           {/* ── Gmail source of truth ── */}
@@ -787,33 +817,33 @@ export default function AdminPage() {
           )}
 
           {/* ── Gmail sync activity & health ── */}
-          {activeTab === 'gmailSync' && company?.id && (
-            <AdminGmailSyncTab companyId={company.id} />
+          {activeTab === 'gmailSync' && companyId && (
+            <AdminGmailSyncTab companyId={companyId} />
           )}
 
           {/* ── WhatsApp ── */}
-          {activeTab === 'whatsapp' && company?.id && (
-            <AdminWhatsAppTab companyId={company.id} />
+          {activeTab === 'whatsapp' && companyId && (
+            <AdminWhatsAppTab companyId={companyId} />
           )}
 
           {/* ── Microsoft Teams ── */}
-          {activeTab === 'msTeams' && company?.id && (
-            <AdminMsTeamsTab companyId={company.id} />
+          {activeTab === 'msTeams' && companyId && (
+            <AdminMsTeamsTab companyId={companyId} />
           )}
 
           {/* ── OneDrive / SharePoint ── */}
-          {activeTab === 'oneDrive' && company?.id && (
-            <AdminOneDriveTab companyId={company.id} />
+          {activeTab === 'oneDrive' && companyId && (
+            <AdminOneDriveTab companyId={companyId} />
           )}
 
           {/* ── Email ── */}
-          {activeTab === 'email' && company?.id && (
-            <AdminEmailTab companyId={company.id} />
+          {activeTab === 'email' && companyId && (
+            <AdminEmailTab companyId={companyId} />
           )}
 
           {/* ── AI Assistant ── */}
-          {activeTab === 'aiAssistant' && company?.id && (
-            <AdminAiAssistantTab companyId={company.id} />
+          {activeTab === 'aiAssistant' && companyId && (
+            <AdminAiAssistantTab companyId={companyId} />
           )}
 
           {/* ── Performance (internal — site-admin only) ── */}
@@ -827,17 +857,22 @@ export default function AdminPage() {
           )}
 
           {/* ── Archive requests ── */}
-          {activeTab === 'archiveRequests' && company?.id && (
-            <AdminArchiveRequestsTab companyId={company.id} />
+          {activeTab === 'archiveRequests' && companyId && (
+            <AdminArchiveRequestsTab companyId={companyId} />
           )}
 
           {/* ── Virtual computers ── */}
-          {activeTab === 'virtualComputers' && company?.id && (
-            <AdminVirtualComputersTab companyId={company.id} />
+          {activeTab === 'virtualComputers' && companyId && (
+            <AdminVirtualComputersTab companyId={companyId} />
+          )}
+
+          {/* ── Company tab: skeleton while this page's own company fetch is pending ── */}
+          {activeTab === 'company' && loading && (
+            <SkeletonRows count={2} heightClass="h-56" />
           )}
 
           {/* ── Team access defaults ── */}
-          {activeTab === 'company' && (
+          {activeTab === 'company' && !loading && (
             <div className="bg-white border border-slate-200 rounded-[40px] p-8 mb-4">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4">
                 Default project access
@@ -883,7 +918,7 @@ export default function AdminPage() {
           )}
 
           {/* ── Company settings ── */}
-          {activeTab === 'company' && (
+          {activeTab === 'company' && !loading && (
             <div className="bg-white border border-slate-200 rounded-[40px] p-8 space-y-5">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 Company details

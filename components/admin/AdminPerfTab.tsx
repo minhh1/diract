@@ -52,7 +52,7 @@ function groupEntries(entries: PerfLogEntry[]): Group[] {
 // "what happened during this one page load" vs "how has this URL performed
 // over time."
 const PAGE_EVENT_RE = /^PAGE (\w+)\(([^)]*)\): (start|ready)$/;
-const KIND_LABEL: Record<string, string> = { dashboard: "Dashboard", table: "Table", settings: "Settings" };
+const KIND_LABEL: Record<string, string> = { dashboard: "Dashboard", table: "Table", settings: "Settings", admin: "Admin", marketplace: "Marketplace" };
 
 interface PageSample { at: number; durationMs: number }
 interface PageStat { kind: string; name: string; samples: PageSample[] }

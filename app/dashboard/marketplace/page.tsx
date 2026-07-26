@@ -3,7 +3,7 @@
 // Template marketplace: browse + install published templates (any company's,
 // see supabase/template_marketplace.sql's install_company_template), and
 // author/manage the ones your own company owns via TemplateTableBuilder.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as LucideIcons from "lucide-react";
 import { Store, Plus, Loader2, Check, X, Trash2 } from "lucide-react";
@@ -12,6 +12,7 @@ import { useCompany } from "@/components/CompanyContext";
 import TemplateTableBuilder from "@/components/marketplace/TemplateTableBuilder";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 interface Template {
   id: string; slug: string; name: string; description: string | null;
@@ -184,11 +185,13 @@ function DashboardWireframe({ widgets, labelFor }: { widgets: PreviewWidget[]; l
 // fetch -- revisiting the page within staleTime shows the last result
 // immediately while a background refetch keeps it fresh.
 async function fetchMarketplaceData(companyId: string) {
+  perfLog("marketplace: batch fetch start");
   const [{ data: pub }, { data: own }, { data: installs }] = await Promise.all([
     supabase.from('template_definitions').select('*').eq('is_published', true).order('name'),
     supabase.from('template_definitions').select('*').eq('owner_company_id', companyId).order('created_at', { ascending: false }),
     supabase.from('company_template_installs').select('template_id').eq('company_id', companyId),
   ]);
+  perfLog("marketplace: batch fetch resolved");
   return {
     published: (pub || []) as Template[],
     mine: (own || []) as Template[],
@@ -208,6 +211,11 @@ export default function MarketplacePage() {
   const published = data?.published ?? [];
   const mine = data?.mine ?? [];
   const installedIds = data?.installedIds ?? new Set<string>();
+
+  useEffect(() => { perfLogPageStart("marketplace", "marketplace"); }, []);
+  useEffect(() => {
+    if (!loading) perfLogPageReady("marketplace", "marketplace");
+  }, [loading]);
 
   const [installing, setInstalling] = useState<Template | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -388,7 +396,13 @@ export default function MarketplacePage() {
         <button onClick={() => setTab('mine')} className={`px-4 py-2 rounded-full text-[11px] font-bold transition-all ${tab === 'mine' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500'}`}>My templates</button>
       </div>
 
-      {loading ? null : tab === 'browse' ? (
+      {loading ? (
+        <div className="space-y-2">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="h-[68px] bg-white border border-slate-200 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+      ) : tab === 'browse' ? (
         <div className="space-y-2">
           {published.map(t => renderCard(t, 'browse'))}
           {published.length === 0 && <p className="text-center text-[11px] text-slate-300 italic py-8">No published templates yet</p>}

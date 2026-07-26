@@ -83,7 +83,7 @@ export function perfLog(label: string, detail?: string): void {
 // these "PAGE ..." labelled entries out to show one clean "this URL took
 // Nms" row per route, keyed on `path`, instead of making the admin eyeball
 // a whole raw waterfall to find the number that matters.
-export type PerfPageKind = "dashboard" | "table" | "settings";
+export type PerfPageKind = "dashboard" | "table" | "settings" | "admin" | "marketplace";
 export function perfLogPageStart(kind: PerfPageKind, name: string): void {
   perfLog(`PAGE ${kind}(${name}): start`);
 }

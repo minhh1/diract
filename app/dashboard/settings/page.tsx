@@ -248,7 +248,11 @@ export default function SettingsPage() {
           {/* ── IMPORT HISTORY ── */}
           {view === "history" && (
             <div className="space-y-3 animate-in fade-in">
-              {loading ? null : history.length === 0 ? (
+              {loading ? (
+                <div className="space-y-3">
+                  {[0, 1, 2].map(i => <div key={i} className="h-[76px] bg-white border border-slate-200 rounded-[32px] animate-pulse" />)}
+                </div>
+              ) : history.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-20">No import history yet</p>
               ) : (
                 history.map(log => {
@@ -353,7 +357,11 @@ export default function SettingsPage() {
           {/* ── DUPLICATES VIEW ── */}
           {view === "duplicates_view" && (
             <div className="space-y-8 animate-in fade-in">
-              {loading ? null : items.length === 0 ? (
+              {loading ? (
+                <div className="space-y-8">
+                  {[0, 1].map(i => <div key={i} className="h-[220px] bg-white border border-slate-200 rounded-[48px] animate-pulse" />)}
+                </div>
+              ) : items.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-20">No duplicates found</p>
               ) : (
                 items.map((pair, idx) => (
