@@ -159,7 +159,37 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
     );
   }
 
-  // text / email / url / auto_id fallback
+  // Plain 'text' in a form (not email/url, not a grid cell) auto-grows
+  // instead of using a single-line input -- a single line horizontally
+  // scrolls hidden content once a value overflows it (confirmed live on
+  // Time & Fee Entries' Description: typing a normal billing-narrative
+  // sentence scrolled the start of it off-screen), so there's no way to see
+  // or highlight the whole thing without first scrolling to find it. An
+  // auto-growing textarea wraps instead, so every character stays visible
+  // and selectable and nothing shifts while typing. Scoped to non-'plain'
+  // only -- DashboardGrid's rows have a fixed height, so a growing textarea
+  // there would misalign against every other cell in the same row.
+  if (type === 'text' && !plain) {
+    const grow = (el: HTMLTextAreaElement | null) => {
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    return (
+      <textarea
+        ref={grow}
+        defaultValue={value ?? ''}
+        disabled={disabled}
+        onBlur={e => onCommit(e.target.value || null)}
+        onInput={e => grow(e.currentTarget)}
+        rows={1}
+        className={`${inputClass.replace('rounded-full', 'rounded-2xl')} resize-none leading-snug`}
+        placeholder={field.label}
+      />
+    );
+  }
+
+  // email / url / auto_id fallback (and 'text' in a grid cell)
   return (
     <input
       type={type === 'email' ? 'email' : type === 'url' ? 'url' : 'text'}
