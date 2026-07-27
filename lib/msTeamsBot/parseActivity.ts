@@ -14,6 +14,7 @@ export interface IncomingMessage {
   question: string;
   reactionTargetId?: string;
   isGroup: boolean;
+  wasMentioned: boolean;
   senderName?: string;
 }
 
@@ -60,15 +61,19 @@ export function parseIncomingActivity(activity: any): IncomingMessage | null {
     return null;
   }
 
-  // In a group chat or channel, only respond when actually @mentioned --
-  // replying to every unrelated message in a team channel would be noisy
-  // and wrong. A 1:1 (personal) conversation has no one else to mention it
-  // for, so every message there gets a reply. Reactions skip this check --
-  // reacting to a specific message is inherently unambiguous about intent.
+  // In a group chat or channel, an unmentioned message is only worth a
+  // reply when the sender already has something going with the bot (a
+  // pending create/update/issue_precedent flow) -- that decision needs a DB
+  // lookup by linked account, which this pure parsing function doesn't have,
+  // so it's made downstream in lib/botEngine/handleMessage.ts instead (see
+  // wasMentioned below). Observed live (2026-07-27): hard-dropping every
+  // unmentioned group reply here meant a person answering (or trying to
+  // cancel) a multi-turn question the bot had already asked -- without
+  // re-@mentioning it on every single follow-up -- was silently discarded,
+  // leaving them stuck with no way to escape a stale "collecting" state.
   const conversationType: string | undefined = activity.conversation?.conversationType;
-  if (!isLikeReaction && activity.type === "message" && conversationType !== "personal" && !wasBotMentioned(activity)) {
-    return null;
-  }
+  const isGroup = conversationType !== "personal";
+  const wasMentioned = isLikeReaction || !isGroup || wasBotMentioned(activity);
 
   const question = isLikeReaction ? "\u{1F44D}" : stripMentionMarkup(activity.text);
   const aadObjectId: string | undefined = activity.from?.aadObjectId;
@@ -89,8 +94,7 @@ export function parseIncomingActivity(activity: any): IncomingMessage | null {
   // already isolated per person. senderName (only needed outside a 1:1,
   // which is unambiguous on its own) is used to prefix the bot's replies --
   // see attribute() in lib/msTeamsBot/handleMessage.ts.
-  const isGroup = conversationType !== "personal";
   const senderName: string | undefined = activity.from?.name;
 
-  return { aadObjectId, tenantId, serviceUrl, conversationId, activityId, question, reactionTargetId, isGroup, senderName };
+  return { aadObjectId, tenantId, serviceUrl, conversationId, activityId, question, reactionTargetId, isGroup, wasMentioned, senderName };
 }

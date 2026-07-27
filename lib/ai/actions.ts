@@ -11,6 +11,7 @@
 import { logTaskActivity } from "@/lib/taskActivityLog";
 import { triggerCalendarSync } from "@/lib/triggerCalendarSync";
 import { getGraphAppToken, ensureFolderPath, uploadFile, updateFileContent } from "@/lib/msGraph/onedrive";
+import { createBotFile, updateBotFile } from "@/lib/ai/botFiles";
 
 export interface ResolvedMatch {
   id: string;
@@ -427,9 +428,20 @@ export async function updateProject(admin: any, companyId: string, params: Updat
 // Fuzzy match against files already synced in from OneDrive (onedrive_files,
 // kept fresh by supabase/functions/onedrive-sync-worker) -- mirrors
 // resolveTaskByName's found/ambiguous/not_found shape exactly.
+// Candidates can come from either the real OneDrive index (onedrive_files,
+// populated by the periodic sync worker) or bot_created_files (this
+// company's chat-created files when OneDrive isn't connected -- see
+// lib/ai/botFiles.ts). A bot_created_files id is prefixed "local:" so
+// updateOnedriveFile below knows which backend to write back to.
 export async function resolveOnedriveFileByName(admin: any, companyId: string, name: string): Promise<ResolveResult> {
-  const { data } = await admin.from("onedrive_files").select("item_id, name").eq("company_id", companyId).ilike("name", `%${name}%`);
-  const candidates: ResolvedMatch[] = (data ?? []).map((f: { item_id: string; name: string }) => ({ id: f.item_id, name: f.name }));
+  const [{ data: onedriveFiles }, { data: localFiles }] = await Promise.all([
+    admin.from("onedrive_files").select("item_id, name").eq("company_id", companyId).ilike("name", `%${name}%`),
+    admin.from("bot_created_files").select("id, name").eq("company_id", companyId).ilike("name", `%${name}%`),
+  ]);
+  const candidates: ResolvedMatch[] = [
+    ...(onedriveFiles ?? []).map((f: { item_id: string; name: string }) => ({ id: f.item_id, name: f.name })),
+    ...(localFiles ?? []).map((f: { id: string; name: string }) => ({ id: `local:${f.id}`, name: f.name })),
+  ];
   return pickBestMatch(name, candidates);
 }
 
@@ -440,21 +452,44 @@ export async function resolveOnedriveFileByName(admin: any, companyId: string, n
 export async function resolvePrecedentByName(admin: any, companyId: string, name: string): Promise<ResolveResult> {
   const { data } = await admin
     .from("precedents").select("id, name").eq("company_id", companyId).eq("record_table", "projects")
-    .is("deleted_at", null).ilike("name", `%${name}%`);
-  const candidates: ResolvedMatch[] = (data ?? []) as ResolvedMatch[];
-  return pickBestMatch(name, candidates);
+    .eq("is_system", false).is("deleted_at", null).ilike("name", `%${name}%`);
+  const candidates = new Map<string, ResolvedMatch>();
+  for (const p of (data ?? []) as ResolvedMatch[]) candidates.set(p.id, p);
+
+  // Same fuzzy fallback as resolveProjectByName -- observed live: "Order on
+  // the Agent" (an extra filler word) failed to match a precedent literally
+  // named "Order on Agent" via plain substring matching.
+  if (candidates.size === 0) {
+    const searchTokens = fuzzyTokens(name);
+    if (searchTokens.length) {
+      const { data: allPrecedents } = await admin
+        .from("precedents").select("id, name").eq("company_id", companyId).eq("record_table", "projects").eq("is_system", false).is("deleted_at", null);
+      for (const p of (allPrecedents ?? []) as ResolvedMatch[]) {
+        if (fuzzyMatchesTokens(p.name, searchTokens)) candidates.set(p.id, p);
+      }
+    }
+  }
+
+  return pickBestMatch(name, Array.from(candidates.values()));
+}
+
+async function getOnedriveGraphContextOrNull(admin: any, companyId: string): Promise<{ token: string; driveId: string } | null> {
+  const { data: creds } = await admin.from("company_onedrive_credentials").select("credentials, drive_id").eq("company_id", companyId).maybeSingle();
+  if (!creds?.drive_id) return null;
+  const token = await getGraphAppToken(creds.credentials.tenant_id, creds.credentials.client_id, creds.credentials.client_secret);
+  return { token, driveId: creds.drive_id };
 }
 
 async function getOnedriveGraphContext(admin: any, companyId: string): Promise<{ token: string; driveId: string }> {
-  const { data: creds } = await admin.from("company_onedrive_credentials").select("credentials, drive_id").eq("company_id", companyId).maybeSingle();
-  if (!creds?.drive_id) throw new Error("OneDrive isn't connected for this company -- ask an admin to connect it in Admin -> OneDrive.");
-  const token = await getGraphAppToken(creds.credentials.tenant_id, creds.credentials.client_id, creds.credentials.client_secret);
-  return { token, driveId: creds.drive_id };
+  const ctx = await getOnedriveGraphContextOrNull(admin, companyId);
+  if (!ctx) throw new Error("OneDrive isn't connected for this company -- ask an admin to connect it in Admin -> OneDrive.");
+  return ctx;
 }
 
 export interface CreateOnedriveFileParams {
   name: string;
   projectName?: string | null;
+  projectId?: string | null;
   content: string;
 }
 
@@ -462,8 +497,16 @@ export interface CreateOnedriveFileParams {
 // a project was mentioned, otherwise a default /Assistant Files/ folder --
 // both created on demand. v1 writes plain text content (see lib/ai/fileDraft.ts's
 // header comment on why this isn't real Word/.docx authoring yet).
-export async function createOnedriveFile(admin: any, companyId: string, params: CreateOnedriveFileParams): Promise<{ name: string; webUrl: string }> {
-  const { token, driveId } = await getOnedriveGraphContext(admin, companyId);
+//
+// Falls back to lib/ai/botFiles.ts's Storage-backed create when this
+// company has no OneDrive connection at all -- previously this just threw,
+// making create_file entirely unusable without OneDrive connected first.
+export async function createOnedriveFile(admin: any, companyId: string, userId: string, params: CreateOnedriveFileParams): Promise<{ name: string; webUrl: string }> {
+  const ctx = await getOnedriveGraphContextOrNull(admin, companyId);
+  if (!ctx) {
+    return createBotFile(admin, { companyId, userId, name: params.name, projectId: params.projectId ?? null, content: params.content });
+  }
+  const { token, driveId } = ctx;
   const folderPath = params.projectName ? `Projects/${params.projectName}` : "Assistant Files";
   await ensureFolderPath(token, driveId, folderPath);
   const fileName = /\.[a-z0-9]+$/i.test(params.name) ? params.name : `${params.name}.txt`;
@@ -471,7 +514,13 @@ export async function createOnedriveFile(admin: any, companyId: string, params: 
   return { name: fileName, webUrl: uploaded.webUrl };
 }
 
+// itemId is either a real OneDrive Graph item id, or "local:{uuid}" for a
+// bot_created_files row (see resolveOnedriveFileByName above) -- the prefix
+// says which backend actually holds the content.
 export async function updateOnedriveFile(admin: any, companyId: string, itemId: string, content: string): Promise<{ webUrl: string }> {
+  if (itemId.startsWith("local:")) {
+    return updateBotFile(admin, itemId.slice("local:".length), content);
+  }
   const { token, driveId } = await getOnedriveGraphContext(admin, companyId);
   const updated = await updateFileContent(token, driveId, itemId, content);
   return { webUrl: updated.webUrl };

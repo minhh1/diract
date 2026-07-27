@@ -72,7 +72,16 @@ BEGIN
     ('other_side_solicitor',   'Other Side''s Solicitor',    'entity', NULL::jsonb, 'entities', 'name', 5),
     ('debtor',                 'Debtor',                     'entity', NULL::jsonb, 'entities', 'name', 6),
     ('person_responsible',     'Person Responsible',         'entity', NULL::jsonb, 'entities', 'name', 7),
-    ('person_assisting',       'Person Assisting',           'entity', NULL::jsonb, 'entities', 'name', 8)
+    ('person_assisting',       'Person Assisting',           'entity', NULL::jsonb, 'entities', 'name', 8),
+    -- selling_agent/deposit_holder: conveyancing matters need to record who
+    -- holds the deposit at settlement -- usually the selling agent, but
+    -- sometimes the other side's solicitor or a third party. deposit_holder
+    -- itself is a plain select (no conditional-visibility mechanism exists
+    -- for a custom field), so deposit_holder_other is just always present,
+    -- only meaningful when deposit_holder = 'Other'.
+    ('selling_agent',          'Selling Agent',              'entity', NULL::jsonb, 'entities', 'name', 9),
+    ('deposit_holder',         'Deposit Holder',              'select', to_jsonb(ARRAY['Selling Agent','Other Side''s Solicitor','Other']), NULL::text, NULL::text, 10),
+    ('deposit_holder_other',   'Deposit Holder (if Other)',  'entity', NULL::jsonb, 'entities', 'name', 11)
   ) AS v(field_key, label, field_type, select_options, linked_table, linked_display_column, display_order)
   WHERE NOT EXISTS (
     SELECT 1 FROM template_definition_system_fields

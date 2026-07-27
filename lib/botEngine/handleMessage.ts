@@ -22,11 +22,13 @@ import {
   createOnedriveFile, updateOnedriveFile,
 } from "@/lib/ai/actions";
 import { advanceFileAction, buildFileMissingFieldsTool, type FileAdvanceResult } from "@/lib/ai/fileActions";
-import { advancePrecedentAction, allKnownFields, buildPrecedentMissingFieldsTool, type PrecedentAdvanceResult } from "@/lib/ai/precedentAction";
+import {
+  advancePrecedentAction, allKnownFields, buildPrecedentMissingFieldsTool, draftSubjectFromCollected, looksLikeDraftRequest,
+  type PrecedentAdvanceResult,
+} from "@/lib/ai/precedentAction";
 import { issuePrecedentDocument } from "@/lib/precedents/issuePrecedent";
 import { advanceAppointmentAction, buildAppointmentMissingFieldsTool, type AppointmentAdvanceResult } from "@/lib/ai/appointmentAction";
 import { bookAppointment } from "@/lib/ai/calendarBooking";
-import { getCompanyTimezone } from "@/lib/companyTimezone";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { APP_URL } from "@/lib/config";
@@ -41,6 +43,7 @@ import { APP_URL } from "@/lib/config";
 // channel-specific context (service URL, credentials, conversation id...)
 // it needs to actually send that reply.
 export interface ChannelAdapter {
+  channel: "teams" | "whatsapp";
   linkedAccountsTable: string;
   pendingActionsTable: string;
   linkRequestsTable: string;
@@ -48,6 +51,15 @@ export interface ChannelAdapter {
   linkPagePath: string;
   reply(text: string): Promise<string>; // returns a provider message id (for prompt_message_id / reaction matching)
   buildLinkRequestRow(code: string): Record<string, unknown>;
+  // Proactively messages a DIFFERENT linked account than the current
+  // conversation's -- e.g. asking a configured signer to confirm their
+  // signature (see lib/ai/precedentAction.ts's confirming step, and
+  // beginOrSkipSignoffRound below). `linkedAccount` is a full row from this
+  // channel's own linkedAccountsTable. Returns the sent message's id, or
+  // null if they couldn't be reached (no stored service URL yet, WhatsApp's
+  // 24h freeform-message window, etc.) so the caller can treat them as
+  // unreachable rather than get stuck waiting forever.
+  sendProactive(linkedAccount: any, text: string): Promise<string | null>;
 }
 
 export interface ChannelMessage {
@@ -55,25 +67,51 @@ export interface ChannelMessage {
   question: string;
   reactionTargetId?: string;
   isGroup?: boolean;
+  // Only Teams sets these -- WhatsApp has no @mention concept, so every
+  // group message there is always treated as addressed to the bot. When
+  // requiresMentionInGroup is true and wasMentioned is false, an unmentioned
+  // group message is only worth a reply if the sender already has a pending
+  // action going (see the gate right after `pending` loads below) --
+  // otherwise it's the same as any other unrelated message in the channel.
+  requiresMentionInGroup?: boolean;
+  wasMentioned?: boolean;
   senderName?: string | null;
 }
 
 const CONFIRM_WORDS = new Set(["yes", "y", "confirm", "confirmed", "do it", "go ahead", "yep", "yeah"]);
 
+// Appended to every "collecting" question (see the apply*AdvanceResult
+// helpers below) -- the equivalent hint already exists on the "confirming"
+// step ('Reply "yes" to confirm or "no" to cancel'), but nothing told
+// someone stuck answering several collecting questions in a row that they
+// could bail out at any point, same as isCancelMessage already supports.
+const CANCEL_HINT = '\n\n(Say "cancel" anytime to stop this.)';
+
 // Exact-match only -- these are short/ambiguous enough that matching them
 // as a substring would false-positive on unrelated answers (e.g. "no" is a
 // substring of "Notary", "stop" of "laptop").
-const CANCEL_EXACT_WORDS = new Set(["no", "n", "cancel", "nevermind", "never mind", "stop"]);
+const CANCEL_EXACT_WORDS = new Set(["no", "n", "stop"]);
 // Longer, distinctive phrases -- safe to match anywhere in a natural
 // sentence. Observed in testing: a real reply like "it's fine, don't
 // create, I'll test again tomorrow, good night" isn't equal to any single
 // short word, so it fell through and got mistaken for an answer to the
 // pending question, and the bot just re-asked it.
 const CANCEL_PHRASES = ["don't create", "do not create", "don't bother", "forget it", "not now", "no thanks", "no thank you", "cancel that", "leave it"];
+// Unlike "no"/"stop" above, "cancel"/"nevermind" aren't substrings of any
+// common unrelated word, so they're safe to match anywhere in the message
+// rather than requiring an exact whole-message match. Observed live
+// (2026-07-27): a real reply of "cancel this" or "@Diract AI please cancel"
+// silently failed to cancel anything, because it only exact-matched the
+// bare word "cancel" with nothing else in the message.
+const CANCEL_WORD_PATTERNS = [/\bcancel\b/, /\bnevermind\b/, /\bnever mind\b/];
 
 function isCancelMessage(text: string): boolean {
   const normalized = text.trim().toLowerCase();
-  return CANCEL_EXACT_WORDS.has(normalized) || CANCEL_PHRASES.some((p) => normalized.includes(p));
+  return (
+    CANCEL_EXACT_WORDS.has(normalized) ||
+    CANCEL_PHRASES.some((p) => normalized.includes(p)) ||
+    CANCEL_WORD_PATTERNS.some((p) => p.test(normalized))
+  );
 }
 
 // No per-message model picker (unlike the web chat) -- defaults to the
@@ -86,21 +124,12 @@ const DEFAULT_HOSTED_MODEL_ID = HOSTED_MODELS[0].id;
 // it correctly said it "couldn't understand the date 'tomorrow'"). Included
 // in every tool-calling/extraction call so due_date can be given in natural
 // language, not just literal YYYY-MM-DD.
-// "Today" genuinely depends on which timezone you're asking from (unlike
-// the weekday-of-a-known-date computations elsewhere in this file, which
-// are timezone-invariant calendar-date math) -- near a midnight boundary,
-// UTC's calendar day can already differ from the company's actual local
-// one, which would make the model resolve "tomorrow" to the wrong date.
-// Uses the company's own configured timezone (see lib/companyTimezone.ts)
-// via Intl's formatter rather than any manual UTC-offset math.
-async function todayContextMessage(admin: any, companyId: string) {
-  const timezone = await getCompanyTimezone(admin, companyId);
-  const now = new Date();
-  const date = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-  const weekday = now.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
+function todayContextMessage() {
+  const today = new Date();
+  const weekday = today.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
   return {
     role: "system",
-    content: `Today is ${weekday}, ${date} (YYYY-MM-DD). If the user gives a relative date (e.g. "today", "tomorrow", "next Wednesday", "in 3 days"), convert it to an absolute YYYY-MM-DD date yourself before returning it. A bare weekday name with no qualifier (e.g. just "Monday", not "next Monday" or "this Monday") means the closest upcoming occurrence of that weekday -- today itself if today already is that weekday, otherwise the next one ahead, never one in the past.`,
+    content: `Today is ${weekday}, ${today.toISOString().slice(0, 10)} (YYYY-MM-DD). If the user gives a relative date (e.g. "today", "tomorrow", "next Wednesday", "in 3 days"), convert it to an absolute YYYY-MM-DD date yourself before returning it. A bare weekday name with no qualifier (e.g. just "Monday", not "next Monday" or "this Monday") means the closest upcoming occurrence of that weekday -- today itself if today already is that weekday, otherwise the next one ahead, never one in the past.`,
   };
 }
 
@@ -166,11 +195,44 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
     .maybeSingle();
 
   if (!linked) {
+    // An unmentioned group message from someone who's never linked their
+    // account has nothing to do with the bot at all -- most people in a
+    // shared group chat never will (see the requiresMentionInGroup gate
+    // further down for the equivalent case once they ARE linked).
+    if (msg.isGroup && msg.requiresMentionInGroup && !msg.wasMentioned) return;
     const code = randomCode();
     await admin.from(adapter.linkRequestsTable).insert({ code, company_id: companyId, ...adapter.buildLinkRequestRow(code) });
     const linkUrl = `${APP_URL}${adapter.linkPagePath}?code=${code}`;
     await reply(`I don't recognize your account yet. Link it to Diract first, then send your question again: ${linkUrl}`);
     return;
+  }
+
+  // A configured signer replying to a proactive "would you like to sign"
+  // DM (see lib/ai/precedentAction.ts's confirming step and
+  // beginOrSkipSignoffRound below) takes priority over anything else this
+  // person might have pending -- it's always a single yes/no, never part
+  // of a longer collecting flow, and the conversation it's replying to
+  // isn't the one that started the original issuance.
+  const { data: pendingSignoff } = await admin
+    .from("precedent_signoff_request_signers")
+    .select("id, request_id, prompt_message_id")
+    .eq("linked_account_id", linked.id)
+    .eq("status", "pending")
+    .maybeSingle();
+  if (pendingSignoff) {
+    const isReactionConfirm = !!msg.reactionTargetId && msg.reactionTargetId === pendingSignoff.prompt_message_id;
+    const normalized = msg.question.trim().toLowerCase();
+    if (isReactionConfirm || (!msg.reactionTargetId && (CONFIRM_WORDS.has(normalized) || isCancelMessage(msg.question)))) {
+      const confirmed = isReactionConfirm || CONFIRM_WORDS.has(normalized);
+      await admin.from("precedent_signoff_request_signers")
+        .update({ status: confirmed ? "confirmed" : "declined", responded_at: new Date().toISOString() })
+        .eq("id", pendingSignoff.id);
+      await reply(confirmed ? "Thanks — I've noted you'll sign this document." : "No problem, I won't include your signature.");
+      await maybeFinalizeSignoffRequest(admin, adapter, pendingSignoff.request_id);
+      return;
+    }
+    // Anything else (including an unrelated reaction) falls through to
+    // normal handling rather than getting stuck demanding yes/no forever.
   }
 
   // Loaded before the pending-action check (not just before the RAG path
@@ -197,6 +259,18 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
     .eq("linked_account_id", linked.id)
     .maybeSingle();
 
+  // An unmentioned group message (Teams only -- see ChannelMessage's
+  // requiresMentionInGroup) is ignored UNLESS this person already has
+  // something going with the bot. Observed live (2026-07-27): gating this
+  // upstream in parseActivity.ts (before any DB lookup was even possible)
+  // meant replying "cancel" -- or anything at all -- to a multi-turn
+  // question without re-@mentioning the bot on every single follow-up was
+  // silently dropped, leaving the person stuck reseeing the same "collecting"
+  // question with no way to escape it.
+  if (msg.isGroup && msg.requiresMentionInGroup && !msg.wasMentioned && !pending) {
+    return;
+  }
+
   // A "like"/👍 reaction only ever means "confirm" -- and only when it's on
   // the exact confirmation message this pending action's prompt_message_id
   // points at (not just any reaction from this person). No match -> ignore
@@ -205,12 +279,7 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
   if (msg.reactionTargetId) {
     if (pending && pending.status === "confirming" && pending.prompt_message_id === msg.reactionTargetId && new Date(pending.expires_at) > new Date()) {
       await admin.from(adapter.pendingActionsTable).delete().eq("linked_account_id", linked.id);
-      let resultText: string;
-      try {
-        resultText = await executeAction(admin, companyId, linked.user_id, pending.action_type, pending.params);
-      } catch (err) {
-        resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
-      }
+      const resultText = await finalizeConfirmedAction(admin, companyId, adapter, linked, pending.action_type, pending.params);
       await reply(resultText);
     }
     return;
@@ -235,12 +304,7 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
     // around to confuse a later one).
     await admin.from(adapter.pendingActionsTable).delete().eq("linked_account_id", linked.id);
     if (CONFIRM_WORDS.has(normalized)) {
-      let resultText: string;
-      try {
-        resultText = await executeAction(admin, companyId, linked.user_id, pending.action_type, pending.params);
-      } catch (err) {
-        resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
-      }
+      const resultText = await finalizeConfirmedAction(admin, companyId, adapter, linked, pending.action_type, pending.params);
       await reply(resultText);
       return;
     }
@@ -304,7 +368,7 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
       const toolCallMessages = [
         modelMessages[0],
         { role: "system", content: TOOL_USE_GUARDRAILS },
-        await todayContextMessage(admin, companyId),
+        todayContextMessage(),
         ...(identityMsg ? [identityMsg] : []),
         ...modelMessages.slice(1),
       ];
@@ -584,7 +648,7 @@ async function applyAdvanceResult(
       },
       { onConflict: "linked_account_id" }
     );
-    return reply(result.question);
+    return reply(result.question + CANCEL_HINT);
   }
 
   const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
@@ -624,7 +688,7 @@ async function applyFileAdvanceResult(
       { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, prompt_message_id: null, expires_at: expiresAt },
       { onConflict: "linked_account_id" }
     );
-    return reply(result.question);
+    return reply(result.question + CANCEL_HINT);
   }
 
   const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
@@ -652,7 +716,7 @@ async function applyPrecedentAdvanceResult(
       { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, prompt_message_id: null, expires_at: expiresAt },
       { onConflict: "linked_account_id" }
     );
-    return reply(result.question);
+    return reply(result.question + CANCEL_HINT);
   }
 
   const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
@@ -680,7 +744,7 @@ async function applyAppointmentAdvanceResult(
       { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, prompt_message_id: null, expires_at: expiresAt },
       { onConflict: "linked_account_id" }
     );
-    return reply(result.question);
+    return reply(result.question + CANCEL_HINT);
   }
 
   const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
@@ -779,7 +843,7 @@ async function continueCollecting(
         DEFAULT_HOSTED_MODEL_ID,
         [
           { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-          await todayContextMessage(admin, companyId),
+          todayContextMessage(),
           { role: "user", content: msg.question },
         ],
         buildAppointmentMissingFieldsTool(pendingFieldKeys)
@@ -815,6 +879,40 @@ async function continueCollecting(
   }
 
   if (actionType === "issue_precedent") {
+    // Special case: a single confirm_ai_fallback question is a plain yes/no
+    // ("write this with AI instead?"), not a field to extract -- checked
+    // directly against CONFIRM_WORDS (see advancePrecedentAction's
+    // not_found handling), never through AI extraction. A non-confirm
+    // reply is treated as a fresh precedent name to try instead.
+    if (pendingFieldKeys.length === 1 && pendingFieldKeys[0] === "confirm_ai_fallback") {
+      const merged = { ...collectedSoFar };
+      if (CONFIRM_WORDS.has(msg.question.trim().toLowerCase())) merged.use_ai_fallback = "true";
+      else merged.precedent_name = msg.question.trim();
+      const result = await advancePrecedentAction(admin, companyId, linked.user_id, DEFAULT_HOSTED_MODEL_ID, sourceTypes, merged);
+      await applyPrecedentAdvanceResult(admin, linked, msg, adapter, actionType, result);
+      return;
+    }
+
+    // Special case: a reply to the subject-line question that reads as
+    // "you draft it" gets a subject drafted from the matter's own data
+    // instead of being parsed as a literal subject (see looksLikeDraftRequest).
+    if (pendingFieldKeys.includes("subject") && looksLikeDraftRequest(msg.question)) {
+      const draft = await draftSubjectFromCollected(admin, companyId, DEFAULT_HOSTED_MODEL_ID, collectedSoFar);
+      if (draft) {
+        const cost = costUsd("hosted", DEFAULT_HOSTED_MODEL_ID, draft);
+        await admin.from("ai_usage_events").insert({
+          company_id: companyId, user_id: linked.user_id, model_id: DEFAULT_HOSTED_MODEL_ID, provider: "hosted",
+          input_tokens: draft.inputTokens, output_tokens: draft.outputTokens, cost_usd: cost,
+        });
+        const merged = { ...collectedSoFar, subject: draft.subject };
+        const result = await advancePrecedentAction(admin, companyId, linked.user_id, DEFAULT_HOSTED_MODEL_ID, sourceTypes, merged);
+        await applyPrecedentAdvanceResult(admin, linked, msg, adapter, actionType, result);
+        return;
+      }
+      // Drafting failed (or the precedent/matter couldn't be re-resolved) --
+      // fall through to normal extraction rather than getting stuck.
+    }
+
     const allFields = await allKnownFields(admin, companyId, collectedSoFar);
     const pendingFields = allFields.filter((f) => pendingFieldKeys.includes(f.key));
 
@@ -825,7 +923,7 @@ async function continueCollecting(
         DEFAULT_HOSTED_MODEL_ID,
         [
           { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-          await todayContextMessage(admin, companyId),
+          todayContextMessage(),
           { role: "user", content: msg.question },
         ],
         buildPrecedentMissingFieldsTool(pendingFields)
@@ -871,7 +969,7 @@ async function continueCollecting(
       DEFAULT_HOSTED_MODEL_ID,
       [
         { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-        await todayContextMessage(admin, companyId),
+        todayContextMessage(),
         ...(identityMsg ? [identityMsg] : []),
         { role: "user", content: msg.question },
       ],
@@ -909,6 +1007,116 @@ async function continueCollecting(
   await applyAdvanceResult(admin, companyId, linked, msg, adapter, actionType, await advanceAction(admin, companyId, actionType as ActionType, merged));
 }
 
+// A confirmed issue_precedent needs a detour through the per-signer
+// confirmation round (see beginOrSkipSignoffRound) before the document is
+// actually issued, if this matter/company has configured signers -- every
+// other action type just runs executeAction directly, unchanged.
+async function finalizeConfirmedAction(
+  admin: any, companyId: string, adapter: ChannelAdapter, linked: LinkedAccount, actionType: string, params: any
+): Promise<string> {
+  try {
+    if (actionType === "issue_precedent") {
+      const { data: precedent } = await admin.from("precedents").select("name").eq("id", params.precedentId).maybeSingle();
+      return await beginOrSkipSignoffRound(admin, companyId, adapter, linked, precedent?.name || "this document", params);
+    }
+    return await executeAction(admin, companyId, linked.user_id, actionType, params);
+  } catch (err) {
+    return `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+// Resolves this matter/company's configured signers (precedent_settings) --
+// if none, issues immediately exactly as before this feature existed. If
+// there are some, proactively DMs whichever are reachable on this channel
+// (see ChannelAdapter.sendProactive) asking if they want to sign, and pauses
+// the actual issuing until they've all responded (see
+// maybeFinalizeSignoffRequest, triggered by their replies in
+// handleChannelMessage's pendingSignoff check above). A configured signer
+// with no linked account on this channel can't be asked at all, so they're
+// included by default (the same behavior as before this feature existed)
+// rather than silently dropped.
+async function beginOrSkipSignoffRound(
+  admin: any, companyId: string, adapter: ChannelAdapter, linked: LinkedAccount, precedentName: string, issueParams: any
+): Promise<string> {
+  const issueDirectly = async (signerIds?: string[]) => {
+    const result = await issuePrecedentDocument(admin, { ...issueParams, companyId, userId: linked.user_id, signerIds });
+    return result.ok ? `Done — issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
+  };
+
+  const [{ data: projectSettings }, { data: companySettings }] = await Promise.all([
+    admin.from("precedent_settings").select("signers").eq("company_id", companyId).eq("project_id", issueParams.projectId).maybeSingle(),
+    admin.from("precedent_settings").select("signers").eq("company_id", companyId).is("project_id", null).maybeSingle(),
+  ]);
+  const signerIds: string[] = (projectSettings || companySettings)?.signers || [];
+  if (!signerIds.length) return issueDirectly(undefined);
+
+  const [{ data: linkedAccounts }, { data: profiles }] = await Promise.all([
+    admin.from(adapter.linkedAccountsTable).select("*").eq("company_id", companyId).in("user_id", signerIds),
+    admin.from("profiles").select("id, full_name, email").in("id", signerIds),
+  ]);
+  const linkedByUserId = new Map<string, any>((linkedAccounts || []).map((a: any) => [a.user_id, a]));
+  const nameByUserId = new Map<string, string>((profiles || []).map((p: any) => [p.id, p.full_name || p.email || "there"]));
+
+  const baseSignerIds: string[] = [];
+  const sentTo: { userId: string; name: string; account: any; messageId: string }[] = [];
+  for (const signerId of signerIds) {
+    const account = linkedByUserId.get(signerId);
+    if (!account) { baseSignerIds.push(signerId); continue; }
+    const name = nameByUserId.get(signerId) || "there";
+    const messageId = await adapter.sendProactive(
+      account,
+      `Hi ${name} — I'm issuing "${precedentName}" for a matter you're a configured signer on. Would you like your signature included? Reply yes/no.`
+    );
+    if (!messageId) { baseSignerIds.push(signerId); continue; }
+    sentTo.push({ userId: signerId, name, account, messageId });
+  }
+
+  if (!sentTo.length) return issueDirectly(signerIds); // couldn't reach anyone to ask -- fall back to including everyone configured
+
+  const { data: request, error } = await admin.from("precedent_signoff_requests").insert({
+    company_id: companyId, project_id: issueParams.projectId, precedent_id: issueParams.precedentId, requested_by: linked.user_id,
+    channel: adapter.channel, requester_linked_account_id: linked.id,
+    pending_issue_params: { ...issueParams, baseSignerIds },
+  }).select("id").single();
+  if (error || !request) return `Sorry, I couldn't set up the signature request: ${error?.message}`;
+
+  await admin.from("precedent_signoff_request_signers").insert(
+    sentTo.map(s => ({ request_id: request.id, user_id: s.userId, linked_account_id: s.account.id, status: "pending", prompt_message_id: s.messageId }))
+  );
+
+  return `I've asked ${sentTo.map(s => s.name).join(", ")} to confirm their signature. I'll issue the document once they respond.`;
+}
+
+// Runs once a signer responds (see handleChannelMessage's pendingSignoff
+// check) -- if everyone asked has now answered, issues the document with
+// only the confirmed signers included and messages the ORIGINAL requester
+// (not whichever signer just replied, whose own conversation has nothing to
+// do with the issuance itself) via their own linked account.
+async function maybeFinalizeSignoffRequest(admin: any, adapter: ChannelAdapter, requestId: string) {
+  const { data: signers } = await admin.from("precedent_signoff_request_signers").select("user_id, status").eq("request_id", requestId);
+  if (!signers?.length || signers.some((s: any) => s.status === "pending")) return;
+
+  const { data: request } = await admin.from("precedent_signoff_requests").select("*").eq("id", requestId).maybeSingle();
+  if (!request || request.status !== "awaiting_signoffs") return;
+
+  const confirmedSignerIds = signers.filter((s: any) => s.status === "confirmed").map((s: any) => s.user_id);
+  const { baseSignerIds, ...issueParams } = request.pending_issue_params as any;
+  const finalSignerIds = [...(baseSignerIds || []), ...confirmedSignerIds];
+
+  let resultText: string;
+  try {
+    const result = await issuePrecedentDocument(admin, { ...issueParams, companyId: request.company_id, userId: request.requested_by, signerIds: finalSignerIds });
+    resultText = result.ok ? `Done — issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
+  } catch (err) {
+    resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
+  }
+
+  await admin.from("precedent_signoff_requests").update({ status: "issued" }).eq("id", requestId);
+
+  const { data: requesterAccount } = await admin.from(adapter.linkedAccountsTable).select("*").eq("id", request.requester_linked_account_id).maybeSingle();
+  if (requesterAccount) await adapter.sendProactive(requesterAccount, resultText);
+}
+
 // Runs the actual mutation once a pending action has been confirmed. Never
 // called with unresolved names -- params were already fully resolved to
 // real IDs when the pending action was stored (see handleToolCall above).
@@ -930,7 +1138,7 @@ async function executeAction(admin: any, companyId: string, userId: string, acti
     return "Done — updated the project.";
   }
   if (actionType === "create_file") {
-    const file = await createOnedriveFile(admin, companyId, params);
+    const file = await createOnedriveFile(admin, companyId, userId, params);
     return `Done — created "${file.name}": ${file.webUrl}`;
   }
   if (actionType === "update_file") {
@@ -941,10 +1149,8 @@ async function executeAction(admin: any, companyId: string, userId: string, acti
     const booked = await bookAppointment(admin, companyId, params);
     return `Done — booked "${params.name}" on ${params.date} at ${params.startTime}.${booked.htmlLink ? ` ${booked.htmlLink}` : ""}`;
   }
-  if (actionType === "issue_precedent") {
-    const result = await issuePrecedentDocument(admin, { companyId, userId, ...params });
-    if (!result.ok) throw new Error(result.error);
-    return `Done — issued "${result.subject}": ${result.url}`;
-  }
+  // issue_precedent is never routed here -- finalizeConfirmedAction handles
+  // it directly via beginOrSkipSignoffRound, since it needs the channel
+  // adapter (to proactively message signers) that this function doesn't have.
   return "Unknown action type.";
 }

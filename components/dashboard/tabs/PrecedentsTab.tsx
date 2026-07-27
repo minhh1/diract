@@ -161,6 +161,10 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
 
+  // Subject-only AI drafting -- independent of the body assist above, informed
+  // by the matter's own name/custom fields rather than a written brief.
+  const [draftingSubject, setDraftingSubject] = useState(false);
+
   // Body template auto-detected from uploaded example documents (see
   // Settings → Precedents → "Body template"). When set, the Body field
   // defaults to this generated fill-in form instead of a blank textarea --
@@ -178,8 +182,14 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
       .then(json => setSignerIds((json.projectOverride || json.companyDefault)?.signers || []));
     fetch("/api/precedents/staff-signoffs").then(res => res.json())
       .then(json => setStaff(json.staff || []));
-    fetch(`/api/precedents/${precedent.id}/body-template`).then(res => res.json())
-      .then(json => setBodyTemplate(json.template?.segments || null));
+    fetch(`/api/precedents/${precedent.id}/body-template?recordId=${recordId}`).then(res => res.json())
+      .then(json => {
+        setBodyTemplate(json.template?.segments || null);
+        // Fields bound to an existing project field (see PrecedentsSettingsTab.tsx's
+        // "Default from field" picker) start pre-filled from this record's own
+        // data instead of blank -- still editable before issuing.
+        if (json.fieldDefaults) setFieldValues((prev: Record<string, string>) => ({ ...json.fieldDefaults, ...prev }));
+      });
   }, [recordId, precedent.id]);
 
   const needsRecipientName = detectedFields.some(f => f.role === "recipient_name");
@@ -205,6 +215,20 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
     if (!res.ok) { setDraftError(json.error || "Failed to draft"); return; }
     setSubject(json.subject || "");
     setBody(json.body || "");
+  };
+
+  const handleDraftSubjectWithAi = async () => {
+    setDraftingSubject(true);
+    setError(null);
+    const res = await fetch(`/api/precedents/${precedent.id}/draft-subject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordId }),
+    });
+    const json = await res.json();
+    setDraftingSubject(false);
+    if (!res.ok) { setError(json.error || "Failed to draft a subject line"); return; }
+    setSubject(json.subject || "");
   };
 
   const handleIssue = async () => {
@@ -301,12 +325,18 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Subject line</p>
-              {!showAiAssist && !usingTemplate && (
-                <button type="button" onClick={() => setShowAiAssist(true)}
-                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">
-                  <Sparkles size={11} /> Draft with AI instead
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={handleDraftSubjectWithAi} disabled={draftingSubject}
+                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 disabled:opacity-40">
+                  {draftingSubject ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Draft subject with AI
                 </button>
-              )}
+                {!showAiAssist && !usingTemplate && (
+                  <button type="button" onClick={() => setShowAiAssist(true)}
+                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">
+                    <Sparkles size={11} /> Draft with AI instead
+                  </button>
+                )}
+              </div>
             </div>
             <input value={subject} onChange={e => setSubject(e.target.value)}
               placeholder="e.g. Update on your account"

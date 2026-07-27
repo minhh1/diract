@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     .select("id, name, description, ai_instructions, display_order, created_at")
     .eq("company_id", companyId)
     .eq("record_table", recordTable)
+    .eq("is_system", false)
     .is("deleted_at", null)
     .order("display_order");
 

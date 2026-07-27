@@ -74,3 +74,47 @@ export async function sendReply(
   const json = await res.json().catch(() => ({}));
   return json.id ?? "";
 }
+
+// Creates a brand-new 1:1 conversation with a specific Teams user, for
+// proactively messaging someone who hasn't sent a message in the current
+// conversation -- e.g. asking a configured signer to confirm their
+// signature (see lib/ai/precedentAction.ts). Per the Bot Connector API's
+// documented proactive-messaging pattern: POST /v3/conversations with the
+// bot + target member, scoped to their tenant via channelData. Returns the
+// new conversationId to post into via sendNewMessage below.
+export async function createConversation(
+  creds: BotCredentials,
+  botToken: string,
+  serviceUrl: string,
+  tenantId: string,
+  targetAadObjectId: string
+): Promise<string> {
+  const url = `${serviceUrl.replace(/\/$/, "")}/v3/conversations`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${botToken}` },
+    body: JSON.stringify({
+      bot: { id: creds.bot_app_id },
+      members: [{ id: targetAadObjectId }],
+      channelData: { tenant: { id: tenantId } },
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to create Teams conversation: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  return json.id;
+}
+
+// Posts a brand-new message into a conversation with no specific prior
+// activity to reply to (unlike sendReply) -- used right after
+// createConversation, or any other proactive (not reply-triggered) send.
+export async function sendNewMessage(serviceUrl: string, conversationId: string, botToken: string, text: string): Promise<string> {
+  const url = `${serviceUrl.replace(/\/$/, "")}/v3/conversations/${encodeURIComponent(conversationId)}/activities`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${botToken}` },
+    body: JSON.stringify({ type: "message", text }),
+  });
+  if (!res.ok) throw new Error(`Failed to send Teams proactive message: ${res.status} ${await res.text()}`);
+  const json = await res.json().catch(() => ({}));
+  return json.id ?? "";
+}

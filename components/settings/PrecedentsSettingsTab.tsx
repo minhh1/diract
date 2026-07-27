@@ -727,6 +727,7 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
 }
 
 interface BodyExample { id: string; original_filename: string | null; created_at: string }
+interface AvailableField { id: string; label: string }
 
 // Lets an admin upload real past documents of this precedent's type so the
 // app can auto-detect a reusable body -- fixed wording plus fill-in fields
@@ -737,6 +738,7 @@ interface BodyExample { id: string; original_filename: string | null; created_at
 function BodyTemplateSection({ precedentId, canEdit }: { precedentId: string; canEdit: boolean }) {
   const [examples, setExamples] = useState<BodyExample[]>([]);
   const [segments, setSegments] = useState<BodyTemplateSegment[] | null>(null);
+  const [availableFields, setAvailableFields] = useState<AvailableField[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -748,6 +750,7 @@ function BodyTemplateSection({ precedentId, canEdit }: { precedentId: string; ca
     const json = await res.json();
     setExamples(json.examples || []);
     setSegments(json.template?.segments || null);
+    setAvailableFields(json.availableFields || []);
     setLoading(false);
   }, [precedentId]);
 
@@ -794,6 +797,14 @@ function BodyTemplateSection({ precedentId, canEdit }: { precedentId: string; ca
   const removeField = (key: string) => {
     if (!segments) return;
     saveSegments(segments.map(s => (s.type === "field" && s.key === key ? { type: "text" as const, text: s.example } : s)));
+  };
+
+  // Binds a field to an existing custom field on this precedent's record
+  // table (e.g. Selling Agent) so it defaults from that value at issue time
+  // instead of always being asked -- see lib/precedents/customFieldDefaults.ts.
+  const setAutoFillFieldId = (key: string, autoFillFieldId: string | null) => {
+    if (!segments) return;
+    saveSegments(segments.map(s => (s.type === "field" && s.key === key ? { ...s, autoFillFieldId } : s)));
   };
 
   if (loading) return null;
@@ -858,6 +869,14 @@ function BodyTemplateSection({ precedentId, canEdit }: { precedentId: string; ca
                       if (canEdit && label && label !== s.label) renameField(s.key, label);
                     }}
                     className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400 disabled:bg-transparent disabled:border-transparent" />
+                  {canEdit && availableFields.length > 0 && (
+                    <select value={s.autoFillFieldId || ""} onChange={e => setAutoFillFieldId(s.key, e.target.value || null)}
+                      title="Default from an existing field"
+                      className="w-36 px-2 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400 bg-white shrink-0">
+                      <option value="">No default</option>
+                      {availableFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    </select>
+                  )}
                   {canEdit && (
                     <button onClick={() => removeField(s.key)} title="Remove this field"
                       className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0">

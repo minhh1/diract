@@ -10,10 +10,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
+import { resolveCustomFieldDefaults } from "@/lib/precedents/customFieldDefaults";
 
 async function loadPrecedent(admin: any, precedentId: string, companyId: string) {
   const { data } = await admin
-    .from("precedents").select("id, company_id, body_template").eq("id", precedentId).is("deleted_at", null).maybeSingle();
+    .from("precedents").select("id, company_id, record_table, body_template").eq("id", precedentId).is("deleted_at", null).maybeSingle();
   if (!data || data.company_id !== companyId) return null;
   return data;
 }
@@ -27,13 +28,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const precedent = await loadPrecedent(admin, precedentId, companyId);
   if (!precedent) return NextResponse.json({ error: "Precedent not found" }, { status: 404 });
 
-  const { data: examples } = await admin
-    .from("precedent_body_examples")
-    .select("id, original_filename, created_at")
-    .eq("precedent_id", precedentId)
-    .order("created_at", { ascending: true });
+  const [{ data: examples }, { data: availableFields }] = await Promise.all([
+    admin.from("precedent_body_examples").select("id, original_filename, created_at").eq("precedent_id", precedentId).order("created_at", { ascending: true }),
+    admin.from("company_custom_fields").select("id, label").eq("company_id", companyId).eq("table_name", precedent.record_table).is("deleted_at", null).order("display_order"),
+  ]);
 
-  return NextResponse.json({ examples: examples || [], template: precedent.body_template || null });
+  // recordId (a specific matter, say) -> resolve each field's bound
+  // default, keyed by the body_template's own field key, ready to drop
+  // straight into the Issue modal's fieldValues state (see
+  // lib/precedents/customFieldDefaults.ts).
+  let fieldDefaults: Record<string, string> = {};
+  const recordId = req.nextUrl.searchParams.get("recordId");
+  const segments = precedent.body_template?.segments as BodyTemplateSegment[] | undefined;
+  if (recordId && segments?.length) {
+    const boundFields = segments.filter((s): s is Extract<BodyTemplateSegment, { type: "field" }> => s.type === "field" && !!s.autoFillFieldId);
+    if (boundFields.length) {
+      const resolved = await resolveCustomFieldDefaults(admin, recordId, boundFields.map(f => f.autoFillFieldId));
+      for (const f of boundFields) {
+        if (f.autoFillFieldId && resolved[f.autoFillFieldId]) fieldDefaults[f.key] = resolved[f.autoFillFieldId];
+      }
+    }
+  }
+
+  return NextResponse.json({ examples: examples || [], template: precedent.body_template || null, availableFields: availableFields || [], fieldDefaults });
 }
 
 function parseSegments(input: any): BodyTemplateSegment[] | null {
@@ -43,7 +60,10 @@ function parseSegments(input: any): BodyTemplateSegment[] | null {
     if (s?.type === "text" && typeof s.text === "string" && s.text.trim()) {
       out.push({ type: "text", text: s.text });
     } else if (s?.type === "field" && s.key && s.label) {
-      out.push({ type: "field", key: String(s.key).trim(), label: String(s.label).trim(), example: String(s.example || "").trim() });
+      out.push({
+        type: "field", key: String(s.key).trim(), label: String(s.label).trim(), example: String(s.example || "").trim(),
+        autoFillFieldId: s.autoFillFieldId ? String(s.autoFillFieldId) : null,
+      });
     } else {
       return null;
     }

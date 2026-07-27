@@ -252,3 +252,68 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
 
   return { ok: true, issuanceId, subject: formattedSubject, url: signed?.signedUrl || null };
 }
+
+const GENERAL_PRECEDENT_NAME = "General Document";
+
+// One hidden, auto-created precedent per company, used only when the bot's
+// issue_precedent action can't match a real precedent name and the user
+// asks for a freeform AI-written document instead (see
+// lib/ai/precedentAction.ts). is_system keeps it out of GET /api/precedents
+// and resolvePrecedentByName's normal search -- this is the only way to
+// reach it, by design.
+export async function resolveOrCreateGeneralPrecedent(admin: any, companyId: string): Promise<{ id: string; name: string }> {
+  const { data: existing } = await admin
+    .from("precedents").select("id, name").eq("company_id", companyId).eq("is_system", true)
+    .is("deleted_at", null).maybeSingle();
+  if (existing) return existing;
+
+  const { data: created, error } = await admin
+    .from("precedents")
+    .insert({ company_id: companyId, record_table: "projects", name: GENERAL_PRECEDENT_NAME, is_system: true, display_order: 9999 })
+    .select("id, name").single();
+  if (error || !created) throw new Error(error?.message || "Failed to set up a general document precedent");
+  return created;
+}
+
+// A compact "here's what this record is" summary for AI drafting context --
+// the project's name plus a handful of its own custom field values (label:
+// value), so a drafted subject/body actually reflects the matter instead of
+// just its bare name. Entity-type fields resolve to the linked entity's own
+// name, same as lib/precedents/customFieldDefaults.ts.
+export async function resolveProjectSummary(admin: any, companyId: string, projectId: string): Promise<string> {
+  const { data: project } = await admin.from("projects").select("name").eq("id", projectId).maybeSingle();
+  const name = project?.name || "";
+
+  const { data: fields } = await admin
+    .from("company_custom_fields").select("id, label, field_type").eq("company_id", companyId).eq("table_name", "projects").is("deleted_at", null);
+  if (!fields?.length) return name;
+
+  const { data: values } = await admin
+    .from("company_custom_field_values")
+    .select("field_id, value_text, value_number, value_date, value_boolean, value_record_id")
+    .eq("record_id", projectId).in("field_id", fields.map((f: any) => f.id));
+  if (!values?.length) return name;
+
+  const fieldById = new Map<string, any>(fields.map((f: any) => [f.id, f]));
+  const entityIds = [...new Set(
+    values.filter((v: any) => fieldById.get(v.field_id)?.field_type === "entity" && v.value_record_id).map((v: any) => v.value_record_id)
+  )];
+  let entityNameById = new Map<string, string>();
+  if (entityIds.length) {
+    const { data: entities } = await admin.from("entities").select("id, name").in("id", entityIds);
+    entityNameById = new Map((entities || []).map((e: any) => [e.id, e.name]));
+  }
+
+  const parts: string[] = [];
+  for (const v of values as any[]) {
+    const field = fieldById.get(v.field_id);
+    if (!field) continue;
+    let display: string | null = null;
+    if (field.field_type === "entity" && v.value_record_id) display = entityNameById.get(v.value_record_id) || null;
+    else display = v.value_text ?? (v.value_number != null ? String(v.value_number) : null) ?? v.value_date ?? (v.value_boolean != null ? String(v.value_boolean) : null);
+    if (display) parts.push(`${field.label}: ${display}`);
+    if (parts.length >= 6) break; // a compact summary, not the whole record
+  }
+
+  return parts.length ? `${name} (${parts.join(", ")})` : name;
+}

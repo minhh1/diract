@@ -203,7 +203,7 @@ const CREATE_FILE_TOOL = {
   type: "function",
   function: {
     name: "create_file",
-    description: "Create a new file/document in the company's OneDrive/SharePoint. The content is drafted from the instructions, not typed in directly.",
+    description: "Create a new file/document (stored in the company's OneDrive/SharePoint if connected, otherwise saved directly in Diract). The content is drafted from the instructions, not typed in directly.",
     parameters: {
       type: "object",
       properties: {
@@ -223,7 +223,7 @@ const UPDATE_FILE_TOOL = {
   type: "function",
   function: {
     name: "update_file",
-    description: "Update an existing OneDrive/SharePoint file with new content drafted from instructions.",
+    description: "Update an existing file (in OneDrive/SharePoint or Diract's own storage, whichever it was created in) with new content drafted from instructions.",
     parameters: {
       type: "object",
       properties: {

@@ -43,3 +43,34 @@ export async function sendWhatsAppReply(
   const json = await res.json().catch(() => ({}));
   return json.messages?.[0]?.id ?? "";
 }
+
+// A fresh, unprompted message -- not a reply within an existing exchange --
+// e.g. proactively asking a configured signer to confirm their signature
+// (see lib/ai/precedentAction.ts). No `context.message_id`, since there's no
+// specific inbound message this is replying to.
+//
+// Real platform limit, not a bug here: Meta only allows a freeform
+// (non-template) message like this within 24 hours of the recipient's last
+// message to this business number -- outside that window the API call
+// below fails and the caller should surface "couldn't reach [name]" rather
+// than assume delivery.
+export async function sendWhatsAppMessage(
+  credentials: WhatsAppSendCredentials,
+  destination: WhatsAppDestination,
+  text: string
+): Promise<string> {
+  const res = await fetch(`https://graph.facebook.com/v21.0/${credentials.phone_number_id}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${credentials.access_token}` },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: destination.type === "group" ? "group" : "individual",
+      to: destination.type === "group" ? destination.groupId : destination.waId,
+      type: "text",
+      text: { body: text },
+    }),
+  });
+  if (!res.ok) throw new Error(`WhatsApp send failed: ${res.status} ${await res.text()}`);
+  const json = await res.json().catch(() => ({}));
+  return json.messages?.[0]?.id ?? "";
+}

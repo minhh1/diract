@@ -133,7 +133,7 @@ export async function advanceFileAction(
 
   if (actionType === "create_file") {
     const summary = `I'll create a file "${collected.name}"${projectMatch ? ` under project ${projectMatch.name}` : ""} with this content:\n\n${preview}`;
-    return { status: "confirming", summary, params: { name: collected.name, projectName: projectMatch?.name ?? null, content } };
+    return { status: "confirming", summary, params: { name: collected.name, projectName: projectMatch?.name ?? null, projectId: projectMatch?.id ?? null, content } };
   }
 
   const summary = `I'll update "${fileMatch!.name}" with this content:\n\n${preview}`;

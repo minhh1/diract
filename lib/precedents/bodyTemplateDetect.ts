@@ -16,7 +16,7 @@ import { callHostedModelWithTools } from "@/lib/ai/modelCall";
 
 export type BodyTemplateSegment =
   | { type: "text"; text: string }
-  | { type: "field"; key: string; label: string; example: string };
+  | { type: "field"; key: string; label: string; example: string; autoFillFieldId?: string | null };
 
 export interface BodyTemplate {
   segments: BodyTemplateSegment[];

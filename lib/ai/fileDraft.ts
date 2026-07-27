@@ -1,5 +1,6 @@
 // lib/ai/fileDraft.ts
-// Drafts the actual content for a bot-created/updated OneDrive file (see
+// Drafts the actual content for a bot-created/updated file (OneDrive, or
+// Diract's own storage when OneDrive isn't connected -- see
 // lib/ai/fileActions.ts, app/api/teams/bot/[companyId]/route.ts,
 // app/api/whatsapp/webhook/[companyId]/route.ts) -- a separate model call
 // from the tool-calling/extraction ones, since drafting real document text

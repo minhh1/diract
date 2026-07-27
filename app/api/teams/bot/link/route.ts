@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const admin = adminClient();
   const { data: request } = await admin
     .from("teams_bot_link_requests")
-    .select("company_id, teams_aad_object_id, teams_tenant_id")
+    .select("company_id, teams_aad_object_id, teams_tenant_id, teams_service_url")
     .eq("code", code)
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
@@ -34,11 +34,16 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   if (!membership) return NextResponse.json({ error: "You're not a member of the company this bot belongs to" }, { status: 403 });
 
+  // teams_service_url is carried forward (not just used to consume this
+  // request) so this person can be messaged proactively later without
+  // needing an existing conversation to reply into -- see
+  // lib/msTeamsBot/connector.ts's createConversation.
   const { error } = await admin.from("teams_bot_linked_accounts").upsert(
     {
       company_id: request.company_id,
       teams_aad_object_id: request.teams_aad_object_id,
       teams_tenant_id: request.teams_tenant_id,
+      teams_service_url: request.teams_service_url,
       user_id: user.id,
     },
     { onConflict: "company_id,teams_aad_object_id" }

@@ -19,7 +19,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { adminClient } from "@/lib/documentTemplateAuth";
 import { verifyWhatsAppSignature } from "@/lib/whatsappBot/verifySignature";
-import { sendWhatsAppReply, type WhatsAppDestination } from "@/lib/whatsappBot/sendMessage";
+import { sendWhatsAppReply, sendWhatsAppMessage, type WhatsAppDestination } from "@/lib/whatsappBot/sendMessage";
 import { handleChannelMessage, type ChannelAdapter, type ChannelMessage } from "@/lib/botEngine/handleMessage";
 
 interface WhatsAppCredentials {
@@ -154,6 +154,7 @@ function destinationFor(msg: IncomingMessage): WhatsAppDestination {
 // wrapper exactly.
 async function handleMessage(admin: any, companyId: string, credentials: WhatsAppCredentials, msg: IncomingMessage) {
   const adapter: ChannelAdapter = {
+    channel: "whatsapp",
     linkedAccountsTable: "whatsapp_bot_linked_accounts",
     pendingActionsTable: "whatsapp_bot_pending_actions",
     linkRequestsTable: "whatsapp_bot_link_requests",
@@ -161,6 +162,18 @@ async function handleMessage(admin: any, companyId: string, credentials: WhatsAp
     linkPagePath: "/link-whatsapp",
     reply: (text: string) => sendWhatsAppReply(credentials, destinationFor(msg), msg.messageId, text),
     buildLinkRequestRow: () => ({ wa_id: msg.waId }),
+    // linkedAccount is a full whatsapp_bot_linked_accounts row -- unlike
+    // Teams, no conversation object is needed, just their wa_id. Subject to
+    // Meta's 24h freeform-message window (see sendWhatsAppMessage) -- a
+    // failure here just means they couldn't be reached right now, not a bug.
+    sendProactive: async (linkedAccount: any, text: string) => {
+      try {
+        return await sendWhatsAppMessage(credentials, { type: "individual", waId: linkedAccount.wa_id }, text);
+      } catch (err) {
+        console.error("Failed to proactively message a WhatsApp user:", err);
+        return null;
+      }
+    },
   };
 
   const channelMessage: ChannelMessage = {

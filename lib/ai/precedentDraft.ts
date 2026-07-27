@@ -55,3 +55,36 @@ export async function draftPrecedentContent(
 
   return { subject, body, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
 }
+
+const SUBJECT_ONLY_SYSTEM_PROMPT =
+  "You write a single short subject line for a piece of formal business correspondence, based on the document type and details of the specific matter/record it's for. " +
+  "Respond with ONLY the subject line itself -- no quotes, no \"Subject:\" prefix, no explanation.";
+
+export interface SubjectDraft {
+  subject: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+// A lighter sibling to draftPrecedentContent -- no user-written brief
+// needed, just the record's own name/custom-field summary (see
+// lib/precedents/issuePrecedent.ts's resolveProjectSummary), for when
+// someone just wants a subject line suggested rather than typing one. Used
+// independently of body drafting by both the web Issue modal's Subject
+// field and the bot (see PrecedentsTab.tsx, lib/ai/precedentAction.ts).
+export async function draftSubjectLine(
+  modelId: string,
+  precedentName: string,
+  aiInstructions: string | null,
+  recordSummary: string
+): Promise<SubjectDraft> {
+  const messages = [
+    { role: "system", content: SUBJECT_ONLY_SYSTEM_PROMPT },
+    { role: "system", content: `Document type: ${precedentName}` },
+    ...(aiInstructions ? [{ role: "system", content: `Drafting instructions for this document type: ${aiInstructions}` }] : []),
+    { role: "user", content: `This document is for: ${recordSummary}` },
+  ];
+  const usage = await callHostedModel(modelId, messages);
+  const subject = usage.content.trim().replace(/^["']|["']$/g, "") || precedentName;
+  return { subject, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
+}
