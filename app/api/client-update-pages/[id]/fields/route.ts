@@ -1,14 +1,18 @@
 // app/api/client-update-pages/[id]/fields/route.ts
-// GET returns the pickable field catalog (base projects columns + the two
-// synthetic property-linked keys + this company's projects custom fields) so
-// the admin editor can offer a checkbox list; POST adds one (or an 'adhoc'
-// page-only field, which just needs a label) to the page.
+// GET returns the pickable field catalog (base projects columns + the
+// synthetic name/property-linked keys + this company's projects custom
+// fields) so the admin editor can offer a checkbox list; POST adds one (or
+// an 'adhoc' page-only field, which just needs a label) to a specific
+// group's column set -- see the group_id column: each top-level group has
+// its own explicit fields, there's no shared fallback (a new group starts
+// with a copy made at creation time, see the groups POST route).
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
 import { logChange, resolveActorName } from "@/lib/clientUpdatePageLog";
 
 const SYNTHETIC_BASE_FIELDS = [
+  { field_key: "name", label: "Matter" },
   { field_key: "property_address", label: "Property Address" },
   { field_key: "purchase_price", label: "Purchase Price" },
 ];
@@ -30,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const baseOptions = [
     ...SYNTHETIC_BASE_FIELDS,
     ...(schemaCols || [])
-      .filter((c: any) => c.category === "data" && !c.is_hidden)
+      .filter((c: any) => c.category === "data" && !c.is_hidden && c.column_name !== "name")
       .map((c: any) => ({ field_key: c.column_name, label: c.label || c.column_name.replace(/_/g, " ") })),
   ];
   const customOptions = (customFields || []).map((f: any) => ({ field_key: f.id, label: f.label }));
@@ -49,11 +53,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const body = await req.json().catch(() => ({}));
   const { fieldSource, fieldKey, label } = body;
+  const groupId: string | null = body.groupId || null;
   if (!["base", "custom", "adhoc"].includes(fieldSource)) {
     return NextResponse.json({ error: "Invalid field source" }, { status: 400 });
   }
   if (!label?.trim()) return NextResponse.json({ error: "Label is required" }, { status: 400 });
   if (fieldSource !== "adhoc" && !fieldKey) return NextResponse.json({ error: "fieldKey is required" }, { status: 400 });
+
+  if (groupId) {
+    const { data: group } = await admin.from("client_update_groups").select("id").eq("id", groupId).eq("page_id", id).maybeSingle();
+    if (!group) return NextResponse.json({ error: "Group not found" }, { status: 404 });
+  }
 
   // field_type/select_options are snapshotted at add-time so display (date
   // formatting, dropdown rendering) doesn't need a second lookup per render.
@@ -73,7 +83,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   } else if (fieldSource === "base") {
     if (fieldKey === "purchase_price") fieldType = "currency";
-    else if (fieldKey === "property_address") fieldType = "text";
+    else if (fieldKey === "property_address" || fieldKey === "name") fieldType = "text";
     else {
       const { data: schemaCols } = await admin.rpc("get_schema_metadata", { target_table: "projects", p_company_id: companyId });
       const col = (schemaCols || []).find((c: any) => c.column_name === fieldKey);
@@ -81,11 +91,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
-  const { count } = await admin.from("client_update_page_fields").select("id", { count: "exact", head: true }).eq("page_id", id);
+  let countQuery = admin.from("client_update_page_fields").select("id", { count: "exact", head: true }).eq("page_id", id);
+  countQuery = groupId ? countQuery.eq("group_id", groupId) : countQuery.is("group_id", null);
+  const { count } = await countQuery;
+
   const { data: field, error } = await admin.from("client_update_page_fields").insert({
-    page_id: id, field_source: fieldSource, field_key: fieldSource === "adhoc" ? `adhoc_${Date.now()}` : fieldKey,
+    page_id: id, group_id: groupId, field_source: fieldSource, field_key: fieldSource === "adhoc" ? `adhoc_${Date.now()}` : fieldKey,
     label: label.trim(), display_order: count || 0, field_type: fieldType, select_options: selectOptions,
-  }).select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options").single();
+  }).select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options, group_id").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const actorName = await resolveActorName(admin, user.id);

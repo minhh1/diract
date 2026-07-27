@@ -16,9 +16,12 @@
 // via the move dropdown) OR define a condition ("this select column equals
 // this value") -- when a condition is set, membership is computed live
 // from matter data instead of being dragged in. A "Sort by" section (default
-// Settlement Date when present) sits below. Table styling (spreadsheet mode)
-// matches app/public/tasks/[pageId]/page.tsx's task table, with a frozen
-// (not CSS-sticky -- that overlapped on scroll) Matter name column.
+// one Settlement Date criterion when present, stackable with "+ Add sort")
+// sits below. Each top-level group has its own explicit column set (no
+// column, including "Matter" itself, is pinned or special-cased -- every
+// one is an ordinary, reorderable, removable field). Table styling
+// (spreadsheet mode, the default view) matches
+// app/public/tasks/[pageId]/page.tsx's task table.
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -29,7 +32,7 @@ import ColumnManagerModal from "./ColumnManagerModal";
 import GroupConditionModal from "./GroupConditionModal";
 import ActivityLogModal from "./ActivityLogModal";
 
-export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; }
+export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; }
 export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; }
@@ -45,7 +48,7 @@ interface Props {
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onRenameGroup?: (groupId: string, name: string) => void;
   onDeleteGroup?: (groupId: string) => void;
-  onAddGroup?: (name: string, parentGroupId: string | null) => void;
+  onAddGroup?: (name: string, parentGroupId: string | null, copyFieldsFromGroupId?: string | null) => void;
   onSetGroupCondition?: (groupId: string, fieldId: string | null, value: string | null) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
@@ -79,12 +82,11 @@ export default function MatterBoard({
   pageId, groups, items, fields, dateFormat, canEdit, canComment,
   onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onMoveItem, onRemoveItem, onAddNote, onReorderFields, onDataChanged, onDateFormatChanged,
 }: Props) {
-  const [mode, setMode] = useState<"cards" | "spreadsheet">("cards");
+  const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [sortFieldId, setSortFieldId] = useState<string>(MATTER_NAME_SORT);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sorts, setSorts] = useState<{ fieldId: string; dir: "asc" | "desc" }[]>([]);
   const [showAddMatter, setShowAddMatter] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [showDateFormat, setShowDateFormat] = useState(false);
@@ -105,6 +107,11 @@ export default function MatterBoard({
 
   const activeTopGroup = topGroups.find(g => g.id === activeTop) || null;
   const subGroups = activeTopGroup ? groups.filter(g => g.parent_group_id === activeTopGroup.id) : [];
+
+  // Each top-level group has its own explicit column set (no shared
+  // fallback -- see the migration comment); Ungrouped uses group_id IS NULL
+  // fields, subgroups always show their parent's.
+  const visibleFields = fields.filter(f => (f.group_id ?? null) === (activeTopGroup?.id ?? null));
 
   // Items conditionally claimed by one of this top group's subgroups don't
   // also count as unclassified.
@@ -166,33 +173,55 @@ export default function MatterBoard({
       })
     : statusFilteredItems;
 
-  const sortOptions = [{ id: MATTER_NAME_SORT, label: "Matter" }, ...fields.map(f => ({ id: f.id, label: f.label }))];
-  // Defaults to Settlement Date on first load when the page has one; once
-  // the user picks something else that choice is left alone.
-  const [sortInitialised, setSortInitialised] = useState(false);
+  const sortOptions = [{ id: MATTER_NAME_SORT, label: "Matter" }, ...visibleFields.map(f => ({ id: f.id, label: f.label }))];
+  // Defaults to a single Settlement Date criterion on first load of a group
+  // that has one; once the user touches sorting that choice is left alone.
+  // Re-runs per active group since each one's fields (and so its natural
+  // default) can differ.
+  const [sortInitialisedFor, setSortInitialisedFor] = useState<string | null>(null);
   useEffect(() => {
-    if (sortInitialised || !fields.length) return;
-    const settlementField = fields.find(f => f.label.toLowerCase().includes("settlement date"));
-    if (settlementField) setSortFieldId(settlementField.id);
-    setSortInitialised(true);
-  }, [fields, sortInitialised]);
-
-  const sortField = fields.find(f => f.id === sortFieldId);
-  const visibleItems = useMemo(() => {
-    const compare = (a: MatterBoardItem, b: MatterBoardItem): number => {
-      if (sortFieldId === MATTER_NAME_SORT) return a.matterName.localeCompare(b.matterName);
-      const av = a.values[sortFieldId];
-      const bv = b.values[sortFieldId];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      if (sortField && (sortField.field_type === "number" || sortField.field_type === "currency")) return Number(av) - Number(bv);
-      return String(av).localeCompare(String(bv));
-    };
-    const sorted = [...searchedItems].sort(compare);
-    return sortDir === "asc" ? sorted : sorted.reverse();
+    const groupKey = activeTopGroup?.id ?? UNGROUPED;
+    if (sortInitialisedFor === groupKey || !visibleFields.length) return;
+    const settlementField = visibleFields.find(f => f.label.toLowerCase().includes("settlement date"));
+    setSorts(settlementField ? [{ fieldId: settlementField.id, dir: "asc" }] : []);
+    setSortInitialisedFor(groupKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchedItems, sortFieldId, sortDir]);
+  }, [activeTopGroup?.id, visibleFields.length]);
+
+  const compareOne = (a: MatterBoardItem, b: MatterBoardItem, fieldId: string): number => {
+    if (fieldId === MATTER_NAME_SORT) return a.matterName.localeCompare(b.matterName);
+    const av = a.values[fieldId];
+    const bv = b.values[fieldId];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const f = visibleFields.find(f => f.id === fieldId);
+    if (f && (f.field_type === "number" || f.field_type === "currency")) return Number(av) - Number(bv);
+    return String(av).localeCompare(String(bv));
+  };
+
+  const visibleItems = useMemo(() => {
+    if (!sorts.length) return searchedItems;
+    const compare = (a: MatterBoardItem, b: MatterBoardItem): number => {
+      for (const s of sorts) {
+        const r = compareOne(a, b, s.fieldId);
+        if (r !== 0) return s.dir === "asc" ? r : -r;
+      }
+      return 0;
+    };
+    return [...searchedItems].sort(compare);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchedItems, sorts]);
+
+  const addSort = () => {
+    const used = new Set(sorts.map(s => s.fieldId));
+    const next = sortOptions.find(o => !used.has(o.id));
+    if (next) setSorts(prev => [...prev, { fieldId: next.id, dir: "asc" }]);
+  };
+  const updateSort = (index: number, patch: Partial<{ fieldId: string; dir: "asc" | "desc" }>) => {
+    setSorts(prev => prev.map((s, i) => i === index ? { ...s, ...patch } : s));
+  };
+  const removeSort = (index: number) => setSorts(prev => prev.filter((_, i) => i !== index));
 
   // Flat, indented list of every MANUALLY-assignable group -- conditional
   // subgroups aren't offered here since dragging a matter into one wouldn't
@@ -207,7 +236,7 @@ export default function MatterBoard({
 
   const addMatterTargetGroupId = activeTop === UNGROUPED ? null : activeTopGroup?.id ?? null;
   const conditionGroup = groups.find(g => g.id === conditionGroupId) || null;
-  const selectFields = fields.filter(f => f.field_type === "select");
+  const selectFields = visibleFields.filter(f => f.field_type === "select");
 
   return (
     <div className="space-y-4">
@@ -274,7 +303,7 @@ export default function MatterBoard({
                 onRename={onRenameGroup ? name => onRenameGroup(t.id, name) : undefined}
                 onDelete={onDeleteGroup ? () => onDeleteGroup(t.id) : undefined} />
             ))}
-            {canEdit && onAddGroup && <SidebarAddRow onAdd={name => onAddGroup(name, null)} />}
+            {canEdit && onAddGroup && <SidebarAddRow onAdd={name => onAddGroup(name, null, activeTop === UNGROUPED ? null : activeTop)} />}
           </SidebarSection>
 
           {activeTopGroup && statusOptions.length > 0 && (
@@ -291,14 +320,30 @@ export default function MatterBoard({
           )}
 
           <SidebarSection title="Sort by">
-            <select value={sortFieldId} onChange={e => setSortFieldId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-              {sortOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-            </select>
-            <button onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}
-              className="mt-1.5 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
-              {sortDir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />} {sortDir === "asc" ? "Ascending" : "Descending"}
-            </button>
+            <div className="space-y-1.5">
+              {sorts.map((s, i) => {
+                const usedElsewhere = new Set(sorts.filter((_, j) => j !== i).map(x => x.fieldId));
+                return (
+                  <div key={i} className="flex items-center gap-1">
+                    <select value={s.fieldId} onChange={e => updateSort(i, { fieldId: e.target.value })}
+                      className="flex-1 min-w-0 px-2.5 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
+                      {sortOptions.filter(o => !usedElsewhere.has(o.id) || o.id === s.fieldId).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    </select>
+                    <button onClick={() => updateSort(i, { dir: s.dir === "asc" ? "desc" : "asc" })} title={s.dir === "asc" ? "Ascending" : "Descending"}
+                      className="p-1.5 border border-slate-200 rounded-full text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors shrink-0">
+                      {s.dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+                    </button>
+                    <button onClick={() => removeSort(i)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
+                  </div>
+                );
+              })}
+              {sorts.length < sortOptions.length && (
+                <button onClick={addSort}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-slate-200 text-slate-400 text-[10px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                  <Plus size={11} /> Add sort
+                </button>
+              )}
+            </div>
           </SidebarSection>
         </div>
 
@@ -306,7 +351,7 @@ export default function MatterBoard({
           {mode === "cards" ? (
             <div className="space-y-3">
               {visibleItems.map(item => (
-                <MatterCard key={item.id} item={item} fields={fields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment}
+                <MatterCard key={item.id} item={item} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment}
                   onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} />
               ))}
               {visibleItems.length === 0 && (
@@ -314,7 +359,7 @@ export default function MatterBoard({
               )}
             </div>
           ) : (
-            <SpreadsheetView items={visibleItems} fields={fields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit}
+            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit}
               onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} />
           )}
         </div>
@@ -325,7 +370,7 @@ export default function MatterBoard({
           onClose={() => setShowAddMatter(false)} onAdded={() => { setShowAddMatter(false); onDataChanged?.(); }} />
       )}
       {showColumns && pageId && (
-        <ColumnManagerModal pageId={pageId} currentFields={fields}
+        <ColumnManagerModal pageId={pageId} groupId={activeTop === UNGROUPED ? null : activeTopGroup?.id ?? null} currentFields={visibleFields}
           onClose={() => setShowColumns(false)} onChanged={() => onDataChanged?.()} />
       )}
       {conditionGroup && onSetGroupCondition && (
@@ -589,14 +634,10 @@ function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; ca
 
 // ── Spreadsheet mode -- styled like app/public/tasks/[pageId]/page.tsx's
 // task table (rounded white card, horizontal-only row separators, uppercase
-// gray headers, row hover). The Matter column is a genuinely separate,
-// non-scrolling panel (not CSS position:sticky on a table cell, which
-// overlapped adjacent columns on scroll in every browser tested) -- row
-// heights are pinned to match exactly so the two panels stay visually
-// aligned as one table, and hover state is synced across both via JS. ────
-
-const ROW_H = 57;
-const HEAD_H = 46;
+// gray headers, row hover). No column is pinned -- "Matter" is just an
+// ordinary (removable, reorderable) field like any other; a plain
+// horizontally-scrolling table, which sidesteps the overlap bugs a
+// CSS-sticky column had. ─────────────────────────────────────────────
 
 function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, onSaveValue, onMoveItem, onRemoveItem, onReorderFields }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean;
@@ -605,7 +646,6 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, onSa
   onRemoveItem?: (itemId: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
 }) {
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
 
@@ -621,75 +661,54 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, onSa
   };
 
   return (
-    <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden">
-      <div className="flex">
-        {/* Frozen Matter column -- a plain non-scrolling panel, not a sticky table cell. */}
-        <div className="shrink-0 w-[200px] border-r border-slate-100">
-          <div style={{ height: HEAD_H }} className="flex items-center px-4 border-b border-slate-100">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Matter</span>
-          </div>
+    <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
+      <table className="w-full min-w-[760px] text-[13px]">
+        <thead>
+          <tr className="border-b border-slate-100 text-left">
+            {fields.map(f => (
+              <th key={f.id} draggable={canEdit && !!onReorderFields}
+                onDragStart={() => setDraggedFieldId(f.id)}
+                onDragOver={e => { e.preventDefault(); setDragOverFieldId(f.id); }}
+                onDrop={() => handleColumnDrop(f.id)}
+                onDragEnd={() => { setDraggedFieldId(null); setDragOverFieldId(null); }}
+                className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""}`}>
+                <span className="inline-flex items-center gap-1">
+                  {canEdit && onReorderFields && <GripVertical size={10} className="text-slate-300" />}
+                  {f.label}
+                </span>
+              </th>
+            ))}
+            {canEdit && onMoveItem && <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Group</th>}
+            {canEdit && onRemoveItem && <th className="w-10" />}
+          </tr>
+        </thead>
+        <tbody>
           {items.map(item => (
-            <div key={item.id} style={{ height: ROW_H }}
-              className={`flex items-center px-4 border-b border-slate-50 last:border-0 transition-colors ${hoveredId === item.id ? "bg-slate-50" : ""}`}
-              onMouseEnter={() => setHoveredId(item.id)} onMouseLeave={() => setHoveredId(null)}>
-              <span className="text-[13px] font-medium text-slate-700 truncate">{item.matterName}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Scrollable rest of the columns. */}
-        <div className="flex-1 overflow-x-auto">
-          <table className="text-[13px]" style={{ minWidth: `${fields.length * 160 + 200}px`, width: "100%" }}>
-            <thead>
-              <tr style={{ height: HEAD_H }} className="border-b border-slate-100 text-left">
-                {fields.map(f => (
-                  <th key={f.id} draggable={canEdit && !!onReorderFields}
-                    onDragStart={() => setDraggedFieldId(f.id)}
-                    onDragOver={e => { e.preventDefault(); setDragOverFieldId(f.id); }}
-                    onDrop={() => handleColumnDrop(f.id)}
-                    onDragEnd={() => { setDraggedFieldId(null); setDragOverFieldId(null); }}
-                    className={`px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""}`}>
-                    <span className="inline-flex items-center gap-1">
-                      {canEdit && onReorderFields && <GripVertical size={10} className="text-slate-300" />}
-                      {f.label}
-                    </span>
-                  </th>
-                ))}
-                {canEdit && onMoveItem && <th className="px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Group</th>}
-                {canEdit && onRemoveItem && <th className="w-10" />}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(item => (
-                <tr key={item.id} style={{ height: ROW_H }}
-                  className={`border-b border-slate-50 last:border-0 transition-colors ${hoveredId === item.id ? "bg-slate-50" : ""}`}
-                  onMouseEnter={() => setHoveredId(item.id)} onMouseLeave={() => setHoveredId(null)}>
-                  {fields.map(f => (
-                    <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
-                      onSave={v => onSaveValue?.(item.id, f.id, v)} />
-                  ))}
-                  {canEdit && onMoveItem && (
-                    <td className="px-4">
-                      <select value={item.group_id || ""} onChange={e => onMoveItem(item.id, e.target.value || null)}
-                        className="text-[11px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
-                        {moveOptions.map(o => <option key={o.id || "none"} value={o.id}>{o.label}</option>)}
-                      </select>
-                    </td>
-                  )}
-                  {canEdit && onRemoveItem && (
-                    <td className="px-4">
-                      <button onClick={() => onRemoveItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
-                    </td>
-                  )}
-                </tr>
+            <tr key={item.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+              {fields.map(f => (
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
+                  onSave={v => onSaveValue?.(item.id, f.id, v)} />
               ))}
-              {items.length === 0 && (
-                <tr><td colSpan={fields.length + 2} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No matters here yet</td></tr>
+              {canEdit && onMoveItem && (
+                <td className="px-4 py-4">
+                  <select value={item.group_id || ""} onChange={e => onMoveItem(item.id, e.target.value || null)}
+                    className="text-[11px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
+                    {moveOptions.map(o => <option key={o.id || "none"} value={o.id}>{o.label}</option>)}
+                  </select>
+                </td>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              {canEdit && onRemoveItem && (
+                <td className="px-4 py-4">
+                  <button onClick={() => onRemoveItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                </td>
+              )}
+            </tr>
+          ))}
+          {items.length === 0 && (
+            <tr><td colSpan={fields.length + 2} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No matters here yet</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -702,7 +721,7 @@ function SpreadsheetCell({ field, value, dateFormat, editable, onSave }: { field
 
   if (field.field_type === "select" && field.select_options?.length) {
     return (
-      <td className="px-4">
+      <td className="px-4 py-4">
         {editable ? (
           <select value={value ?? ""} onChange={e => onSave(e.target.value || null)}
             className="text-[12px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
@@ -716,7 +735,7 @@ function SpreadsheetCell({ field, value, dateFormat, editable, onSave }: { field
 
   if (editing) {
     return (
-      <td className="px-2">
+      <td className="px-2 py-2.5">
         <input autoFocus type={isDateField(field) ? "date" : "text"} value={draft ?? ""} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
           className="w-32 px-2 py-1.5 border border-indigo-300 rounded-full text-[12px] outline-none" />
@@ -725,7 +744,7 @@ function SpreadsheetCell({ field, value, dateFormat, editable, onSave }: { field
   }
   return (
     <td onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
-      className={`px-4 whitespace-nowrap text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""}`}>
+      className={`px-4 py-4 whitespace-nowrap text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""}`}>
       {value == null || value === "" ? "—" : formatValue(value, field, dateFormat)}
     </td>
   );

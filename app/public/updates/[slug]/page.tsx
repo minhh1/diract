@@ -144,12 +144,12 @@ export default function ClientUpdatePage() {
     fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}`, { method: "DELETE" });
   };
 
-  const addGroup = (name: string, parentGroupId: string | null) => {
+  const addGroup = (name: string, parentGroupId: string | null, copyFieldsFromGroupId?: string | null) => {
     if (mode !== "staff" || !staffPageId) return;
     const tempId = `temp-${Date.now()}`;
     setBoard(prev => prev && { ...prev, groups: [...prev.groups, { id: tempId, name, parent_group_id: parentGroupId }] });
     fetch(`/api/client-update-pages/${staffPageId}/groups`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parentGroupId }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parentGroupId, copyFieldsFromGroupId }),
     }).then(r => r.json()).then(json => {
       if (json.group) setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === tempId ? json.group : g) });
     });

@@ -7,11 +7,11 @@
 import { useState, useEffect } from "react";
 import { X, GripVertical, Trash2 } from "lucide-react";
 
-interface FieldDef { id: string; field_source: string; field_key: string; label: string; }
+interface FieldDef { id: string; field_source: string; field_key: string; label: string; group_id?: string | null; }
 interface CatalogOption { field_key: string; label: string; }
 
-export default function ColumnManagerModal({ pageId, currentFields, onClose, onChanged }: {
-  pageId: string; currentFields: FieldDef[]; onClose: () => void; onChanged: () => void;
+export default function ColumnManagerModal({ pageId, groupId, currentFields, onClose, onChanged }: {
+  pageId: string; groupId: string | null; currentFields: FieldDef[]; onClose: () => void; onChanged: () => void;
 }) {
   const [order, setOrder] = useState(currentFields);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export default function ColumnManagerModal({ pageId, currentFields, onClose, onC
 
   const addField = async (fieldSource: "base" | "custom" | "adhoc", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
     await fetch(`/api/client-update-pages/${pageId}/fields`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldSource, fieldKey, label, selectOptions }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldSource, fieldKey, label, selectOptions, groupId }),
     });
     onChanged();
   };
