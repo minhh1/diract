@@ -93,6 +93,10 @@ function computeAllPreviews(fields: CustomTableField[], values: Record<string, a
 // Disbursements' quantity defaulting to 1) -- unlike date/boolean this is
 // opt-in per field (no default_value means no default, stays blank), since
 // unlike "today"/"false" there's no universally-sensible number to assume.
+// select fields work the same way (e.g. Time & Fee Entries' GST Status
+// defaulting to "GST Exclusive") -- confirmed live: the field was already
+// configured with a default_value, it just silently had no effect here,
+// since this function never had a branch for 'select' at all.
 // Recomputed after each successful add so the next entry starts from these
 // same defaults again instead of resetting to blank/undefined.
 function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, any> {
@@ -105,6 +109,8 @@ function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, an
     } else if ((field.field_type === 'number' || field.field_type === 'currency') && !field.formula_type && field.default_value != null) {
       const n = Number(field.default_value);
       if (!Number.isNaN(n)) defaults[field.field_key] = n;
+    } else if (field.field_type === 'select' && !field.formula_type && field.default_value != null && (field.select_options || []).includes(field.default_value)) {
+      defaults[field.field_key] = field.default_value;
     }
   }
   return defaults;
