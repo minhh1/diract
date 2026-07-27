@@ -48,6 +48,39 @@ async function repointConditionsByLabel(admin: any, pageId: string, groupId: str
   return unresolved;
 }
 
+// Adhoc fields' VALUES (client_update_page_values, keyed by field_id +
+// item_id) don't travel with a copied/reverted field on their own -- a
+// customize/revert always creates/falls back to a field with a DIFFERENT
+// id, so without this every matter's existing data on that column (e.g.
+// Status) would silently go blank even though the column itself looks
+// right. This actually happened in production: Conveyancing's Status
+// column showed empty for every matter after a customize, because the
+// real values were still sitting on the field it had just diverged from.
+// Copies every adhoc field's values from its old id to its new id
+// (matched by label), scoped to this group's own items only.
+async function copyAdhocValues(
+  admin: any, pageId: string, groupId: string,
+  oldFields: { id: string; label: string; field_source: string }[],
+  newFields: { id: string; label: string; field_source: string }[]
+) {
+  const oldAdhocByLabel = new Map(oldFields.filter(f => f.field_source === "adhoc").map(f => [f.label, f.id]));
+  const newAdhocByLabel = new Map(newFields.filter(f => f.field_source === "adhoc").map(f => [f.label, f.id]));
+  if (!oldAdhocByLabel.size) return;
+
+  const { data: items } = await admin.from("client_update_page_items").select("id").eq("page_id", pageId).eq("group_id", groupId);
+  const itemIds = (items || []).map((i: any) => i.id);
+  if (!itemIds.length) return;
+
+  for (const [label, oldFieldId] of oldAdhocByLabel) {
+    const newFieldId = newAdhocByLabel.get(label);
+    if (!newFieldId || newFieldId === oldFieldId) continue;
+    const { data: values } = await admin.from("client_update_page_values").select("item_id, value_text").eq("field_id", oldFieldId).in("item_id", itemIds);
+    if (!values?.length) continue;
+    await admin.from("client_update_page_values")
+      .upsert(values.map((v: any) => ({ item_id: v.item_id, field_id: newFieldId, value_text: v.value_text })), { onConflict: "item_id,field_id" });
+  }
+}
+
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string; groupId: string }> }) {
   const { id, groupId } = await params;
   const auth = await authorizeCompanyMember();
@@ -65,13 +98,17 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (alreadyCustom) return NextResponse.json({ error: "This group already has customized columns" }, { status: 400 });
 
   const { data: sharedFields } = await admin.from("client_update_page_fields")
-    .select("field_source, field_key, label, display_order, client_visible, field_type, select_options").eq("page_id", id).is("group_id", null);
+    .select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options").eq("page_id", id).is("group_id", null);
 
   if (sharedFields?.length) {
-    const { error } = await admin.from("client_update_page_fields").insert(
-      sharedFields.map((f: any) => ({ ...f, page_id: id, group_id: groupId, field_key: f.field_source === "adhoc" ? `adhoc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` : f.field_key }))
-    );
+    const { data: newFields, error } = await admin.from("client_update_page_fields").insert(
+      sharedFields.map((f: any) => {
+        const { id: _oldId, ...rest } = f;
+        return { ...rest, page_id: id, group_id: groupId, field_key: f.field_source === "adhoc" ? `adhoc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` : f.field_key };
+      })
+    ).select("id, label, field_source");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await copyAdhocValues(admin, id, groupId, sharedFields, newFields || []);
   }
 
   // Best-effort -- a condition left pointing at the shared field still
@@ -107,6 +144,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const names = unresolved.map(n => `"${n}"`).join(", ");
     return NextResponse.json({ error: `Can't revert "${group.name}" -- no shared column matches the condition on ${names}. Clear or change that condition first.` }, { status: 400 });
   }
+
+  // Same reasoning as the POST side -- carry this group's own adhoc values
+  // (e.g. Status) back onto the shared field before they're cascade-deleted
+  // along with the group's own field rows.
+  const { data: ownFields } = await admin.from("client_update_page_fields").select("id, label, field_source").eq("page_id", id).eq("group_id", groupId);
+  const { data: sharedFields } = await admin.from("client_update_page_fields").select("id, label, field_source").eq("page_id", id).is("group_id", null);
+  if (ownFields?.length) await copyAdhocValues(admin, id, groupId, ownFields, sharedFields || []);
 
   const { error } = await admin.from("client_update_page_fields").delete().eq("page_id", id).eq("group_id", groupId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
