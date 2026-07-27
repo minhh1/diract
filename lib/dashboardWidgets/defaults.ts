@@ -33,8 +33,11 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   trust_ledger_statement: { w: 12, h: 8 },
   trust_cash_book: { w: 12, h: 8 },
   trust_aged_balances: { w: 12, h: 6 },
-  public_task_page: { w: 4, h: 3 },
-  public_document_page: { w: 4, h: 3 },
+  // Both render a full page's worth of UI now (task table / document-fill
+  // form, see PublicTaskPageWidget.tsx/DocumentPublicPageWidget.tsx), not a
+  // small link card -- sized like the other full-featured widgets above.
+  public_task_page: { w: 12, h: 12 },
+  public_document_page: { w: 12, h: 12 },
   my_tasks_button: { w: 3, h: 2 },
 };
 
