@@ -1,21 +1,24 @@
 // app/public/updates/[slug]/page.tsx
-// GENUINELY UNAUTHENTICATED client-facing page -- no supabase.auth calls
-// anywhere in this file or the API routes it talks to. Modeled on
-// app/public/documents/[pageId]/page.tsx's PIN-gate + localStorage cache
-// pattern. Shows a client's matters grouped into named groups, each as its
-// own card (not a shared-header table) so per-matter field labels -- e.g.
-// "Settlement Date" -- can differ without fighting a shared column header.
+// Dual-mode: a logged-in staff member of the page's own company gets the
+// full editable board right here (no PIN, values/groups/matters editable,
+// same as the Settings admin editor) via the authenticated by-slug route;
+// anyone else -- no session, or a session that isn't a member of this
+// company -- falls back to the original genuinely-unauthenticated,
+// PIN-gated, read + comment-only flow (app/public/documents/[pageId]/page.tsx's
+// PIN-cache pattern). The one supabase.auth call this file makes is used
+// only to *detect* a staff session -- every subsequent public-side read/
+// write still goes through the zero-auth public API routes exactly as
+// before, so an anonymous client's experience is unchanged.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { Loader2, Lock, Building2, MessageSquarePlus } from "lucide-react";
+import { Loader2, Lock, ShieldCheck } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem } from "@/components/clientUpdatePages/MatterBoard";
 
-interface FieldDef { id: string; label: string; fieldSource: string; }
-interface Note { id: string; date: string; body: string; author: string | null; source: "staff" | "client"; }
-interface Item { id: string; matterName: string; values: Record<string, any>; notes: Note[]; }
-interface Group { id: string; name: string; items: Item[]; }
-interface PageData { title: string; clientLabel: string | null; requiresCode: boolean; fieldDefs: FieldDef[]; groups: Group[]; ungrouped: Item[]; }
+interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; }
+interface PageMeta { title: string; clientLabel: string | null }
 
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
 function getCachedCode(slug: string): string | null {
@@ -28,136 +31,160 @@ function clearCachedCode(slug: string) {
   try { localStorage.removeItem(codeCacheKey(slug)); } catch { /* ignore */ }
 }
 
-function formatValue(v: any): string {
-  if (v == null || v === "") return "—";
-  if (typeof v === "number") return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(v))) {
-    return new Date(`${v}T00:00:00`).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  }
-  return String(v);
-}
-
-function MatterCard({ item, fieldDefs, onAddNote }: { item: Item; fieldDefs: FieldDef[]; onAddNote: (itemId: string, note: string) => Promise<void> }) {
-  const [noteInput, setNoteInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async () => {
-    if (!noteInput.trim()) return;
-    setSubmitting(true);
-    await onAddNote(item.id, noteInput.trim());
-    setNoteInput("");
-    setSubmitting(false);
-  };
-
-  return (
-    <div className="bg-white rounded-[24px] border border-slate-200 p-6 space-y-5">
-      <p className="text-[13px] font-bold text-slate-800">{item.matterName}</p>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-        {fieldDefs.map(f => (
-          <div key={f.id}>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{f.label}</p>
-            <p className="text-[13px] text-slate-700">{formatValue(item.values[f.id])}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="border-t border-slate-100 pt-4 space-y-3">
-        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Notes</p>
-        {item.notes.length === 0 && <p className="text-[12px] text-slate-300 italic">No notes yet</p>}
-        <div className="space-y-2 max-h-56 overflow-y-auto">
-          {item.notes.map(n => (
-            <div key={n.id} className="flex items-start gap-2 text-[12px]">
-              <span className="text-slate-400 shrink-0 w-20">{formatValue(n.date)}</span>
-              <span className={`flex-1 ${n.source === "client" ? "text-indigo-700" : "text-slate-600"}`}>
-                {n.body}
-                {n.source === "client" && <span className="ml-1.5 text-[9px] uppercase font-bold text-indigo-400">you</span>}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 pt-1">
-          <input value={noteInput} onChange={e => setNoteInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") submit(); }}
-            placeholder="Add a note or question..."
-            className="flex-1 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-          <button onClick={submit} disabled={submitting || !noteInput.trim()}
-            className="p-2 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
-            {submitting ? <Loader2 size={16} className="animate-spin" /> : <MessageSquarePlus size={16} />}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function ClientUpdatePage() {
   const params = useParams();
   const slug = params.slug as string;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<PageData | null>(null);
+  const [mode, setMode] = useState<"staff" | "client" | null>(null);
+  const [staffPageId, setStaffPageId] = useState<string | null>(null);
+  const [meta, setMeta] = useState<PageMeta | null>(null);
+  const [board, setBoard] = useState<Board | null>(null);
+
   const [needsCode, setNeedsCode] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
   const [checkingCode, setCheckingCode] = useState(false);
 
-  const fetchPage = useCallback(async (code?: string) => {
+  // ── Public (PIN-gated) fetch -- unchanged from the original flow ──────
+  const fetchPublic = useCallback(async (code?: string) => {
     const url = code ? `/api/client-update-pages/public/${slug}?code=${encodeURIComponent(code)}` : `/api/client-update-pages/public/${slug}`;
     const res = await fetch(url);
     const json = await res.json();
     return { ok: res.ok, json };
   }, [slug]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const loadAsClient = useCallback(async () => {
     const cachedCode = getCachedCode(slug);
     if (cachedCode) {
-      const attempt = await fetchPage(cachedCode);
+      const attempt = await fetchPublic(cachedCode);
       if (attempt.ok && !attempt.json.requiresCode) {
-        setData(attempt.json);
+        setMode("client");
+        setMeta({ title: attempt.json.title, clientLabel: attempt.json.clientLabel });
+        setBoard({ groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields });
         setLoading(false);
         return;
       }
       clearCachedCode(slug);
     }
-    const { ok, json } = await fetchPage();
+    const { ok, json } = await fetchPublic();
     if (!ok) { setError(json.error || "This page is not available"); setLoading(false); return; }
-    if (json.requiresCode) { setData(json); setNeedsCode(true); setLoading(false); return; }
-    setData(json);
+    setMode("client");
+    setMeta({ title: json.title, clientLabel: json.clientLabel });
+    if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
+    setBoard({ groups: json.groups, items: json.items, fields: json.fields });
     setLoading(false);
-  }, [fetchPage, slug]);
+  }, [fetchPublic, slug]);
+
+  // ── Try staff auth first; anything short of a clean 200 falls back ────
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const res = await fetch(`/api/client-update-pages/by-slug/${slug}`);
+      if (res.ok) {
+        const json = await res.json();
+        setMode("staff");
+        setStaffPageId(json.page.id);
+        setMeta({ title: json.page.title, clientLabel: json.page.client_label });
+        setBoard({ groups: json.groups, items: json.items, fields: json.fields });
+        setLoading(false);
+        return;
+      }
+    }
+    await loadAsClient();
+  }, [slug, loadAsClient]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (data?.title) document.title = data.title; }, [data?.title]);
+  useEffect(() => { if (meta?.title) document.title = meta.title; }, [meta?.title]);
 
   const handleCodeSubmit = async () => {
     if (!codeInput.trim()) return;
     setCheckingCode(true);
     setCodeError(null);
     const code = codeInput.trim();
-    const { ok, json } = await fetchPage(code);
+    const { ok, json } = await fetchPublic(code);
     setCheckingCode(false);
     if (!ok) { setCodeError(json.error || "Incorrect access code"); return; }
     setCachedCode(slug, code);
     setNeedsCode(false);
-    setData(json);
+    setBoard({ groups: json.groups, items: json.items, fields: json.fields });
   };
 
-  const handleAddNote = async (itemId: string, note: string) => {
-    const cachedCode = getCachedCode(slug);
-    const res = await fetch(`/api/client-update-pages/public/${slug}/notes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId, note, code: cachedCode }),
+  // ── Optimistic mutation handlers ───────────────────────────────────
+  // In staff mode these hit the same authenticated admin routes the
+  // Settings editor uses (cookie session carries auth); in client mode
+  // only note-adding is wired up at all (MatterBoard gets canEdit=false).
+  const saveValue = (itemId: string, fieldId: string, value: any) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: value } } : i) });
+    fetch(`/api/client-update-pages/${staffPageId}/values`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value }),
     });
-    if (!res.ok) return;
-    const { note: created } = await res.json();
-    setData(prev => {
-      if (!prev) return prev;
-      const addTo = (items: Item[]) => items.map(i => i.id === itemId ? { ...i, notes: [created, ...i.notes] } : i);
-      return { ...prev, groups: prev.groups.map(g => ({ ...g, items: addTo(g.items) })), ungrouped: addTo(prev.ungrouped) };
+  };
+
+  const renameGroup = (groupId: string, name: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, name } : g) });
+    fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+    });
+  };
+
+  const deleteGroup = (groupId: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    if (!window.confirm("Delete this group? Its matters move to Ungrouped, nothing else changes.")) return;
+    setBoard(prev => prev && {
+      ...prev,
+      groups: prev.groups.filter(g => g.id !== groupId),
+      items: prev.items.map(i => i.group_id === groupId ? { ...i, group_id: null } : i),
+    });
+    fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}`, { method: "DELETE" });
+  };
+
+  const addGroup = (name: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    const tempId = `temp-${Date.now()}`;
+    setBoard(prev => prev && { ...prev, groups: [...prev.groups, { id: tempId, name }] });
+    fetch(`/api/client-update-pages/${staffPageId}/groups`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+    }).then(r => r.json()).then(json => {
+      if (json.group) setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === tempId ? json.group : g) });
+    });
+  };
+
+  const moveItem = (itemId: string, groupId: string | null) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, group_id: groupId } : i) });
+    fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ groupId }),
+    });
+  };
+
+  const removeItem = (itemId: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, items: prev.items.filter(i => i.id !== itemId) });
+    fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}`, { method: "DELETE" });
+  };
+
+  const addNote = (itemId: string, note: string) => {
+    if (!note.trim()) return;
+    const tempId = `temp-${Date.now()}`;
+    const source: "staff" | "client" = mode === "staff" ? "staff" : "client";
+    const optimisticNote = { id: tempId, note_date: new Date().toISOString().slice(0, 10), body: note.trim(), author_name: mode === "staff" ? "You" : null, source };
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: [optimisticNote, ...i.notes] } : i) });
+
+    const request = mode === "staff" && staffPageId
+      ? fetch(`/api/client-update-pages/${staffPageId}/notes`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, note }),
+        })
+      : fetch(`/api/client-update-pages/public/${slug}/notes`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, note, code: getCachedCode(slug) }),
+        });
+
+    request.then(r => r.ok ? r.json() : null).then(json => {
+      if (json?.note) setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: i.notes.map(n => n.id === tempId ? json.note : n) } : i) });
     });
   };
 
@@ -176,7 +203,7 @@ export default function ClientUpdatePage() {
     );
   }
 
-  if (!data) return null;
+  if (!meta) return null;
 
   if (needsCode) {
     return (
@@ -184,7 +211,7 @@ export default function ClientUpdatePage() {
         <div className="max-w-sm w-full bg-white rounded-[32px] border border-slate-200 p-8 text-center space-y-4">
           <Lock size={28} className="text-indigo-600 mx-auto" />
           <div>
-            <p className="text-[15px] font-bold text-slate-800">{data.title}</p>
+            <p className="text-[15px] font-bold text-slate-800">{meta.title}</p>
             <p className="text-[12px] text-slate-500 mt-1">Enter the PIN you were given to continue.</p>
           </div>
           <input
@@ -204,40 +231,39 @@ export default function ClientUpdatePage() {
     );
   }
 
+  if (!board) return null;
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
-      <div className="max-w-3xl mx-auto space-y-8">
-        <div>
-          <h1 className="text-[18px] font-bold text-slate-800">{data.title}</h1>
-          {data.clientLabel && <p className="text-[12px] text-slate-400 mt-0.5">{data.clientLabel}</p>}
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-[18px] font-bold text-slate-800">{meta.title}</h1>
+            {meta.clientLabel && <p className="text-[12px] text-slate-400 mt-0.5">{meta.clientLabel}</p>}
+          </div>
+          {mode === "staff" && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest">
+              <ShieldCheck size={12} /> Staff — editing enabled
+            </span>
+          )}
         </div>
 
-        {data.groups.map(g => (
-          <div key={g.id} className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Building2 size={14} className="text-slate-400" />
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{g.name}</p>
-            </div>
-            <div className="space-y-4">
-              {g.items.map(item => (
-                <MatterCard key={item.id} item={item} fieldDefs={data.fieldDefs} onAddNote={handleAddNote} />
-              ))}
-            </div>
-          </div>
-        ))}
+        <MatterBoard
+          groups={board.groups}
+          items={board.items}
+          fields={board.fields}
+          canEdit={mode === "staff"}
+          canComment
+          onSaveValue={mode === "staff" ? saveValue : undefined}
+          onRenameGroup={mode === "staff" ? renameGroup : undefined}
+          onDeleteGroup={mode === "staff" ? deleteGroup : undefined}
+          onAddGroup={mode === "staff" ? addGroup : undefined}
+          onMoveItem={mode === "staff" ? moveItem : undefined}
+          onRemoveItem={mode === "staff" ? removeItem : undefined}
+          onAddNote={addNote}
+        />
 
-        {data.ungrouped.length > 0 && (
-          <div className="space-y-3">
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Ungrouped</p>
-            <div className="space-y-4">
-              {data.ungrouped.map(item => (
-                <MatterCard key={item.id} item={item} fieldDefs={data.fieldDefs} onAddNote={handleAddNote} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {data.groups.length === 0 && data.ungrouped.length === 0 && (
+        {board.groups.length === 0 && board.items.length === 0 && (
           <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-12">No matters on this page yet</p>
         )}
       </div>

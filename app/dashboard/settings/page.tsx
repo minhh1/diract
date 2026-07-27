@@ -30,7 +30,7 @@ const PrecedentsSettingsTab = dynamic(() => import("@/components/settings/Preced
 const InvoiceTemplateSettingsTab = dynamic(() => import("@/components/settings/InvoiceTemplateSettingsTab"));
 
 
-type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "client_update_pages" | "precedents" | "invoice_template";
+type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents" | "invoice_template";
 type DupType = "properties" | "entities" | "projects";
 
 // Cached via useQuery (see SettingsPage below) so revisiting either view
@@ -58,6 +58,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const { companyId } = useCompany();
   const [view, setView] = useState<SettingsView>("menu");
+  const [publicPagesTab, setPublicPagesTab] = useState<"tasks" | "client_updates">("tasks");
 
   // The sidebar's Settings panel deep-links straight to a view (e.g.
   // ?view=history) instead of always landing on the menu first. This is a
@@ -65,7 +66,7 @@ export default function SettingsPage() {
   // button/menu clicks inside this page still just call setView directly.
   useEffect(() => {
     const v = searchParams.get("view");
-    if (v && ["menu", "history", "schema", "duplicates_menu", "duplicates_view", "public_pages", "client_update_pages", "precedents", "invoice_template"].includes(v)) {
+    if (v && ["menu", "history", "schema", "duplicates_menu", "duplicates_view", "public_pages", "precedents", "invoice_template"].includes(v)) {
       setView(v as SettingsView);
     }
   }, [searchParams.get("view")]);
@@ -155,8 +156,7 @@ export default function SettingsPage() {
     if (view === 'history') return 'Import history';
     if (view === 'duplicates_menu') return 'Duplicates';
     if (view === 'duplicates_view') return `Duplicates — ${activeDupType}`;
-    if (view === 'public_pages') return 'Public task pages';
-    if (view === 'client_update_pages') return 'Client update pages';
+    if (view === 'public_pages') return 'Public pages';
     if (view === 'precedents') return 'Precedents';
     if (view === 'invoice_template') return 'Invoice template';
     return 'Settings';
@@ -248,15 +248,7 @@ export default function SettingsPage() {
               <button onClick={() => setView("public_pages")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
                 <div className="flex items-center gap-5">
                   <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors"><Share2 size={20} /></div>
-                  <span className="text-[15px] font-medium text-slate-700">Public task pages</span>
-                </div>
-                <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
-              </button>
-
-              <button onClick={() => setView("client_update_pages")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
-                <div className="flex items-center gap-5">
-                  <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors"><Share2 size={20} /></div>
-                  <span className="text-[15px] font-medium text-slate-700">Client update pages</span>
+                  <span className="text-[15px] font-medium text-slate-700">Public pages</span>
                 </div>
                 <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
               </button>
@@ -358,9 +350,26 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ── PUBLIC TASK PAGES ── */}
-          {view === 'public_pages' && <PublicTaskPagesTab />}
-          {view === 'client_update_pages' && <ClientUpdatePagesTab />}
+          {/* ── PUBLIC PAGES (task pages + client update pages) ── */}
+          {view === 'public_pages' && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPublicPagesTab("tasks")}
+                  className={`px-4 py-2 rounded-full text-[11px] font-bold transition-colors ${
+                    publicPagesTab === "tasks" ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
+                  }`}>
+                  Task pages
+                </button>
+                <button onClick={() => setPublicPagesTab("client_updates")}
+                  className={`px-4 py-2 rounded-full text-[11px] font-bold transition-colors ${
+                    publicPagesTab === "client_updates" ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
+                  }`}>
+                  Client updates
+                </button>
+              </div>
+              {publicPagesTab === "tasks" ? <PublicTaskPagesTab /> : <ClientUpdatePagesTab />}
+            </div>
+          )}
 
           {/* ── SCHEMA VISUALISATION ── */}
 

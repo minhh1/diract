@@ -6,12 +6,13 @@
 // live from a scope.
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Plus, Copy, Check, Trash2, ExternalLink, X, ArrowLeft, FolderPlus, Search,
+  Plus, Copy, Check, Trash2, ExternalLink, X, ArrowLeft, Search, Pencil, RefreshCw,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import MatterBoard from "@/components/clientUpdatePages/MatterBoard";
 
 interface Page {
   id: string; title: string; client_label: string | null; slug: string;
@@ -181,66 +182,100 @@ async function fetchDetail(pageId: string): Promise<Detail> {
 
 function PageEditor({ pageId, onBack }: { pageId: string; onBack: () => void }) {
   const { data, refetch, isLoading } = useQuery({ queryKey: ["client-update-page", pageId], queryFn: () => fetchDetail(pageId) });
-  const [showAddGroup, setShowAddGroup] = useState(false);
-  const [newGroupName, setNewGroupName] = useState("");
+  // Local, optimistically-mutated copy of the loaded detail -- every board
+  // edit (value/group/note/etc) updates this immediately and fires its
+  // request in the background, rather than waiting on a refetch round-trip.
+  // Re-synced from `data` on load and whenever a modal-driven action
+  // (add matter/add field) triggers an explicit refetch() for its
+  // server-generated id.
+  const [board, setBoard] = useState<Detail | null>(null);
+  useEffect(() => { if (data) setBoard(data); }, [data]);
+
   const [showAddMatter, setShowAddMatter] = useState<string | null>(null); // groupId or "" for ungrouped
   const [showFieldPicker, setShowFieldPicker] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingPin, setEditingPin] = useState(false);
+  const [pinDraft, setPinDraft] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [savingPin, setSavingPin] = useState(false);
 
   useProgressBarWhile(isLoading);
-  if (isLoading || !data) return null;
-  const { page, groups, items, fields } = data;
+  if (isLoading || !board) return null;
+  const { page, groups, items, fields } = board;
 
-  const addGroup = async () => {
-    if (!newGroupName.trim()) return;
-    await fetch(`/api/client-update-pages/${pageId}/groups`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newGroupName.trim() }),
+  const addGroup = (name: string) => {
+    const tempId = `temp-${Date.now()}`;
+    setBoard(prev => prev && { ...prev, groups: [...prev.groups, { id: tempId, name, display_order: prev.groups.length }] });
+    fetch(`/api/client-update-pages/${pageId}/groups`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+    }).then(r => r.json()).then(json => {
+      if (json.group) setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === tempId ? json.group : g) });
     });
-    setNewGroupName(""); setShowAddGroup(false); refetch();
   };
 
-  const renameGroup = async (groupId: string, name: string) => {
-    await fetch(`/api/client-update-pages/${pageId}/groups/${groupId}`, {
+  const renameGroup = (groupId: string, name: string) => {
+    setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, name } : g) });
+    fetch(`/api/client-update-pages/${pageId}/groups/${groupId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
     });
-    refetch();
   };
 
-  const deleteGroup = async (groupId: string) => {
+  const deleteGroup = (groupId: string) => {
     if (!window.confirm("Delete this group? Its matters move to Ungrouped, nothing else changes.")) return;
-    await fetch(`/api/client-update-pages/${pageId}/groups/${groupId}`, { method: "DELETE" });
-    refetch();
+    setBoard(prev => prev && {
+      ...prev,
+      groups: prev.groups.filter(g => g.id !== groupId),
+      items: prev.items.map(i => i.group_id === groupId ? { ...i, group_id: null } : i),
+    });
+    fetch(`/api/client-update-pages/${pageId}/groups/${groupId}`, { method: "DELETE" });
   };
 
-  const moveItem = async (itemId: string, groupId: string | null) => {
-    await fetch(`/api/client-update-pages/${pageId}/items/${itemId}`, {
+  const moveItem = (itemId: string, groupId: string | null) => {
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, group_id: groupId } : i) });
+    fetch(`/api/client-update-pages/${pageId}/items/${itemId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ groupId }),
     });
-    refetch();
   };
 
-  const removeItem = async (itemId: string) => {
-    await fetch(`/api/client-update-pages/${pageId}/items/${itemId}`, { method: "DELETE" });
-    refetch();
+  const removeItem = (itemId: string) => {
+    setBoard(prev => prev && { ...prev, items: prev.items.filter(i => i.id !== itemId) });
+    fetch(`/api/client-update-pages/${pageId}/items/${itemId}`, { method: "DELETE" });
   };
 
-  const saveValue = async (itemId: string, fieldId: string, value: any) => {
-    await fetch(`/api/client-update-pages/${pageId}/values`, {
+  const saveValue = (itemId: string, fieldId: string, value: any) => {
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: value } } : i) });
+    fetch(`/api/client-update-pages/${pageId}/values`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value }),
     });
-    refetch();
   };
 
-  const addNote = async (itemId: string, note: string) => {
+  const addNote = (itemId: string, note: string) => {
     if (!note.trim()) return;
-    await fetch(`/api/client-update-pages/${pageId}/notes`, {
+    const tempId = `temp-${Date.now()}`;
+    const optimisticNote = { id: tempId, note_date: new Date().toISOString().slice(0, 10), body: note.trim(), author_name: "You", source: "staff" as const };
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: [optimisticNote, ...i.notes] } : i) });
+    fetch(`/api/client-update-pages/${pageId}/notes`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, note }),
+    }).then(r => r.json()).then(json => {
+      if (json.note) setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: i.notes.map(n => n.id === tempId ? json.note : n) } : i) });
     });
-    refetch();
   };
 
-  const removeField = async (fieldId: string) => {
-    await fetch(`/api/client-update-pages/${pageId}/fields/${fieldId}`, { method: "DELETE" });
+  const removeField = (fieldId: string) => {
+    setBoard(prev => prev && { ...prev, fields: prev.fields.filter(f => f.id !== fieldId) });
+    fetch(`/api/client-update-pages/${pageId}/fields/${fieldId}`, { method: "DELETE" });
+  };
+
+  const changePin = async (body: { pin: string } | { regenerate: true }) => {
+    setSavingPin(true);
+    setPinError(null);
+    const res = await fetch(`/api/client-update-pages/${pageId}/pin`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    setSavingPin(false);
+    if (!res.ok) { setPinError(json.error || "Could not update PIN"); return; }
+    setEditingPin(false);
     refetch();
   };
 
@@ -253,7 +288,27 @@ function PageEditor({ pageId, onBack }: { pageId: string; onBack: () => void }) 
         <button onClick={onBack} className="p-2 text-slate-400 hover:text-slate-700 transition-colors"><ArrowLeft size={16} /></button>
         <div className="flex-1 min-w-0">
           <p className="text-[14px] font-bold text-slate-800">{page.title}</p>
-          <p className="text-[11px] text-slate-400">PIN {page.access_code} · {publicUrl}</p>
+          <div className="flex items-center gap-1.5">
+            {editingPin ? (
+              <>
+                <input value={pinDraft} onChange={e => setPinDraft(e.target.value)} autoFocus
+                  onKeyDown={e => { if (e.key === "Enter" && pinDraft.trim()) changePin({ pin: pinDraft.trim() }); if (e.key === "Escape") setEditingPin(false); }}
+                  placeholder="New PIN" className="w-24 px-2 py-0.5 border border-indigo-300 rounded-full text-[11px] outline-none" />
+                <button disabled={savingPin || !pinDraft.trim()} onClick={() => changePin({ pin: pinDraft.trim() })}
+                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 disabled:opacity-40">Save</button>
+                <button onClick={() => setEditingPin(false)} className="text-[10px] font-bold text-slate-400 hover:text-slate-600">Cancel</button>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] text-slate-400">PIN {page.access_code} · {publicUrl}</p>
+                <button onClick={() => { setPinDraft(page.access_code || ""); setEditingPin(true); }} title="Change PIN"
+                  className="p-0.5 text-slate-300 hover:text-indigo-600 transition-colors"><Pencil size={11} /></button>
+                <button onClick={() => changePin({ regenerate: true })} disabled={savingPin} title="Generate a new random PIN"
+                  className="p-0.5 text-slate-300 hover:text-indigo-600 transition-colors disabled:opacity-40"><RefreshCw size={11} /></button>
+              </>
+            )}
+          </div>
+          {pinError && <p className="text-[10px] text-red-500 mt-0.5">{pinError}</p>}
         </div>
         <button onClick={() => { navigator.clipboard.writeText(publicUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
           className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-full text-[11px] font-bold text-slate-600 hover:border-indigo-300 transition-colors">
@@ -265,31 +320,10 @@ function PageEditor({ pageId, onBack }: { pageId: string; onBack: () => void }) 
         </button>
       </div>
 
-      {groups.map(g => (
-        <GroupSection key={g.id} group={g} items={itemsFor(g.id)} fields={fields} allGroups={groups}
-          onRename={name => renameGroup(g.id, name)} onDelete={() => deleteGroup(g.id)}
-          onMoveItem={moveItem} onRemoveItem={removeItem} onSaveValue={saveValue} onAddNote={addNote}
-          onAddMatter={() => setShowAddMatter(g.id)} />
-      ))}
-
-      <GroupSection group={null} items={itemsFor(null)} fields={fields} allGroups={groups}
-        onMoveItem={moveItem} onRemoveItem={removeItem} onSaveValue={saveValue} onAddNote={addNote}
-        onAddMatter={() => setShowAddMatter("")} />
-
-      {showAddGroup ? (
-        <div className="flex items-center gap-2">
-          <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Group name"
-            onKeyDown={e => { if (e.key === "Enter") addGroup(); }}
-            autoFocus className="px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
-          <button onClick={addGroup} className="px-4 py-2.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full">Add</button>
-          <button onClick={() => setShowAddGroup(false)} className="px-4 py-2.5 text-slate-400 text-[11px] font-bold">Cancel</button>
-        </div>
-      ) : (
-        <button onClick={() => setShowAddGroup(true)}
-          className="flex items-center gap-2 px-4 py-2.5 border border-dashed border-slate-200 rounded-full text-[11px] font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
-          <FolderPlus size={14} /> Add group
-        </button>
-      )}
+      <MatterBoard groups={groups} items={items} fields={fields} canEdit canComment
+        onSaveValue={saveValue} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup} onAddGroup={addGroup}
+        onMoveItem={moveItem} onRemoveItem={removeItem} onAddNote={addNote}
+        onAddMatter={groupId => setShowAddMatter(groupId ?? "")} />
 
       {showAddMatter !== null && (
         <AddMatterModal groupId={showAddMatter || null} pageId={pageId}
@@ -299,114 +333,6 @@ function PageEditor({ pageId, onBack }: { pageId: string; onBack: () => void }) 
         <FieldPickerModal pageId={pageId} currentFields={fields} onRemove={removeField}
           onClose={() => setShowFieldPicker(false)} onChanged={() => refetch()} />
       )}
-    </div>
-  );
-}
-
-function GroupSection({ group, items, fields, allGroups, onRename, onDelete, onMoveItem, onRemoveItem, onSaveValue, onAddNote, onAddMatter }: {
-  group: Group | null; items: Item[]; fields: FieldDef[]; allGroups: Group[];
-  onRename?: (name: string) => void; onDelete?: () => void;
-  onMoveItem: (itemId: string, groupId: string | null) => void;
-  onRemoveItem: (itemId: string) => void;
-  onSaveValue: (itemId: string, fieldId: string, value: any) => void;
-  onAddNote: (itemId: string, note: string) => void;
-  onAddMatter: () => void;
-}) {
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState(group?.name || "");
-  const [expandedItem, setExpandedItem] = useState<string | null>(null);
-
-  if (!group && items.length === 0) return null;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        {editingName ? (
-          <input value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-            onBlur={() => { setEditingName(false); if (nameDraft.trim() && onRename) onRename(nameDraft.trim()); }}
-            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-            autoFocus className="text-[11px] font-bold text-slate-500 uppercase tracking-widest bg-transparent border-b border-indigo-300 outline-none" />
-        ) : (
-          <p onClick={() => group && setEditingName(true)} className={`text-[11px] font-bold text-slate-500 uppercase tracking-widest ${group ? "cursor-pointer hover:text-indigo-600" : ""}`}>
-            {group ? group.name : "Ungrouped"}
-          </p>
-        )}
-        {group && <button onClick={onDelete} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><X size={12} /></button>}
-        <button onClick={onAddMatter} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">+ Add matter</button>
-      </div>
-
-      <div className="space-y-2">
-        {items.map(item => (
-          <div key={item.id} className="bg-white border border-slate-200 rounded-2xl">
-            <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}>
-              <p className="flex-1 text-[12px] font-medium text-slate-700">{item.matterName}</p>
-              <select value={group?.id || ""} onChange={e => { e.stopPropagation(); onMoveItem(item.id, e.target.value || null); }} onClick={e => e.stopPropagation()}
-                className="text-[11px] border border-slate-200 rounded-full px-2.5 py-1 outline-none bg-white">
-                <option value="">Ungrouped</option>
-                {allGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-              <button onClick={e => { e.stopPropagation(); onRemoveItem(item.id); }} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
-            </div>
-            {expandedItem === item.id && (
-              <div className="border-t border-slate-100 px-4 py-4 space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {fields.map(f => (
-                    <ValueCell key={f.id} field={f} value={item.values[f.id]} onSave={v => onSaveValue(item.id, f.id, v)} />
-                  ))}
-                </div>
-                <NotesPanel notes={item.notes} onAdd={note => onAddNote(item.id, note)} />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ValueCell({ field, value, onSave }: { field: FieldDef; value: any; onSave: (v: any) => void }) {
-  const [draft, setDraft] = useState(value ?? "");
-  const [editing, setEditing] = useState(false);
-
-  const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
-  const isDate = field.field_key.includes("date") || field.field_key === "estimated_completion_date";
-
-  return (
-    <div>
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{field.label}</p>
-      {editing ? (
-        <input autoFocus type={isDate ? "date" : "text"} value={draft ?? ""} onChange={e => setDraft(e.target.value)}
-          onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
-          className="w-full px-2 py-1 border border-indigo-300 rounded-lg text-[12px] outline-none" />
-      ) : (
-        <p onClick={() => { setDraft(value ?? ""); setEditing(true); }} className="text-[12px] text-slate-700 cursor-text hover:bg-slate-50 rounded px-1 -mx-1 min-h-[18px]">
-          {value == null || value === "" ? <span className="text-slate-300">—</span> : String(value)}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function NotesPanel({ notes, onAdd }: { notes: Note[]; onAdd: (note: string) => void }) {
-  const [input, setInput] = useState("");
-  return (
-    <div className="border-t border-slate-100 pt-3 space-y-2">
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Notes</p>
-      <div className="space-y-1.5 max-h-40 overflow-y-auto">
-        {notes.map(n => (
-          <div key={n.id} className="text-[11px] flex gap-2">
-            <span className="text-slate-400 w-20 shrink-0">{n.note_date}</span>
-            <span className={n.source === "client" ? "text-indigo-700" : "text-slate-600"}>
-              {n.body}{n.author_name ? ` — ${n.author_name}` : ""}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <input value={input} onChange={e => setInput(e.target.value)} placeholder="Add a note..."
-          onKeyDown={e => { if (e.key === "Enter" && input.trim()) { onAdd(input.trim()); setInput(""); } }}
-          className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400" />
-      </div>
     </div>
   );
 }

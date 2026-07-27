@@ -36,5 +36,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   }).select("id, note_date, body, author_name, source").single();
   if (error) return NextResponse.json({ error: "Could not save your note" }, { status: 500 });
 
-  return NextResponse.json({ note: { id: created.id, date: created.note_date, body: created.body, author: created.author_name, source: created.source } });
+  return NextResponse.json({ note: created });
 }
