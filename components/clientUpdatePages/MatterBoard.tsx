@@ -125,13 +125,13 @@ function saveStatusNames(groupId: string, names: string[]) {
 // Fixed swatch -> full, statically-written Tailwind class strings (never
 // built dynamically, e.g. `bg-${color}-50` -- the JIT compiler only picks
 // up classes it can see written out literally in source).
-const FORMAT_COLORS: Record<string, { swatch: string; row: string; cardBg: string; border: string }> = {
-  red: { swatch: "bg-red-400", row: "bg-red-50", cardBg: "bg-red-50/40", border: "border-l-red-400" },
-  amber: { swatch: "bg-amber-400", row: "bg-amber-50", cardBg: "bg-amber-50/40", border: "border-l-amber-400" },
-  green: { swatch: "bg-emerald-400", row: "bg-emerald-50", cardBg: "bg-emerald-50/40", border: "border-l-emerald-400" },
-  blue: { swatch: "bg-blue-400", row: "bg-blue-50", cardBg: "bg-blue-50/40", border: "border-l-blue-400" },
-  purple: { swatch: "bg-purple-400", row: "bg-purple-50", cardBg: "bg-purple-50/40", border: "border-l-purple-400" },
-  slate: { swatch: "bg-slate-400", row: "bg-slate-100", cardBg: "bg-slate-100/40", border: "border-l-slate-400" },
+const FORMAT_COLORS: Record<string, { swatch: string; row: string; smRow: string; cardBg: string; border: string }> = {
+  red: { swatch: "bg-red-400", row: "bg-red-50", smRow: "sm:bg-red-50", cardBg: "bg-red-50/40", border: "border-l-red-400" },
+  amber: { swatch: "bg-amber-400", row: "bg-amber-50", smRow: "sm:bg-amber-50", cardBg: "bg-amber-50/40", border: "border-l-amber-400" },
+  green: { swatch: "bg-emerald-400", row: "bg-emerald-50", smRow: "sm:bg-emerald-50", cardBg: "bg-emerald-50/40", border: "border-l-emerald-400" },
+  blue: { swatch: "bg-blue-400", row: "bg-blue-50", smRow: "sm:bg-blue-50", cardBg: "bg-blue-50/40", border: "border-l-blue-400" },
+  purple: { swatch: "bg-purple-400", row: "bg-purple-50", smRow: "sm:bg-purple-50", cardBg: "bg-purple-50/40", border: "border-l-purple-400" },
+  slate: { swatch: "bg-slate-400", row: "bg-slate-100", smRow: "sm:bg-slate-100", cardBg: "bg-slate-100/40", border: "border-l-slate-400" },
 };
 const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
@@ -980,12 +980,19 @@ function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; ca
 // task table (rounded white card, horizontal-only row separators, uppercase
 // gray headers, row hover). No column is pinned by default -- "Matter" is
 // just an ordinary (removable, reorderable) field like any other; a plain
-// horizontally-scrolling table. freezeFirstColumn is an explicit opt-in
-// (see MatterBoard's toolbar Pin toggle) that sticks whichever field is
+// horizontally-scrolling table (custom-styled, always-visible scrollbar --
+// see .matter-spreadsheet-scroll in globals.css -- so a mouse user can see
+// there's more to scroll to). freezeFirstColumn is an explicit opt-in (see
+// MatterBoard's toolbar Pin toggle) that sticks whichever field is
 // currently first via CSS sticky + an opaque background + z-index on just
 // that one cell per row -- the earlier always-on frozen column was a
 // bigger frozen-panel construct that had an overlap bug on scroll; this is
-// deliberately narrower in scope to avoid repeating that. ─────────────────
+// deliberately narrower in scope to avoid repeating that. The sticky
+// styling only applies from the `sm:` breakpoint up -- on a touch/mobile
+// viewport a sticky cell can swallow the horizontal swipe gesture that
+// starts on it (a WebKit quirk with sticky elements inside a scrolling
+// ancestor), which blocked scrolling entirely; below `sm:` the "frozen"
+// column just behaves like every other column. ─────────────────────────
 
 function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, freezeFirstColumn, colorForItem, onSaveValue, onMoveItem, onRemoveItem, onReorderFields }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean;
@@ -1011,7 +1018,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
   };
 
   return (
-    <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto">
+    <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden overflow-x-auto matter-spreadsheet-scroll">
       <table className="w-full min-w-[760px] text-[13px]">
         <thead>
           <tr className="border-b border-slate-100 text-left">
@@ -1021,7 +1028,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
                 onDragOver={e => { e.preventDefault(); setDragOverFieldId(f.id); }}
                 onDrop={() => handleColumnDrop(f.id)}
                 onDragEnd={() => { setDraggedFieldId(null); setDragOverFieldId(null); }}
-                className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""} ${freezeFirstColumn && i === 0 ? "sticky left-0 z-20 bg-white border-r border-slate-200" : ""}`}>
+                className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""} ${freezeFirstColumn && i === 0 ? "sm:sticky sm:left-0 sm:z-20 sm:bg-white sm:border-r sm:border-slate-200" : ""}`}>
                 <span className="inline-flex items-center gap-1">
                   {canEdit && onReorderFields && <GripVertical size={10} className="text-slate-300" />}
                   {f.label}
@@ -1039,7 +1046,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
             return (
             <tr key={item.id} className={`border-b border-slate-50 last:border-0 ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
               {fields.map((f, i) => (
-                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.row}
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
                   onSave={v => onSaveValue?.(item.id, f.id, v)} />
               ))}
               {canEdit && onMoveItem && (
@@ -1073,7 +1080,10 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
 
   const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
-  const frozenClass = frozen ? `sticky left-0 z-10 ${frozenBg || "bg-white"} border-r border-slate-200` : "";
+  // sm: prefixed -- see the header comment above SpreadsheetView for why
+  // freezing only applies from that breakpoint up, never on a touch/mobile
+  // viewport.
+  const frozenClass = frozen ? `sm:sticky sm:left-0 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white"}` : "";
 
   if (field.field_type === "select" && field.select_options?.length) {
     return (

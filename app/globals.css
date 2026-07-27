@@ -132,3 +132,27 @@
 .data-table-scroll {
   scrollbar-width: none; /* Firefox */
 }
+
+/* Client Update Pages' spreadsheet -- unlike top-scroll-mirror above (whose
+   thumb is transparent until hover), this one is always visibly coloured,
+   so a mouse user can see there's more to scroll to without having to
+   hover first (a wide table with a mostly-empty area below it gives no
+   other hint that it scrolls). Custom ::-webkit-scrollbar styling also
+   overrides macOS's auto-hide-scrollbars setting as a side effect. */
+.matter-spreadsheet-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.matter-spreadsheet-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.matter-spreadsheet-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+.matter-spreadsheet-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+.matter-spreadsheet-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}

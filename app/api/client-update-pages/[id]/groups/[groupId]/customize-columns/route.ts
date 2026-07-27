@@ -11,6 +11,43 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
 import { logChange, resolveActorName } from "@/lib/clientUpdatePageLog";
 
+// A subgroup's condition (e.g. Status -> "In Progress") is pinned to one
+// specific field id. Customizing or reverting a group's columns replaces
+// its active Status field with a different row (a fresh copy, or falling
+// back to the shared one) -- if the condition isn't re-pointed to follow,
+// it keeps checking the OLD field while the visible column edits the NEW
+// one, so classification silently stops seeing new edits (exactly what
+// happened to Niksen in production: a matter's Status showed correctly in
+// the table but the matter sat in "Unclassified"). Matches by LABEL
+// ("Status") since the replacement field always gets a new id. Returns the
+// names of any subgroups that couldn't be resolved (no same-labelled field
+// in the target scope) so the caller can decide whether to block.
+async function repointConditionsByLabel(admin: any, pageId: string, groupId: string, targetGroupId: string | null): Promise<string[]> {
+  const { data: subgroups } = await admin.from("client_update_groups")
+    .select("id, name, condition_field_id").eq("parent_group_id", groupId).not("condition_field_id", "is", null);
+  if (!subgroups?.length) return [];
+
+  const { data: currentFields } = await admin.from("client_update_page_fields")
+    .select("id, label").in("id", subgroups.map((s: any) => s.condition_field_id));
+  const labelById = new Map((currentFields || []).map((f: any) => [f.id, f.label]));
+
+  let targetQuery = admin.from("client_update_page_fields").select("id, label").eq("page_id", pageId);
+  targetQuery = targetGroupId ? targetQuery.eq("group_id", targetGroupId) : targetQuery.is("group_id", null);
+  const { data: targetFields } = await targetQuery;
+  const targetIdByLabel = new Map((targetFields || []).map((f: any) => [f.label, f.id]));
+
+  const unresolved: string[] = [];
+  for (const sg of subgroups) {
+    const label = labelById.get(sg.condition_field_id);
+    const newId = label ? targetIdByLabel.get(label) : undefined;
+    if (!newId) { unresolved.push(sg.name); continue; }
+    if (newId !== sg.condition_field_id) {
+      await admin.from("client_update_groups").update({ condition_field_id: newId }).eq("id", sg.id);
+    }
+  }
+  return unresolved;
+}
+
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string; groupId: string }> }) {
   const { id, groupId } = await params;
   const auth = await authorizeCompanyMember();
@@ -37,6 +74,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Best-effort -- a condition left pointing at the shared field still
+  // works today (that field still exists), it just won't track this
+  // group's own future edits. Not worth blocking the customize over.
+  await repointConditionsByLabel(admin, id, groupId, groupId);
+
   const actorName = await resolveActorName(admin, user.id);
   await logChange(admin, id, actorName, "staff", "columns_customized", `Customized columns for "${group.name}" (started from the shared set)`);
 
@@ -55,18 +97,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { data: group } = await admin.from("client_update_groups").select("id, name").eq("id", groupId).eq("page_id", id).maybeSingle();
   if (!group) return NextResponse.json({ error: "Group not found" }, { status: 404 });
 
-  // Same guard as the single-field DELETE route -- reverting drops every
-  // one of this group's own fields in one shot, so it can hit the exact
-  // same silent-condition-breakage risk in bulk (see
-  // app/api/client-update-pages/[id]/fields/[fieldId]/route.ts).
-  const { data: ownFields } = await admin.from("client_update_page_fields").select("id").eq("page_id", id).eq("group_id", groupId);
-  const ownFieldIds = (ownFields || []).map((f: any) => f.id);
-  if (ownFieldIds.length) {
-    const { data: dependentGroups } = await admin.from("client_update_groups").select("name").eq("page_id", id).in("condition_field_id", ownFieldIds);
-    if (dependentGroups?.length) {
-      const names = dependentGroups.map((g: any) => `"${g.name}"`).join(", ");
-      return NextResponse.json({ error: `Can't revert "${group.name}" -- one of its columns is used as the condition for ${names}. Clear or change that condition first.` }, { status: 400 });
-    }
+  // Re-point any of this group's own subgroup conditions to the matching
+  // shared field BEFORE dropping the group's own fields (the field a
+  // condition currently points at still needs to exist to read its label
+  // off it). Only block if a condition genuinely has no shared equivalent
+  // to fall back to.
+  const unresolved = await repointConditionsByLabel(admin, id, groupId, null);
+  if (unresolved.length) {
+    const names = unresolved.map(n => `"${n}"`).join(", ");
+    return NextResponse.json({ error: `Can't revert "${group.name}" -- no shared column matches the condition on ${names}. Clear or change that condition first.` }, { status: 400 });
   }
 
   const { error } = await admin.from("client_update_page_fields").delete().eq("page_id", id).eq("group_id", groupId);
