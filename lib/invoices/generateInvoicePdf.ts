@@ -121,6 +121,10 @@ export interface InvoiceFeeLine {
   staffPosition?: string | null;
   gstStatus?: string | null;
   staffName?: string | null;
+  // Time & Fee Entries' 'type' = 'Fixed Fee' -- hours is a synthetic 1 (see
+  // DashboardQuickAddForm.tsx), never a real figure, so every hours-column
+  // renderer prints "Fixed Fee" here instead of a number.
+  isFixedFee?: boolean;
 }
 
 export interface InvoiceDisbursementLine {
@@ -559,8 +563,8 @@ function drawLineItemTable(
       const str = money(line.rate);
       page.drawText(str, { x: cols.xByKey.rate - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
-    if (input.display.showHoursPerLine && line.hours != null && cols.xByKey.hours != null) {
-      const str = line.hours.toFixed(2);
+    if (input.display.showHoursPerLine && (line.isFixedFee || line.hours != null) && cols.xByKey.hours != null) {
+      const str = line.isFixedFee ? 'Fixed Fee' : line.hours!.toFixed(2);
       page.drawText(str, { x: cols.xByKey.hours - font.widthOfTextAtSize(str, size), y, size, font, color: rgb(0.15, 0.15, 0.18) });
     }
     if (input.display.showAmountAndGstPerLine && cols.xByKey.gst != null && cols.xByKey.amount != null) {

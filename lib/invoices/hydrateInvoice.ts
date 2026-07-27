@@ -89,7 +89,7 @@ export async function hydrateInvoiceForRender(
     date: l.entry_date, staffInitials: initials(l.staff_name), description: l.description,
     rate: l.rate, hours: l.hours, originalAmount: Number(l.original_amount), billedAmount: Number(l.billed_amount),
     gstAmount: Number(l.gst_amount) || 0, staffPosition: l.staff_position || null, gstStatus: l.gst_status || null,
-    staffName: l.staff_name as string | null,
+    staffName: l.staff_name as string | null, isFixedFee: !!l.is_fixed_fee,
   }));
   const disbursementLines = (lineItems || []).filter(l => l.source_type === 'disbursement').map(l => ({
     date: l.entry_date, description: l.description, amount: Number(l.billed_amount),

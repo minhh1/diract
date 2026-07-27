@@ -270,7 +270,7 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
         { header: 'Hours', width: 45, align: 'right' },
         { header: 'Amount ($)', width: 75, align: 'right' },
       ],
-      input.feeLines.map(l => [formatDate(l.date), l.description || '', l.staffInitials || '', (l.hours ?? 0).toFixed(2), money(l.billedAmount)]),
+      input.feeLines.map(l => [formatDate(l.date), l.description || '', l.staffInitials || '', l.isFixedFee ? 'Fixed Fee' : (l.hours ?? 0).toFixed(2), money(l.billedAmount)]),
       regular, bold,
       { title: 'Professional Fees', totalsLabel: 'Total Professional Fees Rendered', totalsValue: money(feesTotal) }
     ));

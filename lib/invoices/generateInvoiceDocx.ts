@@ -107,7 +107,7 @@ export async function generateInvoiceDocx(input: GenerateInvoicePdfInput): Promi
         case 'staff': return l.staffInitials || '';
         case 'desc': return l.description || '';
         case 'rate': return l.rate != null ? money(l.rate) : '';
-        case 'hours': return l.hours != null ? l.hours.toFixed(2) : '';
+        case 'hours': return l.isFixedFee ? 'Fixed Fee' : (l.hours != null ? l.hours.toFixed(2) : '');
         case 'gst': return money(l.gstAmount);
         case 'amount': return money(l.billedAmount);
         default: return '';

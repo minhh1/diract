@@ -223,7 +223,14 @@ export default function DashboardQuickAddForm({
   // their OWN rate -- i.e. Rate's current value isn't empty AND doesn't
   // match what THIS function itself last set it to; still-untouched or
   // still-our-own-last-fill are both fair game to update again.
+  //
+  // Scoped to tables that also have a Duration (Hours) field -- Rate means
+  // "per hour" there, which is what a staff member's own default_rate
+  // actually represents. On a table without one (e.g. Disbursements, where
+  // Rate is a per-unit cost unrelated to who logged it) auto-filling it
+  // from the selected staff's hourly rate was simply wrong.
   const applyDefaultRate = async (entityId: string) => {
+    if (!fields.some(f => f.field_key === 'duration_hours')) return;
     const rateField = quickAddFields.find(f => f.field_key === 'rate' && f.field_type === 'currency');
     if (!rateField) return;
     const current = values[rateField.field_key];
@@ -249,10 +256,26 @@ export default function DashboardQuickAddForm({
     field.field_type === 'entity' && field.linked_filter_column === 'linked_profile_id' &&
     (field.linked_filter_value === '$current_user' || field.linked_filter_value === '$team_scope');
 
+  // Time & Fee Entries' 'type' select ('Time Based' | 'Fixed Fee') -- a
+  // Fixed Fee entry bills a flat amount, so Duration (Hours) doesn't apply.
+  // Hidden from the form below and pinned to 1 under the hood so the
+  // existing Amount = Rate x Duration formula still resolves to exactly
+  // Rate, without needing a second, conditional formula. Cleared back to
+  // blank if switched back to Time Based, so the real hours have to be
+  // re-entered rather than silently staying at 1.
+  const durationField = fields.find(f => f.field_key === 'duration_hours');
+  const isFixedFee = values.type === 'Fixed Fee';
+
   const previews = computeAllPreviews(fields, values);
   const valueFor = (field: CustomTableField) => field.formula_type ? previews[field.field_key] ?? null : values[field.field_key];
   const commitFor = (field: CustomTableField) => (v: any) => {
-    setValues(prev => ({ ...prev, [field.field_key]: v }));
+    setValues(prev => {
+      const next = { ...prev, [field.field_key]: v };
+      if (field.field_key === 'type' && durationField) {
+        next[durationField.field_key] = v === 'Fixed Fee' ? 1 : undefined;
+      }
+      return next;
+    });
     if (v && isCurrentUserStaffField(field)) applyDefaultRate(v);
   };
 
@@ -282,7 +305,7 @@ export default function DashboardQuickAddForm({
           visually overlapping when several with different intrinsic
           minimum widths (e.g. a native date input) crowded one flex row. */}
       <div className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
-        {quickAddFields.map(field => {
+        {quickAddFields.filter(field => !(isFixedFee && field.field_key === 'duration_hours')).map(field => {
           const widthClass = FIELD_WIDTH_CLASSES[fieldLayout?.[field.id]?.width || defaultFieldWidth(field.field_type)];
           return (
             <FieldSlot

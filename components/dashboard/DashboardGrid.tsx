@@ -184,11 +184,26 @@ export default function DashboardGrid({
   const valueFor = (record: CustomTableRecord, field: CustomTableField) =>
     overrides[record.id]?.[field.field_key] ?? record.values[field.field_key];
 
+  // Time & Fee Entries' 'type' select ('Time Based' | 'Fixed Fee') -- a
+  // Fixed Fee row's Duration (Hours) is a synthetic 1 (see
+  // DashboardQuickAddForm.tsx's matching comment), not a real editable
+  // number, so show it as plain read-only text instead of a numeric input
+  // that invites hand-editing a value that doesn't mean anything.
+  const isDurationHours = (field: CustomTableField) => field.field_key === 'duration_hours';
+
   const handleCellCommit = async (recordId: string, field: CustomTableField, value: any) => {
-    setOverrides(prev => ({ ...prev, [recordId]: { ...prev[recordId], [field.field_key]: value } }));
+    // See DashboardQuickAddForm.tsx's matching comment -- flipping an
+    // existing row to Fixed Fee pins Duration (Hours) to 1 too, same as a
+    // freshly-created one, so Amount = Rate x Duration still resolves to
+    // exactly Rate.
+    const extra: Record<string, any> = {};
+    if (field.field_key === 'type' && fields.some(f => f.field_key === 'duration_hours')) {
+      extra.duration_hours = value === 'Fixed Fee' ? 1 : undefined;
+    }
+    setOverrides(prev => ({ ...prev, [recordId]: { ...prev[recordId], [field.field_key]: value, ...extra } }));
     const result = sourceKind === 'custom'
-      ? await updateRecord(recordId, tableId, companyId, { [field.field_key]: value }, fields)
-      : await updateSystemTableRecord(recordId, sourceKind as SystemTableName, companyId, { [field.field_key]: value }, fields);
+      ? await updateRecord(recordId, tableId, companyId, { [field.field_key]: value, ...extra }, fields)
+      : await updateSystemTableRecord(recordId, sourceKind as SystemTableName, companyId, { [field.field_key]: value, ...extra }, fields);
     if (result && 'error' in result) {
       window.alert(result.error);
       setOverrides(prev => {
@@ -232,6 +247,13 @@ export default function DashboardGrid({
 
   const handleDraftCommit = async (rowIndex: number, field: CustomTableField, value: any) => {
     const nextValues = { ...(draftRows[rowIndex] || {}), [field.field_key]: value };
+    // See DashboardQuickAddForm.tsx's matching comment -- Fixed Fee rows
+    // never get an editable Duration (Hours) cell (hidden above), so pin it
+    // to 1 here too, otherwise a required-but-never-filled duration_hours
+    // would block this row from ever saving.
+    if (field.field_key === 'type' && fields.some(f => f.field_key === 'duration_hours')) {
+      nextValues.duration_hours = value === 'Fixed Fee' ? 1 : undefined;
+    }
     setDraftRows(prev => prev.map((r, i) => i === rowIndex ? nextValues : r));
 
     // A blank row should look and stay blank -- not attempt a save (and
@@ -324,14 +346,18 @@ export default function DashboardGrid({
             <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
               {gridFields.map(f => (
                 <td key={f.id} className={`px-4 py-2 ${highlightBgFor(r, f.id)}`} style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
-                  <FieldValueInput
-                    field={f}
-                    value={valueFor(r, f)}
-                    onCommit={v => handleCellCommit(r.id, f, v)}
-                    disabled={readOnly}
-                    displayValue={r.displayValues[f.field_key]}
-                    variant="plain"
-                  />
+                  {isDurationHours(f) && (overrides[r.id]?.type ?? r.values.type) === 'Fixed Fee' ? (
+                    <span className="text-[12px] font-medium text-slate-400">Fixed Fee</span>
+                  ) : (
+                    <FieldValueInput
+                      field={f}
+                      value={valueFor(r, f)}
+                      onCommit={v => handleCellCommit(r.id, f, v)}
+                      disabled={readOnly}
+                      displayValue={r.displayValues[f.field_key]}
+                      variant="plain"
+                    />
+                  )}
                 </td>
               ))}
               {!readOnly && (
@@ -348,6 +374,9 @@ export default function DashboardGrid({
               <tr className="border-b border-slate-50">
                 {gridFields.map(f => (
                   <td key={f.id} className="px-4 py-2" style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
+                    {isDurationHours(f) && draft.type === 'Fixed Fee' ? (
+                      <span className="text-[12px] font-medium text-slate-400">Fixed Fee</span>
+                    ) : (
                     <FieldValueInput
                       key={`${f.id}-${draftGeneration[i] || 0}`}
                       field={f}
@@ -356,6 +385,7 @@ export default function DashboardGrid({
                       disabled={!!draftSaving[i]}
                       variant="plain"
                     />
+                    )}
                   </td>
                 ))}
                 <td className="px-2">{draftSaving[i] && <Loader2 size={13} className="animate-spin text-slate-300" />}</td>

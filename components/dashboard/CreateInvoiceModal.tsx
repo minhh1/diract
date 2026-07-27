@@ -23,7 +23,7 @@ import { createRecord as createCustomRecord, updateRecord as updateCustomRecord 
 import { scaleToTarget, applyToSelectedLines, applyPercentOrAmount, splitGst, type ApportionLine, type ApportionedLine } from "@/lib/invoices/apportionment";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 
-interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; staffPosition: string | null; rate: number; hours: number; amount: number; gstStatus: string }
+interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; staffPosition: string | null; rate: number; hours: number; amount: number; gstStatus: string; isFixedFee: boolean }
 interface DisbRow { id: string; tableId: string; date: string | null; description: string; amount: number; gstStatus: string }
 
 interface Props {
@@ -232,6 +232,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
               rate: Number(row.rate) || 0,
               hours: Number(row.duration_hours) || 0, amount: Number(row.amount) || 0,
               gstStatus: row.gst_status || 'GST Exclusive',
+              isFixedFee: row.type === 'Fixed Fee',
             });
           } else {
             newDisbRows.push({
@@ -367,7 +368,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
         company_id: companyId, invoice_record_id: record.id, source_type: 'fee', source_record_id: row.id,
         description: row.description, original_amount: originalSplit.exGst, billed_amount: billedSplit.exGst,
         entry_date: row.date, staff_name: row.staffLabel || null, staff_position: row.staffPosition, rate: row.rate, hours: row.hours,
-        gst_status: row.gstStatus, gst_amount: billedSplit.gst,
+        gst_status: row.gstStatus, gst_amount: billedSplit.gst, is_fixed_fee: row.isFixedFee,
       });
     }
     for (const row of disbRows.filter(r => selectedDisbIds.has(r.id))) {
