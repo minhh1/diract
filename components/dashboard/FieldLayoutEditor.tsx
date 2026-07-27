@@ -400,20 +400,23 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
                   {linkedItems.map(item => (
                     <div key={item.id} className="flex items-center gap-0.5 pl-3 pr-1.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-[11px] font-medium group">
                       <span>{item.name}</span>
-                      {/* Edit inline */}
+                      {/* Edit inline -- always visible, not hover-only: opacity-0
+                          group-hover:opacity-100 is invisible AND unreachable on
+                          touch (no persistent :hover), same fix as the master
+                          table's row controls earlier this session. */}
                       <button onClick={() => setEditingLinked(item)} title="Edit record"
-                        className="ml-1 p-0.5 text-indigo-300 hover:text-indigo-600 transition-colors opacity-0 group-hover:opacity-100">
+                        className="ml-1 p-0.5 text-indigo-300 hover:text-indigo-600 transition-colors">
                         <Pencil size={10} />
                       </button>
                       {/* Open in dashboard */}
                       <button onClick={() => router.push(getLinkedPath(item))} title="Open record"
-                        className="p-0.5 text-indigo-300 hover:text-indigo-600 transition-colors opacity-0 group-hover:opacity-100">
+                        className="p-0.5 text-indigo-300 hover:text-indigo-600 transition-colors">
                         <ArrowUpRight size={10} />
                       </button>
                       {/* Remove */}
                       {onRemoveLinked && (
                         <button onClick={() => onRemoveLinked(item.id)} title="Remove link"
-                          className="p-0.5 text-indigo-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
+                          className="p-0.5 text-indigo-300 hover:text-red-500 transition-colors">
                           <X size={10} />
                         </button>
                       )}
