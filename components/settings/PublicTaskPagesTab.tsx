@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import {
-  Plus, Copy, Check, Trash2, ExternalLink, X,
+  Plus, Copy, Check, Trash2, ExternalLink, X, Pencil,
 } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
@@ -53,6 +53,7 @@ async function fetchPublicTaskPagesData(userId: string): Promise<{ allTeams: Tea
 export default function PublicTaskPagesTab() {
   const { userId, isAdmin } = useCompany();
   const [showCreate, setShowCreate] = useState(false);
+  const [editingPage, setEditingPage] = useState<Page | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const { data, isLoading: loading, refetch } = useQuery({
@@ -117,6 +118,10 @@ export default function PublicTaskPagesTab() {
                   className="p-2 text-slate-400 hover:text-indigo-600 transition-colors shrink-0">
                   <ExternalLink size={15} />
                 </a>
+                <button onClick={() => setEditingPage(p)} title="Edit"
+                  className="p-2 text-slate-400 hover:text-indigo-600 transition-colors shrink-0">
+                  <Pencil size={15} />
+                </button>
                 <button onClick={() => handleRevoke(p.id)} title="Revoke"
                   className="p-2 text-slate-400 hover:text-red-500 transition-colors shrink-0">
                   <Trash2 size={15} />
@@ -129,6 +134,10 @@ export default function PublicTaskPagesTab() {
 
       {showCreate && (
         <CreatePageModal isAdmin={isAdmin} teamOptions={teamOptions} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetch(); }} />
+      )}
+
+      {editingPage && (
+        <EditPageModal page={editingPage} onClose={() => setEditingPage(null)} onSaved={() => { setEditingPage(null); refetch(); }} />
       )}
     </div>
   );
@@ -269,6 +278,88 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
           <button onClick={handleCreate} disabled={saving}
             className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
             {saving ? "Creating..." : "Create page"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Edits an existing page's title/columns/expiry via PATCH .../settings --
+// deliberately no scope/team picker here, unlike CreatePageModal above:
+// scope is an access-control decision baked into the page's already-shared
+// URL, not something to silently change in place (see that route's own doc
+// comment). Revoking and recreating is the correct path if the scope
+// itself needs to change.
+function EditPageModal({ page, onClose, onSaved }: { page: Page; onClose: () => void; onSaved: () => void }) {
+  const [title, setTitle] = useState(page.title);
+  const [columns, setColumns] = useState<string[]>(page.columns || []);
+  const [noExpiry, setNoExpiry] = useState(!page.expiresAt);
+  const [expiresAt, setExpiresAt] = useState(page.expiresAt || defaultExpiry());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleColumn = (key: string) => setColumns(prev => prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key]);
+
+  const handleSave = async () => {
+    if (!title.trim()) { setError("Title is required"); return; }
+    setSaving(true);
+    setError(null);
+    const res = await fetch(`/api/public-tasks/${page.id}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, columns, expiresAt: noExpiry ? null : expiresAt }),
+    });
+    const json = await res.json();
+    setSaving(false);
+    if (!res.ok) { setError(json.error || "Failed to save"); return; }
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl w-full max-w-lg mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
+          <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Edit public page</h3>
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Title</p>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Weekly team tasks"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
+          </div>
+
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Columns to show</p>
+            <div className="flex flex-wrap gap-2">
+              {PUBLIC_TASK_COLUMNS.map(c => (
+                <button key={c.key} type="button" onClick={() => toggleColumn(c.key)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
+                    columns.includes(c.key) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300"
+                  }`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Expiry date</p>
+            <input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} disabled={noExpiry}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none disabled:opacity-40" />
+            <label className="flex items-center gap-2 mt-2 cursor-pointer">
+              <input type="checkbox" checked={noExpiry} onChange={e => setNoExpiry(e.target.checked)} />
+              <span className="text-[11px] text-slate-500">No expiry (not recommended — leaves this link open indefinitely)</span>
+            </label>
+          </div>
+
+          {error && <p className="text-[11px] text-red-500">{error}</p>}
+        </div>
+        <div className="px-8 py-5 border-t border-slate-100 shrink-0">
+          <button onClick={handleSave} disabled={saving}
+            className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+            {saving ? "Saving..." : "Save changes"}
           </button>
         </div>
       </div>

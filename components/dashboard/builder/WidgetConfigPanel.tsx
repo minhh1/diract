@@ -15,6 +15,7 @@ import type { DashboardWidget, SummaryTileWidget, TileCondition, ChartSeriesConf
 import { isRelationType, isNumericType, isDateType, operatorsForType, aggregatesForType } from "@/lib/schema/fieldCapabilities";
 import { PILL_SIZE_LABELS, PILL_GAP_LABELS, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
 import { RELATIVE_DATE_RANGES, RELATIVE_DATE_LABELS } from "@/lib/dashboardWidgets/relativeDates";
+import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
 
 // Grid columns store a raw pixel width (GridWidget.config.columnWidths),
 // unlike filter_bar/quick_add_form's category-based fieldLayout -- these
@@ -80,19 +81,59 @@ function PillStyleControls({
   );
 }
 
+interface PublicTaskPageSummary {
+  id: string; title: string; scope: string; teamName: string | null;
+  columns: string[]; expiresAt: string | null; isActive: boolean;
+}
+
 // Creates/manages the public_task_pages row a PublicTaskPageWidget owns
 // (see lib/dashboardWidgets/types.ts) -- unlike every other widget's config,
-// this one makes a real API call from inside the config panel itself
+// this one makes real API calls from inside the config panel itself
 // (Settings -> Public task pages' own create flow works the same way),
 // since there's nothing meaningful to preview locally before the page
-// actually exists server-side.
+// actually exists server-side. Beyond create/copy/revoke, also supports
+// editing the current page's title/columns/expiry in place (PATCH
+// /settings, doesn't change the URL) and switching the widget to point at
+// a DIFFERENT one of the caller's existing pages (mirrors
+// PublicDocumentPageConfig's picker below).
 function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | null; onPageIdChange: (id: string) => void }) {
+  const [pages, setPages] = useState<PublicTaskPageSummary[] | null>(null);
   const [title, setTitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [revoked, setRevoked] = useState(false);
+  const [mode, setMode] = useState<'view' | 'edit' | 'picker'>('view');
+  const [editTitle, setEditTitle] = useState('');
+  const [editColumns, setEditColumns] = useState<string[]>([]);
+  const [editNoExpiry, setEditNoExpiry] = useState(true);
+  const [editExpiresAt, setEditExpiresAt] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/public-tasks/list').then(res => res.json()).then(json => {
+      if (active) setPages(json.pages || []);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const currentPage = pages?.find(p => p.id === pageId) || null;
+
+  const startEdit = () => {
+    if (currentPage) {
+      setEditTitle(currentPage.title);
+      setEditColumns(currentPage.columns || []);
+      setEditNoExpiry(!currentPage.expiresAt);
+      setEditExpiresAt(currentPage.expiresAt || '');
+    }
+    setEditError(null);
+    setMode('edit');
+  };
+
+  const toggleEditColumn = (key: string) => setEditColumns(prev => prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key]);
 
   const handleCreate = async () => {
     if (!title.trim()) { setError('Title is required'); return; }
@@ -110,7 +151,28 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
     const json = await res.json();
     setSaving(false);
     if (!res.ok) { setError(json.error || 'Failed to create page'); return; }
+    setPages(prev => [...(prev || []), {
+      id: json.pageId, title, scope: 'my_and_unassigned', teamName: null,
+      columns: ['project_name', 'due_date', 'status'], expiresAt: null, isActive: true,
+    }]);
     onPageIdChange(json.pageId);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!pageId) return;
+    if (!editTitle.trim()) { setEditError('Title is required'); return; }
+    setEditSaving(true);
+    setEditError(null);
+    const res = await fetch(`/api/public-tasks/${pageId}/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: editTitle, columns: editColumns, expiresAt: editNoExpiry ? null : (editExpiresAt || null) }),
+    });
+    const json = await res.json();
+    setEditSaving(false);
+    if (!res.ok) { setEditError(json.error || 'Failed to save'); return; }
+    setPages(prev => prev ? prev.map(p => p.id === pageId ? { ...p, title: editTitle, columns: editColumns, expiresAt: editNoExpiry ? null : editExpiresAt } : p) : prev);
+    setMode('view');
   };
 
   const handleRevoke = async () => {
@@ -120,6 +182,37 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
     setRevoking(false);
     setRevoked(true);
   };
+
+  if (!pageId && mode === 'picker') {
+    const activePages = (pages || []).filter(p => p.isActive);
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-slate-400">Pick one of your existing public task pages to point this widget at.</p>
+        {activePages.length === 0 ? (
+          <p className="text-[11px] text-slate-300 italic py-2">No active pages yet</p>
+        ) : (
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {activePages.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { onPageIdChange(p.id); setMode('view'); }}
+                className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
+              >
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}</p>
+                <p className="text-[10px] text-slate-400 truncate">{SCOPE_LABELS[p.scope] || p.scope}{p.teamName ? ` — ${p.teamName}` : ''}</p>
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => setMode('view')}
+          className="w-full py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-slate-300 transition-all"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
 
   if (!pageId) {
     return (
@@ -144,6 +237,109 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
         >
           {saving ? 'Creating...' : 'Create page'}
         </button>
+        {pages && pages.filter(p => p.isActive).length > 0 && (
+          <button
+            onClick={() => setMode('picker')}
+            className="w-full py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all"
+          >
+            Use an existing page instead
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'picker') {
+    const otherPages = (pages || []).filter(p => p.isActive && p.id !== pageId);
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-slate-400">Point this widget at a different existing page — the widget itself is unaffected, revoke and copy still apply to whichever page you pick.</p>
+        {pages === null ? (
+          <p className="text-[11px] text-slate-300 italic py-2">Loading...</p>
+        ) : otherPages.length === 0 ? (
+          <p className="text-[11px] text-slate-300 italic py-2">No other active pages to switch to</p>
+        ) : (
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {otherPages.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { onPageIdChange(p.id); setMode('view'); }}
+                className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
+              >
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}</p>
+                <p className="text-[10px] text-slate-400 truncate">{SCOPE_LABELS[p.scope] || p.scope}{p.teamName ? ` — ${p.teamName}` : ''}</p>
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => setMode('view')}
+          className="w-full py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-slate-300 transition-all"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  if (mode === 'edit') {
+    return (
+      <div className="space-y-3">
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Title</label>
+          <input
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+          />
+        </div>
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Columns to show</label>
+          <div className="flex flex-wrap gap-2">
+            {PUBLIC_TASK_COLUMNS.map(c => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => toggleEditColumn(c.key)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
+                  editColumns.includes(c.key) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Expiry date</label>
+          <input
+            type="date"
+            value={editExpiresAt}
+            onChange={e => setEditExpiresAt(e.target.value)}
+            disabled={editNoExpiry}
+            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none disabled:opacity-40"
+          />
+          <label className="flex items-center gap-2 mt-2 cursor-pointer">
+            <input type="checkbox" checked={editNoExpiry} onChange={e => setEditNoExpiry(e.target.checked)} />
+            <span className="text-[11px] text-slate-500">No expiry</span>
+          </label>
+        </div>
+        {editError && <p className="text-[11px] text-red-500 font-medium">{editError}</p>}
+        <div className="flex gap-2">
+          <button
+            onClick={handleSaveEdit}
+            disabled={editSaving}
+            className="flex-1 py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all"
+          >
+            {editSaving ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            onClick={() => setMode('view')}
+            className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-slate-300 transition-all"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     );
   }
@@ -164,6 +360,20 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
             >
               {copied ? 'Copied' : 'Copy link'}
+            </button>
+            <button
+              onClick={startEdit}
+              className="flex-1 py-2.5 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+            >
+              Edit
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMode('picker')}
+              className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all"
+            >
+              Change page
             </button>
             <button
               onClick={handleRevoke}
@@ -962,7 +1172,7 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
         {draft.type === 'public_task_page' && (
           <PublicTaskPageConfig
             pageId={draft.config.pageId}
-            onPageIdChange={pageId => updateConfig({ pageId })}
+            onPageIdChange={pageId => updateConfig({ pageId: pageId || null })}
           />
         )}
 
