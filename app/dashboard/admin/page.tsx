@@ -26,6 +26,7 @@ const AdminTeamsTab = dynamic(() => import("@/components/admin/AdminTeamsTab"));
 const AdminDefaultViewsTab = dynamic(() => import("@/components/admin/AdminDefaultViewsTab"));
 const AdminDefaultTabsTab = dynamic(() => import("@/components/admin/AdminDefaultTabsTab"));
 const AdminDefaultTablesTab = dynamic(() => import("@/components/admin/AdminDefaultTablesTab"));
+const AdminDefaultDashboardsTab = dynamic(() => import("@/components/admin/AdminDefaultDashboardsTab"));
 const AdminVirtualComputersTab = dynamic(() => import("@/components/admin/AdminVirtualComputersTab"));
 const AdminGmailSyncTab = dynamic(() => import("@/components/admin/AdminGmailSyncTab"));
 const AdminWhatsAppTab = dynamic(() => import("@/components/admin/AdminWhatsAppTab"));
@@ -236,10 +237,11 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
+type AdminTab = 'members' | 'teams' | 'views' | 'defaultTabs' | 'defaultTables' | 'defaultDashboards' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'defaultTabs', 'defaultTables', 'defaultDashboards', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
-  members: 'Members', teams: 'Teams', defaults: 'Defaults', invites: 'Invite links',
+  members: 'Members', teams: 'Teams', views: 'Default views', defaultTabs: 'Default tabs',
+  defaultTables: 'Default tables', defaultDashboards: 'Default dashboards', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
   oneDrive: 'OneDrive', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
@@ -859,25 +861,24 @@ export default function AdminPage() {
             <AdminTeamsTab companyId={companyId} />
           )}
 
-          {/* ── Defaults: views, tabs, tables & dashboards — grouped into
-              one tab since they're all "what does a new/existing record get
-              by default" questions, same stacked-sections style the Company
-              tab below already uses for its own several unrelated cards. ── */}
-          {activeTab === 'defaults' && companyId && (
-            <div className="space-y-10">
-              <div>
-                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest mb-4">Default views</p>
-                <AdminDefaultViewsTab companyId={companyId} />
-              </div>
-              <div className="pt-8 border-t border-slate-100">
-                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest mb-4">Default tabs</p>
-                <AdminDefaultTabsTab companyId={companyId} />
-              </div>
-              <div className="pt-8 border-t border-slate-100">
-                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest mb-4">Default tables &amp; dashboards</p>
-                <AdminDefaultTablesTab companyId={companyId} />
-              </div>
-            </div>
+          {/* ── Default views ── */}
+          {activeTab === 'views' && companyId && (
+            <AdminDefaultViewsTab companyId={companyId} />
+          )}
+
+          {/* ── Default tabs ── */}
+          {activeTab === 'defaultTabs' && companyId && (
+            <AdminDefaultTabsTab companyId={companyId} />
+          )}
+
+          {/* ── Default tables ── */}
+          {activeTab === 'defaultTables' && companyId && (
+            <AdminDefaultTablesTab companyId={companyId} />
+          )}
+
+          {/* ── Default dashboards ── */}
+          {activeTab === 'defaultDashboards' && companyId && (
+            <AdminDefaultDashboardsTab companyId={companyId} />
           )}
 
           {/* ── Gmail source of truth ── */}

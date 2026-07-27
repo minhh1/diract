@@ -111,7 +111,10 @@ const SETTINGS_LINKS = [
 const ADMIN_LINKS = [
   { tab: 'members', icon: Users, label: 'Members' },
   { tab: 'teams', icon: Users, label: 'Teams' },
-  { tab: 'defaults', icon: Table2, label: 'Defaults' },
+  { tab: 'views', icon: Settings, label: 'Default views' },
+  { tab: 'defaultTabs', icon: LayoutGrid, label: 'Default tabs' },
+  { tab: 'defaultTables', icon: Table2, label: 'Default tables' },
+  { tab: 'defaultDashboards', icon: LayoutDashboard, label: 'Default dashboards' },
   { tab: 'invites', icon: LinkIcon, label: 'Invite links' },
   { tab: 'gmail', icon: Mail, label: 'Gmail' },
   { tab: 'gmailSync', icon: Activity, label: 'Gmail sync' },
