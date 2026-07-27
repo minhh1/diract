@@ -21,6 +21,16 @@ export interface InvoiceTemplateDisplay {
   showDueDate: boolean;
   showPaymentSummary: boolean;
   showAccountSummary: boolean;
+  // Detailed style only (see generateDetailedInvoicePdf.ts) -- optional,
+  // undefined means "show" (matches every template saved before these
+  // existed, whose stored `display` JSON simply lacks the keys, without
+  // needing a data migration). Independent toggles: a firm might want
+  // neither itemised breakdown on the invoice at all, just the summary
+  // totals -- when Professional Fees is off, CreateInvoiceModal requires a
+  // manually-typed description of the work instead (there's no itemised
+  // list left for the client to infer it from).
+  showProfessionalFeesTable?: boolean;
+  showSummaryFeesByLawyerTable?: boolean;
 }
 
 export const DEFAULT_INVOICE_DISPLAY: InvoiceTemplateDisplay = {
@@ -162,6 +172,11 @@ export interface GenerateInvoicePdfInput {
     yourReference?: string | null;
     periodEnd?: string | null;
     paymentTermsDays?: number;
+    // Only read when display.showProfessionalFeesTable is false -- replaces
+    // the generic "Professional Services Rendered" row label on page 1 with
+    // a manually-typed explanation of the work, since there's no itemised
+    // table left on the invoice for the client to infer it from otherwise.
+    professionalFeesDescription?: string | null;
   };
   feeLines: InvoiceFeeLine[];
   disbursementLines: InvoiceDisbursementLine[];

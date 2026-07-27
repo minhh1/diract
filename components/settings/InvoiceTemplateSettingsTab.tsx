@@ -448,9 +448,34 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
               )}
             </div>
             {t.style === 'detailed' ? (
-              <p className="text-[11px] text-slate-400 bg-slate-50 rounded-2xl px-4 py-2.5">
-                Uses a fixed detailed layout (summary + itemised appendix + remittance advice + notice of rights). Only the logo's position and size are customizable — use "Edit logo" above. Set "Responsible partner"/"Our reference"/"Your reference" per invoice in Create Invoice.
-              </p>
+              <div className="space-y-2">
+                <p className="text-[11px] text-slate-400 bg-slate-50 rounded-2xl px-4 py-2.5">
+                  Uses a fixed detailed layout (summary + remittance advice + notice of rights). Only the logo's position/size and the two itemised tables below are customizable. Set "Responsible partner"/"Our reference"/"Your reference" per invoice in Create Invoice.
+                </p>
+                <fieldset disabled={!isAdmin} className="space-y-1.5 disabled:opacity-60">
+                  <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={t.display.showProfessionalFeesTable !== false}
+                      onChange={() => updateTemplate(t.id, { display: { ...t.display, showProfessionalFeesTable: t.display.showProfessionalFeesTable === false } })}
+                    />
+                    Include the itemised "Professional Fees" table
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={t.display.showSummaryFeesByLawyerTable !== false}
+                      onChange={() => updateTemplate(t.id, { display: { ...t.display, showSummaryFeesByLawyerTable: t.display.showSummaryFeesByLawyerTable === false } })}
+                    />
+                    Include the "Summary Fees by Lawyer" table
+                  </label>
+                  {t.display.showProfessionalFeesTable === false && (
+                    <p className="text-[10px] text-amber-600 pl-6">
+                      When this is off, whoever creates an invoice on this template must type a description of the fees for page 1 — there's no itemised breakdown left for the client to read.
+                    </p>
+                  )}
+                </fieldset>
+              </div>
             ) : (
               <fieldset disabled={!isAdmin} className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 disabled:opacity-60">
                 {DISPLAY_TOGGLES.map(opt => (

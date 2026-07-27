@@ -191,9 +191,21 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   y -= 26;
 
   // ── Fees summary table ───────────────────────────────────────────
+  // Independent toggles (display.showProfessionalFeesTable/
+  // showSummaryFeesByLawyerTable, both optional -- undefined means "show",
+  // so every template saved before these existed keeps its current output
+  // with no migration needed) let a firm drop either or both itemised
+  // appendix tables. When the Professional Fees breakdown is dropped, the
+  // client has no other way to see what the fees actually covered, so the
+  // row below uses a manually-typed description instead of the generic
+  // label -- required client-side in CreateInvoiceModal.tsx whenever this
+  // toggle is off.
+  const showFeesTable = input.display?.showProfessionalFeesTable !== false;
+  const showLawyerSummary = input.display?.showSummaryFeesByLawyerTable !== false;
   if (input.feeLines.length) {
     const feesExGst = input.feeLines.reduce((s, l) => s + l.billedAmount, 0);
     const feesGst = input.feeLines.reduce((s, l) => s + l.gstAmount, 0);
+    const feesLabel = showFeesTable ? 'Professional Services Rendered' : (input.invoice.professionalFeesDescription || 'Professional Services Rendered');
     ({ page, y } = drawBorderedTable(
       pdfDoc, page, y, MARGIN,
       [
@@ -202,7 +214,7 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
         { header: 'GST', width: 100, align: 'right' },
         { header: 'Total', width: 100, align: 'right' },
       ],
-      [['Professional Services Rendered', money(feesExGst), money(feesGst), money(feesExGst + feesGst)]],
+      [[feesLabel, money(feesExGst), money(feesGst), money(feesExGst + feesGst)]],
       regular, bold,
       { totalsLabel: 'Total Professional Fees Rendered', totalsValue: money(feesExGst + feesGst) }
     ));
@@ -247,7 +259,7 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
 
   const days = input.invoice.paymentTermsDays ?? 14;
   for (const line of wrapText(
-    `This account is due and payable within ${days} days. If you do not pay within 30 days of the date of this account, we may charge interest on the unpaid amount at the rate that is equal to the maximum percentage specified by the Reserve Bank of Australia as the Cash Rate Target as at the date this account was issued, plus 2%.`,
+    `Payment of this invoice is required within ${days} days of the date shown above. If the balance remains outstanding 30 days after that date, we reserve the right to apply interest to the amount owing, calculated at the Reserve Bank of Australia's Cash Rate Target (as at the date this invoice was issued) plus 2%.`,
     regular, 9, CONTENT_W
   )) { text(line, MARGIN, 9, { color: [0.35, 0.35, 0.4] }); y -= 12; }
   y -= 16;
@@ -256,50 +268,61 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   text(input.company.name, MARGIN, 11, { bold: true });
 
   // ── Pages 2+: itemised appendix ───────────────────────────────────
-  page = pdfDoc.addPage([PAGE_W, PAGE_H]);
-  y = PAGE_H - MARGIN;
+  // Only added when there's actually something left to put on it -- with
+  // both fee tables toggled off and no disbursements, skip it rather than
+  // leave a blank page between the summary and the remittance advice.
+  const hasFeeAppendix = input.feeLines.length > 0 && (showFeesTable || showLawyerSummary);
+  const hasDisbAppendix = input.disbursementLines.length > 0;
+  if (hasFeeAppendix || hasDisbAppendix) {
+    page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    y = PAGE_H - MARGIN;
+  }
 
   if (input.feeLines.length) {
     const feesTotal = input.feeLines.reduce((s, l) => s + l.billedAmount, 0);
-    ({ page, y } = drawBorderedTable(
-      pdfDoc, page, y, MARGIN,
-      [
-        { header: 'Date', width: 65 },
-        { header: 'Narrative', width: CONTENT_W - (65 + 45 + 45 + 75) },
-        { header: 'Initials', width: 45 },
-        { header: 'Hours', width: 45, align: 'right' },
-        { header: 'Amount ($)', width: 75, align: 'right' },
-      ],
-      input.feeLines.map(l => [formatDate(l.date), l.description || '', l.staffInitials || '', l.isFixedFee ? 'Fixed Fee' : (l.hours ?? 0).toFixed(2), money(l.billedAmount)]),
-      regular, bold,
-      { title: 'Professional Fees', totalsLabel: 'Total Professional Fees Rendered', totalsValue: money(feesTotal) }
-    ));
-    y -= 14;
-
-    // Summary Fees by Lawyer -- group fee lines by staffName.
-    const byLawyer = new Map<string, { initials: string; position: string; rate: number; hours: number; amount: number }>();
-    for (const l of input.feeLines) {
-      const key = l.staffName || l.staffInitials || 'Unknown';
-      const entry = byLawyer.get(key) || { initials: l.staffInitials || '', position: l.staffPosition || '', rate: l.rate ?? 0, hours: 0, amount: 0 };
-      entry.hours += l.hours ?? 0;
-      entry.amount += l.billedAmount;
-      byLawyer.set(key, entry);
+    if (showFeesTable) {
+      ({ page, y } = drawBorderedTable(
+        pdfDoc, page, y, MARGIN,
+        [
+          { header: 'Date', width: 65 },
+          { header: 'Narrative', width: CONTENT_W - (65 + 45 + 45 + 75) },
+          { header: 'Initials', width: 45 },
+          { header: 'Hours', width: 45, align: 'right' },
+          { header: 'Amount ($)', width: 75, align: 'right' },
+        ],
+        input.feeLines.map(l => [formatDate(l.date), l.description || '', l.staffInitials || '', l.isFixedFee ? 'Fixed Fee' : (l.hours ?? 0).toFixed(2), money(l.billedAmount)]),
+        regular, bold,
+        { title: 'Professional Fees', totalsLabel: 'Total Professional Fees Rendered', totalsValue: money(feesTotal) }
+      ));
+      y -= 14;
     }
-    ({ page, y } = drawBorderedTable(
-      pdfDoc, page, y, MARGIN,
-      [
-        { header: 'Initials', width: 50 },
-        { header: 'Name', width: 145 },
-        { header: 'Position', width: 100 },
-        { header: 'Rate ($)', width: 70, align: 'right' },
-        { header: 'Hours', width: 55, align: 'right' },
-        { header: 'Amount ($)', width: CONTENT_W - (50 + 145 + 100 + 70 + 55), align: 'right' },
-      ],
-      [...byLawyer.entries()].map(([name, e]) => [e.initials, name, e.position, money(e.rate), e.hours.toFixed(2), money(e.amount)]),
-      regular, bold,
-      { title: 'Summary Fees by Lawyer', totalsLabel: 'Total Professional Fees Rendered', totalsValue: money(feesTotal) }
-    ));
-    y -= 14;
+
+    if (showLawyerSummary) {
+      // Group fee lines by staffName.
+      const byLawyer = new Map<string, { initials: string; position: string; rate: number; hours: number; amount: number }>();
+      for (const l of input.feeLines) {
+        const key = l.staffName || l.staffInitials || 'Unknown';
+        const entry = byLawyer.get(key) || { initials: l.staffInitials || '', position: l.staffPosition || '', rate: l.rate ?? 0, hours: 0, amount: 0 };
+        entry.hours += l.hours ?? 0;
+        entry.amount += l.billedAmount;
+        byLawyer.set(key, entry);
+      }
+      ({ page, y } = drawBorderedTable(
+        pdfDoc, page, y, MARGIN,
+        [
+          { header: 'Initials', width: 50 },
+          { header: 'Name', width: 145 },
+          { header: 'Position', width: 100 },
+          { header: 'Rate ($)', width: 70, align: 'right' },
+          { header: 'Hours', width: 55, align: 'right' },
+          { header: 'Amount ($)', width: CONTENT_W - (50 + 145 + 100 + 70 + 55), align: 'right' },
+        ],
+        [...byLawyer.entries()].map(([name, e]) => [e.initials, name, e.position, money(e.rate), e.hours.toFixed(2), money(e.amount)]),
+        regular, bold,
+        { title: 'Summary Fees by Lawyer', totalsLabel: 'Total Professional Fees Rendered', totalsValue: money(feesTotal) }
+      ));
+      y -= 14;
+    }
   }
 
   if (input.disbursementLines.length) {
@@ -360,12 +383,12 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   }
   y -= 26;
 
-  text('NOTICE OF RIGHTS', MARGIN, 10, { bold: true, color: [0.4, 0.4, 0.45] });
+  text('YOUR RIGHTS CONCERNING THIS INVOICE', MARGIN, 10, { bold: true, color: [0.4, 0.4, 0.45] });
   y -= 16;
   const notice = [
-    'If you have any concern about this tax invoice, please contact our firm. If we cannot satisfactorily resolve your concern, you may, depending on the circumstances:',
-    '1. Seek a costs assessment by the costs assessor of the relevant jurisdiction under the applicable Legal Profession Uniform Law, within 12 months after the bill was given to you or payment was requested, or after the legal costs were paid if no bill or request was made. A costs assessor may, having regard to the delay and reasons for it, allow an assessment to proceed after that period.',
-    '2. Make a costs complaint to the Legal Services Commissioner of the relevant jurisdiction within 60 days after the legal costs become payable (or within 30 days after an itemised bill you requested is provided). The Commissioner deals with cost disputes where the total legal costs do not exceed the applicable indexed threshold, and may allow a complaint outside that period having regard to the delay and reasons for it, provided we have not commenced legal proceedings for those costs.',
+    'Please raise any concerns about this invoice with us directly in the first instance. If a concern cannot be resolved between us, you may, depending on your circumstances, have the following options:',
+    '1. Apply to the costs assessor of the relevant jurisdiction for a costs assessment under the Legal Profession Uniform Law. This application must generally be made within 12 months of the bill being given to you, of payment being requested, or — where no bill or request was made — within 12 months of the legal costs being paid. A costs assessor has discretion to accept a later application, taking into account the length of and reasons for the delay.',
+    '2. Lodge a costs complaint with the Legal Services Commissioner of the relevant jurisdiction. This must generally be done within 60 days of the legal costs becoming payable, or within 30 days of receiving an itemised bill you requested. The Commissioner\'s role is limited to disputes where the total legal costs are under the applicable indexed threshold, and a complaint made outside these timeframes may still be accepted at the Commissioner\'s discretion, provided we have not already commenced proceedings to recover the costs.',
   ];
   for (const para of notice) {
     for (const line of wrapText(para, regular, 8.5, CONTENT_W)) { text(line, MARGIN, 8.5, { color: [0.4, 0.4, 0.45] }); y -= 12; }

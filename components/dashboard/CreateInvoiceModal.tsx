@@ -70,6 +70,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const [responsiblePartnerLabel, setResponsiblePartnerLabel] = useState<string | null>(null);
   const [ourReference, setOurReference] = useState('');
   const [yourReference, setYourReference] = useState('');
+  const [professionalFeesDescription, setProfessionalFeesDescription] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState('');
@@ -316,6 +317,18 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
 
+  // The Detailed template's "Professional Fees" itemised table is
+  // per-template optional (InvoiceTemplateSettingsTab.tsx) -- when a firm
+  // turns it off, the client has no other way to see what the fees
+  // covered, so this invoice needs a manually-typed description instead of
+  // the itemised list (see generateDetailedInvoicePdf.ts's page-1 summary
+  // row).
+  const selectedTemplateConfig = invoiceSettings.templates.find(t => t.id === templateId);
+  const professionalFeesDescriptionRequired =
+    selectedTemplateConfig?.style === 'detailed' &&
+    selectedTemplateConfig.display?.showProfessionalFeesTable === false &&
+    selectedFeeIds.size > 0;
+
   const handleSave = async () => {
     if (!invoicesTableId) return;
     if (selectedFeeIds.size === 0 && selectedDisbIds.size === 0) {
@@ -324,6 +337,10 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     }
     if (hasNegativeBilled) {
       setError('One or more fees would be billed at a negative amount — adjust the discount or target.');
+      return;
+    }
+    if (professionalFeesDescriptionRequired && !professionalFeesDescription.trim()) {
+      setError('This template excludes the itemised Professional Fees table — describe the fees for the client.');
       return;
     }
     setSaving(true);
@@ -335,6 +352,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
       responsible_partner: responsiblePartnerId,
       our_reference: ourReference || null,
       your_reference: yourReference || null,
+      professional_fees_description: professionalFeesDescription.trim() || null,
       issue_date: issueDate,
       due_date: dueDate || null,
       status: 'Under Review',
@@ -518,6 +536,21 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     >
                       {invoiceSettings.templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
+                  </div>
+                )}
+                {professionalFeesDescriptionRequired && (
+                  <div className="col-span-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                      Professional fees description <span className="text-rose-400">*</span>
+                    </label>
+                    <textarea
+                      value={professionalFeesDescription} onChange={e => setProfessionalFeesDescription(e.target.value)}
+                      rows={2} placeholder="e.g. For professional services in connection with the preparation and negotiation of the Development Management Agreement"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-2.5 px-4 text-sm font-medium outline-none resize-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      This template doesn't include the itemised Professional Fees table, so the client needs this to know what the fees covered.
+                    </p>
                   </div>
                 )}
                 <div>

@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
       subtotal, gst, totalIncGst: subtotal + gst, trustApplied: 0, payments: 0, amountDue: subtotal + gst, priorBalance: 0,
       responsiblePartnerName: 'Sample Partner', ourReference: 'REF-001', yourReference: 'YOUR-REF-99',
       periodEnd: today, paymentTermsDays: invoiceSettings.paymentTermsDays ?? 14,
+      professionalFeesDescription: 'For professional services in connection with the sample matter.',
     },
     feeLines: [
       { date: today, staffInitials: 'AB', staffName: 'Alex Bright', staffPosition: 'Associate', description: 'Sample professional fee line', rate: 100, hours: 2, originalAmount: 200, billedAmount: feeSplit.exGst, gstAmount: feeSplit.gst, gstStatus: 'GST Exclusive' },
