@@ -68,7 +68,17 @@ export async function hydrateInvoiceForRender(
   const invoiceSettings = (company?.invoice_settings as any) || {};
   const templates: InvoiceTemplateConfig[] = invoiceSettings.templates || [];
   const selectedTemplate = templates.find(t => t.id === invoice.template_id) || templates.find(t => t.isDefault) || templates[0];
-  const display: InvoiceTemplateDisplay = { ...DEFAULT_INVOICE_DISPLAY, ...(selectedTemplate?.display || {}) };
+  // This one invoice's own choice (CreateInvoiceModal.tsx's 2 checkboxes)
+  // wins over the template's default when explicitly set (not null/
+  // undefined -- every invoice created before this existed, and any where
+  // the checkbox was left at the template's own default, has no override
+  // stored at all).
+  const display: InvoiceTemplateDisplay = {
+    ...DEFAULT_INVOICE_DISPLAY,
+    ...(selectedTemplate?.display || {}),
+    ...(invoice.show_professional_fees_table != null ? { showProfessionalFeesTable: invoice.show_professional_fees_table } : {}),
+    ...(invoice.show_summary_fees_by_lawyer_table != null ? { showSummaryFeesByLawyerTable: invoice.show_summary_fees_by_lawyer_table } : {}),
+  };
   const layout: InvoiceLayout = { ...DEFAULT_INVOICE_LAYOUT, ...(selectedTemplate?.layout || {}) };
 
   let logoBytes: Uint8Array | null = null;

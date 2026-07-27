@@ -243,7 +243,7 @@ export default function ClientUpdatePage() {
           </div>
           {mode === "staff" && (
             <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest">
-              <ShieldCheck size={12} /> Staff — editing enabled
+              <ShieldCheck size={12} /> Staff
             </span>
           )}
         </div>

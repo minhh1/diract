@@ -71,6 +71,14 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const [ourReference, setOurReference] = useState('');
   const [yourReference, setYourReference] = useState('');
   const [professionalFeesDescription, setProfessionalFeesDescription] = useState('');
+  // Per-invoice overrides of the Detailed template's two itemised tables
+  // (InvoiceTemplateSettingsTab.tsx sets the template-wide default; these
+  // let one specific invoice deviate from it without changing the
+  // template or any other invoice). Re-defaulted from the selected
+  // template's own setting whenever the template changes, see the effect
+  // below.
+  const [showProfessionalFeesTable, setShowProfessionalFeesTable] = useState(true);
+  const [showSummaryFeesByLawyerTable, setShowSummaryFeesByLawyerTable] = useState(true);
   const [templateId, setTemplateId] = useState('');
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState('');
@@ -91,6 +99,15 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     d.setDate(d.getDate() + days);
     setDueDate(d.toISOString().slice(0, 10));
   }, [issueDate, invoiceSettings.paymentTermsDays, dueDateTouched]);
+
+  // Re-default the two per-invoice table overrides from whichever template
+  // is selected -- switching templates mid-modal shouldn't carry over a
+  // previous template's setting.
+  useEffect(() => {
+    const t = invoiceSettings.templates.find(x => x.id === templateId);
+    setShowProfessionalFeesTable(t?.display?.showProfessionalFeesTable !== false);
+    setShowSummaryFeesByLawyerTable(t?.display?.showSummaryFeesByLawyerTable !== false);
+  }, [templateId, invoiceSettings.templates]);
 
   const [success, setSuccess] = useState<{ id: string; invoiceNumber: string } | null>(null);
 
@@ -324,10 +341,9 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   // the itemised list (see generateDetailedInvoicePdf.ts's page-1 summary
   // row).
   const selectedTemplateConfig = invoiceSettings.templates.find(t => t.id === templateId);
+  const isDetailedTemplate = selectedTemplateConfig?.style === 'detailed';
   const professionalFeesDescriptionRequired =
-    selectedTemplateConfig?.style === 'detailed' &&
-    selectedTemplateConfig.display?.showProfessionalFeesTable === false &&
-    selectedFeeIds.size > 0;
+    isDetailedTemplate && !showProfessionalFeesTable && selectedFeeIds.size > 0;
 
   const handleSave = async () => {
     if (!invoicesTableId) return;
@@ -353,6 +369,8 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
       our_reference: ourReference || null,
       your_reference: yourReference || null,
       professional_fees_description: professionalFeesDescription.trim() || null,
+      show_professional_fees_table: isDetailedTemplate ? showProfessionalFeesTable : null,
+      show_summary_fees_by_lawyer_table: isDetailedTemplate ? showSummaryFeesByLawyerTable : null,
       issue_date: issueDate,
       due_date: dueDate || null,
       status: 'Under Review',
@@ -536,6 +554,19 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     >
                       {invoiceSettings.templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
+                  </div>
+                )}
+                {isDetailedTemplate && (
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">For this invoice only</label>
+                    <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={showProfessionalFeesTable} onChange={e => setShowProfessionalFeesTable(e.target.checked)} />
+                      Include the itemised "Professional Fees" table
+                    </label>
+                    <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={showSummaryFeesByLawyerTable} onChange={e => setShowSummaryFeesByLawyerTable(e.target.checked)} />
+                      Include the "Summary Fees by Lawyer" table
+                    </label>
                   </div>
                 )}
                 {professionalFeesDescriptionRequired && (
