@@ -119,9 +119,21 @@ export default function ClientUpdatePage() {
   // only note-adding is wired up at all (MatterBoard gets canEdit=false).
   const saveValue = (itemId: string, fieldId: string, value: any) => {
     if (mode !== "staff" || !staffPageId) return;
-    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: value } } : i) });
+    let prevValue: any;
+    setBoard(prev => {
+      if (!prev) return prev;
+      prevValue = prev.items.find(i => i.id === itemId)?.values[fieldId];
+      return { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: value } } : i) };
+    });
     fetch(`/api/client-update-pages/${staffPageId}/values`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value }),
+    }).then(async res => {
+      if (res.ok) return;
+      // Revert just this one field (not the whole board) so it doesn't
+      // clobber any other edit that landed optimistically in the meantime.
+      const json = await res.json().catch(() => ({}));
+      setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: prevValue } } : i) });
+      window.alert(json.error || "Couldn't save that value");
     });
   };
 
