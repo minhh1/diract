@@ -249,7 +249,28 @@ export function applyClassification(
     detectedFields.push(options ? { role, options } : { role });
   }
 
-  if (!toReplace.size && !toDelete.size) return { bytes: docxBytes, detectedFields };
+  // Some letterheads pack Our Ref/date/delivery-mode/recipient-name directly
+  // adjacent with no blank line between any of them at all -- a firm's own
+  // compact header style, not something this module ever removed (there was
+  // nothing to preserve). Insert one blank paragraph between each pair in
+  // this cluster that's genuinely adjacent, matching the loose blank-spacer
+  // convention already used everywhere else in a typical letterhead (before
+  // the salutation, before the closing). A letterhead that already has its
+  // own spacing here is untouched, since only truly-adjacent pairs qualify.
+  const HEADER_CLUSTER_ORDER: Role[] = ["our_ref", "date", "delivery_mode", "recipient_name"];
+  const clusterAnchors = HEADER_CLUSTER_ORDER
+    .map(role => {
+      const group = byRole.get(role);
+      if (!group) return null;
+      return { role, index: [...group].sort((a, b) => a.index - b.index)[0].index };
+    })
+    .filter((c): c is { role: Role; index: number } => c !== null);
+  const insertBlankAfter = new Set<number>();
+  for (let i = 0; i < clusterAnchors.length - 1; i++) {
+    if (clusterAnchors[i + 1].index === clusterAnchors[i].index + 1) insertBlankAfter.add(clusterAnchors[i].index);
+  }
+
+  if (!toReplace.size && !toDelete.size && !insertBlankAfter.size) return { bytes: docxBytes, detectedFields };
 
   let newXml = "";
   let lastEnd = 0;
@@ -257,8 +278,13 @@ export function applyClassification(
     const start = m.index!;
     const end = start + m[0].length;
     newXml += xml.slice(lastEnd, start);
-    if (toReplace.has(i)) newXml += toReplace.get(i);
-    else if (!toDelete.has(i)) newXml += m[0];
+    let emitted: string | null = null;
+    if (toReplace.has(i)) { emitted = toReplace.get(i)!; newXml += emitted; }
+    else if (!toDelete.has(i)) { emitted = m[0]; newXml += emitted; }
+    if (emitted && insertBlankAfter.has(i)) {
+      const pPrMatch = emitted.match(/<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/);
+      newXml += `<w:p>${pPrMatch ? pPrMatch[0] : ""}</w:p>`;
+    }
     lastEnd = end;
   });
   newXml += xml.slice(lastEnd);
