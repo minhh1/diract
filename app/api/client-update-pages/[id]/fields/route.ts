@@ -1,8 +1,11 @@
 // app/api/client-update-pages/[id]/fields/route.ts
-// GET returns the pickable field catalog (base projects columns + the
-// synthetic name/property-linked keys + this company's projects custom
-// fields) so the admin editor can offer a checkbox list; POST adds one (or
-// an 'adhoc' page-only field, which just needs a label) to a specific
+// GET returns the pickable field catalog: base projects columns + the
+// synthetic name/property-linked keys, this company's projects custom
+// fields, and "related" tables reachable from a matter -- currently just
+// entities, one per 'entity'-type custom field on projects (e.g. "Client
+// Name" links to an entities row; each of that entity's own columns, from
+// a curated allow-list, becomes a pickable related field). POST adds one
+// (or an 'adhoc' page-only field, which just needs a label) to a specific
 // group's column set. group_id NULL is the shared/default column set every
 // group shows unless it's been explicitly customized -- see
 // .../groups/[groupId]/customize-columns/route.ts for how a top-level group
@@ -13,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
 import { logChange, resolveActorName } from "@/lib/clientUpdatePageLog";
+import { RELATED_ENTITY_COLUMNS } from "@/lib/clientUpdatePageDetail";
 
 const SYNTHETIC_BASE_FIELDS = [
   { field_key: "name", label: "Matter" },
@@ -29,9 +33,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const gate = await loadPageForCompany(admin, id, companyId);
   if (gate.error) return gate.error;
 
-  const [{ data: schemaCols }, { data: customFields }] = await Promise.all([
+  const [{ data: schemaCols }, { data: customFields }, { data: entityLinkFields }] = await Promise.all([
     admin.rpc("get_schema_metadata", { target_table: "projects", p_company_id: companyId }),
     admin.from("company_custom_fields").select("id, field_key, label").eq("company_id", companyId).eq("table_name", "projects").is("deleted_at", null),
+    admin.from("company_custom_fields").select("id, label").eq("company_id", companyId).eq("table_name", "projects").eq("field_type", "entity").is("deleted_at", null),
   ]);
 
   const baseOptions = [
@@ -41,8 +46,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .map((c: any) => ({ field_key: c.column_name, label: c.label || c.column_name.replace(/_/g, " ") })),
   ];
   const customOptions = (customFields || []).map((f: any) => ({ field_key: f.id, label: f.label }));
+  const relatedTables = (entityLinkFields || []).map((f: any) => ({
+    linkFieldId: f.id,
+    linkLabel: f.label,
+    columns: RELATED_ENTITY_COLUMNS,
+  }));
 
-  return NextResponse.json({ base: baseOptions, custom: customOptions });
+  return NextResponse.json({ base: baseOptions, custom: customOptions, relatedTables });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -57,11 +67,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
   const { fieldSource, fieldKey, label } = body;
   const groupId: string | null = body.groupId || null;
-  if (!["base", "custom", "adhoc"].includes(fieldSource)) {
+  if (!["base", "custom", "adhoc", "related_entity"].includes(fieldSource)) {
     return NextResponse.json({ error: "Invalid field source" }, { status: 400 });
   }
   if (!label?.trim()) return NextResponse.json({ error: "Label is required" }, { status: 400 });
   if (fieldSource !== "adhoc" && !fieldKey) return NextResponse.json({ error: "fieldKey is required" }, { status: 400 });
+
+  if (fieldSource === "related_entity") {
+    const [linkFieldId, column] = String(fieldKey).split(":");
+    if (!linkFieldId || !column || !RELATED_ENTITY_COLUMNS.some(c => c.key === column)) {
+      return NextResponse.json({ error: "Invalid related field" }, { status: 400 });
+    }
+    const { data: linkField } = await admin.from("company_custom_fields")
+      .select("id").eq("id", linkFieldId).eq("company_id", companyId).eq("table_name", "projects").eq("field_type", "entity").is("deleted_at", null).maybeSingle();
+    if (!linkField) return NextResponse.json({ error: "Related link field not found" }, { status: 404 });
+  }
 
   if (groupId) {
     const { data: group } = await admin.from("client_update_groups").select("id").eq("id", groupId).eq("page_id", id).maybeSingle();
@@ -84,6 +104,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       fieldType = ["date", "select", "number", "currency", "boolean"].includes(cf.field_type) ? cf.field_type : "text";
       selectOptions = cf.field_type === "select" ? cf.select_options : null;
     }
+  } else if (fieldSource === "related_entity") {
+    fieldType = "text"; // read-only display column -- see the file header comment
   } else if (fieldSource === "base") {
     if (fieldKey === "purchase_price") fieldType = "currency";
     else if (fieldKey === "property_address" || fieldKey === "name") fieldType = "text";

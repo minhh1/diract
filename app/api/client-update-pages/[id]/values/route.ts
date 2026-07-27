@@ -38,6 +38,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await logChange(admin, id, actorName, "staff", "value_changed", `Set "${field.label}" to ${displayValue} on ${project?.name || "a matter"}`);
   };
 
+  // Read-only -- see lib/clientUpdatePageDetail.ts's header comment. Editing
+  // continues to happen on the entity's own record, not through this report.
+  if (field.field_source === "related_entity") {
+    return NextResponse.json({ error: "This column isn't editable here" }, { status: 400 });
+  }
+
   if (field.field_source === "adhoc") {
     const { error } = await admin.from("client_update_page_values")
       .upsert({ item_id: itemId, field_id: fieldId, value_text: value ?? null }, { onConflict: "item_id,field_id" });

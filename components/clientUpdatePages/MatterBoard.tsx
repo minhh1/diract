@@ -847,9 +847,10 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
   );
 }
 
-function ValueCell({ field, value, dateFormat, editable, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; onSave: (v: any) => void }) {
+function ValueCell({ field, value, dateFormat, editable: editableProp, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; onSave: (v: any) => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
+  const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
 
   const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
 
@@ -1018,9 +1019,10 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
   );
 }
 
-function SpreadsheetCell({ field, value, dateFormat, editable, frozen, frozenBg, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void }) {
+function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, frozen, frozenBg, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
+  const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
 
   const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
   const frozenClass = frozen ? `sticky left-0 z-10 ${frozenBg || "bg-white"} border-r border-slate-200` : "";

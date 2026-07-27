@@ -5,10 +5,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, GripVertical, Trash2, Loader2, ChevronUp, ChevronDown } from "lucide-react";
+import { X, GripVertical, Trash2, Loader2, ChevronUp, ChevronDown, ChevronRight } from "lucide-react";
 
 interface FieldDef { id: string; field_source: string; field_key: string; label: string; group_id?: string | null; }
 interface CatalogOption { field_key: string; label: string; }
+interface RelatedTableOption { linkFieldId: string; linkLabel: string; columns: { key: string; label: string }[]; }
 
 export default function ColumnManagerModal({ pageId, groupId, currentFields, groupName, isCustomized, onCustomize, onRevert, onReorderFields, onClose, onChanged }: {
   pageId: string; groupId: string | null; currentFields: FieldDef[];
@@ -20,7 +21,8 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
   const [order, setOrder] = useState(currentFields);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [catalog, setCatalog] = useState<{ base: CatalogOption[]; custom: CatalogOption[] } | null>(null);
+  const [catalog, setCatalog] = useState<{ base: CatalogOption[]; custom: CatalogOption[]; relatedTables: RelatedTableOption[] } | null>(null);
+  const [expandedLink, setExpandedLink] = useState<string | null>(null);
   const [adhocLabel, setAdhocLabel] = useState("");
   const [adhocIsSelect, setAdhocIsSelect] = useState(false);
   const [adhocOptions, setAdhocOptions] = useState("");
@@ -91,7 +93,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
     onChanged();
   };
 
-  const addField = async (fieldSource: "base" | "custom" | "adhoc", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
+  const addField = async (fieldSource: "base" | "custom" | "adhoc" | "related_entity", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
     await fetch(`/api/client-update-pages/${pageId}/fields`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldSource, fieldKey, label, selectOptions, groupId }),
     });
@@ -167,6 +169,37 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
               ))}
             </div>
           </div>
+
+          {!!catalog?.relatedTables.length && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">From a related record</p>
+              <p className="text-[11px] text-slate-400 mb-2">Pull a column from the entity linked through one of the matter's own fields (e.g. the client entity's ABN).</p>
+              <div className="space-y-1">
+                {catalog.relatedTables.map(rt => (
+                  <div key={rt.linkFieldId} className="border border-slate-200 rounded-xl overflow-hidden">
+                    <button onClick={() => setExpandedLink(expandedLink === rt.linkFieldId ? null : rt.linkFieldId)}
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 text-[12px] font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                      {expandedLink === rt.linkFieldId ? <ChevronDown size={13} className="text-slate-400 shrink-0" /> : <ChevronRight size={13} className="text-slate-400 shrink-0" />}
+                      {rt.linkLabel}
+                    </button>
+                    {expandedLink === rt.linkFieldId && (
+                      <div className="flex flex-wrap gap-2 p-3">
+                        {rt.columns.filter(c => !usedKeys.has(`${rt.linkFieldId}:${c.key}`)).map(c => (
+                          <button key={c.key} onClick={() => addField("related_entity", `${rt.linkFieldId}:${c.key}`, `${rt.linkLabel}: ${c.label}`)}
+                            className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                            + {c.label}
+                          </button>
+                        ))}
+                        {rt.columns.every(c => usedKeys.has(`${rt.linkFieldId}:${c.key}`)) && (
+                          <p className="text-[11px] text-slate-300 italic px-1">All columns already added</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Add a report-only column</p>
