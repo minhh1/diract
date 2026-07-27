@@ -332,7 +332,7 @@ function GenericMasterTableInner({
       return byRecord;
     };
 
-    // Junction-backed relation columns (e.g. projects.parent_property_id)
+    // Junction-backed relation columns (e.g. projects.property_id)
     // hold their links in a separate table instead of the FK column itself
     // -- fetched once per column here and merged in as an array under the
     // same alias buildDynamicSelectQuery/resolveValue use for a normal

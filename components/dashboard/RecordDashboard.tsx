@@ -316,7 +316,7 @@ export default function RecordDashboard({
       if (storedName) map[f.field_key] = [{ id: storedName, name: storedName }];
     }
 
-    // ── Base relation fields (e.g. parent_property_id) ──────────
+    // ── Base relation fields (e.g. property_id) ──────────
     const baseRelationFields = currentFields.filter(f =>
       f.field_source === 'base' && f.fieldType === 'relation'
     );
@@ -325,7 +325,7 @@ export default function RecordDashboard({
       const nameCol = f.relationDisplayColumn || 'name';
       if (!table) return;
 
-      // Junction-backed relations (e.g. parent_property_id) — multiple linked records
+      // Junction-backed relations (e.g. property_id) — multiple linked records
       if (f.relationJunction) {
         const { table: junctionTable, sourceCol, targetCol } = f.relationJunction;
         const { data } = await supabase
@@ -743,7 +743,7 @@ export default function RecordDashboard({
     }
     const resolvedItem = { id: resolvedId, name: resolvedName };
 
-    // Junction-backed base relation fields (e.g. parent_property_id) — insert a link row
+    // Junction-backed base relation fields (e.g. property_id) — insert a link row
     if (field.field_source === 'base' && field.fieldType === 'relation' && field.relationJunction) {
       const { table: junctionTable, sourceCol, targetCol } = field.relationJunction;
       const { error } = await supabase.from(junctionTable).insert({

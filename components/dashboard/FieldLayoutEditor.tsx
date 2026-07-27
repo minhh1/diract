@@ -293,7 +293,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
 
   const displayVal = (): string | null => {
     // For base relation fields (single linked record stored as UUID) —
-    // junction-backed relations (e.g. parent_property_id) fall through to
+    // junction-backed relations (e.g. property_id) fall through to
     // the multi-value join below instead.
     if (field.fieldType === 'relation' && !field.relationJunction) {
       return linkedItems.length > 0 ? linkedItems[0].name : null;

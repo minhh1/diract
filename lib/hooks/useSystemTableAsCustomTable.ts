@@ -169,7 +169,7 @@ export function useSystemTableAsCustomTable(
 
     const { data: baseRows } = await supabase.from(tableName).select('*').is('deleted_at', null);
 
-    // Junction-backed native relations (e.g. parent_property_id) hold their
+    // Junction-backed native relations (e.g. property_id) hold their
     // links outside the row itself -- fetch each one's junction table once
     // for every record, same batching shape as cfValuesByRecord below.
     const multiFields = nativeFields.filter(f => f.allow_multiple);

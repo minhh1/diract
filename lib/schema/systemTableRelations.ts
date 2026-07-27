@@ -25,10 +25,18 @@ export const SYSTEM_TABLE_RELATION_MAP: Record<string, SystemRelationConfig> = {
   purchase_entity_id: { table: 'entities', displayCol: 'name' },
   council_entity_id: { table: 'entities', displayCol: 'name' },
   insurer_entity_id: { table: 'entities', displayCol: 'name' },
-  property_id: { table: 'properties', displayCol: 'street_address' },
   project_id: { table: 'projects', displayCol: 'name' },
-  // Projects
-  parent_property_id: {
+  // Projects -- despite living under a "// Properties" heading this is
+  // projects' own column (the only system table that actually has a
+  // property_id -- confirmed against live schema, tasks/properties don't),
+  // linking a project to its "parent property"/properties. Junction-backed
+  // so a project can have 2+ (see supabase/migrations/
+  // 20260727035000_project_properties_multi.sql). This used to be a
+  // separate `parent_property_id` entry -- a name that doesn't match any
+  // real column, so the junction config here never actually applied and
+  // the field silently rendered single-valued despite the junction table,
+  // handleAddLinked, and the multi-select UI all already existing for it.
+  property_id: {
     table: 'properties', displayCol: 'street_address',
     junction: { table: 'project_properties', sourceCol: 'project_id', targetCol: 'property_id' },
   },
