@@ -37,11 +37,20 @@ function wasBotMentioned(activity: any): boolean {
 export function parseIncomingActivity(activity: any): IncomingMessage | null {
   // A "like" reaction on the bot's own confirmation message counts as a
   // "yes" -- lets someone confirm a pending create/update without typing a
-  // word. `replyToId` on a messageReaction activity identifies exactly
-  // which message was reacted to (the Connector API's standard reply
-  // property), verified in handleMessage against the prompt_message_id
-  // captured when that confirmation was sent.
-  const isLikeReaction = activity.type === "messageReaction" && (activity.reactionsAdded ?? []).some((r: { type?: string }) => r.type === "like" || r.type === "plusOne");
+  // word. `replyToId` identifies exactly which message was reacted to (the
+  // Connector API's standard reply property, present on any activity type),
+  // verified in handleMessage against the prompt_message_id captured when
+  // that confirmation was sent. Deliberately not gated on
+  // activity.type === "messageReaction" -- observed live (2026-07-27) that
+  // reactions in a Teams channel/group conversation can arrive with
+  // type "message" and the reactionsAdded array attached directly instead
+  // of the dedicated messageReaction activity type; requiring that exact
+  // type meant every "like" in a group chat was silently dropped as an
+  // unrecognized message (empty text, acked and ignored). A plain "message"
+  // activity never carries a populated reactionsAdded array on its own, so
+  // checking for that array's presence is a safe, type-agnostic signal.
+  const reactionsAdded = (activity.reactionsAdded ?? []) as Array<{ type?: string }>;
+  const isLikeReaction = reactionsAdded.some((r) => r.type === "like" || r.type === "plusOne");
   const reactionTargetId: string | undefined = isLikeReaction ? activity.replyToId : undefined;
 
   // Only real user messages (or a like-reaction confirm) need a reply --

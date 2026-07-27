@@ -96,6 +96,26 @@ function randomCode(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
+// Observed live (2026-07-27): "put a task in for me" left the assignee
+// unfilled ("I need a few more details: Assignee") instead of resolving to
+// the sender themselves -- the model has no notion of who it's talking to
+// unless told, so first-person phrasing ("me", "myself", "for me") had
+// nothing to resolve against. senderName is the channel's own display name
+// for whoever sent the current message (Teams: activity.from.name;
+// WhatsApp: the contact's profile name) -- close enough to their Diract
+// full_name for resolveProfileByName's fuzzy match to still find them.
+// Only relevant to assignee_name, so only added to the tool-calling/
+// extraction calls that can populate it (create_task's initial call and
+// its field-extraction follow-ups), not create_project/create_file/
+// issue_precedent, none of which have an assignee concept.
+function senderIdentityMessage(msg: ChannelMessage): { role: string; content: string } | null {
+  if (!msg.senderName) return null;
+  return {
+    role: "system",
+    content: `You're talking with ${msg.senderName}. If they refer to themselves in first person (e.g. "me", "myself", "I", "assign it to me", "put a task in for me") when specifying who a task should be assigned to, use "${msg.senderName}" as the assignee_name.`,
+  };
+}
+
 // Same live-discovery GET /api/tags call app/api/ai/models makes for the
 // web chat's self-hosted dropdown -- there's no stored "default self-hosted
 // model" setting, so this just picks whatever the company's Ollama
@@ -268,10 +288,12 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
   if (provider === "hosted" && !isConversationalOnly(msg.question)) {
     let toolResult;
     try {
+      const identityMsg = senderIdentityMessage(msg);
       const toolCallMessages = [
         modelMessages[0],
         { role: "system", content: TOOL_USE_GUARDRAILS },
         todayContextMessage(),
+        ...(identityMsg ? [identityMsg] : []),
         ...modelMessages.slice(1),
       ];
       const [taskFields, projectFields] = await Promise.all([
@@ -752,11 +774,13 @@ async function continueCollecting(
   let extracted: Record<string, unknown> = {};
   let plainReply = "";
   try {
+    const identityMsg = senderIdentityMessage(msg);
     const extraction = await callHostedModelWithTools(
       DEFAULT_HOSTED_MODEL_ID,
       [
         { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
         todayContextMessage(),
+        ...(identityMsg ? [identityMsg] : []),
         { role: "user", content: msg.question },
       ],
       buildMissingFieldsTool(pendingFields)

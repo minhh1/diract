@@ -30,6 +30,33 @@ function pickBestMatch(name: string, candidates: ResolvedMatch[]): ResolveResult
   return { status: "ambiguous", candidates };
 }
 
+// Fallback for when a plain ILIKE substring match finds nothing -- observed
+// live (2026-07-27): a user referenced project "7207/117 Bathurst Street"
+// as matter "Unit 7207, 117 Bathurst" (an extra generic word, and a comma
+// where the real name has a slash), which isn't a substring either
+// direction, so the fast path found zero candidates even though a human
+// reads it as an obvious match. Tokenizes both strings, drops filler words
+// that carry no identifying information, and requires every remaining
+// token from the search string to appear somewhere in the candidate's
+// text -- forgiving of extra/reordered words and punctuation differences,
+// but still conservative (every real token must still be present, so it
+// won't match a genuinely different project).
+const FUZZY_STOPWORDS = new Set(["unit", "lot", "no", "number", "the", "a", "an", "at", "on", "of", "and", "for", "st", "street", "rd", "road"]);
+
+function fuzzyTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t && !FUZZY_STOPWORDS.has(t));
+}
+
+function fuzzyMatchesTokens(candidateText: string, searchTokens: string[]): boolean {
+  if (!searchTokens.length) return false;
+  const candidateNormalized = candidateText.toLowerCase().replace(/[^\w\s]/g, " ");
+  return searchTokens.every((t) => candidateNormalized.includes(t));
+}
+
 // Searches projects.name AND, per company, any additional custom fields an
 // admin has nominated as project search fields (teams_bot_project_search_fields
 // -- e.g. Huynh Lawyers wants "Matter Number" searchable, since staff refer
@@ -64,6 +91,37 @@ export async function resolveProjectByName(admin: any, companyId: string, name: 
     if (recordIds.length) {
       const { data: matched } = await admin.from("projects").select("id, name").eq("company_id", companyId).is("deleted_at", null).in("id", recordIds);
       for (const p of (matched ?? []) as ResolvedMatch[]) candidates.set(p.id, p);
+    }
+  }
+
+  // Nothing found via exact substring match on either the name or a
+  // searchable custom field -- fall back to tokenized fuzzy matching (see
+  // fuzzyMatchesTokens above) before giving up, re-querying both sources
+  // without the ILIKE filter so the fuzzy comparison runs in application
+  // code against the full candidate text.
+  if (candidates.size === 0) {
+    const searchTokens = fuzzyTokens(name);
+    if (searchTokens.length) {
+      const { data: allProjects } = await admin.from("projects").select("id, name").eq("company_id", companyId).is("deleted_at", null);
+      for (const p of (allProjects ?? []) as ResolvedMatch[]) {
+        if (fuzzyMatchesTokens(p.name, searchTokens)) candidates.set(p.id, p);
+      }
+
+      if (fieldIds.length) {
+        const { data: allValues } = await admin
+          .from("company_custom_field_values")
+          .select("record_id, value_text")
+          .eq("company_id", companyId)
+          .eq("table_name", "projects")
+          .in("field_id", fieldIds);
+        const fuzzyRecordIds = ((allValues ?? []) as { record_id: string; value_text: string | null }[])
+          .filter((v) => v.value_text && fuzzyMatchesTokens(v.value_text, searchTokens))
+          .map((v) => v.record_id);
+        if (fuzzyRecordIds.length) {
+          const { data: matched } = await admin.from("projects").select("id, name").eq("company_id", companyId).is("deleted_at", null).in("id", fuzzyRecordIds);
+          for (const p of (matched ?? []) as ResolvedMatch[]) candidates.set(p.id, p);
+        }
+      }
     }
   }
 
