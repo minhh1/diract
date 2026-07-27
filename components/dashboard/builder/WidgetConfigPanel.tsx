@@ -461,6 +461,205 @@ function PublicDocumentPageConfig({ pageId, onPageIdChange }: { pageId: string |
   );
 }
 
+interface ClientUpdatePageSummary {
+  id: string; title: string; client_label: string | null; slug: string;
+  access_code: string | null; is_active: boolean; expires_at: string | null; matterCount: number;
+}
+
+// Creates/manages the client_update_pages row a PublicClientUpdatePageWidget
+// owns (see lib/dashboardWidgets/types.ts) -- same create-or-pick shape as
+// PublicTaskPageConfig above, since a fresh page here only ever needs a
+// title (matters/columns/groups are all added afterward directly on the
+// board itself -- Settings -> Public pages' "Client updates" tab creates
+// pages the exact same minimal way). Keyed by slug, not id, since that's
+// what both the public route and this widget's embedded content address a
+// page by.
+function PublicClientUpdatePageConfig({ slug, onSlugChange }: { slug: string | null; onSlugChange: (slug: string) => void }) {
+  const [pages, setPages] = useState<ClientUpdatePageSummary[] | null>(null);
+  const [title, setTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [revoked, setRevoked] = useState(false);
+  const [mode, setMode] = useState<'view' | 'picker'>('view');
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/client-update-pages/list').then(res => res.json()).then(json => {
+      if (active) setPages(json.pages || []);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const currentPage = pages?.find(p => p.slug === slug) || null;
+
+  const handleCreate = async () => {
+    if (!title.trim()) { setError('Title is required'); return; }
+    setSaving(true);
+    setError(null);
+    const res = await fetch('/api/client-update-pages/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    const json = await res.json();
+    setSaving(false);
+    if (!res.ok) { setError(json.error || 'Failed to create page'); return; }
+    setPages(prev => [...(prev || []), {
+      id: json.page.id, title, client_label: null, slug: json.page.slug,
+      access_code: json.page.access_code, is_active: true, expires_at: null, matterCount: 0,
+    }]);
+    onSlugChange(json.page.slug);
+  };
+
+  const handleRevoke = async () => {
+    if (!currentPage || !window.confirm('Revoke this page? The link will stop working immediately.')) return;
+    setRevoking(true);
+    await fetch(`/api/client-update-pages/${currentPage.id}/revoke`, { method: 'PATCH' });
+    setRevoking(false);
+    setRevoked(true);
+  };
+
+  if (!slug && mode === 'picker') {
+    const activePages = (pages || []).filter(p => p.is_active);
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-slate-400">Pick one of your existing client update pages to point this widget at.</p>
+        {activePages.length === 0 ? (
+          <p className="text-[11px] text-slate-300 italic py-2">No active pages yet</p>
+        ) : (
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {activePages.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { onSlugChange(p.slug); setMode('view'); }}
+                className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
+              >
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.client_label ? ` — ${p.client_label}` : ''}</p>
+                <p className="text-[10px] text-slate-400 truncate">{p.matterCount} matter{p.matterCount !== 1 ? 's' : ''}</p>
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => setMode('view')}
+          className="w-full py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-slate-300 transition-all"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  if (!slug) {
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-slate-400">
+          A matter-status board you share with a client — add matters, columns and groups directly on the board itself after creating it (same as the fully editable view you'll get right here, signed in). Anyone with the link enters a PIN to view and add notes.
+        </p>
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Title</label>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. Smith Family Trust"
+            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+          />
+        </div>
+        {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
+        <button
+          onClick={handleCreate}
+          disabled={saving}
+          className="w-full py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all"
+        >
+          {saving ? 'Creating...' : 'Create page'}
+        </button>
+        {pages && pages.filter(p => p.is_active).length > 0 && (
+          <button
+            onClick={() => setMode('picker')}
+            className="w-full py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all"
+          >
+            Use an existing page instead
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'picker') {
+    const otherPages = (pages || []).filter(p => p.is_active && p.slug !== slug);
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-slate-400">Point this widget at a different existing page.</p>
+        {pages === null ? (
+          <p className="text-[11px] text-slate-300 italic py-2">Loading...</p>
+        ) : otherPages.length === 0 ? (
+          <p className="text-[11px] text-slate-300 italic py-2">No other active pages to switch to</p>
+        ) : (
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {otherPages.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { onSlugChange(p.slug); setMode('view'); }}
+                className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
+              >
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.client_label ? ` — ${p.client_label}` : ''}</p>
+                <p className="text-[10px] text-slate-400 truncate">{p.matterCount} matter{p.matterCount !== 1 ? 's' : ''}</p>
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => setMode('view')}
+          className="w-full py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-slate-300 transition-all"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/public/updates/${slug}` : `/public/updates/${slug}`;
+  return (
+    <div className="space-y-3">
+      {revoked ? (
+        <p className="text-[11px] text-red-500 font-medium">Revoked — the link no longer works.</p>
+      ) : (
+        <>
+          <div className="px-4 py-3 bg-slate-50 rounded-2xl space-y-1">
+            <code className="text-[11px] text-slate-600 break-all block">{url}</code>
+            {currentPage?.access_code && (
+              <p className="text-[11px] text-slate-400">PIN: <code className="font-bold text-slate-600">{currentPage.access_code}</code></p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+            >
+              {copied ? 'Copied' : 'Copy link'}
+            </button>
+            <button
+              onClick={() => setMode('picker')}
+              className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all"
+            >
+              Change page
+            </button>
+          </div>
+          <button
+            onClick={handleRevoke}
+            disabled={revoking}
+            className="w-full py-2.5 bg-white border border-slate-200 text-slate-500 rounded-full text-[11px] font-bold hover:border-red-300 hover:text-red-600 disabled:opacity-50 transition-all"
+          >
+            {revoking ? 'Revoking...' : 'Revoke'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   widget: DashboardWidget;
   fields: CustomTableField[];
@@ -1180,6 +1379,13 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
           <PublicDocumentPageConfig
             pageId={draft.config.pageId}
             onPageIdChange={pageId => updateConfig({ pageId: pageId || null })}
+          />
+        )}
+
+        {draft.type === 'public_client_update_page' && (
+          <PublicClientUpdatePageConfig
+            slug={draft.config.slug}
+            onSlugChange={slug => updateConfig({ slug: slug || null })}
           />
         )}
 

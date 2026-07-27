@@ -28,6 +28,7 @@ const TrustCashBookWidget = dynamic(() => import("./TrustCashBookWidget"));
 const TrustAgedBalancesWidget = dynamic(() => import("./TrustAgedBalancesWidget"));
 const PublicTaskPageWidget = dynamic(() => import("./PublicTaskPageWidget"));
 const DocumentPublicPageWidget = dynamic(() => import("./DocumentPublicPageWidget"));
+const ClientUpdatePageWidget = dynamic(() => import("./ClientUpdatePageWidget"));
 const MyTasksButtonWidget = dynamic(() => import("./MyTasksButtonWidget"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
@@ -228,6 +229,9 @@ export default function DashboardWidgetRenderer({
 
     case 'public_document_page':
       return <DocumentPublicPageWidget pageId={widget.config.pageId} />;
+
+    case 'public_client_update_page':
+      return <ClientUpdatePageWidget slug={widget.config.slug} />;
 
     case 'my_tasks_button': {
       if (mode === 'preview') {

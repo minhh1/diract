@@ -287,6 +287,22 @@ export interface PublicDocumentPageWidget extends BaseWidget {
   config: { pageId: string | null };
 }
 
+// Generates (or picks an existing) client_update_pages board -- a
+// matter-status board a firm shares with a client (see
+// app/api/client-update-pages/create/route.ts and
+// components/settings/ClientUpdatePagesTab.tsx, still the other place one
+// can be created). Keyed by slug, not id -- that's what the public route
+// (app/public/updates/[slug]) and this widget's embedded content
+// (components/public/PublicClientUpdateContent.tsx) both address it by.
+// Unlike PublicDocumentPageWidget this CAN create a fresh one itself (only
+// a title is required up front -- matters/columns/groups are all added
+// afterward directly on the board, same as Settings' own create flow), so
+// it mirrors PublicTaskPageWidget's create-or-pick config shape instead.
+export interface PublicClientUpdatePageWidget extends BaseWidget {
+  type: 'public_client_update_page';
+  config: { slug: string | null };
+}
+
 // A button that opens a drawer listing the viewer's own assigned tasks
 // (tasks.assignee_id = the signed-in user, not company-wide) and lets them
 // turn one into a record on THIS dashboard's bound table in one click --
@@ -311,6 +327,6 @@ export type DashboardWidget =
   | GridWidget | SummaryTileWidget | ChartWidget
   | TrustReconciliationWidget | LedesExportWidget
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
-  | PublicTaskPageWidget | PublicDocumentPageWidget | MyTasksButtonWidget;
+  | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];

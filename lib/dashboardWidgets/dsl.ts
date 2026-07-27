@@ -23,6 +23,7 @@
 //   trust_aged_balances [dormant_days=<n>]
 //   public_task_page
 //   public_document_page
+//   public_client_update_page
 //   my_tasks_button [label="<text>"] [description=<key>] [matter=<key>]
 //
 // One or more `series` lines directly after a `chart` line add measures to
@@ -84,6 +85,7 @@ const KEYWORD_TO_TYPE: Record<string, DashboardWidgetType> = {
   trust_aged_balances: 'trust_aged_balances',
   public_task_page: 'public_task_page',
   public_document_page: 'public_document_page',
+  public_client_update_page: 'public_client_update_page',
   my_tasks_button: 'my_tasks_button',
 };
 
@@ -348,6 +350,11 @@ export function parseDSL(source: string, fields: CustomTableField[]): DslParseRe
       case 'public_document_page':
         widgets.push({ id, type, layout, config: { pageId: null } });
         break;
+      // slug (which client_update_pages row this widget links to) is
+      // canvas-only state, same reasoning as pageId above.
+      case 'public_client_update_page':
+        widgets.push({ id, type, layout, config: { slug: null } });
+        break;
       case 'my_tasks_button': {
         const descriptionFieldId = kv.description ? resolveFieldToken(kv.description, lineNo) : null;
         const matterFieldId = kv.matter ? resolveFieldToken(kv.matter, lineNo) : null;
@@ -449,6 +456,8 @@ export function serializeToDSL(widgets: DashboardWidget[], fields: CustomTableFi
           return `public_task_page${widthSuffix(w.layout.w)}`;
         case 'public_document_page':
           return `public_document_page${widthSuffix(w.layout.w)}`;
+        case 'public_client_update_page':
+          return `public_client_update_page${widthSuffix(w.layout.w)}`;
         case 'my_tasks_button': {
           const label = w.config.label ? ` label="${w.config.label}"` : '';
           const description = w.config.descriptionFieldId ? ` description=${fieldKey(w.config.descriptionFieldId)}` : '';

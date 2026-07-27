@@ -15,6 +15,7 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   trust_aged_balances: { label: 'Dormant trust balances', icon: 'AlertTriangle' },
   public_task_page: { label: 'Public task page', icon: 'Share2' },
   public_document_page: { label: 'Public document page', icon: 'FileSignature' },
+  public_client_update_page: { label: 'Public client update page', icon: 'Newspaper' },
   my_tasks_button: { label: 'My Tasks button', icon: 'ListChecks' },
 };
 
@@ -38,6 +39,7 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   // small link card -- sized like the other full-featured widgets above.
   public_task_page: { w: 12, h: 12 },
   public_document_page: { w: 12, h: 12 },
+  public_client_update_page: { w: 12, h: 12 },
   my_tasks_button: { w: 3, h: 2 },
 };
 
@@ -48,7 +50,7 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
 // tableless dashboard never has. Used by AddWidgetMenu to hide the rest
 // rather than let someone add a grid/chart/etc. that can never do anything.
 export const TABLE_INDEPENDENT_WIDGET_TYPES: DashboardWidgetType[] = [
-  'heading', 'text', 'public_task_page', 'public_document_page',
+  'heading', 'text', 'public_task_page', 'public_document_page', 'public_client_update_page',
 ];
 
 export function createWidget(type: DashboardWidgetType, existingWidgets: DashboardWidget[]): DashboardWidget {
@@ -70,6 +72,7 @@ export function createWidget(type: DashboardWidgetType, existingWidgets: Dashboa
     case 'trust_aged_balances': return { ...base, type, config: { dormantDays: 365 } };
     case 'public_task_page': return { ...base, type, config: { pageId: null } };
     case 'public_document_page': return { ...base, type, config: { pageId: null } };
+    case 'public_client_update_page': return { ...base, type, config: { slug: null } };
     case 'my_tasks_button': return { ...base, type, config: { label: '', descriptionFieldId: null, matterFieldId: null } };
   }
 }
