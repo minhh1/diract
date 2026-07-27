@@ -294,8 +294,8 @@ export default function MatterBoard({
         </div>
       </div>
 
-      <div className="flex gap-5 items-start">
-        <div className="w-52 shrink-0 space-y-6">
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        <div className="w-full lg:w-52 lg:shrink-0 space-y-6">
           <SidebarSection title="Group">
             {topOptions.map(t => (
               <SidebarRow key={t.id} label={t.name} count={t.count} active={activeTop === t.id} onClick={() => setActiveTop(t.id)}
@@ -347,7 +347,7 @@ export default function MatterBoard({
           </SidebarSection>
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="w-full flex-1 min-w-0">
           {mode === "cards" ? (
             <div className="space-y-3">
               {visibleItems.map(item => (
@@ -428,7 +428,7 @@ function SidebarRow({ label, count, active, onClick, canEdit, onRename, onDelete
         <span className={`shrink-0 ml-2 ${active ? "opacity-70" : "text-slate-400"}`}>{count}</span>
       </button>
       {canEdit && (onRename || onDelete) && (
-        <span className={`flex items-center gap-0.5 pr-2 shrink-0 ${active ? "opacity-0 group-hover/row:opacity-100" : "opacity-0 group-hover/row:opacity-100"}`}>
+        <span className="flex items-center gap-0.5 pr-2 shrink-0 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100">
           {onRename && (
             <button onClick={() => { setDraft(label); setEditing(true); }} className="p-0.5 hover:opacity-70"><Pencil size={10} /></button>
           )}
@@ -465,7 +465,7 @@ function SidebarCheckboxRow({ label, count, checked, onToggle, canEdit, onRename
         <span className="text-[10px] text-slate-400 shrink-0">{count}</span>
       </label>
       {canEdit && (onRename || onDelete || onOpenCondition) && (
-        <span className="flex items-center gap-0.5 pl-1 shrink-0 opacity-0 group-hover/row:opacity-100">
+        <span className="flex items-center gap-0.5 pl-1 shrink-0 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100">
           {onOpenCondition && (
             <button onClick={onOpenCondition} title="Set condition" className="p-0.5 text-slate-400 hover:text-indigo-600"><Filter size={10} /></button>
           )}
