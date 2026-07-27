@@ -522,7 +522,7 @@ export default function RecordDashboard({
           const { data: insertedTabs } = await supabase.from('record_tabs').insert(missingTabs).select();
           if (insertedTabs?.length) {
             await seedDefaultDashboardWidgets(insertedTabs, widgetsByLinkedTableId);
-            finalTabs = [...uniqueTabs, ...insertedTabs];
+            finalTabs = [...finalTabs, ...insertedTabs];
             insertedTabs.forEach(t => t.linked_table_id && existingLinkedTableIds.add(t.linked_table_id));
           }
         }
@@ -541,6 +541,22 @@ export default function RecordDashboard({
             finalTabs = [...finalTabs, ...insertedTabs];
           }
         }
+      }
+
+      // Details is always the first tab -- backfilling it above appends to
+      // the end of finalTabs, so a record that had e.g. Time & Fees as its
+      // only tab before Details existed would otherwise open straight into
+      // Time & Fees every time (TabBar pins index 0 the same way so a drag
+      // reorder can't undo this either). Only reorders + persists
+      // display_order when something's actually out of place, so this is a
+      // no-op write on every normal load.
+      const fieldsIdx = finalTabs.findIndex(t => t.tab_type === 'fields');
+      if (fieldsIdx > 0) {
+        const [detailsTab] = finalTabs.splice(fieldsIdx, 1);
+        finalTabs = [detailsTab, ...finalTabs].map((t, i) => ({ ...t, display_order: i }));
+        await Promise.all(finalTabs.map(t =>
+          supabase.from('record_tabs').update({ display_order: t.display_order }).eq('id', t.id)
+        ));
       }
 
       setTabs(finalTabs);

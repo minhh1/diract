@@ -107,8 +107,13 @@ export default function TabBar({
     setRenamingId(null);
   };
 
+  // Details (tab_type 'fields') is always the first tab -- it can't be
+  // dragged itself (see `draggable` below) and nothing can be dropped into
+  // its slot, so index 0 stays pinned to it either way.
+  const detailsIsFirst = tabs[0]?.tab_type === 'fields';
+
   const handleDrop = (targetIdx: number) => {
-    if (dragIdx === null || dragIdx === targetIdx) {
+    if (dragIdx === null || dragIdx === targetIdx || (detailsIsFirst && targetIdx === 0)) {
       setDragIdx(null); setDragOverIdx(null); return;
     }
     const reordered = [...tabs];
@@ -131,7 +136,7 @@ export default function TabBar({
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
-        className="no-scrollbar flex-1 min-w-0 flex items-center gap-1 px-6 overflow-x-auto scroll-smooth"
+        className="flex-1 min-w-0 flex items-center gap-1 px-6 overflow-x-auto scroll-smooth"
       >
       {tabs.map((tab, idx) => {
         const Icon = (LucideIcons as any)[tab.icon] || TAB_TYPE_ICONS[tab.tab_type] || FileText;
@@ -142,7 +147,7 @@ export default function TabBar({
         return (
           <div
             key={tab.id}
-            draggable={isEditing}
+            draggable={isEditing && tab.tab_type !== 'fields'}
             onDragStart={() => setDragIdx(idx)}
             onDragOver={e => { e.preventDefault(); setDragOverIdx(idx); }}
             onDrop={() => handleDrop(idx)}
@@ -154,7 +159,7 @@ export default function TabBar({
             } ${isDragOver ? 'bg-indigo-50 rounded-t-lg' : ''}`}
             onClick={() => !isRenaming && onSelect(tab.id)}
           >
-            {isEditing && (
+            {isEditing && tab.tab_type !== 'fields' && (
               <GripVertical size={12} className="text-slate-300 cursor-grab shrink-0" />
             )}
 
