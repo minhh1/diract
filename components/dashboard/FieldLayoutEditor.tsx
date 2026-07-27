@@ -459,7 +459,16 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
       ) : editing ? (
         <div className="flex items-center gap-2" onBlur={handleBlur}>
           {renderEditor()}
-          <button onClick={handleSave} disabled={saving}
+          {/* onMouseDown preventDefault, not just onClick -- Safari (unlike
+              Chrome/Firefox) doesn't move focus to a clicked <button> by
+              default, so the input's onBlur (handleBlur, which cancels the
+              edit and resets draft to the old value) fired *before* this
+              button's own onClick ever got a chance to run, on Safari only.
+              Blocking the mousedown's default focus-shift stops the input
+              from blurring at all, so the click reaches handleSave with the
+              edit still open. Enter-to-save was never affected since it
+              saves straight from the input without ever blurring first. */}
+          <button onClick={handleSave} onMouseDown={e => e.preventDefault()} disabled={saving}
             className="px-3 py-2 bg-indigo-600 text-white rounded-full text-[10px] font-bold disabled:opacity-50 shrink-0">
             {saving ? '...' : 'Save'}
           </button>
