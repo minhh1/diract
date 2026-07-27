@@ -1590,6 +1590,7 @@ export default function RecordDashboard({
 
               <div className="flex-1 overflow-y-auto min-h-0">
                 <RecordDashboard
+                  key={activeSubProjectId}
                   systemTable="projects"
                   recordId={activeSubProjectId}
                   onBack={() => { setActiveSubProjectId(null); setSubProjectFullscreen(false); }}

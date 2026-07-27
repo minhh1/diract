@@ -16,7 +16,7 @@ export default function EntitiesPage() {
         pageTitle="Entities"
         newButtonLabel="+ New entity"
         renderDashboard={(id: string, onBack: () => void, initialRecord?: any) => (
-          <RecordDashboard systemTable="entities" recordId={id} onBack={onBack} initialRecord={initialRecord} />
+          <RecordDashboard key={id} systemTable="entities" recordId={id} onBack={onBack} initialRecord={initialRecord} />
         )}
       />
     </DeletedSystemTableGuard>

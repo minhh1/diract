@@ -16,7 +16,7 @@ export default function TasksPage() {
         pageTitle="Tasks"
         newButtonLabel="+ New task"
         renderDashboard={(id: string, onBack: () => void, initialRecord?: any) => (
-          <RecordDashboard systemTable="tasks" recordId={id} onBack={onBack} initialRecord={initialRecord} />
+          <RecordDashboard key={id} systemTable="tasks" recordId={id} onBack={onBack} initialRecord={initialRecord} />
         )}
       />
     </DeletedSystemTableGuard>
