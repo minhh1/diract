@@ -1,10 +1,9 @@
 // lib/teamScope.ts
 // Resolves which "Staff" entities (via entities.linked_profile_id) the
 // current signed-in user is allowed to bill work as: a company admin can
-// bill as anyone (null = unrestricted); everyone else can only bill as
-// themselves -- "only admin can bill as other people, otherwise each staff
-// needs to bill as themselves," an explicit call to simplify away from an
-// earlier team-leader-sees-their-team allowance. Backs RelationPicker's
+// bill as anyone (null = unrestricted); a member of a team with
+// teams.allow_time_entry_delegation set (configured in Admin > Teams) can
+// too; everyone else can only bill as themselves. Backs RelationPicker's
 // '$team_scope' sentinel (see FieldConfigPanel.tsx / RelationPicker.tsx),
 // the role-aware replacement for the old, inconsistently-applied
 // '$current_user'-only filter on Time & Fee Entries/Disbursements' Staff
@@ -23,6 +22,21 @@ export async function getStaffScopeIds(): Promise<string[] | null> {
   const { data: membership } = await supabase
     .from('company_memberships').select('role').eq('user_id', user.id).eq('company_id', companyId).maybeSingle();
   if (membership?.role === 'company_admin') return null;
+
+  // Delegated permission -- a team's members can bill as anyone too, not
+  // just the company_admin, if an admin has ticked "Allow members to enter
+  // time on behalf of other staff" for that team (Admin > Teams). `teams`
+  // isn't itself company-scoped (see AdminTeamsTab.tsx), but team_members
+  // only ever links a profile actually in THIS user's own membership check
+  // above, so there's no cross-company leak from checking it unconditionally.
+  const { data: myTeams } = await supabase
+    .from('team_members').select('team_id').eq('profile_id', user.id);
+  const myTeamIds = (myTeams || []).map(t => t.team_id);
+  if (myTeamIds.length) {
+    const { data: delegatedTeam } = await supabase
+      .from('teams').select('id').in('id', myTeamIds).eq('allow_time_entry_delegation', true).limit(1).maybeSingle();
+    if (delegatedTeam) return null;
+  }
 
   const { data: staffEntities } = await supabase
     .from('entities').select('id')

@@ -135,6 +135,14 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               onSelect={id => onFilterChange(field.id, id)}
               placeholder={`All`}
               size={pillSize}
+              // A "$current_user"/"$team_scope" Staff filter (e.g. Time &
+              // Fee Entries) auto-selecting the viewer's own entity makes
+              // sense for a REGULAR staff member (their own entries by
+              // default), but an admin viewing this same filter bar wants
+              // the opposite default -- everyone's entries, with the
+              // ability to narrow to one person still available via this
+              // exact picker. Non-admins keep the existing auto-select.
+              autoSelectSelf={!isAdmin}
             />
           ) : field.field_type === 'boolean' ? (
             <select

@@ -172,6 +172,13 @@ interface Props {
   // field) rather than a blanket default, since most relation pickers on
   // this component have no business creating new rows.
   allowCreateEntity?: boolean;
+  // Whether the "$current_user"/"$team_scope" auto-select effect below
+  // should apply -- true (the default) matches every existing caller
+  // (quick-add forms, grid cells: "who am I logging this as" sensibly
+  // defaults to me). DashboardFilterBar passes false for an admin viewer,
+  // since a FILTER defaulting to "just my own entries" is the opposite of
+  // what "let admin view everyone's" needs -- see its own doc comment.
+  autoSelectSelf?: boolean;
 }
 
 // Resolves the primary display field's value (plus an optional second
@@ -377,7 +384,7 @@ export async function warmRelationOptionsCache(): Promise<void> {
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md', variant = 'pill',
-  allowCreateEntity,
+  allowCreateEntity, autoSelectSelf = true,
 }: Props) {
   const plain = variant === 'plain';
   const sizeClass = plain ? 'py-1 px-0.5 text-[12px]' : PILL_SIZE_CLASSES[size];
@@ -492,7 +499,7 @@ export default function RelationPicker({
   // `active === false` closure.
   useEffect(() => {
     if (
-      multiple || value || userClearedRef.current || !linkedSystemTable || filterColumn !== 'linked_profile_id' ||
+      !autoSelectSelf || multiple || value || userClearedRef.current || !linkedSystemTable || filterColumn !== 'linked_profile_id' ||
       (filterValue !== CURRENT_USER_SENTINEL && filterValue !== TEAM_SCOPE_SENTINEL)
     ) return;
     let active = true;
@@ -526,7 +533,7 @@ export default function RelationPicker({
     // fetch via the cleanup's `active = false`) on every unrelated parent
     // re-render, before the request had a chance to resolve. Matches the
     // same omission already made in the label-resolution effect above.
-  }, [multiple, value, linkedSystemTable, filterColumn, filterValue, displayField, displayField2]);
+  }, [autoSelectSelf, multiple, value, linkedSystemTable, filterColumn, filterValue, displayField, displayField2]);
 
   // Fetches the WHOLE candidate list once per open (not on every keystroke)
   // and caches it (dedupedFetch above) -- typing after the first open just

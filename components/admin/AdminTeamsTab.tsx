@@ -22,6 +22,11 @@ interface Team {
   leader_id: string | null;
   is_active: boolean;
   members: TeamMember[];
+  // Time & Fee Entries/Disbursements permission -- see lib/teamScope.ts's
+  // getStaffScopeIds, the '$team_scope' Staff-field sentinel this backs.
+  // Off by default: only a company_admin can bill as someone else until an
+  // admin explicitly grants a team this.
+  allow_time_entry_delegation: boolean;
 }
 
 interface Props {
@@ -56,7 +61,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     // Load teams
     const { data: ts } = await supabase
       .from('teams')
-      .select('id, team_name, leader_id, is_active')
+      .select('id, team_name, leader_id, is_active, allow_time_entry_delegation')
       .order('team_name');
 
     // Load all company members
@@ -125,7 +130,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     if (!name) return;
     setNewTeamName('');
     const { data: created } = await supabase
-      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active').single();
+      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation').single();
     if (created) {
       const newTeam: Team = { ...created, members: [] };
       updateTeams(prev => [...prev, newTeam].sort((a, b) => a.team_name.localeCompare(b.team_name)));
@@ -172,6 +177,11 @@ export default function AdminTeamsTab({ companyId }: Props) {
       supabase.from('team_members')
         .upsert({ team_id: teamId, profile_id: profileId }, { onConflict: 'team_id,profile_id' }).then();
     }
+  };
+
+  const toggleDelegation = (teamId: string, next: boolean) => {
+    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_time_entry_delegation: next } : t));
+    supabase.from('teams').update({ allow_time_entry_delegation: next }).eq('id', teamId).then();
   };
 
   const setLeader = (teamId: string, profileId: string) => {
@@ -259,6 +269,19 @@ export default function AdminTeamsTab({ companyId }: Props) {
               </>
             )}
           </div>
+
+          {/* Time entry permission -- see lib/teamScope.ts's getStaffScopeIds */}
+          <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
+            <input
+              type="checkbox"
+              checked={team.allow_time_entry_delegation}
+              onChange={e => toggleDelegation(team.id, e.target.checked)}
+              className="w-4 h-4 accent-indigo-600 shrink-0"
+            />
+            <span className="text-[11px] text-slate-600">
+              Allow members to enter time on behalf of other staff
+            </span>
+          </label>
 
           {/* Current members */}
           {team.members.map(m => {
