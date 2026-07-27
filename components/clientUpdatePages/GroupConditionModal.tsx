@@ -5,23 +5,40 @@
 "use client";
 
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Plus, Loader2 } from "lucide-react";
 
 interface ConditionField { id: string; label: string; field_type?: string; select_options?: string[] | null; }
 
-export default function GroupConditionModal({ groupName, fields, currentFieldId, currentValue, onSave, onClose }: {
+export default function GroupConditionModal({ groupName, fields, currentFieldId, currentValue, onSave, onClose, onAddFieldOption }: {
   groupName: string;
   fields: ConditionField[];
   currentFieldId: string | null;
   currentValue: string | null;
   onSave: (fieldId: string | null, value: string | null) => void;
   onClose: () => void;
+  onAddFieldOption?: (fieldId: string, option: string) => Promise<void>;
 }) {
   const selectFields = fields.filter(f => f.field_type === "select" && f.select_options?.length);
   const [fieldId, setFieldId] = useState(currentFieldId || "");
   const [value, setValue] = useState(currentValue || "");
+  const [addingOption, setAddingOption] = useState(false);
+  const [newOption, setNewOption] = useState("");
+  const [savingOption, setSavingOption] = useState(false);
 
   const selectedField = selectFields.find(f => f.id === fieldId);
+
+  const submitNewOption = async () => {
+    if (!onAddFieldOption || !fieldId || !newOption.trim() || savingOption) return;
+    setSavingOption(true);
+    try {
+      await onAddFieldOption(fieldId, newOption.trim());
+      setValue(newOption.trim());
+      setNewOption("");
+      setAddingOption(false);
+    } finally {
+      setSavingOption(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -52,6 +69,24 @@ export default function GroupConditionModal({ groupName, fields, currentFieldId,
                   <option value="">— Select —</option>
                   {selectedField.select_options!.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
+                {onAddFieldOption && (
+                  addingOption ? (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <input value={newOption} onChange={e => setNewOption(e.target.value)} placeholder={`New ${selectedField.label} value`} autoFocus
+                        onKeyDown={e => { if (e.key === "Enter") submitNewOption(); if (e.key === "Escape") setAddingOption(false); }}
+                        className="flex-1 min-w-0 px-3 py-1.5 border border-indigo-300 rounded-full text-[11px] outline-none" />
+                      <button onClick={submitNewOption} disabled={savingOption || !newOption.trim()}
+                        className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
+                        {savingOption ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setAddingOption(true)}
+                      className="flex items-center gap-1 mt-1.5 text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors">
+                      <Plus size={11} /> Add a new {selectedField.label} value
+                    </button>
+                  )
+                )}
               </div>
             )}
           </>

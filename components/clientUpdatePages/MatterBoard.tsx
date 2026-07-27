@@ -65,6 +65,7 @@ interface Props {
   onDeleteGroup?: (groupId: string) => void;
   onAddGroup?: (name: string, parentGroupId: string | null) => void;
   onSetGroupCondition?: (groupId: string, fieldId: string | null, value: string | null) => void;
+  onAddFieldOption?: (fieldId: string, option: string) => Promise<void>;
   onSetDefaultStatusFilter?: (groupId: string, names: string[]) => void;
   onCustomizeColumns?: (groupId: string) => Promise<void>;
   onRevertColumns?: (groupId: string) => Promise<void>;
@@ -140,7 +141,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
-  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
+  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
@@ -672,6 +673,7 @@ export default function MatterBoard({
         <GroupConditionModal groupName={conditionGroup.name} fields={selectFields}
           currentFieldId={conditionGroup.condition_field_id ?? null} currentValue={conditionGroup.condition_value ?? null}
           onSave={(fieldId, value) => { onSetGroupCondition(conditionGroup.id, fieldId, value); setConditionGroupId(null); }}
+          onAddFieldOption={onAddFieldOption}
           onClose={() => setConditionGroupId(null)} />
       )}
       {showLogs && pageId && <ActivityLogModal pageId={pageId} onClose={() => setShowLogs(false)} />}
