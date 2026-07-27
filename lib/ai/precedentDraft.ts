@@ -11,8 +11,8 @@ import { retrieveGroundingContext } from "./retrieval";
 import { callHostedModel } from "./modelCall";
 
 const BASE_SYSTEM_PROMPT =
-  "You draft formal legal correspondence for a law firm, based on a staff member's instructions. " +
-  "Write clear, professional prose appropriate for a client-facing letter -- no meta-commentary, no markdown. " +
+  "You draft formal business correspondence, based on a staff member's instructions. " +
+  "Write clear, professional prose appropriate for a client-facing document -- no meta-commentary, no markdown. " +
   "Respond in EXACTLY this format, nothing before or after it:\n" +
   "SUBJECT: <a short subject line for this letter>\n\n" +
   "<the full body of the letter, starting with the salutation's next line -- do NOT include a salutation " +
@@ -42,7 +42,7 @@ export async function draftPrecedentContent(
   const messages = [
     { role: "system", content: BASE_SYSTEM_PROMPT },
     { role: "system", content: `Document type: ${precedentName}` },
-    ...(aiInstructions ? [{ role: "system", content: `Firm-specific drafting instructions for this document type: ${aiInstructions}` }] : []),
+    ...(aiInstructions ? [{ role: "system", content: `Drafting instructions for this document type: ${aiInstructions}` }] : []),
     ...(contextBlock ? [{ role: "system", content: `Relevant company context (use if helpful, don't force it in):\n${contextBlock}` }] : []),
     ...(contextLabel ? [{ role: "system", content: `This relates to: ${contextLabel}` }] : []),
     { role: "user", content: prompt },

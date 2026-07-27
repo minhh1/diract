@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest) {
   // Company-wide defaults are an admin-only setting; a matter-level override
   // is something anyone with access to that matter can set for themselves.
   if (!projectId && !isAdmin) {
-    return NextResponse.json({ error: "Only a company admin can change the firm-wide defaults" }, { status: 403 });
+    return NextResponse.json({ error: "Only a company admin can change the company-wide defaults" }, { status: 403 });
   }
   if (projectId) {
     const { data: project } = await admin.from("projects").select("id, company_id").eq("id", projectId).maybeSingle();

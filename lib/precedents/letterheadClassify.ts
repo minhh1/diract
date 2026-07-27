@@ -66,14 +66,14 @@ const CLASSIFY_TOOL = {
   function: {
     name: "classify_letterhead_paragraphs",
     description:
-      "Classify which paragraphs of a firm's Word letterhead/letter template play which semantic role, so the app can turn placeholder text into merge tags at the right spot instead of a generic catch-all at the end of the document.",
+      "Classify which paragraphs of a business's Word letterhead/document template play which semantic role, so the app can turn placeholder text into merge tags at the right spot instead of a generic catch-all at the end of the document.",
     parameters: {
       type: "object",
       properties: {
         fields: {
           type: "array",
           description:
-            "One entry per paragraph that plays a recognizable role. Skip purely decorative/blank paragraphs (logo art, plain spacing) with no role. 'closing' and 'signoff' are reported even though they're already correct static text (not brackets/placeholders) -- e.g. a real 'Yours faithfully,' line, or a hardcoded name/position/firm/phone/email block -- so the app knows that content already exists and won't add a duplicate.",
+            "One entry per paragraph that plays a recognizable role. Skip purely decorative/blank paragraphs (logo art, plain spacing) with no role. 'closing' and 'signoff' are reported even though they're already correct static text (not brackets/placeholders) -- e.g. a real 'Yours faithfully,' line, or a hardcoded name/title/company/phone/email block -- so the app knows that content already exists and won't add a duplicate.",
           items: {
             type: "object",
             properties: {
@@ -101,8 +101,8 @@ const CLASSIFY_TOOL = {
   },
 };
 
-const SYSTEM_PROMPT = `You are analysing a law firm's uploaded Word letterhead/letter template, broken into numbered paragraphs (some blank, some marked [bold]). Bracketed text like [insert] or [By Hand/By Email/By Post] marks a placeholder the firm hasn't filled in yet -- these almost always indicate one of the roles below. A blank run of several consecutive paragraphs after the salutation, before any closing/signoff, is the letter's body. Call classify_letterhead_paragraphs exactly once with every paragraph that plays a role:
-- our_ref: a firm/matter reference line, e.g. "Our Ref: ..."
+const SYSTEM_PROMPT = `You are analysing a business's uploaded Word letterhead/document template, broken into numbered paragraphs (some blank, some marked [bold]). Bracketed text like [insert] or [By Hand/By Email/By Post] marks a placeholder that hasn't been filled in yet -- these almost always indicate one of the roles below. A blank run of several consecutive paragraphs after the salutation, before any closing/signoff, is the letter's body. Call classify_letterhead_paragraphs exactly once with every paragraph that plays a role:
+- our_ref: an internal reference line, e.g. "Our Ref: ..."
 - date: the letter's date line (often a Word DATE field)
 - delivery_mode: a bracketed list of delivery methods, e.g. "[By Hand/By Email/By Post]"
 - recipient_name: the addressee's name or company name
@@ -110,7 +110,7 @@ const SYSTEM_PROMPT = `You are analysing a law firm's uploaded Word letterhead/l
 - salutation: the "Dear ..." line
 - subject: the letter's subject/RE heading -- can span several consecutive paragraphs (e.g. a bold heading plus one or two labeled detail lines)
 - body: the blank paragraph(s) where the letter's own content goes
-- signoff: the signature block (name, position, firm, phone, email) -- whether it's blank placeholders or already a real hardcoded person's details
+- signoff: the signature block (name, title, company, phone, email) -- whether it's blank placeholders or already a real hardcoded person's details
 - closing: the sign-off phrase itself (e.g. "Yours faithfully,")
 Separately, business letters conventionally use a blank line to visually separate distinct pieces of information -- e.g. between a reference line and the date, between the date and delivery instructions, between delivery instructions and a recipient's name. Some letterheads pack several of these directly adjacent with no blank line at all. List (in blankLineAfter) the index of every paragraph that's missing this separation from the one right after it -- but never one whose next paragraph is already blank, and never split up a single block that belongs together (e.g. a mailing address's own lines, or a subject heading and its labeled detail lines).
 Output ONLY through the tool call. If nothing recognizable is found, call it with an empty fields array.`;

@@ -27,7 +27,7 @@ const BUILD_TOOL = {
   function: {
     name: "build_precedent_body_template",
     description:
-      "Reconstruct one canonical version of a law firm precedent's letter body as an ordered sequence of segments, alternating fixed boilerplate text and fill-in fields, from one or more real past examples of the same type of letter.",
+      "Reconstruct one canonical version of a precedent document's body as an ordered sequence of segments, alternating fixed boilerplate text and fill-in fields, from one or more real past examples of the same type of document.",
     parameters: {
       type: "object",
       properties: {
@@ -40,8 +40,8 @@ const BUILD_TOOL = {
             properties: {
               type: { type: "string", enum: ["text", "field"] },
               text: { type: "string", description: "Required when type is 'text': the fixed wording, worded generically (not copied from just one example if others phrase it differently)." },
-              key: { type: "string", description: "Required when type is 'field': a short snake_case identifier, e.g. property_address, settlement_date." },
-              label: { type: "string", description: "Required when type is 'field': a short human label for a form input, e.g. \"Property Address\"." },
+              key: { type: "string", description: "Required when type is 'field': a short snake_case identifier, e.g. project_reference, due_date." },
+              label: { type: "string", description: "Required when type is 'field': a short human label for a form input, e.g. \"Project Reference\"." },
               example: { type: "string", description: "Required when type is 'field': the actual value this field held in whichever example illustrates it best, used as a placeholder." },
             },
             required: ["type"],
@@ -53,13 +53,13 @@ const BUILD_TOOL = {
   },
 };
 
-const SYSTEM_PROMPT = `You are analysing real past letters a law firm has sent, all examples of the SAME type of precedent letter, to build a reusable template for future letters of this type.
+const SYSTEM_PROMPT = `You are analysing real past documents a business has sent, all examples of the SAME type of precedent document, to build a reusable template for future documents of this type.
 
-The firm's letterhead already supplies the date, Our Ref, delivery mode, recipient name/address, salutation, subject line, and closing/signoff separately -- do NOT include any of those in your output, only the substantive body content between the salutation and the closing.
+The letterhead already supplies the date, Our Ref, delivery mode, recipient name/address, salutation, subject line, and closing/signoff separately -- do NOT include any of those in your output, only the substantive body content between the salutation and the closing.
 
 Call build_precedent_body_template exactly once with the body reconstructed as an ordered list of segments:
-- A "text" segment is wording that stays the same across examples (or, with only one example, reads as a fixed sentence rather than data) -- keep the firm's actual phrasing.
-- A "field" segment is a specific piece of information that varies between examples or is obviously a data point specific to one matter: an address, a date, a dollar amount, a name, a reference number, etc. Give it a short snake_case key, a human label, and use the clearest example's actual value as the "example".
+- A "text" segment is wording that stays the same across examples (or, with only one example, reads as a fixed sentence rather than data) -- keep the actual phrasing.
+- A "field" segment is a specific piece of information that varies between examples or is obviously a data point specific to one record: an address, a date, a dollar amount, a name, a reference number, etc. Give it a short snake_case key, a human label, and use the clearest example's actual value as the "example".
 - Preserve paragraph breaks in "text" segments using \\n\\n between paragraphs, exactly like the source documents.
 - If multiple examples are given, compare them to tell fixed wording apart from what varies -- don't invent a field for something that's actually identical across all examples.
 Output ONLY through the tool call.`;

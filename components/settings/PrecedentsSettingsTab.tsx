@@ -54,9 +54,9 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const SUBJECT_OPTIONS: { value: Settings["subject_line_style"]; label: string; example: string }[] = [
-  { value: "sentence_case", label: "Sentence case", example: "Settlement of your claim" },
-  { value: "all_caps", label: "ALL CAPS", example: "SETTLEMENT OF YOUR CLAIM" },
-  { value: "with_re", label: "RE: prefix", example: "RE: Settlement of your claim" },
+  { value: "sentence_case", label: "Sentence case", example: "Update on your account" },
+  { value: "all_caps", label: "ALL CAPS", example: "UPDATE ON YOUR ACCOUNT" },
+  { value: "with_re", label: "RE: prefix", example: "RE: Update on your account" },
 ];
 
 const DATE_OPTIONS = [
@@ -240,7 +240,7 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const handleRemove = async () => {
-    if (!window.confirm("Remove the firm letterhead? Documents can't be issued until a new one is uploaded.")) return;
+    if (!window.confirm("Remove the company letterhead? Documents can't be issued until a new one is uploaded.")) return;
     await fetch("/api/precedents/letterhead", { method: "DELETE" });
     setLetterhead(null);
     invalidatePreviewCache();
@@ -310,8 +310,8 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
         <div>
           <p className="text-[12px] text-slate-400 mb-3">
             {isAdmin
-              ? <>Upload your firm&apos;s Word letterhead (logo/header/footer already laid out). The recipient&apos;s
-                  address and the letter itself are placed automatically — no manual tagging needed.</>
+              ? <>Upload your company&apos;s Word letterhead (logo/header/footer already laid out). The recipient&apos;s
+                  address and the document itself are placed automatically — no manual tagging needed.</>
               : "No letterhead has been uploaded yet — ask a company admin to set one up before issuing documents."}
           </p>
           {isAdmin && (
@@ -625,7 +625,7 @@ function StaffSignoffRow({ staff, canEdit, canDelete, onChanged }: {
     <div className="border border-indigo-200 rounded-2xl p-4 space-y-2">
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (shown in bold)"
         className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] font-bold outline-none focus:border-indigo-400" />
-      <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Position, e.g. Partner"
+      <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Position, e.g. Manager"
         className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
       <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Company name"
         className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
@@ -811,7 +811,7 @@ function BodyTemplateSection({ precedentId, canEdit }: { precedentId: string; ca
         )}
       </div>
       <p className="text-[11px] text-slate-400">
-        Upload one or more real past documents of this type — the app compares them (and the firm's letterhead) to build a reusable body with fill-in fields for what changes each time, e.g. a property address or settlement date.
+        Upload one or more real past documents of this type — the app compares them (and the company's letterhead) to build a reusable body with fill-in fields for what changes each time, e.g. a project reference or due date.
       </p>
 
       {uploading && (
@@ -912,13 +912,13 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
 
   return (
     <div className="border border-slate-200 rounded-[24px] p-5 space-y-3">
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Letter of Demand"
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Order Confirmation"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] font-bold outline-none focus:border-indigo-400" />
       <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
         placeholder="Description shown to staff on the Precedent tab (optional)"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
       <textarea value={aiInstructions} onChange={e => setAiInstructions(e.target.value)} rows={3}
-        placeholder="Instructions for the optional AI drafting assist — e.g. 'This is a formal letter of demand. State a clear deadline and the consequences of non-payment.'"
+        placeholder="Instructions for the optional AI drafting assist — e.g. 'This confirms an order has been placed. State the order details and expected delivery date.'"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
       {!isNew && <BodyTemplateSection precedentId={precedent.id} canEdit={canEdit} />}
       {error && <p className="text-[11px] text-red-500">{error}</p>}

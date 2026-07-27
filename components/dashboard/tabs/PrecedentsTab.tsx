@@ -292,7 +292,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
           )}
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-              Salutation <span className="text-slate-300 normal-case font-normal">(optional — leave blank to use the firm's default)</span>
+              Salutation <span className="text-slate-300 normal-case font-normal">(optional — leave blank to use the default)</span>
             </p>
             <input value={salutation} onChange={e => setSalutation(e.target.value)}
               placeholder="e.g. Dear Mr Smith,"
@@ -309,7 +309,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
               )}
             </div>
             <input value={subject} onChange={e => setSubject(e.target.value)}
-              placeholder="e.g. Settlement of your claim"
+              placeholder="e.g. Update on your account"
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
           </div>
 
@@ -322,7 +322,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
                 Describe what this document should say — the subject and body above will be pre-filled for you to review and edit before issuing.
               </p>
               <textarea value={brief} onChange={e => setBrief(e.target.value)} rows={3}
-                placeholder="e.g. Confirm settlement of the claim for $50,000, payable within 14 days..."
+                placeholder="e.g. Confirm the order has shipped and is expected to arrive within 5 business days..."
                 className="w-full px-4 py-2.5 border border-indigo-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none bg-white" />
               {draftError && <p className="text-[11px] text-red-500">{draftError}</p>}
               <button type="button" onClick={handleDraftWithAi} disabled={drafting}
@@ -355,7 +355,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
               </div>
             ) : (
               <textarea value={body} onChange={e => setBody(e.target.value)} rows={8}
-                placeholder="Write the letter's content here..."
+                placeholder="Write the document's content here..."
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
             )}
           </div>
@@ -488,11 +488,11 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
           <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
             <div className="flex items-center justify-between">
               <p className="text-[11px] text-slate-400">
-                {override ? "This matter has its own overrides." : "Currently using the firm-wide defaults."}
+                {override ? "This matter has its own overrides." : "Currently using the company-wide defaults."}
               </p>
               {override && (
                 <button onClick={revertToFirmDefault} disabled={saving} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700">
-                  Use firm default
+                  Use company default
                 </button>
               )}
             </div>

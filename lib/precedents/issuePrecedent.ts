@@ -149,7 +149,7 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
     .select("storage_path, address_tag_key, content_tag_key, signoff_tag_key, detected_fields")
     .eq("company_id", companyId).maybeSingle();
   if (!letterhead) {
-    return { ok: false, error: "This firm hasn't set up a letterhead yet — an admin can upload one in Settings → Precedents.", status: 400 };
+    return { ok: false, error: "This company hasn't set up a letterhead yet — an admin can upload one in Settings → Precedents.", status: 400 };
   }
 
   // Fields lib/precedents/letterheadClassify.ts found beyond the always-
@@ -204,7 +204,7 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
   if (detectedRoles.has("subject")) fillData.subject = formattedSubject;
 
   const { data: fileData, error: dlErr } = await admin.storage.from(BUCKET).download(letterhead.storage_path);
-  if (dlErr || !fileData) return { ok: false, error: "Could not load the firm's letterhead", status: 500 };
+  if (dlErr || !fileData) return { ok: false, error: "Could not load the company's letterhead", status: 500 };
 
   let docxBuffer: Buffer;
   try {
