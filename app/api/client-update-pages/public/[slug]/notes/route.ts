@@ -11,7 +11,7 @@ import { loadActivePageBySlug, codeMatches } from "@/lib/clientUpdatePageGate";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const body = await req.json().catch(() => ({}));
-  const { itemId, note, code } = body as { itemId?: string; note?: string; code?: string };
+  const { itemId, note, code, propertyId } = body as { itemId?: string; note?: string; code?: string; propertyId?: string };
 
   if (!itemId || !note || !String(note).trim()) {
     return NextResponse.json({ error: "A note is required" }, { status: 400 });
@@ -28,12 +28,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     return NextResponse.json({ error: "Incorrect access code" }, { status: 401 });
   }
 
-  const { data: item } = await admin.from("client_update_page_items").select("id").eq("id", itemId).eq("page_id", page.id).maybeSingle();
+  const { data: item } = await admin.from("client_update_page_items").select("id, project_id").eq("id", itemId).eq("page_id", page.id).maybeSingle();
   if (!item) return NextResponse.json({ error: "This matter is not available" }, { status: 404 });
 
+  // Same "must genuinely belong to this matter" check as the staff route --
+  // see its comment. property_id stays null (a whole-matter note) unless
+  // that holds.
+  let noteProperty: string | null = null;
+  if (propertyId) {
+    const { count } = await admin.from("project_properties").select("id", { count: "exact", head: true }).eq("project_id", item.project_id).eq("property_id", propertyId);
+    if (count) noteProperty = propertyId;
+  }
+
   const { data: created, error } = await admin.from("client_update_page_notes").insert({
-    item_id: itemId, body: String(note).trim(), source: "client",
-  }).select("id, note_date, body, author_name, source, created_at").single();
+    item_id: itemId, body: String(note).trim(), source: "client", property_id: noteProperty,
+  }).select("id, note_date, body, author_name, source, created_at, property_id").single();
   if (error) return NextResponse.json({ error: "Could not save your note" }, { status: 500 });
 
   return NextResponse.json({ note: created });

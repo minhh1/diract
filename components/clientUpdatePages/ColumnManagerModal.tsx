@@ -23,14 +23,14 @@ interface RelatedTableOption { linkFieldId: string; linkLabel: string; columns: 
 export default function ColumnManagerModal({ pageId, groupId, currentFields, groupName, isCustomized, onCustomize, onRevert, onReorderFields, onClose, onChanged }: {
   pageId: string; groupId: string | null; currentFields: FieldDef[];
   groupName: string | null; isCustomized: boolean;
-  onCustomize?: () => Promise<void>; onRevert?: () => Promise<void>;
+  onCustomize?: () => void; onRevert?: () => Promise<void>;
   onReorderFields?: (fieldIds: string[]) => void;
   onClose: () => void; onChanged: () => void;
 }) {
   const [order, setOrder] = useState(currentFields);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [catalog, setCatalog] = useState<{ base: CatalogOption[]; custom: CatalogOption[]; relatedTables: RelatedTableOption[] } | null>(null);
+  const [catalog, setCatalog] = useState<{ base: CatalogOption[]; custom: CatalogOption[]; relatedTables: RelatedTableOption[]; propertyBase: CatalogOption[]; propertyCustom: CatalogOption[] } | null>(null);
   const [expandedLink, setExpandedLink] = useState<string | null>(null);
   const [adhocLabel, setAdhocLabel] = useState("");
   const [adhocIsSelect, setAdhocIsSelect] = useState(false);
@@ -40,11 +40,14 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
   const [promoteChooserId, setPromoteChooserId] = useState<string | null>(null);
   const [promoteType, setPromoteType] = useState("text");
 
-  const handleCustomize = async () => {
-    if (!onCustomize || switching) return;
-    setSwitching(true);
-    try { await onCustomize(); onChanged(); } catch (e: any) { window.alert(e?.message || "Couldn't customize columns"); } finally { setSwitching(false); }
-  };
+  // Optimistic -- onCustomize applies the new columns to local state and
+  // fires the request itself (see PublicClientUpdateContent.tsx), so
+  // there's nothing to await here; the "Customize" button flips to
+  // "Revert to shared" the instant isCustomized recomputes, no spinner
+  // needed. This used to await the request (and then a full board
+  // reload) before anything visibly changed, which is what made it feel
+  // slow.
+  const handleCustomize = () => onCustomize?.();
   const handleRevert = async () => {
     if (!onRevert || switching) return;
     if (!window.confirm(`Revert "${groupName}" to the shared columns? Its own customized columns will be removed.`)) return;
@@ -105,7 +108,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
     onChanged();
   };
 
-  const addField = async (fieldSource: "base" | "custom" | "adhoc" | "related_entity", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
+  const addField = async (fieldSource: "base" | "custom" | "adhoc" | "related_entity" | "property", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
     await fetch(`/api/client-update-pages/${pageId}/fields`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldSource, fieldKey, label, selectOptions, groupId }),
     });
@@ -159,8 +162,8 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
               )
             ) : (
               onCustomize && (
-                <button onClick={handleCustomize} disabled={switching} className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 disabled:opacity-40 transition-colors shrink-0">
-                  {switching && <Loader2 size={11} className="animate-spin" />} Customize for {groupName} only
+                <button onClick={handleCustomize} className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0">
+                  Customize for {groupName} only
                 </button>
               )
             )}
@@ -232,6 +235,27 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
               ))}
             </div>
           </div>
+
+          {(!!catalog?.propertyBase.length || !!catalog?.propertyCustom.length) && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Property fields</p>
+              <p className="text-[11px] text-slate-400 mb-2">Lives on the linked property, not the matter -- a matter with 2+ properties shows one row/card per property, each with its own value for this column.</p>
+              <div className="flex flex-wrap gap-2">
+                {catalog?.propertyBase.filter(o => !usedKeys.has(o.field_key)).map(o => (
+                  <button key={o.field_key} onClick={() => addField("property", o.field_key, o.label)}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                    + {o.label}
+                  </button>
+                ))}
+                {catalog?.propertyCustom.filter(o => !usedKeys.has(o.field_key)).map(o => (
+                  <button key={o.field_key} onClick={() => addField("property", o.field_key, o.label)}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                    + {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {!!catalog?.relatedTables.length && (
             <div>

@@ -1,17 +1,22 @@
 // app/api/client-update-pages/[id]/fields/route.ts
 // GET returns the pickable field catalog: base projects columns + the
 // synthetic name/property-linked keys, this company's projects custom
-// fields, and "related" tables reachable from a matter -- currently just
-// entities, one per 'entity'-type custom field on projects (e.g. "Client
-// Name" links to an entities row; each of that entity's own columns, from
-// a curated allow-list, becomes a pickable related field). POST adds one
-// (or an 'adhoc' page-only field, which just needs a label) to a specific
-// group's column set. group_id NULL is the shared/default column set every
-// group shows unless it's been explicitly customized -- see
-// .../groups/[groupId]/customize-columns/route.ts for how a top-level group
-// diverges from (or reverts back to) that shared set. This keeps a fresh or
-// unmodified group's columns stable and predictable instead of drifting
-// independently from the moment it's created.
+// fields, property base/custom fields (field_source: 'property' --
+// key packs "base:<column>" or "custom:<company_custom_fields.id>",
+// resolved per-property by lib/clientUpdatePageDetail.ts and split across
+// a row/card per property for a matter with more than one -- see
+// MatterBoard.tsx's expandByProperty), and "related" tables reachable from
+// a matter -- currently just entities, one per 'entity'-type custom field
+// on projects (e.g. "Client Name" links to an entities row; each of that
+// entity's own columns, from a curated allow-list, becomes a pickable
+// related field). POST adds one (or an 'adhoc' page-only field, which just
+// needs a label) to a specific group's column set. group_id NULL is the
+// shared/default column set every group shows unless it's been explicitly
+// customized -- see .../groups/[groupId]/customize-columns/route.ts for
+// how a top-level group diverges from (or reverts back to) that shared
+// set. This keeps a fresh or unmodified group's columns stable and
+// predictable instead of drifting independently from the moment it's
+// created.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
@@ -33,10 +38,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const gate = await loadPageForCompany(admin, id, companyId);
   if (gate.error) return gate.error;
 
-  const [{ data: schemaCols }, { data: customFields }, { data: entityLinkFields }] = await Promise.all([
+  const [{ data: schemaCols }, { data: customFields }, { data: entityLinkFields }, { data: propertySchemaCols }, { data: propertyCustomFields }] = await Promise.all([
     admin.rpc("get_schema_metadata", { target_table: "projects", p_company_id: companyId }),
     admin.from("company_custom_fields").select("id, field_key, label").eq("company_id", companyId).eq("table_name", "projects").is("deleted_at", null),
     admin.from("company_custom_fields").select("id, label").eq("company_id", companyId).eq("table_name", "projects").eq("field_type", "entity").is("deleted_at", null),
+    admin.rpc("get_schema_metadata", { target_table: "properties", p_company_id: companyId }),
+    admin.from("company_custom_fields").select("id, field_key, label").eq("company_id", companyId).eq("table_name", "properties").is("deleted_at", null),
   ]);
 
   const baseOptions = [
@@ -56,8 +63,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     linkLabel: f.label,
     columns: RELATED_ENTITY_COLUMNS,
   }));
+  // street_address is already covered by the synthetic "Property Address"
+  // base field above (which also handles the multi-property split) -- so
+  // it's excluded here for the same reason name/purchase_price are above.
+  const propertyBaseOptions = (propertySchemaCols || [])
+    .filter((c: any) => c.category === "data" && !c.is_hidden && c.column_name !== "street_address")
+    .map((c: any) => ({ field_key: `base:${c.column_name}`, label: c.label || c.column_name.replace(/_/g, " ") }));
+  const propertyCustomOptions = (propertyCustomFields || []).map((f: any) => ({ field_key: `custom:${f.id}`, label: f.label }));
 
-  return NextResponse.json({ base: baseOptions, custom: customOptions, relatedTables });
+  return NextResponse.json({ base: baseOptions, custom: customOptions, relatedTables, propertyBase: propertyBaseOptions, propertyCustom: propertyCustomOptions });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -72,7 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
   const { fieldSource, fieldKey, label } = body;
   const groupId: string | null = body.groupId || null;
-  if (!["base", "custom", "adhoc", "related_entity"].includes(fieldSource)) {
+  if (!["base", "custom", "adhoc", "related_entity", "property"].includes(fieldSource)) {
     return NextResponse.json({ error: "Invalid field source" }, { status: 400 });
   }
   if (!label?.trim()) return NextResponse.json({ error: "Label is required" }, { status: 400 });
@@ -86,6 +100,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: linkField } = await admin.from("company_custom_fields")
       .select("id").eq("id", linkFieldId).eq("company_id", companyId).eq("table_name", "projects").eq("field_type", "entity").is("deleted_at", null).maybeSingle();
     if (!linkField) return NextResponse.json({ error: "Related link field not found" }, { status: 404 });
+  }
+
+  // "base:<column>" or "custom:<company_custom_fields.id>" -- see the GET
+  // handler's header comment for why properties fields are keyed this way
+  // instead of getting their own field_source per kind.
+  let propertyFieldKind: "base" | "custom" | null = null;
+  if (fieldSource === "property") {
+    const [kind, key] = String(fieldKey).split(":");
+    if (!["base", "custom"].includes(kind) || !key) {
+      return NextResponse.json({ error: "Invalid property field" }, { status: 400 });
+    }
+    propertyFieldKind = kind as "base" | "custom";
+    if (kind === "custom") {
+      const { data: cf } = await admin.from("company_custom_fields")
+        .select("id").eq("id", key).eq("company_id", companyId).eq("table_name", "properties").is("deleted_at", null).maybeSingle();
+      if (!cf) return NextResponse.json({ error: "Property custom field not found" }, { status: 404 });
+    }
   }
 
   if (groupId) {
@@ -117,6 +148,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     else {
       const { data: schemaCols } = await admin.rpc("get_schema_metadata", { target_table: "projects", p_company_id: companyId });
       const col = (schemaCols || []).find((c: any) => c.column_name === fieldKey);
+      fieldType = col?.data_type?.includes("date") ? "date" : ["numeric", "integer"].includes(col?.data_type) ? "number" : "text";
+    }
+  } else if (fieldSource === "property") {
+    const [, key] = String(fieldKey).split(":");
+    if (propertyFieldKind === "custom") {
+      const { data: cf } = await admin.from("company_custom_fields").select("field_type, select_options").eq("id", key).maybeSingle();
+      if (cf) {
+        fieldType = ["date", "select", "number", "currency", "boolean"].includes(cf.field_type) ? cf.field_type : "text";
+        selectOptions = cf.field_type === "select" ? cf.select_options : null;
+      }
+    } else {
+      const { data: schemaCols } = await admin.rpc("get_schema_metadata", { target_table: "properties", p_company_id: companyId });
+      const col = (schemaCols || []).find((c: any) => c.column_name === key);
       fieldType = col?.data_type?.includes("date") ? "date" : ["numeric", "integer"].includes(col?.data_type) ? "number" : "text";
     }
   }

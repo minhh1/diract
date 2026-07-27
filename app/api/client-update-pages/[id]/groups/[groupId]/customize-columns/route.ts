@@ -100,15 +100,21 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const { data: sharedFields } = await admin.from("client_update_page_fields")
     .select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options").eq("page_id", id).is("group_id", null);
 
+  let newFields: any[] = [];
   if (sharedFields?.length) {
-    const { data: newFields, error } = await admin.from("client_update_page_fields").insert(
+    const { data, error } = await admin.from("client_update_page_fields").insert(
       sharedFields.map((f: any) => {
         const { id: _oldId, ...rest } = f;
         return { ...rest, page_id: id, group_id: groupId, field_key: f.field_source === "adhoc" ? `adhoc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` : f.field_key };
       })
-    ).select("id, label, field_source");
+    // Full shape (not just id/label/field_source) -- the caller applies
+    // this directly to its optimistic local field list (see MatterBoard.tsx's
+    // customizeColumns) instead of doing a full board reload to pick up
+    // the new fields' real ids, which is what made this feel slow before.
+    ).select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options, group_id");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await copyAdhocValues(admin, id, groupId, sharedFields, newFields || []);
+    newFields = data || [];
+    await copyAdhocValues(admin, id, groupId, sharedFields, newFields);
   }
 
   // Best-effort -- a condition left pointing at the shared field still
@@ -119,7 +125,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const actorName = await resolveActorName(admin, user.id);
   await logChange(admin, id, actorName, "staff", "columns_customized", `Customized columns for "${group.name}" (started from the shared set)`);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, fields: newFields });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string; groupId: string }> }) {

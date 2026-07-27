@@ -48,12 +48,63 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
 
   // Purchase Price lives on projects, not properties (see the migration's
   // header comment) -- property_address is still the linked property's own
-  // field, so that join stays.
-  const propertyIds = [...new Set((projects || []).map((p: any) => p.property_id).filter(Boolean))];
-  const { data: properties } = propertyIds.length
-    ? await admin.from("properties").select("id, street_address").in("id", propertyIds)
+  // field. A project can now have 2+ properties (project_properties
+  // junction -- see lib/schema/systemTableRelations.ts's property_id entry
+  // and supabase/migrations/20260727035000_project_properties_multi.sql),
+  // so this reads every linked property per project, not just the single
+  // legacy projects.property_id -- MatterBoard.tsx expands a matter with
+  // more than one into its own row/card per property. Falls back to the
+  // legacy single column for the (shouldn't-happen-post-backfill, but stay
+  // defensive) case of a project with a property_id but no junction row.
+  const { data: projectPropertyLinks } = projectIds.length
+    ? await admin.from("project_properties").select("project_id, property_id").in("project_id", projectIds).order("created_at", { ascending: true })
+    : { data: [] as any[] };
+  const propertyIdsByProject = new Map<string, string[]>();
+  for (const link of projectPropertyLinks || []) {
+    if (!propertyIdsByProject.has(link.project_id)) propertyIdsByProject.set(link.project_id, []);
+    propertyIdsByProject.get(link.project_id)!.push(link.property_id);
+  }
+  for (const p of projects || []) {
+    if (!propertyIdsByProject.has(p.id) && p.property_id) propertyIdsByProject.set(p.id, [p.property_id]);
+  }
+  const allPropertyIds = [...new Set([...propertyIdsByProject.values()].flat())];
+  // select("*") -- a 'property' field_source (see below) can point at any
+  // base column on properties, picked freely from the fields catalog, so
+  // there's no fixed column list to name up front the way the narrower
+  // single-column select this replaced had.
+  const { data: properties } = allPropertyIds.length
+    ? await admin.from("properties").select("*").in("id", allPropertyIds)
     : { data: [] as any[] };
   const propertyById = new Map<string, any>((properties || []).map((p: any) => [p.id, p]));
+
+  // A 'property' field's field_key packs "base:<column>" or
+  // "custom:<company_custom_fields.id>" -- parallel to how a 'base'/
+  // 'custom' field works for projects, just scoped to whichever
+  // property(ies) a matter is linked to instead of the matter itself (see
+  // the fields route's header comment for the picker side of this).
+  const propertyFields = (fields || []).filter((f: any) => f.field_key === "property_address" || f.field_source === "property");
+  const propertyCustomFieldIds = propertyFields
+    .filter((f: any) => f.field_source === "property" && f.field_key.startsWith("custom:"))
+    .map((f: any) => f.field_key.split(":")[1]);
+  const { data: propertyCustomValues } = propertyCustomFieldIds.length && allPropertyIds.length
+    ? await admin.from("company_custom_field_values")
+        .select("field_id, record_id, value_text, value_number, value_date, value_boolean")
+        .in("field_id", propertyCustomFieldIds).in("record_id", allPropertyIds)
+    : { data: [] as any[] };
+  const propertyCustomValueByKey = new Map<string, any>((propertyCustomValues || []).map((v: any) => [`${v.field_id}:${v.record_id}`, v]));
+
+  function resolvePropertyField(field: any, propertyId: string | undefined): any {
+    if (!propertyId) return null;
+    const property = propertyById.get(propertyId);
+    if (field.field_key === "property_address") return property?.street_address ?? null;
+    const [kind, key] = field.field_key.split(":");
+    if (kind === "base") return property?.[key] ?? null;
+    if (kind === "custom") {
+      const v = propertyCustomValueByKey.get(`${key}:${propertyId}`);
+      return v ? (v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null) : null;
+    }
+    return null;
+  }
 
   const customFieldIds = (fields || []).filter((f: any) => f.field_source === "custom").map((f: any) => f.field_key);
   const { data: customValues } = customFieldIds.length && projectIds.length
@@ -82,7 +133,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const adhocValueByKey = new Map<string, any>((adhocValues || []).map((v: any) => [`${v.field_id}:${v.item_id}`, v.value_text]));
 
   const { data: notes } = itemIds.length
-    ? await admin.from("client_update_page_notes").select("id, item_id, note_date, body, author_name, source, created_at")
+    ? await admin.from("client_update_page_notes").select("id, item_id, note_date, body, author_name, source, created_at, property_id")
         .in("item_id", itemIds).order("created_at", { ascending: false })
     : { data: [] as any[] };
   const notesByItem = new Map<string, any[]>();
@@ -114,8 +165,10 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       const v = customValueByKey.get(`${field.field_key}:${item.project_id}`);
       return v ? (v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null) : null;
     }
-    const property = project?.property_id ? propertyById.get(project.property_id) : null;
-    if (field.field_key === "property_address") return property?.street_address ?? null;
+    if (field.field_key === "property_address" || field.field_source === "property") {
+      const propIds = propertyIdsByProject.get(item.project_id) || [];
+      return resolvePropertyField(field, propIds[0]);
+    }
     return project?.[field.field_key] ?? null;
   }
 
@@ -127,6 +180,11 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       values: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveValue(f, i)])),
       notes: notesByItem.get(i.id) || [],
       emails: emailsByItem.get(i.id) || [],
+      properties: (propertyIdsByProject.get(i.project_id) || []).map((pid: string) => ({
+        id: pid,
+        address: propertyById.get(pid)?.street_address ?? null,
+        values: Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyField(f, pid)])),
+      })),
     })),
     fields: fields || [],
     formatRules: formatRules || [],

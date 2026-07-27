@@ -44,9 +44,10 @@ import GroupConditionModal from "./GroupConditionModal";
 import ActivityLogModal from "./ActivityLogModal";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
-export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; }
+export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
 export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
-export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
+export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; }
+export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
@@ -60,18 +61,18 @@ interface Props {
   freezeFirstColumn?: boolean;
   canEdit: boolean;
   canComment: boolean;
-  onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
+  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
   onRenameGroup?: (groupId: string, name: string) => void;
   onDeleteGroup?: (groupId: string) => void;
   onAddGroup?: (name: string, parentGroupId: string | null) => void;
   onSetGroupCondition?: (groupId: string, fieldId: string | null, value: string | null) => void;
   onAddFieldOption?: (fieldId: string, option: string) => Promise<void>;
   onSetDefaultStatusFilter?: (groupId: string, names: string[]) => void;
-  onCustomizeColumns?: (groupId: string) => Promise<void>;
+  onCustomizeColumns?: (groupId: string) => void;
   onRevertColumns?: (groupId: string) => Promise<void>;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
-  onAddNote: (itemId: string, note: string) => void;
+  onAddNote: (itemId: string, note: string, propertyId?: string) => void;
   onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
   onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
@@ -352,13 +353,17 @@ export default function MatterBoard({
   }));
   const removeFilter = (index: number) => setFilters(prev => prev.filter((_, i) => i !== index));
 
-  // First matching rule wins (rules are ordered, top to bottom). Checked
-  // against the item's full value map, not just visibleFields, since a
-  // rule can reference any field on the page regardless of which group is
-  // currently active (formatting rules aren't group-scoped).
+  // First matching rule wins (rules are ordered, top to bottom). A rule's
+  // field_id is resolved to THIS group's own field with the same label
+  // (see resolveRuleFieldId's comment) rather than compared directly --
+  // formatting rules are page-wide, but each top-level group can have its
+  // own differently-id'd copy of a same-named column once customized, so
+  // comparing the raw id only ever matched whichever one group the rule
+  // happened to be set on.
   const colorForItem = (item: MatterBoardItem): string | null => {
     for (const rule of formatRules) {
-      if (String(item.values[rule.field_id] ?? "") === rule.value) return rule.color;
+      const fieldId = resolveRuleFieldId(rule, fields, visibleFields);
+      if (fieldId && String(item.values[fieldId] ?? "") === rule.value) return rule.color;
     }
     return null;
   };
@@ -583,7 +588,9 @@ export default function MatterBoard({
             <SidebarSection title="Formatting">
               <div className="space-y-2">
                 {formatRules.map(rule => {
-                  const field = fields.find(f => f.id === rule.field_id);
+                  const originalField = fields.find(f => f.id === rule.field_id);
+                  const resolvedFieldId = resolveRuleFieldId(rule, fields, visibleFields);
+                  const field = visibleFields.find(f => f.id === resolvedFieldId);
                   const options = field ? distinctValuesFor(field.id) : [];
                   return (
                     <div key={rule.id} className="space-y-1">
@@ -591,12 +598,13 @@ export default function MatterBoard({
                         <button onClick={() => canEdit && onUpdateFormatRule && setColorPickerFor(colorPickerFor === rule.id ? null : rule.id)}
                           title="Change colour" className={`w-4 h-4 rounded-full shrink-0 ${FORMAT_COLORS[rule.color]?.swatch || "bg-slate-300"}`} />
                         {canEdit && onUpdateFormatRule ? (
-                          <select value={rule.field_id} onChange={e => onUpdateFormatRule(rule.id, { fieldId: e.target.value, value: distinctValuesFor(e.target.value)[0] || "" })}
+                          <select value={resolvedFieldId ?? ""} onChange={e => onUpdateFormatRule(rule.id, { fieldId: e.target.value, value: distinctValuesFor(e.target.value)[0] || "" })}
                             className="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
+                            {!resolvedFieldId && <option value="">{originalField?.label || "?"} (not on this group)</option>}
                             {visibleFields.map(vf => <option key={vf.id} value={vf.id}>{vf.label}</option>)}
                           </select>
                         ) : (
-                          <span className="flex-1 min-w-0 text-[11px] text-slate-600 truncate">{field?.label || "?"} = {rule.value}</span>
+                          <span className="flex-1 min-w-0 text-[11px] text-slate-600 truncate">{originalField?.label || "?"} = {rule.value}</span>
                         )}
                         {canEdit && onRemoveFormatRule && (
                           <button onClick={() => onRemoveFormatRule(rule.id)} title="Remove rule" className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
@@ -669,8 +677,8 @@ export default function MatterBoard({
         <div className="w-full flex-1 min-w-0">
           {mode === "cards" ? (
             <div className="space-y-3">
-              {visibleItems.map(item => (
-                <MatterCard key={item.id} item={item} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)}
+              {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
+                <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)}
                   onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
               ))}
               {visibleItems.length === 0 && (
@@ -708,6 +716,25 @@ export default function MatterBoard({
   );
 }
 
+// A formatting rule's field_id is snapshotted from whichever group was
+// active when the rule's Column was set -- but rules are page-wide
+// (client_update_page_format_rules has no group_id), and each top-level
+// group can have its own differently-id'd copy of a same-named column
+// (e.g. "Status") once customized -- see the customize-columns route.
+// Comparing the raw id directly meant a rule only ever matched whichever
+// ONE group it happened to be set on, and looked "unset" everywhere else;
+// worse, editing it from a different group's Formatting panel could
+// silently reassign field_id to that group's fields, breaking it for the
+// original one. Resolves by label instead, against whichever group's own
+// field list is passed in, so "Status = Terminated" applies consistently
+// everywhere a same-named column exists.
+function resolveRuleFieldId(rule: MatterBoardFormatRule, allFields: MatterBoardField[], groupFields: MatterBoardField[]): string | null {
+  const original = allFields.find(f => f.id === rule.field_id);
+  if (!original) return null;
+  const matched = groupFields.find(f => f.label === original.label);
+  return matched ? matched.id : null;
+}
+
 // A matter belongs to a top-level group's count either directly (group_id
 // === topId), via one of that top group's manual sub-groups, or via a
 // conditional sub-group's condition matching.
@@ -716,6 +743,48 @@ function descendantOf(groups: MatterBoardGroup[], item: MatterBoardItem, topId: 
   if (item.group_id === topId) return true;
   const g = groups.find(g => g.id === item.group_id);
   return g?.parent_group_id === topId;
+}
+
+// A matter with 2+ linked properties (project_properties junction -- see
+// lib/schema/systemTableRelations.ts's property_id entry) renders as one
+// row/card per property instead of one for the whole matter -- Matter
+// Number/name and every other (matter-level) field repeat identically
+// across them, since it's still the same underlying matter; only fields
+// that genuinely live on the property (Property Address, and any
+// field_source: 'property' column -- see the fields route's header
+// comment) differ per row, each pulling that specific property's own
+// value. A single-property (or property-less) matter is unaffected --
+// exactly one display row, same as before this existed. Filtering/
+// sorting/grouping all still operate on the underlying items (one per
+// matter) -- this only runs at the final render step, so it never has to
+// reconcile two rows of the same matter landing in different filtered
+// positions. `key` is distinct per row (item.id alone would collide) but
+// value edits and notes/emails still key off item.id (the matter, via
+// onSaveValue/onAddNote's itemId param) plus a separate propertyId, so a
+// property-sourced field edited from one row only ever writes to that
+// row's own property -- see the values/notes routes' handling of
+// propertyId. Notes are filtered per row too: a note with no property_id
+// (the default, and every note added before this existed) shows on every
+// row of the matter; one tagged to a specific property only shows on that
+// row.
+function propertyFieldIdsOf(fields: MatterBoardField[]): string[] {
+  return fields.filter(f => f.field_key === "property_address" || f.field_source === "property").map(f => f.id);
+}
+
+function expandByProperty(items: MatterBoardItem[], propertyFieldIds: string[]): { key: string; item: MatterBoardItem; propertyId: string | undefined }[] {
+  return items.flatMap(item => {
+    const props = item.properties || [];
+    if (props.length <= 1) return [{ key: item.id, item, propertyId: props[0]?.id }];
+    return props.map(p => ({
+      key: `${item.id}::${p.id}`,
+      propertyId: p.id,
+      item: {
+        ...item,
+        values: propertyFieldIds.length ? { ...item.values, ...Object.fromEntries(propertyFieldIds.map(fid => [fid, p.values[fid] ?? null])) } : item.values,
+        notes: item.notes.filter(n => n.property_id == null || n.property_id === p.id),
+      },
+    }));
+  });
 }
 
 // ── Sidebar (Group / Status / Sort) ─────────────────────────────────────
@@ -840,13 +909,13 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
-  item: MatterBoardItem; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
+function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
+  item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null;
-  onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
+  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
-  onAddNote: (itemId: string, note: string) => void;
+  onAddNote: (itemId: string, note: string, propertyId?: string) => void;
   onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
   onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
@@ -922,10 +991,10 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {fields.map(f => (
               <ValueCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
-                onSave={v => onSaveValue?.(item.id, f.id, v)} />
+                onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)} />
             ))}
           </div>
-          <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
+          <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
           <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
         </div>
       )}
@@ -1132,11 +1201,11 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean;
   colorForItem: (item: MatterBoardItem) => string | null;
-  onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
+  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
-  onAddNote: (itemId: string, note: string) => void;
+  onAddNote: (itemId: string, note: string, propertyId?: string) => void;
   onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
   onRemoveEmail?: (itemId: string, emailId: string) => void;
 }) {
@@ -1180,12 +1249,12 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
           </tr>
         </thead>
         <tbody>
-          {items.map(item => {
+          {expandByProperty(items, propertyFieldIdsOf(fields)).map(({ key, item, propertyId }) => {
             const rowColor = colorForItem(item);
             const rowColorClasses = rowColor ? FORMAT_COLORS[rowColor] : null;
             const expanded = expandedId === item.id;
             return (
-            <Fragment key={item.id}>
+            <Fragment key={key}>
             <tr className={`border-b ${expanded ? "border-transparent" : "border-slate-50 last:border-0"} ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
               <td className={`sm:sticky sm:left-0 sm:z-10 ${rowColorClasses?.smRow || "sm:bg-white"}`}>
                 <button onClick={() => setExpandedId(expanded ? null : item.id)} title={expanded ? "Collapse" : "Expand for notes"}
@@ -1195,7 +1264,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
               </td>
               {fields.map((f, i) => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
-                  onSave={v => onSaveValue?.(item.id, f.id, v)} />
+                  onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)} />
               ))}
               {canEdit && onMoveItem && (
                 <td className="px-4 py-4">
@@ -1214,7 +1283,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
             {expanded && (
               <tr className="border-b border-slate-50 last:border-0">
                 <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3">
-                  <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
+                  <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
                   <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
                 </td>
               </tr>

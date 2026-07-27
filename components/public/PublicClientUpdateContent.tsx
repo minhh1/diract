@@ -132,22 +132,43 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   // In staff mode these hit the same authenticated admin routes the
   // Settings editor uses (cookie session carries auth); in client mode
   // only note-adding is wired up at all (MatterBoard gets canEdit=false).
-  const saveValue = (itemId: string, fieldId: string, value: any) => {
+  // A property-sourced field (Property Address, or any field_source:
+  // 'property' column) isn't read from item.values on a matter's split
+  // rows (2+ linked properties) -- MatterBoard's expandByProperty overrides
+  // those per row from item.properties[].values instead (see its header
+  // comment), so that also has to be patched here for the edit to actually
+  // show up optimistically; item.values itself still gets it too, since a
+  // single-property matter (no split) reads straight from there.
+  const patchPropertyValue = (item: MatterBoardItem, fieldId: string, value: any, propertyId: string | undefined): MatterBoardItem["properties"] => {
+    if (!item.properties?.length) return item.properties;
+    const targetId = propertyId || item.properties[0].id;
+    return item.properties.map(p => p.id === targetId ? { ...p, values: { ...p.values, [fieldId]: value } } : p);
+  };
+
+  const saveValue = (itemId: string, fieldId: string, value: any, propertyId?: string) => {
     if (mode !== "staff" || !staffPageId) return;
     let prevValue: any;
+    let prevProperties: Board["items"][number]["properties"];
     setBoard(prev => {
       if (!prev) return prev;
-      prevValue = prev.items.find(i => i.id === itemId)?.values[fieldId];
-      return { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: value } } : i) };
+      const item = prev.items.find(i => i.id === itemId);
+      prevValue = item?.values[fieldId];
+      prevProperties = item?.properties;
+      return {
+        ...prev,
+        items: prev.items.map(i => i.id === itemId
+          ? { ...i, values: { ...i.values, [fieldId]: value }, properties: patchPropertyValue(i, fieldId, value, propertyId) }
+          : i),
+      };
     });
     fetch(`/api/client-update-pages/${staffPageId}/values`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value }),
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value, propertyId }),
     }).then(async res => {
       if (res.ok) return;
       // Revert just this one field (not the whole board) so it doesn't
       // clobber any other edit that landed optimistically in the meantime.
       const json = await res.json().catch(() => ({}));
-      setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: prevValue } } : i) });
+      setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, values: { ...i.values, [fieldId]: prevValue }, properties: prevProperties } : i) });
       window.alert(json.error || "Couldn't save that value");
     });
   };
@@ -182,10 +203,34 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     });
   };
 
-  const customizeColumns = async (groupId: string) => {
+  // Optimistic -- copies the shared fields into this group's own local
+  // state (temp ids) immediately, so "Customize" -> "Revert to shared"
+  // flips instantly instead of waiting on the round trip (the server does
+  // real work here -- copying every shared field, adhoc values, and
+  // re-pointing subgroup conditions -- see the route's header comment,
+  // which is what made waiting on it feel slow). Swaps the temp copies for
+  // the real fields once the request lands, or drops them back out if it
+  // failed.
+  const customizeColumns = (groupId: string) => {
     if (mode !== "staff" || !staffPageId) return;
-    const res = await fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}/customize-columns`, { method: "POST" });
-    if (!res.ok) { const json = await res.json().catch(() => ({})); throw new Error(json.error || "Couldn't customize columns"); }
+    let tempFields: MatterBoardField[] = [];
+    setBoard(prev => {
+      if (!prev) return prev;
+      const sharedFields = prev.fields.filter(f => f.group_id === null);
+      tempFields = sharedFields.map((f, i) => ({ ...f, id: `temp-customize-${Date.now()}-${i}`, group_id: groupId }));
+      return { ...prev, fields: [...prev.fields, ...tempFields] };
+    });
+
+    fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}/customize-columns`, { method: "POST" }).then(async res => {
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBoard(prev => prev && { ...prev, fields: prev.fields.filter(f => !tempFields.some(t => t.id === f.id)) });
+        window.alert(json.error || "Couldn't customize columns");
+        return;
+      }
+      const realFields: MatterBoardField[] = json.fields || [];
+      setBoard(prev => prev && { ...prev, fields: [...prev.fields.filter(f => !tempFields.some(t => t.id === f.id)), ...realFields] });
+    });
   };
 
   const revertColumns = async (groupId: string) => {
@@ -242,19 +287,19 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, ai_summary: json.summary, ai_summary_generated_at: json.generatedAt } : i) });
   };
 
-  const addNote = (itemId: string, note: string) => {
+  const addNote = (itemId: string, note: string, propertyId?: string) => {
     if (!note.trim()) return;
     const tempId = `temp-${Date.now()}`;
     const source: "staff" | "client" = mode === "staff" ? "staff" : "client";
-    const optimisticNote = { id: tempId, note_date: new Date().toISOString().slice(0, 10), body: note.trim(), author_name: mode === "staff" ? "You" : null, source, created_at: new Date().toISOString() };
+    const optimisticNote = { id: tempId, note_date: new Date().toISOString().slice(0, 10), body: note.trim(), author_name: mode === "staff" ? "You" : null, source, created_at: new Date().toISOString(), property_id: propertyId ?? null };
     setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: [optimisticNote, ...i.notes] } : i) });
 
     const request = mode === "staff" && staffPageId
       ? fetch(`/api/client-update-pages/${staffPageId}/notes`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, note }),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, note, propertyId }),
         })
       : fetch(`/api/client-update-pages/public/${slug}/notes`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, note, code: getCachedCode(slug) }),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, note, code: getCachedCode(slug), propertyId }),
         });
 
     request.then(r => r.ok ? r.json() : null).then(json => {
