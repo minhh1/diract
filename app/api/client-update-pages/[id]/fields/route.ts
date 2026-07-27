@@ -3,9 +3,12 @@
 // synthetic name/property-linked keys + this company's projects custom
 // fields) so the admin editor can offer a checkbox list; POST adds one (or
 // an 'adhoc' page-only field, which just needs a label) to a specific
-// group's column set -- see the group_id column: each top-level group has
-// its own explicit fields, there's no shared fallback (a new group starts
-// with a copy made at creation time, see the groups POST route).
+// group's column set. group_id NULL is the shared/default column set every
+// group shows unless it's been explicitly customized -- see
+// .../groups/[groupId]/customize-columns/route.ts for how a top-level group
+// diverges from (or reverts back to) that shared set. This keeps a fresh or
+// unmodified group's columns stable and predictable instead of drifting
+// independently from the moment it's created.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";

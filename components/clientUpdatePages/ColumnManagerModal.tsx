@@ -5,13 +5,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, GripVertical, Trash2 } from "lucide-react";
+import { X, GripVertical, Trash2, Loader2 } from "lucide-react";
 
 interface FieldDef { id: string; field_source: string; field_key: string; label: string; group_id?: string | null; }
 interface CatalogOption { field_key: string; label: string; }
 
-export default function ColumnManagerModal({ pageId, groupId, currentFields, onClose, onChanged }: {
-  pageId: string; groupId: string | null; currentFields: FieldDef[]; onClose: () => void; onChanged: () => void;
+export default function ColumnManagerModal({ pageId, groupId, currentFields, groupName, isCustomized, onCustomize, onRevert, onClose, onChanged }: {
+  pageId: string; groupId: string | null; currentFields: FieldDef[];
+  groupName: string | null; isCustomized: boolean;
+  onCustomize?: () => Promise<void>; onRevert?: () => Promise<void>;
+  onClose: () => void; onChanged: () => void;
 }) {
   const [order, setOrder] = useState(currentFields);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -20,6 +23,19 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, onC
   const [adhocLabel, setAdhocLabel] = useState("");
   const [adhocIsSelect, setAdhocIsSelect] = useState(false);
   const [adhocOptions, setAdhocOptions] = useState("");
+  const [switching, setSwitching] = useState(false);
+
+  const handleCustomize = async () => {
+    if (!onCustomize || switching) return;
+    setSwitching(true);
+    try { await onCustomize(); onChanged(); } catch (e: any) { window.alert(e?.message || "Couldn't customize columns"); } finally { setSwitching(false); }
+  };
+  const handleRevert = async () => {
+    if (!onRevert || switching) return;
+    if (!window.confirm(`Revert "${groupName}" to the shared columns? Its own customized columns will be removed.`)) return;
+    setSwitching(true);
+    try { await onRevert(); onChanged(); } catch (e: any) { window.alert(e?.message || "Couldn't revert columns"); } finally { setSwitching(false); }
+  };
 
   useEffect(() => { setOrder(currentFields); }, [currentFields]);
   useEffect(() => {
@@ -43,8 +59,15 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, onC
   };
 
   const removeField = async (fieldId: string) => {
+    const prevOrder = order;
     setOrder(prev => prev.filter(f => f.id !== fieldId));
-    await fetch(`/api/client-update-pages/${pageId}/fields/${fieldId}`, { method: "DELETE" });
+    const res = await fetch(`/api/client-update-pages/${pageId}/fields/${fieldId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setOrder(prevOrder);
+      window.alert(json.error || "Couldn't remove that column");
+      return;
+    }
     onChanged();
   };
 
@@ -62,6 +85,26 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, onC
           <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Manage columns</h3>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
+        {groupName && (onCustomize || onRevert) && (
+          <div className="flex items-center justify-between gap-3 px-8 py-3 bg-slate-50 border-b border-slate-100 shrink-0">
+            <p className="text-[11px] text-slate-500">
+              {isCustomized ? <>Customized for <span className="font-bold text-slate-700">{groupName}</span></> : <>Using the <span className="font-bold text-slate-700">shared</span> columns</>}
+            </p>
+            {isCustomized ? (
+              onRevert && (
+                <button onClick={handleRevert} disabled={switching} className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-indigo-600 disabled:opacity-40 transition-colors shrink-0">
+                  {switching && <Loader2 size={11} className="animate-spin" />} Revert to shared
+                </button>
+              )
+            ) : (
+              onCustomize && (
+                <button onClick={handleCustomize} disabled={switching} className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 disabled:opacity-40 transition-colors shrink-0">
+                  {switching && <Loader2 size={11} className="animate-spin" />} Customize for {groupName} only
+                </button>
+              )
+            )}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">On this page — drag to reorder</p>

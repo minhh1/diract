@@ -17,15 +17,17 @@
 // this value") -- when a condition is set, membership is computed live
 // from matter data instead of being dragged in. A "Sort by" section (default
 // one Settlement Date criterion when present, stackable with "+ Add sort")
-// sits below. Each top-level group has its own explicit column set (no
-// column, including "Matter" itself, is pinned or special-cased -- every
-// one is an ordinary, reorderable, removable field). Table styling
-// (spreadsheet mode, the default view) matches
-// app/public/tasks/[pageId]/page.tsx's task table.
+// sits below. Columns are shared across every top-level group by default
+// (stable, predictable) -- a group only gets its own different columns once
+// explicitly "customized" (and can be reverted back to shared at any time),
+// see the fields/customize-columns routes. No column, including "Matter"
+// itself, is pinned or special-cased -- every one is an ordinary,
+// reorderable, removable field. Table styling (spreadsheet mode, the
+// default view) matches app/public/tasks/[pageId]/page.tsx's task table.
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -34,7 +36,7 @@ import ActivityLogModal from "./ActivityLogModal";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; }
-export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; }
+export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; }
 
 interface Props {
@@ -48,11 +50,14 @@ interface Props {
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onRenameGroup?: (groupId: string, name: string) => void;
   onDeleteGroup?: (groupId: string) => void;
-  onAddGroup?: (name: string, parentGroupId: string | null, copyFieldsFromGroupId?: string | null) => void;
+  onAddGroup?: (name: string, parentGroupId: string | null) => void;
   onSetGroupCondition?: (groupId: string, fieldId: string | null, value: string | null) => void;
+  onCustomizeColumns?: (groupId: string) => Promise<void>;
+  onRevertColumns?: (groupId: string) => Promise<void>;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string) => void;
+  onGenerateSummary?: (itemId: string) => Promise<void>;
   onReorderFields?: (fieldIds: string[]) => void;
   onDataChanged?: () => void; // matters added / columns changed -- needs a full refetch
   onDateFormatChanged?: (format: string) => void;
@@ -80,7 +85,7 @@ const MATTER_NAME_SORT = "__matter_name__";
 
 export default function MatterBoard({
   pageId, groups, items, fields, dateFormat, canEdit, canComment,
-  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onMoveItem, onRemoveItem, onAddNote, onReorderFields, onDataChanged, onDateFormatChanged,
+  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onReorderFields, onDataChanged, onDateFormatChanged,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
@@ -108,10 +113,14 @@ export default function MatterBoard({
   const activeTopGroup = topGroups.find(g => g.id === activeTop) || null;
   const subGroups = activeTopGroup ? groups.filter(g => g.parent_group_id === activeTopGroup.id) : [];
 
-  // Each top-level group has its own explicit column set (no shared
-  // fallback -- see the migration comment); Ungrouped uses group_id IS NULL
-  // fields, subgroups always show their parent's.
-  const visibleFields = fields.filter(f => (f.group_id ?? null) === (activeTopGroup?.id ?? null));
+  // A top-level group shows the shared column set (group_id IS NULL) by
+  // default; it only diverges once explicitly customized (own group_id-
+  // scoped rows exist), and can be reverted back to shared at any time --
+  // see the fields route's header comment. Ungrouped always shows the
+  // shared set (it can't diverge), and a subgroup always shows its parent
+  // top-level group's columns.
+  const hasCustomColumns = !!activeTopGroup && fields.some(f => f.group_id === activeTopGroup.id);
+  const visibleFields = hasCustomColumns ? fields.filter(f => f.group_id === activeTopGroup!.id) : fields.filter(f => f.group_id === null);
 
   // Items conditionally claimed by one of this top group's subgroups don't
   // also count as unclassified.
@@ -303,7 +312,7 @@ export default function MatterBoard({
                 onRename={onRenameGroup ? name => onRenameGroup(t.id, name) : undefined}
                 onDelete={onDeleteGroup ? () => onDeleteGroup(t.id) : undefined} />
             ))}
-            {canEdit && onAddGroup && <SidebarAddRow onAdd={name => onAddGroup(name, null, activeTop === UNGROUPED ? null : activeTop)} />}
+            {canEdit && onAddGroup && <SidebarAddRow onAdd={name => onAddGroup(name, null)} />}
           </SidebarSection>
 
           {activeTopGroup && statusOptions.length > 0 && (
@@ -352,7 +361,7 @@ export default function MatterBoard({
             <div className="space-y-3">
               {visibleItems.map(item => (
                 <MatterCard key={item.id} item={item} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment}
-                  onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} />
+                  onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters here yet</p>
@@ -370,7 +379,10 @@ export default function MatterBoard({
           onClose={() => setShowAddMatter(false)} onAdded={() => { setShowAddMatter(false); onDataChanged?.(); }} />
       )}
       {showColumns && pageId && (
-        <ColumnManagerModal pageId={pageId} groupId={activeTop === UNGROUPED ? null : activeTopGroup?.id ?? null} currentFields={visibleFields}
+        <ColumnManagerModal pageId={pageId} groupId={hasCustomColumns ? activeTopGroup!.id : null} currentFields={visibleFields}
+          groupName={activeTopGroup?.name ?? null} isCustomized={hasCustomColumns}
+          onCustomize={activeTopGroup && onCustomizeColumns ? () => onCustomizeColumns(activeTopGroup.id) : undefined}
+          onRevert={activeTopGroup && onRevertColumns ? () => onRevertColumns(activeTopGroup.id) : undefined}
           onClose={() => setShowColumns(false)} onChanged={() => onDataChanged?.()} />
       )}
       {conditionGroup && onSetGroupCondition && (
@@ -513,20 +525,47 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, onSaveValue, onMoveItem, onRemoveItem, onAddNote }: {
+function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary }: {
   item: MatterBoardItem; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string) => void;
+  onGenerateSummary?: (itemId: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const generateSummary = async () => {
+    if (!onGenerateSummary || generating) return;
+    setGenerating(true);
+    try { await onGenerateSummary(item.id); } finally { setGenerating(false); }
+  };
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl">
       <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <p className="flex-1 text-[12px] font-medium text-slate-700">{item.matterName}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] font-medium text-slate-700">{item.matterName}</p>
+          {item.ai_summary ? (
+            <p className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-400 italic">
+              <span className="truncate">{item.ai_summary}</span>
+              {canEdit && onGenerateSummary && (
+                <button onClick={e => { e.stopPropagation(); generateSummary(); }} disabled={generating} title="Regenerate summary"
+                  className="shrink-0 not-italic text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
+                  {generating ? <Loader2 size={10} className="animate-spin" /> : <RotateCw size={10} />}
+                </button>
+              )}
+            </p>
+          ) : canEdit && onGenerateSummary ? (
+            <button onClick={e => { e.stopPropagation(); generateSummary(); }} disabled={generating}
+              className="flex items-center gap-1 mt-0.5 text-[11px] text-indigo-500 hover:text-indigo-700 disabled:opacity-40 transition-colors">
+              {generating ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+              {generating ? "Summarising..." : "Summarise emails"}
+            </button>
+          ) : null}
+        </div>
         {canEdit && onMoveItem && (
           <select value={item.group_id || ""} onChange={e => { e.stopPropagation(); onMoveItem(item.id, e.target.value || null); }} onClick={e => e.stopPropagation()}
             className="text-[11px] border border-slate-200 rounded-full px-2.5 py-1 outline-none bg-white">

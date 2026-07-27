@@ -144,15 +144,27 @@ export default function ClientUpdatePage() {
     fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}`, { method: "DELETE" });
   };
 
-  const addGroup = (name: string, parentGroupId: string | null, copyFieldsFromGroupId?: string | null) => {
+  const addGroup = (name: string, parentGroupId: string | null) => {
     if (mode !== "staff" || !staffPageId) return;
     const tempId = `temp-${Date.now()}`;
     setBoard(prev => prev && { ...prev, groups: [...prev.groups, { id: tempId, name, parent_group_id: parentGroupId }] });
     fetch(`/api/client-update-pages/${staffPageId}/groups`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parentGroupId, copyFieldsFromGroupId }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parentGroupId }),
     }).then(r => r.json()).then(json => {
       if (json.group) setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === tempId ? json.group : g) });
     });
+  };
+
+  const customizeColumns = async (groupId: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}/customize-columns`, { method: "POST" });
+    if (!res.ok) { const json = await res.json().catch(() => ({})); throw new Error(json.error || "Couldn't customize columns"); }
+  };
+
+  const revertColumns = async (groupId: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}/customize-columns`, { method: "DELETE" });
+    if (!res.ok) { const json = await res.json().catch(() => ({})); throw new Error(json.error || "Couldn't revert columns"); }
   };
 
   const moveItem = (itemId: string, groupId: string | null) => {
@@ -167,6 +179,14 @@ export default function ClientUpdatePage() {
     if (mode !== "staff" || !staffPageId) return;
     setBoard(prev => prev && { ...prev, items: prev.items.filter(i => i.id !== itemId) });
     fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}`, { method: "DELETE" });
+  };
+
+  const generateSummary = async (itemId: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/summarize`, { method: "POST" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { window.alert(json.error || "Failed to summarise emails"); return; }
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, ai_summary: json.summary, ai_summary_generated_at: json.generatedAt } : i) });
   };
 
   const addNote = (itemId: string, note: string) => {
@@ -285,9 +305,12 @@ export default function ClientUpdatePage() {
           onDeleteGroup={mode === "staff" ? deleteGroup : undefined}
           onAddGroup={mode === "staff" ? addGroup : undefined}
           onSetGroupCondition={mode === "staff" ? setGroupCondition : undefined}
+          onCustomizeColumns={mode === "staff" ? customizeColumns : undefined}
+          onRevertColumns={mode === "staff" ? revertColumns : undefined}
           onMoveItem={mode === "staff" ? moveItem : undefined}
           onRemoveItem={mode === "staff" ? removeItem : undefined}
           onAddNote={addNote}
+          onGenerateSummary={mode === "staff" ? generateSummary : undefined}
           onReorderFields={mode === "staff" ? reorderFields : undefined}
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
