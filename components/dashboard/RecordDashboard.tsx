@@ -708,47 +708,68 @@ export default function RecordDashboard({
     const field = fields.find(f => f.id === fieldId || f.field_key === fieldId);
     if (!field) return;
 
+    // Resolve a "__new__..." create-on-save placeholder into a real row
+    // FIRST, before any branch below -- every one of them needs a real id,
+    // not the placeholder string. This used to only run for custom
+    // entity/property/project fields, *after* the base-relation branches
+    // had already returned early -- so creating a brand-new property (or
+    // any other base relation field, e.g. Parent Property when the matter
+    // has none yet) tried to save the literal text "__new__<name>" into a
+    // uuid column and failed outright, with nothing checking the result.
+    let resolvedId = item.id;
+    let resolvedName = item.name;
+    if (item.id.startsWith('__new__')) {
+      const newName = item.name;
+      const targetTable = field.fieldType === 'entity' ? 'entities'
+        : field.fieldType === 'property' ? 'properties'
+        : field.fieldType === 'project' ? 'projects'
+        : field.fieldType === 'relation' ? (field.relationTable || 'entities')
+        : 'entities';
+      const targetNameCol = field.fieldType === 'relation'
+        ? (field.relationDisplayColumn || 'name')
+        : targetTable === 'properties' ? 'street_address' : 'name';
+      const insertData: any = targetTable === 'entities'
+        ? { company_id: companyId, [targetNameCol]: newName, entity_type: 'Person' }
+        : targetTable === 'properties'
+        ? { company_id: companyId, [targetNameCol]: newName }
+        : { company_id: companyId, name: newName, status: 'active', created_by: (await supabase.auth.getUser()).data.user?.id };
+      const { data: created, error: createError } = await supabase.from(targetTable).insert(insertData).select('id').single();
+      if (createError || !created) {
+        window.alert(createError?.message || `Couldn't create "${newName}"`);
+        return;
+      }
+      resolvedId = created.id;
+      resolvedName = newName;
+    }
+    const resolvedItem = { id: resolvedId, name: resolvedName };
+
     // Junction-backed base relation fields (e.g. parent_property_id) — insert a link row
     if (field.field_source === 'base' && field.fieldType === 'relation' && field.relationJunction) {
       const { table: junctionTable, sourceCol, targetCol } = field.relationJunction;
-      await supabase.from(junctionTable).insert({
-        company_id: companyId, [sourceCol]: recordId, [targetCol]: item.id,
+      const { error } = await supabase.from(junctionTable).insert({
+        company_id: companyId, [sourceCol]: recordId, [targetCol]: resolvedId,
       });
-      setLinkedItems(prev => ({ ...prev, [field.field_key]: [...(prev[field.field_key] || []), item] }));
+      if (error) { window.alert(error.message); return; }
+      setLinkedItems(prev => ({ ...prev, [field.field_key]: [...(prev[field.field_key] || []), resolvedItem] }));
       return;
     }
 
     // Base relation fields — save UUID directly to the record column
     if (field.field_source === 'base' && field.fieldType === 'relation') {
-      await supabase.from(systemTable!).update({ [field.field_key]: item.id }).eq('id', recordId);
-      setRecord(prev => prev ? { ...prev, [field.field_key]: item.id } : prev);
-      setLinkedItems(prev => ({ ...prev, [field.field_key]: [item] }));
+      const { error } = await supabase.from(systemTable!).update({ [field.field_key]: resolvedId }).eq('id', recordId);
+      if (error) { window.alert(error.message); return; }
+      setRecord(prev => prev ? { ...prev, [field.field_key]: resolvedId } : prev);
+      setLinkedItems(prev => ({ ...prev, [field.field_key]: [resolvedItem] }));
       return;
     }
 
     // Person link fields — store the display name as text
     if (field.field_source === 'base' && field.fieldType === 'person_link') {
-      await supabase.from(systemTable!).update({ [field.field_key]: item.name }).eq('id', recordId);
-      setRecord(prev => prev ? { ...prev, [field.field_key]: item.name } : prev);
-      setLinkedItems(prev => ({ ...prev, [field.field_key]: [item] }));
+      const { error } = await supabase.from(systemTable!).update({ [field.field_key]: resolvedName }).eq('id', recordId);
+      if (error) { window.alert(error.message); return; }
+      setRecord(prev => prev ? { ...prev, [field.field_key]: resolvedName } : prev);
+      setLinkedItems(prev => ({ ...prev, [field.field_key]: [resolvedItem] }));
       return;
-    }
-
-    // If id starts with __new__ — create the record first
-    let resolvedId = item.id;
-    let resolvedName = item.name;
-
-    if (item.id.startsWith('__new__')) {
-      const newName = item.name;
-      const table = field.fieldType === 'entity' ? 'entities' : field.fieldType === 'property' ? 'properties' : 'projects';
-      const insertData: any = field.fieldType === 'entity'
-        ? { company_id: companyId, name: newName, entity_type: 'Person' }
-        : field.fieldType === 'property'
-        ? { company_id: companyId, street_address: newName }
-        : { company_id: companyId, name: newName, status: 'active', created_by: (await supabase.auth.getUser()).data.user?.id };
-      const { data: created } = await supabase.from(table).insert(insertData).select('id').single();
-      resolvedId = created?.id || newName;
-      resolvedName = newName;
     }
 
     // Canonical storage for entity/property/project custom-field values --
@@ -761,23 +782,21 @@ export default function RecordDashboard({
       .select('id')
       .eq('record_id', recordId).eq('field_id', fieldId)
       .maybeSingle();
-    if (existingRow) {
-      await supabase.from('company_custom_field_values')
-        .update({ value_record_id: resolvedId }).eq('id', existingRow.id);
-    } else {
-      await supabase.from('company_custom_field_values').insert({
-        company_id: companyId,
-        field_id: fieldId,
-        record_id: recordId,
-        table_name: systemTable || '',
-        value_record_id: resolvedId,
-      });
-    }
+    const { error } = existingRow
+      ? await supabase.from('company_custom_field_values').update({ value_record_id: resolvedId }).eq('id', existingRow.id)
+      : await supabase.from('company_custom_field_values').insert({
+          company_id: companyId,
+          field_id: fieldId,
+          record_id: recordId,
+          table_name: systemTable || '',
+          value_record_id: resolvedId,
+        });
+    if (error) { window.alert(error.message); return; }
 
     // Update local state
     setLinkedItems(prev => ({
       ...prev,
-      [fieldId]: [{ id: resolvedId, name: resolvedName }],
+      [fieldId]: [resolvedItem],
     }));
   };
 
@@ -786,7 +805,8 @@ export default function RecordDashboard({
 
     if (field?.field_source === 'base' && field.fieldType === 'relation' && field.relationJunction) {
       const { table: junctionTable, sourceCol, targetCol } = field.relationJunction;
-      await supabase.from(junctionTable).delete().eq(sourceCol, recordId).eq(targetCol, linkedRecordId);
+      const { error } = await supabase.from(junctionTable).delete().eq(sourceCol, recordId).eq(targetCol, linkedRecordId);
+      if (error) { window.alert(error.message); return; }
       setLinkedItems(prev => ({
         ...prev,
         [fieldId]: (prev[fieldId] || []).filter(i => i.id !== linkedRecordId),
@@ -795,16 +815,18 @@ export default function RecordDashboard({
     }
 
     if (field?.field_source === 'base' && field.fieldType === 'relation') {
-      await supabase.from(systemTable!).update({ [field.field_key]: null }).eq('id', recordId);
+      const { error } = await supabase.from(systemTable!).update({ [field.field_key]: null }).eq('id', recordId);
+      if (error) { window.alert(error.message); return; }
       setRecord(prev => prev ? { ...prev, [field.field_key]: null } : prev);
       setLinkedItems(prev => ({ ...prev, [fieldId]: [] }));
       return;
     }
 
-    await supabase.from('company_custom_field_values')
+    const { error } = await supabase.from('company_custom_field_values')
       .delete()
       .eq('field_id', fieldId)
       .eq('record_id', recordId);
+    if (error) { window.alert(error.message); return; }
 
     setLinkedItems(prev => ({
       ...prev,
