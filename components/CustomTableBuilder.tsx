@@ -39,8 +39,8 @@ const COLOR_OPTIONS = [
 ];
 
 export default function CustomTableBuilder() {
-  const { tables, loading, refetch } = useCustomTables();
-  const { isAdmin, companyId, tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables } = useCompany();
+  const { isAdmin, companyId, userId, tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables } = useCompany();
+  const { tables, loading, refetch } = useCustomTables(userId);
   const [deletingSystemSlug, setDeletingSystemSlug] = useState<string | null>(null);
   const { pendingIds: pendingArchiveIds, refreshPendingArchiveRequests } = usePendingArchiveRequests("company_tables", companyId);
   const [editingSystemSlug, setEditingSystemSlug] = useState<string | null>(null);
@@ -50,6 +50,11 @@ export default function CustomTableBuilder() {
   const [newName, setNewName] = useState('');
   const [newIcon, setNewIcon] = useState('Table2');
   const [newColor, setNewColor] = useState('#6366f1');
+  // Private tables are visible only to their creator (see supabase/
+  // migrations/20260727040000_default_and_private_tables_dashboards.sql) --
+  // any user can create one, admin or not; this is additive to the existing
+  // (unchanged) shared-table creation, not a replacement for it.
+  const [newIsPrivate, setNewIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [limit, setLimit] = useState<number | null>(null);
@@ -171,6 +176,7 @@ export default function CustomTableBuilder() {
       icon: newIcon,
       color: newColor,
       display_order: tables.length,
+      owner_user_id: newIsPrivate ? user?.id : null,
     }).select().single();
 
     setSaving(false);
@@ -189,11 +195,16 @@ export default function CustomTableBuilder() {
 
     setCreating(false);
     setNewName('');
+    setNewIsPrivate(false);
     refetch();
   };
 
-  const handleDelete = async (tableId: string, tableName: string) => {
-    if (!isAdmin) {
+  const handleDelete = async (tableId: string, tableName: string, ownerUserId: string | null) => {
+    // A private table is fully this user's own -- no need to route through
+    // admin approval just because they aren't a company admin (RLS's own
+    // delete policy agrees: owner_user_id = auth.uid() is enough on its own).
+    const isOwnPrivateTable = !!userId && ownerUserId === userId;
+    if (!isAdmin && !isOwnPrivateTable) {
       if (!window.confirm(`Request deleting the "${tableName}" table? A company admin will need to approve it.`)) return;
       if (!companyId) return;
       const result = await createArchiveRequest("company_tables", tableId, `Table: ${tableName}`, companyId);
@@ -446,7 +457,7 @@ export default function CustomTableBuilder() {
                 <Pencil size={14} />
               </button>
               <button
-                onClick={() => handleDelete(table.id, table.name)}
+                onClick={() => handleDelete(table.id, table.name, table.owner_user_id)}
                 className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
               >
                 <Trash2 size={14} />
@@ -523,6 +534,20 @@ export default function CustomTableBuilder() {
                   ))}
                 </div>
               </div>
+
+              <button
+                onClick={() => setNewIsPrivate(p => !p)}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all text-left"
+              >
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                  newIsPrivate ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
+                }`}>
+                  {newIsPrivate && <Check size={11} className="text-white" strokeWidth={3} />}
+                </div>
+                <span className="text-[12px] font-medium text-slate-600">
+                  Private -- only visible to me
+                </span>
+              </button>
 
               {/* Preview */}
               <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl">

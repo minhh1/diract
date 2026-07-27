@@ -8,7 +8,7 @@ import {
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
-  Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send,
+  Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -16,8 +16,8 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
-import { useCustomTables } from "@/lib/hooks/useCustomTables";
-import { useCustomDashboards } from "@/lib/hooks/useCustomDashboards";
+import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
+import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
@@ -113,6 +113,7 @@ const ADMIN_LINKS = [
   { tab: 'teams', icon: Users, label: 'Teams' },
   { tab: 'views', icon: Settings, label: 'Default views' },
   { tab: 'defaultTabs', icon: LayoutGrid, label: 'Default tabs' },
+  { tab: 'defaultTables', icon: Table2, label: 'Default tables & dashboards' },
   { tab: 'invites', icon: LinkIcon, label: 'Invite links' },
   { tab: 'gmail', icon: Mail, label: 'Gmail' },
   { tab: 'gmailSync', icon: Activity, label: 'Gmail sync' },
@@ -170,7 +171,7 @@ function TableVisibilityPanel({
 }: {
   visible: string[];
   systemTables: typeof ALL_SYSTEM_TABLES;
-  customTables: { id: string; slug: string; name: string; icon: string }[];
+  customTables: { id: string; slug: string; name: string; icon: string; is_default?: boolean }[];
   onChange: (slugs: string[]) => void;
   onClose: () => void;
 }) {
@@ -183,8 +184,22 @@ function TableVisibilityPanel({
   };
 
   const Row = ({
-    slug, label, icon: Icon,
-  }: { slug: string; label: string; icon: React.ElementType }) => {
+    slug, label, icon: Icon, isDefault,
+  }: { slug: string; label: string; icon: React.ElementType; isDefault?: boolean }) => {
+    // Admin-designated default -- always on, can't be toggled off from here
+    // (see supabase/migrations/20260727040000_default_and_private_tables_dashboards.sql).
+    if (isDefault) {
+      return (
+        <div
+          title="Set as a default table by your company admin -- always visible"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-slate-900 text-white opacity-70 cursor-default"
+        >
+          <Icon size={14} />
+          <span className="text-[12px] font-bold flex-1">{label}</span>
+          <Lock size={12} className="shrink-0" />
+        </div>
+      );
+    }
     const isVisible = visible.includes(slug);
     return (
       <button
@@ -218,7 +233,7 @@ function TableVisibilityPanel({
         {systemTables.map(t => <Row key={t.slug} slug={t.slug} label={t.label} icon={t.icon} />)}
         {customTables.map(t => {
           const Icon = (LucideIcons as any)[t.icon] || Table2;
-          return <Row key={t.slug} slug={t.slug} label={t.name} icon={Icon} />;
+          return <Row key={t.slug} slug={t.slug} label={t.name} icon={Icon} isDefault={t.is_default} />;
         })}
       </div>
     </div>
@@ -652,8 +667,8 @@ export default function Sidebar() {
   );
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
-  const { tables: customTables } = useCustomTables();
-  const { dashboards, refetch: refetchDashboards } = useCustomDashboards();
+  const { tables: customTables, refetch: refetchCustomTables } = useCustomTables(ctxUserId);
+  const { dashboards, refetch: refetchDashboards } = useCustomDashboards(ctxUserId);
 
   const mode = pathname.includes("projects") ? "projects"
     : pathname.includes("properties") ? "properties"
@@ -978,6 +993,28 @@ export default function Sidebar() {
     if (activeViewId === view.id) { startNavigation(); router.push(`/dashboard/${mode}`); }
   };
 
+  // Only ever rendered next to a table/dashboard this user owns privately
+  // (owner_user_id === ctxUserId) -- RLS's own delete policy backs this up
+  // regardless (a regular user can only delete their own private rows,
+  // never a shared/default one), so this is just the matching UI affordance.
+  const handleDeleteMyCustomTable = async (table: CustomTable, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${table.name}"? This moves it to Trash and can be restored later.`)) return;
+    await supabase.from('company_tables').update({ deleted_at: new Date().toISOString() }).eq('id', table.id);
+    refetchCustomTables();
+    if (isTableActive(table.slug)) { startNavigation(); router.push('/dashboard/properties'); }
+  };
+
+  const handleDeleteMyDashboard = async (dashboard: CustomDashboard, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${dashboard.name}"? This moves it to Trash and can be restored later.`)) return;
+    await supabase.from('company_dashboards').update({ deleted_at: new Date().toISOString() }).eq('id', dashboard.id);
+    refetchDashboards();
+    if (pathname === `/dashboard/${dashboard.slug}`) { startNavigation(); router.push('/dashboard/properties'); }
+  };
+
   const handleSwitchCompany = async (companyId: string) => {
     if (companyId === ctxCompanyId) return;
     if (!ctxUserId) return;
@@ -992,8 +1029,11 @@ export default function Sidebar() {
   };
 
   // ── Derived ────────────────────────────────────────────────────
+  // is_default custom tables are mandatory -- shown regardless of what's in
+  // this user's own stored sidebar_visible_tables preference (which only
+  // ever governs tables the admin hasn't pinned).
   const visibleSystemTables = systemTables.filter(t => visibleTables.includes(t.slug));
-  const visibleCustomTables = customTables.filter(t => visibleTables.includes(t.slug));
+  const visibleCustomTables = customTables.filter(t => t.is_default || visibleTables.includes(t.slug));
   const isTableActive = (slug: string) =>
     pathname.includes(slug) &&
     !pathname.includes('gmail') &&
@@ -1265,20 +1305,31 @@ export default function Sidebar() {
 
                 {visibleCustomTables.map(table => {
                   const Icon = (LucideIcons as any)[table.icon] || Table2;
+                  const isMine = !!ctxUserId && table.owner_user_id === ctxUserId;
                   return (
-                    <button
-                      key={table.id}
-                      onClick={() => goToTableList(table.slug)}
-                      aria-label={table.name}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
-                        isTableActive(table.slug)
-                          ? 'bg-slate-900 text-white'
-                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                      }`}
-                    >
-                      <Icon size={16} className="shrink-0" />
-                      <span className="truncate">{table.name}</span>
-                    </button>
+                    <div key={table.id} className="group/table flex items-center">
+                      <button
+                        onClick={() => goToTableList(table.slug)}
+                        aria-label={table.name}
+                        className={`flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                          isTableActive(table.slug)
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                        }`}
+                      >
+                        <Icon size={16} className="shrink-0" />
+                        <span className="truncate">{table.name}</span>
+                      </button>
+                      {isMine && (
+                        <button
+                          onClick={(e) => handleDeleteMyCustomTable(table, e)}
+                          title={`Delete "${table.name}"`}
+                          className="p-1 mr-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/table:opacity-100 transition-all shrink-0"
+                        >
+                          <X size={11} strokeWidth={3} />
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
                   </>
@@ -1312,18 +1363,32 @@ export default function Sidebar() {
                 {dashboards.map(d => {
                   const Icon = (LucideIcons as any)[d.icon] || LayoutDashboard;
                   const active = pathname === `/dashboard/${d.slug}`;
+                  const isMine = !!ctxUserId && d.owner_user_id === ctxUserId;
                   return (
-                    <button
-                      key={d.id}
-                      onClick={() => { if (!active) { startNavigation(); router.push(`/dashboard/${d.slug}`); } }}
-                      aria-label={d.name}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
-                        active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                      }`}
-                    >
-                      <Icon size={16} className="shrink-0" />
-                      <span className="truncate">{d.name}</span>
-                    </button>
+                    <div key={d.id} className="group/dash flex items-center">
+                      <button
+                        onClick={() => { if (!active) { startNavigation(); router.push(`/dashboard/${d.slug}`); } }}
+                        aria-label={d.name}
+                        className={`flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                          active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                        }`}
+                      >
+                        <Icon size={16} className="shrink-0" />
+                        <span className="truncate">{d.name}</span>
+                        {d.is_default && (
+                          <Lock size={10} className={`shrink-0 ml-auto ${active ? 'opacity-70' : 'opacity-30'}`} />
+                        )}
+                      </button>
+                      {isMine && (
+                        <button
+                          onClick={(e) => handleDeleteMyDashboard(d, e)}
+                          title={`Delete "${d.name}"`}
+                          className="p-1 mr-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/dash:opacity-100 transition-all shrink-0"
+                        >
+                          <X size={11} strokeWidth={3} />
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
                 {dashboards.length === 0 && (

@@ -143,7 +143,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       // dashboard (see app/dashboard/[tableSlug]/page.tsx), so warming it
       // here removes a whole blank-screen stage before that page even
       // starts rendering anything.
-      warmCustomTables();
+      warmCustomTables(user.id);
 
       // Membership lookup only needs user_id, not active_company_id — so it
       // doesn't actually have to wait on the profile fetch to resolve first.

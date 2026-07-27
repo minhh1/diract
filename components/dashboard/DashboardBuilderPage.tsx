@@ -9,7 +9,7 @@
 // saved dashboard's widgets get rendered on the view page.
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2, LayoutGrid, Code2, LayoutDashboard, Table2, Share2 } from "lucide-react";
+import { Loader2, Trash2, LayoutGrid, Code2, LayoutDashboard, Table2, Share2, Check } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { supabase } from "@/lib/supabase";
@@ -64,7 +64,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const router = useRouter();
   const isNew = slugParam === 'new';
   const { companyId, userId, isAdmin, loading: companyLoading, tableLabelOverrides } = useCompany();
-  const { tables } = useCustomTables();
+  const { tables } = useCustomTables(userId);
 
   const [loading, setLoading] = useState(!isNew);
   const [dashboardId, setDashboardId] = useState<string | null>(null);
@@ -85,6 +85,13 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const [builderMode, setBuilderMode] = useState<'canvas' | 'code'>('canvas');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // null = shared/company-wide, a user id = private to that user (see
+  // supabase/migrations/20260727040000_default_and_private_tables_dashboards.sql).
+  // Only meaningful once an existing dashboard has loaded -- a brand new one
+  // hasn't been assigned an owner yet (see handleSave's isNew branch for
+  // what it becomes on creation).
+  const [existingOwnerUserId, setExistingOwnerUserId] = useState<string | null>(null);
+  const [isDefault, setIsDefault] = useState(false);
 
   const isNoneSource = dashboardKind === 'public_pages';
   const isSystemSource = !isNoneSource && (SYSTEM_TABLE_NAMES as readonly string[]).includes(sourceTableKey);
@@ -117,6 +124,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
           name: string; icon: string; color: string;
           source_table_id: string | null; source_table_type: DashboardSourceKind;
           code_source: string | null; builder_mode: 'canvas' | 'code';
+          owner_user_id: string | null; is_default: boolean;
         };
         if (!row.widgets_migrated_at) {
           const migrated = await ensureDashboardWidgetsMigrated(row);
@@ -137,6 +145,8 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         setWidgets(row.widgets || []);
         setCodeSource(row.code_source || '');
         setBuilderMode(row.builder_mode || 'canvas');
+        setExistingOwnerUserId(row.owner_user_id ?? null);
+        setIsDefault(!!row.is_default);
       }
       setLoading(false);
     })();
@@ -191,6 +201,10 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       widgets: finalWidgets,
       code_source: builderMode === 'code' ? codeSource : serializeToDSL(finalWidgets, fields),
       builder_mode: builderMode,
+      // Only an admin can ever end up true here -- the checkbox itself is
+      // only rendered for an admin (see the JSX below), and RLS's own
+      // WITH CHECK independently rejects is_default = true from anyone else.
+      is_default: isAdmin && isDefault,
     };
 
     if (isNew) {
@@ -203,7 +217,16 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       // the column's DB default (see
       // supabase/company_dashboards_widgets_default_fix.sql) -- set
       // explicitly here too for clarity at the call site.
-      const { data, error: err } = await supabase.from('company_dashboards').insert({ ...payload, slug, widgets_migrated_at: new Date().toISOString() }).select().single();
+      //
+      // owner_user_id: a non-admin's new dashboard is always private (RLS's
+      // own insert policy enforces this regardless -- a non-admin can only
+      // insert with owner_user_id = themselves); an admin's stays shared,
+      // same as every dashboard created before this feature existed, unless
+      // they've also ticked "Set as company default" below.
+      const { data, error: err } = await supabase.from('company_dashboards').insert({
+        ...payload, slug, widgets_migrated_at: new Date().toISOString(),
+        owner_user_id: isAdmin ? null : userId,
+      }).select().single();
       setSaving(false);
       if (err) { setError(err.message); return; }
       if (data) {
@@ -245,11 +268,23 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   if (loading || companyLoading) {
     return null;
   }
-  if (!isAdmin) {
-    return <p className="text-center text-[12px] text-slate-400 py-20">Only company admins can build or delete dashboards.</p>;
+  // A brand-new dashboard is open to any user (their own ends up private,
+  // see handleSave); an existing one is editable by an admin or whoever
+  // privately owns it -- matches RLS's own update/delete policies exactly
+  // (supabase/migrations/20260727040000_default_and_private_tables_dashboards.sql),
+  // this is just the matching UI gate.
+  const isOwner = !!userId && existingOwnerUserId === userId;
+  if (!isNew && !isAdmin && !isOwner) {
+    return <p className="text-center text-[12px] text-slate-400 py-20">Only the owner or a company admin can edit this dashboard.</p>;
   }
 
   const canSave = !saving && !!name.trim() && (isNoneSource || !!sourceTableKey) && !(builderMode === 'code' && codeErrors.length > 0);
+  // The default toggle only makes sense for a shared dashboard an admin can
+  // actually mark mandatory-for-everyone -- a brand new one (about to become
+  // shared, since admin's creation defaults to shared) or an existing shared
+  // one. Never shown for a private dashboard (is_default would always be
+  // rejected by RLS for one anyway).
+  const canShowDefaultToggle = isAdmin && (isNew || existingOwnerUserId === null);
 
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-6">
@@ -262,6 +297,22 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Name</label>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Time Entry" className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
         </div>
+        {canShowDefaultToggle && (
+          <button
+            type="button"
+            onClick={() => setIsDefault(p => !p)}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all text-left"
+          >
+            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+              isDefault ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
+            }`}>
+              {isDefault && <Check size={11} className="text-white" strokeWidth={3} />}
+            </div>
+            <span className="text-[12px] font-medium text-slate-600">
+              Set as company default -- mandatory in every member's sidebar, only an admin can remove it
+            </span>
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Icon</label>

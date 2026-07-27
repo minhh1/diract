@@ -245,6 +245,10 @@ export function useSystemTableAsCustomTable(
     display_order: 0,
     is_ledger: false,
     disable_record_dashboard: false,
+    // A system table is the original "always there, can't be removed" case
+    // -- is_default true is the closest fit, and it's never privately owned.
+    is_default: true,
+    owner_user_id: null,
   } : null;
 
   return { tableDef, fields, records, loading, recordsLoading, refetch: load };

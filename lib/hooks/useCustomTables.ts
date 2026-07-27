@@ -20,6 +20,17 @@ export interface CustomTable {
   // table's own master page (CustomTableMasterPage.tsx) skips navigating to
   // a full RecordDashboard on row click / after creating a record.
   disable_record_dashboard: boolean;
+  // Admin-designated company default (see supabase/migrations/
+  // 20260727040000_default_and_private_tables_dashboards.sql) -- mandatory
+  // in every member's sidebar, only an admin can set this or remove the
+  // table. Always false for a private (owner_user_id set) table.
+  is_default: boolean;
+  // null = shared/company-wide (the only kind that existed before this
+  // column) -- non-null = private, visible only to that user (RLS also
+  // lets an admin see it, for oversight; see fetchTables' own filter below
+  // for why the client still hides it from anyone but the owner regardless
+  // of admin status).
+  owner_user_id: string | null;
 }
 
 // Module-level cache, not per-component -- app/dashboard/[tableSlug]/page.tsx
@@ -36,27 +47,50 @@ export interface CustomTable {
 // 60s TTL: long enough that "sign in, then click into a table" always hits
 // warm cache; short enough that a table created in another tab shows up
 // within the same session without a full reload.
+//
+// Keyed by user id, not just "warm or not" -- results now differ per user
+// (each user's own private tables are mixed in), so a cache built for one
+// signed-in user must never be served to another. In practice a single tab
+// only ever has one signed-in user, so this is a single slot that gets
+// invalidated whenever the resolved user id changes, not a real multi-user
+// cache.
 const CACHE_TTL_MS = 60_000;
 let cachedTables: CustomTable[] | null = null;
+let cachedForUserId: string | null = null;
 let cacheExpiresAt = 0;
 let inFlight: Promise<CustomTable[]> | null = null;
 
-function isCacheWarm(): boolean {
-  return cachedTables !== null && cacheExpiresAt > Date.now();
+function isCacheWarm(userId: string | null): boolean {
+  return cachedTables !== null && cachedForUserId === userId && cacheExpiresAt > Date.now();
 }
 
-function fetchTables(): Promise<CustomTable[]> {
+async function resolveUserId(providedUserId?: string | null): Promise<string | null> {
+  if (providedUserId) return providedUserId;
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
+
+// RLS already restricts rows to shared (owner_user_id null) + this user's
+// own private ones -- except an admin, who RLS also lets see every OTHER
+// member's private tables (for oversight/support, see the migration's own
+// comment). That's the right call for a dedicated admin review surface, but
+// not for an admin's own everyday sidebar -- so this always additionally
+// filters to "mine or shared" client-side regardless of role, rather than
+// relying on RLS alone to decide what shows up here.
+function fetchTables(userId: string | null): Promise<CustomTable[]> {
   if (inFlight) return inFlight;
   perfLog("useCustomTables: start");
   const promise = (async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('company_tables')
       .select('*')
-      .is('deleted_at', null)
-      .order('display_order');
+      .is('deleted_at', null);
+    query = userId ? query.or(`owner_user_id.is.null,owner_user_id.eq.${userId}`) : query.is('owner_user_id', null);
+    const { data } = await query.order('display_order');
     const tables = data || [];
     perfLog("useCustomTables: resolved", `${tables.length} tables`);
     cachedTables = tables;
+    cachedForUserId = userId;
     cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     inFlight = null;
     return tables;
@@ -65,51 +99,58 @@ function fetchTables(): Promise<CustomTable[]> {
   return promise;
 }
 
-export function warmCustomTables(): void {
-  if (isCacheWarm() || inFlight) return;
-  fetchTables().catch(() => {});
+export function warmCustomTables(userId?: string | null): void {
+  (async () => {
+    const uid = await resolveUserId(userId);
+    if (isCacheWarm(uid) || inFlight) return;
+    fetchTables(uid).catch(() => {});
+  })();
 }
 
-export function useCustomTables(): {
+export function useCustomTables(userId?: string | null): {
   tables: CustomTable[];
   loading: boolean;
   refetch: () => void;
 } {
   // Lazy initializers -- read the cache synchronously on first render so a
   // warm cache never even flashes a loading state, rather than only
-  // avoiding it after an effect gets a chance to run.
-  const [tables, setTables] = useState<CustomTable[]>(() => cachedTables ?? []);
-  const [loading, setLoading] = useState<boolean>(() => !isCacheWarm());
+  // avoiding it after an effect gets a chance to run. Can't resolve the
+  // "is this the right user's cache" check synchronously when userId isn't
+  // provided by the caller (that needs an async auth call) -- callers that
+  // pass their own already-known userId (from useCompany()) get the full
+  // synchronous benefit; others fall back to the effect below.
+  const [tables, setTables] = useState<CustomTable[]>(() => (userId && isCacheWarm(userId)) ? cachedTables! : []);
+  const [loading, setLoading] = useState<boolean>(() => !(userId && isCacheWarm(userId)));
 
   useEffect(() => {
     let active = true;
-    if (isCacheWarm()) {
-      setTables(cachedTables!);
-      setLoading(false);
-      return;
-    }
-    fetchTables().then(t => {
+    (async () => {
+      const uid = await resolveUserId(userId);
+      if (!active) return;
+      if (isCacheWarm(uid)) {
+        setTables(cachedTables!);
+        setLoading(false);
+        return;
+      }
+      const t = await fetchTables(uid);
       if (!active) return;
       setTables(t);
       setLoading(false);
-    });
+    })();
     return () => { active = false; };
-  }, []);
+  }, [userId]);
 
   const refetch = useCallback(() => {
-    // Forces a real network fetch (e.g. after creating/renaming/deleting a
-    // table in CustomTableBuilder) -- invalidating the shared cache too, so
-    // any OTHER component that mounts useCustomTables after this point
-    // (Sidebar, RecordDashboard, etc.) also picks up the change instead of
-    // serving stale data for up to CACHE_TTL_MS.
     cachedTables = null;
     inFlight = null;
     setLoading(true);
-    fetchTables().then(t => {
+    (async () => {
+      const uid = await resolveUserId(userId);
+      const t = await fetchTables(uid);
       setTables(t);
       setLoading(false);
-    });
-  }, []);
+    })();
+  }, [userId]);
 
   return { tables, loading, refetch };
 }
