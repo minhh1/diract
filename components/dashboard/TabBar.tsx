@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Plus, Pencil, Trash2, GripVertical, Check, X,
+  Plus, Pencil, Trash2, GripVertical, Check, X, ChevronLeft, ChevronRight,
   FileText, ListChecks, Calendar, Mail, FolderKanban, Table2, ShieldCheck, FileSignature, PenSquare
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
@@ -58,6 +58,43 @@ export default function TabBar({
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
+  // Left/right paging arrows replace the native scrollbar -- a real
+  // scrollbar (even a thin one) is fiddly to grab precisely for something
+  // as narrow as a tab strip, so overflow is paged a tab-row's-width at a
+  // time via buttons instead. Native scroll (trackpad/shift+wheel/drag)
+  // still works underneath; the arrows are just a visible, clickable
+  // affordance layered on top, shown only when there's actually somewhere
+  // to scroll to.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    updateScrollState();
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(el);
+    window.addEventListener('resize', updateScrollState);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateScrollState);
+    };
+  }, [updateScrollState, tabs.length, extraTabs.length, isEditing]);
+
+  const pageScroll = (direction: 1 | -1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * el.clientWidth * 0.7, behavior: 'smooth' });
+  };
+
   const handleRenameStart = (tab: RecordTab) => {
     setRenamingId(tab.id);
     setRenameValue(tab.title);
@@ -82,7 +119,20 @@ export default function TabBar({
   };
 
   return (
-    <div className="tab-bar-scroll flex items-center gap-1 border-b border-slate-100 px-6 bg-white overflow-x-auto">
+    <div className="relative flex items-center border-b border-slate-100 bg-white">
+      {canScrollLeft && (
+        <button
+          onClick={() => pageScroll(-1)}
+          className="absolute left-0 top-0 bottom-0 z-10 flex items-center pl-2 pr-4 bg-gradient-to-r from-white via-white to-transparent text-slate-400 hover:text-indigo-600"
+        >
+          <ChevronLeft size={16} />
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        onScroll={updateScrollState}
+        className="no-scrollbar flex-1 min-w-0 flex items-center gap-1 px-6 overflow-x-auto scroll-smooth"
+      >
       {tabs.map((tab, idx) => {
         const Icon = (LucideIcons as any)[tab.icon] || TAB_TYPE_ICONS[tab.tab_type] || FileText;
         const isActive = activeTabId === tab.id;
@@ -193,6 +243,15 @@ export default function TabBar({
           }`}
         >
           {isEditing ? 'Done' : 'Edit tabs'}
+        </button>
+      )}
+      </div>
+      {canScrollRight && (
+        <button
+          onClick={() => pageScroll(1)}
+          className="absolute right-0 top-0 bottom-0 z-10 flex items-center pr-2 pl-4 bg-gradient-to-l from-white via-white to-transparent text-slate-400 hover:text-indigo-600"
+        >
+          <ChevronRight size={16} />
         </button>
       )}
     </div>

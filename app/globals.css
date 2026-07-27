@@ -93,21 +93,15 @@
   }
 }
 
-/* Tab bars -- invisible until hover, so the row of tabs itself doesn't sit
-   on top of a permanently-visible bar; same pattern as .top-scroll-mirror. */
-.tab-bar-scroll::-webkit-scrollbar {
-  height: 5px;
+/* Fully hides the native scrollbar -- for scroll containers that have their
+   own dedicated paging controls instead (e.g. TabBar's left/right arrow
+   buttons), where a visible native bar would just be redundant clutter
+   alongside them. Native scroll (trackpad/shift+wheel/drag) still works. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
-.tab-bar-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 999px;
-  transition: background 0.2s;
-}
-.tab-bar-scroll:hover::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-}
-.tab-bar-scroll:hover::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
 }
 
 /* Top scroll mirror — horizontal scrollbar pinned in the header */
