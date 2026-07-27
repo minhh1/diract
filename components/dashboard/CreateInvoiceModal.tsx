@@ -389,13 +389,17 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     }
 
     // amount_due isn't a formula field (unlike subtotal/gst/total_inc_gst,
-    // which just cascaded via the sum_related rollups the invoice/
-    // invoiced_amount updates above triggered) -- read the now-current
-    // total_inc_gst and set amount_due = it (payments/trust_applied are
-    // both 0 at creation time; edited later via InvoicesTab's Edit action,
-    // which recomputes amount_due itself).
+    // which cascade via the sum_related rollups the invoice/invoiced_amount
+    // updates above trigger) -- set it from `totalIncGst`, the exact value
+    // already shown in this modal's own Totals preview, rather than reading
+    // total_inc_gst back from the DB. That read used to race the rollup
+    // cascade itself (confirmed live: total_inc_gst ends up correct but
+    // this read could still see 0 first), and total_inc_gst is computed
+    // from the SAME apportioned/GST-split numbers as `totalIncGst` here, so
+    // there's nothing the DB round trip could tell us that isn't already in
+    // scope. payments/trust_applied are both 0 at creation time; edited
+    // later via InvoicesTab's Edit action, which recomputes amount_due itself.
     const invNumberField = invoiceFields.find(f => f.field_key === 'invoice_number');
-    const totalField = invoiceFields.find(f => f.field_key === 'total_inc_gst');
     const amountDueField = invoiceFields.find(f => f.field_key === 'amount_due');
     let invoiceNumber = '';
     if (invNumberField) {
@@ -403,10 +407,8 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
         .from('company_table_values').select('value_text').eq('record_id', record.id).eq('field_id', invNumberField.id).maybeSingle();
       invoiceNumber = numRow?.value_text || '';
     }
-    if (totalField && amountDueField) {
-      const { data: totalRow } = await supabase
-        .from('company_table_values').select('value_number').eq('record_id', record.id).eq('field_id', totalField.id).maybeSingle();
-      await updateCustomRecord(record.id, invoicesTableId, companyId, { amount_due: totalRow?.value_number || 0 }, invoiceFields);
+    if (amountDueField) {
+      await updateCustomRecord(record.id, invoicesTableId, companyId, { amount_due: totalIncGst }, invoiceFields);
     }
 
     setSaving(false);

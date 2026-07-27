@@ -296,12 +296,24 @@ function computeFormulaFields(fields: CustomTableField[], values: Record<string,
     // blank, and it would save as-is instead of being blanked or rejected.
     result[field.field_key] = null;
     const fieldA = field.formula_field_a_id ? byId.get(field.formula_field_a_id) : null;
-    const a = fieldA ? Number(result[fieldA.field_key]) : NaN;
+    // For 'add' specifically, a sibling that's still unset (e.g. an
+    // invoice's disbursements_total, a sum_related rollup that's never been
+    // touched because this invoice has no disbursements yet) means zero
+    // contribution, not "unknown, don't compute" -- the sum of what DOES
+    // exist is still a real, meaningful total. Confirmed live: an
+    // invoice with fees but zero disbursements (or vice versa) left
+    // subtotal/gst/total_inc_gst permanently null, since this used to NaN
+    // out and skip the add entirely the moment either side was untouched.
+    // 'multiply'/'percentage_of' keep the stricter behavior -- a missing
+    // factor there genuinely can't be treated as a no-op.
+    const rawA = fieldA ? result[fieldA.field_key] : undefined;
+    const a = rawA == null ? (field.formula_type === 'add' ? 0 : NaN) : Number(rawA);
     if (Number.isNaN(a)) continue;
 
     if (field.formula_type === 'multiply' || field.formula_type === 'add') {
       const fieldB = field.formula_field_b_id ? byId.get(field.formula_field_b_id) : null;
-      const b = fieldB ? Number(result[fieldB.field_key]) : NaN;
+      const rawB = fieldB ? result[fieldB.field_key] : undefined;
+      const b = rawB == null ? (field.formula_type === 'add' ? 0 : NaN) : Number(rawB);
       if (!Number.isNaN(b)) result[field.field_key] = field.formula_type === 'add' ? a + b : a * b;
     } else if (field.formula_type === 'percentage_of') {
       result[field.field_key] = a * ((field.formula_percent ?? 0) / 100);

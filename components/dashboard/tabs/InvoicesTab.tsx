@@ -34,6 +34,11 @@ interface InvoiceRow {
 }
 
 const STATUS_OPTIONS = ['Under Review', 'Sent', 'Paid', 'Overdue', 'Void'];
+// Excludes 'Void' -- EditInvoiceModal's status dropdown used to let 'Void'
+// be picked like any other status, silently skipping the release-line-
+// items-back-to-unbilled cleanup only the dedicated Void (Ban icon) button
+// actually does. Voiding now only ever happens through handleVoid.
+const EDIT_STATUS_OPTIONS = STATUS_OPTIONS.filter(s => s !== 'Void');
 const STATUS_BADGE: Record<string, string> = {
   'Under Review': 'bg-slate-100 text-slate-600',
   Sent: 'bg-sky-50 text-sky-700',
@@ -328,10 +333,16 @@ function EditInvoiceModal({
         </div>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Status</label>
-          <select value={status} onChange={e => setStatus(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none">
-            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {status === 'Void' ? (
+            <p className="text-[12px] text-slate-400 bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4">
+              Void — use the Ban icon to void an invoice (releases its fees/disbursements back to unbilled)
+            </p>
+          ) : (
+            <select value={status} onChange={e => setStatus(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none">
+              {EDIT_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
         </div>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Due date</label>
