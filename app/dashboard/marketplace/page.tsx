@@ -51,7 +51,16 @@ interface PreviewConflict {
   fieldLabels?: Record<string, string>;
   // System-field-only settings (same idea as TemplateTableField's).
   required?: boolean; unique?: boolean; helpText?: string | null; selectOptions?: string[] | null;
-  conflict: { existingId: string; existingName?: string; existingLabel?: string } | null;
+  conflict: {
+    existingId: string; existingName?: string; existingLabel?: string;
+    // System-field-only: "field_key" when the exact same key already
+    // exists, "label" when only the label matches (e.g. this company built
+    // an equivalent field by hand before this template existed, under an
+    // auto-generated key) -- both are real conflicts, but a label match
+    // means "use existing" has to target this specific existingId directly,
+    // since the template's own field_key won't find it.
+    matchType?: "field_key" | "label";
+  } | null;
 }
 
 interface PreviewWidget { id: string; type: string; layout?: { x: number; y: number; w: number; h: number }; config?: Record<string, any> }
@@ -219,7 +228,7 @@ export default function MarketplacePage() {
 
   const [installing, setInstalling] = useState<Template | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [resolutions, setResolutions] = useState<{ tables: Record<string, string>; systemFields: Record<string, string>; applyLabelOverrides: boolean }>({ tables: {}, systemFields: {}, applyLabelOverrides: false });
+  const [resolutions, setResolutions] = useState<{ tables: Record<string, string>; systemFields: Record<string, string>; systemFieldExistingIds: Record<string, string>; applyLabelOverrides: boolean }>({ tables: {}, systemFields: {}, systemFieldExistingIds: {}, applyLabelOverrides: false });
   // Bundled dashboards are opt-in (see install_company_template's
   // p_install_dashboards) -- tables always install, dashboards only if asked.
   const [installDashboards, setInstallDashboards] = useState(false);
@@ -248,6 +257,17 @@ export default function MarketplacePage() {
     setResolutions({
       tables: Object.fromEntries((data.tables || []).filter((t: PreviewConflict) => t.conflict).map((t: PreviewConflict) => [t.slug, 'create_new'])),
       systemFields: Object.fromEntries((data.systemFields || []).filter((f: PreviewConflict) => f.conflict).map((f: PreviewConflict) => [`${f.tableName}:${f.fieldKey}`, 'create_new'])),
+      // Populated regardless of which resolution ends up chosen -- only
+      // consulted server-side when a field's resolution is 'use_existing',
+      // but a label-matched conflict (see preview route) has no field_key
+      // to fall back on, so the specific matched id has to travel with the
+      // resolution from the moment the conflict is known, not just when the
+      // "Use existing" button happens to be clicked.
+      systemFieldExistingIds: Object.fromEntries(
+        (data.systemFields || [])
+          .filter((f: PreviewConflict) => f.conflict)
+          .map((f: PreviewConflict) => [`${f.tableName}:${f.fieldKey}`, f.conflict!.existingId])
+      ),
       applyLabelOverrides: Object.keys(data.suggestedLabelOverrides || {}).length > 0,
     });
   };
@@ -561,7 +581,11 @@ export default function MarketplacePage() {
                             </div>
                             {f.conflict && (
                               <>
-                                <p className="text-[10px] text-amber-700 mt-1">You already have "{f.conflict.existingLabel}"</p>
+                                <p className="text-[10px] text-amber-700 mt-1">
+                                  {f.conflict.matchType === "label"
+                                    ? `You already have a field called "${f.conflict.existingLabel}" — looks like the same thing, just built by hand under a different internal key`
+                                    : `You already have "${f.conflict.existingLabel}"`}
+                                </p>
                                 <div className="flex gap-2 mt-1">
                                   {(['use_existing', 'create_new'] as const).map(r => (
                                     <button key={r} onClick={() => setResolutions(prev => ({ ...prev, systemFields: { ...prev.systemFields, [`${f.tableName}:${f.fieldKey}`]: r } }))}

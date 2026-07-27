@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check } from "lucide-react";
+import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check, Trash2 } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
 // Same deferral as CustomTableMasterPage.tsx's RecordDashboard/
@@ -271,16 +271,60 @@ function GenericMasterTableInner({
     // baseItems id — cheap compared to a whole extra sequential round-trip.
     const fetchCustomFields = async () => {
       if (!visibleCustomFieldIds.length || !cid) return {};
-      const { data: cfValues } = await supabase
-        .from('company_custom_field_values')
-        .select('record_id, field_id, value_text, value_number, value_date, value_boolean')
-        .in('field_id', visibleCustomFieldIds);
+      // Unscoped by record_id (see comment above) means this can genuinely
+      // exceed PostgREST's default 1000-row page — confirmed happening for
+      // Huynh Lawyers (1510 rows across just 3 columns) — silently dropping
+      // whichever records didn't fall in the first page, showing as blank
+      // cells with no error. Page through with .range() until exhausted
+      // instead of a single unbounded select.
+      const PAGE_SIZE = 1000;
+      const allValues: any[] = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data: page } = await supabase
+          .from('company_custom_field_values')
+          .select('record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id')
+          .in('field_id', visibleCustomFieldIds)
+          .range(from, from + PAGE_SIZE - 1);
+        if (!page?.length) break;
+        allValues.push(...page);
+        if (page.length < PAGE_SIZE) break;
+      }
       const byRecord: Record<string, Record<string, any>> = {};
-      (cfValues || []).forEach(v => {
+      allValues.forEach(v => {
         if (!byRecord[v.record_id]) byRecord[v.record_id] = {};
         byRecord[v.record_id][v.field_id] =
-          v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
+          v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id;
       });
+
+      // Relation-type columns (entity/property/project) hold a raw linked
+      // record id in value_record_id — resolve each to its display name so
+      // the grid shows e.g. "Ipswich Oak Pty Ltd" instead of a bare uuid.
+      // Batched per target table (not per cell) to stay cheap even with a
+      // full column of these.
+      const RELATION_TARGET_TABLES: Record<string, { table: string; nameColumn: string }> = {
+        entity: { table: 'entities', nameColumn: 'name' },
+        property: { table: 'properties', nameColumn: 'street_address' },
+        project: { table: 'projects', nameColumn: 'name' },
+      };
+      const relationFieldIds = visibleCustomFieldIds.filter(id => {
+        const fieldType = customFieldCols.find(f => f.id === id)?.field_type;
+        return fieldType && fieldType in RELATION_TARGET_TABLES;
+      });
+      await Promise.all(relationFieldIds.map(async fieldId => {
+        const fieldType = customFieldCols.find(f => f.id === fieldId)!.field_type;
+        const { table, nameColumn } = RELATION_TARGET_TABLES[fieldType];
+        const linkedIds = [...new Set(
+          Object.values(byRecord).map(fields => fields[fieldId]).filter(Boolean)
+        )];
+        if (!linkedIds.length) return;
+        const { data: linked } = await supabase.from(table).select(`id, ${nameColumn}`).in('id', linkedIds);
+        const nameById = new Map((linked || []).map((r: any) => [r.id, r[nameColumn]]));
+        for (const recordId of Object.keys(byRecord)) {
+          const rawId = byRecord[recordId][fieldId];
+          if (rawId) byRecord[recordId][fieldId] = nameById.get(rawId) || rawId;
+        }
+      }));
+
       return byRecord;
     };
 
@@ -854,6 +898,16 @@ function GenericMasterTableInner({
     t.setItems(prev => prev.map(item => item.id === id ? { ...item, needs_review: false } : item));
   }, [t.setItems, tableName]);
 
+  // Discards a record the add-on auto-created that turned out to be wrong
+  // (e.g. a typo that should have matched an existing record but didn't) —
+  // soft-delete rather than just clearing the flag, since "Confirmed" means
+  // "this is a real, correct record" and this is the opposite case.
+  const discardReviewItem = useCallback(async (id: string) => {
+    if (!window.confirm('Discard this record? It will be soft-deleted.')) return;
+    await supabase.from(tableName).update({ deleted_at: new Date().toISOString(), needs_review: false }).eq('id', id);
+    t.setItems(prev => prev.filter(item => item.id !== id));
+  }, [t.setItems, tableName]);
+
   // ── Early returns ──────────────────────────────────────────────────
 
   if (selectedId && renderDashboard) {
@@ -1001,12 +1055,21 @@ function GenericMasterTableInner({
                         <p className="text-[10px] text-amber-600 truncate">{item.review_reason}</p>
                       )}
                     </div>
-                    <button
-                      onClick={() => markReviewed(item.id)}
-                      className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full text-[10px] font-bold transition-colors"
-                    >
-                      <Check size={11} /> Confirmed
-                    </button>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <button
+                        onClick={() => markReviewed(item.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full text-[10px] font-bold transition-colors"
+                      >
+                        <Check size={11} /> Confirmed
+                      </button>
+                      <button
+                        onClick={() => discardReviewItem(item.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-full text-[10px] font-bold transition-colors"
+                        title="Discard this record"
+                      >
+                        <Trash2 size={11} /> Discard
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

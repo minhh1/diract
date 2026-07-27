@@ -638,11 +638,20 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
       var pf = projFields[pfi];
       var isMatterField = pf.label.toLowerCase().indexOf('matter') !== -1 && pf.label.toLowerCase().indexOf('number') !== -1;
       if (isMatterField) continue;
-      if (pf.isRequired && pf.isRelationType) { blockedProjectField = pf; continue; }
-      if (pf.isRelationType) continue; // optional relation fields: no add-on input, safe to just omit
+      // Resolvable relation fields (entity/property/project — e.g. "Client
+      // Name") get a plain text input — there's no search-and-pick UI here,
+      // so the typed value is matched against existing records server-side
+      // (or a new one is created and flagged for review) when the project
+      // is created.
+      if (pf.isRelationType && !pf.isResolvableRelation) {
+        if (pf.isRequired) blockedProjectField = pf;
+        continue; // other relation fields: no add-on input, safe to just omit if optional
+      }
 
       var pfName = 'projField_' + pf.id;
-      var pfLabel = pf.label + (pf.isRequired ? ' *' : '');
+      var pfLabel = pf.isResolvableRelation
+        ? pf.label + (pf.isRequired ? ' *' : '') + ' (type a name — we\'ll match or create it)'
+        : pf.label + (pf.isRequired ? ' *' : '');
       if (pf.fieldType === 'boolean') {
         createSection.addWidget(CardService.newSelectionInput()
           .setType(CardService.SelectionInputType.CHECK_BOX)
@@ -1058,7 +1067,9 @@ function buildAdminSettingsCard(companyId, token) {
 
   for (var i = 0; i < fields.length; i++) {
     var f = fields[i];
-    var label = f.isRelationType ? f.label + ' (linked record — marking this required blocks creating projects from Gmail)' : f.label;
+    var label = f.isResolvableRelation ? f.label + ' (linked record — typed as a name in Gmail, matched or created automatically)'
+      : f.isRelationType ? f.label + ' (linked record — marking this required blocks creating projects from Gmail)'
+      : f.label;
     section.addWidget(CardService.newSelectionInput()
       .setType(CardService.SelectionInputType.CHECK_BOX)
       .setFieldName('req_' + f.id)
@@ -1153,11 +1164,13 @@ function onSelectCustomTableForRecord(e) {
     .build();
 }
 
-// Field types with no add-on input widget (relation pickers need a live
-// search UI against other records; formula fields are always computed, this
-// endpoint doesn't evaluate them; auto-number fields are assigned server-side).
+// Field types with no add-on input widget (relation pickers other than
+// entity/property/project need a live search UI against other records, or
+// in table_relation's case an arbitrary custom table with no established
+// identifying column; formula fields are always computed, this endpoint
+// doesn't evaluate them; auto-number fields are assigned server-side).
 function tableFieldHasAddonInput(f) {
-  return !f.isRelationType && !f.isFormula && !f.isAutoNumber;
+  return (!f.isRelationType || f.isResolvableRelation) && !f.isFormula && !f.isAutoNumber;
 }
 
 function buildCreateTableRecordCard(companyId, tableId, tableName, token) {
@@ -1183,7 +1196,9 @@ function buildCreateTableRecordCard(companyId, tableId, tableName, token) {
     if (!tableFieldHasAddonInput(f)) continue;
     hasInputs = true;
     var fieldName = 'field_' + f.id;
-    var label = f.label + (f.isRequired ? ' *' : '');
+    var label = f.isResolvableRelation
+      ? f.label + (f.isRequired ? ' *' : '') + ' (type a name — we\'ll match or create it)'
+      : f.label + (f.isRequired ? ' *' : '');
 
     if (f.fieldType === 'boolean') {
       section.addWidget(CardService.newSelectionInput()
@@ -1259,9 +1274,15 @@ function onCreateTableRecordSubmit(e) {
   var result = apiPost('/create-table-record', { tableId: tableId, companyId: companyId, values: values }, token);
   if (!result.ok) return errorNotification('Error: ' + (result.data.error || 'Unknown'));
 
+  var flaggedNames = result.data.flaggedNames || [];
+  var successMsg = '✓ Record added to ' + tableName;
+  if (flaggedNames.length) {
+    successMsg += '. New record "' + flaggedNames.join('", "') + '" needs review.';
+  }
+
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation().popCard())
-    .setNotification(CardService.newNotification().setText('✓ Record added to ' + tableName))
+    .setNotification(CardService.newNotification().setText(successMsg))
     .build();
 }
 
@@ -3114,7 +3135,10 @@ function onCreateProject(e) {
   var customFieldValues = {};
   for (var pfi = 0; pfi < projFields.length; pfi++) {
     var pf = projFields[pfi];
-    if (pf.isRelationType) continue;
+    // Resolvable relation fields are collected as a typed name (see
+    // buildMainCard) — every other relation type has no add-on input and
+    // is skipped.
+    if (pf.isRelationType && !pf.isResolvableRelation) continue;
     var pfName = 'projField_' + pf.id;
     if (pf.fieldType === 'boolean') {
       customFieldValues[pf.id] = (formInputs[pfName] || []).indexOf('true') !== -1 ? 'true' : 'false';
@@ -3160,7 +3184,12 @@ function onCreateProject(e) {
       }
     }
   }
-  return successNotification('✓ Project "' + projectName + '" created — label applied.');
+  var flaggedNames = result.data.flaggedNames || [];
+  var successMsg = '✓ Project "' + projectName + '" created — label applied.';
+  if (flaggedNames.length) {
+    successMsg += ' New record "' + flaggedNames.join('", "') + '" needs review.';
+  }
+  return successNotification(successMsg);
 }
 
 // ── Remove project / label ─────────────────────────────────────────

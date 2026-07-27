@@ -225,18 +225,22 @@ export default function RecordDashboard({
         supabase.from(systemTable).select('*').eq('id', recordId).single(),
         supabase
           .from('company_custom_field_values')
-          .select('field_id, value_text, value_number, value_date, value_boolean')
+          .select('field_id, value_text, value_number, value_date, value_boolean, value_record_id')
           .eq('record_id', recordId)
           .eq('table_name', systemTable),
       ]);
 
       if (!data) return;
 
-      // Merge custom field values into record using field_id as key
+      // Merge custom field values into record using field_id as key. For a
+      // relation-type field (entity/property/project) this is the raw
+      // linked record's id -- resolveLinkedItems below turns it into a
+      // display name; the picker itself edits via handleAddLinked, which
+      // writes straight back into this same column.
       const customValues: Record<string, any> = {};
       (cfValues || []).forEach(v => {
         customValues[v.field_id] =
-          v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
+          v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id;
       });
 
       const merged = { ...data, ...customValues };
@@ -270,21 +274,28 @@ export default function RecordDashboard({
     const currentFields = flds ?? fields;
     const map: Record<string, { id: string; name: string }[]> = {};
 
-    // ── Custom linked fields (entity/property) ──────────────────
+    // ── Custom linked fields (entity/property/project) ──────────
+    // The linked record's id lives in company_custom_field_values.value_record_id
+    // (already merged into currentRecord by loadRecord) -- resolve each to a
+    // display name from its target table. (There used to be a separate
+    // company_custom_field_linked_values table for this; it's been migrated
+    // into the canonical value_record_id column, matching every other writer
+    // of entity/property/project custom fields in this app.)
+    const CUSTOM_LINKED_TABLES: Record<string, { table: string; nameColumn: string }> = {
+      entity: { table: 'entities', nameColumn: 'name' },
+      property: { table: 'properties', nameColumn: 'street_address' },
+      project: { table: 'projects', nameColumn: 'name' },
+    };
     const customLinkedFields = currentFields.filter(f =>
-      f.field_source === 'custom' && ['entity', 'property'].includes(f.fieldType)
+      f.field_source === 'custom' && f.fieldType in CUSTOM_LINKED_TABLES
     );
-    if (customLinkedFields.length) {
-      const { data } = await supabase
-        .from('company_custom_field_linked_values')
-        .select('field_id, linked_record_id, linked_record_name')
-        .eq('record_id', recordId)
-        .in('field_id', customLinkedFields.map(f => f.id));
-      for (const row of (data || [])) {
-        if (!map[row.field_id]) map[row.field_id] = [];
-        map[row.field_id].push({ id: row.linked_record_id, name: row.linked_record_name || row.linked_record_id });
-      }
-    }
+    await Promise.all(customLinkedFields.map(async f => {
+      const storedId = currentRecord?.[f.id];
+      if (!storedId) return;
+      const { table, nameColumn } = CUSTOM_LINKED_TABLES[f.fieldType];
+      const { data } = await supabase.from(table).select(`id, ${nameColumn}`).eq('id', storedId).single();
+      if (data) map[f.id] = [{ id: storedId, name: (data as any)[nameColumn] || storedId }];
+    }));
 
     // ── Person link fields — value is stored as text name directly ──
     const personLinkFields = currentFields.filter(f =>
@@ -615,6 +626,20 @@ export default function RecordDashboard({
   const handleAddTab = async (
     type: string, title: string, icon: string, linkedTableId?: string
   ) => {
+    // Manually adding a tab pointing at the Time & Fee Entries/Disbursements/
+    // Invoices table needs the same billing_role tag the auto-created
+    // defaults get (see lib/dashboardWidgets/defaultRecordDashboardTabs.ts) --
+    // CreateInvoiceModal/InvoicesTab resolve "this matter's fee sources" by
+    // querying record_tabs for that tag, never by title/slug directly, so a
+    // tab created without it is invisible to Create Invoice even though it
+    // looks and works identically otherwise. Matched by slug, not title,
+    // since a manually-added tab's title is freely editable.
+    const linkedTable = linkedTableId ? customTables.find(t => t.id === linkedTableId) : null;
+    const billingRole =
+      linkedTable?.slug === 'time-fee-entries' || linkedTable?.slug === 'disbursements' ? 'fee_source'
+      : linkedTable?.slug === 'invoices' ? 'invoices'
+      : null;
+
     const { data } = await supabase
       .from('record_tabs')
       .insert({
@@ -626,6 +651,7 @@ export default function RecordDashboard({
         tab_type: type,
         linked_table_id: linkedTableId || null,
         display_order: tabs.length,
+        billing_role: billingRole,
       })
       .select()
       .single();
@@ -664,7 +690,7 @@ export default function RecordDashboard({
 
   // ── Field save ─────────────────────────────────────────────────
 
-  const isLinkedField = (fieldType: string) => ['entity', 'property'].includes(fieldType);
+  const isLinkedField = (fieldType: string) => ['entity', 'property', 'project'].includes(fieldType);
 
   const handleAddLinked = async (fieldId: string, item: { id: string; name: string }) => {
     const field = fields.find(f => f.id === fieldId || f.field_key === fieldId);
@@ -702,29 +728,44 @@ export default function RecordDashboard({
 
     if (item.id.startsWith('__new__')) {
       const newName = item.name;
-      const table = field.fieldType === 'entity' ? 'entities' : 'properties';
-      const nameCol = field.fieldType === 'entity' ? 'name' : 'street_address';
+      const table = field.fieldType === 'entity' ? 'entities' : field.fieldType === 'property' ? 'properties' : 'projects';
       const insertData: any = field.fieldType === 'entity'
         ? { company_id: companyId, name: newName, entity_type: 'Person' }
-        : { company_id: companyId, street_address: newName };
+        : field.fieldType === 'property'
+        ? { company_id: companyId, street_address: newName }
+        : { company_id: companyId, name: newName, status: 'active', created_by: (await supabase.auth.getUser()).data.user?.id };
       const { data: created } = await supabase.from(table).insert(insertData).select('id').single();
       resolvedId = created?.id || newName;
       resolvedName = newName;
     }
 
-    await supabase.from('company_custom_field_linked_values').insert({
-      company_id: companyId,
-      field_id: fieldId,
-      record_id: recordId,
-      table_name: systemTable || '',
-      linked_record_id: resolvedId,
-      linked_record_name: resolvedName,
-    });
+    // Canonical storage for entity/property/project custom-field values --
+    // matches every other writer in this app (Teams bot, invoices,
+    // precedents, the Gmail add-on). A record can only have one value per
+    // field here (single value_record_id column, not an array), so update
+    // the existing row if one exists rather than inserting a duplicate.
+    const { data: existingRow } = await supabase
+      .from('company_custom_field_values')
+      .select('id')
+      .eq('record_id', recordId).eq('field_id', fieldId)
+      .maybeSingle();
+    if (existingRow) {
+      await supabase.from('company_custom_field_values')
+        .update({ value_record_id: resolvedId }).eq('id', existingRow.id);
+    } else {
+      await supabase.from('company_custom_field_values').insert({
+        company_id: companyId,
+        field_id: fieldId,
+        record_id: recordId,
+        table_name: systemTable || '',
+        value_record_id: resolvedId,
+      });
+    }
 
     // Update local state
     setLinkedItems(prev => ({
       ...prev,
-      [fieldId]: [...(prev[fieldId] || []), { id: resolvedId, name: resolvedName }],
+      [fieldId]: [{ id: resolvedId, name: resolvedName }],
     }));
   };
 
@@ -748,11 +789,10 @@ export default function RecordDashboard({
       return;
     }
 
-    await supabase.from('company_custom_field_linked_values')
+    await supabase.from('company_custom_field_values')
       .delete()
       .eq('field_id', fieldId)
-      .eq('record_id', recordId)
-      .eq('linked_record_id', linkedRecordId);
+      .eq('record_id', recordId);
 
     setLinkedItems(prev => ({
       ...prev,

@@ -69,12 +69,36 @@ function isResolvableRelationType(fieldType: string): boolean {
 // (components/GenericMasterTable.tsx) — the existing duplicate-
 // reconciliation tool (Settings → Reconciliation) is what a user would then
 // use to merge it if it does turn out to be a duplicate.
+// Case-insensitive EXACT match (ilike with no wildcards) — checked first
+// and separately from the fuzzy substring search below, because the DB's
+// own uniqueness guard on this table (e.g. entities' unique_entity_per_company)
+// keys off the exact name, not a substring. Two different relation fields
+// resolving the identical name on the same project (e.g. Client Name and
+// Debtor both "X Pty Ltd") is a completely ordinary case, not an edge case
+// — skipping this exact check and going straight to the fuzzy search below
+// is what caused it to intermittently 500 with a duplicate-key error
+// instead of just linking to the same record for both fields.
+async function findExactRelationMatch(table: string, nameColumn: string, companyId: string, trimmed: string): Promise<{ id: string } | null> {
+  const { data } = await db
+    .from(table)
+    .select('id')
+    .eq('company_id', companyId)
+    .is('deleted_at', null)
+    .ilike(nameColumn, trimmed)
+    .limit(1)
+    .maybeSingle();
+  return data ? { id: data.id } : null;
+}
+
 async function resolveOrCreateRelation(
   companyId: string, fieldType: string, name: string, createdBy: string | null
 ): Promise<{ id: string; flagged: boolean }> {
   const config = RESOLVABLE_RELATION_TABLES[fieldType];
   if (!config) throw new Error(`Unsupported relation field type: ${fieldType}`);
   const trimmed = name.trim();
+
+  const exact = await findExactRelationMatch(config.table, config.nameColumn, companyId, trimmed);
+  if (exact) return { id: exact.id, flagged: false };
 
   const { data: candidates } = await db
     .from(config.table)
@@ -84,12 +108,9 @@ async function resolveOrCreateRelation(
     .ilike(config.nameColumn, `%${trimmed}%`);
 
   const list = (candidates || []) as any[];
-  let match: any = null;
-  if (list.length === 1) {
-    match = list[0];
-  } else if (list.length > 1) {
-    match = list.find((c) => String(c[config.nameColumn]).toLowerCase() === trimmed.toLowerCase()) || null;
-  }
+  // No exact-match branch needed here any more (handled above) — several
+  // fuzzy candidates with none exact is genuinely ambiguous.
+  const match = list.length === 1 ? list[0] : null;
   if (match) return { id: match.id, flagged: false };
 
   const reason = list.length > 1
@@ -108,6 +129,17 @@ async function resolveOrCreateRelation(
     .from(config.table)
     .insert(insertRow)
     .select('id').single();
+
+  if (error?.code === '23505') {
+    // Lost a race against a concurrent request creating the same name (e.g.
+    // a double-tap on "Create project & label") — someone else's insert won
+    // between our candidate search and our own insert. Re-query by exact
+    // name (not the fuzzy search — that's what let this fall through to an
+    // error previously) rather than erroring: the row now exists, so use it
+    // like a normal confident match.
+    const retryExact = await findExactRelationMatch(config.table, config.nameColumn, companyId, trimmed);
+    if (retryExact) return { id: retryExact.id, flagged: false };
+  }
   if (error || !created) throw new Error(error?.message || `Failed to create ${fieldType}`);
   return { id: created.id, flagged: true };
 }

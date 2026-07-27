@@ -62,6 +62,7 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
     ? (field.relationTable || 'entities')
     : field.fieldType === 'entity' ? 'entities'
     : field.fieldType === 'property' ? 'properties'
+    : field.fieldType === 'project' ? 'projects'
     : (field.relationTable || 'entities');
 
   const nameCol = isPersonLink
@@ -247,12 +248,13 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   const getLinkedPath = (item: LinkedItem) => {
     const table = field.fieldType === 'entity' ? 'entities'
       : field.fieldType === 'property' ? 'properties'
+      : field.fieldType === 'project' ? 'projects'
       : field.fieldType === 'person_link' ? 'entities'
       : field.relationTable || 'entities';
     return `/dashboard/${table}?id=${item.id}`;
   };
 
-  const isLinked = field.fieldType === 'entity' || field.fieldType === 'property' || field.fieldType === 'relation' || field.fieldType === 'person_link';
+  const isLinked = field.fieldType === 'entity' || field.fieldType === 'property' || field.fieldType === 'project' || field.fieldType === 'relation' || field.fieldType === 'person_link';
 
   const handleSave = async () => {
     setSaving(true);
@@ -633,6 +635,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
 
   const table = field.fieldType === 'entity' ? 'entities'
     : field.fieldType === 'property' ? 'properties'
+    : field.fieldType === 'project' ? 'projects'
     : field.relationTable || 'entities';
 
   const dashboardPath = `/dashboard/${table}?id=${item.id}`;

@@ -232,10 +232,28 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
       const { data: existing } = await admin
         .from("company_custom_fields").select("id, label")
         .eq("company_id", companyId).eq("table_name", f.table_name).eq("field_key", f.field_key).is("deleted_at", null).maybeSingle();
+      if (existing) {
+        return {
+          ...detail,
+          owned: false,
+          conflict: { existingId: existing.id, existingLabel: existing.label, matchType: "field_key" as const },
+        };
+      }
+      // No exact field_key match, but the company may already have this
+      // same field under a different key (e.g. one they built by hand
+      // before this template existed, or before this field was added to
+      // it — `field_key`s in that case are often auto-generated
+      // (`field_<timestamp>`), not the template's clean slug). Installing
+      // blindly in that case creates a confusing duplicate — see the Huynh
+      // Lawyers "Client" / "Client Name" cleanup this was found from —
+      // so flag an exact case-insensitive label match on the same table too.
+      const { data: labelMatch } = await admin
+        .from("company_custom_fields").select("id, label")
+        .eq("company_id", companyId).eq("table_name", f.table_name).ilike("label", f.label).is("deleted_at", null).maybeSingle();
       return {
         ...detail,
         owned: false,
-        conflict: existing ? { existingId: existing.id, existingLabel: existing.label } : null,
+        conflict: labelMatch ? { existingId: labelMatch.id, existingLabel: labelMatch.label, matchType: "label" as const } : null,
       };
     })
   );

@@ -27,6 +27,7 @@ DECLARE
   v_sf RECORD;
   v_resolution text;
   v_existing_id uuid;
+  v_explicit_existing_id uuid;
   v_new_table_id uuid;
   v_new_field_id uuid;
   v_new_slug text;
@@ -199,8 +200,17 @@ BEGIN
 
     v_resolution := COALESCE(p_resolutions->'systemFields'->>(v_sf.table_name || ':' || v_sf.field_key), 'create_new');
     IF v_resolution = 'use_existing' THEN
-      SELECT id INTO v_existing_id FROM company_custom_fields
-        WHERE company_id = p_company_id AND table_name = v_sf.table_name AND field_key = v_sf.field_key AND deleted_at IS NULL LIMIT 1;
+      -- See install_company_template's identical handling: a label-matched
+      -- conflict has no field_key to look up by, so the client sends the
+      -- specific existing id directly when it has one.
+      v_explicit_existing_id := NULLIF(p_resolutions->'systemFieldExistingIds'->>(v_sf.table_name || ':' || v_sf.field_key), '')::uuid;
+      IF v_explicit_existing_id IS NOT NULL THEN
+        SELECT id INTO v_existing_id FROM company_custom_fields
+          WHERE id = v_explicit_existing_id AND company_id = p_company_id AND table_name = v_sf.table_name AND deleted_at IS NULL LIMIT 1;
+      ELSE
+        SELECT id INTO v_existing_id FROM company_custom_fields
+          WHERE company_id = p_company_id AND table_name = v_sf.table_name AND field_key = v_sf.field_key AND deleted_at IS NULL LIMIT 1;
+      END IF;
       IF v_existing_id IS NULL THEN
         RAISE EXCEPTION 'use_existing chosen for field %:% but no matching field exists', v_sf.table_name, v_sf.field_key;
       END IF;

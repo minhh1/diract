@@ -783,12 +783,47 @@ const loadRows = async (cols: SpreadsheetColumn[], cid: string | null) => {
 
   if (customColIds.length > 0 && records?.length) {
     const recordIds = records.map((r: any) => r.id);
-    const { data: vals } = await supabase
-      .from('company_custom_field_values')
-      .select('field_id, record_id, value_text, value_number, value_date, value_boolean')
-      .in('field_id', customColIds)
-      .in('record_id', recordIds);
-    customValues = vals || [];
+    // Paged rather than a single unbounded select — a large sheet (many
+    // records x many custom columns) can exceed PostgREST's default
+    // 1000-row page, which would otherwise silently drop cells for
+    // whichever records didn't land in the first page (confirmed happening
+    // in the equivalent query in GenericMasterTable.tsx).
+    const PAGE_SIZE = 1000;
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data: page } = await supabase
+        .from('company_custom_field_values')
+        .select('field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id')
+        .in('field_id', customColIds)
+        .in('record_id', recordIds)
+        .range(from, from + PAGE_SIZE - 1);
+      if (!page?.length) break;
+      customValues.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
+
+    // Relation-type columns (entity/property/project) hold a raw linked
+    // record id in value_record_id — resolve each to its display name so
+    // the sheet shows e.g. "Ipswich Oak Pty Ltd" instead of a bare uuid.
+    const RELATION_TARGET_TABLES: Record<string, { table: string; nameColumn: string }> = {
+      entity: { table: 'entities', nameColumn: 'name' },
+      property: { table: 'properties', nameColumn: 'street_address' },
+      project: { table: 'projects', nameColumn: 'name' },
+    };
+    const relationCols = cols.filter(c => c.type === 'custom' && c.fieldType in RELATION_TARGET_TABLES);
+    await Promise.all(relationCols.map(async col => {
+      const { table, nameColumn } = RELATION_TARGET_TABLES[col.fieldType];
+      const linkedIds = [...new Set(
+        customValues.filter(v => v.field_id === col.id && v.value_record_id).map(v => v.value_record_id)
+      )];
+      if (!linkedIds.length) return;
+      const { data: linked } = await supabase.from(table).select(`id, ${nameColumn}`).in('id', linkedIds);
+      const nameById = new Map((linked || []).map((r: any) => [r.id, r[nameColumn]]));
+      customValues.forEach(v => {
+        if (v.field_id === col.id && v.value_record_id) {
+          v.value_text = nameById.get(v.value_record_id) || v.value_record_id;
+        }
+      });
+    }));
   }
 
   const newRows: SpreadsheetRow[] = (records || []).map((record: any) => {
@@ -818,7 +853,7 @@ const loadRows = async (cols: SpreadsheetColumn[], cid: string | null) => {
         v => v.field_id === col.id && v.record_id === record.id
       );
       values[col.id] = val
-        ? String(val.value_text ?? val.value_number ?? val.value_date ?? val.value_boolean ?? '')
+        ? String(val.value_text ?? val.value_number ?? val.value_date ?? val.value_boolean ?? val.value_record_id ?? '')
         : '';
     });
 

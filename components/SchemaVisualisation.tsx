@@ -35,6 +35,9 @@ export default function SchemaVisualisation() {
   // unrelated "Status" fields on different tables don't get silently
   // confused with each other when picking fields for a widget.
   const [duplicateLabels, setDuplicateLabels] = useState<Map<string, string[]>>(new Map());
+  // label -> how many fields share it on the SAME table (2+ means a real
+  // duplicate, e.g. two "Billing Type" fields both on Projects).
+  const [sameTableDuplicateLabels, setSameTableDuplicateLabels] = useState<Map<string, number>>(new Map());
 
   useEffect(() => { loadFields(); }, [activeTable, isCustomTable, customTableId]);
   useEffect(() => { if (companyId) loadDuplicateLabels(companyId); }, [companyId, customTables]);
@@ -56,20 +59,34 @@ export default function SchemaVisualisation() {
       supabase.from('company_table_fields').select('label, table_id').eq('company_id', cid).is('deleted_at', null),
     ]);
     const tableNameById = new Map(customTables.map(t => [t.id, t.name]));
-    const byLabel = new Map<string, Set<string>>();
+    // Every occurrence of a label, table name repeated once per field -- not
+    // deduped -- so two fields sharing a label on the SAME table show up as
+    // two entries for that table, not one (a plain Set here previously
+    // collapsed same-table duplicates into a single entry, so e.g. two
+    // "Billing Type" fields on Projects were never flagged; see the Huynh
+    // Lawyers duplicate-field cleanup this was found from).
+    const byLabel = new Map<string, string[]>();
     const add = (label: string, tableName: string) => {
       const key = label.trim().toLowerCase();
       if (!key) return;
-      if (!byLabel.has(key)) byLabel.set(key, new Set());
-      byLabel.get(key)!.add(tableName);
+      if (!byLabel.has(key)) byLabel.set(key, []);
+      byLabel.get(key)!.push(tableName);
     };
     for (const f of sysFields || []) add(f.label, f.table_name.charAt(0).toUpperCase() + f.table_name.slice(1));
     for (const f of tblFields || []) add(f.label, tableNameById.get(f.table_id) || 'another table');
-    const result = new Map<string, string[]>();
+
+    const crossTable = new Map<string, string[]>();
+    const sameTable = new Map<string, number>();
     for (const [key, tables] of byLabel) {
-      if (tables.size > 1) result.set(key, Array.from(tables));
+      const distinct = Array.from(new Set(tables));
+      if (distinct.length > 1) crossTable.set(key, distinct);
+      const counts = new Map<string, number>();
+      for (const t of tables) counts.set(t, (counts.get(t) || 0) + 1);
+      const maxRepeat = Math.max(...counts.values());
+      if (maxRepeat > 1) sameTable.set(key, maxRepeat);
     }
-    setDuplicateLabels(result);
+    setDuplicateLabels(crossTable);
+    setSameTableDuplicateLabels(sameTable);
   };
 
   const handleTableSelect = (slug: string, tableId?: string) => {
@@ -574,12 +591,14 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
                           : activeTable.charAt(0).toUpperCase() + activeTable.slice(1);
                         const otherTables = (duplicateLabels.get(field.label.trim().toLowerCase()) || [])
                           .filter(t => t !== currentTableName);
+                        const sameTableDuplicateCount = sameTableDuplicateLabels.get(field.label.trim().toLowerCase()) || 0;
                         return (
                           <FieldCard
                             key={field.id}
                             field={field}
                             isSelected={selectedFieldId === field.id}
                             otherTablesWithLabel={otherTables}
+                            sameTableDuplicateCount={sameTableDuplicateCount}
                             customTables={customTables}
                             onSelect={() => setSelectedFieldId(
                               selectedFieldId === field.id ? null : field.id

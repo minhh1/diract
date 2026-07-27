@@ -13,6 +13,11 @@ interface Props {
   // label -- a common source of confusion when picking fields for a widget
   // ("which 'Status' did I mean?"). Empty when the label is unique.
   otherTablesWithLabel?: string[];
+  // How many fields on THIS SAME table share this exact label — 2+ means a
+  // real duplicate (e.g. two "Billing Type" fields both on Projects), the
+  // kind of mess a template install can silently create if it only checks
+  // field_key, not label, for an existing equivalent.
+  sameTableDuplicateCount?: number;
   customTables?: CustomTable[];
   onSelect: () => void;
   onDragStart: () => void;
@@ -31,7 +36,7 @@ function relationTargetLabel(field: CustomField, customTables: CustomTable[]): s
 }
 
 export default function FieldCard({
-  field, isSelected, otherTablesWithLabel = [], customTables = [], onSelect, onDragStart, onDragOver, onDrop,
+  field, isSelected, otherTablesWithLabel = [], sameTableDuplicateCount = 0, customTables = [], onSelect, onDragStart, onDragOver, onDrop,
 }: Props) {
   const ftConfig = getFieldTypeConfig(field.field_type);
   const FtIcon = ftConfig.icon;
@@ -91,6 +96,15 @@ export default function FieldCard({
         >
           <Link2 size={10} className="shrink-0" />
           Also on {otherTablesWithLabel.join(', ')}
+        </p>
+      )}
+      {sameTableDuplicateCount > 1 && (
+        <p
+          className="flex items-center gap-1 text-[10px] text-rose-600 mt-2 ml-7 truncate font-bold"
+          title={`${sameTableDuplicateCount} fields on this table are all called "${field.label}" -- likely an accidental duplicate (e.g. from a template install), not intentional`}
+        >
+          <Link2 size={10} className="shrink-0" />
+          Duplicate — {sameTableDuplicateCount} fields share this label here
         </p>
       )}
     </div>
