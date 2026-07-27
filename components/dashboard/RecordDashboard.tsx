@@ -55,8 +55,17 @@ export default function RecordDashboard({
   systemTable, tableId, tableName,
   recordId, onBack, embedded = false, initialRecord,
 }: Props) {
-  const { tables: customTables } = useCustomTables();
-  const { companyId: ctxCompanyId, isAdmin: ctxIsAdmin } = useCompany();
+  const { companyId: ctxCompanyId, userId: ctxUserId, isAdmin: ctxIsAdmin } = useCompany();
+  // Passing userId matters here, not just for private-table filtering --
+  // without it useCustomTables() can't seed its cache synchronously and has
+  // to resolve auth.getUser() first, so `customTables` is still `[]` at the
+  // moment loadTabs() below runs on a fast page load. buildMissingDefault-
+  // ProjectDashboardTabs then silently can't find e.g. the "Time & Fee
+  // Entries" table and skips seeding this Matter's built-in Time & Fees/
+  // Disbursements/Invoices tabs -- permanently, since once any OTHER tab
+  // (e.g. a manually-added one) claims that same linked_table_id, the
+  // idempotent top-up on every later load treats it as already covered.
+  const { tables: customTables } = useCustomTables(ctxUserId);
 
   const [record, setRecord] = useState<Record<string, any> | null>(initialRecord ?? null);
   const [fields, setFields] = useState<FieldLayout[]>([]);
