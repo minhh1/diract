@@ -86,11 +86,36 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
   }
 
   if (type === 'select') {
+    // First-letter keyboard shortcut, e.g. Time & Fee Entries' Type field:
+    // "t" picks "Time Based", "f" picks "Fixed Fee" -- immediately (not
+    // native <select> typeahead, which just changes the value and keeps
+    // focus here) and advances to the next field, for fast keyboard-only
+    // entry. Generic over any select field's own option text, not
+    // hardcoded to Type -- and scoped to quick-add forms specifically (the
+    // [data-quickadd-fields] container DashboardQuickAddForm renders
+    // around its fields) so a grid cell's own tab order isn't hijacked and
+    // native typeahead still works everywhere else.
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLSelectElement>) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+      const container = e.currentTarget.closest('[data-quickadd-fields]');
+      if (!container) return;
+      const match = (field.select_options || []).find(opt => opt[0]?.toLowerCase() === e.key.toLowerCase());
+      if (!match) return;
+      e.preventDefault();
+      e.currentTarget.value = match;
+      onCommit(match);
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')
+      );
+      const idx = focusable.indexOf(e.currentTarget);
+      if (idx >= 0 && idx < focusable.length - 1) focusable[idx + 1].focus();
+    };
     return (
       <select
         defaultValue={value ?? ''}
         disabled={disabled}
         onChange={e => onCommit(e.target.value || null)}
+        onKeyDown={handleKeyDown}
         className={`${inputClass} appearance-none`}
       >
         <option value="">{plain ? '' : '—'}</option>

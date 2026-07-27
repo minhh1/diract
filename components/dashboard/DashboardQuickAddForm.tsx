@@ -310,7 +310,11 @@ export default function DashboardQuickAddForm({
           Fixed widths (not flex-1 grow/shrink) is also what fixed pills
           visually overlapping when several with different intrinsic
           minimum widths (e.g. a native date input) crowded one flex row. */}
-      <div className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
+      {/* data-quickadd-fields marks this as a quick-add form's own field
+          container -- see FieldValueInput.tsx's select-field keyboard
+          shortcut, which scopes its "advance to next field" behavior to
+          this exact boundary. */}
+      <div data-quickadd-fields className={`flex flex-wrap items-end ${PILL_GAP_CLASSES[pillGap]}`}>
         {quickAddFields.filter(field => !(isFixedFee && field.field_key === 'duration_hours')).map(field => {
           const widthClass = FIELD_WIDTH_CLASSES[fieldLayout?.[field.id]?.width || defaultFieldWidth(field.field_type)];
           return (
