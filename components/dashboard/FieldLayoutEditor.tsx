@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import { GripVertical, X, Minus, Plus, Search, ExternalLink, Pencil, ArrowUpRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getFieldLabel } from "@/lib/fieldLabels";
 
 export interface FieldLayout {
   id: string;
@@ -24,6 +25,7 @@ export interface FieldLayout {
 interface Props {
   fields: FieldLayout[];
   recordValues: Record<string, any>;
+  recordMatterType?: string; // this record's Matter Type value, if any -- see lib/fieldLabels.ts
   linkedItems?: Record<string, LinkedItem[]>; // fieldId → array of linked records
   isEditing: boolean;
   onSave: (fieldKey: string, value: any) => Promise<void>;
@@ -791,7 +793,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
 // ── FieldLayoutEditor ──────────────────────────────────────────────
 
 export default function FieldLayoutEditor({
-  fields, recordValues, linkedItems = {}, isEditing,
+  fields, recordValues, recordMatterType, linkedItems = {}, isEditing,
   onSave, onAddLinked, onRemoveLinked, onLayoutChange, onAddField, onRemoveField,
 }: Props) {
   const [draggedKey, setDraggedKey]   = useState<string | null>(null);
@@ -903,7 +905,7 @@ export default function FieldLayoutEditor({
                 )}
 
                 <EditableValue
-                  field={field}
+                  field={{ ...field, label: getFieldLabel(field, recordMatterType) }}
                   value={getFieldValue(field)}
                   linkedItems={linkedItems[field.id] || linkedItems[field.field_key] || []}
                   onSave={v => onSave(getSaveKey(field), v)}

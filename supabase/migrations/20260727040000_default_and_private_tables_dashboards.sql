@@ -13,15 +13,19 @@
 -- admin can set it true or delete such a row.
 
 alter table company_tables
-  add column is_default boolean not null default false,
-  add column owner_user_id uuid references profiles(id) on delete cascade;
+  add column if not exists is_default boolean not null default false,
+  add column if not exists owner_user_id uuid references profiles(id) on delete cascade;
 
 alter table company_dashboards
-  add column is_default boolean not null default false,
-  add column owner_user_id uuid references profiles(id) on delete cascade;
+  add column if not exists is_default boolean not null default false,
+  add column if not exists owner_user_id uuid references profiles(id) on delete cascade;
 
 -- ── company_tables ──────────────────────────────────────────────────
 drop policy if exists ct_all on company_tables;
+drop policy if exists ct_select on company_tables;
+drop policy if exists ct_insert on company_tables;
+drop policy if exists ct_update on company_tables;
+drop policy if exists ct_delete on company_tables;
 
 create policy ct_select on company_tables for select
   using (
@@ -55,6 +59,10 @@ create policy ct_delete on company_tables for delete
 
 -- ── company_table_fields (child of company_tables via table_id) ─────
 drop policy if exists ctf_all on company_table_fields;
+drop policy if exists ctf_select on company_table_fields;
+drop policy if exists ctf_insert on company_table_fields;
+drop policy if exists ctf_update on company_table_fields;
+drop policy if exists ctf_delete on company_table_fields;
 
 create policy ctf_select on company_table_fields for select
   using (
@@ -106,6 +114,10 @@ create policy ctf_delete on company_table_fields for delete
 
 -- ── company_table_records (child of company_tables via table_id) ────
 drop policy if exists ctr_all on company_table_records;
+drop policy if exists ctr_select on company_table_records;
+drop policy if exists ctr_insert on company_table_records;
+drop policy if exists ctr_update on company_table_records;
+drop policy if exists ctr_delete on company_table_records;
 
 create policy ctr_select on company_table_records for select
   using (
@@ -157,6 +169,10 @@ create policy ctr_delete on company_table_records for delete
 
 -- ── company_table_values (child of company_tables via table_id) ─────
 drop policy if exists ctv_all on company_table_values;
+drop policy if exists ctv_select on company_table_values;
+drop policy if exists ctv_insert on company_table_values;
+drop policy if exists ctv_update on company_table_values;
+drop policy if exists ctv_delete on company_table_values;
 
 create policy ctv_select on company_table_values for select
   using (
@@ -209,6 +225,10 @@ create policy ctv_delete on company_table_values for delete
 -- ── company_table_value_links (no direct table_id -- join via
 --    company_table_records.record_id to reach company_tables) ───────
 drop policy if exists company_table_value_links_company_members on company_table_value_links;
+drop policy if exists ctvl_select on company_table_value_links;
+drop policy if exists ctvl_insert on company_table_value_links;
+drop policy if exists ctvl_update on company_table_value_links;
+drop policy if exists ctvl_delete on company_table_value_links;
 
 create policy ctvl_select on company_table_value_links for select
   using (
@@ -265,6 +285,10 @@ create policy ctvl_delete on company_table_value_links for delete
 
 -- ── company_dashboards ──────────────────────────────────────────────
 drop policy if exists company_dashboards_active_company on company_dashboards;
+drop policy if exists company_dashboards_select on company_dashboards;
+drop policy if exists company_dashboards_insert on company_dashboards;
+drop policy if exists company_dashboards_update on company_dashboards;
+drop policy if exists company_dashboards_delete on company_dashboards;
 
 create policy company_dashboards_select on company_dashboards for select
   using (
