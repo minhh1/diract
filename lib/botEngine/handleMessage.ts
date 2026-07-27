@@ -24,6 +24,8 @@ import {
 import { advanceFileAction, buildFileMissingFieldsTool, type FileAdvanceResult } from "@/lib/ai/fileActions";
 import { advancePrecedentAction, allKnownFields, buildPrecedentMissingFieldsTool, type PrecedentAdvanceResult } from "@/lib/ai/precedentAction";
 import { issuePrecedentDocument } from "@/lib/precedents/issuePrecedent";
+import { advanceAppointmentAction, buildAppointmentMissingFieldsTool, type AppointmentAdvanceResult } from "@/lib/ai/appointmentAction";
+import { bookAppointment } from "@/lib/ai/calendarBooking";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { APP_URL } from "@/lib/config";
@@ -447,6 +449,15 @@ async function handleToolCall(
     return applyPrecedentAdvanceResult(admin, linked, msg, adapter, "issue_precedent", result);
   }
 
+  if (toolCall.name === "create_appointment") {
+    const collected: Record<string, string> = {};
+    for (const [key, value] of Object.entries(args)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") collected[key] = String(value);
+    }
+    const result = await advanceAppointmentAction(collected);
+    return applyAppointmentAdvanceResult(admin, linked, msg, adapter, "create_appointment", result);
+  }
+
   if (toolCall.name === "update_task") {
     const taskName = args.task_name as string | undefined;
     if (!taskName) return reply("Which task should I update?");
@@ -641,6 +652,34 @@ async function applyPrecedentAdvanceResult(
   );
 }
 
+// Mirrors applyFileAdvanceResult, for lib/ai/appointmentAction.ts's
+// AppointmentAdvanceResult shape.
+async function applyAppointmentAdvanceResult(
+  admin: any,
+  linked: LinkedAccount,
+  msg: ChannelMessage,
+  adapter: ChannelAdapter,
+  actionType: string,
+  result: AppointmentAdvanceResult
+) {
+  const reply = (text: string) => adapter.reply(attribute(text, msg));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  if (result.status === "collecting") {
+    await admin.from(adapter.pendingActionsTable).upsert(
+      { linked_account_id: linked.id, action_type: actionType, status: "collecting", collected: result.collected, next_fields: result.missingFields, params: null, summary: null, prompt_message_id: null, expires_at: expiresAt },
+      { onConflict: "linked_account_id" }
+    );
+    return reply(result.question);
+  }
+
+  const promptMessageId = await reply(`${result.summary}\n\nReply "yes" to confirm or "no" to cancel.`);
+  await admin.from(adapter.pendingActionsTable).upsert(
+    { linked_account_id: linked.id, action_type: actionType, status: "confirming", params: result.params, summary: result.summary, collected: null, next_fields: null, prompt_message_id: promptMessageId, expires_at: expiresAt },
+    { onConflict: "linked_account_id" }
+  );
+}
+
 // Handles a reply that arrives while a create_task/create_project/
 // create_file/update_file/issue_precedent is still "collecting" (see the
 // pending-action check in handleChannelMessage). Since the bot always asks
@@ -719,6 +758,49 @@ async function continueCollecting(
     }
     const result = await advanceFileAction(admin, companyId, actionType, DEFAULT_HOSTED_MODEL_ID, null, sourceTypes, merged);
     await applyFileAdvanceResult(admin, linked, msg, adapter, actionType, result);
+    return;
+  }
+
+  if (actionType === "create_appointment") {
+    let extracted: Record<string, unknown> = {};
+    let plainReply = "";
+    try {
+      const extraction = await callHostedModelWithTools(
+        DEFAULT_HOSTED_MODEL_ID,
+        [
+          { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
+          todayContextMessage(),
+          { role: "user", content: msg.question },
+        ],
+        buildAppointmentMissingFieldsTool(pendingFieldKeys)
+      );
+      const cost = costUsd("hosted", DEFAULT_HOSTED_MODEL_ID, extraction);
+      await admin.from("ai_usage_events").insert({
+        company_id: companyId,
+        user_id: linked.user_id,
+        model_id: DEFAULT_HOSTED_MODEL_ID,
+        provider: "hosted",
+        input_tokens: extraction.inputTokens,
+        output_tokens: extraction.outputTokens,
+        cost_usd: cost,
+      });
+      if (extraction.toolCall) extracted = extraction.toolCall.arguments;
+      else plainReply = extraction.content?.trim() ?? "";
+    } catch (err) {
+      console.error("Bot appointment field-extraction call failed:", err);
+    }
+
+    if (!Object.keys(extracted).length && plainReply) {
+      await reply(plainReply);
+      return;
+    }
+
+    const merged = { ...collectedSoFar };
+    for (const [key, value] of Object.entries(extracted)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") merged[key] = String(value);
+    }
+    const result = await advanceAppointmentAction(merged);
+    await applyAppointmentAdvanceResult(admin, linked, msg, adapter, actionType, result);
     return;
   }
 
@@ -844,6 +926,10 @@ async function executeAction(admin: any, companyId: string, userId: string, acti
   if (actionType === "update_file") {
     const file = await updateOnedriveFile(admin, companyId, params.itemId, params.content);
     return `Done — updated the file: ${file.webUrl}`;
+  }
+  if (actionType === "create_appointment") {
+    const booked = await bookAppointment(admin, companyId, params);
+    return `Done — booked "${params.name}" on ${params.date} at ${params.startTime}.${booked.htmlLink ? ` ${booked.htmlLink}` : ""}`;
   }
   if (actionType === "issue_precedent") {
     const result = await issuePrecedentDocument(admin, { companyId, userId, ...params });

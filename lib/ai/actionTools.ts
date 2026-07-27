@@ -263,6 +263,32 @@ const ISSUE_PRECEDENT_TOOL = {
   },
 };
 
+// Books a fixed 1-hour slot on the firm's shared calendar (see
+// lib/ai/calendarBooking.ts) -- no duration property, that's not
+// user-configurable. address vs. notes are deliberately separate: address
+// is only for a literal, specific street address; anything vaguer (e.g.
+// "at the client's office", "video call", "phone call") belongs in notes
+// instead, so the model has an obvious place to put a non-specific
+// location description without forcing it into the address field.
+const CREATE_APPOINTMENT_TOOL = {
+  type: "function",
+  function: {
+    name: "create_appointment",
+    description: "Book a 1-hour appointment on the firm's shared calendar.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The appointment's title/subject, only if the user actually stated one -- omit rather than inventing one." },
+        date: { type: "string", description: "The appointment date in YYYY-MM-DD format, if mentioned (resolve a relative phrase like \"tomorrow\" to an absolute date)." },
+        start_time: { type: "string", description: "Start time in 24-hour HH:MM format, if mentioned (e.g. \"2pm\" -> \"14:00\"). Always a 1-hour appointment -- never ask about or invent an end time/duration." },
+        address: { type: "string", description: "A specific street address, ONLY if the user gave one. Leave this out if they only described the location vaguely." },
+        notes: { type: "string", description: "Any other appointment details, including a non-specific location description (e.g. \"at the client's office\", \"video call\", \"phone call\") if the user didn't give a literal address." },
+      },
+      required: [],
+    },
+  },
+};
+
 // Built with this company's field config so create_task/create_project's
 // schemas reflect its custom fields -- called once per bot message (see
 // app/api/teams/bot/[companyId]/route.ts). update_task/update_project are
@@ -336,6 +362,7 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
     CREATE_FILE_TOOL,
     UPDATE_FILE_TOOL,
     ISSUE_PRECEDENT_TOOL,
+    CREATE_APPOINTMENT_TOOL,
   ];
 }
 
