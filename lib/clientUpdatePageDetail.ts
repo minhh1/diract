@@ -32,7 +32,7 @@ const RELATED_ENTITY_COLUMN_KEYS = RELATED_ENTITY_COLUMNS.map(c => c.key);
 
 export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean } = {}) {
   const [{ data: groups }, { data: items }, { data: allFields }, { data: formatRules }] = await Promise.all([
-    admin.from("client_update_groups").select("id, name, display_order, parent_group_id, condition_field_id, condition_value").eq("page_id", pageId).order("display_order"),
+    admin.from("client_update_groups").select("id, name, display_order, parent_group_id, condition_field_id, condition_value, default_status_names").eq("page_id", pageId).order("display_order"),
     admin.from("client_update_page_items").select("id, project_id, group_id, display_order, display_name, ai_summary, ai_summary_generated_at").eq("page_id", pageId).order("display_order"),
     admin.from("client_update_page_fields").select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options, group_id").eq("page_id", pageId).order("display_order"),
     admin.from("client_update_page_format_rules").select("id, field_id, value, color, display_order").eq("page_id", pageId).order("display_order"),

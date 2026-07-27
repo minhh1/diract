@@ -31,6 +31,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updates.condition_value = body.conditionFieldId ? (body.conditionValue ?? null) : null;
     conditionChanged = true;
   }
+  // Staff's Status-checkbox selection for this (top-level) group, applied
+  // page-wide as the default for everyone -- a client can still locally
+  // override it (see MatterBoard.tsx), which never writes back here.
+  if ("defaultStatusNames" in body) {
+    updates.default_status_names = Array.isArray(body.defaultStatusNames) ? body.defaultStatusNames : null;
+  }
   if (!Object.keys(updates).length) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
   const { error } = await admin.from("client_update_groups").update(updates).eq("id", groupId).eq("page_id", id);

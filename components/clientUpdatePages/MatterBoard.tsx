@@ -46,7 +46,7 @@ import ActivityLogModal from "./ActivityLogModal";
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; }
 export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
-export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; }
+export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
 interface Props {
@@ -64,6 +64,7 @@ interface Props {
   onDeleteGroup?: (groupId: string) => void;
   onAddGroup?: (name: string, parentGroupId: string | null) => void;
   onSetGroupCondition?: (groupId: string, fieldId: string | null, value: string | null) => void;
+  onSetDefaultStatusFilter?: (groupId: string, names: string[]) => void;
   onCustomizeColumns?: (groupId: string) => Promise<void>;
   onRevertColumns?: (groupId: string) => Promise<void>;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
@@ -102,6 +103,25 @@ const UNGROUPED = "__ungrouped__";
 const UNCLASSIFIED = "__unclassified__";
 const MATTER_NAME_SORT = "__matter_name__";
 
+// The Status-checkbox selection staff makes persists page-wide (as the
+// group's own default_status_names, in the database -- see the groups
+// PATCH route) for every viewer, staff and client alike. A CLIENT can
+// still locally override it without changing that shared default or
+// affecting any other viewer -- that override lives only here, in their
+// own browser's localStorage. Persisted by subgroup NAME rather than id so
+// it still resolves correctly if ids ever change. Keyed off the URL path
+// (stable for both staff and client) + the top-level group id.
+const statusPrefKey = (groupId: string) => `client_update_status_pref_${typeof window !== "undefined" ? window.location.pathname : ""}_${groupId}`;
+function getSavedStatusNames(groupId: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(statusPrefKey(groupId));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function saveStatusNames(groupId: string, names: string[]) {
+  try { localStorage.setItem(statusPrefKey(groupId), JSON.stringify(names)); } catch { /* ignore */ }
+}
+
 // Fixed swatch -> full, statically-written Tailwind class strings (never
 // built dynamically, e.g. `bg-${color}-50` -- the JIT compiler only picks
 // up classes it can see written out literally in source).
@@ -117,7 +137,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
-  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
+  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
@@ -206,19 +226,42 @@ export default function MatterBoard({
       ]
     : [];
 
-  // Defaults to "In Progress" checked on first load of a group that has
-  // one (Status is shared across groups, so this is consistent everywhere);
-  // once the user touches the Status checkboxes that choice is left alone
-  // for the rest of the session, same guarded-init pattern as sort/filters.
+  // Resolves subgroup NAMES (In Progress/Settled/Terminated) to this
+  // group's own subgroup ids -- names, not ids, since a saved/default
+  // selection needs to resolve consistently even though each group's
+  // subgroups are separate rows with separate ids.
+  const resolveStatusNames = (names: string[]): Set<string> => {
+    const set = new Set(names.map(n => n.trim().toLowerCase()));
+    return new Set(subGroups.filter(sg => set.has(sg.name.trim().toLowerCase())).map(sg => sg.id));
+  };
+
+  // Priority on first load of a group: the CLIENT's own saved override (if
+  // they're a client and have one) > staff's page-wide default
+  // (default_status_names, applies to every viewer) > auto-select
+  // "In Progress" if nothing's ever been configured. Once the viewer
+  // touches the checkboxes themselves that choice is left alone for the
+  // rest of the session, same guarded-init pattern as sort/filters.
   const [statusInitialisedFor, setStatusInitialisedFor] = useState<string | null>(null);
   useEffect(() => {
     const groupKey = activeTopGroup?.id ?? UNGROUPED;
     if (statusInitialisedFor === groupKey) return;
-    const inProgress = subGroups.find(sg => sg.name.trim().toLowerCase() === "in progress");
-    setSelectedStatuses(inProgress ? new Set([inProgress.id]) : new Set());
+
+    let initial: Set<string> | null = null;
+    if (!canEdit && activeTopGroup) {
+      const saved = getSavedStatusNames(activeTopGroup.id);
+      if (saved) initial = resolveStatusNames(saved);
+    }
+    if (!initial && activeTopGroup?.default_status_names != null) {
+      initial = resolveStatusNames(activeTopGroup.default_status_names);
+    }
+    if (!initial) {
+      const inProgress = subGroups.find(sg => sg.name.trim().toLowerCase() === "in progress");
+      initial = inProgress ? new Set([inProgress.id]) : new Set();
+    }
+    setSelectedStatuses(initial);
     setStatusInitialisedFor(groupKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTopGroup?.id, subGroups.map(g => g.id).join(",")]);
+  }, [activeTopGroup?.id, activeTopGroup?.default_status_names, canEdit, subGroups.map(g => g.id).join(",")]);
 
   // Ad-hoc filters reference a specific field id, which is only meaningful
   // within the active group's own visible columns -- reset on group change
@@ -232,6 +275,11 @@ export default function MatterBoard({
     setSelectedStatuses(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
+      if (activeTopGroup) {
+        const names = subGroups.filter(sg => next.has(sg.id)).map(sg => sg.name);
+        if (canEdit) onSetDefaultStatusFilter?.(activeTopGroup.id, names);
+        else saveStatusNames(activeTopGroup.id, names);
+      }
       return next;
     });
   };
@@ -1043,10 +1091,10 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
 
   if (editing) {
     return (
-      <td className={`px-2 py-2.5 ${frozenClass}`}>
+      <td className={`px-2 py-2 ${frozenClass}`}>
         <input autoFocus type={isDateField(field) ? "date" : "text"} value={draft ?? ""} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
-          className="w-32 px-2 py-1.5 border border-indigo-300 rounded-full text-[12px] outline-none" />
+          className="w-full min-w-[140px] px-3 py-2 border border-indigo-300 rounded-full text-[12px] outline-none" />
       </td>
     );
   }

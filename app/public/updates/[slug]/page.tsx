@@ -243,6 +243,14 @@ export default function ClientUpdatePage() {
     });
   };
 
+  const setDefaultStatusFilter = (groupId: string, names: string[]) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, default_status_names: names } : g) });
+    fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ defaultStatusNames: names }),
+    });
+  };
+
   const reorderFields = (fieldIds: string[]) => {
     if (mode !== "staff" || !staffPageId) return;
     setBoard(prev => {
@@ -378,6 +386,7 @@ export default function ClientUpdatePage() {
           onDeleteGroup={mode === "staff" ? deleteGroup : undefined}
           onAddGroup={mode === "staff" ? addGroup : undefined}
           onSetGroupCondition={mode === "staff" ? setGroupCondition : undefined}
+          onSetDefaultStatusFilter={mode === "staff" ? setDefaultStatusFilter : undefined}
           onCustomizeColumns={mode === "staff" ? customizeColumns : undefined}
           onRevertColumns={mode === "staff" ? revertColumns : undefined}
           onMoveItem={mode === "staff" ? moveItem : undefined}
