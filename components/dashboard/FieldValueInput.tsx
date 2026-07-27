@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef, useState } from "react";
+import { Sparkles, Loader2 } from "lucide-react";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import RelationPicker from "./RelationPicker";
 import { getValueColumn, isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
@@ -46,6 +48,12 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
   const type = field.field_type;
   const inputClass = inputClassFor(size, variant);
   const plain = variant === 'plain';
+
+  // Only ever used by the growing-textarea branch below, but declared here
+  // (not inside that `if`) since hooks can't be called conditionally.
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
 
   // Computed fields are never hand-edited — see supabase/company_table_fields_formula.sql.
   if (field.formula_type) {
@@ -175,17 +183,59 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
       el.style.height = 'auto';
       el.style.height = `${el.scrollHeight}px`;
     };
+    // Same "make this professional" rewrite as MyTasksButtonWidget's task
+    // notes (app/api/ai/rewrite-text) -- reads/writes the textarea's DOM
+    // value directly since it's uncontrolled (defaultValue, commit-on-blur),
+    // then feeds the result through the normal onCommit path so it persists
+    // exactly like a manual edit would.
+    const handleRewrite = async () => {
+      const el = textareaRef.current;
+      const text = el?.value.trim();
+      if (!text) return;
+      setRewriting(true);
+      setRewriteError(null);
+      try {
+        const res = await fetch('/api/ai/rewrite-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Rewrite failed');
+        if (el) { el.value = json.text; grow(el); }
+        onCommit(json.text || null);
+      } catch (err) {
+        setRewriteError(err instanceof Error ? err.message : 'Rewrite failed');
+      } finally {
+        setRewriting(false);
+      }
+    };
     return (
-      <textarea
-        ref={grow}
-        defaultValue={value ?? ''}
-        disabled={disabled}
-        onBlur={e => onCommit(e.target.value || null)}
-        onInput={e => grow(e.currentTarget)}
-        rows={1}
-        className={`${inputClass.replace('rounded-full', 'rounded-2xl')} resize-none leading-snug`}
-        placeholder={field.label}
-      />
+      <div className="relative">
+        <textarea
+          ref={el => { textareaRef.current = el; grow(el); }}
+          defaultValue={value ?? ''}
+          disabled={disabled}
+          onBlur={e => onCommit(e.target.value || null)}
+          onInput={e => grow(e.currentTarget)}
+          rows={1}
+          className={`${inputClass.replace('rounded-full', 'rounded-2xl')} resize-none leading-snug pr-8`}
+          placeholder={field.label}
+        />
+        {!disabled && (
+          <button
+            type="button"
+            onClick={handleRewrite}
+            disabled={rewriting}
+            title="Rewrite with AI"
+            aria-label="Rewrite with AI"
+            className="absolute top-1.5 right-1.5 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
+          >
+            {rewriting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+          </button>
+        )}
+        {rewriteError && <p className="text-[10px] text-red-500 font-medium mt-1 px-1">{rewriteError}</p>}
+      </div>
     );
   }
 
