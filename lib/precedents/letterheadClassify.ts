@@ -89,6 +89,12 @@ const CLASSIFY_TOOL = {
             required: ["index", "role"],
           },
         },
+        blankLineAfter: {
+          type: "array",
+          items: { type: "number" },
+          description:
+            "Indices of paragraphs that should have a blank paragraph inserted immediately after them, for readability. Only list an index when that separation is clearly missing AND the paragraph right after it is NOT already blank -- never list one whose next paragraph is already blank, and never insert separation inside a single block that belongs together (e.g. within a multi-line mailing address, or between a subject heading and its own detail lines).",
+        },
       },
       required: ["fields"],
     },
@@ -106,6 +112,7 @@ const SYSTEM_PROMPT = `You are analysing a law firm's uploaded Word letterhead/l
 - body: the blank paragraph(s) where the letter's own content goes
 - signoff: the signature block (name, position, firm, phone, email) -- whether it's blank placeholders or already a real hardcoded person's details
 - closing: the sign-off phrase itself (e.g. "Yours faithfully,")
+Separately, business letters conventionally use a blank line to visually separate distinct pieces of information -- e.g. between a reference line and the date, between the date and delivery instructions, between delivery instructions and a recipient's name. Some letterheads pack several of these directly adjacent with no blank line at all. List (in blankLineAfter) the index of every paragraph that's missing this separation from the one right after it -- but never one whose next paragraph is already blank, and never split up a single block that belongs together (e.g. a mailing address's own lines, or a subject heading and its labeled detail lines).
 Output ONLY through the tool call. If nothing recognizable is found, call it with an empty fields array.`;
 
 function paragraphsPrompt(paragraphs: ExtractedParagraph[]): string {
@@ -116,12 +123,13 @@ function paragraphsPrompt(paragraphs: ExtractedParagraph[]): string {
 
 export interface ClassifyResult {
   classifications: Classification[];
+  blankLineAfter: number[];
   inputTokens: number;
   outputTokens: number;
 }
 
 export async function classifyParagraphs(paragraphs: ExtractedParagraph[], modelId: string): Promise<ClassifyResult> {
-  if (!paragraphs.length) return { classifications: [], inputTokens: 0, outputTokens: 0 };
+  if (!paragraphs.length) return { classifications: [], blankLineAfter: [], inputTokens: 0, outputTokens: 0 };
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: paragraphsPrompt(paragraphs) },
@@ -137,7 +145,9 @@ export async function classifyParagraphs(paragraphs: ExtractedParagraph[], model
           options: Array.isArray(f.options) ? f.options.map((o: any) => String(o)).filter(Boolean) : undefined,
         }))
     : [];
-  return { classifications, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
+  const rawBlankLineAfter = result.toolCall?.arguments?.blankLineAfter;
+  const blankLineAfter = Array.isArray(rawBlankLineAfter) ? rawBlankLineAfter.filter((i: any) => Number.isInteger(i)) : [];
+  return { classifications, blankLineAfter, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
 }
 
 function parseOptionsFromText(text: string): string[] | undefined {
@@ -186,7 +196,8 @@ const KEEP_LABEL_PREFIX_ROLES = new Set<Role>(["our_ref", "address"]);
 export function applyClassification(
   docxBytes: Buffer,
   classifications: Classification[],
-  tagKeys: LetterheadTagKeys
+  tagKeys: LetterheadTagKeys,
+  blankLineAfter: number[] = []
 ): { bytes: Buffer; detectedFields: DetectedField[] } {
   if (!classifications.length) return { bytes: docxBytes, detectedFields: [] };
 
@@ -249,26 +260,13 @@ export function applyClassification(
     detectedFields.push(options ? { role, options } : { role });
   }
 
-  // Some letterheads pack Our Ref/date/delivery-mode/recipient-name directly
-  // adjacent with no blank line between any of them at all -- a firm's own
-  // compact header style, not something this module ever removed (there was
-  // nothing to preserve). Insert one blank paragraph between each pair in
-  // this cluster that's genuinely adjacent, matching the loose blank-spacer
-  // convention already used everywhere else in a typical letterhead (before
-  // the salutation, before the closing). A letterhead that already has its
-  // own spacing here is untouched, since only truly-adjacent pairs qualify.
-  const HEADER_CLUSTER_ORDER: Role[] = ["our_ref", "date", "delivery_mode", "recipient_name"];
-  const clusterAnchors = HEADER_CLUSTER_ORDER
-    .map(role => {
-      const group = byRole.get(role);
-      if (!group) return null;
-      return { role, index: [...group].sort((a, b) => a.index - b.index)[0].index };
-    })
-    .filter((c): c is { role: Role; index: number } => c !== null);
-  const insertBlankAfter = new Set<number>();
-  for (let i = 0; i < clusterAnchors.length - 1; i++) {
-    if (clusterAnchors[i + 1].index === clusterAnchors[i].index + 1) insertBlankAfter.add(clusterAnchors[i].index);
-  }
+  // Which paragraphs need a blank line inserted after them is the model's
+  // own call (see classifyParagraphs's blankLineAfter), not a fixed rule
+  // about specific roles here -- a letterhead's compact/spaced-out header
+  // style varies firm to firm, so this generalizes instead of only ever
+  // fixing one exact pattern. Guards against a hallucinated out-of-range
+  // index the same way the role classifications above do.
+  const insertBlankAfter = new Set(blankLineAfter.filter(i => matches[i]));
 
   if (!toReplace.size && !toDelete.size && !insertBlankAfter.size) return { bytes: docxBytes, detectedFields };
 

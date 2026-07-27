@@ -82,9 +82,9 @@ export async function POST(req: NextRequest) {
     const tokenCap = aiSettings?.monthly_token_cap ?? 2000000;
     if (!(await isTokenCapReached(admin, companyId, tokenCap))) {
       const paragraphs = extractParagraphs(bytes);
-      const { classifications, inputTokens, outputTokens } = await classifyParagraphs(paragraphs, DEFAULT_MODEL_ID);
+      const { classifications, blankLineAfter, inputTokens, outputTokens } = await classifyParagraphs(paragraphs, DEFAULT_MODEL_ID);
       if (classifications.length) {
-        const applied = applyClassification(bytes, classifications, { addressTagKey, contentTagKey, signoffTagKey });
+        const applied = applyClassification(bytes, classifications, { addressTagKey, contentTagKey, signoffTagKey }, blankLineAfter);
         classified = applied.bytes;
         detectedFields = applied.detectedFields;
       }
