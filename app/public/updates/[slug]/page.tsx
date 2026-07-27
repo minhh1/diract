@@ -16,9 +16,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem } from "@/components/clientUpdatePages/MatterBoard";
+import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
-interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; }
+interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
 interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean }
 
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
@@ -63,7 +63,7 @@ export default function ClientUpdatePage() {
       if (attempt.ok && !attempt.json.requiresCode) {
         setMode("client");
         setMeta({ title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn });
-        setBoard({ groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields });
+        setBoard({ groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [] });
         setLoading(false);
         return;
       }
@@ -74,7 +74,7 @@ export default function ClientUpdatePage() {
     setMode("client");
     setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
-    setBoard({ groups: json.groups, items: json.items, fields: json.fields });
+    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
     setLoading(false);
   }, [fetchPublic, slug]);
 
@@ -86,7 +86,7 @@ export default function ClientUpdatePage() {
     setMode("staff");
     setStaffPageId(json.page.id);
     setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column });
-    setBoard({ groups: json.groups, items: json.items, fields: json.fields });
+    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
     return true;
   }, [slug]);
 
@@ -110,7 +110,7 @@ export default function ClientUpdatePage() {
     if (!ok) { setCodeError(json.error || "Incorrect access code"); return; }
     setCachedCode(slug, code);
     setNeedsCode(false);
-    setBoard({ groups: json.groups, items: json.items, fields: json.fields });
+    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
   };
 
   // ── Optimistic mutation handlers ───────────────────────────────────
@@ -263,6 +263,34 @@ export default function ClientUpdatePage() {
     });
   };
 
+  const addFormatRule = (fieldId: string, value: string, color: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    const tempId = `temp-${Date.now()}`;
+    setBoard(prev => prev && { ...prev, formatRules: [...prev.formatRules, { id: tempId, field_id: fieldId, value, color }] });
+    fetch(`/api/client-update-pages/${staffPageId}/format-rules`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldId, value, color }),
+    }).then(r => r.json()).then(json => {
+      if (json.rule) setBoard(prev => prev && { ...prev, formatRules: prev.formatRules.map(r => r.id === tempId ? json.rule : r) });
+    });
+  };
+
+  const updateFormatRule = (ruleId: string, patch: { fieldId?: string; value?: string; color?: string }) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && {
+      ...prev,
+      formatRules: prev.formatRules.map(r => r.id === ruleId ? { ...r, ...(patch.fieldId ? { field_id: patch.fieldId } : {}), ...(patch.value ? { value: patch.value } : {}), ...(patch.color ? { color: patch.color } : {}) } : r),
+    });
+    fetch(`/api/client-update-pages/${staffPageId}/format-rules/${ruleId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    });
+  };
+
+  const removeFormatRule = (ruleId: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, formatRules: prev.formatRules.filter(r => r.id !== ruleId) });
+    fetch(`/api/client-update-pages/${staffPageId}/format-rules/${ruleId}`, { method: "DELETE" });
+  };
+
   const changeFreezeColumn = (freeze: boolean) => {
     if (mode !== "staff" || !staffPageId) return;
     setMeta(prev => prev && { ...prev, freezeFirstColumn: freeze });
@@ -331,6 +359,7 @@ export default function ClientUpdatePage() {
           groups={board.groups}
           items={board.items}
           fields={board.fields}
+          formatRules={board.formatRules}
           dateFormat={meta.dateFormat}
           freezeFirstColumn={meta.freezeFirstColumn}
           canEdit={mode === "staff"}
@@ -353,6 +382,9 @@ export default function ClientUpdatePage() {
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
           onFreezeFirstColumnChanged={mode === "staff" ? changeFreezeColumn : undefined}
+          onAddFormatRule={mode === "staff" ? addFormatRule : undefined}
+          onUpdateFormatRule={mode === "staff" ? updateFormatRule : undefined}
+          onRemoveFormatRule={mode === "staff" ? removeFormatRule : undefined}
         />
       </div>
     </div>

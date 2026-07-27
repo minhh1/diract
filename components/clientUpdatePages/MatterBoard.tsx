@@ -47,12 +47,14 @@ export interface MatterBoardField { id: string; field_source: string; field_key:
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; }
 export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; }
+export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
 interface Props {
   pageId?: string; // required when canEdit -- backs Add matter / Manage columns / date format
   groups: MatterBoardGroup[];
   items: MatterBoardItem[];
   fields: MatterBoardField[];
+  formatRules: MatterBoardFormatRule[];
   dateFormat: string;
   freezeFirstColumn?: boolean;
   canEdit: boolean;
@@ -75,6 +77,9 @@ interface Props {
   onDataChanged?: () => void; // matters added / columns changed -- needs a full refetch
   onDateFormatChanged?: (format: string) => void;
   onFreezeFirstColumnChanged?: (freeze: boolean) => void;
+  onAddFormatRule?: (fieldId: string, value: string, color: string) => void;
+  onUpdateFormatRule?: (ruleId: string, patch: { fieldId?: string; value?: string; color?: string }) => void;
+  onRemoveFormatRule?: (ruleId: string) => void;
 }
 
 function isDateField(field: MatterBoardField): boolean {
@@ -97,14 +102,28 @@ const UNGROUPED = "__ungrouped__";
 const UNCLASSIFIED = "__unclassified__";
 const MATTER_NAME_SORT = "__matter_name__";
 
+// Fixed swatch -> full, statically-written Tailwind class strings (never
+// built dynamically, e.g. `bg-${color}-50` -- the JIT compiler only picks
+// up classes it can see written out literally in source).
+const FORMAT_COLORS: Record<string, { swatch: string; row: string; cardBg: string; border: string }> = {
+  red: { swatch: "bg-red-400", row: "bg-red-50", cardBg: "bg-red-50/40", border: "border-l-red-400" },
+  amber: { swatch: "bg-amber-400", row: "bg-amber-50", cardBg: "bg-amber-50/40", border: "border-l-amber-400" },
+  green: { swatch: "bg-emerald-400", row: "bg-emerald-50", cardBg: "bg-emerald-50/40", border: "border-l-emerald-400" },
+  blue: { swatch: "bg-blue-400", row: "bg-blue-50", cardBg: "bg-blue-50/40", border: "border-l-blue-400" },
+  purple: { swatch: "bg-purple-400", row: "bg-purple-50", cardBg: "bg-purple-50/40", border: "border-l-purple-400" },
+  slate: { swatch: "bg-slate-400", row: "bg-slate-100", cardBg: "bg-slate-100/40", border: "border-l-slate-400" },
+};
+const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
+
 export default function MatterBoard({
-  pageId, groups, items, fields, dateFormat, freezeFirstColumn, canEdit, canComment,
-  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged,
+  pageId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
+  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<{ fieldId: string; values: Set<string> }[]>([]);
+  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sorts, setSorts] = useState<{ fieldId: string; dir: "asc" | "desc" }[]>([]);
   const [showAddMatter, setShowAddMatter] = useState(false);
@@ -263,6 +282,26 @@ export default function MatterBoard({
     return { ...f, values: next };
   }));
   const removeFilter = (index: number) => setFilters(prev => prev.filter((_, i) => i !== index));
+
+  // First matching rule wins (rules are ordered, top to bottom). Checked
+  // against the item's full value map, not just visibleFields, since a
+  // rule can reference any field on the page regardless of which group is
+  // currently active (formatting rules aren't group-scoped).
+  const colorForItem = (item: MatterBoardItem): string | null => {
+    for (const rule of formatRules) {
+      if (String(item.values[rule.field_id] ?? "") === rule.value) return rule.color;
+    }
+    return null;
+  };
+
+  const addFormatRule = () => {
+    if (!onAddFormatRule) return;
+    const field = visibleFields[0];
+    if (!field) return;
+    const value = distinctValuesFor(field.id)[0];
+    if (!value) return;
+    onAddFormatRule(field.id, value, FORMAT_COLOR_KEYS[formatRules.length % FORMAT_COLOR_KEYS.length]);
+  };
 
   const searchedItems = search.trim()
     ? filterFilteredItems.filter(i => {
@@ -471,6 +510,55 @@ export default function MatterBoard({
             </div>
           </SidebarSection>
 
+          {(formatRules.length > 0 || (canEdit && onAddFormatRule)) && (
+            <SidebarSection title="Formatting">
+              <div className="space-y-2">
+                {formatRules.map(rule => {
+                  const field = fields.find(f => f.id === rule.field_id);
+                  const options = field ? distinctValuesFor(field.id) : [];
+                  return (
+                    <div key={rule.id} className="relative flex items-center gap-1">
+                      <button onClick={() => canEdit && onUpdateFormatRule && setColorPickerFor(colorPickerFor === rule.id ? null : rule.id)}
+                        title="Change colour" className={`w-4 h-4 rounded-full shrink-0 ${FORMAT_COLORS[rule.color]?.swatch || "bg-slate-300"}`} />
+                      {canEdit && onUpdateFormatRule ? (
+                        <>
+                          <select value={rule.field_id} onChange={e => onUpdateFormatRule(rule.id, { fieldId: e.target.value, value: distinctValuesFor(e.target.value)[0] || "" })}
+                            className="min-w-0 px-2 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
+                            {visibleFields.map(vf => <option key={vf.id} value={vf.id}>{vf.label}</option>)}
+                          </select>
+                          <select value={rule.value} onChange={e => onUpdateFormatRule(rule.id, { value: e.target.value })}
+                            className="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
+                            {!options.includes(rule.value) && <option value={rule.value}>{rule.value}</option>}
+                            {options.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </>
+                      ) : (
+                        <span className="flex-1 min-w-0 text-[11px] text-slate-600 truncate">{field?.label || "?"} = {rule.value}</span>
+                      )}
+                      {canEdit && onRemoveFormatRule && (
+                        <button onClick={() => onRemoveFormatRule(rule.id)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
+                      )}
+                      {colorPickerFor === rule.id && onUpdateFormatRule && (
+                        <div className="absolute mt-8 ml-6 bg-white border border-slate-200 rounded-2xl shadow-lg p-2 z-20 flex gap-1.5">
+                          {FORMAT_COLOR_KEYS.map(c => (
+                            <button key={c} onClick={() => { onUpdateFormatRule(rule.id, { color: c }); setColorPickerFor(null); }}
+                              className={`w-5 h-5 rounded-full ${FORMAT_COLORS[c].swatch} ${rule.color === c ? "ring-2 ring-offset-1 ring-slate-400" : ""}`} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {canEdit && onAddFormatRule && visibleFields.length > 0 && (
+                  <button onClick={addFormatRule}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-slate-200 text-slate-400 text-[10px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                    <Plus size={11} /> Add rule
+                  </button>
+                )}
+              </div>
+            </SidebarSection>
+          )}
+
           <SidebarSection title="Sort by">
             <div className="space-y-1.5">
               {sorts.map((s, i) => {
@@ -503,7 +591,7 @@ export default function MatterBoard({
           {mode === "cards" ? (
             <div className="space-y-3">
               {visibleItems.map(item => (
-                <MatterCard key={item.id} item={item} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment}
+                <MatterCard key={item.id} item={item} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)}
                   onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
               ))}
               {visibleItems.length === 0 && (
@@ -511,7 +599,7 @@ export default function MatterBoard({
               )}
             </div>
           ) : (
-            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} freezeFirstColumn={!!freezeFirstColumn}
+            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} freezeFirstColumn={!!freezeFirstColumn} colorForItem={colorForItem}
               onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} />
           )}
         </div>
@@ -668,9 +756,9 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter }: {
+function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter }: {
   item: MatterBoardItem; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
-  canEdit: boolean; canComment: boolean;
+  canEdit: boolean; canComment: boolean; color: string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
@@ -695,8 +783,10 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
     if (trimmed && trimmed !== item.matterName) onRenameMatter?.(item.id, trimmed);
   };
 
+  const colorClasses = color ? FORMAT_COLORS[color] : null;
+
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl">
+    <div className={`border rounded-2xl ${colorClasses ? `border-l-4 ${colorClasses.border} ${colorClasses.cardBg} border-y-slate-200 border-r-slate-200` : "bg-white border-slate-200"}`}>
       <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className="flex-1 min-w-0">
           {editingTitle ? (
@@ -847,9 +937,10 @@ function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; ca
 // bigger frozen-panel construct that had an overlap bug on scroll; this is
 // deliberately narrower in scope to avoid repeating that. ─────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, freezeFirstColumn, onSaveValue, onMoveItem, onRemoveItem, onReorderFields }: {
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, freezeFirstColumn, colorForItem, onSaveValue, onMoveItem, onRemoveItem, onReorderFields }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean;
   freezeFirstColumn: boolean;
+  colorForItem: (item: MatterBoardItem) => string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
@@ -892,10 +983,13 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
           </tr>
         </thead>
         <tbody>
-          {items.map(item => (
-            <tr key={item.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+          {items.map(item => {
+            const rowColor = colorForItem(item);
+            const rowColorClasses = rowColor ? FORMAT_COLORS[rowColor] : null;
+            return (
+            <tr key={item.id} className={`border-b border-slate-50 last:border-0 ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
               {fields.map((f, i) => (
-                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0}
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.row}
                   onSave={v => onSaveValue?.(item.id, f.id, v)} />
               ))}
               {canEdit && onMoveItem && (
@@ -912,7 +1006,8 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
                 </td>
               )}
             </tr>
-          ))}
+            );
+          })}
           {items.length === 0 && (
             <tr><td colSpan={fields.length + 2} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No matters here yet</td></tr>
           )}
@@ -922,12 +1017,12 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
   );
 }
 
-function SpreadsheetCell({ field, value, dateFormat, editable, frozen, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; onSave: (v: any) => void }) {
+function SpreadsheetCell({ field, value, dateFormat, editable, frozen, frozenBg, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
 
   const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
-  const frozenClass = frozen ? "sticky left-0 z-10 bg-white border-r border-slate-200" : "";
+  const frozenClass = frozen ? `sticky left-0 z-10 ${frozenBg || "bg-white"} border-r border-slate-200` : "";
 
   if (field.field_type === "select" && field.select_options?.length) {
     return (

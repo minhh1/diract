@@ -8,10 +8,11 @@
 // client_visible: false ones, since that flag only hides a field from the
 // external client, not from staff).
 export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean } = {}) {
-  const [{ data: groups }, { data: items }, { data: allFields }] = await Promise.all([
+  const [{ data: groups }, { data: items }, { data: allFields }, { data: formatRules }] = await Promise.all([
     admin.from("client_update_groups").select("id, name, display_order, parent_group_id, condition_field_id, condition_value").eq("page_id", pageId).order("display_order"),
     admin.from("client_update_page_items").select("id, project_id, group_id, display_order, display_name, ai_summary, ai_summary_generated_at").eq("page_id", pageId).order("display_order"),
     admin.from("client_update_page_fields").select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options, group_id").eq("page_id", pageId).order("display_order"),
+    admin.from("client_update_page_format_rules").select("id, field_id, value, color, display_order").eq("page_id", pageId).order("display_order"),
   ]);
   const fields = opts.clientVisibleOnly ? (allFields || []).filter((f: any) => f.client_visible) : (allFields || []);
 
@@ -74,5 +75,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       notes: notesByItem.get(i.id) || [],
     })),
     fields: fields || [],
+    formatRules: formatRules || [],
   };
 }
