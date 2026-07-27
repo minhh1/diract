@@ -329,11 +329,17 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     let result = records;
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(r => {
-        const primary = String(r.values[primaryField?.field_key] || '');
-        return primary.toLowerCase().includes(q) ||
-          Object.values(r.values).some(v => String(v || '').toLowerCase().includes(q));
-      });
+      // Every column currently shown (table + expand panel), not just the
+      // primary field -- via resolveValue so relation fields are matched
+      // on their linked record's display name, not the raw id that a plain
+      // r.values scan would've searched instead.
+      const searchCols = [...new Set([
+        ...(primaryField ? [primaryField.id] : []),
+        ...cc.tableCols, ...cc.expandCols,
+      ])];
+      result = result.filter(r =>
+        searchCols.some(colId => resolveValue(r, colId).toLowerCase().includes(q))
+      );
     }
     const sort = cc.sort;
     if (!sort) return result;
@@ -343,7 +349,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
       return sort.direction === 'asc' ? cmp : -cmp;
     });
-  }, [records, search, primaryField, cc.sort, resolveValue]);
+  }, [records, search, primaryField, cc.tableCols, cc.expandCols, cc.sort, resolveValue]);
 
   // Fields the NewRecordModal prompts for -- the primary field plus every
   // other required field, so creating a record here never starts from an

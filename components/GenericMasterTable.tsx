@@ -755,9 +755,15 @@ function GenericMasterTableInner({
   const filteredItems = useMemo(() => {
     const primaryCol = tableName === 'properties' ? 'street_address' : 'name';
 
-    // Search
-    let result = [...t.items].filter(item =>
-      String(resolveValue(item, primaryCol) || '').toLowerCase().includes(search.toLowerCase())
+    // Search — every column currently shown (table + expand panel), not
+    // just the primary/name column, so e.g. searching a client name or
+    // reference number on projects actually finds matches. Reuses
+    // resolveValue so relation/custom-field/currency/date formatting stays
+    // consistent with what's on screen.
+    const searchCols = [...new Set([primaryCol, ...t.tableCols, ...t.expandCols])];
+    const q = search.trim().toLowerCase();
+    let result = !q ? [...t.items] : t.items.filter(item =>
+      searchCols.some(colId => String(resolveValue(item, colId) || '').toLowerCase().includes(q))
     );
 
     // Active filters
@@ -824,7 +830,7 @@ function GenericMasterTableInner({
       const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
       return sort.direction === 'asc' ? cmp : -cmp;
     });
-  }, [t.items, search, t.tableCols, resolveValue, tableName, t.sort, filters]);
+  }, [t.items, search, t.tableCols, t.expandCols, resolveValue, tableName, t.sort, filters]);
 
   // ── Records created from the Gmail add-on, pending review ──────────
   // Free-text names/addresses typed in the add-on for a relation field
