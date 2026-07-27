@@ -82,7 +82,7 @@ export default function TabBar({
   };
 
   return (
-    <div className="flex items-center gap-1 border-b border-slate-100 px-6 bg-white overflow-x-auto">
+    <div className="tab-bar-scroll flex items-center gap-1 border-b border-slate-100 px-6 bg-white overflow-x-auto">
       {tabs.map((tab, idx) => {
         const Icon = (LucideIcons as any)[tab.icon] || TAB_TYPE_ICONS[tab.tab_type] || FileText;
         const isActive = activeTabId === tab.id;

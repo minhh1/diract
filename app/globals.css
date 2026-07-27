@@ -74,10 +74,16 @@
   background-color: rgba(99, 102, 241, 0.14);
 }
 
-/* Custom Scrollbar using v4 syntax */
+/* Custom Scrollbar using v4 syntax -- both axes thin (the old rule only set
+   `width`, so every HORIZONTAL scrollbar sitewide fell back to the browser's
+   full-size default instead of matching the slim vertical one). */
 @layer utilities {
+  * {
+    scrollbar-width: thin; /* Firefox */
+  }
   ::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -85,6 +91,23 @@
   ::-webkit-scrollbar-thumb {
     @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
   }
+}
+
+/* Tab bars -- invisible until hover, so the row of tabs itself doesn't sit
+   on top of a permanently-visible bar; same pattern as .top-scroll-mirror. */
+.tab-bar-scroll::-webkit-scrollbar {
+  height: 5px;
+}
+.tab-bar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+.tab-bar-scroll:hover::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.tab-bar-scroll:hover::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 /* Top scroll mirror — horizontal scrollbar pinned in the header */
