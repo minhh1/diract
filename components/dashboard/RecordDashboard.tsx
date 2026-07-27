@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   AlertCircle, ArrowLeft, Trash2,
-  Pencil, FolderKanban, Plus, X, ShieldCheck,
+  Pencil, FolderKanban, Plus, X, ShieldCheck, Check,
   Columns2, Rows2, Maximize2, Minimize2,
 } from "lucide-react";
 import ProjectAccessPanel from "@/components/projects/ProjectAccessPanel";
@@ -85,6 +85,10 @@ export default function RecordDashboard({
   const [companyId, setCompanyId] = useState('');
   const [subProjects, setSubProjects] = useState<any[]>([]);
   const [activeSubProjectId, setActiveSubProjectId] = useState<string | null>(null);
+  // "Add sub-project" opens this draft instead of inserting immediately --
+  // nothing hits the database until the user explicitly saves it.
+  const [isAddingSubProject, setIsAddingSubProject] = useState(false);
+  const [newSubProjectName, setNewSubProjectName] = useState('');
   const [parentRecord, setParentRecord] = useState<any | null>(null);
   const [showFieldPicker, setShowFieldPicker] = useState(false);
   const [fieldPickerTabId, setFieldPickerTabId] = useState<string | null>(null);
@@ -919,7 +923,9 @@ export default function RecordDashboard({
 
   // ── Sub-project handlers ───────────────────────────────────────
 
-  const handleCreateSubProject = async () => {
+  const handleSaveSubProject = async () => {
+    const name = newSubProjectName.trim();
+    if (!name) return;
     const parentName = record?.name || '';
     const baseName = parentName.includes('/')
       ? parentName.split('/').slice(-1)[0].trim()
@@ -929,7 +935,7 @@ export default function RecordDashboard({
       .insert({
         company_id: companyId,
         parent_project_id: recordId,
-        name: `${baseName}/New sub-project`,
+        name: `${baseName}/${name}`,
       })
       .select('id, name')
       .single();
@@ -937,6 +943,13 @@ export default function RecordDashboard({
       setSubProjects(prev => [...prev, newSub]);
       setActiveSubProjectId(newSub.id);
     }
+    setIsAddingSubProject(false);
+    setNewSubProjectName('');
+  };
+
+  const handleDiscardSubProject = () => {
+    setIsAddingSubProject(false);
+    setNewSubProjectName('');
   };
 
   // ── Delete ─────────────────────────────────────────────────────
@@ -1413,12 +1426,44 @@ export default function RecordDashboard({
               );
             })}
 
-            <button
-              onClick={handleCreateSubProject}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-300 transition-all"
-            >
-              <Plus size={12} /> Add sub-project
-            </button>
+            {isAddingSubProject ? (
+              <span className="flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full bg-white border border-indigo-300">
+                <FolderKanban size={12} className="text-slate-300 shrink-0" />
+                <input
+                  autoFocus
+                  value={newSubProjectName}
+                  onChange={e => setNewSubProjectName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveSubProject();
+                    if (e.key === 'Escape') handleDiscardSubProject();
+                  }}
+                  placeholder="Sub-project name"
+                  className="text-[11px] font-bold text-slate-700 outline-none w-32 bg-transparent placeholder:font-medium placeholder:text-slate-300"
+                />
+                <button
+                  onClick={handleSaveSubProject}
+                  disabled={!newSubProjectName.trim()}
+                  title="Save"
+                  className="p-1 rounded-full text-emerald-500 hover:bg-emerald-50 disabled:opacity-30 disabled:hover:bg-transparent shrink-0 transition-all"
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  onClick={handleDiscardSubProject}
+                  title="Discard"
+                  className="p-1 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 shrink-0 transition-all"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setIsAddingSubProject(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-300 transition-all"
+              >
+                <Plus size={12} /> Add sub-project
+              </button>
+            )}
           </div>
         )}
 
