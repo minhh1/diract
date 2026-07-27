@@ -42,7 +42,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const baseOptions = [
     ...SYNTHETIC_BASE_FIELDS,
     ...(schemaCols || [])
-      .filter((c: any) => c.category === "data" && !c.is_hidden && c.column_name !== "name")
+      // "name" and "purchase_price" are already covered above (with nicer
+      // labels than the schema RPC's underscore-replaced fallback would
+      // give) -- purchase_price only became a real projects column
+      // recently (see the migration's header comment), so it'd otherwise
+      // now show up a second time here.
+      .filter((c: any) => c.category === "data" && !c.is_hidden && c.column_name !== "name" && c.column_name !== "purchase_price")
       .map((c: any) => ({ field_key: c.column_name, label: c.label || c.column_name.replace(/_/g, " ") })),
   ];
   const customOptions = (customFields || []).map((f: any) => ({ field_key: f.id, label: f.label }));

@@ -53,10 +53,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (field.field_source === "base") {
-    if (field.field_key === "property_address" || field.field_key === "purchase_price") {
+    // property_address lives on the linked property; purchase_price is a
+    // plain projects column (see the migration's header comment) so it
+    // just falls through to the generic projects.update below, no property
+    // link required.
+    if (field.field_key === "property_address") {
       if (!project?.property_id) return NextResponse.json({ error: "This matter has no linked property" }, { status: 400 });
-      const column = field.field_key === "property_address" ? "street_address" : "purchase_price";
-      const { error } = await admin.from("properties").update({ [column]: value ?? null }).eq("id", project.property_id);
+      const { error } = await admin.from("properties").update({ street_address: value ?? null }).eq("id", project.property_id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       await logAfterSave();
       return NextResponse.json({ ok: true });

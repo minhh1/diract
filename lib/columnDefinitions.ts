@@ -19,7 +19,7 @@ const CREDENTIAL_FIELD_LABELS: { suffix: string; label: string }[] = [
 
 export const PROPERTY_COLUMNS = [
   'street_address', 'suburb', 'state', 'postcode', 'country',
-  'folio_identifier', 'holding_entity_id', 'purchase_price', 'purchase_date',
+  'folio_identifier', 'holding_entity_id', 'purchase_date',
   'insurer_name', 'insurance_expiry', 'purchase_entity_id', 'policy_number',
   'project_manager', 'project_owner', 'last_coc_date', 'council_entity_id',
   'insurer_entity_id', 'is_sold', 'sold_date', 'sold_price',
@@ -30,8 +30,14 @@ export const ENTITY_COLUMNS = [
   'trust_deed_date', 'established_date',
 ];
 
+// purchase_price moved here from PROPERTY_COLUMNS (Client Update Pages --
+// see supabase/migrations/20260728130000_projects_purchase_price.sql).
+// properties.purchase_price still exists and is still written at
+// property-creation time (NewPropertyModal.tsx, RecordCreatorField.tsx,
+// the CSV property-import pipeline) since a property isn't always linked
+// to a project yet when it's created -- the two can drift.
 export const PROJECT_COLUMNS = [
-  'name', 'description', 'property_id', 'estimated_completion_date',
+  'name', 'description', 'property_id', 'estimated_completion_date', 'purchase_price',
 ];
 
 export function buildCredentialColumnSections() {

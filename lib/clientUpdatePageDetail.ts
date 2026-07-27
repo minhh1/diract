@@ -42,13 +42,16 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const projectIds = (items || []).map((i: any) => i.project_id);
   const itemIds = (items || []).map((i: any) => i.id);
   const { data: projects } = projectIds.length
-    ? await admin.from("projects").select("id, name, property_id, estimated_completion_date").in("id", projectIds)
+    ? await admin.from("projects").select("id, name, property_id, estimated_completion_date, purchase_price").in("id", projectIds)
     : { data: [] as any[] };
   const projectById = new Map<string, any>((projects || []).map((p: any) => [p.id, p]));
 
+  // Purchase Price lives on projects, not properties (see the migration's
+  // header comment) -- property_address is still the linked property's own
+  // field, so that join stays.
   const propertyIds = [...new Set((projects || []).map((p: any) => p.property_id).filter(Boolean))];
   const { data: properties } = propertyIds.length
-    ? await admin.from("properties").select("id, street_address, purchase_price").in("id", propertyIds)
+    ? await admin.from("properties").select("id, street_address").in("id", propertyIds)
     : { data: [] as any[] };
   const propertyById = new Map<string, any>((properties || []).map((p: any) => [p.id, p]));
 
@@ -103,7 +106,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     }
     const property = project?.property_id ? propertyById.get(project.property_id) : null;
     if (field.field_key === "property_address") return property?.street_address ?? null;
-    if (field.field_key === "purchase_price") return property?.purchase_price ?? null;
     return project?.[field.field_key] ?? null;
   }
 
