@@ -1,24 +1,25 @@
 // app/public/updates/[slug]/page.tsx
 // Dual-mode: a logged-in staff member of the page's own company gets the
-// full editable board right here (no PIN, values/groups/matters editable,
-// same as the Settings admin editor) via the authenticated by-slug route;
-// anyone else -- no session, or a session that isn't a member of this
-// company -- falls back to the original genuinely-unauthenticated,
-// PIN-gated, read + comment-only flow (app/public/documents/[pageId]/page.tsx's
-// PIN-cache pattern). The one supabase.auth call this file makes is used
-// only to *detect* a staff session -- every subsequent public-side read/
-// write still goes through the zero-auth public API routes exactly as
-// before, so an anonymous client's experience is unchanged.
+// full editable board right here (no PIN, values/groups/matters/columns
+// all editable, right on this page -- Settings only manages the page
+// itself: create/revoke/PIN) via the authenticated by-slug route; anyone
+// else -- no session, or a session that isn't a member of this company --
+// falls back to the original genuinely-unauthenticated, PIN-gated, read +
+// note-only flow (app/public/documents/[pageId]/page.tsx's PIN-cache
+// pattern). The one supabase.auth call this file makes is used only to
+// *detect* a staff session -- every subsequent public-side read/write
+// still goes through the zero-auth public API routes exactly as before,
+// so an anonymous client's experience is unchanged.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { Loader2, Lock, ShieldCheck } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; }
-interface PageMeta { title: string; clientLabel: string | null }
+interface PageMeta { title: string; dateFormat: string }
 
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
 function getCachedCode(slug: string): string | null {
@@ -61,7 +62,7 @@ export default function ClientUpdatePage() {
       const attempt = await fetchPublic(cachedCode);
       if (attempt.ok && !attempt.json.requiresCode) {
         setMode("client");
-        setMeta({ title: attempt.json.title, clientLabel: attempt.json.clientLabel });
+        setMeta({ title: attempt.json.title, dateFormat: attempt.json.dateFormat });
         setBoard({ groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields });
         setLoading(false);
         return;
@@ -71,30 +72,30 @@ export default function ClientUpdatePage() {
     const { ok, json } = await fetchPublic();
     if (!ok) { setError(json.error || "This page is not available"); setLoading(false); return; }
     setMode("client");
-    setMeta({ title: json.title, clientLabel: json.clientLabel });
+    setMeta({ title: json.title, dateFormat: json.dateFormat });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
     setBoard({ groups: json.groups, items: json.items, fields: json.fields });
     setLoading(false);
   }, [fetchPublic, slug]);
 
   // ── Try staff auth first; anything short of a clean 200 falls back ────
+  const loadAsStaff = useCallback(async () => {
+    const res = await fetch(`/api/client-update-pages/by-slug/${slug}`);
+    if (!res.ok) return false;
+    const json = await res.json();
+    setMode("staff");
+    setStaffPageId(json.page.id);
+    setMeta({ title: json.page.title, dateFormat: json.page.date_format });
+    setBoard({ groups: json.groups, items: json.items, fields: json.fields });
+    return true;
+  }, [slug]);
+
   const load = useCallback(async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const res = await fetch(`/api/client-update-pages/by-slug/${slug}`);
-      if (res.ok) {
-        const json = await res.json();
-        setMode("staff");
-        setStaffPageId(json.page.id);
-        setMeta({ title: json.page.title, clientLabel: json.page.client_label });
-        setBoard({ groups: json.groups, items: json.items, fields: json.fields });
-        setLoading(false);
-        return;
-      }
-    }
+    if (user && await loadAsStaff()) { setLoading(false); return; }
     await loadAsClient();
-  }, [slug, loadAsClient]);
+  }, [loadAsStaff, loadAsClient]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (meta?.title) document.title = meta.title; }, [meta?.title]);
@@ -137,18 +138,18 @@ export default function ClientUpdatePage() {
     if (!window.confirm("Delete this group? Its matters move to Ungrouped, nothing else changes.")) return;
     setBoard(prev => prev && {
       ...prev,
-      groups: prev.groups.filter(g => g.id !== groupId),
+      groups: prev.groups.filter(g => g.id !== groupId && g.parent_group_id !== groupId),
       items: prev.items.map(i => i.group_id === groupId ? { ...i, group_id: null } : i),
     });
     fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}`, { method: "DELETE" });
   };
 
-  const addGroup = (name: string) => {
+  const addGroup = (name: string, parentGroupId: string | null) => {
     if (mode !== "staff" || !staffPageId) return;
     const tempId = `temp-${Date.now()}`;
-    setBoard(prev => prev && { ...prev, groups: [...prev.groups, { id: tempId, name }] });
+    setBoard(prev => prev && { ...prev, groups: [...prev.groups, { id: tempId, name, parent_group_id: parentGroupId }] });
     fetch(`/api/client-update-pages/${staffPageId}/groups`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, parentGroupId }),
     }).then(r => r.json()).then(json => {
       if (json.group) setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === tempId ? json.group : g) });
     });
@@ -187,6 +188,19 @@ export default function ClientUpdatePage() {
       if (json?.note) setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: i.notes.map(n => n.id === tempId ? json.note : n) } : i) });
     });
   };
+
+  const changeDateFormat = (format: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setMeta(prev => prev && { ...prev, dateFormat: format });
+    fetch(`/api/client-update-pages/${staffPageId}/date-format`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dateFormat: format }),
+    });
+  };
+
+  // Matters added or columns changed via their modals write straight to the
+  // server (new rows need real ids) -- simplest to just reload the board
+  // afterward rather than hand-reconcile every possible shape.
+  const reloadStaffBoard = () => { if (mode === "staff") loadAsStaff(); };
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-slate-400" /></div>;
@@ -235,23 +249,15 @@ export default function ClientUpdatePage() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-[18px] font-bold text-slate-800">{meta.title}</h1>
-            {meta.clientLabel && <p className="text-[12px] text-slate-400 mt-0.5">{meta.clientLabel}</p>}
-          </div>
-          {mode === "staff" && (
-            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest">
-              <ShieldCheck size={12} /> Staff
-            </span>
-          )}
-        </div>
+      <div className="max-w-[1600px] mx-auto space-y-4">
+        <h1 className="text-[16px] font-bold text-slate-800">{meta.title}</h1>
 
         <MatterBoard
+          pageId={mode === "staff" ? staffPageId! : undefined}
           groups={board.groups}
           items={board.items}
           fields={board.fields}
+          dateFormat={meta.dateFormat}
           canEdit={mode === "staff"}
           canComment
           onSaveValue={mode === "staff" ? saveValue : undefined}
@@ -261,11 +267,9 @@ export default function ClientUpdatePage() {
           onMoveItem={mode === "staff" ? moveItem : undefined}
           onRemoveItem={mode === "staff" ? removeItem : undefined}
           onAddNote={addNote}
+          onDataChanged={reloadStaffBoard}
+          onDateFormatChanged={changeDateFormat}
         />
-
-        {board.groups.length === 0 && board.items.length === 0 && (
-          <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-12">No matters on this page yet</p>
-        )}
       </div>
     </div>
   );

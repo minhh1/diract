@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   const { admin, companyId } = auth;
 
   const { data: page } = await admin
-    .from("client_update_pages").select("id, company_id, title, client_label, slug, is_active").eq("slug", slug).maybeSingle();
+    .from("client_update_pages").select("id, company_id, title, client_label, slug, is_active, date_format").eq("slug", slug).maybeSingle();
   if (!page || page.company_id !== companyId || !page.is_active) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
   if (page.access_code) {
     const code = req.nextUrl.searchParams.get("code");
-    if (!code) return NextResponse.json({ title: page.title, clientLabel: page.client_label, requiresCode: true, fields: [], groups: [], items: [] });
+    if (!code) return NextResponse.json({ title: page.title, dateFormat: page.date_format, requiresCode: true, fields: [], groups: [], items: [] });
     if (!codeMatches(page, code)) {
       return NextResponse.json({ error: "Incorrect access code" }, { status: 401 });
     }
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
   return NextResponse.json({
     title: page.title,
-    clientLabel: page.client_label,
+    dateFormat: page.date_format,
     requiresCode: false,
     ...detail,
   });
