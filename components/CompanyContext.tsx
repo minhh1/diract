@@ -9,6 +9,7 @@ import { perfLog } from "@/lib/perfLog";
 import { readShellCache, writeShellCache, clearShellCache } from "@/lib/shellCache";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
+import { startBackgroundShellPrefetch } from "@/lib/hooks/prefetchShells";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 
 // Per-company display-name overrides for the three system tables, e.g. a
@@ -192,6 +193,10 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         isAdmin: admin, isSiteAdmin: siteAdmin, tableLabelOverrides: overrides, disabledSystemTables: disabled,
         invoiceSettings: { ...emptyInvoiceSettings(), ...invoiceSettingsData }, logoUrl: logo,
       });
+      // Warms every OTHER custom table/dashboard's shell cache in the
+      // background so whichever one the user clicks into next -- often not
+      // the page they landed on -- is already warm instead of a cold load.
+      startBackgroundShellPrefetch();
     }
     load();
     return () => { cancelled = true; };
