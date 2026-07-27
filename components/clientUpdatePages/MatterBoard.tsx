@@ -614,6 +614,7 @@ export default function MatterBoard({
           groupName={activeTopGroup?.name ?? null} isCustomized={hasCustomColumns}
           onCustomize={activeTopGroup && onCustomizeColumns ? () => onCustomizeColumns(activeTopGroup.id) : undefined}
           onRevert={activeTopGroup && onRevertColumns ? () => onRevertColumns(activeTopGroup.id) : undefined}
+          onReorderFields={onReorderFields}
           onClose={() => setShowColumns(false)} onChanged={() => onDataChanged?.()} />
       )}
       {conditionGroup && onSetGroupCondition && (

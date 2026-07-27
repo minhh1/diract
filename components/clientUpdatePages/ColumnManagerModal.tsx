@@ -10,10 +10,11 @@ import { X, GripVertical, Trash2, Loader2, ChevronUp, ChevronDown } from "lucide
 interface FieldDef { id: string; field_source: string; field_key: string; label: string; group_id?: string | null; }
 interface CatalogOption { field_key: string; label: string; }
 
-export default function ColumnManagerModal({ pageId, groupId, currentFields, groupName, isCustomized, onCustomize, onRevert, onClose, onChanged }: {
+export default function ColumnManagerModal({ pageId, groupId, currentFields, groupName, isCustomized, onCustomize, onRevert, onReorderFields, onClose, onChanged }: {
   pageId: string; groupId: string | null; currentFields: FieldDef[];
   groupName: string | null; isCustomized: boolean;
   onCustomize?: () => Promise<void>; onRevert?: () => Promise<void>;
+  onReorderFields?: (fieldIds: string[]) => void;
   onClose: () => void; onChanged: () => void;
 }) {
   const [order, setOrder] = useState(currentFields);
@@ -55,11 +56,18 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
     persistOrder(reordered);
   };
 
+  // Goes through the same onReorderFields callback SpreadsheetView's
+  // column-header drag uses (page.tsx's reorderFields -- updates board
+  // state optimistically, then persists) instead of this modal doing its
+  // own fetch-then-full-reload. Reloading after every single reorder click
+  // was the actual bug behind "reordering keeps resetting": several quick
+  // successive moves (dragging more than one column, or repeated up/down
+  // clicks) fire their own reload each, and an earlier reload landing
+  // after a later move's optimistic update would visually snap it back to
+  // a stale order -- the database write itself was never the problem.
   const persistOrder = (reordered: FieldDef[]) => {
     setOrder(reordered);
-    fetch(`/api/client-update-pages/${pageId}/fields/reorder`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldIds: reordered.map(f => f.id) }),
-    }).then(() => onChanged());
+    onReorderFields?.(reordered.map(f => f.id));
   };
 
   const moveField = (index: number, dir: -1 | 1) => {

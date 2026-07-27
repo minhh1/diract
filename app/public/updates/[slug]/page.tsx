@@ -247,8 +247,17 @@ export default function ClientUpdatePage() {
     if (mode !== "staff" || !staffPageId) return;
     setBoard(prev => {
       if (!prev) return prev;
+      // fieldIds is just the active group's own visible fields, reordered
+      // -- not the whole page (another group can have its own separately-
+      // customized columns). Splice the reordered ones back in relative
+      // order and leave every other field exactly where it was, rather
+      // than replacing the whole array (which would silently drop every
+      // other group's fields from local state until the next full reload).
+      const reorderedSet = new Set(fieldIds);
       const byId = new Map(prev.fields.map(f => [f.id, f]));
-      return { ...prev, fields: fieldIds.map(id => byId.get(id)!).filter(Boolean) };
+      const reorderedFields = fieldIds.map(id => byId.get(id)!).filter(Boolean);
+      const untouchedFields = prev.fields.filter(f => !reorderedSet.has(f.id));
+      return { ...prev, fields: [...reorderedFields, ...untouchedFields] };
     });
     fetch(`/api/client-update-pages/${staffPageId}/fields/reorder`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldIds }),
