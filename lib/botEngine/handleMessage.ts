@@ -26,6 +26,7 @@ import { advancePrecedentAction, allKnownFields, buildPrecedentMissingFieldsTool
 import { issuePrecedentDocument } from "@/lib/precedents/issuePrecedent";
 import { advanceAppointmentAction, buildAppointmentMissingFieldsTool, type AppointmentAdvanceResult } from "@/lib/ai/appointmentAction";
 import { bookAppointment } from "@/lib/ai/calendarBooking";
+import { getCompanyTimezone } from "@/lib/companyTimezone";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { APP_URL } from "@/lib/config";
@@ -85,12 +86,21 @@ const DEFAULT_HOSTED_MODEL_ID = HOSTED_MODELS[0].id;
 // it correctly said it "couldn't understand the date 'tomorrow'"). Included
 // in every tool-calling/extraction call so due_date can be given in natural
 // language, not just literal YYYY-MM-DD.
-function todayContextMessage() {
-  const today = new Date();
-  const weekday = today.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+// "Today" genuinely depends on which timezone you're asking from (unlike
+// the weekday-of-a-known-date computations elsewhere in this file, which
+// are timezone-invariant calendar-date math) -- near a midnight boundary,
+// UTC's calendar day can already differ from the company's actual local
+// one, which would make the model resolve "tomorrow" to the wrong date.
+// Uses the company's own configured timezone (see lib/companyTimezone.ts)
+// via Intl's formatter rather than any manual UTC-offset math.
+async function todayContextMessage(admin: any, companyId: string) {
+  const timezone = await getCompanyTimezone(admin, companyId);
+  const now = new Date();
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
   return {
     role: "system",
-    content: `Today is ${weekday}, ${today.toISOString().slice(0, 10)} (YYYY-MM-DD). If the user gives a relative date (e.g. "today", "tomorrow", "next Wednesday", "in 3 days"), convert it to an absolute YYYY-MM-DD date yourself before returning it. A bare weekday name with no qualifier (e.g. just "Monday", not "next Monday" or "this Monday") means the closest upcoming occurrence of that weekday -- today itself if today already is that weekday, otherwise the next one ahead, never one in the past.`,
+    content: `Today is ${weekday}, ${date} (YYYY-MM-DD). If the user gives a relative date (e.g. "today", "tomorrow", "next Wednesday", "in 3 days"), convert it to an absolute YYYY-MM-DD date yourself before returning it. A bare weekday name with no qualifier (e.g. just "Monday", not "next Monday" or "this Monday") means the closest upcoming occurrence of that weekday -- today itself if today already is that weekday, otherwise the next one ahead, never one in the past.`,
   };
 }
 
@@ -294,7 +304,7 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
       const toolCallMessages = [
         modelMessages[0],
         { role: "system", content: TOOL_USE_GUARDRAILS },
-        todayContextMessage(),
+        await todayContextMessage(admin, companyId),
         ...(identityMsg ? [identityMsg] : []),
         ...modelMessages.slice(1),
       ];
@@ -769,7 +779,7 @@ async function continueCollecting(
         DEFAULT_HOSTED_MODEL_ID,
         [
           { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-          todayContextMessage(),
+          await todayContextMessage(admin, companyId),
           { role: "user", content: msg.question },
         ],
         buildAppointmentMissingFieldsTool(pendingFieldKeys)
@@ -815,7 +825,7 @@ async function continueCollecting(
         DEFAULT_HOSTED_MODEL_ID,
         [
           { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-          todayContextMessage(),
+          await todayContextMessage(admin, companyId),
           { role: "user", content: msg.question },
         ],
         buildPrecedentMissingFieldsTool(pendingFields)
@@ -861,7 +871,7 @@ async function continueCollecting(
       DEFAULT_HOSTED_MODEL_ID,
       [
         { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-        todayContextMessage(),
+        await todayContextMessage(admin, companyId),
         ...(identityMsg ? [identityMsg] : []),
         { role: "user", content: msg.question },
       ],

@@ -167,6 +167,21 @@ function buildEventTitle(format: string, taskName: string, projectName: string, 
   return title.trim().replace(/^[\s—\-]+|[\s—\-]+$/g, ""); // strip leading/trailing separators
 }
 
+// Adds a duration to a naive HH:MM(:SS) time, rolling the calendar date
+// forward if it crosses midnight -- deliberately NOT done via
+// `new Date(...).toISOString()` (see buildEvent's header comment for why).
+function addDurationMins(datePart: string, time: string, durationMins: number): { date: string; time: string } {
+  const [h, m] = time.split(":").map(Number);
+  const totalMinutes = h * 60 + m + durationMins;
+  const endTime = `${String(Math.floor(totalMinutes / 60) % 24).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}:00`;
+  const daysToAdd = Math.floor(totalMinutes / (24 * 60));
+  if (daysToAdd === 0) return { date: datePart, time: endTime };
+
+  const rolled = new Date(`${datePart}T00:00:00Z`);
+  rolled.setUTCDate(rolled.getUTCDate() + daysToAdd);
+  return { date: rolled.toISOString().slice(0, 10), time: endTime };
+}
+
 function buildEvent(params: {
   title: string;
   description: string;
@@ -174,18 +189,25 @@ function buildEvent(params: {
   dueTime: string | null;
   durationMins: number;
   isCompleted: boolean;
+  timezone: string;
 }): any {
-  const { title, description, dueDate, dueTime, durationMins, isCompleted } = params;
+  const { title, description, dueDate, dueTime, durationMins, isCompleted, timezone } = params;
 
   let start: any, end: any;
   const datePart = dueDate.substring(0, 10); // dueDate may be a full timestamp — keep just YYYY-MM-DD
 
   if (dueTime) {
-    // Timed event — dueTime is HH:MM:SS, already includes seconds
-    const startDt = new Date(`${datePart}T${dueTime}`);
-    const endDt = new Date(startDt.getTime() + durationMins * 60 * 1000);
-    start = { dateTime: startDt.toISOString(), timeZone: "Australia/Sydney" };
-    end = { dateTime: endDt.toISOString(), timeZone: "Australia/Sydney" };
+    // Timed event -- dueTime is HH:MM:SS, already includes seconds. Sent as
+    // a *naive* local datetime string (no UTC offset) paired with timeZone
+    // -- confirmed against Google's Calendar API docs (2026-07-27): a
+    // dateTime with no offset is interpreted as wall-clock time IN the
+    // given timeZone. Previously used `new Date(...).toISOString()` for
+    // the instant, which always produces a UTC-suffixed string -- Google
+    // then ignores timeZone entirely and the event lands at the wrong
+    // wall-clock hour (shifted by the company's UTC offset).
+    const endAt = addDurationMins(datePart, dueTime, durationMins);
+    start = { dateTime: `${datePart}T${dueTime}`, timeZone: timezone };
+    end = { dateTime: `${endAt.date}T${endAt.time}`, timeZone: timezone };
   } else {
     // All-day event
     start = { date: datePart };
@@ -242,11 +264,12 @@ Deno.serve(async (req) => {
 
     const companyId = task.company_id;
     const { data: company } = await db.from("companies")
-      .select("calendar_event_title_format, calendar_event_duration_mins, sync_tasks_to_company_calendar, gmail_source_emails")
+      .select("calendar_event_title_format, calendar_event_duration_mins, sync_tasks_to_company_calendar, gmail_source_emails, timezone")
       .eq("id", companyId).maybeSingle();
 
     const titleFormat = company?.calendar_event_title_format || "{task_name}";
     const durationMins = company?.calendar_event_duration_mins || 30;
+    const timezone = company?.timezone || "Australia/Sydney";
 
     // ── Resolve sync targets ────────────────────────────────────────
     // Two independent copies — each syncs (or doesn't) on its own, so a
@@ -326,7 +349,7 @@ Deno.serve(async (req) => {
       } else {
         // Mark as cancelled (keeps in history)
         const event = buildEvent({ title, description, dueDate: task.due_date, dueTime: task.due_time,
-          durationMins, isCompleted: true });
+          durationMins, isCompleted: true, timezone });
         if (assigneeAuth && assigneeCalendarId && task.calendar_event_id) {
           await updateCalendarEvent(assigneeAuth.token, assigneeCalendarId, task.calendar_event_id, event);
         }
@@ -347,7 +370,7 @@ Deno.serve(async (req) => {
     }
 
     const event = buildEvent({ title, description, dueDate: task.due_date, dueTime: task.due_time,
-      durationMins, isCompleted: false });
+      durationMins, isCompleted: false, timezone });
 
     const dbUpdate: Record<string, unknown> = {};
     let anySynced = false;

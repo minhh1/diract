@@ -8,16 +8,19 @@
 // gatekeep on availability).
 //
 // Event start/end are sent as *naive* local datetime strings (no UTC
-// offset) paired with timeZone: "Australia/Sydney" -- confirmed against
-// Google's Calendar API docs (2026-07-27): a dateTime with no offset is
-// interpreted as wall-clock time IN the given timeZone. Deliberately not
-// using `new Date(...).toISOString()` for the instant itself (that always
-// produces a UTC-suffixed string, which would make Google ignore timeZone
-// entirely and shift the event by Sydney's UTC offset) -- only used below
-// for safe, timezone-agnostic *calendar-date* arithmetic (rolling to the
-// next day when adding the fixed 1-hour duration crosses midnight).
+// offset) paired with the company's own configured timeZone (see
+// lib/companyTimezone.ts) -- confirmed against Google's Calendar API docs
+// (2026-07-27): a dateTime with no offset is interpreted as wall-clock time
+// IN the given timeZone. Deliberately not using `new Date(...).toISOString()`
+// for the instant itself (that always produces a UTC-suffixed string, which
+// would make Google ignore timeZone entirely and shift the event by the
+// company's UTC offset) -- only used below for safe, timezone-agnostic
+// *calendar-date* arithmetic (rolling to the next day when adding the fixed
+// 1-hour duration crosses midnight).
+import { getCompanyTimezone } from "@/lib/companyTimezone";
+
 const APPOINTMENT_DURATION_MINS = 60;
-const APPOINTMENT_TIMEZONE = "Australia/Sydney";
+
 
 export interface AppointmentParams {
   name: string;
@@ -79,7 +82,7 @@ async function getCompanyCalendarToken(admin: any, companyId: string): Promise<{
 }
 
 export async function bookAppointment(admin: any, companyId: string, params: AppointmentParams): Promise<BookedAppointment> {
-  const auth = await getCompanyCalendarToken(admin, companyId);
+  const [auth, timezone] = await Promise.all([getCompanyCalendarToken(admin, companyId), getCompanyTimezone(admin, companyId)]);
   if (!auth) {
     throw new Error("This company hasn't connected a Gmail account for calendar sync yet -- ask an admin to connect one in Admin -> Gmail.");
   }
@@ -90,8 +93,8 @@ export async function bookAppointment(admin: any, companyId: string, params: App
     summary: params.name,
     description: params.notes ?? undefined,
     location: params.address ?? undefined,
-    start: { dateTime: `${params.date}T${params.startTime}:00`, timeZone: APPOINTMENT_TIMEZONE },
-    end: { dateTime: `${end.date}T${end.time}:00`, timeZone: APPOINTMENT_TIMEZONE },
+    start: { dateTime: `${params.date}T${params.startTime}:00`, timeZone: timezone },
+    end: { dateTime: `${end.date}T${end.time}:00`, timeZone: timezone },
     reminders: {
       useDefault: false,
       overrides: [

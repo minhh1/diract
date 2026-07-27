@@ -52,6 +52,7 @@ interface Company {
   abn: string | null;
   acn: string | null;
   company_type: string | null;
+  timezone: string;
   status: string;
   created_at: string;
   project_default_access: 'all_members' | 'specific_teams' | 'specific_members';
@@ -81,6 +82,16 @@ const CALENDAR_BASE_TOKENS = [
   { id: 'task_name',    label: 'Task Name',    example: 'Follow up with client' },
   { id: 'project_name', label: 'Project Name', example: 'Acme Corp' },
 ];
+
+// Every IANA timezone name the browser actually knows about, rather than a
+// hand-maintained list -- Intl.supportedValuesOf('timeZone') is Baseline
+// across all major browsers since 2022. Falls back to a short common set
+// if it's ever unavailable (very old browser), so the dropdown never ends
+// up completely empty.
+const TIMEZONE_OPTIONS: string[] =
+  typeof Intl !== 'undefined' && typeof (Intl as any).supportedValuesOf === 'function'
+    ? (Intl as any).supportedValuesOf('timeZone')
+    : ['UTC', 'Australia/Sydney', 'Australia/Perth', 'America/New_York', 'America/Los_Angeles', 'Europe/London', 'Asia/Singapore'];
 
 interface ProjectCustomField { id: string; field_key: string; label: string; }
 
@@ -274,6 +285,7 @@ export default function AdminPage() {
   const [companyAbn, setCompanyAbn] = useState('');
   const [companyAcn, setCompanyAcn] = useState('');
   const [companyType, setCompanyType] = useState('');
+  const [companyTimezone, setCompanyTimezone] = useState('UTC');
   const [savingCompany, setSavingCompany] = useState(false);
 
   // Token generation
@@ -325,6 +337,7 @@ export default function AdminPage() {
     setCompanyAbn(company.abn || '');
     setCompanyAcn(company.acn || '');
     setCompanyType(company.company_type || '');
+    setCompanyTimezone(company.timezone || 'UTC');
     const comp = company as any;
     setSourceEmails(comp.gmail_source_emails || []);
     setArchiveEmails(comp.gmail_archive_emails || []);
@@ -390,10 +403,11 @@ export default function AdminPage() {
       abn: companyAbn || null,
       acn: companyAcn || null,
       company_type: companyType || null,
+      timezone: companyTimezone,
     }).eq('id', company.id);
     queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && old.company && ({
       ...old,
-      company: { ...old.company, name: companyName, abn: companyAbn || null, acn: companyAcn || null, company_type: companyType || null },
+      company: { ...old.company, name: companyName, abn: companyAbn || null, acn: companyAcn || null, company_type: companyType || null, timezone: companyTimezone },
     }));
     setSavingCompany(false);
   };
@@ -1041,6 +1055,24 @@ export default function AdminPage() {
                 </select>
                 <p className="text-[10px] text-slate-400 mt-1.5">
                   Unlocks industry-specific features, like the detailed law-firm invoice template.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                  Timezone
+                </label>
+                <select
+                  value={companyTimezone}
+                  onChange={e => setCompanyTimezone(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100 appearance-none"
+                >
+                  {TIMEZONE_OPTIONS.map(tz => (
+                    <option key={tz} value={tz}>{tz}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  Used by the AI assistant to resolve relative dates like tomorrow or next Wednesday, and to book appointments/sync task due dates at the correct local time.
                 </p>
               </div>
 
