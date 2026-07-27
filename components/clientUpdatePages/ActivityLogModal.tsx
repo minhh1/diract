@@ -31,7 +31,7 @@ export default function ActivityLogModal({ pageId, onClose }: { pageId: string; 
       <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
           <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Activity log</h3>
-          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+          <button onClick={onClose} title="Close" className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-8 py-6">
           {logs === null ? (

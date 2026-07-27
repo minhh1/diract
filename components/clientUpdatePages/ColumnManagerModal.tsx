@@ -5,9 +5,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, GripVertical, Trash2, Loader2, ChevronUp, ChevronDown, ChevronRight } from "lucide-react";
+import { X, GripVertical, Trash2, Loader2, ChevronUp, ChevronDown, ChevronRight, DatabaseZap } from "lucide-react";
 
-interface FieldDef { id: string; field_source: string; field_key: string; label: string; group_id?: string | null; }
+interface FieldDef { id: string; field_source: string; field_key: string; label: string; field_type?: string; group_id?: string | null; }
+
+const PROMOTE_TYPE_OPTIONS = [
+  { value: "text", label: "Text" },
+  { value: "select", label: "Dropdown" },
+  { value: "number", label: "Number" },
+  { value: "currency", label: "Currency" },
+  { value: "date", label: "Date" },
+  { value: "boolean", label: "Yes / No" },
+];
 interface CatalogOption { field_key: string; label: string; }
 interface RelatedTableOption { linkFieldId: string; linkLabel: string; columns: { key: string; label: string }[]; }
 
@@ -27,6 +36,9 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
   const [adhocIsSelect, setAdhocIsSelect] = useState(false);
   const [adhocOptions, setAdhocOptions] = useState("");
   const [switching, setSwitching] = useState(false);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [promoteChooserId, setPromoteChooserId] = useState<string | null>(null);
+  const [promoteType, setPromoteType] = useState("text");
 
   const handleCustomize = async () => {
     if (!onCustomize || switching) return;
@@ -100,12 +112,39 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
     onChanged();
   };
 
+  // Only ever offered for adhoc (report-only) columns -- base/custom/
+  // related_entity are already real matter fields, there's nothing to
+  // promote. See the promote route's header comment for what this does --
+  // notably, the real field's type is picked here rather than silently
+  // inherited from the adhoc column (adhoc is only ever 'text' or
+  // 'select', which is rarely the type you actually want on the real
+  // matter record).
+  const openPromoteChooser = (field: FieldDef) => {
+    setPromoteChooserId(field.id);
+    setPromoteType(field.field_type === "select" ? "select" : "text");
+  };
+
+  const confirmPromote = async (field: FieldDef) => {
+    setPromotingId(field.id);
+    try {
+      const res = await fetch(`/api/client-update-pages/${pageId}/fields/${field.id}/promote`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldType: promoteType }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { window.alert(json.error || "Couldn't save that as a custom field"); return; }
+      setPromoteChooserId(null);
+      onChanged();
+    } finally {
+      setPromotingId(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
           <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Manage columns</h3>
-          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+          <button onClick={onClose} title="Close" className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
         {groupName && (onCustomize || onRevert) && (
           <div className="flex items-center justify-between gap-3 px-8 py-3 bg-slate-50 border-b border-slate-100 shrink-0">
@@ -132,21 +171,45 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">On this page — drag to reorder</p>
             <div className="space-y-1">
               {order.map((f, i) => (
-                <div key={f.id} draggable
-                  onDragStart={() => setDraggedId(f.id)}
-                  onDragOver={e => { e.preventDefault(); setDragOverId(f.id); }}
-                  onDrop={() => handleDrop(f.id)}
-                  onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
-                  className={`flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl cursor-grab active:cursor-grabbing transition-colors ${dragOverId === f.id ? "ring-2 ring-indigo-300" : ""}`}>
-                  <GripVertical size={13} className="text-slate-300 shrink-0" />
-                  <span className="flex-1 text-[12px] text-slate-700">{f.label}</span>
-                  <div className="flex items-center shrink-0">
-                    <button onClick={() => moveField(i, -1)} disabled={i === 0} title="Move up"
-                      className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-20 disabled:hover:text-slate-300 transition-colors"><ChevronUp size={13} /></button>
-                    <button onClick={() => moveField(i, 1)} disabled={i === order.length - 1} title="Move down"
-                      className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-20 disabled:hover:text-slate-300 transition-colors"><ChevronDown size={13} /></button>
+                <div key={f.id}>
+                  <div draggable
+                    onDragStart={() => setDraggedId(f.id)}
+                    onDragOver={e => { e.preventDefault(); setDragOverId(f.id); }}
+                    onDrop={() => handleDrop(f.id)}
+                    onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
+                    className={`flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl cursor-grab active:cursor-grabbing transition-colors ${dragOverId === f.id ? "ring-2 ring-indigo-300" : ""}`}>
+                    <GripVertical size={13} className="text-slate-300 shrink-0" />
+                    <span className="flex-1 text-[12px] text-slate-700">{f.label}</span>
+                    {f.field_source === "adhoc" && (
+                      <button onClick={() => openPromoteChooser(f)} disabled={promotingId === f.id} title="Save as a real custom field on Matters -- shows on the normal matter dashboard too"
+                        className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors shrink-0">
+                        {promotingId === f.id ? <Loader2 size={13} className="animate-spin" /> : <DatabaseZap size={13} />}
+                      </button>
+                    )}
+                    <div className="flex items-center shrink-0">
+                      <button onClick={() => moveField(i, -1)} disabled={i === 0} title="Move up"
+                        className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-20 disabled:hover:text-slate-300 transition-colors"><ChevronUp size={13} /></button>
+                      <button onClick={() => moveField(i, 1)} disabled={i === order.length - 1} title="Move down"
+                        className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-20 disabled:hover:text-slate-300 transition-colors"><ChevronDown size={13} /></button>
+                    </div>
+                    <button onClick={() => removeField(f.id)} title="Remove this column from the page" className="p-1 text-slate-300 hover:text-red-500 shrink-0"><Trash2 size={13} /></button>
                   </div>
-                  <button onClick={() => removeField(f.id)} className="p-1 text-slate-300 hover:text-red-500 shrink-0"><Trash2 size={13} /></button>
+                  {promoteChooserId === f.id && (
+                    <div className="mt-1 ml-5 p-3 border border-indigo-200 bg-indigo-50/50 rounded-xl space-y-2">
+                      <p className="text-[11px] text-slate-600">Save "{f.label}" as a real custom field on Matters. It'll then show on the normal matter dashboard too, and any values already entered here carry over.</p>
+                      <div className="flex items-center gap-2">
+                        <select value={promoteType} onChange={e => setPromoteType(e.target.value)}
+                          className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
+                          {PROMOTE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        <button onClick={() => setPromoteChooserId(null)} className="text-[10px] font-bold text-slate-400 shrink-0">Cancel</button>
+                        <button onClick={() => confirmPromote(f)} disabled={promotingId === f.id}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full disabled:opacity-40 transition-colors shrink-0">
+                          {promotingId === f.id && <Loader2 size={11} className="animate-spin" />} Save
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

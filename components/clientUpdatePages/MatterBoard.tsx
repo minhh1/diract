@@ -185,8 +185,25 @@ export default function MatterBoard({
 
   const topGroups = groups.filter(g => !g.parent_group_id);
   const ungroupedCount = items.filter(i => !i.group_id).length;
+
+  // The Group list's count is the "still open" count -- just In Progress +
+  // Not Exchanged, not every matter regardless of status (Settled/
+  // Terminated ones are done, and Unclassified is a data gap, so a bare
+  // total was mostly noise once a group actually had matters winding down).
+  // Falls back to the plain total for a group that hasn't set up either of
+  // those subgroups yet, so a fresh group doesn't just show 0.
+  const OPEN_STATUS_NAMES = new Set(["in progress", "not exchanged"]);
+  const openStatusCountFor = (topId: string): number => {
+    const subs = groups.filter(g => g.parent_group_id === topId && OPEN_STATUS_NAMES.has(g.name.trim().toLowerCase()));
+    if (!subs.length) return items.filter(i => descendantOf(groups, i, topId)).length;
+    return subs.reduce((sum, sg) => sum + (sg.condition_field_id
+      ? items.filter(i => i.group_id === topId && String(i.values[sg.condition_field_id!] ?? "") === sg.condition_value).length
+      : items.filter(i => i.group_id === sg.id).length
+    ), 0);
+  };
+
   const topOptions = [
-    ...topGroups.map(g => ({ id: g.id, name: g.name, count: items.filter(i => descendantOf(groups, i, g.id)).length })),
+    ...topGroups.map(g => ({ id: g.id, name: g.name, count: openStatusCountFor(g.id) })),
     ...(ungroupedCount > 0 || topGroups.length === 0 ? [{ id: UNGROUPED, name: "Ungrouped", count: ungroupedCount }] : []),
   ];
 
@@ -435,7 +452,7 @@ export default function MatterBoard({
           <Search size={14} className="text-slate-300 shrink-0" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search matters..."
             className="flex-1 min-w-0 text-[12px] outline-none" />
-          {search && <button onClick={() => setSearch("")} className="text-slate-300 hover:text-slate-600 shrink-0"><X size={13} /></button>}
+          {search && <button onClick={() => setSearch("")} title="Clear search" className="text-slate-300 hover:text-slate-600 shrink-0"><X size={13} /></button>}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
@@ -539,7 +556,7 @@ export default function MatterBoard({
                         className="flex-1 min-w-0 px-2.5 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
                         {visibleFields.filter(vf => !usedElsewhere.has(vf.id) || vf.id === f.fieldId).map(vf => <option key={vf.id} value={vf.id}>{vf.label}</option>)}
                       </select>
-                      <button onClick={() => removeFilter(i)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
+                      <button onClick={() => removeFilter(i)} title="Remove filter" className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
                     </div>
                     <div className="pl-1 space-y-0.5 max-h-32 overflow-y-auto">
                       {options.length === 0 && <p className="text-[10px] text-slate-300 italic px-2 py-1">No values yet</p>}
@@ -569,34 +586,44 @@ export default function MatterBoard({
                   const field = fields.find(f => f.id === rule.field_id);
                   const options = field ? distinctValuesFor(field.id) : [];
                   return (
-                    <div key={rule.id} className="relative flex items-center gap-1">
-                      <button onClick={() => canEdit && onUpdateFormatRule && setColorPickerFor(colorPickerFor === rule.id ? null : rule.id)}
-                        title="Change colour" className={`w-4 h-4 rounded-full shrink-0 ${FORMAT_COLORS[rule.color]?.swatch || "bg-slate-300"}`} />
-                      {canEdit && onUpdateFormatRule ? (
-                        <>
+                    <div key={rule.id} className="space-y-1">
+                      <div className="relative flex items-center gap-1">
+                        <button onClick={() => canEdit && onUpdateFormatRule && setColorPickerFor(colorPickerFor === rule.id ? null : rule.id)}
+                          title="Change colour" className={`w-4 h-4 rounded-full shrink-0 ${FORMAT_COLORS[rule.color]?.swatch || "bg-slate-300"}`} />
+                        {canEdit && onUpdateFormatRule ? (
                           <select value={rule.field_id} onChange={e => onUpdateFormatRule(rule.id, { fieldId: e.target.value, value: distinctValuesFor(e.target.value)[0] || "" })}
-                            className="min-w-0 px-2 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
+                            className="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
                             {visibleFields.map(vf => <option key={vf.id} value={vf.id}>{vf.label}</option>)}
                           </select>
-                          <select value={rule.value} onChange={e => onUpdateFormatRule(rule.id, { value: e.target.value })}
-                            className="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
-                            {!options.includes(rule.value) && <option value={rule.value}>{rule.value}</option>}
-                            {options.map(o => <option key={o} value={o}>{o}</option>)}
-                          </select>
-                        </>
-                      ) : (
-                        <span className="flex-1 min-w-0 text-[11px] text-slate-600 truncate">{field?.label || "?"} = {rule.value}</span>
-                      )}
-                      {canEdit && onRemoveFormatRule && (
-                        <button onClick={() => onRemoveFormatRule(rule.id)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
-                      )}
-                      {colorPickerFor === rule.id && onUpdateFormatRule && (
-                        <div className="absolute mt-8 ml-6 bg-white border border-slate-200 rounded-2xl shadow-lg p-2 z-20 flex gap-1.5">
-                          {FORMAT_COLOR_KEYS.map(c => (
-                            <button key={c} onClick={() => { onUpdateFormatRule(rule.id, { color: c }); setColorPickerFor(null); }}
-                              className={`w-5 h-5 rounded-full ${FORMAT_COLORS[c].swatch} ${rule.color === c ? "ring-2 ring-offset-1 ring-slate-400" : ""}`} />
-                          ))}
-                        </div>
+                        ) : (
+                          <span className="flex-1 min-w-0 text-[11px] text-slate-600 truncate">{field?.label || "?"} = {rule.value}</span>
+                        )}
+                        {canEdit && onRemoveFormatRule && (
+                          <button onClick={() => onRemoveFormatRule(rule.id)} title="Remove rule" className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
+                        )}
+                        {colorPickerFor === rule.id && onUpdateFormatRule && (
+                          <div className="absolute top-full mt-1 left-6 bg-white border border-slate-200 rounded-2xl shadow-lg p-2 z-20 flex gap-1.5">
+                            {FORMAT_COLOR_KEYS.map(c => (
+                              <button key={c} onClick={() => { onUpdateFormatRule(rule.id, { color: c }); setColorPickerFor(null); }} title={c}
+                                className={`w-5 h-5 rounded-full ${FORMAT_COLORS[c].swatch} ${rule.color === c ? "ring-2 ring-offset-1 ring-slate-400" : ""}`} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* Its own full-width row, not squeezed alongside the
+                          Column select above -- two selects sharing one
+                          narrow sidebar row left this one collapsed to just
+                          a few px wide (the Column select's intrinsic width
+                          is set by its longest label, e.g. "Balance of
+                          Deposit Payment Date", which crowded this one out
+                          entirely). */}
+                      {canEdit && onUpdateFormatRule && (
+                        <select value={rule.value} onChange={e => onUpdateFormatRule(rule.id, { value: e.target.value })}
+                          className="w-full pl-6 pr-2 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
+                          {!options.includes(rule.value) && rule.value && <option value={rule.value}>{rule.value}</option>}
+                          {options.length === 0 && <option value="">No values yet</option>}
+                          {options.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
                       )}
                     </div>
                   );
@@ -625,7 +652,7 @@ export default function MatterBoard({
                       className="p-1.5 border border-slate-200 rounded-full text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors shrink-0">
                       {s.dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
                     </button>
-                    <button onClick={() => removeSort(i)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
+                    <button onClick={() => removeSort(i)} title="Remove sort" className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
                   </div>
                 );
               })}
@@ -724,16 +751,18 @@ function SidebarRow({ label, count, active, onClick, canEdit, onRename, onDelete
         <span className="truncate">{label}</span>
         <span className={`shrink-0 ml-2 ${active ? "opacity-70" : "text-slate-400"}`}>{count}</span>
       </button>
-      {canEdit && (onRename || onDelete) && (
-        <span className="flex items-center gap-0.5 pr-2 shrink-0 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100">
-          {onRename && (
-            <button onClick={() => { setDraft(label); setEditing(true); }} className="p-0.5 hover:opacity-70"><Pencil size={10} /></button>
-          )}
-          {onDelete && (
-            <button onClick={onDelete} className="p-0.5 hover:opacity-70"><X size={11} /></button>
-          )}
-        </span>
-      )}
+      {/* Always reserved at this width, even with nothing to show (e.g.
+          Ungrouped, which has no rename/delete) -- otherwise a row without
+          icons has nothing claiming this space, so its label/count sit
+          further right than every sibling row that does have icons. */}
+      <span className="flex items-center gap-0.5 pr-2 w-9 shrink-0 justify-end opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100">
+        {canEdit && onRename && (
+          <button onClick={() => { setDraft(label); setEditing(true); }} title="Rename" className="p-0.5 hover:opacity-70"><Pencil size={10} /></button>
+        )}
+        {canEdit && onDelete && (
+          <button onClick={onDelete} title="Delete" className="p-0.5 hover:opacity-70"><X size={11} /></button>
+        )}
+      </span>
     </div>
   );
 }
@@ -761,19 +790,20 @@ function SidebarCheckboxRow({ label, count, checked, onToggle, canEdit, onRename
         <span className="flex-1 text-[11px] text-slate-600 truncate">{label}</span>
         <span className="text-[10px] text-slate-400 shrink-0">{count}</span>
       </label>
-      {canEdit && (onRename || onDelete || onOpenCondition) && (
-        <span className="flex items-center gap-0.5 pl-1 shrink-0 opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100">
-          {onOpenCondition && (
-            <button onClick={onOpenCondition} title="Set condition" className="p-0.5 text-slate-400 hover:text-indigo-600"><Filter size={10} /></button>
-          )}
-          {onRename && (
-            <button onClick={() => { setDraft(label); setEditing(true); }} className="p-0.5 text-slate-400 hover:text-indigo-600"><Pencil size={10} /></button>
-          )}
-          {onDelete && (
-            <button onClick={onDelete} className="p-0.5 text-slate-400 hover:text-red-500"><X size={11} /></button>
-          )}
-        </span>
-      )}
+      {/* Same fixed-width reservation as SidebarRow's icon slot, for the
+          same reason -- Unclassified (no rename/delete/condition) would
+          otherwise sit misaligned against every real subgroup row. */}
+      <span className="flex items-center gap-0.5 pl-1 w-[51px] shrink-0 justify-end opacity-100 lg:opacity-0 lg:group-hover/row:opacity-100">
+        {canEdit && onOpenCondition && (
+          <button onClick={onOpenCondition} title="Set condition" className="p-0.5 text-slate-400 hover:text-indigo-600"><Filter size={10} /></button>
+        )}
+        {canEdit && onRename && (
+          <button onClick={() => { setDraft(label); setEditing(true); }} title="Rename" className="p-0.5 text-slate-400 hover:text-indigo-600"><Pencil size={10} /></button>
+        )}
+        {canEdit && onDelete && (
+          <button onClick={onDelete} title="Delete" className="p-0.5 text-slate-400 hover:text-red-500"><X size={11} /></button>
+        )}
+      </span>
     </div>
   );
 }
@@ -884,7 +914,7 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
           </select>
         )}
         {canEdit && onRemoveItem && (
-          <button onClick={e => { e.stopPropagation(); onRemoveItem(item.id); }} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+          <button onClick={e => { e.stopPropagation(); onRemoveItem(item.id); }} title="Remove from this page" className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
         )}
       </div>
       {expanded && (
@@ -1037,7 +1067,7 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
               {e.snippet ? <span className="block text-slate-400 truncate">{e.snippet}</span> : null}
             </span>
             {canEdit && onRemove && (
-              <button onClick={() => onRemove(e.id)} className="shrink-0 p-0.5 text-slate-300 opacity-0 group-hover/email:opacity-100 hover:text-red-500 transition-colors">
+              <button onClick={() => onRemove(e.id)} title="Remove this email" className="shrink-0 p-0.5 text-slate-300 opacity-0 group-hover/email:opacity-100 hover:text-red-500 transition-colors">
                 <X size={11} />
               </button>
             )}
@@ -1177,7 +1207,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
               )}
               {canEdit && onRemoveItem && (
                 <td className="px-4 py-4">
-                  <button onClick={() => onRemoveItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                  <button onClick={() => onRemoveItem(item.id)} title="Remove from this page" className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
                 </td>
               )}
             </tr>

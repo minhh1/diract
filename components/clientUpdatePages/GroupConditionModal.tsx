@@ -45,7 +45,7 @@ export default function GroupConditionModal({ groupName, fields, currentFieldId,
       <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-sm mx-4 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-[13px] font-bold text-slate-800">Condition for "{groupName}"</h3>
-          <button onClick={onClose} className="p-1 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+          <button onClick={onClose} title="Close" className="p-1 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
         <p className="text-[11px] text-slate-400">Show a matter here automatically when a column equals a value — instead of dragging it in manually.</p>
 
