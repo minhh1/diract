@@ -157,7 +157,10 @@ export interface GenerateInvoicePdfInput {
     issueDate: string | null;
     dueDate: string | null;
     matterName: string | null;
-    debtorName: string | null;
+    // One or more entities (e.g. joint purchasers) -- each renders as its
+    // own paragraph wherever the debtor's name appears, with a blank line
+    // between them when there's more than one.
+    debtorNames: string[];
     subtotal: number;
     gst: number;
     totalIncGst: number;
@@ -399,16 +402,27 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
 
   // ── Bill to ───────────────────────────────────────────────────────
   text('BILL TO', layout.billTo.x, typo.billToLabel, { bold: true, color: [0.55, 0.55, 0.6] }, layout.billTo.y);
-  text(input.invoice.debtorName || '—', layout.billTo.x, typo.debtorName, { bold: true }, layout.billTo.y - 14);
-  hr(layout.billTo.y - 40);
+  // One or more debtors (e.g. joint purchasers) -- each its own paragraph,
+  // with a blank line between them. The single-debtor case lands at
+  // exactly the same y as before this existed (billTo.y - 14).
+  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['—'];
+  let debtorY = layout.billTo.y - 14;
+  debtorLines.forEach((name, i) => {
+    text(name, layout.billTo.x, typo.debtorName, { bold: true }, debtorY);
+    debtorY -= 14;
+    if (i < debtorLines.length - 1) debtorY -= 14;
+  });
+  const hrY = debtorY - 12;
+  hr(hrY);
 
   // Tables start a fixed gap below wherever bill-to actually landed (not an
   // independent anchor of its own -- their height is row-count-dependent,
   // so letting them float freely risked colliding with whatever's below
   // them; deriving their start from bill-to instead of a hardcoded constant
   // means moving bill-to up/down to compress/expand the header still works
-  // sensibly).
-  y = layout.billTo.y - 60;
+  // sensibly). Also grows with extra debtor lines so the table never
+  // overlaps a multi-debtor bill-to block.
+  y = hrY - 20;
 
   // ── Fee lines ─────────────────────────────────────────────────────
   if (input.feeLines.length) {

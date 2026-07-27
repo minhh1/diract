@@ -600,6 +600,51 @@ export default function RelationPicker({
     );
   }
 
+  // Shared by the option click handler and the Tab/Enter-with-one-match
+  // shortcut below, so the two ways of confirming a pick can't drift apart.
+  // Single-select only -- multi-select's own `toggle` (inside the
+  // `multiple` branch below) is its equivalent.
+  const selectOption = (opt: RelationOption) => {
+    // Already know the label from the option clicked -- set it immediately
+    // instead of waiting on the value-resolution effect below to re-fetch
+    // it from the server, which was the visible lag on every relation pick.
+    setCurrentLabel(opt.label);
+    resolvedForRef.current = opt.id;
+    onSelect?.(opt.id, opt.label);
+    setQuery('');
+    setOpen(false);
+  };
+
+  // allowCreateEntity only -- after NewEntityModal creates a row, invalidate
+  // this field's cached candidate list (same key the "fetch on open" effect
+  // reads) and refetch it so the new entity is actually findable, then
+  // auto-select it via the same path a normal click would -- otherwise the
+  // viewer would have to close and reopen the dropdown just to find the row
+  // they were staring at a moment ago. Defined before the `multiple` branch
+  // below (rather than after, where selectOption lived) since that branch
+  // returns early and needs this too -- multi-select ADDS the new entity to
+  // the current selection instead of replacing it.
+  const handleEntityCreated = async (newId?: string) => {
+    setShowCreateEntity(false);
+    if (!linkedSystemTable) return;
+    const key = optionsCacheKey(linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
+    cache.delete(key);
+    setLoading(true);
+    const list = await fetchAllSystemTableOptions(linkedSystemTable, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
+    cache.set(key, { value: list, expiresAt: Date.now() + OPTIONS_CACHE_TTL_MS });
+    setFullOptions(list);
+    setLoading(false);
+    const match = newId && list.find(o => o.id === newId);
+    if (!match) { setOpen(true); return; }
+    if (multiple) {
+      setMultiLabels(prev => ({ ...prev, [match.id]: match.label }));
+      onSelectMulti?.([...(values || []), match.id]);
+      setOpen(true);
+    } else {
+      selectOption(match);
+    }
+  };
+
   if (multiple) {
     const selectedIds = values || [];
     const labelOf = (id: string) => multiLabels[id] ?? options.find(o => o.id === id)?.label ?? '…';
@@ -699,45 +744,24 @@ export default function RelationPicker({
                 );
               })
             )}
+            {allowCreateEntity && linkedSystemTable === 'entities' && (
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setShowCreateEntity(true); }}
+                className="w-full text-left px-4 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 border-t border-slate-100 flex items-center gap-1.5"
+              >
+                <Plus size={12} /> Add new entity
+              </button>
+            )}
           </div>
+        )}
+
+        {allowCreateEntity && (
+          <NewEntityModal isOpen={showCreateEntity} onClose={() => setShowCreateEntity(false)} onRefresh={handleEntityCreated} />
         )}
       </div>
     );
   }
-
-  // Shared by the option click handler and the Tab/Enter-with-one-match
-  // shortcut below, so the two ways of confirming a pick can't drift apart.
-  const selectOption = (opt: RelationOption) => {
-    // Already know the label from the option clicked -- set it immediately
-    // instead of waiting on the value-resolution effect below to re-fetch
-    // it from the server, which was the visible lag on every relation pick.
-    setCurrentLabel(opt.label);
-    resolvedForRef.current = opt.id;
-    onSelect?.(opt.id, opt.label);
-    setQuery('');
-    setOpen(false);
-  };
-
-  // allowCreateEntity only -- after NewEntityModal creates a row, invalidate
-  // this field's cached candidate list (same key the "fetch on open" effect
-  // reads) and refetch it so the new entity is actually findable, then
-  // auto-select it via the same path a normal click would -- otherwise the
-  // viewer would have to close and reopen the dropdown just to find the row
-  // they were staring at a moment ago.
-  const handleEntityCreated = async (newId?: string) => {
-    setShowCreateEntity(false);
-    if (!linkedSystemTable) return;
-    const key = optionsCacheKey(linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
-    cache.delete(key);
-    setLoading(true);
-    const list = await fetchAllSystemTableOptions(linkedSystemTable, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
-    cache.set(key, { value: list, expiresAt: Date.now() + OPTIONS_CACHE_TTL_MS });
-    setFullOptions(list);
-    setLoading(false);
-    const match = newId && list.find(o => o.id === newId);
-    if (match) selectOption(match);
-    else setOpen(true);
-  };
 
   return (
     <div ref={containerRef} className="relative w-full">

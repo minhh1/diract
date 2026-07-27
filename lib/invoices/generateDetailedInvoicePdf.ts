@@ -165,18 +165,32 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   text(`Tax Invoice No: ${input.invoice.invoiceNumber}`, PAGE_W / 2, 16, { bold: true, align: 'center' });
   y -= 28;
 
-  // Left: debtor name. Right: issue date / our ref / your ref, label+value.
-  text(input.invoice.debtorName || '—', MARGIN, 11);
+  // Left: debtor name(s) -- one or more entities (e.g. joint purchasers),
+  // each its own paragraph with a blank line between when there's more
+  // than one. Right: issue date / our ref / your ref, label+value. Both
+  // columns draw from the same starting y via explicit atY (rather than
+  // the shared mutable `y`) so a tall debtor list can't get silently
+  // overwritten by the meta column's own y decrements; the shared `y` is
+  // set to whichever column actually ran lower once both are drawn.
+  const debtorBlockStartY = y;
+  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['—'];
+  let debtorY = debtorBlockStartY;
+  debtorLines.forEach((name, i) => {
+    text(name, MARGIN, 11, {}, debtorY);
+    debtorY -= 14;
+    if (i < debtorLines.length - 1) debtorY -= 14;
+  });
+
   const metaX = MARGIN + 260, metaValueX = metaX + 90;
-  text('Date of Issue:', metaX, 10);
-  text(formatDate(input.invoice.issueDate), metaValueX, 10, { bold: true });
-  y -= 14;
-  text('Our Reference:', metaX, 10);
-  text(input.invoice.ourReference || '', metaValueX, 10, { bold: true });
-  y -= 14;
-  text('Your Reference:', metaX, 10);
-  text(input.invoice.yourReference || '', metaValueX, 10, { bold: true });
-  y -= 22;
+  text('Date of Issue:', metaX, 10, {}, debtorBlockStartY);
+  text(formatDate(input.invoice.issueDate), metaValueX, 10, { bold: true }, debtorBlockStartY);
+  text('Our Reference:', metaX, 10, {}, debtorBlockStartY - 14);
+  text(input.invoice.ourReference || '', metaValueX, 10, { bold: true }, debtorBlockStartY - 14);
+  text('Your Reference:', metaX, 10, {}, debtorBlockStartY - 28);
+  text(input.invoice.yourReference || '', metaValueX, 10, { bold: true }, debtorBlockStartY - 28);
+  const metaEndY = debtorBlockStartY - 28 - 22;
+
+  y = Math.min(debtorY, metaEndY);
 
   if (input.invoice.responsiblePartnerName) {
     text('Responsible Partner:', MARGIN, 10, { bold: true });
@@ -351,8 +365,15 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   text('Our Ref:', MARGIN, 10); text(input.invoice.ourReference || '', MARGIN + 100, 10, { bold: true });
   text('Date of Tax Invoice:', MARGIN + 260, 10); text(formatDate(input.invoice.issueDate, 'long'), MARGIN + 260 + 130, 10, { bold: true });
   y -= 24;
-  text('Payor Name:', MARGIN, 10); text(input.invoice.debtorName || '', MARGIN + 100, 10, { bold: true });
-  y -= 20;
+  text('Payor Name:', MARGIN, 10);
+  const payorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : [''];
+  let payorY = y;
+  payorLines.forEach((name, i) => {
+    text(name, MARGIN + 100, 10, { bold: true }, payorY);
+    payorY -= 14;
+    if (i < payorLines.length - 1) payorY -= 14;
+  });
+  y = payorY - 6;
   text('Amount Due:', MARGIN, 13, { bold: true }); text(money(input.invoice.amountDue), MARGIN + 100, 13, { bold: true });
   y -= 4; hr(y); y -= 24;
 

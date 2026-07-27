@@ -15,7 +15,7 @@
 // InvoicesTab.tsx, all three passing the same matterId/companyId/userId.
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { X, Loader2, Check, ExternalLink } from "lucide-react";
+import { X, Loader2, Check, ExternalLink, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import RelationPicker from "./RelationPicker";
@@ -64,13 +64,24 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const [targetDistribution, setTargetDistribution] = useState<'all' | 'largest'>('all');
   const [largestSelectedIds, setLargestSelectedIds] = useState<Set<string>>(new Set());
 
-  const [debtorId, setDebtorId] = useState<string | null>(null);
-  const [debtorLabel, setDebtorLabel] = useState<string | null>(null);
+  // Multiple debtors (e.g. joint purchasers/co-borrowers) -- see
+  // supabase/invoices_debtor_multi.sql, which flipped this field to the
+  // generic allow_multiple relation mechanism. Each entity renders as its
+  // own paragraph on the invoice, with a blank line between them.
+  const [debtorIds, setDebtorIds] = useState<string[]>([]);
   const [responsiblePartnerId, setResponsiblePartnerId] = useState<string | null>(null);
   const [responsiblePartnerLabel, setResponsiblePartnerLabel] = useState<string | null>(null);
   const [ourReference, setOurReference] = useState('');
   const [yourReference, setYourReference] = useState('');
   const [professionalFeesDescription, setProfessionalFeesDescription] = useState('');
+  const [matterName, setMatterName] = useState('');
+  // AI-drafted candidate for professionalFeesDescription -- shown as a
+  // preview the admin explicitly adopts (or discards), never auto-applied,
+  // so a draft they're already part-way through typing is never silently
+  // overwritten.
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
   // Per-invoice overrides of the Detailed template's two itemised tables
   // (InvoiceTemplateSettingsTab.tsx sets the template-wide default; these
   // let one specific invoice deviate from it without changing the
@@ -139,6 +150,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
       ]);
       if (!active) return;
       setInvoiceFields((invFields || []) as CustomTableField[]);
+      if (project?.name) setMatterName(project.name);
 
       // Debtor auto-fill (Settings -> Invoice template -> Terms & payment)
       // -- `projects` has no built-in "client"/"debtor" column, only
@@ -153,9 +165,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
           .from('company_custom_field_values').select('value_record_id')
           .eq('field_id', debtorKey.slice(3)).eq('record_id', matterId).maybeSingle();
         if (cfValue?.value_record_id && active) {
-          setDebtorId(cfValue.value_record_id);
-          const { data: entity } = await supabase.from('entities').select('name').eq('id', cfValue.value_record_id).maybeSingle();
-          if (active) setDebtorLabel(entity?.name || null);
+          setDebtorIds([cfValue.value_record_id]);
         }
       }
 
@@ -345,6 +355,28 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const professionalFeesDescriptionRequired =
     isDetailedTemplate && !showProfessionalFeesTable && selectedFeeIds.size > 0;
 
+  const handleSuggestDescription = async () => {
+    const descriptions = feeRows.filter(r => selectedFeeIds.has(r.id)).map(r => r.description).filter(Boolean);
+    if (!descriptions.length) return;
+    setSuggesting(true);
+    setSuggestError(null);
+    setSuggestion(null);
+    try {
+      const res = await fetch('/api/ai/suggest-invoice-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matterName, feeDescriptions: descriptions }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Suggestion failed');
+      setSuggestion(json.text || null);
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : 'Suggestion failed');
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!invoicesTableId) return;
     if (selectedFeeIds.size === 0 && selectedDisbIds.size === 0) {
@@ -364,7 +396,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
 
     const record = await createCustomRecord(invoicesTableId, companyId, userId, {
       matter: matterId,
-      debtor: debtorId,
+      debtor: debtorIds,
       responsible_partner: responsiblePartnerId,
       our_reference: ourReference || null,
       your_reference: yourReference || null,
@@ -515,12 +547,15 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Debtor</label>
                   <RelationPicker
                     linkedSystemTable="entities"
-                    value={debtorId}
-                    initialLabel={debtorLabel || undefined}
-                    onSelect={(id, label) => { setDebtorId(id); setDebtorLabel(label); }}
-                    placeholder="Select debtor..."
+                    multiple
+                    values={debtorIds}
+                    onSelectMulti={setDebtorIds}
+                    placeholder="Select debtor(s)..."
                     allowCreateEntity
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    More than one shows as separate paragraphs on the invoice, one per line.
+                  </p>
                 </div>
                 <div className="col-span-2">
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Responsible partner</label>
@@ -571,9 +606,18 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                 )}
                 {professionalFeesDescriptionRequired && (
                   <div className="col-span-2">
-                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
-                      Professional fees description <span className="text-rose-400">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                        Professional fees description <span className="text-rose-400">*</span>
+                      </label>
+                      <button
+                        type="button" onClick={handleSuggestDescription} disabled={suggesting || selectedFeeIds.size === 0}
+                        title="Suggest with AI" aria-label="Suggest with AI"
+                        className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 disabled:opacity-40"
+                      >
+                        {suggesting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Suggest
+                      </button>
+                    </div>
                     <textarea
                       value={professionalFeesDescription} onChange={e => setProfessionalFeesDescription(e.target.value)}
                       rows={2} placeholder="e.g. For professional services in connection with the preparation and negotiation of the Development Management Agreement"
@@ -582,6 +626,28 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     <p className="text-[10px] text-slate-400 mt-1">
                       This template doesn't include the itemised Professional Fees table, so the client needs this to know what the fees covered.
                     </p>
+                    {suggestError && <p className="text-[10px] text-red-500 mt-1">{suggestError}</p>}
+                    {suggestion && (
+                      <div className="mt-2 bg-indigo-50 border border-indigo-100 rounded-2xl p-3 space-y-2">
+                        <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">AI suggestion</p>
+                        <p className="text-[12px] text-slate-700">{suggestion}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setProfessionalFeesDescription(suggestion); setSuggestion(null); }}
+                            className="px-3 py-1 bg-indigo-600 text-white rounded-full text-[10px] font-bold hover:bg-indigo-700"
+                          >
+                            Use this
+                          </button>
+                          <button
+                            type="button" onClick={() => setSuggestion(null)}
+                            className="px-3 py-1 text-slate-400 text-[10px] font-bold hover:text-slate-600"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div>

@@ -57,13 +57,27 @@ export async function hydrateInvoiceForRender(
     .eq('record_id', invoiceId);
   const invoice = hydrateValues((invoiceValueRows || []) as ValueRow[], invoiceKeyById);
 
-  const [{ data: company }, { data: matter }, { data: debtor }, { data: responsiblePartner }, { data: lineItems }] = await Promise.all([
+  // Debtor allows more than one entity (see supabase/invoices_debtor_multi.sql
+  // -- e.g. joint purchasers), so unlike every other single-entity relation
+  // here it's read via company_table_value_links, not a scalar
+  // company_table_values.value_record_id.
+  const debtorFieldId = (invoiceFields || []).find(f => f.field_key === 'debtor')?.id;
+
+  const [{ data: company }, { data: matter }, { data: debtorLinks }, { data: responsiblePartner }, { data: lineItems }] = await Promise.all([
     admin.from('companies').select('name, abn, invoice_settings, logo_url').eq('id', companyId).maybeSingle(),
     invoice.matter ? admin.from('projects').select('name').eq('id', invoice.matter).maybeSingle() : Promise.resolve({ data: null }),
-    invoice.debtor ? admin.from('entities').select('name').eq('id', invoice.debtor).maybeSingle() : Promise.resolve({ data: null }),
+    debtorFieldId
+      ? admin.from('company_table_value_links').select('value_record_id').eq('record_id', invoiceId).eq('field_id', debtorFieldId)
+      : Promise.resolve({ data: [] as { value_record_id: string }[] }),
     invoice.responsible_partner ? admin.from('entities').select('name').eq('id', invoice.responsible_partner).maybeSingle() : Promise.resolve({ data: null }),
     admin.from('invoice_line_items').select('*').eq('invoice_record_id', invoiceId).order('entry_date'),
   ]);
+
+  const debtorIds = (debtorLinks || []).map(l => l.value_record_id);
+  const { data: debtorEntities } = debtorIds.length
+    ? await admin.from('entities').select('name').in('id', debtorIds).order('name')
+    : { data: [] as { name: string }[] };
+  const debtorNames = (debtorEntities || []).map(e => e.name);
 
   const invoiceSettings = (company?.invoice_settings as any) || {};
   const templates: InvoiceTemplateConfig[] = invoiceSettings.templates || [];
@@ -119,7 +133,7 @@ export async function hydrateInvoiceForRender(
     layout,
     invoice: {
       invoiceNumber: invoice.invoice_number || '', issueDate: invoice.issue_date || null, dueDate: invoice.due_date || null,
-      matterName: (matter as any)?.name || null, debtorName: (debtor as any)?.name || null,
+      matterName: (matter as any)?.name || null, debtorNames,
       subtotal: Number(invoice.subtotal) || 0, gst: Number(invoice.gst) || 0, totalIncGst: Number(invoice.total_inc_gst) || 0,
       trustApplied: Number(invoice.trust_applied) || 0, payments: Number(invoice.payments) || 0, amountDue: Number(invoice.amount_due) || 0,
       priorBalance: 0,

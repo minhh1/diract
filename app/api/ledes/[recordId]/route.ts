@@ -129,11 +129,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ rec
     }
   }
 
+  // Debtor allows more than one entity (see supabase/invoices_debtor_multi.sql
+  // -- e.g. joint purchasers), so it's read via company_table_value_links,
+  // not the invoice's own scalar values. LEDES 1998B has no concept of
+  // multiple clients on one invoice; the first debtor stands in for CLIENT_ID.
+  const debtorFieldId = (invoiceFields || []).find(f => f.field_key === 'debtor')?.id;
+  const { data: debtorLinks } = debtorFieldId
+    ? await admin.from('company_table_value_links').select('value_record_id').eq('record_id', recordId).eq('field_id', debtorFieldId)
+    : { data: [] as { value_record_id: string }[] };
+  const firstDebtorId = debtorLinks?.[0]?.value_record_id || null;
+
   // Resolve display names for the header/timekeeper columns.
-  const [{ data: company }, { data: matter }, { data: debtor }, { data: staffRows }] = await Promise.all([
+  const [{ data: company }, { data: matter }, { data: staffRows }] = await Promise.all([
     admin.from('companies').select('name').eq('id', companyId).maybeSingle(),
     invoice.matter ? admin.from('projects').select('id, name').eq('id', invoice.matter).maybeSingle() : Promise.resolve({ data: null }),
-    invoice.debtor ? admin.from('entities').select('id, name').eq('id', invoice.debtor).maybeSingle() : Promise.resolve({ data: null }),
     staffIds.size ? admin.from('entities').select('id, name').in('id', [...staffIds]) : Promise.resolve({ data: [] }),
   ]);
   const staffNameById = new Map((staffRows || []).map((s: any) => [s.id, s.name]));
@@ -141,7 +150,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ rec
   const invoiceNumber = ledesText(invoice.invoice_number) || recordId.slice(0, 8).toUpperCase();
   const shared = {
     invoiceDate: ledesDate(invoice.issue_date),
-    clientId: invoice.debtor ? String(invoice.debtor).slice(0, 8).toUpperCase() : '',
+    clientId: firstDebtorId ? firstDebtorId.slice(0, 8).toUpperCase() : '',
     matterId: invoice.matter ? String(invoice.matter).slice(0, 8).toUpperCase() : '',
     invoiceTotal: money(invoice.total_inc_gst ?? invoice.subtotal),
     start: ledesDate(invoice.period_start) || ledesDate(invoice.issue_date),

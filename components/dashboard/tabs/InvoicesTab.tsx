@@ -97,17 +97,28 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
       byRecord.get(v.record_id)![field.field_key] = v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id ?? null;
     });
 
-    const debtorIds = new Set<string>();
-    byRecord.forEach(row => { if (row.debtor) debtorIds.add(row.debtor); });
-    const { data: debtorRows } = debtorIds.size
-      ? await supabase.from('entities').select('id, name').in('id', [...debtorIds])
+    // Debtor allows more than one entity (see supabase/invoices_debtor_multi.sql),
+    // so unlike every other single-entity field above it lives in
+    // company_table_value_links, not company_table_values.
+    const debtorField = fieldList.find(f => f.field_key === 'debtor');
+    const { data: debtorLinkRows } = debtorField
+      ? await supabase.from('company_table_value_links').select('record_id, value_record_id').eq('field_id', debtorField.id).in('record_id', aliveIds)
+      : { data: [] as { record_id: string; value_record_id: string }[] };
+    const debtorIdsByRecord = new Map<string, string[]>();
+    (debtorLinkRows || []).forEach(l => {
+      if (!debtorIdsByRecord.has(l.record_id)) debtorIdsByRecord.set(l.record_id, []);
+      debtorIdsByRecord.get(l.record_id)!.push(l.value_record_id);
+    });
+    const allDebtorIds = [...new Set((debtorLinkRows || []).map(l => l.value_record_id))];
+    const { data: debtorRows } = allDebtorIds.length
+      ? await supabase.from('entities').select('id, name').in('id', allDebtorIds)
       : { data: [] as { id: string; name: string }[] };
     const debtorNameById = new Map((debtorRows || []).map(d => [d.id, d.name]));
 
     const rows: InvoiceRow[] = [...byRecord.entries()].map(([id, row]) => ({
       id,
       invoiceNumber: row.invoice_number || '',
-      debtorName: debtorNameById.get(row.debtor) || '—',
+      debtorName: (debtorIdsByRecord.get(id) || []).map(did => debtorNameById.get(did)).filter(Boolean).join(', ') || '—',
       issueDate: row.issue_date || null,
       dueDate: row.due_date || null,
       status: row.status || 'Under Review',
