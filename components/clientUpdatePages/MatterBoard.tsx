@@ -2,18 +2,21 @@
 // Shared, mode-aware renderer for a Client Update Page's matters -- used by
 // both the authenticated admin editor (components/settings/ClientUpdatePagesTab.tsx)
 // and the public page (app/public/updates/[slug]/page.tsx) when a logged-in
-// staff member is viewing it. Two toggleable layouts (cards / spreadsheet)
-// over the same data and the same callbacks; the caller decides what's
-// actually editable via `canEdit`/`canComment` and supplies the callbacks
-// that hit either the authenticated admin routes or the public PIN-gated
-// routes -- this component has no opinion on which.
+// staff member is viewing it.
+//
+// Groups are NEVER auto-derived from data (not by client entity, not by
+// anything structural) -- they're purely user-created, typically 3-4 of
+// them, and navigated as a tab bar with counts, mirroring this company's
+// existing "Tasks - Conveyancing" view (per-person pill tabs like
+// "Hoang Chau (4)"). One tab is shown at a time; the Cards/Spreadsheet
+// toggle controls how that tab's matters render, not which ones.
 // All mutations are applied to local state immediately by the caller (see
 // the optimistic wrappers in ClientUpdatePagesTab.tsx / the public page) --
 // this component just renders whatever `items`/`groups` it's given.
 "use client";
 
-import { useState } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus } from "lucide-react";
+import { useState, useEffect } from "react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil } from "lucide-react";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; }
@@ -46,21 +49,77 @@ function isDateField(field: MatterBoardField): boolean {
   return field.field_key.includes("date") || field.field_key === "estimated_completion_date";
 }
 
+// Sentinel for the "Ungrouped" tab -- distinct from `null` used as a plain
+// value so a tab id can round-trip through <button> handlers unambiguously.
+const UNGROUPED = "__ungrouped__";
+
 export default function MatterBoard({
   groups, items, fields, canEdit, canComment,
   onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onMoveItem, onRemoveItem, onAddNote, onAddMatter,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("cards");
-  const [showAddGroup, setShowAddGroup] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>(UNGROUPED);
+  const [addingGroup, setAddingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [editingActiveName, setEditingActiveName] = useState(false);
+  const [activeNameDraft, setActiveNameDraft] = useState("");
 
-  const itemsFor = (groupId: string | null) => items.filter(i => i.group_id === groupId);
-  const ungrouped = itemsFor(null);
+  const ungroupedCount = items.filter(i => !i.group_id).length;
+  const tabs = [
+    ...groups.map(g => ({ id: g.id, name: g.name, count: items.filter(i => i.group_id === g.id).length })),
+    ...(ungroupedCount > 0 || groups.length === 0 ? [{ id: UNGROUPED, name: "Ungrouped", count: ungroupedCount }] : []),
+  ];
+
+  // Keep the active tab valid as groups/items change (e.g. the active
+  // group got deleted, or this is the first render).
+  useEffect(() => {
+    if (!tabs.some(t => t.id === activeTab)) {
+      setActiveTab(tabs[0]?.id ?? UNGROUPED);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups.map(g => g.id).join(","), ungroupedCount]);
+
+  const activeItems = items.filter(i => (activeTab === UNGROUPED ? !i.group_id : i.group_id === activeTab));
+  const activeGroup = groups.find(g => g.id === activeTab) || null;
+
+  const submitAddGroup = () => {
+    if (!newGroupName.trim() || !onAddGroup) return;
+    onAddGroup(newGroupName.trim());
+    setNewGroupName("");
+    setAddingGroup(false);
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 bg-slate-100 rounded-full p-1">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              className={`px-3.5 py-2 rounded-full text-[11px] font-bold transition-colors ${
+                activeTab === t.id ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
+              }`}>
+              {t.name} ({t.count})
+            </button>
+          ))}
+          {canEdit && onAddGroup && (
+            addingGroup ? (
+              <div className="flex items-center gap-1.5">
+                <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Group name" autoFocus
+                  onKeyDown={e => { if (e.key === "Enter") submitAddGroup(); if (e.key === "Escape") setAddingGroup(false); }}
+                  className="px-3 py-1.5 border border-indigo-300 rounded-full text-[11px] outline-none w-32" />
+                <button onClick={submitAddGroup} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">Add</button>
+                <button onClick={() => setAddingGroup(false)} className="text-[10px] font-bold text-slate-400 hover:text-slate-600">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => setAddingGroup(true)} title="Add group"
+                className="p-2 rounded-full border border-dashed border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                <Plus size={13} />
+              </button>
+            )
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 bg-slate-100 rounded-full p-1 shrink-0">
           <button onClick={() => setMode("cards")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-colors ${mode === "cards" ? "bg-white text-slate-800 shadow-sm" : "text-slate-400"}`}>
             <LayoutGrid size={12} /> Cards
@@ -72,40 +131,50 @@ export default function MatterBoard({
         </div>
       </div>
 
-      {mode === "cards" ? (
-        <div className="space-y-6">
-          {groups.map(g => (
-            <CardGroupSection key={g.id} group={g} items={itemsFor(g.id)} fields={fields} allGroups={groups}
-              canEdit={canEdit} canComment={canComment}
-              onRenameGroup={onRenameGroup} onDeleteGroup={onDeleteGroup}
-              onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onSaveValue={onSaveValue} onAddNote={onAddNote}
-              onAddMatter={onAddMatter ? () => onAddMatter(g.id) : undefined} />
-          ))}
-          <CardGroupSection group={null} items={ungrouped} fields={fields} allGroups={groups}
-            canEdit={canEdit} canComment={canComment}
-            onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onSaveValue={onSaveValue} onAddNote={onAddNote}
-            onAddMatter={onAddMatter ? () => onAddMatter(null) : undefined} />
+      {canEdit && activeGroup && (
+        <div className="flex items-center gap-2">
+          {editingActiveName ? (
+            <input value={activeNameDraft} onChange={e => setActiveNameDraft(e.target.value)} autoFocus
+              onBlur={() => { setEditingActiveName(false); if (activeNameDraft.trim() && onRenameGroup) onRenameGroup(activeGroup.id, activeNameDraft.trim()); }}
+              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              className="text-[11px] font-bold text-slate-500 bg-transparent border-b border-indigo-300 outline-none" />
+          ) : (
+            <button onClick={() => { setActiveNameDraft(activeGroup.name); setEditingActiveName(true); }}
+              className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition-colors">
+              <Pencil size={10} /> Rename
+            </button>
+          )}
+          {onDeleteGroup && (
+            <button onClick={() => onDeleteGroup(activeGroup.id)}
+              className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors">
+              <Trash2 size={10} /> Delete group
+            </button>
+          )}
+          {onAddMatter && (
+            <button onClick={() => onAddMatter(activeGroup.id)} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
+              + Add matter
+            </button>
+          )}
+        </div>
+      )}
+      {canEdit && !activeGroup && onAddMatter && (
+        <button onClick={() => onAddMatter(null)} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
+          + Add matter
+        </button>
+      )}
 
-          {canEdit && onAddGroup && (
-            showAddGroup ? (
-              <div className="flex items-center gap-2">
-                <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Group name"
-                  onKeyDown={e => { if (e.key === "Enter" && newGroupName.trim()) { onAddGroup(newGroupName.trim()); setNewGroupName(""); setShowAddGroup(false); } }}
-                  autoFocus className="px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
-                <button onClick={() => { if (newGroupName.trim()) { onAddGroup(newGroupName.trim()); setNewGroupName(""); setShowAddGroup(false); } }}
-                  className="px-4 py-2.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full">Add</button>
-                <button onClick={() => setShowAddGroup(false)} className="px-4 py-2.5 text-slate-400 text-[11px] font-bold">Cancel</button>
-              </div>
-            ) : (
-              <button onClick={() => setShowAddGroup(true)}
-                className="flex items-center gap-2 px-4 py-2.5 border border-dashed border-slate-200 rounded-full text-[11px] font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
-                <Plus size={14} /> Add group
-              </button>
-            )
+      {mode === "cards" ? (
+        <div className="space-y-3">
+          {activeItems.map(item => (
+            <MatterCard key={item.id} item={item} fields={fields} groups={groups} canEdit={canEdit} canComment={canComment}
+              onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} />
+          ))}
+          {activeItems.length === 0 && (
+            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters here yet</p>
           )}
         </div>
       ) : (
-        <SpreadsheetView groups={groups} items={items} fields={fields} canEdit={canEdit}
+        <SpreadsheetView items={activeItems} fields={fields} groups={groups} canEdit={canEdit}
           onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} />
       )}
     </div>
@@ -114,70 +183,41 @@ export default function MatterBoard({
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function CardGroupSection({ group, items, fields, allGroups, canEdit, canComment, onRenameGroup, onDeleteGroup, onMoveItem, onRemoveItem, onSaveValue, onAddNote, onAddMatter }: {
-  group: MatterBoardGroup | null; items: MatterBoardItem[]; fields: MatterBoardField[]; allGroups: MatterBoardGroup[];
-  canEdit: boolean; canComment: boolean;
-  onRenameGroup?: (groupId: string, name: string) => void;
-  onDeleteGroup?: (groupId: string) => void;
+function MatterCard({ item, fields, groups, canEdit, canComment, onSaveValue, onMoveItem, onRemoveItem, onAddNote }: {
+  item: MatterBoardItem; fields: MatterBoardField[]; groups: MatterBoardGroup[]; canEdit: boolean; canComment: boolean;
+  onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
-  onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onAddNote: (itemId: string, note: string) => void;
-  onAddMatter?: () => void;
 }) {
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState(group?.name || "");
-  const [expandedItem, setExpandedItem] = useState<string | null>(null);
-
-  if (!group && items.length === 0) return null;
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        {editingName ? (
-          <input value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-            onBlur={() => { setEditingName(false); if (nameDraft.trim() && onRenameGroup && group) onRenameGroup(group.id, nameDraft.trim()); }}
-            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-            autoFocus className="text-[11px] font-bold text-slate-500 uppercase tracking-widest bg-transparent border-b border-indigo-300 outline-none" />
-        ) : (
-          <p onClick={() => canEdit && group && setEditingName(true)} className={`text-[11px] font-bold text-slate-500 uppercase tracking-widest ${canEdit && group ? "cursor-pointer hover:text-indigo-600" : ""}`}>
-            {group ? group.name : "Ungrouped"}
-          </p>
+    <div className="bg-white border border-slate-200 rounded-2xl">
+      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <p className="flex-1 text-[12px] font-medium text-slate-700">{item.matterName}</p>
+        {canEdit && onMoveItem && groups.length > 0 && (
+          <select value={item.group_id || ""} onChange={e => { e.stopPropagation(); onMoveItem(item.id, e.target.value || null); }} onClick={e => e.stopPropagation()}
+            className="text-[11px] border border-slate-200 rounded-full px-2.5 py-1 outline-none bg-white">
+            <option value="">Ungrouped</option>
+            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
         )}
-        {canEdit && group && onDeleteGroup && <button onClick={() => onDeleteGroup(group.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><X size={12} /></button>}
-        {canEdit && onAddMatter && <button onClick={onAddMatter} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">+ Add matter</button>}
+        {canEdit && onRemoveItem && (
+          <button onClick={e => { e.stopPropagation(); onRemoveItem(item.id); }} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+        )}
       </div>
-
-      <div className="space-y-2">
-        {items.map(item => (
-          <div key={item.id} className="bg-white border border-slate-200 rounded-2xl">
-            <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}>
-              <p className="flex-1 text-[12px] font-medium text-slate-700">{item.matterName}</p>
-              {canEdit && onMoveItem && (
-                <select value={group?.id || ""} onChange={e => { e.stopPropagation(); onMoveItem(item.id, e.target.value || null); }} onClick={e => e.stopPropagation()}
-                  className="text-[11px] border border-slate-200 rounded-full px-2.5 py-1 outline-none bg-white">
-                  <option value="">Ungrouped</option>
-                  {allGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              )}
-              {canEdit && onRemoveItem && (
-                <button onClick={e => { e.stopPropagation(); onRemoveItem(item.id); }} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
-              )}
-            </div>
-            {expandedItem === item.id && (
-              <div className="border-t border-slate-100 px-4 py-4 space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {fields.map(f => (
-                    <ValueCell key={f.id} field={f} value={item.values[f.id]} editable={canEdit && !!onSaveValue}
-                      onSave={v => onSaveValue?.(item.id, f.id, v)} />
-                  ))}
-                </div>
-                <NotesPanel notes={item.notes} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
-              </div>
-            )}
+      {expanded && (
+        <div className="border-t border-slate-100 px-4 py-4 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {fields.map(f => (
+              <ValueCell key={f.id} field={f} value={item.values[f.id]} editable={canEdit && !!onSaveValue}
+                onSave={v => onSaveValue?.(item.id, f.id, v)} />
+            ))}
           </div>
-        ))}
-      </div>
+          <NotesPanel notes={item.notes} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -245,55 +285,53 @@ function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; ca
   );
 }
 
-// ── Spreadsheet mode ─────────────────────────────────────────────────
+// ── Spreadsheet mode -- a dense grid, like the source Excel report ────
 
-function SpreadsheetView({ groups, items, fields, canEdit, onSaveValue, onMoveItem, onRemoveItem }: {
-  groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; canEdit: boolean;
+function SpreadsheetView({ items, fields, groups, canEdit, onSaveValue, onMoveItem, onRemoveItem }: {
+  items: MatterBoardItem[]; fields: MatterBoardField[]; groups: MatterBoardGroup[]; canEdit: boolean;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
 }) {
-  const groupName = (id: string | null) => id ? (groups.find(g => g.id === id)?.name || "—") : "Ungrouped";
-
   return (
-    <div className="overflow-x-auto bg-white border border-slate-200 rounded-[24px]">
+    <div className="overflow-x-auto bg-white border border-slate-300 rounded-lg">
       <table className="w-full text-[12px] border-collapse">
         <thead>
-          <tr className="border-b border-slate-100">
-            <th className="text-left px-4 py-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest sticky left-0 bg-white">Matter</th>
-            <th className="text-left px-4 py-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Group</th>
+          <tr className="bg-slate-50 border-b border-slate-300">
+            <th className="text-left px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide border-r border-slate-200 sticky left-0 bg-slate-50 whitespace-nowrap">Matter</th>
             {fields.map(f => (
-              <th key={f.id} className="text-left px-4 py-3 text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">{f.label}</th>
+              <th key={f.id} className="text-left px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide border-r border-slate-200 whitespace-nowrap">{f.label}</th>
             ))}
-            {canEdit && onRemoveItem && <th className="w-8" />}
+            {canEdit && onMoveItem && groups.length > 0 && <th className="text-left px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide border-r border-slate-200 whitespace-nowrap">Group</th>}
+            {canEdit && onRemoveItem && <th className="w-8 border-slate-200" />}
           </tr>
         </thead>
         <tbody>
-          {items.map(item => (
-            <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-              <td className="px-4 py-2 font-medium text-slate-700 whitespace-nowrap sticky left-0 bg-white">{item.matterName}</td>
-              <td className="px-4 py-2">
-                {canEdit && onMoveItem ? (
-                  <select value={item.group_id || ""} onChange={e => onMoveItem(item.id, e.target.value || null)}
-                    className="text-[11px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
-                    <option value="">Ungrouped</option>
-                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
-                ) : groupName(item.group_id)}
-              </td>
+          {items.map((item, idx) => (
+            <tr key={item.id} className={`border-b border-slate-200 ${idx % 2 === 1 ? "bg-slate-50/40" : ""} hover:bg-indigo-50/30`}>
+              <td className="px-3 py-1.5 font-medium text-slate-700 whitespace-nowrap border-r border-slate-100 sticky left-0 bg-inherit">{item.matterName}</td>
               {fields.map(f => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} editable={canEdit && !!onSaveValue}
                   onSave={v => onSaveValue?.(item.id, f.id, v)} />
               ))}
+              {canEdit && onMoveItem && groups.length > 0 && (
+                <td className="px-2 py-1 border-r border-slate-100">
+                  <select value={item.group_id || ""} onChange={e => onMoveItem(item.id, e.target.value || null)}
+                    className="text-[11px] border border-slate-200 rounded-full px-2 py-0.5 outline-none bg-white">
+                    <option value="">Ungrouped</option>
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                </td>
+              )}
               {canEdit && onRemoveItem && (
-                <td className="px-2 py-2">
+                <td className="px-2 py-1">
                   <button onClick={() => onRemoveItem(item.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
                 </td>
               )}
             </tr>
           ))}
           {items.length === 0 && (
-            <tr><td colSpan={fields.length + 3} className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters</td></tr>
+            <tr><td colSpan={fields.length + 3} className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters here yet</td></tr>
           )}
         </tbody>
       </table>
@@ -309,16 +347,16 @@ function SpreadsheetCell({ field, value, editable, onSave }: { field: MatterBoar
 
   if (editing) {
     return (
-      <td className="px-2 py-1">
+      <td className="px-1.5 py-1 border-r border-slate-100">
         <input autoFocus type={isDateField(field) ? "date" : "text"} value={draft ?? ""} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
-          className="w-32 px-2 py-1 border border-indigo-300 rounded-lg text-[12px] outline-none" />
+          className="w-32 px-2 py-1 border border-indigo-300 rounded text-[12px] outline-none" />
       </td>
     );
   }
   return (
     <td onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
-      className={`px-4 py-2 whitespace-nowrap text-slate-700 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""}`}>
+      className={`px-3 py-1.5 whitespace-nowrap text-slate-700 border-r border-slate-100 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""}`}>
       {value == null || value === "" ? <span className="text-slate-300">—</span> : formatValue(value)}
     </td>
   );
