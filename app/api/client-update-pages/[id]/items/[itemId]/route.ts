@@ -20,19 +20,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const updates: Record<string, any> = {};
   if ("groupId" in body) updates.group_id = body.groupId || null;
   if (typeof body.displayOrder === "number") updates.display_order = body.displayOrder;
+  if ("displayName" in body) updates.display_name = body.displayName?.trim() || null;
   if (!Object.keys(updates).length) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
+  const { data: before } = await admin.from("client_update_page_items").select("project_id, display_name").eq("id", itemId).eq("page_id", id).maybeSingle();
   const { error } = await admin.from("client_update_page_items").update(updates).eq("id", itemId).eq("page_id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  const { data: project } = before?.project_id ? await admin.from("projects").select("name").eq("id", before.project_id).maybeSingle() : { data: null };
+
   if ("groupId" in body) {
-    const [{ data: item }, { data: group }] = await Promise.all([
-      admin.from("client_update_page_items").select("project_id").eq("id", itemId).maybeSingle(),
-      body.groupId ? admin.from("client_update_groups").select("name").eq("id", body.groupId).maybeSingle() : Promise.resolve({ data: null }),
-    ]);
-    const { data: project } = item?.project_id ? await admin.from("projects").select("name").eq("id", item.project_id).maybeSingle() : { data: null };
+    const { data: group } = body.groupId ? await admin.from("client_update_groups").select("name").eq("id", body.groupId).maybeSingle() : { data: null };
     const actorName = await resolveActorName(admin, user.id);
     await logChange(admin, id, actorName, "staff", "matter_moved", `Moved "${project?.name || "a matter"}" to ${group?.name || "Ungrouped"}`);
+  }
+
+  if ("displayName" in body) {
+    const actorName = await resolveActorName(admin, user.id);
+    const newTitle = updates.display_name || project?.name || "a matter";
+    await logChange(admin, id, actorName, "staff", "matter_renamed", `Renamed "${before?.display_name || project?.name || "a matter"}" to "${newTitle}" on this page`);
   }
 
   return NextResponse.json({ ok: true });

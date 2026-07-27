@@ -19,7 +19,7 @@ import { supabase } from "@/lib/supabase";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; }
-interface PageMeta { title: string; dateFormat: string }
+interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean }
 
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
 function getCachedCode(slug: string): string | null {
@@ -62,7 +62,7 @@ export default function ClientUpdatePage() {
       const attempt = await fetchPublic(cachedCode);
       if (attempt.ok && !attempt.json.requiresCode) {
         setMode("client");
-        setMeta({ title: attempt.json.title, dateFormat: attempt.json.dateFormat });
+        setMeta({ title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn });
         setBoard({ groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields });
         setLoading(false);
         return;
@@ -72,7 +72,7 @@ export default function ClientUpdatePage() {
     const { ok, json } = await fetchPublic();
     if (!ok) { setError(json.error || "This page is not available"); setLoading(false); return; }
     setMode("client");
-    setMeta({ title: json.title, dateFormat: json.dateFormat });
+    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
     setBoard({ groups: json.groups, items: json.items, fields: json.fields });
     setLoading(false);
@@ -85,7 +85,7 @@ export default function ClientUpdatePage() {
     const json = await res.json();
     setMode("staff");
     setStaffPageId(json.page.id);
-    setMeta({ title: json.page.title, dateFormat: json.page.date_format });
+    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column });
     setBoard({ groups: json.groups, items: json.items, fields: json.fields });
     return true;
   }, [slug]);
@@ -167,6 +167,32 @@ export default function ClientUpdatePage() {
     if (!res.ok) { const json = await res.json().catch(() => ({})); throw new Error(json.error || "Couldn't revert columns"); }
   };
 
+  const renameMatter = (itemId: string, name: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, matterName: name } : i) });
+    fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName: name }),
+    });
+  };
+
+  const summarizeOpenMatters = async () => {
+    if (mode !== "staff" || !staffPageId) return { generated: 0, skipped: 0, failed: [] as string[] };
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/summarize-open`, { method: "POST" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Couldn't generate summaries");
+    await loadAsStaff();
+    return json;
+  };
+
+  const clearSummaries = async () => {
+    if (mode !== "staff" || !staffPageId) return 0;
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/summaries`, { method: "DELETE" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Couldn't clear summaries");
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => ({ ...i, ai_summary: null, ai_summary_generated_at: null })) });
+    return json.cleared as number;
+  };
+
   const moveItem = (itemId: string, groupId: string | null) => {
     if (mode !== "staff" || !staffPageId) return;
     setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, group_id: groupId } : i) });
@@ -237,6 +263,14 @@ export default function ClientUpdatePage() {
     });
   };
 
+  const changeFreezeColumn = (freeze: boolean) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setMeta(prev => prev && { ...prev, freezeFirstColumn: freeze });
+    fetch(`/api/client-update-pages/${staffPageId}/freeze-column`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ freeze }),
+    });
+  };
+
   // Matters added or columns changed via their modals write straight to the
   // server (new rows need real ids) -- simplest to just reload the board
   // afterward rather than hand-reconcile every possible shape.
@@ -298,6 +332,7 @@ export default function ClientUpdatePage() {
           items={board.items}
           fields={board.fields}
           dateFormat={meta.dateFormat}
+          freezeFirstColumn={meta.freezeFirstColumn}
           canEdit={mode === "staff"}
           canComment
           onSaveValue={mode === "staff" ? saveValue : undefined}
@@ -311,9 +346,13 @@ export default function ClientUpdatePage() {
           onRemoveItem={mode === "staff" ? removeItem : undefined}
           onAddNote={addNote}
           onGenerateSummary={mode === "staff" ? generateSummary : undefined}
+          onSummarizeOpenMatters={mode === "staff" ? summarizeOpenMatters : undefined}
+          onClearSummaries={mode === "staff" ? clearSummaries : undefined}
+          onRenameMatter={mode === "staff" ? renameMatter : undefined}
           onReorderFields={mode === "staff" ? reorderFields : undefined}
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
+          onFreezeFirstColumnChanged={mode === "staff" ? changeFreezeColumn : undefined}
         />
       </div>
     </div>

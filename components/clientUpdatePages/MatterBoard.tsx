@@ -11,23 +11,32 @@
 // spot as this company's Supabase Logs viewer, adapted to this app's light
 // visual style): "Group" (top-level, single-select, e.g. "Conveyancing")
 // stacked above "Status" (that group's sub-groups, multi-select checkboxes
-// with counts, e.g. "In Progress"/"Settled"/"Terminated" -- checking none
-// shows everything). A subgroup can either hold matters manually (drag in
-// via the move dropdown) OR define a condition ("this select column equals
-// this value") -- when a condition is set, membership is computed live
-// from matter data instead of being dragged in. A "Sort by" section (default
-// one Settlement Date criterion when present, stackable with "+ Add sort")
-// sits below. Columns are shared across every top-level group by default
-// (stable, predictable) -- a group only gets its own different columns once
-// explicitly "customized" (and can be reverted back to shared at any time),
-// see the fields/customize-columns routes. No column, including "Matter"
-// itself, is pinned or special-cased -- every one is an ordinary,
-// reorderable, removable field. Table styling (spreadsheet mode, the
-// default view) matches app/public/tasks/[pageId]/page.tsx's task table.
+// with counts, e.g. "In Progress"/"Settled"/"Terminated" -- defaults to just
+// "In Progress" checked on first load of a group, since Status is shared
+// across every group; checking none shows everything). A subgroup can
+// either hold matters manually (drag in via the move dropdown) OR define a
+// condition ("this select column equals this value") -- when a condition is
+// set, membership is computed live from matter data instead of being
+// dragged in. Below that, "Filters" is a separate, generic ad-hoc mechanism
+// (add/remove any number of them): pick any visible field and check off
+// which of its currently-present distinct values to show -- works for a
+// select field or a free-text one like Matter Description alike, unlike
+// Status/subgroups which are purpose-built for classification. A "Sort by"
+// section (default one Settlement Date criterion when present, stackable
+// with "+ Add sort") sits below that. Columns are shared across every
+// top-level group by default (stable, predictable) -- a group only gets its
+// own different columns once explicitly "customized" (and can be reverted
+// back to shared at any time), see the fields/customize-columns routes. No
+// column, including "Matter" itself, is pinned or special-cased by default
+// -- every one is an ordinary, reorderable (drag or the column manager's
+// up/down buttons), removable field; freezing the first column in
+// spreadsheet mode is an explicit opt-in toggle, not automatic. Table
+// styling (spreadsheet mode, the default view) matches
+// app/public/tasks/[pageId]/page.tsx's task table.
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, Pin } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -45,6 +54,7 @@ interface Props {
   items: MatterBoardItem[];
   fields: MatterBoardField[];
   dateFormat: string;
+  freezeFirstColumn?: boolean;
   canEdit: boolean;
   canComment: boolean;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
@@ -58,9 +68,13 @@ interface Props {
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
+  onSummarizeOpenMatters?: () => Promise<{ generated: number; skipped: number; failed: string[] }>;
+  onClearSummaries?: () => Promise<number>;
+  onRenameMatter?: (itemId: string, name: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
   onDataChanged?: () => void; // matters added / columns changed -- needs a full refetch
   onDateFormatChanged?: (format: string) => void;
+  onFreezeFirstColumnChanged?: (freeze: boolean) => void;
 }
 
 function isDateField(field: MatterBoardField): boolean {
@@ -84,12 +98,13 @@ const UNCLASSIFIED = "__unclassified__";
 const MATTER_NAME_SORT = "__matter_name__";
 
 export default function MatterBoard({
-  pageId, groups, items, fields, dateFormat, canEdit, canComment,
-  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onReorderFields, onDataChanged, onDateFormatChanged,
+  pageId, groups, items, fields, dateFormat, freezeFirstColumn, canEdit, canComment,
+  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState<{ fieldId: string; values: Set<string> }[]>([]);
   const [search, setSearch] = useState("");
   const [sorts, setSorts] = useState<{ fieldId: string; dir: "asc" | "desc" }[]>([]);
   const [showAddMatter, setShowAddMatter] = useState(false);
@@ -97,6 +112,33 @@ export default function MatterBoard({
   const [showDateFormat, setShowDateFormat] = useState(false);
   const [conditionGroupId, setConditionGroupId] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
+  const [summarizingAll, setSummarizingAll] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
+
+  const summarizeOpenMatters = async () => {
+    if (!onSummarizeOpenMatters || summarizingAll) return;
+    setSummarizingAll(true);
+    try {
+      const result = await onSummarizeOpenMatters();
+      const parts = [`Generated ${result.generated} summar${result.generated === 1 ? "y" : "ies"}`];
+      if (result.failed.length) parts.push(`${result.failed.length} failed: ${result.failed.join(", ")}`);
+      window.alert(parts.join(" — "));
+    } finally {
+      setSummarizingAll(false);
+    }
+  };
+
+  const clearSummaries = async () => {
+    if (!onClearSummaries || clearingAll) return;
+    if (!window.confirm("Clear the AI summary from every matter on this page? This can't be undone, but they can be regenerated.")) return;
+    setClearingAll(true);
+    try {
+      const cleared = await onClearSummaries();
+      window.alert(`Cleared ${cleared} summar${cleared === 1 ? "y" : "ies"}`);
+    } finally {
+      setClearingAll(false);
+    }
+  };
 
   const topGroups = groups.filter(g => !g.parent_group_id);
   const ungroupedCount = items.filter(i => !i.group_id).length;
@@ -145,13 +187,27 @@ export default function MatterBoard({
       ]
     : [];
 
-  // Reset the status filter whenever the active group (or its subgroup set)
-  // changes, so a stale selection from a different group's statuses can't
-  // silently persist and hide everything.
+  // Defaults to "In Progress" checked on first load of a group that has
+  // one (Status is shared across groups, so this is consistent everywhere);
+  // once the user touches the Status checkboxes that choice is left alone
+  // for the rest of the session, same guarded-init pattern as sort/filters.
+  const [statusInitialisedFor, setStatusInitialisedFor] = useState<string | null>(null);
   useEffect(() => {
-    setSelectedStatuses(new Set());
+    const groupKey = activeTopGroup?.id ?? UNGROUPED;
+    if (statusInitialisedFor === groupKey) return;
+    const inProgress = subGroups.find(sg => sg.name.trim().toLowerCase() === "in progress");
+    setSelectedStatuses(inProgress ? new Set([inProgress.id]) : new Set());
+    setStatusInitialisedFor(groupKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTop, subGroups.map(g => g.id).join(",")]);
+  }, [activeTopGroup?.id, subGroups.map(g => g.id).join(",")]);
+
+  // Ad-hoc filters reference a specific field id, which is only meaningful
+  // within the active group's own visible columns -- reset on group change
+  // for the same reason the status filter does.
+  useEffect(() => {
+    setFilters([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTop]);
 
   const toggleStatus = (id: string) => {
     setSelectedStatuses(prev => {
@@ -174,13 +230,47 @@ export default function MatterBoard({
     return subGroups.some(sg => selectedStatuses.has(sg.id) && subgroupItems(sg).includes(i));
   });
 
+  // Distinct values are read from groupScopedItems (not the
+  // progressively-narrowed result) so a filter's own checkbox list doesn't
+  // shrink out from under the user as other filters/search/status change --
+  // works for any field regardless of its declared type (a free-text field
+  // like Matter Description just gets whatever distinct values are
+  // currently present, not a fixed option list).
+  const distinctValuesFor = (fieldId: string): string[] => {
+    const vals = new Set<string>();
+    for (const i of groupScopedItems) {
+      const v = i.values[fieldId];
+      if (v != null && v !== "") vals.add(String(v));
+    }
+    return [...vals].sort();
+  };
+
+  const filterFilteredItems = filters.reduce(
+    (acc, f) => (f.values.size === 0 ? acc : acc.filter(i => f.values.has(String(i.values[f.fieldId] ?? "")))),
+    statusFilteredItems
+  );
+
+  const addFilter = () => {
+    const used = new Set(filters.map(f => f.fieldId));
+    const next = visibleFields.find(f => !used.has(f.id));
+    if (next) setFilters(prev => [...prev, { fieldId: next.id, values: new Set() }]);
+  };
+  const updateFilterField = (index: number, fieldId: string) => setFilters(prev => prev.map((f, i) => i === index ? { fieldId, values: new Set() } : f));
+  const toggleFilterValue = (index: number, value: string) => setFilters(prev => prev.map((f, i) => {
+    if (i !== index) return f;
+    const next = new Set(f.values);
+    if (next.has(value)) next.delete(value); else next.add(value);
+    return { ...f, values: next };
+  }));
+  const removeFilter = (index: number) => setFilters(prev => prev.filter((_, i) => i !== index));
+
   const searchedItems = search.trim()
-    ? statusFilteredItems.filter(i => {
+    ? filterFilteredItems.filter(i => {
         const q = search.trim().toLowerCase();
         if (i.matterName.toLowerCase().includes(q)) return true;
         return Object.values(i.values).some(v => v != null && String(v).toLowerCase().includes(q));
       })
-    : statusFilteredItems;
+    : filterFilteredItems;
 
   const sortOptions = [{ id: MATTER_NAME_SORT, label: "Matter" }, ...visibleFields.map(f => ({ id: f.id, label: f.label }))];
   // Defaults to a single Settlement Date criterion on first load of a group
@@ -268,6 +358,18 @@ export default function MatterBoard({
                 className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                 <Columns3 size={14} />
               </button>
+              {onSummarizeOpenMatters && (
+                <button onClick={summarizeOpenMatters} disabled={summarizingAll} title="Generate AI summaries for open matters with emails, that don't have one yet"
+                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
+                  {summarizingAll ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                </button>
+              )}
+              {onClearSummaries && (
+                <button onClick={clearSummaries} disabled={clearingAll} title="Clear all AI summaries on this page"
+                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-red-300 hover:text-red-600 disabled:opacity-40 transition-colors">
+                  {clearingAll ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
+                </button>
+              )}
               <button onClick={() => setShowLogs(true)} title="Activity log"
                 className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                 <History size={14} />
@@ -289,6 +391,12 @@ export default function MatterBoard({
                 )}
               </div>
             </>
+          )}
+          {mode === "spreadsheet" && onFreezeFirstColumnChanged && (
+            <button onClick={() => onFreezeFirstColumnChanged(!freezeFirstColumn)} title="Freeze the first column"
+              className={`p-2 border rounded-full transition-colors ${freezeFirstColumn ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
+              <Pin size={14} />
+            </button>
           )}
           <div className="flex items-center gap-1 bg-slate-100 rounded-full p-1">
             <button onClick={() => setMode("cards")}
@@ -328,6 +436,41 @@ export default function MatterBoard({
             </SidebarSection>
           )}
 
+          <SidebarSection title="Filters">
+            <div className="space-y-3">
+              {filters.map((f, i) => {
+                const usedElsewhere = new Set(filters.filter((_, j) => j !== i).map(x => x.fieldId));
+                const options = distinctValuesFor(f.fieldId);
+                return (
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center gap-1">
+                      <select value={f.fieldId} onChange={e => updateFilterField(i, e.target.value)}
+                        className="flex-1 min-w-0 px-2.5 py-1.5 border border-slate-200 rounded-full text-[10px] outline-none bg-white">
+                        {visibleFields.filter(vf => !usedElsewhere.has(vf.id) || vf.id === f.fieldId).map(vf => <option key={vf.id} value={vf.id}>{vf.label}</option>)}
+                      </select>
+                      <button onClick={() => removeFilter(i)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={12} /></button>
+                    </div>
+                    <div className="pl-1 space-y-0.5 max-h-32 overflow-y-auto">
+                      {options.length === 0 && <p className="text-[10px] text-slate-300 italic px-2 py-1">No values yet</p>}
+                      {options.map(o => (
+                        <label key={o} className="flex items-center gap-2 px-2 py-0.5 cursor-pointer">
+                          <input type="checkbox" checked={f.values.has(o)} onChange={() => toggleFilterValue(i, o)} className="accent-indigo-600 shrink-0" />
+                          <span className="text-[11px] text-slate-600 truncate">{o}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {filters.length < visibleFields.length && (
+                <button onClick={addFilter}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-slate-200 text-slate-400 text-[10px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                  <Plus size={11} /> Add filter
+                </button>
+              )}
+            </div>
+          </SidebarSection>
+
           <SidebarSection title="Sort by">
             <div className="space-y-1.5">
               {sorts.map((s, i) => {
@@ -361,14 +504,14 @@ export default function MatterBoard({
             <div className="space-y-3">
               {visibleItems.map(item => (
                 <MatterCard key={item.id} item={item} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment}
-                  onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} />
+                  onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters here yet</p>
               )}
             </div>
           ) : (
-            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit}
+            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} freezeFirstColumn={!!freezeFirstColumn}
               onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} />
           )}
         </div>
@@ -525,7 +668,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary }: {
+function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter }: {
   item: MatterBoardItem; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
@@ -533,9 +676,12 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
+  onRenameMatter?: (itemId: string, name: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(item.matterName);
 
   const generateSummary = async () => {
     if (!onGenerateSummary || generating) return;
@@ -543,14 +689,33 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
     try { await onGenerateSummary(item.id); } finally { setGenerating(false); }
   };
 
+  const commitTitle = () => {
+    setEditingTitle(false);
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== item.matterName) onRenameMatter?.(item.id, trimmed);
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl">
       <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className="flex-1 min-w-0">
-          <p className="text-[12px] font-medium text-slate-700">{item.matterName}</p>
+          {editingTitle ? (
+            <input value={titleDraft} onChange={e => setTitleDraft(e.target.value)} autoFocus onClick={e => e.stopPropagation()}
+              onBlur={commitTitle}
+              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setTitleDraft(item.matterName); setEditingTitle(false); } }}
+              className="w-full px-2 -mx-2 py-0.5 border border-indigo-300 rounded-lg text-[12px] font-medium outline-none" />
+          ) : (
+            <p className="flex items-center gap-1.5 text-[12px] font-medium text-slate-700">
+              <span className="truncate">{item.matterName}</span>
+              {canEdit && onRenameMatter && (
+                <button onClick={e => { e.stopPropagation(); setTitleDraft(item.matterName); setEditingTitle(true); }} title="Rename this card"
+                  className="shrink-0 text-slate-300 hover:text-indigo-600 transition-colors"><Pencil size={10} /></button>
+              )}
+            </p>
+          )}
           {item.ai_summary ? (
-            <p className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-400 italic">
-              <span className="truncate">{item.ai_summary}</span>
+            <p className="flex items-start gap-1.5 mt-0.5 text-[11px] text-slate-400 italic">
+              <span>{item.ai_summary}</span>
               {canEdit && onGenerateSummary && (
                 <button onClick={e => { e.stopPropagation(); generateSummary(); }} disabled={generating} title="Regenerate summary"
                   className="shrink-0 not-italic text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
@@ -673,13 +838,18 @@ function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; ca
 
 // ── Spreadsheet mode -- styled like app/public/tasks/[pageId]/page.tsx's
 // task table (rounded white card, horizontal-only row separators, uppercase
-// gray headers, row hover). No column is pinned -- "Matter" is just an
-// ordinary (removable, reorderable) field like any other; a plain
-// horizontally-scrolling table, which sidesteps the overlap bugs a
-// CSS-sticky column had. ─────────────────────────────────────────────
+// gray headers, row hover). No column is pinned by default -- "Matter" is
+// just an ordinary (removable, reorderable) field like any other; a plain
+// horizontally-scrolling table. freezeFirstColumn is an explicit opt-in
+// (see MatterBoard's toolbar Pin toggle) that sticks whichever field is
+// currently first via CSS sticky + an opaque background + z-index on just
+// that one cell per row -- the earlier always-on frozen column was a
+// bigger frozen-panel construct that had an overlap bug on scroll; this is
+// deliberately narrower in scope to avoid repeating that. ─────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, onSaveValue, onMoveItem, onRemoveItem, onReorderFields }: {
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, freezeFirstColumn, onSaveValue, onMoveItem, onRemoveItem, onReorderFields }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean;
+  freezeFirstColumn: boolean;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
@@ -704,13 +874,13 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, onSa
       <table className="w-full min-w-[760px] text-[13px]">
         <thead>
           <tr className="border-b border-slate-100 text-left">
-            {fields.map(f => (
+            {fields.map((f, i) => (
               <th key={f.id} draggable={canEdit && !!onReorderFields}
                 onDragStart={() => setDraggedFieldId(f.id)}
                 onDragOver={e => { e.preventDefault(); setDragOverFieldId(f.id); }}
                 onDrop={() => handleColumnDrop(f.id)}
                 onDragEnd={() => { setDraggedFieldId(null); setDragOverFieldId(null); }}
-                className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""}`}>
+                className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""} ${freezeFirstColumn && i === 0 ? "sticky left-0 z-20 bg-white border-r border-slate-200" : ""}`}>
                 <span className="inline-flex items-center gap-1">
                   {canEdit && onReorderFields && <GripVertical size={10} className="text-slate-300" />}
                   {f.label}
@@ -724,8 +894,8 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, onSa
         <tbody>
           {items.map(item => (
             <tr key={item.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-              {fields.map(f => (
-                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
+              {fields.map((f, i) => (
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0}
                   onSave={v => onSaveValue?.(item.id, f.id, v)} />
               ))}
               {canEdit && onMoveItem && (
@@ -752,15 +922,16 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, onSa
   );
 }
 
-function SpreadsheetCell({ field, value, dateFormat, editable, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; onSave: (v: any) => void }) {
+function SpreadsheetCell({ field, value, dateFormat, editable, frozen, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; onSave: (v: any) => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
 
   const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
+  const frozenClass = frozen ? "sticky left-0 z-10 bg-white border-r border-slate-200" : "";
 
   if (field.field_type === "select" && field.select_options?.length) {
     return (
-      <td className="px-4 py-4">
+      <td className={`px-4 py-4 ${frozenClass}`}>
         {editable ? (
           <select value={value ?? ""} onChange={e => onSave(e.target.value || null)}
             className="text-[12px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
@@ -774,7 +945,7 @@ function SpreadsheetCell({ field, value, dateFormat, editable, onSave }: { field
 
   if (editing) {
     return (
-      <td className="px-2 py-2.5">
+      <td className={`px-2 py-2.5 ${frozenClass}`}>
         <input autoFocus type={isDateField(field) ? "date" : "text"} value={draft ?? ""} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
           className="w-32 px-2 py-1.5 border border-indigo-300 rounded-full text-[12px] outline-none" />
@@ -783,7 +954,7 @@ function SpreadsheetCell({ field, value, dateFormat, editable, onSave }: { field
   }
   return (
     <td onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
-      className={`px-4 py-4 whitespace-nowrap text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""}`}>
+      className={`px-4 py-4 whitespace-nowrap text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
       {value == null || value === "" ? "—" : formatValue(value, field, dateFormat)}
     </td>
   );

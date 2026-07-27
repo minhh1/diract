@@ -5,7 +5,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, GripVertical, Trash2, Loader2 } from "lucide-react";
+import { X, GripVertical, Trash2, Loader2, ChevronUp, ChevronDown } from "lucide-react";
 
 interface FieldDef { id: string; field_source: string; field_key: string; label: string; group_id?: string | null; }
 interface CatalogOption { field_key: string; label: string; }
@@ -51,11 +51,23 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
     const toIdx = reordered.findIndex(f => f.id === targetId);
     const [moved] = reordered.splice(fromIdx, 1);
     reordered.splice(toIdx, 0, moved);
-    setOrder(reordered);
     setDraggedId(null); setDragOverId(null);
+    persistOrder(reordered);
+  };
+
+  const persistOrder = (reordered: FieldDef[]) => {
+    setOrder(reordered);
     fetch(`/api/client-update-pages/${pageId}/fields/reorder`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldIds: reordered.map(f => f.id) }),
     }).then(() => onChanged());
+  };
+
+  const moveField = (index: number, dir: -1 | 1) => {
+    const targetIndex = index + dir;
+    if (targetIndex < 0 || targetIndex >= order.length) return;
+    const reordered = [...order];
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+    persistOrder(reordered);
   };
 
   const removeField = async (fieldId: string) => {
@@ -109,7 +121,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">On this page — drag to reorder</p>
             <div className="space-y-1">
-              {order.map(f => (
+              {order.map((f, i) => (
                 <div key={f.id} draggable
                   onDragStart={() => setDraggedId(f.id)}
                   onDragOver={e => { e.preventDefault(); setDragOverId(f.id); }}
@@ -118,6 +130,12 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
                   className={`flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl cursor-grab active:cursor-grabbing transition-colors ${dragOverId === f.id ? "ring-2 ring-indigo-300" : ""}`}>
                   <GripVertical size={13} className="text-slate-300 shrink-0" />
                   <span className="flex-1 text-[12px] text-slate-700">{f.label}</span>
+                  <div className="flex items-center shrink-0">
+                    <button onClick={() => moveField(i, -1)} disabled={i === 0} title="Move up"
+                      className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-20 disabled:hover:text-slate-300 transition-colors"><ChevronUp size={13} /></button>
+                    <button onClick={() => moveField(i, 1)} disabled={i === order.length - 1} title="Move down"
+                      className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-20 disabled:hover:text-slate-300 transition-colors"><ChevronDown size={13} /></button>
+                  </div>
                   <button onClick={() => removeField(f.id)} className="p-1 text-slate-300 hover:text-red-500 shrink-0"><Trash2 size={13} /></button>
                 </div>
               ))}
