@@ -91,6 +91,16 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     notesByItem.get(n.item_id)!.push(n);
   }
 
+  const { data: appendedEmails } = itemIds.length
+    ? await admin.from("client_update_page_emails").select("id, item_id, subject, from_name, from_address, snippet, email_date, added_by_name, created_at")
+        .in("item_id", itemIds).order("email_date", { ascending: false })
+    : { data: [] as any[] };
+  const emailsByItem = new Map<string, any[]>();
+  for (const e of appendedEmails || []) {
+    if (!emailsByItem.has(e.item_id)) emailsByItem.set(e.item_id, []);
+    emailsByItem.get(e.item_id)!.push(e);
+  }
+
   function resolveValue(field: any, item: any): any {
     const project = projectById.get(item.project_id);
     if (field.field_source === "adhoc") return adhocValueByKey.get(`${field.id}:${item.id}`) ?? null;
@@ -116,6 +126,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       matterName: i.display_name || projectById.get(i.project_id)?.name || "",
       values: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveValue(f, i)])),
       notes: notesByItem.get(i.id) || [],
+      emails: emailsByItem.get(i.id) || [],
     })),
     fields: fields || [],
     formatRules: formatRules || [],

@@ -34,7 +34,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   let result;
   try {
-    result = await summarizeMatterEmails(admin, companyId, DEFAULT_MODEL_ID, item.project_id, project?.name || "this matter");
+    result = await summarizeMatterEmails(admin, companyId, DEFAULT_MODEL_ID, item.id, item.project_id, project?.name || "this matter");
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Failed to summarise emails" }, { status: 502 });
   }

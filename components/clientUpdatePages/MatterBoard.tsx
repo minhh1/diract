@@ -36,7 +36,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -45,7 +45,8 @@ import ActivityLogModal from "./ActivityLogModal";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; }
-export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
+export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
+export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
@@ -70,6 +71,8 @@ interface Props {
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string) => void;
+  onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
+  onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onSummarizeOpenMatters?: () => Promise<{ generated: number; skipped: number; failed: string[] }>;
   onClearSummaries?: () => Promise<number>;
@@ -137,7 +140,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
-  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
+  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
@@ -640,7 +643,7 @@ export default function MatterBoard({
             <div className="space-y-3">
               {visibleItems.map(item => (
                 <MatterCard key={item.id} item={item} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)}
-                  onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
+                  onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters here yet</p>
@@ -648,7 +651,7 @@ export default function MatterBoard({
             </div>
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} colorForItem={colorForItem}
-              onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} />
+              onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} />
           )}
         </div>
       </div>
@@ -805,13 +808,15 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter }: {
+function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
   item: MatterBoardItem; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string) => void;
+  onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
+  onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onRenameMatter?: (itemId: string, name: string) => void;
 }) {
@@ -889,6 +894,7 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
             ))}
           </div>
           <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
+          <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
         </div>
       )}
     </div>
@@ -988,6 +994,85 @@ function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoa
   );
 }
 
+// Distinct from NotesPanel -- this is a structured, staff-only log of real
+// email correspondence (subject/sender/date/summary) that also feeds
+// lib/ai/matterEmailSummary.ts, not free-text commentary. The list itself
+// is shown to everyone (same as staff-authored notes already are, on this
+// client-facing page), but only staff (canEdit) can log or remove an entry
+// -- there's no public API route for this, see the emails route's header.
+function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
+  emails: MatterBoardEmail[]; dateFormat: string; canEdit: boolean;
+  onAdd?: (email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
+  onRemove?: (emailId: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [fromName, setFromName] = useState("");
+  const [snippet, setSnippet] = useState("");
+  const [emailDate, setEmailDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (!onAdd || (!subject.trim() && !snippet.trim())) return;
+    setSubmitting(true);
+    await onAdd({ subject: subject.trim(), fromName: fromName.trim(), snippet: snippet.trim(), emailDate });
+    setSubject(""); setFromName(""); setSnippet(""); setEmailDate(new Date().toISOString().slice(0, 10));
+    setSubmitting(false);
+    setAdding(false);
+  };
+
+  return (
+    <div className="border-t border-slate-100 pt-3 space-y-2">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Emails</p>
+      {emails.length === 0 && <p className="text-[11px] text-slate-300 italic">No emails logged yet</p>}
+      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+        {emails.map(e => (
+          <div key={e.id} className="group/email text-[11px] flex items-start gap-2">
+            <span className="text-slate-400 w-24 shrink-0">{formatDate(e.email_date, dateFormat)}</span>
+            <span className="flex-1 min-w-0 text-slate-600">
+              {e.subject && <span className="font-medium">{e.subject}</span>}
+              {e.from_name ? ` — ${e.from_name}` : ""}
+              {e.snippet ? <span className="block text-slate-400 truncate">{e.snippet}</span> : null}
+            </span>
+            {canEdit && onRemove && (
+              <button onClick={() => onRemove(e.id)} className="shrink-0 p-0.5 text-slate-300 opacity-0 group-hover/email:opacity-100 hover:text-red-500 transition-colors">
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {canEdit && onAdd && (
+        adding ? (
+          <div className="space-y-1.5 border border-slate-200 rounded-xl p-2.5">
+            <div className="flex items-center gap-1.5">
+              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" autoFocus
+                className="flex-1 min-w-0 px-2.5 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none" />
+              <input type="date" value={emailDate} onChange={e => setEmailDate(e.target.value)}
+                className="px-2.5 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none shrink-0" />
+            </div>
+            <input value={fromName} onChange={e => setFromName(e.target.value)} placeholder="From"
+              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none" />
+            <textarea value={snippet} onChange={e => setSnippet(e.target.value)} placeholder="Summary..." rows={2}
+              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-2xl text-[11px] outline-none resize-none" />
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setAdding(false)} className="text-[10px] font-bold text-slate-400">Cancel</button>
+              <button onClick={submit} disabled={submitting || (!subject.trim() && !snippet.trim())}
+                className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full disabled:opacity-40 transition-colors">
+                {submitting && <Loader2 size={11} className="animate-spin" />} Log email
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors">
+            <Mail size={12} /> Log an email
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
 // ── Spreadsheet mode -- styled like app/public/tasks/[pageId]/page.tsx's
 // task table (rounded white card, horizontal-only row separators, uppercase
 // gray headers, row hover). No column is pinned by default -- "Matter" is
@@ -1011,7 +1096,7 @@ function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoa
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, colorForItem, onSaveValue, onMoveItem, onRemoveItem, onReorderFields, onAddNote }: {
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, colorForItem, onSaveValue, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean;
   colorForItem: (item: MatterBoardItem) => string | null;
@@ -1020,6 +1105,8 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   onRemoveItem?: (itemId: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
   onAddNote: (itemId: string, note: string) => void;
+  onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
+  onRemoveEmail?: (itemId: string, emailId: string) => void;
 }) {
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
@@ -1094,8 +1181,9 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
             </tr>
             {expanded && (
               <tr className="border-b border-slate-50 last:border-0">
-                <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50">
+                <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3">
                   <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
+                  <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
                 </td>
               </tr>
             )}

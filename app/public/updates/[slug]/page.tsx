@@ -247,6 +247,44 @@ export default function ClientUpdatePage() {
     });
   };
 
+  const appendEmail = (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => {
+    if (mode !== "staff" || !staffPageId) return;
+    const tempId = `temp-${Date.now()}`;
+    const optimisticEmail = {
+      id: tempId, subject: email.subject || null, from_name: email.fromName || null, from_address: null,
+      snippet: email.snippet || null, email_date: email.emailDate, added_by_name: "You", created_at: new Date().toISOString(),
+    };
+    setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, emails: [optimisticEmail, ...i.emails] } : i) });
+
+    fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/emails`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: email.subject, fromName: email.fromName, snippet: email.snippet, emailDate: email.emailDate }),
+    }).then(async res => {
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, emails: i.emails.filter(e => e.id !== tempId) } : i) });
+        window.alert(json.error || "Couldn't log that email");
+        return;
+      }
+      if (json.email) setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, emails: i.emails.map(e => e.id === tempId ? json.email : e) } : i) });
+    });
+  };
+
+  const removeEmail = (itemId: string, emailId: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    let prevEmails: any[] = [];
+    setBoard(prev => {
+      if (!prev) return prev;
+      prevEmails = prev.items.find(i => i.id === itemId)?.emails || [];
+      return { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, emails: i.emails.filter(e => e.id !== emailId) } : i) };
+    });
+    fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/emails/${emailId}`, { method: "DELETE" }).then(res => {
+      if (res.ok) return;
+      setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, emails: prevEmails } : i) });
+      window.alert("Couldn't remove that email");
+    });
+  };
+
   const setGroupCondition = (groupId: string, fieldId: string | null, value: string | null) => {
     if (mode !== "staff" || !staffPageId) return;
     setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, condition_field_id: fieldId, condition_value: value } : g) });
@@ -404,6 +442,8 @@ export default function ClientUpdatePage() {
           onMoveItem={mode === "staff" ? moveItem : undefined}
           onRemoveItem={mode === "staff" ? removeItem : undefined}
           onAddNote={addNote}
+          onAddEmail={mode === "staff" ? appendEmail : undefined}
+          onRemoveEmail={mode === "staff" ? removeEmail : undefined}
           onGenerateSummary={mode === "staff" ? generateSummary : undefined}
           onSummarizeOpenMatters={mode === "staff" ? summarizeOpenMatters : undefined}
           onClearSummaries={mode === "staff" ? clearSummaries : undefined}

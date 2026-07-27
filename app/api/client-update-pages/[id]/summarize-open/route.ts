@@ -32,10 +32,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const { data: projects } = await admin.from("projects").select("id, name, status").in("id", projectIds);
   const projectById = new Map((projects || []).map((p: any) => [p.id, p]));
 
-  const { data: emailRows } = await admin.from("project_emails").select("project_id").in("project_id", projectIds);
+  const itemIds = items.map((i: any) => i.id);
+  const [{ data: emailRows }, { data: appendedRows }] = await Promise.all([
+    admin.from("project_emails").select("project_id").in("project_id", projectIds),
+    admin.from("client_update_page_emails").select("item_id").in("item_id", itemIds),
+  ]);
   const projectsWithEmails = new Set((emailRows || []).map((e: any) => e.project_id));
+  const itemsWithAppendedEmails = new Set((appendedRows || []).map((e: any) => e.item_id));
 
-  const targets = items.filter((i: any) => !i.ai_summary && projectById.get(i.project_id)?.status === "Open" && projectsWithEmails.has(i.project_id));
+  const targets = items.filter((i: any) => !i.ai_summary && projectById.get(i.project_id)?.status === "Open" && (projectsWithEmails.has(i.project_id) || itemsWithAppendedEmails.has(i.id)));
   if (!targets.length) return NextResponse.json({ generated: 0, skipped: items.length });
 
   const { data: aiSettings } = await admin.from("ai_chat_settings").select("monthly_token_cap").eq("company_id", companyId).maybeSingle();
@@ -50,7 +55,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     const project = projectById.get(item.project_id);
     try {
-      const result = await summarizeMatterEmails(admin, companyId, DEFAULT_MODEL_ID, item.project_id, project?.name || "this matter");
+      const result = await summarizeMatterEmails(admin, companyId, DEFAULT_MODEL_ID, item.id, item.project_id, project?.name || "this matter");
       if (!result) continue;
       const generatedAt = new Date().toISOString();
       await admin.from("client_update_page_items").update({ ai_summary: result.summary, ai_summary_generated_at: generatedAt }).eq("id", item.id);
