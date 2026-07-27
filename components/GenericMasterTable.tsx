@@ -321,7 +321,11 @@ function GenericMasterTableInner({
         const nameById = new Map((linked || []).map((r: any) => [r.id, r[nameColumn]]));
         for (const recordId of Object.keys(byRecord)) {
           const rawId = byRecord[recordId][fieldId];
-          if (rawId) byRecord[recordId][fieldId] = nameById.get(rawId) || rawId;
+          // '', not rawId -- a lookup miss (deleted linked record, or a
+          // stale value left over from before it was reassigned) should
+          // render blank like any other empty cell, never the raw internal
+          // id, which looks broken and leaks a uuid into the UI.
+          if (rawId) byRecord[recordId][fieldId] = nameById.get(rawId) || '';
         }
       }));
 
@@ -403,7 +407,7 @@ function GenericMasterTableInner({
 
     perfLog(`GenericMasterTable(${tableName}): fetchItems done`);
     return items;
-  }, [tableName, schemaAll, relatedByPath]);
+  }, [tableName, schemaAll, relatedByPath, customFieldCols]);
 
   const invalidateRows = useInvalidateRows();
 
@@ -426,7 +430,16 @@ function GenericMasterTableInner({
     userId: ctxUserId,
     companyId: ctxCompanyId,
     isAdmin: ctxIsAdmin,
-    schemaReady: !schema.loading,
+    // Also wait on customFieldsLoading -- fetchItems resolves relation-type
+    // custom fields (e.g. a "Client Name" entity-relation field) using
+    // customFieldCols, and firing the first real fetch before that's loaded
+    // meant every relation field silently fell back to its raw uuid instead
+    // of the linked record's name (customFieldCols was still [] at that
+    // point, so nothing matched RELATION_TARGET_TABLES and the
+    // name-resolution loop below never ran). Whether this raced depended on
+    // how fast each request happened to come back, so it only showed up for
+    // some sessions/users, never reliably.
+    schemaReady: !schema.loading && !customFieldsLoading,
     fetchItems,
   });
 
