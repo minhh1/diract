@@ -231,7 +231,7 @@ export default function ClientUpdatePage() {
     if (!note.trim()) return;
     const tempId = `temp-${Date.now()}`;
     const source: "staff" | "client" = mode === "staff" ? "staff" : "client";
-    const optimisticNote = { id: tempId, note_date: new Date().toISOString().slice(0, 10), body: note.trim(), author_name: mode === "staff" ? "You" : null, source };
+    const optimisticNote = { id: tempId, note_date: new Date().toISOString().slice(0, 10), body: note.trim(), author_name: mode === "staff" ? "You" : null, source, created_at: new Date().toISOString() };
     setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: [optimisticNote, ...i.notes] } : i) });
 
     const request = mode === "staff" && staffPageId

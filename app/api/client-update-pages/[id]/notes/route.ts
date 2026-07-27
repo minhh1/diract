@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { data: created, error } = await admin.from("client_update_page_notes").insert({
     item_id: itemId, body: note.trim(), note_date: noteDate || undefined,
     author_name: profile?.full_name || profile?.email || null, source: "staff",
-  }).select("id, note_date, body, author_name, source").single();
+  }).select("id, note_date, body, author_name, source, created_at").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ note: created });

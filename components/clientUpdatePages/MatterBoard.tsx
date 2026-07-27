@@ -35,8 +35,8 @@
 // app/public/tasks/[pageId]/page.tsx's task table.
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, Pin } from "lucide-react";
+import { useState, useEffect, useMemo, Fragment } from "react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -44,7 +44,7 @@ import GroupConditionModal from "./GroupConditionModal";
 import ActivityLogModal from "./ActivityLogModal";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
-export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; }
+export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; }
 export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
@@ -647,8 +647,8 @@ export default function MatterBoard({
               )}
             </div>
           ) : (
-            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} freezeFirstColumn={!!freezeFirstColumn} colorForItem={colorForItem}
-              onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} />
+            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} colorForItem={colorForItem}
+              onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} />
           )}
         </div>
       </div>
@@ -888,7 +888,7 @@ function MatterCard({ item, fields, dateFormat, moveOptions, canEdit, canComment
                 onSave={v => onSaveValue?.(item.id, f.id, v)} />
             ))}
           </div>
-          <NotesPanel notes={item.notes} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
+          <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
         </div>
       )}
     </div>
@@ -936,7 +936,19 @@ function ValueCell({ field, value, dateFormat, editable: editableProp, onSave }:
   );
 }
 
-function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; canComment: boolean; onAdd: (note: string) => void }) {
+// note_date (a plain date, possibly backdated by staff -- see the notes
+// POST route's noteDate param) supplies the DAY; created_at (the real
+// moment it was saved, never backdated) supplies the TIME. Falls back to
+// date-only if created_at isn't present (e.g. a stale cached note).
+function formatNoteTimestamp(note: MatterBoardNote, dateFormat: string): string {
+  const datePart = formatDate(note.note_date, dateFormat);
+  if (!note.created_at) return datePart;
+  const time = new Date(note.created_at);
+  if (isNaN(time.getTime())) return datePart;
+  return `${datePart}, ${time.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoardNote[]; dateFormat: string; canComment: boolean; onAdd: (note: string) => void }) {
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -955,7 +967,7 @@ function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; ca
       <div className="space-y-1.5 max-h-40 overflow-y-auto">
         {notes.map(n => (
           <div key={n.id} className="text-[11px] flex gap-2">
-            <span className="text-slate-400 w-20 shrink-0">{n.note_date}</span>
+            <span className="text-slate-400 w-32 shrink-0">{formatNoteTimestamp(n, dateFormat)}</span>
             <span className={n.source === "client" ? "text-indigo-700" : "text-slate-600"}>
               {n.body}{n.author_name ? ` — ${n.author_name}` : ""}
             </span>
@@ -992,19 +1004,27 @@ function NotesPanel({ notes, canComment, onAdd }: { notes: MatterBoardNote[]; ca
 // viewport a sticky cell can swallow the horizontal swipe gesture that
 // starts on it (a WebKit quirk with sticky elements inside a scrolling
 // ancestor), which blocked scrolling entirely; below `sm:` the "frozen"
-// column just behaves like every other column. ─────────────────────────
+// column just behaves like every other column. A small chevron column at
+// the very left (always sm:sticky at left-0, independent of
+// freezeFirstColumn -- it's a UI control, not data) expands a row inline
+// to show/add its notes, same as Cards mode -- when freezeFirstColumn is
+// also on, the frozen field sits at left-8 instead of left-0 so the two
+// sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, freezeFirstColumn, colorForItem, onSaveValue, onMoveItem, onRemoveItem, onReorderFields }: {
-  items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean;
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, colorForItem, onSaveValue, onMoveItem, onRemoveItem, onReorderFields, onAddNote }: {
+  items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean;
   colorForItem: (item: MatterBoardItem) => string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
+  onAddNote: (itemId: string, note: string) => void;
 }) {
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const totalCols = fields.length + 1 + (canEdit && onMoveItem ? 1 : 0) + (canEdit && onRemoveItem ? 1 : 0);
 
   const handleColumnDrop = (targetId: string) => {
     if (!draggedFieldId || draggedFieldId === targetId || !onReorderFields) { setDraggedFieldId(null); setDragOverFieldId(null); return; }
@@ -1022,13 +1042,14 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
       <table className="w-full min-w-[760px] text-[13px]">
         <thead>
           <tr className="border-b border-slate-100 text-left">
+            <th className="w-8 sm:sticky sm:left-0 sm:z-20 sm:bg-white" />
             {fields.map((f, i) => (
               <th key={f.id} draggable={canEdit && !!onReorderFields}
                 onDragStart={() => setDraggedFieldId(f.id)}
                 onDragOver={e => { e.preventDefault(); setDragOverFieldId(f.id); }}
                 onDrop={() => handleColumnDrop(f.id)}
                 onDragEnd={() => { setDraggedFieldId(null); setDragOverFieldId(null); }}
-                className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""} ${freezeFirstColumn && i === 0 ? "sm:sticky sm:left-0 sm:z-20 sm:bg-white sm:border-r sm:border-slate-200" : ""}`}>
+                className={`px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${canEdit && onReorderFields ? "cursor-grab active:cursor-grabbing" : ""} ${dragOverFieldId === f.id ? "bg-indigo-50" : ""} ${freezeFirstColumn && i === 0 ? "sm:sticky sm:left-8 sm:z-20 sm:bg-white sm:border-r sm:border-slate-200" : ""}`}>
                 <span className="inline-flex items-center gap-1">
                   {canEdit && onReorderFields && <GripVertical size={10} className="text-slate-300" />}
                   {f.label}
@@ -1043,8 +1064,16 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
           {items.map(item => {
             const rowColor = colorForItem(item);
             const rowColorClasses = rowColor ? FORMAT_COLORS[rowColor] : null;
+            const expanded = expandedId === item.id;
             return (
-            <tr key={item.id} className={`border-b border-slate-50 last:border-0 ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
+            <Fragment key={item.id}>
+            <tr className={`border-b ${expanded ? "border-transparent" : "border-slate-50 last:border-0"} ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
+              <td className={`sm:sticky sm:left-0 sm:z-10 ${rowColorClasses?.smRow || "sm:bg-white"}`}>
+                <button onClick={() => setExpandedId(expanded ? null : item.id)} title={expanded ? "Collapse" : "Expand for notes"}
+                  className="flex items-center justify-center w-8 h-8 text-slate-300 hover:text-indigo-600 transition-colors">
+                  <ChevronRight size={13} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+                </button>
+              </td>
               {fields.map((f, i) => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
                   onSave={v => onSaveValue?.(item.id, f.id, v)} />
@@ -1063,10 +1092,18 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, free
                 </td>
               )}
             </tr>
+            {expanded && (
+              <tr className="border-b border-slate-50 last:border-0">
+                <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50">
+                  <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note)} />
+                </td>
+              </tr>
+            )}
+            </Fragment>
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={fields.length + 2} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No matters here yet</td></tr>
+            <tr><td colSpan={totalCols} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No matters here yet</td></tr>
           )}
         </tbody>
       </table>
@@ -1083,7 +1120,9 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
   // sm: prefixed -- see the header comment above SpreadsheetView for why
   // freezing only applies from that breakpoint up, never on a touch/mobile
   // viewport.
-  const frozenClass = frozen ? `sm:sticky sm:left-0 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white"}` : "";
+  // sm:left-8 (not left-0) -- the always-sticky expand-toggle column (see
+  // SpreadsheetView) occupies left-0 first; this sits right after it.
+  const frozenClass = frozen ? `sm:sticky sm:left-8 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white"}` : "";
 
   if (field.field_type === "select" && field.select_options?.length) {
     return (

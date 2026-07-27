@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
 
   const { data: created, error } = await admin.from("client_update_page_notes").insert({
     item_id: itemId, body: String(note).trim(), source: "client",
-  }).select("id, note_date, body, author_name, source").single();
+  }).select("id, note_date, body, author_name, source, created_at").single();
   if (error) return NextResponse.json({ error: "Could not save your note" }, { status: 500 });
 
   return NextResponse.json({ note: created });

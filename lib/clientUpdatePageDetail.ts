@@ -82,8 +82,8 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const adhocValueByKey = new Map<string, any>((adhocValues || []).map((v: any) => [`${v.field_id}:${v.item_id}`, v.value_text]));
 
   const { data: notes } = itemIds.length
-    ? await admin.from("client_update_page_notes").select("id, item_id, note_date, body, author_name, source")
-        .in("item_id", itemIds).order("note_date", { ascending: false })
+    ? await admin.from("client_update_page_notes").select("id, item_id, note_date, body, author_name, source, created_at")
+        .in("item_id", itemIds).order("created_at", { ascending: false })
     : { data: [] as any[] };
   const notesByItem = new Map<string, any[]>();
   for (const n of notes || []) {
