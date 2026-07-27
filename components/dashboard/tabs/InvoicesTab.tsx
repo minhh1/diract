@@ -147,17 +147,35 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
 
   const handleVoid = async (invoiceId: string) => {
     if (!window.confirm('Void this invoice? Its fees and disbursements become unbilled again and can be re-invoiced.')) return;
+
+    // Optimistic: flip the row to Void the instant the admin confirms,
+    // rather than leaving it showing its old status until the line-item
+    // unbilling + status write round trip below finishes -- that could take
+    // a visible moment on an invoice with several entries. Rolled back if
+    // the write actually fails.
+    const previousInvoices = invoices;
+    setInvoices(prev => prev.map(i => i.id === invoiceId ? { ...i, status: 'Void' } : i));
     setVoidingId(invoiceId);
+
     const { data: lineItems } = await supabase
       .from('invoice_line_items').select('source_record_id').eq('invoice_record_id', invoiceId);
+    let firstError: string | null = null;
     for (const li of lineItems || []) {
       const { data: rec } = await supabase.from('company_table_records').select('table_id').eq('id', li.source_record_id).maybeSingle();
       if (!rec) continue;
       const { data: sourceFields } = await supabase.from('company_table_fields').select('*').eq('table_id', rec.table_id).is('deleted_at', null);
-      await updateCustomRecord(li.source_record_id, rec.table_id, companyId, { invoice: null, invoiced_amount: null, invoiced_gst_amount: null }, (sourceFields || []) as CustomTableField[]);
+      const result = await updateCustomRecord(li.source_record_id, rec.table_id, companyId, { invoice: null, invoiced_amount: null, invoiced_gst_amount: null }, (sourceFields || []) as CustomTableField[]);
+      if (result && 'error' in result && !firstError) firstError = result.error;
     }
-    await updateCustomRecord(invoiceId, linkedTableId, companyId, { status: 'Void' }, invoiceFields);
+    const statusResult = await updateCustomRecord(invoiceId, linkedTableId, companyId, { status: 'Void' }, invoiceFields);
+    if (statusResult && 'error' in statusResult && !firstError) firstError = statusResult.error;
     setVoidingId(null);
+
+    if (firstError) {
+      setInvoices(previousInvoices);
+      window.alert(`Could not void this invoice: ${firstError}`);
+      return;
+    }
     loadInvoices();
   };
 
