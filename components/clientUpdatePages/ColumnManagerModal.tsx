@@ -18,6 +18,8 @@ export default function ColumnManagerModal({ pageId, currentFields, onClose, onC
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<{ base: CatalogOption[]; custom: CatalogOption[] } | null>(null);
   const [adhocLabel, setAdhocLabel] = useState("");
+  const [adhocIsSelect, setAdhocIsSelect] = useState(false);
+  const [adhocOptions, setAdhocOptions] = useState("");
 
   useEffect(() => { setOrder(currentFields); }, [currentFields]);
   useEffect(() => {
@@ -46,9 +48,9 @@ export default function ColumnManagerModal({ pageId, currentFields, onClose, onC
     onChanged();
   };
 
-  const addField = async (fieldSource: "base" | "custom" | "adhoc", fieldKey: string | undefined, label: string) => {
+  const addField = async (fieldSource: "base" | "custom" | "adhoc", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
     await fetch(`/api/client-update-pages/${pageId}/fields`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldSource, fieldKey, label }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldSource, fieldKey, label, selectOptions }),
     });
     onChanged();
   };
@@ -99,12 +101,24 @@ export default function ColumnManagerModal({ pageId, currentFields, onClose, onC
 
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Add a report-only column</p>
-            <p className="text-[11px] text-slate-400 mb-2">Doesn't exist on the matter record — just a note field for this report.</p>
-            <div className="flex items-center gap-2">
-              <input value={adhocLabel} onChange={e => setAdhocLabel(e.target.value)} placeholder="e.g. Special conditions"
-                className="flex-1 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
-              <button onClick={() => { if (adhocLabel.trim()) { addField("adhoc", undefined, adhocLabel.trim()); setAdhocLabel(""); } }}
-                className="px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full">Add</button>
+            <p className="text-[11px] text-slate-400 mb-2">Doesn't exist on the matter record — just a field for this report. Can be a dropdown, e.g. a Status column subgroups can filter on.</p>
+            <div className="space-y-2">
+              <input value={adhocLabel} onChange={e => setAdhocLabel(e.target.value)} placeholder="e.g. Status"
+                className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={adhocIsSelect} onChange={e => setAdhocIsSelect(e.target.checked)} />
+                <span className="text-[11px] text-slate-500">Dropdown with fixed options</span>
+              </label>
+              {adhocIsSelect && (
+                <input value={adhocOptions} onChange={e => setAdhocOptions(e.target.value)} placeholder="Option one, Option two, Option three"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+              )}
+              <button onClick={() => {
+                if (!adhocLabel.trim()) return;
+                const options = adhocIsSelect ? adhocOptions.split(",").map(o => o.trim()).filter(Boolean) : undefined;
+                addField("adhoc", undefined, adhocLabel.trim(), options);
+                setAdhocLabel(""); setAdhocIsSelect(false); setAdhocOptions("");
+              }} className="px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full">Add column</button>
             </div>
           </div>
         </div>

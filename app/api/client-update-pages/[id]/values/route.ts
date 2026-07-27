@@ -8,12 +8,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
+import { logChange, resolveActorName } from "@/lib/clientUpdatePageLog";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const auth = await authorizeCompanyMember();
   if ("error" in auth) return auth.error;
-  const { admin, companyId } = auth;
+  const { admin, user, companyId } = auth;
 
   const gate = await loadPageForCompany(admin, id, companyId);
   if (gate.error) return gate.error;
@@ -24,29 +25,39 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [{ data: item }, { data: field }] = await Promise.all([
     admin.from("client_update_page_items").select("id, project_id").eq("id", itemId).eq("page_id", id).maybeSingle(),
-    admin.from("client_update_page_fields").select("id, field_source, field_key").eq("id", fieldId).eq("page_id", id).maybeSingle(),
+    admin.from("client_update_page_fields").select("id, field_source, field_key, label").eq("id", fieldId).eq("page_id", id).maybeSingle(),
   ]);
   if (!item) return NextResponse.json({ error: "Matter not found on this page" }, { status: 404 });
   if (!field) return NextResponse.json({ error: "Field not found on this page" }, { status: 404 });
+
+  const { data: project } = await admin.from("projects").select("id, name, property_id").eq("id", item.project_id).maybeSingle();
+
+  const logAfterSave = async () => {
+    const actorName = await resolveActorName(admin, user.id);
+    const displayValue = value == null || value === "" ? "(blank)" : String(value);
+    await logChange(admin, id, actorName, "staff", "value_changed", `Set "${field.label}" to ${displayValue} on ${project?.name || "a matter"}`);
+  };
 
   if (field.field_source === "adhoc") {
     const { error } = await admin.from("client_update_page_values")
       .upsert({ item_id: itemId, field_id: fieldId, value_text: value ?? null }, { onConflict: "item_id,field_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logAfterSave();
     return NextResponse.json({ ok: true });
   }
 
   if (field.field_source === "base") {
     if (field.field_key === "property_address" || field.field_key === "purchase_price") {
-      const { data: project } = await admin.from("projects").select("property_id").eq("id", item.project_id).maybeSingle();
       if (!project?.property_id) return NextResponse.json({ error: "This matter has no linked property" }, { status: 400 });
       const column = field.field_key === "property_address" ? "street_address" : "purchase_price";
       const { error } = await admin.from("properties").update({ [column]: value ?? null }).eq("id", project.property_id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      await logAfterSave();
       return NextResponse.json({ ok: true });
     }
     const { error } = await admin.from("projects").update({ [field.field_key]: value ?? null }).eq("id", item.project_id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logAfterSave();
     return NextResponse.json({ ok: true });
   }
 
@@ -66,5 +77,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { error } = await admin.from("company_custom_field_values").upsert(row, { onConflict: "field_id,record_id" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await logAfterSave();
   return NextResponse.json({ ok: true });
 }

@@ -2,12 +2,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
+import { logChange, resolveActorName } from "@/lib/clientUpdatePageLog";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const auth = await authorizeCompanyMember();
   if ("error" in auth) return auth.error;
-  const { admin, companyId } = auth;
+  const { admin, user, companyId } = auth;
 
   const gate = await loadPageForCompany(admin, id, companyId);
   if (gate.error) return gate.error;
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { projectId, groupId } = body;
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
 
-  const { data: project } = await admin.from("projects").select("id, company_id").eq("id", projectId).maybeSingle();
+  const { data: project } = await admin.from("projects").select("id, name, company_id").eq("id", projectId).maybeSingle();
   if (!project || project.company_id !== companyId) {
     return NextResponse.json({ error: "Matter not found" }, { status: 404 });
   }
@@ -29,5 +30,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (error.code === "23505") return NextResponse.json({ error: "That matter is already on this page" }, { status: 409 });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  const actorName = await resolveActorName(admin, user.id);
+  await logChange(admin, id, actorName, "staff", "matter_added", `Added matter "${project.name}" to the page`);
+
   return NextResponse.json({ item });
 }

@@ -189,6 +189,26 @@ export default function ClientUpdatePage() {
     });
   };
 
+  const setGroupCondition = (groupId: string, fieldId: string | null, value: string | null) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => prev && { ...prev, groups: prev.groups.map(g => g.id === groupId ? { ...g, condition_field_id: fieldId, condition_value: value } : g) });
+    fetch(`/api/client-update-pages/${staffPageId}/groups/${groupId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conditionFieldId: fieldId, conditionValue: value }),
+    });
+  };
+
+  const reorderFields = (fieldIds: string[]) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setBoard(prev => {
+      if (!prev) return prev;
+      const byId = new Map(prev.fields.map(f => [f.id, f]));
+      return { ...prev, fields: fieldIds.map(id => byId.get(id)!).filter(Boolean) };
+    });
+    fetch(`/api/client-update-pages/${staffPageId}/fields/reorder`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldIds }),
+    });
+  };
+
   const changeDateFormat = (format: string) => {
     if (mode !== "staff" || !staffPageId) return;
     setMeta(prev => prev && { ...prev, dateFormat: format });
@@ -264,9 +284,11 @@ export default function ClientUpdatePage() {
           onRenameGroup={mode === "staff" ? renameGroup : undefined}
           onDeleteGroup={mode === "staff" ? deleteGroup : undefined}
           onAddGroup={mode === "staff" ? addGroup : undefined}
+          onSetGroupCondition={mode === "staff" ? setGroupCondition : undefined}
           onMoveItem={mode === "staff" ? moveItem : undefined}
           onRemoveItem={mode === "staff" ? removeItem : undefined}
           onAddNote={addNote}
+          onReorderFields={mode === "staff" ? reorderFields : undefined}
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
         />
