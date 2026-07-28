@@ -93,7 +93,11 @@ export function perfLog(label: string, detail?: string): void {
 // in specific pages and use a view/slug/table name (not necessarily the
 // literal URL) because they know that page's own real loading-state
 // semantics.
-export type PerfPageKind = "dashboard" | "table" | "settings" | "admin" | "marketplace" | "page" | "record";
+// "public" is for the genuinely-unauthenticated/PIN-gated pages under
+// /public/* (task report, client update board, document fill) -- outside
+// app/dashboard/layout.tsx, so PerfRouteTracker never sees them and they'd
+// otherwise be invisible to Admin > Performance entirely.
+export type PerfPageKind = "dashboard" | "table" | "settings" | "admin" | "marketplace" | "page" | "record" | "public";
 export function perfLogPageStart(kind: PerfPageKind, name: string): void {
   perfLog(`PAGE ${kind}(${name}): start`);
 }

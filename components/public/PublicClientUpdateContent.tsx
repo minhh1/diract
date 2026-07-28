@@ -25,6 +25,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
@@ -107,6 +108,11 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
 
   const load = useCallback(async () => {
     setLoading(true);
+    // "public" -- see lib/perfLog.ts's PerfPageKind doc comment. Fixed name
+    // (not this specific slug) so every distinct client update board
+    // aggregates into one "how's this feature performing" stat in
+    // Admin > Performance, rather than fragmenting into one row per client.
+    perfLogPageStart("public", "client update page");
     // getSession() reads the local session (no network round-trip) instead
     // of getUser() re-validating the JWT against the auth server on every
     // page load. Safe here because this only decides which fetch to try
@@ -115,8 +121,16 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     // session can't grant staff access, just cause one extra fallback
     // request to loadAsClient.
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user && await loadAsStaff()) { setLoading(false); return; }
+    perfLog("public client update page: session resolved");
+    if (session?.user && await loadAsStaff()) {
+      perfLog("public client update page: staff data resolved");
+      setLoading(false);
+      perfLogPageReady("public", "client update page");
+      return;
+    }
     await loadAsClient();
+    perfLog("public client update page: client data resolved");
+    perfLogPageReady("public", "client update page");
   }, [loadAsStaff, loadAsClient]);
 
   useEffect(() => { load(); }, [load]);

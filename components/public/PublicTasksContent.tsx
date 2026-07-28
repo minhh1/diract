@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
@@ -119,6 +120,11 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   const checkAuthAndLoad = useCallback(async () => {
     setLoading(true);
+    // "public" -- see lib/perfLog.ts's PerfPageKind doc comment. Fixed name
+    // (not this specific pageId) so every distinct public task link
+    // aggregates into one "how's this feature performing" stat in
+    // Admin > Performance, rather than fragmenting into one row per link.
+    perfLogPageStart("public", "task page");
     // getSession() reads the local session (no network round-trip) instead
     // of getUser() re-validating the JWT against the auth server on every
     // page load. Safe here because this only decides whether to show the
@@ -128,12 +134,15 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     // grant access to anything, just delay this gate correcting itself by
     // one request.
     const { data: { session } } = await supabase.auth.getSession();
+    perfLog("public task page: session resolved");
     const user = session?.user;
     setSignedIn(!!user);
     setAuthChecked(true);
-    if (!user) { setLoading(false); return; }
+    if (!user) { setLoading(false); perfLogPageReady("public", "task page"); return; }
     await refresh();
+    perfLog("public task page: data resolved");
     setLoading(false);
+    perfLogPageReady("public", "task page");
   }, [refresh]);
 
   useEffect(() => { checkAuthAndLoad(); }, [checkAuthAndLoad]);
