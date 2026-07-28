@@ -9,6 +9,7 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
+  Landmark,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -120,6 +121,7 @@ const ADMIN_LINKS = [
   { tab: 'whatsapp', icon: MessageCircle, label: 'WhatsApp' },
   { tab: 'msTeams', icon: Users2, label: 'Microsoft Teams' },
   { tab: 'oneDrive', icon: FolderOpen, label: 'OneDrive' },
+  { tab: 'xero', icon: Landmark, label: 'Xero' },
   { tab: 'email', icon: Send, label: 'Email' },
   { tab: 'aiAssistant', icon: Sparkles, label: 'AI Assistant' },
   { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },

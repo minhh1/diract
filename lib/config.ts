@@ -24,3 +24,16 @@ export const OUTLOOK_SCOPES = [
   'Mail.ReadWrite',
   'MailboxSettings.Read',
 ].join(' ');
+
+export const XERO_REDIRECT_URI = `${APP_URL}/api/xero/callback`;
+
+// Read-only for now (see supabase/migrations/20260729170000_xero_connections.sql) --
+// just enough to show connection status and organisation/settings info.
+// Widen this (e.g. accounting.transactions.read, accounting.contacts.read)
+// only once an actual feature needs that data.
+export const XERO_SCOPES = [
+  'offline_access',
+  'openid',
+  'profile',
+  'accounting.settings.read',
+].join(' ');

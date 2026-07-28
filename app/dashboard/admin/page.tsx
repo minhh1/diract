@@ -28,6 +28,7 @@ const AdminVirtualComputersTab = dynamic(() => import("@/components/admin/AdminV
 const AdminGmailSyncTab = dynamic(() => import("@/components/admin/AdminGmailSyncTab"));
 const AdminWhatsAppTab = dynamic(() => import("@/components/admin/AdminWhatsAppTab"));
 const AdminMsTeamsTab = dynamic(() => import("@/components/admin/AdminMsTeamsTab"));
+const AdminXeroTab = dynamic(() => import("@/components/admin/AdminXeroTab"));
 const AdminOneDriveTab = dynamic(() => import("@/components/admin/AdminOneDriveTab"));
 const AdminEmailTab = dynamic(() => import("@/components/admin/AdminEmailTab"));
 const AdminAiAssistantTab = dynamic(() => import("@/components/admin/AdminAiAssistantTab"));
@@ -254,12 +255,12 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
+type AdminTab = 'members' | 'teams' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', defaults: 'Default Settings', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
-  oneDrive: 'OneDrive', email: 'Email',
+  oneDrive: 'OneDrive', xero: 'Xero', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
   platformHealth: 'Platform health', archiveRequests: 'Archive requests',
 };
@@ -995,6 +996,11 @@ function AdminPageInner() {
           {/* ── OneDrive / SharePoint ── */}
           {activeTab === 'oneDrive' && companyId && (
             <AdminOneDriveTab companyId={companyId} />
+          )}
+
+          {/* ── Xero ── */}
+          {activeTab === 'xero' && companyId && (
+            <AdminXeroTab />
           )}
 
           {/* ── Email ── */}
