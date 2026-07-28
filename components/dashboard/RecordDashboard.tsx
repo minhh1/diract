@@ -4,9 +4,10 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  AlertCircle, ArrowLeft, Trash2,
+  AlertCircle, Trash2,
   Pencil, FolderKanban, Plus, X, ShieldCheck, Check,
   Columns2, Rows2, Maximize2, Minimize2,
+  LayoutGrid, MapPin, Building2, CheckSquare, Table2,
 } from "lucide-react";
 import ProjectAccessPanel from "@/components/projects/ProjectAccessPanel";
 import ProjectDeletedTasksPanel from "@/components/projects/ProjectDeletedTasksPanel";
@@ -1045,6 +1046,14 @@ export default function RecordDashboard({
       : record.name || record[fields[0]?.field_key] || 'Untitled'
     : 'Loading...';
 
+  const RECORD_TYPE_ICON: Record<string, typeof Table2> = {
+    projects: LayoutGrid,
+    properties: MapPin,
+    entities: Building2,
+    tasks: CheckSquare,
+  };
+  const RecordTypeIcon = (systemTable && RECORD_TYPE_ICON[systemTable]) || Table2;
+
   const activeTab = tabs.find(t => t.id === activeTabId);
 
   // Data-grid tabs (Time & Fees/Disbursements and any other custom_dashboard,
@@ -1362,26 +1371,17 @@ export default function RecordDashboard({
     <div className="flex flex-col h-screen bg-white font-sans antialiased overflow-hidden">
 
       {/* ── Header ── */}
-      <header className="px-8 pt-6 pb-0 border-b border-slate-100 shrink-0 bg-white">
+      <header className="px-8 pt-7 pb-0 border-b border-slate-100 shrink-0 bg-white">
 
-        {/* Back + breadcrumb + actions */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={onBack}
-              className="flex items-center gap-1.5 -ml-2.5 pl-2.5 pr-3 py-1.5 rounded-lg text-[12px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 active:bg-slate-200 transition-all shrink-0"
-            >
-              <ArrowLeft size={14} />
-              {parentRecord ? parentRecord.name : 'Back'}
-            </button>
-            {parentRecord && (
-              <>
-                <span className="text-slate-300 shrink-0">/</span>
-                <span className="text-[12px] font-medium text-slate-600 truncate">
-                  {primaryValue}
-                </span>
-              </>
-            )}
+        {/* Title + actions */}
+        <div className="flex items-center justify-between gap-4 mb-1">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
+              <RecordTypeIcon size={14} className="text-white" />
+            </div>
+            <h1 className="text-xl font-semibold text-slate-900 tracking-tight truncate">
+              {primaryValue}
+            </h1>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -1412,10 +1412,6 @@ export default function RecordDashboard({
           </div>
         </div>
 
-        {/* Title */}
-        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight truncate mb-1">
-          {primaryValue}
-        </h1>
         <p className="text-[11px] font-medium text-slate-400 mb-4">
           {tableName || systemTable}
           {record.created_at && (

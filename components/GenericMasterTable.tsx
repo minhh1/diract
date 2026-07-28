@@ -4,17 +4,15 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import { Search, Settings2, LayoutGrid, X, AlertTriangle, Check, Trash2 } from "lucide-react";
+import { Search, Settings2, Pencil, X, AlertTriangle, Check, Trash2 } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
 // Same deferral as CustomTableMasterPage.tsx's RecordDashboard/
-// NewRecordModal/SpreadsheetEditor split (see that file's comment) --
-// none of these three render anything until the config drawer, spreadsheet
-// panel, or "new record" modal is actually opened, so none of them need to
-// be in this table's own first-load JS.
+// NewRecordModal split (see that file's comment) -- neither of these
+// render anything until the config drawer or "new record" modal is
+// actually opened, so neither needs to be in this table's own first-load JS.
 const ColumnConfigDrawer = dynamic(() => import("@/components/ColumnConfigDrawer"));
 const UniversalSelectionModal = dynamic(() => import("@/components/UniversalSelectionModal"));
-const SpreadsheetEditor = dynamic(() => import("@/components/SpreadsheetEditor"));
 
 import { usePresetTable } from "@/lib/hooks/usePresetTable";
 import type { SortDirection, SortMode } from "@/lib/hooks/usePresetTable";
@@ -155,7 +153,6 @@ function GenericMasterTableInner({
   const [addressSortOpen, setAddressSortOpen] = useState(false);
   const [filters, setFilters] = useState<ActiveFilter[]>([]);
   const [activeViewName, setActiveViewName] = useState<string | null>(null);
-  const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
   // Off by default -- row clicks open the record (see MasterTable's row
   // onClick); inline cell editing is opt-in per table since it changes what
   // clicking a cell does. Persisted per tableName so the choice sticks
@@ -809,7 +806,7 @@ function GenericMasterTableInner({
     return baseWidth + 96;
   }, [t.tableCols, t.colWidths]);
 
-  const filteredItems = useMemo(() => {
+  const sortedItems = useMemo(() => {
     const primaryCol = tableName === 'properties' ? 'street_address' : 'name';
 
     // Search — every column currently shown (table + expand panel), not
@@ -888,6 +885,59 @@ function GenericMasterTableInner({
       return sort.direction === 'asc' ? cmp : -cmp;
     });
   }, [t.items, search, t.tableCols, t.expandCols, resolveValue, tableName, t.sort, filters]);
+
+  // ── Sub-project hierarchy (projects table only) ──────────────────────
+  // A sub-project is just a `projects` row with parent_project_id set --
+  // grouped here so the master table can nest it directly under its parent
+  // instead of sorting it in wherever its own name happens to fall.
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const toggleParentExpand = useCallback((id: string) => {
+    setExpandedParents(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const projectHierarchy = useMemo(() => {
+    if (tableName !== 'projects') return null;
+
+    const byId = new Map(sortedItems.map(item => [item.id, item]));
+    const childrenByParentId = new Map<string, any[]>();
+
+    for (const item of sortedItems) {
+      const parentId = item.parent_project_id;
+      if (!parentId || parentId === item.id) continue;
+      const parent = byId.get(parentId);
+      // Only nest one level deep -- a "child" whose own parent is itself a
+      // sub-project (a grandchild) would otherwise get spliced under a
+      // parent that's also spliced away and never rendered, silently
+      // disappearing. Falls through to rendering flat instead.
+      if (!parent || parent.parent_project_id) continue;
+      if (!childrenByParentId.has(parentId)) childrenByParentId.set(parentId, []);
+      childrenByParentId.get(parentId)!.push(item);
+    }
+
+    if (childrenByParentId.size === 0) return null;
+
+    const childIds = new Set([...childrenByParentId.values()].flat().map((c: any) => c.id));
+    const topLevel = sortedItems.filter(item => !childIds.has(item.id));
+
+    // Full (unfiltered) name lookup -- lets a child whose parent got
+    // filtered/searched/archived out of the current result set still show
+    // "in {parent name}" instead of just looking like an ordinary top-level
+    // matter with no context.
+    const parentNameById = new Map(t.items.map((it: any) => [it.id, it.name]));
+
+    return { topLevel, childrenByParentId, parentNameById };
+  }, [sortedItems, tableName, t.items]);
+
+  // While searching, auto-expand every parent with grouped children so a
+  // match hiding inside a collapsed sub-project row is never invisible.
+  const effectiveExpandedParents = useMemo(() => {
+    if (!search.trim() || !projectHierarchy) return expandedParents;
+    return new Set([...expandedParents, ...projectHierarchy.childrenByParentId.keys()]);
+  }, [search, projectHierarchy, expandedParents]);
 
   // ── Records created from the Gmail add-on, pending review ──────────
   // Free-text names/addresses typed in the add-on for a relation field
@@ -1003,6 +1053,17 @@ function GenericMasterTableInner({
             </h1>
             <div className="flex flex-wrap gap-2">
               <button
+                onClick={toggleInlineEdit}
+                title="Click a cell to edit it, instead of opening the record"
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold transition-all border ${
+                  inlineEditEnabled
+                    ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <Pencil size={16} /> Inline edit {inlineEditEnabled ? 'On' : 'Off'}
+              </button>
+              <button
                 onClick={() => setIsConfigOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
               >
@@ -1013,18 +1074,6 @@ function GenericMasterTableInner({
                   </span>
                 )}
               </button>
-              {/* Legacy bulk field-spreadsheet editor -- predates the unified
-                  schema editor (components/SchemaVisualisation.tsx), which
-                  already covers tasks' custom fields; SpreadsheetEditor's
-                  own tableName type isn't widened to include it. */}
-              {tableName !== 'tasks' && (
-                <button
-                  onClick={() => setIsSpreadsheetOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
-                >
-                  <LayoutGrid size={16} /> Spreadsheet
-                </button>
-              )}
               <button
                 onClick={() => setIsModalOpen(true)}
                 className="bg-slate-900 text-white px-6 py-2 rounded-full text-[11px] font-bold shadow-sm"
@@ -1140,13 +1189,19 @@ function GenericMasterTableInner({
         filterableFields={filterableFields}
         onFiltersChange={setFilters}
         isAdmin={ctxIsAdmin}
-        inlineEditEnabled={inlineEditEnabled}
-        onToggleInlineEdit={toggleInlineEdit}
+        resolveColLabel={resolveColLabel}
+        onReorderTableCols={t.handleReorder}
       />
 
       <main className={`flex-1 flex flex-col min-h-0 overflow-x-auto ${TABLE_AREA_CLASS}`}>
         <MasterTable
-          items={filteredItems}
+          items={projectHierarchy?.topLevel ?? sortedItems}
+          subProjects={projectHierarchy ? {
+            childrenByParentId: projectHierarchy.childrenByParentId,
+            expandedParentIds: effectiveExpandedParents,
+            onToggleExpand: toggleParentExpand,
+            parentNameById: projectHierarchy.parentNameById,
+          } : undefined}
           tableCols={t.tableCols}
           expandCols={t.expandCols}
           colWidths={t.colWidths}
@@ -1176,28 +1231,6 @@ function GenericMasterTableInner({
           onAddressSortOpenChange={setAddressSortOpen}
         />
       </main>
-
-      {isSpreadsheetOpen && tableName !== 'tasks' && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-white font-sans">
-          <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
-            <h2 className="text-xl font-light uppercase tracking-tight text-slate-900">
-              Spreadsheet — {pageTitle}
-            </h2>
-            <button
-              onClick={() => { setIsSpreadsheetOpen(false); t.refresh(); }}
-              className="p-2 text-slate-300 hover:text-black transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <div className="flex-1 p-6 min-h-0 overflow-hidden">
-            <SpreadsheetEditor
-              tableName={tableName}
-              onClose={() => { setIsSpreadsheetOpen(false); t.refresh(); }}
-            />
-          </div>
-        </div>
-      )}
 
       <UniversalSelectionModal
         isOpen={isModalOpen}

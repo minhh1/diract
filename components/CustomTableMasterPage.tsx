@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Search, Settings2, LayoutGrid, X, Plus, ChevronDown, ChevronUp, ChevronsUpDown, GripVertical, Loader2, Trash2, Download } from "lucide-react";
+import { Search, Settings2, X, Plus, ChevronDown, ChevronUp, ChevronsUpDown, GripVertical, Loader2, Trash2, Download } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import DataTable from "@/components/DataTable";
@@ -18,20 +18,19 @@ import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomT
 import { pickCreateFields } from "@/components/dashboard/NewRecordModal";
 import { useProgressBar } from "@/components/TopProgressBar";
 import RecordDashboard from "@/components/dashboard/RecordDashboard";
-import SpreadsheetEditor from "@/components/SpreadsheetEditor";
 import ColumnConfigDrawer from "@/components/ColumnConfigDrawer";
 // Only NewRecordModal stays deferred here -- it's not needed for this
-// page's own initial list view and, unlike the three above, isn't also
+// page's own initial list view and, unlike the two above, isn't also
 // dynamic-imported from GenericMasterTable.tsx. RecordDashboard/
-// SpreadsheetEditor/ColumnConfigDrawer are imported statically instead of
-// via next/dynamic() specifically because GenericMasterTable.tsx now
-// dynamic-imports those same three components too (see its own history) --
-// two routes each lazily referencing the same chunk is exactly the pattern
-// that trips Turbopack dev-mode chunk-loading races on a client-side
-// transition between them (reported: navigating from a custom table to a
-// system table hangs). Static here removes this route's side of that
-// shared-chunk overlap; small components anyway (i.e. hardly hurt by not
-// deferring), so not worth the risk to keep deferred.
+// ColumnConfigDrawer are imported statically instead of via next/dynamic()
+// specifically because GenericMasterTable.tsx now dynamic-imports those
+// same two components too (see its own history) -- two routes each lazily
+// referencing the same chunk is exactly the pattern that trips Turbopack
+// dev-mode chunk-loading races on a client-side transition between them
+// (reported: navigating from a custom table to a system table hangs).
+// Static here removes this route's side of that shared-chunk overlap;
+// small components anyway (i.e. hardly hurt by not deferring), so not
+// worth the risk to keep deferred.
 const NewRecordModal = dynamic(() => import("@/components/dashboard/NewRecordModal"));
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import type { ActiveFilter } from "@/lib/types/filters";
@@ -178,7 +177,6 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
   const [search, setSearch] = useState('');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -532,12 +530,6 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                 <Settings2 size={16} /> Setup
               </button>
               <button
-                onClick={() => setIsSpreadsheetOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
-              >
-                <LayoutGrid size={16} /> Spreadsheet
-              </button>
-              <button
                 onClick={handleExportCsv}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
               >
@@ -597,6 +589,8 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         onToggle={cc.handleToggleColumn}
         filters={NO_FILTERS}
         isAdmin={isAdmin}
+        resolveColLabel={resolveColLabel}
+        onReorderTableCols={cc.handleReorder}
       />
 
       {/* ── Main table ── */}
@@ -786,28 +780,6 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         )}
       </main>
 
-      {/* ── Spreadsheet overlay ── */}
-      {isSpreadsheetOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-white font-sans">
-          <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
-            <h2 className="text-xl font-light uppercase tracking-tight text-slate-900">
-              Spreadsheet — {tableDef.name}
-            </h2>
-            <button
-              onClick={() => { setIsSpreadsheetOpen(false); refetch(); }}
-              className="p-2 text-slate-300 hover:text-black transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <div className="flex-1 p-6 min-h-0 overflow-hidden">
-            <SpreadsheetEditor
-              tableName="properties" // SpreadsheetEditor uses system tables for now
-              onClose={() => { setIsSpreadsheetOpen(false); refetch(); }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

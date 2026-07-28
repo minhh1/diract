@@ -612,6 +612,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const { projectName, matterNumber, status, messageId, companyId } = body;
       const customFieldValues: Record<string, string> = body.customFieldValues || {};
+      const propertyAddress: string = (body.propertyAddress || '').trim();
 
       if (!projectName || !companyId) return json({ error: 'Missing required fields' }, 400, headers);
 
@@ -684,6 +685,27 @@ Deno.serve(async (req) => {
         if (resolved.flagged) flaggedNames.push(typedName);
       }
 
+      // Property is a base column (projects.property_id), not a custom
+      // field, so it's resolved separately from the loop above. Required
+      // specifically for Conveyancing matters (see NewProjectModal.tsx for
+      // the same rule on the web-app side) — optional otherwise.
+      let propertyId: string | null = null;
+      if (propertyAddress) {
+        const resolvedProperty = await resolveOrCreateRelation(companyId, 'property', propertyAddress, profile.id);
+        propertyId = resolvedProperty.id;
+        if (resolvedProperty.flagged) flaggedNames.push(propertyAddress);
+      }
+
+      const matterTypeField = allFields.find((f: any) =>
+        f.field_key === 'matter_type' || f.label?.toLowerCase() === 'matter type'
+      );
+      const isConveyancing = matterTypeField
+        ? String(fieldValues[matterTypeField.id] || '').toLowerCase() === 'conveyancing'
+        : false;
+      if (isConveyancing && !propertyId) {
+        return json({ error: 'Property is required for Conveyancing matters.' }, 400, headers);
+      }
+
       // Required-field check — relation-type fields OTHER than the
       // resolvable ones (link/table_relation) have no input widget in the
       // add-on, so they're excluded from this check; a company with one of
@@ -712,6 +734,7 @@ Deno.serve(async (req) => {
           company_id: companyId,
           name: projectName,
           status: status || 'active',
+          property_id: propertyId,
           created_by: profile.id,
         })
         .select('id').single();

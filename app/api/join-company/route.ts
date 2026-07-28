@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { createClient } from "@supabase/supabase-js";
+import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 
 export async function POST(req: NextRequest) {
   console.log('[join-company] route called');
@@ -67,6 +68,8 @@ export async function POST(req: NextRequest) {
     console.error('[join-company] membership upsert error:', memberError);
     return NextResponse.json({ error: memberError.message }, { status: 500 });
   }
+
+  await ensureStaffEntity(supabaseAdmin, companyId, user.id);
 
   // Switch active company
   const { error: profileError } = await supabaseAdmin

@@ -547,6 +547,17 @@ function LoginPageInner() {
             </div>
           )}
 
+          {mode === 'login' && (
+            <div className="flex justify-end -mt-1">
+              <a
+                href="/login/forgot-password"
+                className="text-[10px] font-black uppercase text-slate-400 hover:text-indigo-600 transition-colors tracking-widest"
+              >
+                Forgot password?
+              </a>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading || googleLoading || tokenValid === false}

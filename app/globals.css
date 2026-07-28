@@ -74,16 +74,10 @@
   background-color: rgba(99, 102, 241, 0.14);
 }
 
-/* Custom Scrollbar using v4 syntax -- both axes thin (the old rule only set
-   `width`, so every HORIZONTAL scrollbar sitewide fell back to the browser's
-   full-size default instead of matching the slim vertical one). */
+/* Custom Scrollbar using v4 syntax */
 @layer utilities {
-  * {
-    scrollbar-width: thin; /* Firefox */
-  }
   ::-webkit-scrollbar {
     width: 6px;
-    height: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -91,17 +85,6 @@
   ::-webkit-scrollbar-thumb {
     @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
   }
-}
-
-/* Fully hides the native scrollbar -- for scroll containers that have their
-   own dedicated paging controls instead (e.g. TabBar's left/right arrow
-   buttons), where a visible native bar would just be redundant clutter
-   alongside them. Native scroll (trackpad/shift+wheel/drag) still works. */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  scrollbar-width: none; /* Firefox */
 }
 
 /* Top scroll mirror — horizontal scrollbar pinned in the header */

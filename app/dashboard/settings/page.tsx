@@ -17,12 +17,11 @@ import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
 // Deferred: the menu (this page's default landing view) doesn't need any of
 // these -- each one only renders once its own view/modal is actually open,
-// so there's no reason their combined ~5,000 lines (SpreadsheetEditor alone
-// is 1,300) should load before the menu can even show its buttons.
+// so there's no reason their combined weight should load before the menu
+// can even show its buttons.
 const ImportModal = dynamic(() => import("@/components/ImportModal"));
 const DataFormattingTool = dynamic(() => import("@/components/DataFormattingTool"));
 const SchemaVisualisation = dynamic(() => import("@/components/SchemaVisualisation"));
-const SpreadsheetEditor = dynamic(() => import("@/components/SpreadsheetEditor"));
 const CustomTableBuilder = dynamic(() => import("@/components/CustomTableBuilder"));
 const PublicTaskPagesTab = dynamic(() => import("@/components/settings/PublicTaskPagesTab"));
 const ClientUpdatePagesTab = dynamic(() => import("@/components/settings/ClientUpdatePagesTab"));
@@ -84,7 +83,6 @@ function SettingsPageInner() {
   const [selected, setSelected] = useState<string[]>([]);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isFormatterOpen, setIsFormatterOpen] = useState(false);
-  const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const historyQueryKey = ['settings-history', companyId] as const;
@@ -218,16 +216,6 @@ function SettingsPageInner() {
                 </div>
                 <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
               </button>
-
-              <button onClick={() => setIsSpreadsheetOpen(true)} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
-              <div className="flex items-center gap-5">
-                <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors">
-                  <LayoutGrid size={20} />
-                </div>
-                <span className="text-[15px] font-medium text-slate-700">Spreadsheet editor</span>
-              </div>
-              <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
-            </button>
 
               <button onClick={() => setView("schema")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
                 <div className="flex items-center gap-5">
@@ -462,24 +450,6 @@ function SettingsPageInner() {
 
         </div>
       </main>
-      {isSpreadsheetOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-white font-sans">
-          <div className="flex items-center justify-between p-6 border-b border-slate-100 shrink-0">
-            <h2 className="text-xl font-light uppercase tracking-tight text-slate-900">
-              Spreadsheet editor
-            </h2>
-            <button
-              onClick={() => setIsSpreadsheetOpen(false)}
-              className="p-2 text-slate-300 hover:text-black transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <div className="flex-1 p-6 min-h-0 overflow-hidden">
-            <SpreadsheetEditor onClose={() => setIsSpreadsheetOpen(false)} />
-          </div>
-        </div>
-      )}
       {isImportOpen && (
         <ImportModal isOpen onClose={() => setIsImportOpen(false)} onRefresh={() => refetchHistory()} />
       )}

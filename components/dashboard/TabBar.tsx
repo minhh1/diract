@@ -136,7 +136,7 @@ export default function TabBar({
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
-        className="flex-1 min-w-0 flex items-center gap-1 px-6 overflow-x-auto scroll-smooth"
+        className="flex-1 min-w-0 flex items-center gap-1 pr-6 overflow-x-auto scroll-smooth"
       >
       {tabs.map((tab, idx) => {
         const Icon = (LucideIcons as any)[tab.icon] || TAB_TYPE_ICONS[tab.tab_type] || FileText;
@@ -152,7 +152,7 @@ export default function TabBar({
             onDragOver={e => { e.preventDefault(); setDragOverIdx(idx); }}
             onDrop={() => handleDrop(idx)}
             onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
-            className={`flex items-center gap-2 px-4 py-3.5 border-b-2 transition-all shrink-0 cursor-pointer ${
+            className={`flex items-center gap-2 ${idx === 0 ? 'pl-0 pr-4' : 'px-4'} py-3.5 border-b-2 transition-all shrink-0 cursor-pointer ${
               isActive
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'

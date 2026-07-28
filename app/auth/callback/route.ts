@@ -12,9 +12,13 @@ export async function GET(request: NextRequest) {
     || null
 
   // Where to land after sign-in — e.g. back on the public task page the
-  // user was trying to view. Only relative paths are honoured.
+  // user was trying to view, or (via `next`) the reset-password form after
+  // a password-recovery link. Only relative paths are honoured.
+  const nextParam = searchParams.get('next')
   const postLoginRedirect = request.cookies.get('post_login_redirect')?.value
-  const destination = postLoginRedirect && postLoginRedirect.startsWith('/') && !postLoginRedirect.startsWith('//')
+  const destination = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+    ? nextParam
+    : postLoginRedirect && postLoginRedirect.startsWith('/') && !postLoginRedirect.startsWith('//')
     ? postLoginRedirect
     : '/dashboard/projects'
 

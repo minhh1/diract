@@ -15,6 +15,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { enqueueProjectArchive } from "@/lib/gmail/archiveProject";
+import { notifyEvent } from "@/lib/email/notify";
+import { archiveRequestDecisionHtml } from "@/lib/email/templates";
 
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
@@ -28,11 +30,13 @@ export async function POST(req: NextRequest) {
 
   const { data: requests, error } = await admin
     .from("archive_requests")
-    .select("id, entity_table, entity_id")
+    .select("id, entity_table, entity_id, entity_label, requested_by")
     .in("id", ids)
     .eq("company_id", companyId)
     .eq("status", "pending");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const { data: company } = await admin.from("companies").select("name").eq("id", companyId).single();
 
   const results: Record<string, { ok: boolean; error?: string }> = {};
   for (const reqRow of requests || []) {
@@ -58,6 +62,21 @@ export async function POST(req: NextRequest) {
       status: "approved", reviewed_by: user.id, reviewed_at: new Date().toISOString(), error: null,
     }).eq("id", reqRow.id);
     results[reqRow.id] = { ok: true };
+
+    if (reqRow.requested_by) {
+      const { data: requester } = await admin.from("profiles").select("email, full_name").eq("id", reqRow.requested_by).maybeSingle();
+      if (requester?.email) {
+        await notifyEvent({
+          admin, companyId, eventType: "archive_request_approved", to: requester.email,
+          subject: `Archive request approved: ${reqRow.entity_label}`,
+          html: archiveRequestDecisionHtml({
+            companyName: company?.name || "Diract", requesterName: requester.full_name || "there",
+            entityLabel: reqRow.entity_label, approved: true,
+          }),
+          sentBy: user.id,
+        });
+      }
+    }
   }
 
   return NextResponse.json({ results });

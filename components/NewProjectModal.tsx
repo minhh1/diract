@@ -66,6 +66,14 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
       alert(`Please fill in required field${missingRequired.length > 1 ? 's' : ''}: ${missingRequired.map(f => f.label).join(', ')}`);
       return;
     }
+    // Conveyancing matters always involve a specific property, so it's
+    // required in that case even though it's optional otherwise.
+    const matterTypeField = customFields.find(f => f.field_key === 'matter_type' || f.label.toLowerCase() === 'matter type');
+    const isConveyancing = matterTypeField && customValues[matterTypeField.id]?.toLowerCase() === 'conveyancing';
+    if (isConveyancing && !street.trim()) {
+      alert('Please fill in the property address — required for Conveyancing matters.');
+      return;
+    }
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     try {

@@ -628,6 +628,13 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
         .addItem('Completed', 'Completed', false)
         .addItem('Closed', 'Closed', false));
 
+    // Property — a base column (projects.property_id), not a custom field,
+    // so it's not part of the dynamic fields loop below. Always shown (not
+    // just for Conveyancing) since a matter's property is broadly useful;
+    // required specifically for Conveyancing is enforced server-side.
+    createSection.addWidget(CardService.newTextInput()
+      .setFieldName('propertyAddress').setTitle('Property (type an address — we\'ll match or create it)'));
+
     // Any other configured project fields (e.g. required-by-admin ones, see
     // "⚙ Settings") — the matter-number field is skipped here since it's
     // already collected above, tied to the Gmail label format.
@@ -3122,6 +3129,7 @@ function onCreateProject(e) {
   var projectName = ((formInputs.projectName || [''])[0] || '').trim();
   var matterNumber = ((formInputs.matterNumber || [''])[0] || '').trim();
   var status = (formInputs.status || ['active'])[0];
+  var propertyAddress = ((formInputs.propertyAddress || [''])[0] || '').trim();
   var messageId = params.messageId || '';
   var token = params.accessToken || getToken();
   var companyId = params.companyId || '';
@@ -3156,6 +3164,7 @@ function onCreateProject(e) {
     messageId: messageId,
     companyId: companyId,
     customFieldValues: customFieldValues,
+    propertyAddress: propertyAddress,
   }, token);
 
   if (!result.ok || !result.data.ok) {

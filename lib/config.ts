@@ -13,3 +13,14 @@ export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/calendar.events',
 ].join(' ');
+
+export const MICROSOFT_TENANT = process.env.MICROSOFT_TENANT ?? 'common';
+
+export const OUTLOOK_REDIRECT_URI = `${APP_URL}/api/outlook/callback`;
+
+export const OUTLOOK_SCOPES = [
+  'offline_access',
+  'User.Read',
+  'Mail.ReadWrite',
+  'MailboxSettings.Read',
+].join(' ');

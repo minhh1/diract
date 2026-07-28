@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Save, Lock, Check, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
+import { X, Save, Lock, Check, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, GripVertical, Loader2 } from "lucide-react";
 import FilterPanel from "@/components/FilterPanel";
 import type { ActiveFilter } from "@/lib/types/filters";
 
@@ -57,8 +57,15 @@ interface Props {
   filterableFields?: FilterableField[];
   onFiltersChange?: (filters: ActiveFilter[]) => void;
   isAdmin?: boolean;
-  inlineEditEnabled?: boolean;
-  onToggleInlineEdit?: () => void;
+  // Labels columns that live inside a related-table "folder" -- those are
+  // otherwise only known once a user drills into that folder (see Field's
+  // subFields/loadSubFields comment above), so a flat "what's showing now"
+  // list needs its own label source.
+  resolveColLabel?: (colId: string) => string;
+  // Table-column-only reorder (no equivalent exists for expandCols -- see
+  // ColumnConfigDrawer's callers, usePresetTable/useTableColumnConfig only
+  // expose one).
+  onReorderTableCols?: (next: string[]) => void;
 }
 
 type ActiveTab = 'columns' | 'filters';
@@ -162,9 +169,33 @@ export default function ColumnConfigDrawer({
   activePresetName, onToggle,
   filters = [], filterableFields = [], onFiltersChange,
   isAdmin = false,
-  inlineEditEnabled = false, onToggleInlineEdit,
+  resolveColLabel, onReorderTableCols,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('columns');
+  const [draggedColId, setDraggedColId] = useState<string | null>(null);
+
+  const moveTableCol = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= tableCols.length) return;
+    const next = [...tableCols];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    onReorderTableCols?.(next);
+  };
+
+  const handleColDrop = (targetId: string) => {
+    if (!draggedColId || draggedColId === targetId) { setDraggedColId(null); return; }
+    const next = [...tableCols];
+    const fromIdx = next.indexOf(draggedColId);
+    const toIdx = next.indexOf(targetId);
+    setDraggedColId(null);
+    if (fromIdx === -1 || toIdx === -1) return;
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, draggedColId);
+    onReorderTableCols?.(next);
+  };
+
+  const labelFor = (colId: string) =>
+    resolveColLabel ? resolveColLabel(colId) : colId.replace(/_id$/, '').replace('.', ' ');
 
   // Local draft for filters — only applied on Save
   const [draftFilters, setDraftFilters] = useState<ActiveFilter[]>(filters);
@@ -284,28 +315,100 @@ export default function ColumnConfigDrawer({
         {/* ── Columns tab ── */}
         {activeTab === 'columns' && (
           <div className="flex-1 overflow-y-auto pt-4">
-            {atRoot && onToggleInlineEdit && (
-              <div className="mx-6 mb-3 flex items-center justify-between gap-3 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-2xl">
-                <div className="min-w-0">
-                  <p className="text-[12px] font-bold text-slate-700">Inline editing</p>
-                  <p className="text-[10px] text-slate-400">Click a cell to edit it, instead of opening the record</p>
-                </div>
-                <button
-                  onClick={onToggleInlineEdit}
-                  className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all shrink-0 ${
-                    inlineEditEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                  }`}
-                >
-                  {inlineEditEnabled ? 'On' : 'Off'}
-                </button>
-              </div>
-            )}
             {!isAdmin && (
               <div className="mx-6 mb-2 flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-2xl">
                 <Lock size={12} className="text-slate-400 shrink-0" />
                 <p className="text-[10px] text-slate-500 font-medium">
                   Columns are set by your company admin and shared by the whole team.
                 </p>
+              </div>
+            )}
+
+            {/* "On this page" -- what's currently showing, reorderable/removable
+                without hunting through the section browser below or dragging
+                column headers directly in the live table. */}
+            {atRoot && (
+              <div className="px-6 mb-4">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                  On this page
+                </p>
+                {tableCols.length === 0 ? (
+                  <p className="text-[11px] text-slate-300 italic py-1">No columns showing</p>
+                ) : (
+                  <div className="space-y-1">
+                    {tableCols.map((colId, idx) => (
+                      <div
+                        key={colId}
+                        draggable={isAdmin}
+                        onDragStart={() => setDraggedColId(colId)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => handleColDrop(colId)}
+                        className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl"
+                      >
+                        {isAdmin && <GripVertical size={12} className="text-slate-300 shrink-0 cursor-move" />}
+                        <span className="flex-1 min-w-0 truncate text-[11px] font-semibold text-slate-700">
+                          {labelFor(colId)}
+                        </span>
+                        {isAdmin && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              onClick={() => moveTableCol(idx, -1)}
+                              disabled={idx === 0}
+                              className="p-1 rounded-full text-slate-300 hover:text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                              title="Move up"
+                            >
+                              <ChevronUp size={12} />
+                            </button>
+                            <button
+                              onClick={() => moveTableCol(idx, 1)}
+                              disabled={idx === tableCols.length - 1}
+                              className="p-1 rounded-full text-slate-300 hover:text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                              title="Move down"
+                            >
+                              <ChevronDown size={12} />
+                            </button>
+                            <button
+                              onClick={() => onToggle(colId, 'none')}
+                              className="p-1 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              title="Remove from table"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {expandCols.length > 0 && (
+                  <>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-4 mb-2">
+                      In expand panel
+                    </p>
+                    <div className="space-y-1">
+                      {expandCols.map(colId => (
+                        <div
+                          key={colId}
+                          className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl"
+                        >
+                          <span className="flex-1 min-w-0 truncate text-[11px] font-semibold text-slate-700">
+                            {labelFor(colId)}
+                          </span>
+                          {isAdmin && (
+                            <button
+                              onClick={() => onToggle(colId, 'none')}
+                              className="p-1 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                              title="Remove from expand panel"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

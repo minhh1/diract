@@ -853,7 +853,9 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
               if (!region) return null;
               return (
                 <p className="text-[11px] text-slate-500 bg-slate-50 rounded-2xl px-4 py-2">
-                  Streams through our {FLY_REGION_LABELS[region.flyRegion]} gateway -- the nearest one to this region.
+                  Sessions for this region route through our streaming infrastructure in {FLY_REGION_LABELS[region.flyRegion]}
+                  -- keeping that close to the VM is what keeps the connection fast, so pick whichever region is
+                  actually closest to the person using it.
                 </p>
               );
             })()}
@@ -943,7 +945,7 @@ export default function AdminVirtualComputersTab({ companyId }: Props) {
                         : "Booting instance -- usually ready within a minute."}
                     </p>
                   )}
-                  {vm.os === "windows" && (
+                  {vm.os === "windows" && vm.provider === "digitalocean" && (
                     <input
                       key={`${vm.id}-${vm.windows_product_key || ""}`}
                       type="text"
