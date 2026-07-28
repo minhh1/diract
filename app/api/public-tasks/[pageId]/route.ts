@@ -10,6 +10,7 @@ import { loadPageAndAuthorize } from "@/lib/publicTaskPageAuth";
 import { logTaskActivity } from "@/lib/taskActivityLog";
 import { filterTasksByProjectAccess } from "@/lib/projectAccess";
 import { triggerCalendarSync } from "@/lib/triggerCalendarSync";
+import { getActiveTaskStatuses, getMatterNumberFieldId } from "@/lib/publicTasksCache";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ pageId: string }> }) {
   const { pageId } = await params;
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   // results, so they all fire together instead of one round trip at a
   // time. This (plus the matching batch below) is the bulk of what made
   // this route slow: what used to be ~15 sequential requests is now 2-3
-  // rounds. matterField is fetched unconditionally (not just when the
+  // rounds. matterFieldId is fetched unconditionally (not just when the
   // page's own columns include "matter_number") because the "add/edit
   // task" project picker always wants matter numbers to disambiguate
   // same-named projects, regardless of whether the task LIST shows that
@@ -55,8 +56,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     { data: rawUnallocated },
     { data: targetProfiles },
     { data: allProjects },
-    { data: matterField },
-    { data: statuses },
+    matterFieldId,
+    statuses,
     { data: teams },
     { data: companyMembersForAssignees },
   ] = await Promise.all([
@@ -82,9 +83,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     // -- the picker filters it client-side, far faster than a round trip
     // on every keystroke.
     admin.from("projects").select("id, name").eq("company_id", page.company_id).is("deleted_at", null).order("name"),
-    admin.from("company_custom_fields").select("id")
-      .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").is("deleted_at", null).maybeSingle(),
-    admin.from("task_statuses").select("id, label").eq("is_active", true).order("display_order"),
+    // Cached (see lib/publicTasksCache.ts) -- a field DEFINITION and a
+    // global status list both change far less often than task/board data,
+    // so a 60s-stale answer here is a non-issue and this saves 2 real
+    // round trips on every cache hit.
+    getMatterNumberFieldId(page.company_id),
+    getActiveTaskStatuses(),
     admin.from("teams").select("id, team_name").eq("company_id", page.company_id).eq("is_active", true),
     // 'my_and_unassigned' can assign to anyone in the company (enforced in
     // POST below), so the picker needs the full roster, not just
@@ -104,20 +108,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const rawAssignedIds = new Set((rawTasks || []).map((t: any) => t.id));
   const extraWatchedIds = [...new Set(Object.keys(watchersByTask))].filter(id => !rawAssignedIds.has(id));
 
-  // Second round: matter values (needs matterField's id), the
+  // Second round: matter values (needs matterFieldId), the
   // my_and_unassigned assignee roster (needs the company's member ids),
   // and the raw watched-task rows (needs extraWatchedIds, just computed
   // above) each depend on something the first round resolved, but not on
   // each other.
   const [matterValues, assigneeProfilesForCompany, { data: rawWatched }] = await Promise.all([
-    matterField && (allProjects?.length)
+    matterFieldId && (allProjects?.length)
       // Don't filter by .in(record_id, ...) with hundreds of IDs — hits URL
       // limits and silently returns nothing. Fetch all values for this
       // field (already scoped to this company via field_id) and map in
       // memory; covers both a task row's matterNumber and the form
       // options catalog below from one fetch instead of two near-identical
       // ones.
-      ? admin.from("company_custom_field_values").select("record_id, value_text").eq("field_id", matterField.id)
+      ? admin.from("company_custom_field_values").select("record_id, value_text").eq("field_id", matterFieldId)
       : Promise.resolve({ data: null }),
     page.scope === "my_and_unassigned"
       ? admin.from("profiles").select("id, full_name, email").in("id", (companyMembersForAssignees || []).map((m: any) => m.user_id))
