@@ -27,7 +27,7 @@ import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { readCache, writeCache } from "@/lib/queryCache";
 import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMigrated";
 import { getSchemaMetadata } from "@/lib/services/schemaService";
-import { fetchCompanyCustomFields } from "./useCompanyCustomFields";
+import { fetchCompanyCustomFields, type CompanyCustomField } from "./useCompanyCustomFields";
 import { warmRelatedFields } from "./useRelatedFields";
 import type { CustomTable } from "./useCustomTables";
 import type { CustomTableField } from "./useCustomTable";
@@ -57,6 +57,62 @@ export async function warmSystemTableShells(companyId: string | null): Promise<v
   await Promise.all(SYSTEM_TABLES.map(t => prefetchSystemTableShell(t, companyId)));
 }
 
+// Relation-type custom field values hold a raw linked record id -- resolved
+// to a display name here the same way GenericMasterTable.tsx's fetchItems
+// does, so a custom field like a "Linked Entity" column doesn't seed the
+// cache with a raw uuid that then visibly swaps to a name once the real
+// fetch corrects it. Duplicated from GenericMasterTable.tsx rather than
+// imported for the same reason prefetchTableFields below duplicates its
+// shell-key helpers -- this file stays a standalone background-fetch
+// module, no imports FROM component internals.
+const RELATION_TARGET_TABLES: Record<string, { table: string; nameColumn: string }> = {
+  entity: { table: 'entities', nameColumn: 'name' },
+  property: { table: 'properties', nameColumn: 'street_address' },
+  project: { table: 'projects', nameColumn: 'name' },
+};
+
+// Values are looked up by field_id alone (scoped to this table's custom
+// fields; RLS scopes to this company) rather than by record_id, matching
+// GenericMasterTable.tsx's own fetchCustomFields -- see its comment for why
+// paging with .range() rather than a single unbounded select matters here.
+async function fetchCustomFieldValues(fields: CompanyCustomField[]): Promise<Record<string, Record<string, any>>> {
+  const fieldIds = fields.map(f => f.id);
+  if (!fieldIds.length) return {};
+  const PAGE_SIZE = 1000;
+  const allValues: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page } = await supabase
+      .from('company_custom_field_values')
+      .select('record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id')
+      .in('field_id', fieldIds)
+      .range(from, from + PAGE_SIZE - 1);
+    if (!page?.length) break;
+    allValues.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  const byRecord: Record<string, Record<string, any>> = {};
+  allValues.forEach(v => {
+    if (!byRecord[v.record_id]) byRecord[v.record_id] = {};
+    byRecord[v.record_id][v.field_id] =
+      v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id;
+  });
+
+  const relationFields = fields.filter(f => f.field_type in RELATION_TARGET_TABLES);
+  await Promise.all(relationFields.map(async field => {
+    const { table, nameColumn } = RELATION_TARGET_TABLES[field.field_type];
+    const linkedIds = [...new Set(Object.values(byRecord).map(v => v[field.id]).filter(Boolean))];
+    if (!linkedIds.length) return;
+    const { data: linked } = await supabase.from(table).select(`id, ${nameColumn}`).in('id', linkedIds);
+    const nameById = new Map((linked || []).map((r: any) => [r.id, r[nameColumn]]));
+    for (const recordId of Object.keys(byRecord)) {
+      const rawId = byRecord[recordId][field.id];
+      if (rawId) byRecord[recordId][field.id] = nameById.get(rawId) || '';
+    }
+  }));
+
+  return byRecord;
+}
+
 // warmSystemTableShells above only covers schema/customFields/relatedFields
 // -- the metadata GenericMasterTable needs to RENDER a table -- not the row
 // data itself. Without this, a session's first visit to whichever of the 4
@@ -65,14 +121,19 @@ export async function warmSystemTableShells(companyId: string | null): Promise<v
 // real ~1s network round trip in full view of a skeleton, exactly the "still
 // not faster" gap this warms away.
 //
-// Deliberately NOT the same query GenericMasterTable's fetchItems runs (that
-// depends on live schema/column-layout state only available inside the
-// mounted component, plus per-table junction/relation joins -- reproducing
-// it here would mean duplicating that query-building logic outside React,
-// a much larger and riskier change). A plain `select('*')` seed is enough:
-// once cached, the real fetchItems call on first visit takes swr()'s
-// warm-cache path (paint immediately, correct any relation/custom-field
-// columns via its own background refresh) instead of the cold blocking one.
+// Custom field values ARE merged in (unlike an earlier version of this
+// function, which seeded a bare `select('*')`) -- seeding without them
+// meant any custom-field column (e.g. a "Matter Number" field on the
+// projects table) visibly painted blank on first load, then jumped to its
+// real value ~1-2s later once the real fetchItems background-refresh
+// corrected it. Junction-backed relation columns (a table's own FK-in-a-
+// separate-table links) are still NOT reproduced here, same trade-off as
+// before for the same reason -- see warmCustomTableShells' doc comment
+// above for the general "duplicating query-building logic outside React
+// is a much larger and riskier change" reasoning; those remain a coarser
+// seed corrected by the real fetch, same as before this fix, just no
+// longer true of plain custom fields (the common case this was reported
+// against).
 // Skips any table whose row cache already has real data (e.g. the table the
 // user landed on already warmed it for real) so this never clobbers a fresher
 // cache with this coarser shape.
@@ -80,8 +141,16 @@ async function warmSystemTableRows(tableName: string, companyId: string): Promis
   const cacheKey = `rows_${companyId}_${tableName}`;
   if (readCache(cacheKey)) return;
   try {
-    const { data } = await supabase.from(tableName).select('*').is('deleted_at', null);
-    if (data) writeCache(cacheKey, data);
+    const fields = await fetchCompanyCustomFields(tableName);
+    const [{ data }, byRecord] = await Promise.all([
+      supabase.from(tableName).select('*').is('deleted_at', null),
+      fetchCustomFieldValues(fields),
+    ]);
+    if (!data) return;
+    const items = fields.length
+      ? data.map((item: any) => ({ ...item, __customFields: byRecord[item.id] || {} }))
+      : data;
+    writeCache(cacheKey, items);
   } catch {}
 }
 
