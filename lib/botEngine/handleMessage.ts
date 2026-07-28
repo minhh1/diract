@@ -19,7 +19,7 @@ import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
   resolveTaskByName, resolveStatusByLabel, resolveProjectByName, resolveProfileByName,
   createTask, updateTask, createProject, updateProject,
-  createOnedriveFile, updateOnedriveFile,
+  createOnedriveFile, updateOnedriveFile, isOnedriveConnected,
 } from "@/lib/ai/actions";
 import { advanceFileAction, buildFileMissingFieldsTool, type FileAdvanceResult } from "@/lib/ai/fileActions";
 import {
@@ -510,6 +510,25 @@ async function handleToolCall(
     for (const [key, value] of Object.entries(args)) {
       if (value !== undefined && value !== null && String(value).trim() !== "") collected[key] = String(value);
     }
+
+    // Without OneDrive connected, create_file's own path just writes bare
+    // plain text with no letterhead formatting (see lib/ai/botFiles.ts) --
+    // observed live (2026-07-28) that this produced an unformatted "letter"
+    // with an invented recipient and unfilled placeholder brackets, since
+    // nothing ever asked for a real one. Redirecting into issue_precedent's
+    // freeform "General Document" path instead reuses the exact same
+    // letterhead-based document pipeline a real precedent gets -- real
+    // address block, date, salutation, signoff -- for free. update_file
+    // isn't redirected: editing a file already sitting in OneDrive or
+    // Storage is still a sensible, separate thing to do.
+    if (toolCall.name === "create_file" && !(await isOnedriveConnected(admin, companyId))) {
+      const redirected: Record<string, string> = { use_ai_fallback: "true" };
+      if (collected.project_name) redirected.project_name = collected.project_name;
+      if (collected.instructions) redirected.instructions = collected.instructions;
+      const result = await advancePrecedentAction(admin, companyId, linked.user_id, DEFAULT_HOSTED_MODEL_ID, sourceTypes, redirected);
+      return applyPrecedentAdvanceResult(admin, linked, msg, adapter, "issue_precedent", result);
+    }
+
     const result = await advanceFileAction(admin, companyId, toolCall.name, DEFAULT_HOSTED_MODEL_ID, null, sourceTypes, collected);
     return applyFileAdvanceResult(admin, linked, msg, adapter, toolCall.name, result);
   }

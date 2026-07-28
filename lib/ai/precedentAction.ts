@@ -115,6 +115,18 @@ export async function allKnownFields(
 ): Promise<PrecedentField[]> {
   const fields = [...PHASE1_FIELDS];
   if (collected.use_ai_fallback === "true") {
+    const { data: letterhead } = await admin.from("company_letterheads").select("detected_fields").eq("company_id", companyId).maybeSingle();
+    const detectedRoles = new Map<string, { role: string; options?: string[] }>(
+      (letterhead?.detected_fields || []).map((f: any) => [f.role, f])
+    );
+    if (detectedRoles.has("recipient_name")) fields.push({ key: "recipient_name", label: "Recipient name", required: true });
+    // Unlike a real precedent, the freeform General Document path doesn't
+    // require an address -- not every freeform document (e.g. an internal
+    // memo) has an external recipient (see issuePrecedentDocument).
+    fields.push({ key: "recipient_address", label: "Recipient address (leave blank if none)", required: false });
+    if (detectedRoles.has("delivery_mode")) {
+      fields.push({ key: "delivery_mode", label: "Delivery mode", required: true, options: detectedRoles.get("delivery_mode")?.options });
+    }
     fields.push({ key: "instructions", label: "What this document should say", required: true });
     fields.push({ key: "subject", label: "Subject line", required: false });
     return fields;
@@ -255,7 +267,15 @@ export async function advancePrecedentAction(
 
   const phase2Fields: PrecedentField[] = [];
   if (detectedRoles.has("recipient_name")) phase2Fields.push({ key: "recipient_name", label: "Recipient name", required: true });
-  phase2Fields.push({ key: "recipient_address", label: "Recipient address", required: true });
+  // Every real precedent is a letter to someone, so an address is required
+  // -- except the freeform General Document fallback (use_ai_fallback),
+  // which might not have an external recipient at all (see
+  // issuePrecedentDocument's matching relaxation for is_system precedents).
+  phase2Fields.push({
+    key: "recipient_address",
+    label: collected.use_ai_fallback === "true" ? "Recipient address (leave blank if none)" : "Recipient address",
+    required: collected.use_ai_fallback !== "true",
+  });
   if (detectedRoles.has("delivery_mode")) {
     phase2Fields.push({ key: "delivery_mode", label: "Delivery mode", required: true, options: detectedRoles.get("delivery_mode")?.options });
   }
@@ -280,7 +300,12 @@ export async function advancePrecedentAction(
       }
       phase2Fields.push({ key: s.key, label: s.label, required: true });
     }
-  } else {
+  } else if (collected.use_ai_fallback !== "true") {
+    // The freeform General Document path (use_ai_fallback) already implies
+    // AI drafting -- that's what accepting the "no precedent matched, want
+    // me to write this with AI?" offer meant, so asking the manual-vs-AI
+    // question again here would just be confusing. A real precedent with no
+    // body_template still needs to ask, since nothing decided that yet.
     phase2Fields.push(CONTENT_MODE_FIELD);
   }
 
@@ -303,9 +328,11 @@ export async function advancePrecedentAction(
 
   // Without a body_template, content_mode decides manual typing vs AI
   // drafting -- ask whichever of body/instructions that choice actually
-  // needs, now that we know which one it is.
+  // needs, now that we know which one it is. use_ai_fallback always wants
+  // AI (see CONTENT_MODE_FIELD's omission above) -- reused below too, when
+  // actually drafting the content, so both stay in sync.
+  const wantsAi = collected.use_ai_fallback === "true" || collected.content_mode?.trim().toLowerCase().includes("ai");
   if (!bodyFields.length) {
-    const wantsAi = collected.content_mode?.trim().toLowerCase().includes("ai");
     const contentField = wantsAi
       ? { key: "instructions", label: "What this document should say", required: true }
       : { key: "body", label: "The document's body text", required: true };
@@ -322,7 +349,7 @@ export async function advancePrecedentAction(
   if (bodyFields.length) {
     fieldValues = {};
     for (const s of bodyFields) fieldValues[s.key] = collected[s.key];
-  } else if (collected.content_mode?.trim().toLowerCase().includes("ai")) {
+  } else if (wantsAi) {
     draftBrief = collected.instructions;
     const { data: aiSettings } = await admin
       .from("ai_chat_settings").select("monthly_token_cap").eq("company_id", companyId).maybeSingle();

@@ -203,7 +203,7 @@ const CREATE_FILE_TOOL = {
   type: "function",
   function: {
     name: "create_file",
-    description: "Create a new file/document (stored in the company's OneDrive/SharePoint if connected, otherwise saved directly in Diract). The content is drafted from the instructions, not typed in directly.",
+    description: "Create a new file/document. If the company's OneDrive/SharePoint is connected, it's saved there; otherwise it's produced as a properly formatted letter using the firm's own letterhead. The content is drafted from the instructions, not typed in directly.",
     parameters: {
       type: "object",
       properties: {

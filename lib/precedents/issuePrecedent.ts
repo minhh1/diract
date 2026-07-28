@@ -119,11 +119,18 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
   const signerIdsOverride = input.signerIds?.map(id => id.trim()).filter(Boolean).slice(0, 4);
 
   if (!subjectInput) return { ok: false, error: "A subject line is required", status: 400 };
-  if (!recipientAddress) return { ok: false, error: "A recipient address is required", status: 400 };
 
   const { data: precedent } = await admin
-    .from("precedents").select("id, company_id, name, body_template").eq("id", precedentId).is("deleted_at", null).maybeSingle();
+    .from("precedents").select("id, company_id, name, body_template, is_system").eq("id", precedentId).is("deleted_at", null).maybeSingle();
   if (!precedent || precedent.company_id !== companyId) return { ok: false, error: "Precedent not found", status: 404 };
+
+  // Every real (non-system) precedent is a letter to someone, so an address
+  // is always required. The hidden General Document precedent (see
+  // resolveOrCreateGeneralPrecedent below) covers freeform documents that
+  // might not have one -- e.g. an internal memo -- so it's the one case
+  // where leaving this blank is fine; the letterhead's address block just
+  // renders empty.
+  if (!recipientAddress && !precedent.is_system) return { ok: false, error: "A recipient address is required", status: 400 };
 
   // A field-value form (see the Issue modal's template mode, or the bot's
   // per-field questions once a precedent has a body_template) always wins

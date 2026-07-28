@@ -473,6 +473,16 @@ export async function resolvePrecedentByName(admin: any, companyId: string, name
   return pickBestMatch(name, Array.from(candidates.values()));
 }
 
+// Checked upfront by the bot (lib/botEngine/handleMessage.ts) before even
+// starting create_file's own field-collecting flow -- when OneDrive isn't
+// connected, the request is redirected into issue_precedent's freeform
+// "General Document" letterhead pipeline instead (see there), so the two
+// flows never both partially run.
+export async function isOnedriveConnected(admin: any, companyId: string): Promise<boolean> {
+  const { data } = await admin.from("company_onedrive_credentials").select("drive_id").eq("company_id", companyId).maybeSingle();
+  return !!data?.drive_id;
+}
+
 async function getOnedriveGraphContextOrNull(admin: any, companyId: string): Promise<{ token: string; driveId: string } | null> {
   const { data: creds } = await admin.from("company_onedrive_credentials").select("credentials, drive_id").eq("company_id", companyId).maybeSingle();
   if (!creds?.drive_id) return null;
