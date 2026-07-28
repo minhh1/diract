@@ -1,7 +1,8 @@
 // components/AppLoader.tsx
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { readShellCache } from "@/lib/shellCache";
 import { COMPANY_CACHE_KEY } from "@/components/CompanyContext";
 import { resolveCompanyBootstrap, BOOTSTRAP_STEPS, type BootstrapStep } from "@/lib/companyBootstrap";
@@ -17,9 +18,15 @@ const PUBLIC_PATH_PREFIXES = ["/login", "/public", "/auth"];
 const CEILING_MS = 6000;
 
 export default function AppLoader({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
   const [progress, setProgress] = useState(0);
+  // Once the real bootstrap gate has resolved for this session, it must
+  // never re-arm -- without this, a pathname change after the splash has
+  // already dismissed would flip `ready` back to false and flash the
+  // splash a second time.
+  const doneRef = useRef(false);
 
   useEffect(() => {
     // Clear stale localStorage cache BEFORE anything reads it. One shared
@@ -27,6 +34,7 @@ export default function AppLoader({ children }: { children: ReactNode }) {
     // persisted React Query cache's `buster` -- so there's a single place
     // to bump when any cached shape changes, not two independently
     // hand-maintained version strings that can drift out of sync.
+    // Runs once per real page load, not per client-side navigation.
     const stored = localStorage.getItem("nk_app_cache_version");
     if (stored !== APP_CACHE_VERSION) {
       const toRemove = Object.keys(localStorage).filter(k =>
@@ -38,12 +46,31 @@ export default function AppLoader({ children }: { children: ReactNode }) {
       toRemove.forEach(k => localStorage.removeItem(k));
       localStorage.setItem("nk_app_cache_version", APP_CACHE_VERSION);
     }
+  }, []);
 
-    const pathname = window.location.pathname;
+  useEffect(() => {
+    // Real login always lands here via router.replace() from /login, a
+    // client-side navigation -- not a full page load. AppLoader lives in
+    // the root layout above every page, so it mounts exactly once per tab;
+    // without depending on `pathname` here, this effect would only ever see
+    // the FIRST url (typically /login), permanently set `ready` from that
+    // public-path branch below, and never re-check once the user actually
+    // lands on a protected route. That silently skipped the splash (and the
+    // bootstrap-gating it exists for) on the one journey every real user
+    // takes.
+    if (doneRef.current) return;
+
     if (PUBLIC_PATH_PREFIXES.some(p => pathname.startsWith(p))) {
       setReady(true);
       return;
     }
+
+    // Coming from the public-path branch above, `ready` may already be
+    // true -- re-arm it so the overlay (gated on `!ready`) actually shows
+    // again while this protected route's real bootstrap wait runs.
+    setReady(false);
+    setFadeOut(false);
+    setProgress(0);
 
     let cancelled = false;
     const stepsSeen = new Set<BootstrapStep>();
@@ -62,6 +89,7 @@ export default function AppLoader({ children }: { children: ReactNode }) {
 
     const finish = () => {
       if (cancelled) return;
+      doneRef.current = true;
       setProgress(100);
       setFadeOut(true);
       // Purely a cosmetic transition on top of already-ready content, not a
@@ -82,7 +110,7 @@ export default function AppLoader({ children }: { children: ReactNode }) {
     }
 
     return () => { cancelled = true; };
-  }, []);
+  }, [pathname]);
 
   return (
     <>
