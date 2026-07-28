@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { fetchScopedDefaultView } from "@/lib/hooks/scopedDefaultView";
 
 const DEFAULT_PRESET_NAME = "Default view";
 
@@ -33,6 +34,8 @@ interface UseTableColumnConfigOptions {
   defaultCols: string[];
   defaultExpandCols?: string[];
   companyId?: string | null;
+  userId?: string | null;
+  myTeamIds?: string[];
   isAdmin?: boolean;
   // false while defaultCols/defaultExpandCols are still resolving (e.g.
   // custom table fields not loaded yet) -- avoids briefly saving those
@@ -53,7 +56,7 @@ interface UseTableColumnConfigOptions {
 // hook with its own independent effect can't preserve without risking a
 // regression on the 4 live system tables that already depend on it.
 export function useTableColumnConfig({
-  tableSlug, defaultCols, defaultExpandCols = [], companyId, isAdmin = false, schemaReady = true,
+  tableSlug, defaultCols, defaultExpandCols = [], companyId, userId, myTeamIds, isAdmin = false, schemaReady = true,
 }: UseTableColumnConfigOptions) {
   const [tableCols, setTableCols] = useState<string[]>(defaultCols);
   const [expandCols, setExpandCols] = useState<string[]>(defaultExpandCols);
@@ -78,12 +81,7 @@ export function useTableColumnConfig({
     if (!companyId || !tableSlug || !schemaReady) return;
     let active = true;
     (async () => {
-      const { data: companyView } = await supabase
-        .from('company_default_views')
-        .select('*')
-        .eq('company_id', companyId)
-        .eq('table_slug', tableSlug)
-        .maybeSingle();
+      const companyView = await fetchScopedDefaultView(companyId, tableSlug, userId, myTeamIds);
       if (!active) return;
       // No saved row yet (every table before its first admin visit to
       // Setup) -- still need to push tableCols/expandCols to the properly-
@@ -106,7 +104,7 @@ export function useTableColumnConfig({
     // re-resolve when the table/company identity actually changes, same
     // reasoning as usePresetTable's own init().
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableSlug, companyId, schemaReady]);
+  }, [tableSlug, companyId, schemaReady, userId, (myTeamIds || []).join(',')]);
 
   const saveCompanyColumns = async (
     t: string[] = tableCols, e: string[] = expandCols,
