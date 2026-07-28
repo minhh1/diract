@@ -58,11 +58,19 @@ interface PageSample { at: number; durationMs: number }
 interface PageStat { kind: string; name: string; samples: PageSample[] }
 
 // Entries come out of the ring buffer oldest-first, and every "PAGE x: start"
-// is always followed later by that exact same kind+name's "PAGE x: ready" --
-// both logged synchronously within one continuous page session, so `t`
-// (performance.now() at call time) is always comparable between the two,
-// even though the ring buffer as a whole spans many separate browser
-// sessions/reloads (where `t` resets to 0 and isn't comparable across them).
+// is always followed later by that exact same kind+name's "PAGE x: ready".
+// Duration is `at` (Date.now()) difference, NOT `t` (performance.now()
+// relative to lib/perfLog.ts's per-pathname epoch) -- `t` only resets on a
+// real top-level navigation (the pathname actually changing), so for a
+// "public" kind logged from inside an embedded dashboard widget (see
+// components/public/PublicTasksContent.tsx/PublicClientUpdateContent.tsx,
+// which render under whatever dashboard URL they're embedded on, not their
+// own /public/... path) the widget's own "start" inherits however much
+// time had already elapsed on the HOST page before the widget got around
+// to mounting, wildly inflating `t`-based durations for anything nested.
+// `at` has no such epoch to inherit -- a wall-clock difference between two
+// specific timestamps is valid no matter what else was happening on the
+// page in between.
 function computePageStats(entries: PerfLogEntry[]): PageStat[] {
   const pendingStart = new Map<string, PerfLogEntry>();
   const byKey = new Map<string, PageStat>();
@@ -78,7 +86,7 @@ function computePageStats(entries: PerfLogEntry[]): PageStat[] {
     const start = pendingStart.get(key);
     if (!start) continue; // a "ready" with no matching "start" still in the buffer (e.g. buffer trimmed mid-pair) -- skip rather than guess
     pendingStart.delete(key);
-    const durationMs = e.t - start.t;
+    const durationMs = e.at - start.at;
     if (durationMs < 0) continue;
     if (!byKey.has(key)) byKey.set(key, { kind, name, samples: [] });
     byKey.get(key)!.samples.push({ at: e.at, durationMs });
