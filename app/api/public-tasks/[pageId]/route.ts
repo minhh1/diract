@@ -94,20 +94,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       : Promise.resolve({ data: null }),
   ]);
 
-  // Second round: each of these depends on something the first round just
-  // resolved (project-access filtering needs the raw task lists; matter
-  // values need matterField's id; the assignee roster needs the company's
-  // member ids) but NOT on each other, so they still run as one batch
-  // rather than four sequential round trips. Being on the same
-  // team-scoped page doesn't grant access to a project restricted to
-  // specific teams/members — filter those out for whoever is actually
-  // viewing the page (not the task's assignee). Admins can already see
-  // everything else in the app, so they're exempt.
-  const [assignedTasks, unallocatedTasksFiltered, matterValues, assigneeProfilesForCompany] = await Promise.all([
-    isAdmin ? Promise.resolve(rawTasks || []) : filterTasksByProjectAccess(admin, user.id, rawTasks || []),
-    page.scope !== "self"
-      ? (isAdmin ? Promise.resolve(rawUnallocated || []) : filterTasksByProjectAccess(admin, user.id, rawUnallocated || []))
-      : Promise.resolve([]),
+  // watchersByTask/extraWatchedIds only need the RAW (pre-access-filter)
+  // task list -- project-access filtering only ever REMOVES tasks, never
+  // adds any, so using raw ids here instead of waiting on a filter step is
+  // exactly as correct and lets the watched-tasks fetch below join the
+  // next batch instead of waiting behind it.
+  const watchersByTask: Record<string, string[]> = {};
+  for (const w of watcherRows || []) (watchersByTask[w.task_id] ||= []).push(w.profile_id);
+  const rawAssignedIds = new Set((rawTasks || []).map((t: any) => t.id));
+  const extraWatchedIds = [...new Set(Object.keys(watchersByTask))].filter(id => !rawAssignedIds.has(id));
+
+  // Second round: matter values (needs matterField's id), the
+  // my_and_unassigned assignee roster (needs the company's member ids),
+  // and the raw watched-task rows (needs extraWatchedIds, just computed
+  // above) each depend on something the first round resolved, but not on
+  // each other.
+  const [matterValues, assigneeProfilesForCompany, { data: rawWatched }] = await Promise.all([
     matterField && (allProjects?.length)
       // Don't filter by .in(record_id, ...) with hundreds of IDs — hits URL
       // limits and silently returns nothing. Fetch all values for this
@@ -120,30 +122,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     page.scope === "my_and_unassigned"
       ? admin.from("profiles").select("id, full_name, email").in("id", (companyMembersForAssignees || []).map((m: any) => m.user_id))
       : Promise.resolve({ data: null }),
+    extraWatchedIds.length
+      ? admin.from("tasks").select(TASK_SELECT).in("id", extraWatchedIds).eq("company_id", page.company_id).is("deleted_at", null)
+      : Promise.resolve({ data: [] as any[] }),
   ]);
-  const unallocatedTasks = unallocatedTasksFiltered;
   const matterByProject: Record<string, string> = Object.fromEntries(
     ((matterValues as any)?.data || []).map((v: any) => [v.record_id, v.value_text || ""])
   );
 
-  const watchersByTask: Record<string, string[]> = {};
-  for (const w of watcherRows || []) (watchersByTask[w.task_id] ||= []).push(w.profile_id);
-
-  const assignedTaskIds = new Set((assignedTasks || []).map((t: any) => t.id));
-  const extraWatchedIds = [...new Set(Object.keys(watchersByTask))].filter(id => !assignedTaskIds.has(id));
-
-  // Depends on extraWatchedIds (itself derived from the two batches above),
-  // so this genuinely can't join either of them.
-  let watchedTasks: any[] = [];
-  if (extraWatchedIds.length) {
-    const { data: rawWatched } = await admin
-      .from("tasks")
-      .select(TASK_SELECT)
-      .in("id", extraWatchedIds)
-      .eq("company_id", page.company_id)
-      .is("deleted_at", null);
-    watchedTasks = isAdmin ? (rawWatched || []) : await filterTasksByProjectAccess(admin, user.id, rawWatched || []);
+  // Third round: ONE project-access filter over the union of every raw
+  // task list (a task can legitimately appear in more than one -- e.g.
+  // unallocated AND watched -- so dedupe by id first), instead of up to
+  // three separate calls each paying their own internal round trip(s).
+  // Being on the same team-scoped page doesn't grant access to a project
+  // restricted to specific teams/members — filter those out for whoever
+  // is actually viewing the page (not the task's assignee). Admins can
+  // already see everything else in the app, so they're exempt entirely.
+  let allowedTaskIds: Set<string> | null = null;
+  if (!isAdmin) {
+    const byId = new Map<string, any>();
+    for (const t of [...(rawTasks || []), ...(rawUnallocated || []), ...(rawWatched || [])]) byId.set(t.id, t);
+    const filtered = await filterTasksByProjectAccess(admin, user.id, [...byId.values()]);
+    allowedTaskIds = new Set(filtered.map((t: any) => t.id));
   }
+  const applyAccess = (list: any[]) => allowedTaskIds ? list.filter((t: any) => allowedTaskIds!.has(t.id)) : list;
+
+  const assignedTasks = applyAccess(rawTasks || []);
+  const unallocatedTasks = applyAccess(rawUnallocated || []);
+  const watchedTasks = applyAccess(rawWatched || []);
 
   // Merging three separately-queried groups (assigned/watched/unallocated)
   // would otherwise leave each block sorted internally but not against each
