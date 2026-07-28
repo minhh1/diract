@@ -17,6 +17,17 @@ const PROMOTE_TYPE_OPTIONS = [
   { value: "date", label: "Date" },
   { value: "boolean", label: "Yes / No" },
 ];
+// Only these two -- a promoted field becomes "a real custom field value
+// for a specific record", which only makes sense for a table where every
+// matter on this page actually has (at most a handful of) real rows to
+// write onto: the matter's own projects row, or its linked properties
+// row(s) (project_properties). Nothing else in this app's data model has
+// that shape for a matter -- see the promote route's header comment for
+// the server-side validation this pairs with.
+const PROMOTE_TABLE_OPTIONS = [
+  { value: "projects", label: "Matter" },
+  { value: "properties", label: "Property" },
+];
 interface CatalogOption { field_key: string; label: string; }
 interface RelatedTableOption { linkFieldId: string; linkLabel: string; columns: { key: string; label: string }[]; }
 
@@ -39,6 +50,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [promoteChooserId, setPromoteChooserId] = useState<string | null>(null);
   const [promoteType, setPromoteType] = useState("text");
+  const [promoteTable, setPromoteTable] = useState<"projects" | "properties">("projects");
 
   // Optimistic -- onCustomize applies the new columns to local state and
   // fires the request itself (see PublicClientUpdateContent.tsx), so
@@ -125,13 +137,14 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
   const openPromoteChooser = (field: FieldDef) => {
     setPromoteChooserId(field.id);
     setPromoteType(field.field_type === "select" ? "select" : "text");
+    setPromoteTable("projects");
   };
 
   const confirmPromote = async (field: FieldDef) => {
     setPromotingId(field.id);
     try {
       const res = await fetch(`/api/client-update-pages/${pageId}/fields/${field.id}/promote`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldType: promoteType }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldType: promoteType, table: promoteTable }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) { window.alert(json.error || "Couldn't save that as a custom field"); return; }
@@ -184,7 +197,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
                     <GripVertical size={13} className="text-slate-300 shrink-0" />
                     <span className="flex-1 text-[12px] text-slate-700">{f.label}</span>
                     {f.field_source === "adhoc" && (
-                      <button onClick={() => openPromoteChooser(f)} disabled={promotingId === f.id} title="Save as a real custom field on Matters -- shows on the normal matter dashboard too"
+                      <button onClick={() => openPromoteChooser(f)} disabled={promotingId === f.id} title="Save as a real custom field on the Matter or its linked Property"
                         className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors shrink-0">
                         {promotingId === f.id ? <Loader2 size={13} className="animate-spin" /> : <DatabaseZap size={13} />}
                       </button>
@@ -199,12 +212,23 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
                   </div>
                   {promoteChooserId === f.id && (
                     <div className="mt-1 ml-5 p-3 border border-indigo-200 bg-indigo-50/50 rounded-xl space-y-2">
-                      <p className="text-[11px] text-slate-600">Save "{f.label}" as a real custom field on Matters. It'll then show on the normal matter dashboard too, and any values already entered here carry over.</p>
+                      <p className="text-[11px] text-slate-600">
+                        Save "{f.label}" as a real custom field on {promoteTable === "properties" ? "the linked property" : "Matters"}.
+                        {promoteTable === "properties"
+                          ? " It'll then vary per property on a matter with 2+, same as Property Address; only entries whose matter has a linked property carry over."
+                          : " It'll then show on the normal matter dashboard too, and any values already entered here carry over."}
+                      </p>
                       <div className="flex items-center gap-2">
+                        <select value={promoteTable} onChange={e => setPromoteTable(e.target.value as "projects" | "properties")}
+                          className="w-24 shrink-0 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
+                          {PROMOTE_TABLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
                         <select value={promoteType} onChange={e => setPromoteType(e.target.value)}
                           className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
                           {PROMOTE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
                         <button onClick={() => setPromoteChooserId(null)} className="text-[10px] font-bold text-slate-400 shrink-0">Cancel</button>
                         <button onClick={() => confirmPromote(f)} disabled={promotingId === f.id}
                           className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full disabled:opacity-40 transition-colors shrink-0">
