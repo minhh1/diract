@@ -13,13 +13,15 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
 
 // Labels/types for the native-column target_field_key values a rule can
-// name -- mirrors the entities columns niksen_recompute_entity_irregularities
-// actually checks (see that function for the full rule list).
+// name -- mirrors the entities columns the auto_fed_rules config actually
+// checks (see supabase/migrations/20260729160000_niksen_irregularities_as_config.sql
+// and .../20260729180000_niksen_irregularities_fixes.sql for the full rule list).
 const NATIVE_FIELD_META: Record<string, { label: string; fieldType: string }> = {
   established_date: { label: "Established Date", fieldType: "text" },
   tfn: { label: "TFN", fieldType: "text" },
   acn: { label: "ACN", fieldType: "text" },
   abn: { label: "ABN", fieldType: "text" },
+  name: { label: "Name", fieldType: "text" },
 };
 
 async function resolveTarget(admin: any, pageId: string, itemId: string, companyId: string) {
