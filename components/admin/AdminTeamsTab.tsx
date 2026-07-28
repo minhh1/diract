@@ -27,6 +27,13 @@ interface Team {
   // Off by default: only a company_admin can bill as someone else until an
   // admin explicitly grants a team this.
   allow_time_entry_delegation: boolean;
+  // Separate permission -- who can VIEW other staff's time entries (grid,
+  // date navigation, summary chart), not who can log time AS them. Backed
+  // by the RLS-enforced time_entry_view_scope_ids() (see migration
+  // 20260728220000_time_entry_view_scope.sql) -- without this, or admin,
+  // a member can only ever see their own entries. Off by default, same
+  // reasoning as delegation above.
+  allow_time_entry_view: boolean;
 }
 
 interface Props {
@@ -61,7 +68,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     // Load teams
     const { data: ts } = await supabase
       .from('teams')
-      .select('id, team_name, leader_id, is_active, allow_time_entry_delegation')
+      .select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view')
       .order('team_name');
 
     // Load all company members
@@ -130,7 +137,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     if (!name) return;
     setNewTeamName('');
     const { data: created } = await supabase
-      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation').single();
+      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view').single();
     if (created) {
       const newTeam: Team = { ...created, members: [] };
       updateTeams(prev => [...prev, newTeam].sort((a, b) => a.team_name.localeCompare(b.team_name)));
@@ -182,6 +189,11 @@ export default function AdminTeamsTab({ companyId }: Props) {
   const toggleDelegation = (teamId: string, next: boolean) => {
     updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_time_entry_delegation: next } : t));
     supabase.from('teams').update({ allow_time_entry_delegation: next }).eq('id', teamId).then();
+  };
+
+  const toggleView = (teamId: string, next: boolean) => {
+    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_time_entry_view: next } : t));
+    supabase.from('teams').update({ allow_time_entry_view: next }).eq('id', teamId).then();
   };
 
   const setLeader = (teamId: string, profileId: string) => {
@@ -280,6 +292,21 @@ export default function AdminTeamsTab({ companyId }: Props) {
             />
             <span className="text-[11px] text-slate-600">
               Allow members to enter time on behalf of other staff
+            </span>
+          </label>
+
+          {/* View permission -- enforced via RLS (time_entry_view_scope_ids,
+              see migration 20260728220000_time_entry_view_scope.sql), not
+              just the UI */}
+          <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
+            <input
+              type="checkbox"
+              checked={team.allow_time_entry_view}
+              onChange={e => toggleView(team.id, e.target.checked)}
+              className="w-4 h-4 accent-indigo-600 shrink-0"
+            />
+            <span className="text-[11px] text-slate-600">
+              Allow members to view all staff&apos;s time entries
             </span>
           </label>
 
