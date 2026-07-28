@@ -15,9 +15,11 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { callHostedModel } from "@/lib/ai/modelCall";
 import { HOSTED_MODELS } from "@/lib/billing/aiModels";
 
-// Cheapest catalog entry -- classifying a couple dozen short field labels
-// into a handful of section names doesn't need a large model.
-const CLASSIFY_MODEL_ID = HOSTED_MODELS[1].id;
+// HOSTED_MODELS[0], not the cheaper [1] -- see rewrite-text/route.ts's
+// identical note: Together has previously retired the smaller 3.1-8B-Turbo
+// from serverless (pay-per-token) availability, 400ing with
+// "model_not_available" despite still being listed in the catalog.
+const CLASSIFY_MODEL_ID = HOSTED_MODELS[0].id;
 
 const FALLBACK_SECTION = "Details";
 
@@ -68,6 +70,7 @@ export async function POST(req: NextRequest) {
     const usage = await callHostedModel(CLASSIFY_MODEL_ID, messages);
     content = usage.content;
   } catch (err) {
+    console.error("[classify-field-sections] model call failed:", err);
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
   }
 
