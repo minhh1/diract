@@ -86,7 +86,10 @@ export default function CanvasEditor({ widgets, onChange, fields, fieldById, rec
             >
               {widgets.map(w => (
                 <div key={w.id} className="group relative bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                  <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Always visible, not hover-only -- opacity-0
+                      group-hover:opacity-100 is invisible AND unreachable on
+                      touch (no persistent :hover), e.g. iPad Safari. */}
+                  <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1">
                     <span className="widget-drag-handle p-1.5 bg-white/95 border border-slate-200 rounded-lg text-slate-400 hover:text-slate-600 cursor-move shadow-sm">
                       <GripVertical size={12} />
                     </span>

@@ -784,7 +784,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
                                     </span>
                                   ))}
                                 </div>
-                                <Pencil size={12} className="text-slate-300 group-hover:text-indigo-400 shrink-0 opacity-0 group-hover:opacity-100 transition-all" />
+                                <Pencil size={12} className="text-slate-300 group-hover:text-indigo-400 shrink-0 transition-all" />
                               </button>
                             ))}
                           </div>
