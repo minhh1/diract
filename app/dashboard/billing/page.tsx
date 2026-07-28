@@ -7,7 +7,7 @@
 // virtual-computer options depend on knowing the plan/status.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useCompany } from "@/components/CompanyContext";
@@ -56,6 +56,14 @@ async function fetchBillingStatus(): Promise<BillingStatus> {
 }
 
 export default function BillingPage() {
+  return (
+    <Suspense fallback={null}>
+      <BillingPageInner />
+    </Suspense>
+  );
+}
+
+function BillingPageInner() {
   const searchParams = useSearchParams();
   const checkoutResult = searchParams.get("checkout");
   // CompanyContext already resolved isAdmin (per-company role check) once

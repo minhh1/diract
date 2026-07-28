@@ -6,12 +6,20 @@
 // write once confirmed here. Direct mirror of app/link-teams/page.tsx.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Sparkles, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export default function LinkWhatsAppPage() {
+  return (
+    <Suspense fallback={null}>
+      <LinkWhatsAppPageInner />
+    </Suspense>
+  );
+}
+
+function LinkWhatsAppPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");

@@ -6,12 +6,20 @@
 // write once confirmed here.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Sparkles, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export default function LinkTeamsPage() {
+  return (
+    <Suspense fallback={null}>
+      <LinkTeamsPageInner />
+    </Suspense>
+  );
+}
+
+function LinkTeamsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");

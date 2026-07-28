@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -55,6 +55,14 @@ async function fetchDuplicatesData(companyId: string, dupType: DupType): Promise
 }
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageInner />
+    </Suspense>
+  );
+}
+
+function SettingsPageInner() {
   const searchParams = useSearchParams();
   const { companyId } = useCompany();
   const [view, setView] = useState<SettingsView>("menu");

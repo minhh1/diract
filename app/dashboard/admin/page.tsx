@@ -1,7 +1,7 @@
 // app/dashboard/admin/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -265,6 +265,14 @@ const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
 };
 
 export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminPageInner />
+    </Suspense>
+  );
+}
+
+function AdminPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Which tab is active now lives in the URL — the sidebar's Admin panel
