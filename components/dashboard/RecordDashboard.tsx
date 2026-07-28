@@ -938,10 +938,14 @@ export default function RecordDashboard({
   // AI-driven field grouping (see app/api/ai/classify-field-sections) --
   // fires the first time a fields tab has any unclassified field (brand new
   // tab, or a field just added via handlePickField) and merges the result
-  // back into local state once it resolves. Best-effort/background: on
-  // failure it just leaves the tab flat rather than surfacing an error, and
-  // the ref guard stops a slow response from being kicked off twice.
+  // back into local state once it resolves. FieldLayoutEditor shows a
+  // skeleton while this is in flight rather than a flash of the flat list
+  // that then jumps into sections -- classifyFailedTabs is how it knows to
+  // give up on that and fall back to flat instead of skeleton-blocking
+  // forever if the call never succeeds. The ref guard stops a slow response
+  // from being kicked off twice.
   const classifyingTabsRef = useRef<Set<string>>(new Set());
+  const [classifyFailedTabs, setClassifyFailedTabs] = useState<Set<string>>(new Set());
 
   const classifyFieldSections = async (tabId: string, layout: FieldLayout[]) => {
     if (classifyingTabsRef.current.has(tabId)) return;
@@ -962,14 +966,14 @@ export default function RecordDashboard({
           })),
         }),
       });
-      if (!res.ok) return;
+      if (!res.ok) { setClassifyFailedTabs(prev => new Set(prev).add(tabId)); return; }
       const { sections } = await res.json();
       setTabFieldLayouts(prev => {
         const current = prev[tabId] || layout;
         return { ...prev, [tabId]: current.map(f => ({ ...f, section: sections[f.field_key] ?? f.section })) };
       });
     } catch {
-      // Best-effort background task -- fields just stay flat on failure.
+      setClassifyFailedTabs(prev => new Set(prev).add(tabId));
     } finally {
       classifyingTabsRef.current.delete(tabId);
     }
@@ -1117,6 +1121,7 @@ export default function RecordDashboard({
     <>
       {activeTab?.tab_type === 'fields' && (
         <FieldLayoutEditor
+          sectioningFailed={classifyFailedTabs.has(activeTab.id)}
           fields={getTabFieldLayout(activeTab.id)}
           recordValues={record || {}}
           recordMatterType={matterTypeFieldId ? record?.[matterTypeFieldId] : undefined}
