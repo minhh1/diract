@@ -81,6 +81,14 @@ interface Props {
   // state below; an actually-empty table still says "No entries yet" once
   // this flips false.
   recordsLoading?: boolean;
+  // An extra "Initials" column, computed by DashboardWidgetRenderer from
+  // whether this dashboard's $team_scope/$current_user Staff filter is
+  // currently cleared (i.e. an admin viewing everyone's entries at once) --
+  // see its matching comment. staffFieldKey names which field's display
+  // name to abbreviate; both are undefined/false everywhere else (regular
+  // staff view, non-Staff-scoped tables, builder preview).
+  showTimekeeperInitials?: boolean;
+  staffFieldKey?: string;
 }
 
 // Same formatting as DashboardSummaryTiles' formatTileValue -- duplicated
@@ -94,6 +102,19 @@ function formatTotal(value: number, fieldType: string): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+// Same shape as generateDetailedInvoicePdf.ts's local initials() -- "Jane
+// Smith" -> "JS" -- duplicated rather than shared, same per-file convention
+// as formatTotal above.
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(p => p[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 3);
+}
+
 // A lightweight grid scoped to a dashboard's configured columns, distinct
 // from components/CustomTableMasterPage.tsx's full-featured master-table
 // view (column drawer, search, expand-row) -- this is meant to be one
@@ -101,10 +122,12 @@ function formatTotal(value: number, fieldType: string): string {
 export default function DashboardGrid({
   tableId, sourceKind, companyId, userId, fields, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
   columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow, recordsLoading,
+  showTimekeeperInitials, staffFieldKey,
 }: Props) {
   const gridFields = gridFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
+  const showInitialsCol = !!showTimekeeperInitials && !!staffFieldKey;
 
   const highlightBgFor = (record: CustomTableRecord, fieldId: string): string => {
     const rule = columnHighlights?.[fieldId];
@@ -306,6 +329,11 @@ export default function DashboardGrid({
       <table className="w-full text-[12px]">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50">
+            {showInitialsCol && (
+              <th className="text-left px-4 py-2.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-14">
+                Initials
+              </th>
+            )}
             {gridFields.map((f, idx) => (
               <th
                 key={f.id}
@@ -344,6 +372,11 @@ export default function DashboardGrid({
         <tbody>
           {records.map(r => (
             <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+              {showInitialsCol && (
+                <td className="px-4 py-2 text-[11px] font-bold text-slate-500">
+                  {initials(r.displayValues[staffFieldKey!] || '')}
+                </td>
+              )}
               {gridFields.map(f => (
                 <td key={f.id} className={`px-4 py-2 ${highlightBgFor(r, f.id)}`} style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
                   {isDurationHours(f) && (overrides[r.id]?.type ?? r.values.type) === 'Fixed Fee' ? (
@@ -372,6 +405,7 @@ export default function DashboardGrid({
           {draftRows.map((draft, i) => (
             <Fragment key={`draft-${i}`}>
               <tr className="border-b border-slate-50">
+                {showInitialsCol && <td className="px-4 py-2" />}
                 {gridFields.map(f => (
                   <td key={f.id} className="px-4 py-2" style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
                     {isDurationHours(f) && draft.type === 'Fixed Fee' ? (
@@ -392,7 +426,7 @@ export default function DashboardGrid({
               </tr>
               {draftErrors[i] && (
                 <tr className="border-b border-slate-50">
-                  <td colSpan={gridFields.length + 1} className="px-4 pb-2 -mt-1.5 text-[10px] font-semibold text-rose-500">
+                  <td colSpan={gridFields.length + 1 + (showInitialsCol ? 1 : 0)} className="px-4 pb-2 -mt-1.5 text-[10px] font-semibold text-rose-500">
                     {draftErrors[i]}
                   </td>
                 </tr>
@@ -401,7 +435,7 @@ export default function DashboardGrid({
           ))}
           {records.length === 0 && paddingRowCount === 0 && (
             <tr>
-              <td colSpan={gridFields.length + (readOnly ? 0 : 1)} className="text-center py-8 text-[11px] text-slate-300 italic">
+              <td colSpan={gridFields.length + (readOnly ? 0 : 1) + (showInitialsCol ? 1 : 0)} className="text-center py-8 text-[11px] text-slate-300 italic">
                 {recordsLoading ? "Loading…" : "No entries yet"}
               </td>
             </tr>
@@ -410,6 +444,7 @@ export default function DashboardGrid({
         {showTotalsRow && (
           <tfoot>
             <tr className="border-t border-slate-200 bg-slate-50 font-bold">
+              {showInitialsCol && <td className="px-4 py-2" />}
               {gridFields.map((f, idx) => (
                 <td key={f.id} className="px-4 py-2 text-[11px] text-slate-700" style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
                   {f.field_type === 'number' || f.field_type === 'currency'

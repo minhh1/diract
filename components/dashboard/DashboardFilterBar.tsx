@@ -136,13 +136,10 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               placeholder={`All`}
               size={pillSize}
               // A "$current_user"/"$team_scope" Staff filter (e.g. Time &
-              // Fee Entries) auto-selecting the viewer's own entity makes
-              // sense for a REGULAR staff member (their own entries by
-              // default), but an admin viewing this same filter bar wants
-              // the opposite default -- everyone's entries, with the
-              // ability to narrow to one person still available via this
-              // exact picker. Non-admins keep the existing auto-select.
-              autoSelectSelf={!isAdmin}
+              // Fee Entries) always defaults to the viewer's own entries,
+              // admin included -- an admin who wants everyone's entries
+              // switches to "All" explicitly via the pinned clearLabel row
+              // below, same picker either way.
               // Pinned at the top of the dropdown -- narrowing to one
               // person is just a normal pick below, but getting back to
               // "everyone" from there needs to be exactly as easy, not a

@@ -162,7 +162,13 @@ export default function DashboardWidgetRenderer({
         />
       );
 
-    case 'grid':
+    case 'grid': {
+      // Once an admin narrows the Staff filter (via DashboardFilterBar's
+      // clearLabel="All" picker) to one person, every row IS that person --
+      // an Initials column would be redundant. Only worth showing while the
+      // filter is cleared, i.e. actually viewing everyone's entries at once.
+      const staffScopeField = fields.find(f => f.linked_filter_value === '$team_scope' || f.linked_filter_value === '$current_user');
+      const showTimekeeperInitials = !!staffScopeField && !filters[staffScopeField.id];
       return (
         <DashboardGrid
           tableId={tableId}
@@ -173,6 +179,8 @@ export default function DashboardWidgetRenderer({
           gridFieldIds={widget.config.fieldIds}
           records={filterByConditions(records, widget.config.conditions, fieldById)}
           recordsLoading={recordsLoading}
+          showTimekeeperInitials={showTimekeeperInitials}
+          staffFieldKey={staffScopeField?.field_key}
           onChanged={mode === 'preview' ? () => {} : onChanged}
           readOnly={isLedger}
           emptyRowCount={mode === 'preview' ? 0 : (widget.config.emptyRowCount || 0)}
@@ -188,6 +196,7 @@ export default function DashboardWidgetRenderer({
           }) : undefined}
         />
       );
+    }
 
     case 'summary_tile': {
       const { value, fieldType } = computeSummaryTileValue(widget.config, records, fieldById);

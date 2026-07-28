@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import {
   Loader2, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical, Check,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
@@ -23,10 +23,7 @@ import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
 // Members tab. next/dynamic defers each tab's own chunk until its
 // `activeTab === ...` condition below actually renders it.
 const AdminTeamsTab = dynamic(() => import("@/components/admin/AdminTeamsTab"));
-const AdminDefaultViewsTab = dynamic(() => import("@/components/admin/AdminDefaultViewsTab"));
-const AdminDefaultTabsTab = dynamic(() => import("@/components/admin/AdminDefaultTabsTab"));
-const AdminDefaultTablesTab = dynamic(() => import("@/components/admin/AdminDefaultTablesTab"));
-const AdminDefaultDashboardsTab = dynamic(() => import("@/components/admin/AdminDefaultDashboardsTab"));
+const AdminDefaultSettingsTab = dynamic(() => import("@/components/admin/AdminDefaultSettingsTab"));
 const AdminVirtualComputersTab = dynamic(() => import("@/components/admin/AdminVirtualComputersTab"));
 const AdminGmailSyncTab = dynamic(() => import("@/components/admin/AdminGmailSyncTab"));
 const AdminWhatsAppTab = dynamic(() => import("@/components/admin/AdminWhatsAppTab"));
@@ -45,6 +42,12 @@ interface Member {
   role: string;
   is_active: boolean;
   is_admin: boolean;
+  // The linked Staff `entities` row (see staffEntityService.ts) this
+  // member's default_rate lives on -- null for a member somehow missing one
+  // (pre-dates the auto-provisioning, or the company has entities disabled
+  // entirely), in which case handleSaveRate creates it on first save.
+  entityId: string | null;
+  defaultRate: number | null;
 }
 
 interface Company {
@@ -204,17 +207,29 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   ]);
   perfLog("admin: batch fetch resolved");
 
-  // Members — two separate queries to avoid FK join issues
+  // Members — separate queries to avoid FK join issues
   let members: Member[] = [];
   if (memberships && memberships.length > 0) {
     const userIds = memberships.map((m: any) => m.user_id);
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, is_active')
-      .in('id', userIds);
+    const [{ data: profiles }, { data: staffEntities }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, full_name, email, is_active')
+        .in('id', userIds),
+      // Rate lives on the linked Staff entity, not the profile -- see
+      // supabase/migrations/20260726065536_entities_default_rate.sql.
+      supabase
+        .from('entities')
+        .select('id, linked_profile_id, default_rate')
+        .eq('company_id', companyId)
+        .eq('entity_type', 'Staff')
+        .in('linked_profile_id', userIds)
+        .is('deleted_at', null),
+    ]);
 
     members = memberships.map((m: any) => {
       const prof = profiles?.find((p: any) => p.id === m.user_id);
+      const entity = staffEntities?.find((e: any) => e.linked_profile_id === m.user_id);
       return {
         id: m.user_id,
         full_name: prof?.full_name || '',
@@ -222,6 +237,8 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
         role: m.role || 'operator',
         is_active: prof?.is_active ?? true,
         is_admin: m.role === 'company_admin',
+        entityId: entity?.id ?? null,
+        defaultRate: entity?.default_rate ?? null,
       };
     });
   }
@@ -237,11 +254,10 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'views' | 'defaultTabs' | 'defaultTables' | 'defaultDashboards' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'views', 'defaultTabs', 'defaultTables', 'defaultDashboards', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
+type AdminTab = 'members' | 'teams' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
-  members: 'Members', teams: 'Teams', views: 'Default views', defaultTabs: 'Default tabs',
-  defaultTables: 'Default tables', defaultDashboards: 'Default dashboards', invites: 'Invite links',
+  members: 'Members', teams: 'Teams', defaults: 'Default Settings', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
   oneDrive: 'OneDrive', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
@@ -265,6 +281,11 @@ export default function AdminPage() {
   const unauthorized = !companyLoading && (!companyId || !isAdmin);
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Default-rate inline editor -- same editingId + Enter/Escape pattern as
+  // AdminTeamsTab.tsx's rename control.
+  const [editingRateId, setEditingRateId] = useState<string | null>(null);
+  const [rateInput, setRateInput] = useState('');
 
   const queryClient = useQueryClient();
   const adminQueryKey = ['admin', companyId] as const;
@@ -392,6 +413,35 @@ export default function AdminPage() {
     queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
       ...old,
       members: old.members.filter(m => m.id !== member.id),
+    }));
+    setSaving(null);
+  };
+
+  const handleSaveRate = async (member: Member) => {
+    const trimmed = rateInput.trim();
+    const rate = trimmed === '' ? null : Number(trimmed);
+    if (rate !== null && !Number.isFinite(rate)) return;
+    setEditingRateId(null);
+    setSaving(member.id);
+    // Most members already have a Staff entity (see staffEntityService.ts's
+    // auto-provisioning on join) -- this insert path only fires for the
+    // rare pre-existing member who joined before that landed.
+    let entityId = member.entityId;
+    if (entityId) {
+      await supabase.from('entities').update({ default_rate: rate }).eq('id', entityId);
+    } else {
+      const { data: created } = await supabase.from('entities').insert({
+        company_id: company!.id,
+        name: member.full_name || 'New team member',
+        entity_type: 'Staff',
+        linked_profile_id: member.id,
+        default_rate: rate,
+      }).select('id').single();
+      entityId = created?.id ?? null;
+    }
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      members: old.members.map(m => m.id === member.id ? { ...m, entityId, defaultRate: rate } : m),
     }));
     setSaving(null);
   };
@@ -640,18 +690,49 @@ export default function AdminPage() {
                       <p className="text-[11px] text-slate-400 truncate mt-0.5">
                         {member.email}
                       </p>
-                      {allTeams.length > 0 && (
-                        <select
-                          onChange={e => handleAssignTeam(member.id, e.target.value || null)}
-                          className="mt-1.5 text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 outline-none bg-white hover:border-indigo-300 cursor-pointer"
-                          defaultValue=""
-                        >
-                          <option value="">Assign to team...</option>
-                          {allTeams.map(t => (
-                            <option key={t.id} value={t.id}>{t.team_name}</option>
-                          ))}
-                        </select>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                        {allTeams.length > 0 && (
+                          <select
+                            onChange={e => handleAssignTeam(member.id, e.target.value || null)}
+                            className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 outline-none bg-white hover:border-indigo-300 cursor-pointer"
+                            defaultValue=""
+                          >
+                            <option value="">Assign to team...</option>
+                            {allTeams.map(t => (
+                              <option key={t.id} value={t.id}>{t.team_name}</option>
+                            ))}
+                          </select>
+                        )}
+                        {editingRateId === member.id ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              autoFocus
+                              defaultValue={member.defaultRate ?? ''}
+                              onChange={e => setRateInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleSaveRate(member);
+                                if (e.key === 'Escape') setEditingRateId(null);
+                              }}
+                              placeholder="Rate"
+                              className="w-20 text-[11px] text-slate-600 border border-slate-200 rounded-full px-3 py-1 outline-none focus:ring-2 focus:ring-indigo-100"
+                            />
+                            <button
+                              onClick={() => handleSaveRate(member)}
+                              className="p-1.5 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all"
+                            >
+                              <Check size={11} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setRateInput(member.defaultRate != null ? String(member.defaultRate) : ''); setEditingRateId(member.id); }}
+                            className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                          >
+                            {member.defaultRate != null ? `$${member.defaultRate}/hr default` : 'Set default rate'}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
@@ -861,24 +942,12 @@ export default function AdminPage() {
             <AdminTeamsTab companyId={companyId} />
           )}
 
-          {/* ── Default views ── */}
-          {activeTab === 'views' && companyId && (
-            <AdminDefaultViewsTab companyId={companyId} />
-          )}
-
-          {/* ── Default tabs ── */}
-          {activeTab === 'defaultTabs' && companyId && (
-            <AdminDefaultTabsTab companyId={companyId} />
-          )}
-
-          {/* ── Default tables ── */}
-          {activeTab === 'defaultTables' && companyId && (
-            <AdminDefaultTablesTab companyId={companyId} />
-          )}
-
-          {/* ── Default dashboards ── */}
-          {activeTab === 'defaultDashboards' && companyId && (
-            <AdminDefaultDashboardsTab companyId={companyId} />
+          {/* ── Default Settings: views/tabs/tables/dashboards, switched
+              via pill tabs inside the component itself (same pattern as
+              AdminGmailSyncTab's own sub-sections) rather than 4 separate
+              Admin tabs. ── */}
+          {activeTab === 'defaults' && companyId && (
+            <AdminDefaultSettingsTab companyId={companyId} />
           )}
 
           {/* ── Gmail source of truth ── */}
