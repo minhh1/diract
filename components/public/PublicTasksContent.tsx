@@ -119,7 +119,16 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   const checkAuthAndLoad = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    // getSession() reads the local session (no network round-trip) instead
+    // of getUser() re-validating the JWT against the auth server on every
+    // page load. Safe here because this only decides whether to show the
+    // "sign in required" gate -- the actual data fetch below is still
+    // enforced server-side (createSupabaseServerClient + cookie session) on
+    // every request regardless, so a stale/tampered local session can't
+    // grant access to anything, just delay this gate correcting itself by
+    // one request.
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
     setSignedIn(!!user);
     setAuthChecked(true);
     if (!user) { setLoading(false); return; }

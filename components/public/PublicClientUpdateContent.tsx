@@ -107,8 +107,15 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && await loadAsStaff()) { setLoading(false); return; }
+    // getSession() reads the local session (no network round-trip) instead
+    // of getUser() re-validating the JWT against the auth server on every
+    // page load. Safe here because this only decides which fetch to try
+    // first (staff vs client) -- loadAsStaff's by-slug route still
+    // re-validates the real session server-side, so a stale/tampered local
+    // session can't grant staff access, just cause one extra fallback
+    // request to loadAsClient.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user && await loadAsStaff()) { setLoading(false); return; }
     await loadAsClient();
   }, [loadAsStaff, loadAsClient]);
 
