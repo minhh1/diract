@@ -287,10 +287,19 @@ async function fetchAllSystemTableOptions(
   if (filterColumn && filterValue === TEAM_SCOPE_SENTINEL) {
     q = q.eq('entity_type', 'Staff');
     const scopeIds = await dedupedFetch('team-scope-ids', getStaffScopeIds);
-    if (scopeIds !== null) q = scopeIds.length ? q.in('id', scopeIds) : q.eq('id', '__none__');
+    // .in() with an empty array matches nothing and is valid regardless of
+    // column type -- unlike the .eq(col, '__none__') sentinel this replaced,
+    // which 400s on a uuid column (id) since '__none__' isn't a valid uuid
+    // literal (confirmed live: PostgREST error 22P02). That silently emptied
+    // the whole options list -- via the caught/swallowed fetch error, not a
+    // legitimately-empty result -- for any $team_scope user with zero scope
+    // ids (no Staff entity of their own, no delegated team).
+    if (scopeIds !== null) q = q.in('id', scopeIds);
   } else if (filterColumn) {
     const resolvedValue = await resolveFilterValue(filterValue);
-    q = resolvedValue ? q.eq(filterColumn, resolvedValue) : q.eq(filterColumn, '__none__');
+    // Same fix as above -- filterColumn can also be a uuid column (e.g.
+    // linked_profile_id).
+    q = q.in(filterColumn, resolvedValue ? [resolvedValue] : []);
   }
   const { data: rows } = await q;
   const ids = (rows || []).map((r: any) => r.id);
