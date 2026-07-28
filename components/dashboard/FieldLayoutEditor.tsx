@@ -134,10 +134,10 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-      <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col max-h-[80vh]">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col max-h-[80vh]">
         <div className="px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[13px] font-bold text-slate-800 uppercase tracking-wide">
+            <h3 className="text-base font-semibold text-slate-900">
               {modalTitle}
             </h3>
             <button onClick={onClose} className="p-1.5 text-slate-300 hover:text-slate-700"><X size={16} /></button>
@@ -161,11 +161,11 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
           {isPersonLink && (
             <div className="flex gap-2 mb-3">
               <button onClick={() => { setPersonLinkType('entity'); setQuery(''); setResults([]); }}
-                className={`flex-1 py-2 rounded-full text-[11px] font-bold transition-colors ${personLinkType === 'entity' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors ${personLinkType === 'entity' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
                 Entity
               </button>
               <button onClick={() => { setPersonLinkType('profile'); setQuery(''); setResults([]); }}
-                className={`flex-1 py-2 rounded-full text-[11px] font-bold transition-colors ${personLinkType === 'profile' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors ${personLinkType === 'profile' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
                 Team member
               </button>
             </div>
@@ -177,7 +177,7 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
               placeholder={isPersonLink
                 ? (personLinkType === 'profile' ? 'Search team member...' : 'Search or create entity...')
                 : table === 'entities' ? 'Search or create entity...' : table === 'properties' ? 'Search or create property...' : `Search ${table}...`}
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
+              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-400" />
           </div>
         </div>
 
@@ -215,7 +215,7 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between shrink-0">
           <button onClick={onClose} className="text-[11px] text-slate-400 hover:text-slate-700">Cancel</button>
           <button onClick={handleSave} disabled={saving}
-            className="px-5 py-2.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+            className="px-5 py-2.5 bg-indigo-600 text-white text-[11px] font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
             {saving ? 'Saving...' : `Save ${draft.length > 0 ? `(${draft.length})` : ''}`}
           </button>
         </div>
@@ -315,7 +315,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
       case 'boolean':
         return (
           <select autoFocus value={String(draft)} onChange={e => setDraft(e.target.value === 'true')}
-            className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none">
+            className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none">
             <option value="true">Yes</option>
             <option value="false">No</option>
           </select>
@@ -323,20 +323,20 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
       case 'select':
         return field.selectOptions?.length ? (
           <select autoFocus value={draft} onChange={e => setDraft(e.target.value)}
-            className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none">
+            className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none">
             <option value="">— Select —</option>
             {field.selectOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </select>
         ) : (
           <input autoFocus type="text" value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
-            className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none" />
+            className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none" />
         );
       case 'date':
         return (
           <input autoFocus type="date" value={draft ? String(draft).slice(0, 10) : ''} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
-            className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none" />
+            className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none" />
         );
       case 'number':
       case 'currency':
@@ -345,27 +345,27 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
             {field.fieldType === 'currency' && <span className="text-slate-400 text-[13px]">$</span>}
             <input autoFocus type="number" value={draft} onChange={e => setDraft(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
-              className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none" />
+              className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none" />
           </div>
         );
       case 'email':
         return (
           <input autoFocus type="email" value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
-            className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none" />
+            className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none" />
         );
       case 'url':
         return (
           <input autoFocus type="url" value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
             placeholder="https://"
-            className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none" />
+            className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none" />
         );
       default:
         return (
           <input autoFocus type="text" value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
-            className="flex-1 bg-slate-50 border border-indigo-300 rounded-full px-4 py-2 text-[13px] outline-none" />
+            className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none" />
         );
     }
   };
@@ -469,7 +469,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
               edit still open. Enter-to-save was never affected since it
               saves straight from the input without ever blurring first. */}
           <button onClick={handleSave} onMouseDown={e => e.preventDefault()} disabled={saving}
-            className="px-3 py-2 bg-indigo-600 text-white rounded-full text-[10px] font-bold disabled:opacity-50 shrink-0">
+            className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-bold disabled:opacity-50 shrink-0">
             {saving ? '...' : 'Save'}
           </button>
         </div>
@@ -612,7 +612,7 @@ function RelatedRowEditor({ config, parentId, row, onSave, onBack }: RelatedRowE
               <select
                 value={draft[col.key] || ''}
                 onChange={e => setDraft(p => ({ ...p, [col.key]: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400 bg-white">
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-400 bg-white">
                 <option value="">— Select —</option>
                 {col.options.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -621,7 +621,7 @@ function RelatedRowEditor({ config, parentId, row, onSave, onBack }: RelatedRowE
                 type={col.type === 'date' ? 'date' : 'text'}
                 value={draft[col.key] || ''}
                 onChange={e => setDraft(p => ({ ...p, [col.key]: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-400"
               />
             )}
           </div>
@@ -629,7 +629,7 @@ function RelatedRowEditor({ config, parentId, row, onSave, onBack }: RelatedRowE
       </div>
       <div className="px-8 py-5 border-t border-slate-100 shrink-0">
         <button onClick={handleSave} disabled={saving}
-          className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+          className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
           {saving ? 'Saving...' : row ? 'Save changes' : 'Add'}
         </button>
       </div>
@@ -696,7 +696,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-2xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
 
         {/* When editing a related row — show editor view */}
         {editingRelated ? (

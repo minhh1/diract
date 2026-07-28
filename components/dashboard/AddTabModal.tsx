@@ -112,9 +112,9 @@ export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-      <div className="bg-white rounded-[40px] p-8 w-full max-w-xl shadow-2xl max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-2xl p-8 w-full max-w-xl shadow-2xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between mb-6 shrink-0">
-          <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">
+          <h3 className="text-base font-semibold text-slate-900">
             Add tab
           </h3>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-black">
@@ -204,7 +204,7 @@ export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
               value={customTitle}
               onChange={e => setCustomTitle(e.target.value)}
               placeholder="Tab name..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-3 px-5 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
             />
           </div>
         )}
@@ -213,14 +213,14 @@ export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
         <div className="flex gap-3 pt-6 shrink-0">
           <button
             onClick={onClose}
-            className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold"
+            className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-lg text-[11px] font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handleAdd}
             disabled={!selected || saving}
-            className="flex-1 py-3 bg-slate-900 text-white rounded-full text-[11px] font-bold disabled:opacity-40 flex items-center justify-center gap-2"
+            className="flex-1 py-3 bg-slate-900 text-white rounded-lg text-[11px] font-medium disabled:opacity-40 flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             Add tab

@@ -488,29 +488,29 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   if (success) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-        <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl p-8 text-center space-y-5">
+        <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-8 text-center space-y-5">
           <div className="mx-auto h-14 w-14 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center">
             <Check size={26} />
           </div>
           <div>
-            <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Invoice created</h3>
+            <h3 className="text-base font-semibold text-slate-900">Invoice created</h3>
             <p className="text-[12px] text-slate-400 mt-1">{success.invoiceNumber || 'Invoice'} is ready.</p>
           </div>
           <div className="flex gap-3">
             <a
               href={`/api/invoices/${success.id}/pdf`}
               target="_blank" rel="noreferrer"
-              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-lg text-[11px] font-bold hover:bg-slate-100 transition-all"
             >
               Preview PDF
             </a>
             <a
               href={`/api/invoices/${success.id}/docx?download=1`}
-              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-lg text-[11px] font-bold hover:bg-slate-100 transition-all"
             >
               Word
             </a>
-            <button onClick={onClose} className="flex-1 py-3 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all">
+            <button onClick={onClose} className="flex-1 py-3 bg-slate-900 text-white rounded-lg text-[11px] font-bold hover:bg-slate-800 transition-all">
               Done
             </button>
           </div>
@@ -521,10 +521,10 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-      <div className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         <div className="shrink-0 flex items-center justify-between p-6 pb-4 border-b border-slate-100">
           <div>
-            <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Create invoice</h3>
+            <h3 className="text-base font-semibold text-slate-900">Create invoice</h3>
             <Link href="/dashboard/settings?view=invoice_template" className="text-[10px] text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-0.5">
               Manage invoice template <ExternalLink size={10} />
             </Link>
@@ -572,12 +572,12 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                 <div>
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Our reference</label>
                   <input value={ourReference} onChange={e => setOurReference(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium outline-none" />
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Your reference</label>
                   <input value={yourReference} onChange={e => setYourReference(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium outline-none" />
                 </div>
                 {invoiceSettings.templates.length > 0 && (
                   <div className="col-span-2">
@@ -585,7 +585,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     <select
                       value={templateId}
                       onChange={e => setTemplateId(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium outline-none appearance-none"
                     >
                       {invoiceSettings.templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
@@ -635,7 +635,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                           <button
                             type="button"
                             onClick={() => { setProfessionalFeesDescription(suggestion); setSuggestion(null); }}
-                            className="px-3 py-1 bg-indigo-600 text-white rounded-full text-[10px] font-bold hover:bg-indigo-700"
+                            className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-bold hover:bg-indigo-700"
                           >
                             Use this
                           </button>
@@ -653,12 +653,12 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                 <div>
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Issue date</label>
                   <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium outline-none" />
                 </div>
                 <div>
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Due date</label>
                   <input type="date" value={dueDate} onChange={e => { setDueDate(e.target.value); setDueDateTouched(true); }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium outline-none" />
                 </div>
               </div>
 
@@ -702,14 +702,14 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                   {mode === 'pct_amount' && (
                     <div className="flex items-center gap-2 pl-6">
                       <select value={pctAmtDirection} onChange={e => setPctAmtDirection(e.target.value as any)}
-                        className="bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none">
+                        className="bg-white border border-slate-200 rounded-lg py-2 px-3 text-[12px] font-medium outline-none">
                         <option value="discount">Discount</option>
                         <option value="markup">Markup</option>
                       </select>
                       <input type="number" step="0.01" value={pctAmtValue} onChange={e => setPctAmtValue(e.target.value)}
-                        placeholder="0" className="w-28 bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none" />
+                        placeholder="0" className="w-28 bg-white border border-slate-200 rounded-lg py-2 px-3 text-[12px] font-medium outline-none" />
                       <select value={pctAmtType} onChange={e => setPctAmtType(e.target.value as any)}
-                        className="bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none">
+                        className="bg-white border border-slate-200 rounded-lg py-2 px-3 text-[12px] font-medium outline-none">
                         <option value="percent">%</option>
                         <option value="amount">$</option>
                       </select>
@@ -721,7 +721,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                       <div className="flex items-center gap-2">
                         <span className="text-[12px] text-slate-500">Target fee total $</span>
                         <input type="number" step="0.01" value={targetTotal} onChange={e => setTargetTotal(e.target.value)}
-                          placeholder={feesSubtotal.toFixed(2)} className="w-32 bg-white border border-slate-200 rounded-full py-2 px-3 text-[12px] font-medium outline-none" />
+                          placeholder={feesSubtotal.toFixed(2)} className="w-32 bg-white border border-slate-200 rounded-lg py-2 px-3 text-[12px] font-medium outline-none" />
                       </div>
                       <div className="flex flex-col gap-1.5">
                         <label className="flex items-center gap-2 text-[12px] text-slate-700 cursor-pointer">
@@ -803,13 +803,13 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
         </div>
 
         <div className="shrink-0 flex gap-3 p-6 pt-4 border-t border-slate-100">
-          <button onClick={onClose} className="flex-1 py-3.5 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold uppercase tracking-widest hover:bg-slate-100 transition-all">
+          <button onClick={onClose} className="flex-1 py-3.5 bg-slate-50 text-slate-600 rounded-lg text-[11px] font-medium hover:bg-slate-100 transition-all">
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving || loading || notReady || (feeRows.length === 0 && disbRows.length === 0)}
-            className="flex-1 py-3.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+            className="flex-1 py-3.5 bg-indigo-600 text-white rounded-lg text-[11px] font-medium disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : 'Create invoice'}
           </button>

@@ -1171,9 +1171,9 @@ export default function RecordDashboard({
 
       {showFieldPicker && fieldPickerTabId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-          <div className="bg-white rounded-[40px] p-8 w-full max-w-md shadow-2xl">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">
+              <h3 className="text-base font-semibold text-slate-900">
                 Add field
               </h3>
               <button
@@ -1307,14 +1307,14 @@ export default function RecordDashboard({
       <div className="font-sans antialiased">
         <div className="px-8 pt-6 pb-0 border-b border-slate-100 bg-white">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xl font-light text-slate-900 tracking-tight uppercase truncate">
+            <h2 className="text-lg font-semibold text-slate-900 tracking-tight truncate">
               {primaryValue}
             </h2>
             <div className="flex items-center gap-2">
               {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_dashboard') && (
                 <button
                   onClick={() => setIsEditingLayout(p => !p)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
                     isEditingLayout
                       ? 'bg-indigo-600 text-white'
                       : 'bg-slate-50 border border-slate-200 text-slate-600'
@@ -1326,7 +1326,7 @@ export default function RecordDashboard({
               )}
             </div>
           </div>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+          <p className="text-[11px] font-medium text-slate-400 mb-3">
             {tableName || systemTable}
             {record.created_at && (
               <span className="ml-2">
@@ -1369,7 +1369,7 @@ export default function RecordDashboard({
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={onBack}
-              className="flex items-center gap-2 -ml-2.5 pl-2.5 pr-3 py-1.5 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-900 hover:bg-slate-100 active:bg-slate-200 active:scale-95 transition-all shrink-0"
+              className="flex items-center gap-1.5 -ml-2.5 pl-2.5 pr-3 py-1.5 rounded-lg text-[12px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 active:bg-slate-200 transition-all shrink-0"
             >
               <ArrowLeft size={14} />
               {parentRecord ? parentRecord.name : 'Back'}
@@ -1377,7 +1377,7 @@ export default function RecordDashboard({
             {parentRecord && (
               <>
                 <span className="text-slate-300 shrink-0">/</span>
-                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest truncate">
+                <span className="text-[12px] font-medium text-slate-600 truncate">
                   {primaryValue}
                 </span>
               </>
@@ -1388,7 +1388,7 @@ export default function RecordDashboard({
             {(activeTab?.tab_type === 'fields' || activeTab?.tab_type === 'custom_dashboard') && (
               <button
                 onClick={() => setIsEditingLayout(p => !p)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
                   isEditingLayout
                     ? 'bg-indigo-600 text-white'
                     : 'bg-slate-50 border border-slate-200 text-slate-600 hover:border-indigo-300'
@@ -1405,7 +1405,7 @@ export default function RecordDashboard({
             )}
             <button
               onClick={handleDelete}
-              className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+              className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
             >
               <Trash2 size={16} />
             </button>
@@ -1413,10 +1413,10 @@ export default function RecordDashboard({
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl font-light text-slate-900 tracking-tight uppercase truncate mb-1">
+        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight truncate mb-1">
           {primaryValue}
         </h1>
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+        <p className="text-[11px] font-medium text-slate-400 mb-4">
           {tableName || systemTable}
           {record.created_at && (
             <span className="ml-2">
@@ -1461,7 +1461,7 @@ export default function RecordDashboard({
                 <button
                   key={sp.id}
                   onClick={() => setActiveSubProjectId(isActive ? null : sp.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all border ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all border ${
                     isActive
                       ? 'bg-slate-900 text-white border-slate-900'
                       : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
@@ -1474,7 +1474,7 @@ export default function RecordDashboard({
             })}
 
             {isAddingSubProject ? (
-              <span className="flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full bg-white border border-indigo-300">
+              <span className="flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg bg-white border border-indigo-300">
                 <FolderKanban size={12} className="text-slate-300 shrink-0" />
                 <input
                   autoFocus
@@ -1491,14 +1491,14 @@ export default function RecordDashboard({
                   onClick={handleSaveSubProject}
                   disabled={!newSubProjectName.trim()}
                   title="Save"
-                  className="p-1 rounded-full text-emerald-500 hover:bg-emerald-50 disabled:opacity-30 disabled:hover:bg-transparent shrink-0 transition-all"
+                  className="p-1 rounded-md text-emerald-500 hover:bg-emerald-50 disabled:opacity-30 disabled:hover:bg-transparent shrink-0 transition-all"
                 >
                   <Check size={13} />
                 </button>
                 <button
                   onClick={handleDiscardSubProject}
                   title="Discard"
-                  className="p-1 rounded-full text-slate-300 hover:text-red-500 hover:bg-red-50 shrink-0 transition-all"
+                  className="p-1 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 shrink-0 transition-all"
                 >
                   <X size={13} />
                 </button>
@@ -1506,7 +1506,7 @@ export default function RecordDashboard({
             ) : (
               <button
                 onClick={() => setIsAddingSubProject(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-300 transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-300 transition-all"
               >
                 <Plus size={12} /> Add sub-project
               </button>
