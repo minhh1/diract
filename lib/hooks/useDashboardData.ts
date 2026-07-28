@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useCompany } from "@/components/CompanyContext";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import { useCustomTable } from "./useCustomTable";
 import type { CustomTable } from "./useCustomTables";
@@ -51,13 +52,22 @@ export interface CompanyDashboard {
   widgets: DashboardWidget[];
   code_source: string | null;
   builder_mode: 'canvas' | 'code';
+  // Non-null = only company_admin + this team's leader can view (see
+  // app/dashboard/boards/[slug]/page.tsx's gate and
+  // lib/hooks/useCustomDashboards.ts's matching sidebar-list filter). Null
+  // (the default) means every company member can see it, same as before
+  // this column existed.
+  restricted_to_team_id: string | null;
 }
 
 interface CachedDashboardShell {
   dashboard: CompanyDashboard;
   sourceTableDef: CustomTable | null;
 }
-const dashboardShellKey = (slug: string) => `dashboard:${slug}`;
+// Scoped by companyId -- see lib/hooks/prefetchShells.ts's tableShellKey
+// doc comment for why (a bare slug-only key served a previous company's
+// stale shell after switching active company).
+const dashboardShellKey = (companyId: string, slug: string) => `dashboard:${companyId}:${slug}`;
 
 // Loads a dashboard's config, resolves its source custom table via
 // useCustomTable, and computes filtered records + summary tile values +
@@ -65,6 +75,7 @@ const dashboardShellKey = (slug: string) => `dashboard:${slug}`;
 // record set -- same scale assumption useCustomTable already makes
 // elsewhere in the app.
 export function useDashboardData(dashboardSlug: string) {
+  const { companyId } = useCompany();
   const [dashboard, setDashboard] = useState<CompanyDashboard | null>(null);
   // Full row, not just the slug -- fetched once source_table_id is known,
   // handed straight to useCustomTable below as its preloadedTable so that
@@ -94,7 +105,7 @@ export function useDashboardData(dashboardSlug: string) {
   // the NEW one.
   useIsomorphicLayoutEffect(() => {
     let active = true;
-    const cached = readShellCache<CachedDashboardShell>(dashboardShellKey(dashboardSlug));
+    const cached = companyId ? readShellCache<CachedDashboardShell>(dashboardShellKey(companyId, dashboardSlug)) : null;
     if (cached) {
       setDashboard(cached.dashboard);
       setSourceTableDef(cached.sourceTableDef);
@@ -120,10 +131,10 @@ export function useDashboardData(dashboardSlug: string) {
         setSourceTableDef(null);
       }
       setDashboardLoading(false);
-      if (dash) writeShellCache(dashboardShellKey(dashboardSlug), { dashboard: dash, sourceTableDef: tbl });
+      if (dash && companyId) writeShellCache(dashboardShellKey(companyId, dashboardSlug), { dashboard: dash, sourceTableDef: tbl });
     })();
     return () => { active = false; };
-  }, [dashboardSlug]);
+  }, [dashboardSlug, companyId]);
 
   const sourceKind: DashboardSourceKind = dashboard?.source_table_type ?? 'custom';
   const systemTableName = (sourceKind !== 'custom' && sourceKind !== 'none') ? sourceKind : null;

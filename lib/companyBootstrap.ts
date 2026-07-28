@@ -28,6 +28,14 @@ export interface CompanyBootstrapResult {
   userEmail: string | null;
   isAdmin: boolean;
   isSiteAdmin: boolean;
+  // Team membership/leadership -- see lib/teamScope.ts's own team_members
+  // query for why `teams` isn't itself company-scoped (checking membership
+  // first is what keeps this leak-free). Used to gate/scope the Team
+  // Leader-facing slice of Admin > Default Settings (see
+  // components/admin/AdminDefaultSettingsTab.tsx) and to resolve a member's
+  // own effective team/person-scoped defaults.
+  myTeamIds: string[];
+  ledTeamIds: string[];
   tableLabelOverrides: TableLabelOverrides;
   disabledSystemTables: DisabledSystemTables;
   invoiceSettings: InvoiceSettings;
@@ -80,7 +88,7 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   perfLog("companyBootstrap: session resolved");
   if (!user) return null;
 
-  const [{ data: prof }, { data: allMemberships }] = await Promise.all([
+  const [{ data: prof }, { data: allMemberships }, { data: myTeamRows }, { data: ledTeamRows }] = await Promise.all([
     supabase
       .from("profiles")
       .select("active_company_id, is_site_admin, companies:active_company_id(name, company_type, table_label_overrides, disabled_system_tables, invoice_settings, logo_url)")
@@ -90,6 +98,15 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
       .from("company_memberships")
       .select("company_id, role")
       .eq("user_id", user.id),
+    supabase
+      .from("team_members")
+      .select("team_id")
+      .eq("profile_id", user.id),
+    supabase
+      .from("teams")
+      .select("id")
+      .eq("leader_id", user.id)
+      .eq("is_active", true),
   ]);
   notifyStep("identity");
   perfLog("companyBootstrap: identity resolved");
@@ -104,6 +121,8 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
     userEmail: user.email ?? null,
     isAdmin: (allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin",
     isSiteAdmin: !!prof?.is_site_admin,
+    myTeamIds: (myTeamRows || []).map(t => t.team_id),
+    ledTeamIds: (ledTeamRows || []).map(t => t.id),
     tableLabelOverrides: companies?.table_label_overrides || {},
     disabledSystemTables: companies?.disabled_system_tables || {},
     invoiceSettings: { ...emptyInvoiceSettings(), ...(companies?.invoice_settings || {}) },
@@ -118,7 +137,7 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   notifyStep("relations");
   await warmSystemTableShells(cid).catch(() => {});
   notifyStep("tableShells");
-  await warmCustomTableShells().catch(() => {});
+  await warmCustomTableShells(cid).catch(() => {});
   // Row data prefetch stays fire-and-forget -- see startSystemTableRowPrefetch's
   // own doc comment for why (unlike shell/metadata, it's cheap per table but
   // not bounded, so it isn't part of what the splash gates on).

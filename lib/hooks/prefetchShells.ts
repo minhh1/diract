@@ -168,21 +168,32 @@ export function startSystemTableRowPrefetch(companyId: string | null): Promise<v
 // imported -- both are one-line key formats, and keeping this module
 // standalone (no imports FROM the hook files) avoids any risk of dragging
 // their React-hook internals into a plain background-fetch module.
-const tableShellKey = (slug: string) => `table:${slug}`;
-const dashboardShellKey = (slug: string) => `dashboard:${slug}`;
+//
+// Scoped by companyId -- a slug is only unique WITHIN a company (two
+// different companies can each have their own "time-fee-entries" custom
+// table), and unlike lib/services/schemaService.ts's system-table cache
+// (already companyId-scoped), this used to key purely by slug. That meant
+// switching active company (components/Sidebar.tsx's handleSwitchCompany,
+// which reloads the page but only clears the system-table schema cache, not
+// this one) left a previous company's table/dashboard shells sitting under
+// the same key the new company's lookups would read -- wrong tableDef/
+// fields silently served until something else happened to overwrite that
+// exact slug for the new company.
+export const tableShellKey = (companyId: string, slug: string) => `table:${companyId}:${slug}`;
+export const dashboardShellKey = (companyId: string, slug: string) => `dashboard:${companyId}:${slug}`;
 
 interface CachedTableShell { tableDef: CustomTable; fields: CustomTableField[] }
 interface CachedDashboardShell { dashboard: CompanyDashboard; sourceTableDef: CustomTable | null }
 
-async function prefetchTableFields(tbl: CustomTable): Promise<void> {
-  if (readShellCache<CachedTableShell>(tableShellKey(tbl.slug))) return;
+async function prefetchTableFields(tbl: CustomTable, companyId: string): Promise<void> {
+  if (readShellCache<CachedTableShell>(tableShellKey(companyId, tbl.slug))) return;
   const { data: flds } = await supabase
     .from('company_table_fields')
     .select('*')
     .eq('table_id', tbl.id)
     .is('deleted_at', null)
     .order('display_order');
-  writeShellCache(tableShellKey(tbl.slug), { tableDef: tbl, fields: (flds || []) as CustomTableField[] });
+  writeShellCache(tableShellKey(companyId, tbl.slug), { tableDef: tbl, fields: (flds || []) as CustomTableField[] });
 }
 
 // Parallel across both tables and dashboards -- this is now a blocking
@@ -190,7 +201,7 @@ async function prefetchTableFields(tbl: CustomTable): Promise<void> {
 // opposite of the sequential loop this used to be: bound the wait by the
 // single slowest fetch, not their sum, the same trade-off
 // warmSystemTableShells already makes across its 4 tables.
-async function prefetchAllShells(): Promise<void> {
+async function prefetchAllShells(companyId: string): Promise<void> {
   const { data: tables } = await supabase
     .from('company_tables').select('*').is('deleted_at', null).order('display_order');
   const tableList = (tables || []) as CustomTable[];
@@ -201,10 +212,10 @@ async function prefetchAllShells(): Promise<void> {
   const dashboardList = (dashboards || []) as (CompanyDashboard & { id: string; widgets_migrated_at: string | null })[];
 
   await Promise.all([
-    ...tableList.map(tbl => prefetchTableFields(tbl).catch(() => {})),
+    ...tableList.map(tbl => prefetchTableFields(tbl, companyId).catch(() => {})),
     ...dashboardList.map(async (dash) => {
       if (dash.source_table_type !== 'custom' || !dash.source_table_id) return;
-      if (readShellCache<CachedDashboardShell>(dashboardShellKey(dash.slug))) return;
+      if (readShellCache<CachedDashboardShell>(dashboardShellKey(companyId, dash.slug))) return;
       try {
         // Same one-time, idempotent migration useDashboardData.ts's own
         // effect runs on a real open -- doing it here just means it's
@@ -213,8 +224,8 @@ async function prefetchAllShells(): Promise<void> {
           dash.widgets = await ensureDashboardWidgetsMigrated(dash);
         }
         const sourceTableDef = tableById.get(dash.source_table_id) ?? null;
-        writeShellCache(dashboardShellKey(dash.slug), { dashboard: dash, sourceTableDef });
-        if (sourceTableDef) await prefetchTableFields(sourceTableDef);
+        writeShellCache(dashboardShellKey(companyId, dash.slug), { dashboard: dash, sourceTableDef });
+        if (sourceTableDef) await prefetchTableFields(sourceTableDef, companyId);
       } catch {}
     }),
   ]);
@@ -230,10 +241,11 @@ let inFlight: Promise<void> | null = null;
 // Strict Mode's double-invoke in dev (so a second caller awaits the same
 // promise instead of re-fetching); in production CompanyProvider only
 // mounts once per session anyway.
-export function warmCustomTableShells(): Promise<void> {
+export function warmCustomTableShells(companyId: string | null): Promise<void> {
+  if (!companyId) return Promise.resolve();
   if (inFlight) return inFlight;
   if (started) return Promise.resolve();
   started = true;
-  inFlight = prefetchAllShells().catch(() => {}).then(() => { inFlight = null; });
+  inFlight = prefetchAllShells(companyId).catch(() => {}).then(() => { inFlight = null; });
   return inFlight;
 }

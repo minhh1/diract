@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { readShellCache } from "@/lib/shellCache";
+import { tableShellKey } from "@/lib/hooks/prefetchShells";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
 import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign } from "lucide-react";
@@ -214,7 +215,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   useEffect(() => {
     if (!data?.companyId) return;
     (async () => {
-      const cached = readShellCache<{ tableDef: CustomTable; fields: CustomTableField[] }>("table:time-fee-entries");
+      const cached = readShellCache<{ tableDef: CustomTable; fields: CustomTableField[] }>(tableShellKey(data.companyId, "time-fee-entries"));
       if (cached) {
         setTimeFeesTable(cached.tableDef);
         setTimeFeesFields(cached.fields);

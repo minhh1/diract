@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useCompany } from "@/components/CompanyContext";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import type { CustomTable } from "./useCustomTables";
 
@@ -10,7 +11,10 @@ interface CachedTableShell {
   tableDef: CustomTable;
   fields: CustomTableField[];
 }
-const tableShellKey = (slug: string) => `table:${slug}`;
+// Scoped by companyId -- see lib/hooks/prefetchShells.ts's tableShellKey
+// doc comment for why (a bare slug-only key served a previous company's
+// stale shell after switching active company).
+const tableShellKey = (companyId: string, slug: string) => `table:${companyId}:${slug}`;
 
 export interface CustomTableField {
   id: string;
@@ -186,6 +190,7 @@ export function useCustomTable(
   // this doesn't need one either.
   addRecordOptimistic: (id: string, values: Record<string, any>) => void;
 } {
+  const { companyId } = useCompany();
   const [tableDef, setTableDef] = useState<CustomTable | null>(null);
   const [fields, setFields] = useState<CustomTableField[]>([]);
   const [records, setRecords] = useState<CustomTableRecord[]>([]);
@@ -245,7 +250,7 @@ export function useCustomTable(
     const fieldList = (flds || []) as CustomTableField[];
     setFields(fieldList);
     setLoading(false);
-    writeShellCache(tableShellKey(tableSlug), { tableDef: tbl, fields: fieldList });
+    if (companyId) writeShellCache(tableShellKey(companyId, tableSlug), { tableDef: tbl, fields: fieldList });
 
     // Build a field_id → field_key map for resolving values
     const fieldMap = new Map(fieldList.map(f => [f.id, f]));
@@ -295,7 +300,7 @@ export function useCustomTable(
     await resolveRelationLabels(fieldList, hydratedRecords);
     setRecords(hydratedRecords);
     setRecordsLoading(false);
-  }, [tableSlug, preloadedTable]);
+  }, [tableSlug, preloadedTable, companyId]);
 
   // Layout effect, not a plain effect -- when a caller reuses this hook's
   // component instance across a slug change (e.g. clicking between two
@@ -314,7 +319,7 @@ export function useCustomTable(
     // that this table's FIELDS are known too. Consulting this cache
     // unconditionally is what lets a repeat visit paint the shell with zero
     // network wait even on the dashboard-driven path.
-    const cached = readShellCache<CachedTableShell>(tableShellKey(tableSlug));
+    const cached = companyId ? readShellCache<CachedTableShell>(tableShellKey(companyId, tableSlug)) : null;
     const preload = preloadedTable?.slug === tableSlug ? preloadedTable : null;
     if (preload) setTableDef(preload);
     else if (cached) setTableDef(cached.tableDef);
@@ -326,7 +331,7 @@ export function useCustomTable(
     }
     setRecordsLoading(true);
     load();
-  }, [tableSlug, load, preloadedTable]);
+  }, [tableSlug, load, preloadedTable, companyId]);
 
   const addRecordOptimistic = useCallback((id: string, values: Record<string, any>) => {
     setRecords(prev => {
