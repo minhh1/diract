@@ -602,7 +602,10 @@ export default function RelationPicker({
       ? (values || []).map(id => multiLabels[id] ?? options.find(o => o.id === id)?.label).filter(Boolean).join(', ')
       : currentLabel;
     return (
-      <div className={plain ? `w-full font-medium text-slate-500 truncate ${sizeClass}` : `w-full bg-slate-50 border border-slate-200 rounded-full font-medium text-slate-500 truncate ${sizeClass}`}>
+      <div
+        title={label || undefined}
+        className={plain ? `w-full font-medium text-slate-500 truncate ${sizeClass}` : `w-full bg-slate-50 border border-slate-200 rounded-full font-medium text-slate-500 truncate ${sizeClass}`}
+      >
         {label || (plain ? '' : '—')}
       </div>
     );
@@ -814,7 +817,10 @@ export default function RelationPicker({
             className="w-full bg-transparent outline-none"
           />
         ) : (
-          <span className={`truncate ${currentLabel ? 'text-slate-700' : 'text-slate-400'}`}>
+          <span
+            title={currentLabel || undefined}
+            className={`truncate ${currentLabel ? 'text-slate-700' : 'text-slate-400'}`}
+          >
             {currentLabel || placeholder || (plain ? '' : 'Select...')}
           </span>
         )}
