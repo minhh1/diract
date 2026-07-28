@@ -31,7 +31,7 @@ import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
-interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; baseTable?: "projects" | "entities" }
+interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed" }
 
 const boardCacheKey = (slug: string) => `client_update_board_${slug}`;
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
@@ -94,7 +94,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     if (cachedCode) {
       const attempt = await fetchPublic(cachedCode);
       if (attempt.ok && !attempt.json.requiresCode) {
-        const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn };
+        const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind };
         const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [] };
         setMode("client");
         setMeta(meta);
@@ -113,7 +113,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     const { ok, json } = await fetchPublic();
     if (!ok) { setError(json.error || "This page is not available"); setLoading(false); return; }
     setMode("client");
-    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, baseTable: json.baseTable });
+    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, baseTable: json.baseTable, pageKind: json.pageKind });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
     const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
     setBoard(board);
@@ -127,7 +127,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     const json = await res.json();
     setMode("staff");
     setStaffPageId(json.page.id);
-    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, baseTable: json.page.base_table });
+    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, baseTable: json.page.base_table, pageKind: json.page.page_kind });
     setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
     return true;
   }, [slug]);
@@ -578,6 +578,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
         <MatterBoard
           pageId={mode === "staff" ? staffPageId! : undefined}
           baseTable={meta.baseTable}
+          pageKind={meta.pageKind}
           groups={board.groups}
           items={board.items}
           fields={board.fields}
@@ -597,7 +598,12 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
           onCustomizeColumns={mode === "staff" ? customizeColumns : undefined}
           onRevertColumns={mode === "staff" ? revertColumns : undefined}
           onMoveItem={mode === "staff" ? moveItem : undefined}
-          onRemoveItem={mode === "staff" ? removeItem : undefined}
+          // An auto_fed item (e.g. an Irregularities row) is a live mirror
+          // of a rule-engine-managed record -- removing it from the page
+          // wouldn't resolve anything underneath, it'd just desync until
+          // the next recompute re-adds it. Fixing the flagged record's
+          // actual field is the real "resolve" action.
+          onRemoveItem={mode === "staff" && meta.pageKind !== "auto_fed" ? removeItem : undefined}
           onAddNote={addNote}
           onAddEmail={mode === "staff" && meta.baseTable !== "entities" ? appendEmail : undefined}
           onRemoveEmail={mode === "staff" && meta.baseTable !== "entities" ? removeEmail : undefined}

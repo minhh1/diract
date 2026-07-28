@@ -160,11 +160,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
 
   const customValueByKey = new Map<string, any>((customValues || []).map((v: any) => [`${v.field_id}:${v.record_id}`, v]));
 
-  const linkedEntityIdByKey = new Map<string, string>((linkValues || []).filter((v: any) => v.value_record_id).map((v: any) => [`${v.field_id}:${v.record_id}`, v.value_record_id]));
-  const relatedEntityIds = [...new Set([...linkedEntityIdByKey.values(), ...customTableRelationIds])];
-
-  const adhocValueByKey = new Map<string, any>((adhocValues || []).map((v: any) => [`${v.field_id}:${v.item_id}`, v.value_text]));
-
   // custom_table 'base' fields resolve straight off company_table_values,
   // typed by the source table's own company_table_fields.field_type
   // (mirrors getValueColumn in lib/schema/fieldCapabilities.ts) -- a
@@ -175,6 +170,11 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const customTableFieldTypeById = new Map<string, string>((customTableFieldDefs || []).map((f: any) => [f.id, f.field_type]));
   const customTableValueByKey = new Map<string, any>((customTableValues || []).map((v: any) => [`${v.field_id}:${v.record_id}`, v]));
   const customTableRelationIds = (customTableValues || []).filter((v: any) => v.value_record_id).map((v: any) => v.value_record_id as string);
+
+  const linkedEntityIdByKey = new Map<string, string>((linkValues || []).filter((v: any) => v.value_record_id).map((v: any) => [`${v.field_id}:${v.record_id}`, v.value_record_id]));
+  const relatedEntityIds = [...new Set([...linkedEntityIdByKey.values(), ...customTableRelationIds])];
+
+  const adhocValueByKey = new Map<string, any>((adhocValues || []).map((v: any) => [`${v.field_id}:${v.item_id}`, v.value_text]));
 
   const notesByItem = new Map<string, any[]>();
   for (const n of notes || []) {

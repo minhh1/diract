@@ -2,8 +2,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Loader2, Check, ShieldCheck } from "lucide-react";
+import { X, Loader2, Check, ShieldCheck, AlertCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 
 interface Props {
   isOpen: boolean;
@@ -44,7 +45,8 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
   const isTrust = entityType.toLowerCase().includes('trust');
 
   const ENTITY_TYPES = [
-    'Company', 'Individual', 'Discretionary Family Trust', 'Fixed Unit Trust',
+    'Company', 'Individual', 'Corporate Trustee', 'Non Corporate Trustee',
+    'Discretionary Family Trust', 'Fixed Unit Trust',
     'Lawyer', 'Accountant', 'Mortgage Broker', 'Real Estate Agent',
     'Local Council', 'Bank', 'Staff', 'Other',
   ];
@@ -84,6 +86,9 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
   const handleSubmit = async () => {
     if (!name.trim()) return;
     if (isTrust && !trusteeName.trim()) { alert('Trustee name is required'); return; }
+    if (abn.trim() && !isValidABN(abn)) { alert('ABN is not valid (must be 11 digits and pass the ABN checksum)'); return; }
+    if (!isTrust && acn.trim() && !isValidACN(acn)) { alert('ACN is not valid (must be 9 digits and pass the ACN checksum)'); return; }
+    if (isTrust && trusteeAbn.trim() && !isValidABN(trusteeAbn)) { alert('Trustee ABN is not valid (must be 11 digits and pass the ABN checksum)'); return; }
     const missingRequired = customFields.filter(f => f.is_required && !customValues[f.id]?.trim());
     if (missingRequired.length > 0) {
       alert(`Please fill in required field${missingRequired.length > 1 ? 's' : ''}: ${missingRequired.map(f => f.label).join(', ')}`);
@@ -193,8 +198,13 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
                   className="bg-white border border-indigo-100 rounded-full py-3 px-5 text-[13px] font-medium outline-none appearance-none">
                   <option>Company</option><option>Individual</option>
                 </select>
-                <input value={trusteeAbn} onChange={e => setTrusteeAbn(e.target.value)} placeholder="Trustee ABN"
-                  className="bg-white border border-indigo-100 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
+                <div>
+                  <input value={trusteeAbn} onChange={e => setTrusteeAbn(e.target.value)} placeholder="Trustee ABN"
+                    className={`w-full bg-white border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${trusteeAbn.trim() && !isValidABN(trusteeAbn) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-indigo-100'}`} />
+                  {trusteeAbn.trim() && !isValidABN(trusteeAbn) && (
+                    <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid ABN</p>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest block mb-1.5 px-1">Trust deed date</label>
@@ -208,11 +218,21 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Identifiers</p>
             <div className="grid grid-cols-3 gap-3">
-              <input value={abn} onChange={e => setAbn(e.target.value)} placeholder="ABN"
-                className="bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
+              <div>
+                <input value={abn} onChange={e => setAbn(e.target.value)} placeholder="ABN"
+                  className={`w-full bg-slate-50 border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${abn.trim() && !isValidABN(abn) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-slate-200'}`} />
+                {abn.trim() && !isValidABN(abn) && (
+                  <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid ABN</p>
+                )}
+              </div>
               {!isTrust && (
-                <input value={acn} onChange={e => setAcn(e.target.value)} placeholder="ACN"
-                  className="bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
+                <div>
+                  <input value={acn} onChange={e => setAcn(e.target.value)} placeholder="ACN"
+                    className={`w-full bg-slate-50 border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${acn.trim() && !isValidACN(acn) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-slate-200'}`} />
+                  {acn.trim() && !isValidACN(acn) && (
+                    <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid ACN</p>
+                  )}
+                </div>
               )}
               <input value={tfn} onChange={e => setTfn(e.target.value)} placeholder="TFN"
                 className="bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />

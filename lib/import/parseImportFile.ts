@@ -258,10 +258,14 @@ export function parseImportFile(
           break;
 
         // Date fields
+        // established_date is deliberately NOT parsed as a date -- it's a
+        // free-text column (see the entities.established_date ALTER in
+        // supabase/migrations/20260728220000_niksen_entity_admin_fields.sql)
+        // so a source record with only a day/month ("22 Jun", no year) can
+        // still be imported instead of failing strict date parsing.
         case 'purchase_date':
         case 'valuation_date':
         case 'trust_deed_date':
-        case 'established_date':
         case 'issued_date':
         case 'paid_up_to':
         case 'date_opened':

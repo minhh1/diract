@@ -1,12 +1,14 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import * as LucideIcons from "lucide-react";
-import { Settings, LayoutDashboard } from "lucide-react";
+import { Settings, LayoutDashboard, Lock } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { useCompany } from "@/components/CompanyContext";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
+import { supabase } from "@/lib/supabase";
 import StaticWidgetGrid from "@/components/dashboard/builder/StaticWidgetGrid";
 import DashboardWidgetRenderer from "@/components/dashboard/DashboardWidgetRenderer";
 
@@ -18,6 +20,20 @@ export default function DashboardViewPage() {
     dashboard, sourceKind, tableDef, fields, fieldById, records, allRecords, loading, filters, setFilter, refetch, updateWidget,
   } = useDashboardData(slug);
 
+  // A dashboard with restricted_to_team_id set (see AdminTeamsTab.tsx's
+  // Administration Team / the Irregularities dashboard) is only visible to
+  // company_admin + that team's leader -- checked here, app-side, same as
+  // every other role-gated page in this app (billing, admin) rather than
+  // via RLS (company_dashboards' RLS stays company-wide).
+  const [teamLeaderId, setTeamLeaderId] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    const teamId = dashboard?.restricted_to_team_id;
+    if (!teamId) { setTeamLeaderId(null); return; }
+    setTeamLeaderId(undefined);
+    supabase.from('teams').select('leader_id').eq('id', teamId).maybeSingle()
+      .then(({ data }) => setTeamLeaderId(data?.leader_id ?? null));
+  }, [dashboard?.restricted_to_team_id]);
+
   useProgressBarWhile(loading || !companyId || !userId);
 
   if (loading || !companyId || !userId) {
@@ -25,6 +41,16 @@ export default function DashboardViewPage() {
   }
   if (!dashboard) {
     return <p className="text-center text-[12px] text-slate-400 py-20">Dashboard not found</p>;
+  }
+
+  if (dashboard.restricted_to_team_id && !isAdmin && teamLeaderId !== userId) {
+    if (teamLeaderId === undefined) return null; // still resolving
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3">
+        <Lock size={20} className="text-slate-300" />
+        <p className="text-[12px] text-slate-400">This dashboard is restricted to the team leader and company admins.</p>
+      </div>
+    );
   }
 
   const Icon = (LucideIcons as any)[dashboard.icon] || LayoutDashboard;

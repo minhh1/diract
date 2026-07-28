@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
+import { fetchScopedDefaultResourceIds } from "@/lib/hooks/scopedDefaultResources";
 
 export interface CustomDashboard {
   id: string;
@@ -20,6 +21,15 @@ export interface CustomDashboard {
   // null = shared/company-wide (the only kind that existed before this
   // column) -- non-null = private, visible only to that user.
   owner_user_id: string | null;
+  // Resolved for the CURRENT viewer: is_default OR this viewer's team/
+  // person has their own company_default_scopes row for this dashboard --
+  // see the matching field on CustomTable in useCustomTables.ts.
+  effectiveDefault: boolean;
+  // Non-null = only company_admin + this team's leader get this dashboard
+  // in their sidebar at all (see isVisibleRestrictedDashboard above) --
+  // already filtered out of the returned list for anyone else, kept here
+  // only for callers that want to know why a dashboard is/isn't present.
+  restricted_to_team_id: string | null;
 }
 
 // Mirrors lib/hooks/useCustomTables.ts's module-level cache/TTL/inFlight
@@ -50,17 +60,42 @@ async function resolveUserId(providedUserId?: string | null): Promise<string | n
 // (oversight), but this list is "my sidebar" -- filter to shared-or-mine
 // client-side regardless of role, same reasoning as useCustomTables.ts's
 // fetchTables.
+// A dashboard with restricted_to_team_id set (see the Irregularities
+// dashboard / AdminTeamsTab.tsx's Administration Team) should stay out of
+// the sidebar entirely for anyone who isn't company_admin or that team's
+// leader -- app/dashboard/boards/[slug]/page.tsx enforces the same rule on
+// direct navigation, this just keeps the nav list itself honest too.
+async function isVisibleRestrictedDashboard(userId: string | null, teamId: string): Promise<boolean> {
+  if (!userId) return false;
+  const { data: prof } = await supabase.from('profiles').select('active_company_id').eq('id', userId).maybeSingle();
+  if (prof?.active_company_id) {
+    const { data: membership } = await supabase.from('company_memberships').select('role')
+      .eq('user_id', userId).eq('company_id', prof.active_company_id).maybeSingle();
+    if (membership?.role === 'company_admin') return true;
+  }
+  const { data: team } = await supabase.from('teams').select('leader_id').eq('id', teamId).maybeSingle();
+  return team?.leader_id === userId;
+}
+
 function fetchDashboards(userId: string | null): Promise<CustomDashboard[]> {
   if (inFlight) return inFlight;
   perfLog("useCustomDashboards: start");
   const promise = (async () => {
     let query = supabase
       .from('company_dashboards')
-      .select('id, name, slug, icon, color, source_table_id, display_order, is_default, owner_user_id')
+      .select('id, name, slug, icon, color, source_table_id, display_order, is_default, owner_user_id, restricted_to_team_id')
       .is('deleted_at', null);
     query = userId ? query.or(`owner_user_id.is.null,owner_user_id.eq.${userId}`) : query.is('owner_user_id', null);
-    const { data } = await query.order('display_order');
-    const dashboards = data || [];
+    const [{ data }, scopedIds] = await Promise.all([
+      query.order('display_order'),
+      fetchScopedDefaultResourceIds('dashboard', userId),
+    ]);
+    const restrictedVisibility = await Promise.all(
+      (data || []).map((d: any) => d.restricted_to_team_id ? isVisibleRestrictedDashboard(userId, d.restricted_to_team_id) : Promise.resolve(true))
+    );
+    const dashboards = (data || [])
+      .map((d: any, i: number) => ({ ...d, effectiveDefault: d.is_default || scopedIds.has(d.id), visible: restrictedVisibility[i] }))
+      .filter((d: any) => d.visible);
     perfLog("useCustomDashboards: resolved", `${dashboards.length} dashboards`);
     cachedDashboards = dashboards;
     cachedForUserId = userId;

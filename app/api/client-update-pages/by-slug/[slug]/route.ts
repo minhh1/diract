@@ -20,11 +20,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   const { admin, companyId } = auth;
 
   const { data: page } = await admin
-    .from("client_update_pages").select("id, company_id, title, client_label, slug, is_active, date_format, freeze_first_column").eq("slug", slug).maybeSingle();
+    .from("client_update_pages").select("id, company_id, title, client_label, slug, is_active, date_format, freeze_first_column, base_table, page_kind").eq("slug", slug).maybeSingle();
   if (!page || page.company_id !== companyId || !page.is_active) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const detail = await loadPageDetail(admin, page.id);
+  const detail = await loadPageDetail(admin, page.id, { baseTable: page.base_table });
   return NextResponse.json({ page, ...detail });
 }

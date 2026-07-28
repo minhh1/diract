@@ -31,12 +31,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     }
   }
 
-  const detail = await loadPageDetail(admin, page.id, { clientVisibleOnly: true });
+  const detail = await loadPageDetail(admin, page.id, { clientVisibleOnly: true, baseTable: page.base_table });
 
   return NextResponse.json({
     title: page.title,
     dateFormat: page.date_format,
     freezeFirstColumn: page.freeze_first_column,
+    baseTable: page.base_table,
+    pageKind: page.page_kind,
     requiresCode: false,
     ...detail,
   });

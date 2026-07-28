@@ -13,6 +13,7 @@ import { buildAllSections, buildHeaderMap, type ImportSection } from "@/lib/impo
 import { parseImportFile, splitCSVLine, type ParsedRow } from "@/lib/import/parseImportFile";
 import { detectSectionFromHeaders } from "@/lib/import/detectSection";
 import { stageAndCheckProperties, stageAndCheckEntities, clearStaging, type StagingFlag } from "@/lib/import/stagingCheck";
+import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 import { commitBaseRow, commitChildRow, type RowAction, type ImportRowResult } from "@/lib/import/commitImport";
 import { findExistingChildRow } from "@/lib/import/parentResolver";
 
@@ -36,6 +37,12 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
 
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [stagingFlags, setStagingFlags] = useState<StagingFlag[]>([]);
+  // Client-side ABN/ACN checksum warnings (entities mode only) -- separate
+  // from stagingFlags since those feed the blocking-score auto-skip logic
+  // above (a checksum failure should surface as a review-table warning, not
+  // silently skip the row from import). No RPC/staging round trip needed --
+  // isValidABN/isValidACN are pure functions over the already-parsed value.
+  const [dataQualityFlags, setDataQualityFlags] = useState<StagingFlag[]>([]);
   const [rowActions, setRowActions] = useState<Map<number, RowAction>>(new Map());
   const [rowUpdateTarget, setRowUpdateTarget] = useState<Map<number, string>>(new Map());
   const [rowParentWarnings, setRowParentWarnings] = useState<Map<number, string>>(new Map());
@@ -71,7 +78,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
 
   const resetAll = () => {
     if (batchId) clearStaging(batchId);
-    setStage("upload"); setFile(null); setParsedRows([]); setStagingFlags([]);
+    setStage("upload"); setFile(null); setParsedRows([]); setStagingFlags([]); setDataQualityFlags([]);
     setRowActions(new Map()); setRowUpdateTarget(new Map()); setRowParentWarnings(new Map());
     setResults([]); setBatchId(null); setDetectedNotice(null);
     setCsvPreviewHeaders([]); setCsvPreviewRows([]);
@@ -165,6 +172,29 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     const newBatchId = crypto.randomUUID();
     setBatchId(newBatchId);
     setParsedRows(parsed);
+
+    const qualityFlags: StagingFlag[] = [];
+    if (mode === 'entities') {
+      parsed.forEach(row => {
+        const abn = row.parsed.abn;
+        const acn = row.parsed.acn;
+        if (abn && !isValidABN(abn)) {
+          qualityFlags.push({
+            staging_row_index: row.rowIndex, matched_against: 'same_batch',
+            matched_identifier: abn, matched_id: null,
+            match_reason: 'Invalid ABN (fails checksum) -- likely a transcription error, double-check against the source',
+          });
+        }
+        if (acn && !isValidACN(acn)) {
+          qualityFlags.push({
+            staging_row_index: row.rowIndex, matched_against: 'same_batch',
+            matched_identifier: acn, matched_id: null,
+            match_reason: 'Invalid ACN (fails checksum) -- likely a transcription error, double-check against the source',
+          });
+        }
+      });
+    }
+    setDataQualityFlags(qualityFlags);
 
     let flags: StagingFlag[] = [];
     const actions = new Map<number, RowAction>();
@@ -394,7 +424,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
   if (!isOpen) return null;
 
   const flagsByRow = new Map<number, StagingFlag[]>();
-  stagingFlags.forEach(f => flagsByRow.set(
+  [...stagingFlags, ...dataQualityFlags].forEach(f => flagsByRow.set(
     f.staging_row_index,
     [...(flagsByRow.get(f.staging_row_index) || []), f]
   ));

@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, Plus, X, Crown, Pencil, Check } from "lucide-react";
+import { Users, Plus, X, Crown, Pencil, Check, ShieldCheck, ChevronDown } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -50,6 +50,51 @@ interface Team {
   include_team_tasks_in_scope: boolean;
 }
 
+// Every boolean permission column on `teams` lives here, not as its own
+// hand-copied <label><input> block in the JSX below -- this list had grown
+// to 4 near-identical blocks (2 time-entry, 2 tasks) purely by copy/paste as
+// each new domain (billing, then tasks) got its own admin-configurable
+// scope, and was on track to keep growing that way with zero structure.
+// Adding a future permission (e.g. a documents or invoices scope) is now
+// exactly one entry here -- the button/panel below renders whatever's in
+// this array and stays correct on its own.
+type PermissionKey =
+  | 'allow_time_entry_delegation'
+  | 'allow_time_entry_view'
+  | 'allow_task_view'
+  | 'include_team_tasks_in_scope';
+
+interface PermissionDef {
+  key: PermissionKey;
+  label: string;
+  // Omit to always show; return false to hide this permission for a given
+  // team/company (e.g. no Time & Fee Entries table, or a sub-option that's
+  // moot once its parent permission is already on).
+  visible?: (ctx: { team: Team; hasTimeEntries: boolean }) => boolean;
+}
+
+const PERMISSION_DEFS: PermissionDef[] = [
+  {
+    key: 'allow_time_entry_delegation',
+    label: 'Allow members to enter time on behalf of other staff',
+    visible: ({ hasTimeEntries }) => hasTimeEntries,
+  },
+  {
+    key: 'allow_time_entry_view',
+    label: "Allow members to view all staff's time entries",
+    visible: ({ hasTimeEntries }) => hasTimeEntries,
+  },
+  {
+    key: 'allow_task_view',
+    label: 'Allow members to view all company tasks',
+  },
+  {
+    key: 'include_team_tasks_in_scope',
+    label: 'Without the above, members can still see tasks assigned to this team',
+    visible: ({ team }) => !team.allow_task_view,
+  },
+];
+
 interface Props {
   companyId: string;
 }
@@ -69,6 +114,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [editName, setEditName]       = useState('');
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const [expandedPermissionsTeamId, setExpandedPermissionsTeamId] = useState<string | null>(null);
   // Whether this company has a Time & Fee Entries table at all -- the two
   // checkboxes below (delegation, view-all) only make sense for a company
   // that actually has that concept (currently just the law-firm-seed
@@ -96,6 +142,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     const { data: ts } = await supabase
       .from('teams')
       .select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope')
+      .eq('company_id', companyId)
       .order('team_name');
 
     // Load all company members
@@ -164,7 +211,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     if (!name) return;
     setNewTeamName('');
     const { data: created } = await supabase
-      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope').single();
+      .from('teams').insert({ team_name: name, is_active: true, company_id: companyId }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope').single();
     if (created) {
       const newTeam: Team = { ...created, members: [] };
       updateTeams(prev => [...prev, newTeam].sort((a, b) => a.team_name.localeCompare(b.team_name)));
@@ -213,24 +260,12 @@ export default function AdminTeamsTab({ companyId }: Props) {
     }
   };
 
-  const toggleDelegation = (teamId: string, next: boolean) => {
-    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_time_entry_delegation: next } : t));
-    supabase.from('teams').update({ allow_time_entry_delegation: next }).eq('id', teamId).then();
-  };
-
-  const toggleView = (teamId: string, next: boolean) => {
-    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_time_entry_view: next } : t));
-    supabase.from('teams').update({ allow_time_entry_view: next }).eq('id', teamId).then();
-  };
-
-  const toggleTaskView = (teamId: string, next: boolean) => {
-    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_task_view: next } : t));
-    supabase.from('teams').update({ allow_task_view: next }).eq('id', teamId).then();
-  };
-
-  const toggleIncludeTeamTasks = (teamId: string, next: boolean) => {
-    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, include_team_tasks_in_scope: next } : t));
-    supabase.from('teams').update({ include_team_tasks_in_scope: next }).eq('id', teamId).then();
+  // Single write path for every permission in PERMISSION_DEFS -- adding a
+  // new permission never needs a new toggle function, just a new entry
+  // there and this already knows how to read/write it.
+  const togglePermission = (teamId: string, key: PermissionKey, next: boolean) => {
+    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, [key]: next } : t));
+    supabase.from('teams').update({ [key]: next }).eq('id', teamId).then();
   };
 
   const setLeader = (teamId: string, profileId: string) => {
@@ -319,67 +354,47 @@ export default function AdminTeamsTab({ companyId }: Props) {
             )}
           </div>
 
-          {/* Time entry permissions -- only shown to companies that actually
-              have a Time & Fee Entries table (currently law-firm-seed only);
-              meaningless (and confusing) to show for e.g. a property
-              company with no Staff/time-entry concept. */}
-          {hasTimeEntries && (
-            <>
-              {/* See lib/teamScope.ts's getStaffScopeIds */}
-              <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={team.allow_time_entry_delegation}
-                  onChange={e => toggleDelegation(team.id, e.target.checked)}
-                  className="w-4 h-4 accent-indigo-600 shrink-0"
-                />
-                <span className="text-[11px] text-slate-600">
-                  Allow members to enter time on behalf of other staff
-                </span>
-              </label>
-
-              {/* Enforced via RLS (time_entry_view_scope_ids, see migration
-                  20260728220000_time_entry_view_scope.sql), not just the UI */}
-              <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={team.allow_time_entry_view}
-                  onChange={e => toggleView(team.id, e.target.checked)}
-                  className="w-4 h-4 accent-indigo-600 shrink-0"
-                />
-                <span className="text-[11px] text-slate-600">
-                  Allow members to view all staff&apos;s time entries
-                </span>
-              </label>
-            </>
-          )}
-
-          {/* Tasks permissions -- universal (every company has Tasks), so
-              not gated behind hasTimeEntries. See migration
-              20260729010000_task_view_scope.sql's task_visible_to_current_user. */}
-          <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
-            <input
-              type="checkbox"
-              checked={team.allow_task_view}
-              onChange={e => toggleTaskView(team.id, e.target.checked)}
-              className="w-4 h-4 accent-indigo-600 shrink-0"
-            />
-            <span className="text-[11px] text-slate-600">
-              Allow members to view all company tasks
-            </span>
-          </label>
-
-          <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
-            <input
-              type="checkbox"
-              checked={team.include_team_tasks_in_scope}
-              onChange={e => toggleIncludeTeamTasks(team.id, e.target.checked)}
-              className="w-4 h-4 accent-indigo-600 shrink-0"
-            />
-            <span className="text-[11px] text-slate-600">
-              Without the above, members can still see tasks assigned to this team
-            </span>
-          </label>
+          {/* Permissions -- driven entirely by PERMISSION_DEFS above, so a
+              future permission is one entry there, not a new block here. */}
+          {(() => {
+            const visibleDefs = PERMISSION_DEFS.filter(p => !p.visible || p.visible({ team, hasTimeEntries }));
+            const enabledCount = visibleDefs.filter(p => team[p.key]).length;
+            const isOpen = expandedPermissionsTeamId === team.id;
+            return (
+              <div className="border-b border-slate-50">
+                <button
+                  onClick={() => setExpandedPermissionsTeamId(isOpen ? null : team.id)}
+                  className="w-full flex items-center justify-between px-6 py-3 hover:bg-slate-50/50 transition-colors"
+                >
+                  <span className="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                    <ShieldCheck size={13} className="text-indigo-500" /> Permissions
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                    {enabledCount} of {visibleDefs.length} enabled
+                    <ChevronDown size={12} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="px-6 pb-3 space-y-0.5">
+                    {visibleDefs.map(p => (
+                      <label
+                        key={p.key}
+                        className="flex items-start gap-2.5 py-2 px-2 -mx-2 rounded-xl cursor-pointer hover:bg-slate-50/50 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!team[p.key]}
+                          onChange={e => togglePermission(team.id, p.key, e.target.checked)}
+                          className="w-4 h-4 accent-indigo-600 shrink-0 mt-0.5"
+                        />
+                        <span className="text-[11px] text-slate-600">{p.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Current members */}
           {team.members.map(m => {

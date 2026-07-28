@@ -6,6 +6,7 @@ import { GripVertical, X, Minus, Plus, Search, ExternalLink, Pencil, ArrowUpRigh
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getFieldLabel } from "@/lib/fieldLabels";
+import RelationPicker from "./RelationPicker";
 
 export interface FieldLayout {
   id: string;
@@ -522,6 +523,12 @@ const RELATED_TABLES: Record<string, RelatedTableConfig[]> = {
         { key: 'date_appointed', label: 'Appointed' },
       ],
       editableCols: [
+        // Optionally links this officeholder to a real entities row (e.g. a
+        // Director who's also tracked as their own Individual entity)
+        // instead of only ever holding a free-text name -- see
+        // supabase/migrations/20260729020000_niksen_entity_admin_fields.sql.
+        // Picking one here auto-fills Name below from its label.
+        { key: 'officeholder_entity_id', label: 'Linked entity', type: 'entity' },
         { key: 'full_name', label: 'Name', type: 'text' },
         { key: 'role', label: 'Role', type: 'select', options: ['Director', 'Secretary', 'Public Officer', 'Shareholder', 'Trustee', 'Beneficiary', 'Other'] },
         { key: 'email', label: 'Email', type: 'text' },
@@ -621,6 +628,14 @@ function RelatedRowEditor({ config, parentId, row, onSave, onBack }: RelatedRowE
                 <option value="">— Select —</option>
                 {col.options.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
+            ) : col.type === 'entity' ? (
+              <RelationPicker
+                linkedSystemTable="entities"
+                value={draft[col.key] || null}
+                onSelect={(id, label) => setDraft(p => ({ ...p, [col.key]: id, ...(label ? { full_name: label } : {}) }))}
+                allowCreateEntity
+                placeholder="Search entities..."
+              />
             ) : (
               <input
                 type={col.type === 'date' ? 'date' : 'text'}

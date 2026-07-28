@@ -43,6 +43,8 @@ import ColumnManagerModal from "./ColumnManagerModal";
 import GroupConditionModal from "./GroupConditionModal";
 import ActivityLogModal from "./ActivityLogModal";
 import CellHistoryPopover, { type CellLogEntry } from "./CellHistoryPopover";
+import EntityOfficeholdersPanel from "./EntityOfficeholdersPanel";
+import IrregularityFixPanel from "./IrregularityFixPanel";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
@@ -54,6 +56,20 @@ export interface MatterBoardFormatRule { id: string; field_id: string; value: st
 
 interface Props {
   pageId?: string; // required when canEdit -- backs Add matter / Manage columns / date format
+  // 'entities' -- an entities-based page (see client_update_pages.base_table)
+  // -- swaps a handful of "matter" copy strings for "entity" and shows the
+  // Directors/Trust inline-expand section on each row instead of the
+  // property split. Undefined/'projects' means today's matters-only board,
+  // unchanged.
+  baseTable?: "projects" | "entities" | "custom_table";
+  // 'auto_fed' (see client_update_pages.page_kind) -- items are entirely
+  // system-generated (e.g. Irregularities rows, from the auto_fed rule
+  // engine), so Add/Remove are hidden and the row-expand area shows the
+  // fix-this-field panel instead of Officeholders/Notes/Emails. Undefined/
+  // 'user_dependent' means today's staff-managed board, unchanged. Distinct
+  // from baseTable -- baseTable picks WHERE an item's data lives, pageKind
+  // picks whether staff or the system owns adding/removing items.
+  pageKind?: "user_dependent" | "auto_fed";
   groups: MatterBoardGroup[];
   items: MatterBoardItem[];
   fields: MatterBoardField[];
@@ -143,7 +159,7 @@ const FORMAT_COLORS: Record<string, { swatch: string; row: string; smRow: string
 const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
-  pageId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
+  pageId, baseTable = "projects", pageKind = "user_dependent", groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
   onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
@@ -486,7 +502,7 @@ export default function MatterBoard({
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-[220px] flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-full">
           <Search size={14} className="text-slate-300 shrink-0" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search matters..."
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={baseTable === "entities" ? "Search entities..." : "Search matters..."}
             className="flex-1 min-w-0 text-[12px] outline-none" />
           {search && <button onClick={() => setSearch("")} title="Clear search" className="text-slate-300 hover:text-slate-600 shrink-0"><X size={13} /></button>}
         </div>
@@ -494,10 +510,12 @@ export default function MatterBoard({
         <div className="flex items-center gap-2 shrink-0">
           {canEdit && pageId && (
             <>
-              <button onClick={() => setShowAddMatter(true)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
-                <UserPlus size={13} /> Add matters
-              </button>
+              {pageKind !== "auto_fed" && (
+                <button onClick={() => setShowAddMatter(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
+                  <UserPlus size={13} /> {baseTable === "entities" ? "Add entities" : "Add matters"}
+                </button>
+              )}
               <button onClick={() => setShowColumns(true)} title="Manage columns"
                 className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                 <Columns3 size={14} />
@@ -709,22 +727,22 @@ export default function MatterBoard({
           {mode === "cards" ? (
             <div className="space-y-3">
               {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
-                <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)}
+                <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
                   onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
               ))}
               {visibleItems.length === 0 && (
-                <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters here yet</p>
+                <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</p>
               )}
             </div>
           ) : (
-            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} colorForItem={colorForItem}
+            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
               onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} />
           )}
         </div>
       </div>
 
       {showAddMatter && pageId && (
-        <AddMatterModal pageId={pageId} groupId={addMatterTargetGroupId}
+        <AddMatterModal pageId={pageId} groupId={addMatterTargetGroupId} baseTable={baseTable}
           onClose={() => setShowAddMatter(false)} onAdded={() => { setShowAddMatter(false); onDataChanged?.(); }} />
       )}
       {showColumns && pageId && (
@@ -964,9 +982,9 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
+function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
-  canEdit: boolean; canComment: boolean; color: string | null;
+  canEdit: boolean; canComment: boolean; color: string | null; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
   onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
@@ -1051,8 +1069,16 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
           </div>
+          {baseTable === "entities" && pageId && (
+            <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
+          )}
+          {pageKind === "auto_fed" && pageId && (
+            <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
+          )}
           <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
-          <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
+          {baseTable !== "entities" && pageKind !== "auto_fed" && (
+            <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
+          )}
         </div>
       )}
     </div>
@@ -1263,9 +1289,9 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail }: {
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
-  freezeFirstColumn: boolean;
+  freezeFirstColumn: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
   onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
@@ -1351,8 +1377,16 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
             {expanded && (
               <tr className="border-b border-slate-50 last:border-0">
                 <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3">
+                  {baseTable === "entities" && pageId && (
+                    <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
+                  )}
+                  {pageKind === "auto_fed" && pageId && (
+                    <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
+                  )}
                   <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
-                  <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
+                  {baseTable !== "entities" && pageKind !== "auto_fed" && (
+                    <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
+                  )}
                 </td>
               </tr>
             )}
@@ -1360,7 +1394,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={totalCols} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">No matters here yet</td></tr>
+            <tr><td colSpan={totalCols} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</td></tr>
           )}
         </tbody>
       </table>

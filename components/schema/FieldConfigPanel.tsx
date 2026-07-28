@@ -42,7 +42,8 @@ const TEAM_SCOPE_SENTINEL = '$team_scope';
 // convenience dropdown when filtering entities by entity_type (e.g. a
 // "Staff" field restricted to entity_type = 'Staff').
 const ENTITY_TYPE_VALUES = [
-  'Company', 'Individual', 'Discretionary Family Trust', 'Fixed Unit Trust',
+  'Company', 'Individual', 'Corporate Trustee', 'Non Corporate Trustee',
+  'Discretionary Family Trust', 'Fixed Unit Trust',
   'Lawyer', 'Accountant', 'Mortgage Broker', 'Real Estate Agent',
   'Local Council', 'Bank', 'Staff', 'Other',
 ];
