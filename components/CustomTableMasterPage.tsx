@@ -138,7 +138,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const selectedId = searchParams.get('id');
 
   const { tableDef, fields, records, loading, recordsLoading, refetch } = useCustomTable(tableSlug);
-  const { isAdmin, companyId: ctxCompanyId } = useCompany();
+  const { isAdmin, companyId: ctxCompanyId, userId: ctxUserId, myTeamIds: ctxMyTeamIds } = useCompany();
 
   // ── Top progress bar ───────────────────────────────────────────────────
   // Matches GenericMasterTable's own loading treatment (see that file) so
@@ -207,6 +207,8 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     defaultCols,
     defaultExpandCols,
     companyId: ctxCompanyId,
+    userId: ctxUserId,
+    myTeamIds: ctxMyTeamIds,
     isAdmin,
     schemaReady: !loading,
   });
@@ -383,7 +385,15 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
 
   const handleDelete = async (record: CustomTableRecord, e: React.MouseEvent) => {
     e.stopPropagation();
-    const label = primaryField ? (record.displayValues[primaryField.field_key] ?? String(record.values[primaryField.field_key] ?? 'this record')) : 'this record';
+    // Relation-type primary fields must resolve through displayValues -- the
+    // raw stored value is a linked-record id (or array of ids), never safe
+    // to show as-is if the label lookup hasn't resolved (or the linked
+    // record was deleted).
+    const label = primaryField
+      ? RELATION_FIELD_TYPES.includes(primaryField.field_type)
+        ? (record.displayValues[primaryField.field_key] ?? 'this record')
+        : String(record.values[primaryField.field_key] ?? 'this record')
+      : 'this record';
 
     if (!isAdmin) {
       if (!window.confirm(`Request archiving "${label}"? A company admin will need to approve it.`)) return;

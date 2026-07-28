@@ -305,7 +305,7 @@ export default function RecordDashboard({
       if (!storedId) return;
       const { table, nameColumn } = CUSTOM_LINKED_TABLES[f.fieldType];
       const { data } = await supabase.from(table).select(`id, ${nameColumn}`).eq('id', storedId).single();
-      if (data) map[f.id] = [{ id: storedId, name: (data as any)[nameColumn] || storedId }];
+      if (data) map[f.id] = [{ id: storedId, name: (data as any)[nameColumn] || 'Untitled' }];
     }));
 
     // ── Person link fields — value is stored as text name directly ──
@@ -336,7 +336,7 @@ export default function RecordDashboard({
         map[f.field_key] = (data || [])
           .map((row: any) => row.linked)
           .filter(Boolean)
-          .map((linked: any) => ({ id: linked.id, name: linked[nameCol] || linked.id }));
+          .map((linked: any) => ({ id: linked.id, name: linked[nameCol] || 'Untitled' }));
         return;
       }
 
@@ -344,7 +344,7 @@ export default function RecordDashboard({
       if (!storedId) return;
       const { data } = await supabase
         .from(table).select(`id, ${nameCol}`).eq('id', storedId).single();
-      if (data) map[f.field_key] = [{ id: storedId, name: (data as any)[nameCol] || storedId }];
+      if (data) map[f.field_key] = [{ id: storedId, name: (data as any)[nameCol] || 'Untitled' }];
     }));
 
     setLinkedItems(map);
@@ -721,6 +721,20 @@ export default function RecordDashboard({
 
   const isLinkedField = (fieldType: string) => ['entity', 'property', 'project'].includes(fieldType);
 
+  // Whether this field's raw value in `record` is a linked record id rather
+  // than a plain scalar -- true for base 'relation' fields and custom
+  // entity/property/project fields (NOT 'person_link', which stores its
+  // display name as plain text directly, see resolveLinkedItems above).
+  // Used to keep any "first field's value" fallback display text (record
+  // title, delete-confirmation label) from ever showing a raw uuid when
+  // that first field happens to be a relation.
+  const isRelationField = (f: FieldLayout) =>
+    (f.field_source === 'base' && f.fieldType === 'relation') ||
+    (f.field_source === 'custom' && isLinkedField(f.fieldType));
+  const rawFieldValue = (f: FieldLayout) => record?.[f.field_source === 'custom' ? f.id : f.field_key];
+  const fallbackLabelField = fields.find(f => !isRelationField(f) && rawFieldValue(f));
+  const fallbackLabelValue = fallbackLabelField ? rawFieldValue(fallbackLabelField) : undefined;
+
   const handleAddLinked = async (fieldId: string, item: { id: string; name: string }) => {
     const field = fields.find(f => f.id === fieldId || f.field_key === fieldId);
     if (!field) return;
@@ -1062,7 +1076,7 @@ export default function RecordDashboard({
   // ── Delete ─────────────────────────────────────────────────────
 
   const handleDelete = async () => {
-    const label = record ? (record.name || record.street_address || record[fields[0]?.field_key] || 'this record') : 'this record';
+    const label = record ? (record.name || record.street_address || fallbackLabelValue || 'this record') : 'this record';
 
     if (!isAdmin) {
       if (!window.confirm(`Request archiving "${label}"? A company admin will need to approve it.`)) return;
@@ -1103,7 +1117,7 @@ export default function RecordDashboard({
   const primaryValue = record
     ? systemTable === 'properties'
       ? record.street_address
-      : record.name || record[fields[0]?.field_key] || 'Untitled'
+      : record.name || fallbackLabelValue || 'Untitled'
     : 'Loading...';
 
   const RECORD_TYPE_ICON: Record<string, typeof Table2> = {
