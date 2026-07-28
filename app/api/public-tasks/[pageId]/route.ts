@@ -36,29 +36,95 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       teams:assigned_team_id(team_name)
     `;
 
-  const { data: rawTasks } = await admin
-    .from("tasks")
-    .select(TASK_SELECT)
-    .in("assignee_id", targetUserIds.length ? targetUserIds : ["00000000-0000-0000-0000-000000000000"])
-    .eq("company_id", page.company_id)
-    .is("deleted_at", null)
-    .order("due_date", { ascending: true, nullsFirst: false })
-    .order("due_time", { ascending: true, nullsFirst: false });
+  const fallbackIds = targetUserIds.length ? targetUserIds : ["00000000-0000-0000-0000-000000000000"];
 
-  // Being on the same team-scoped page doesn't grant access to a project
-  // that's restricted to specific teams/members — filter those out for
-  // whoever is actually viewing the page (not the task's assignee).
-  // Admins can already see everything else in the app, so they're exempt.
-  const assignedTasks = isAdmin ? rawTasks : await filterTasksByProjectAccess(admin, user.id, rawTasks || []);
+  // Everything in this batch only needs page/targetUserIds/isAdmin (already
+  // resolved above) -- none of these queries depend on each other's
+  // results, so they all fire together instead of one round trip at a
+  // time. This (plus the matching batch below) is the bulk of what made
+  // this route slow: what used to be ~15 sequential requests is now 2-3
+  // rounds. matterField is fetched unconditionally (not just when the
+  // page's own columns include "matter_number") because the "add/edit
+  // task" project picker always wants matter numbers to disambiguate
+  // same-named projects, regardless of whether the task LIST shows that
+  // column -- matches the original form-options fetch's behavior, which
+  // also always ran.
+  const [
+    { data: rawTasks },
+    { data: watcherRows },
+    { data: rawUnallocated },
+    { data: targetProfiles },
+    { data: allProjects },
+    { data: matterField },
+    { data: statuses },
+    { data: teams },
+    { data: companyMembersForAssignees },
+  ] = await Promise.all([
+    admin.from("tasks").select(TASK_SELECT)
+      .in("assignee_id", fallbackIds).eq("company_id", page.company_id).is("deleted_at", null)
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("due_time", { ascending: true, nullsFirst: false }),
+    // ── Watched tasks ── A target user watching a task they're not the
+    // assignee of should also show up under their tab -- fetched
+    // separately since the query above is scoped to assignee_id.
+    admin.from("task_watchers").select("task_id, profile_id").in("profile_id", fallbackIds),
+    // ── Unallocated tasks ── fall through every per-user tab, so they get
+    // their own pseudo-tab instead of disappearing entirely. Doesn't apply
+    // to a self-scoped page (inherently "just my own tasks").
+    page.scope !== "self"
+      ? admin.from("tasks").select(TASK_SELECT)
+          .is("assignee_id", null).eq("company_id", page.company_id).is("deleted_at", null)
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .order("due_time", { ascending: true, nullsFirst: false })
+      : Promise.resolve({ data: null }),
+    admin.from("profiles").select("id, full_name, email").in("id", fallbackIds),
+    // Full project catalog is loaded once here (not searched per-keystroke)
+    // -- the picker filters it client-side, far faster than a round trip
+    // on every keystroke.
+    admin.from("projects").select("id, name").eq("company_id", page.company_id).is("deleted_at", null).order("name"),
+    admin.from("company_custom_fields").select("id")
+      .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").is("deleted_at", null).maybeSingle(),
+    admin.from("task_statuses").select("id, label").eq("is_active", true).order("display_order"),
+    admin.from("teams").select("id, team_name").eq("company_id", page.company_id).eq("is_active", true),
+    // 'my_and_unassigned' can assign to anyone in the company (enforced in
+    // POST below), so the picker needs the full roster, not just
+    // targetProfiles (== [page.created_by] for this scope).
+    page.scope === "my_and_unassigned"
+      ? admin.from("company_memberships").select("user_id").eq("company_id", page.company_id)
+      : Promise.resolve({ data: null }),
+  ]);
 
-  // ── Watched tasks ─────────────────────────────────────────────────
-  // A task a target user is watching (but isn't the assignee of) should
-  // also show up under their tab — fetch those separately since the query
-  // above is scoped to assignee_id.
-  const { data: watcherRows } = await admin
-    .from("task_watchers")
-    .select("task_id, profile_id")
-    .in("profile_id", targetUserIds.length ? targetUserIds : ["00000000-0000-0000-0000-000000000000"]);
+  // Second round: each of these depends on something the first round just
+  // resolved (project-access filtering needs the raw task lists; matter
+  // values need matterField's id; the assignee roster needs the company's
+  // member ids) but NOT on each other, so they still run as one batch
+  // rather than four sequential round trips. Being on the same
+  // team-scoped page doesn't grant access to a project restricted to
+  // specific teams/members — filter those out for whoever is actually
+  // viewing the page (not the task's assignee). Admins can already see
+  // everything else in the app, so they're exempt.
+  const [assignedTasks, unallocatedTasksFiltered, matterValues, assigneeProfilesForCompany] = await Promise.all([
+    isAdmin ? Promise.resolve(rawTasks || []) : filterTasksByProjectAccess(admin, user.id, rawTasks || []),
+    page.scope !== "self"
+      ? (isAdmin ? Promise.resolve(rawUnallocated || []) : filterTasksByProjectAccess(admin, user.id, rawUnallocated || []))
+      : Promise.resolve([]),
+    matterField && (allProjects?.length)
+      // Don't filter by .in(record_id, ...) with hundreds of IDs — hits URL
+      // limits and silently returns nothing. Fetch all values for this
+      // field (already scoped to this company via field_id) and map in
+      // memory; covers both a task row's matterNumber and the form
+      // options catalog below from one fetch instead of two near-identical
+      // ones.
+      ? admin.from("company_custom_field_values").select("record_id, value_text").eq("field_id", matterField.id)
+      : Promise.resolve({ data: null }),
+    page.scope === "my_and_unassigned"
+      ? admin.from("profiles").select("id, full_name, email").in("id", (companyMembersForAssignees || []).map((m: any) => m.user_id))
+      : Promise.resolve({ data: null }),
+  ]);
+  const unallocatedTasks = unallocatedTasksFiltered;
+  const matterByProject: Record<string, string> = Object.fromEntries(
+    ((matterValues as any)?.data || []).map((v: any) => [v.record_id, v.value_text || ""])
+  );
 
   const watchersByTask: Record<string, string[]> = {};
   for (const w of watcherRows || []) (watchersByTask[w.task_id] ||= []).push(w.profile_id);
@@ -66,6 +132,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const assignedTaskIds = new Set((assignedTasks || []).map((t: any) => t.id));
   const extraWatchedIds = [...new Set(Object.keys(watchersByTask))].filter(id => !assignedTaskIds.has(id));
 
+  // Depends on extraWatchedIds (itself derived from the two batches above),
+  // so this genuinely can't join either of them.
   let watchedTasks: any[] = [];
   if (extraWatchedIds.length) {
     const { data: rawWatched } = await admin
@@ -75,23 +143,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       .eq("company_id", page.company_id)
       .is("deleted_at", null);
     watchedTasks = isAdmin ? (rawWatched || []) : await filterTasksByProjectAccess(admin, user.id, rawWatched || []);
-  }
-
-  // ── Unallocated tasks ────────────────────────────────────────────
-  // Tasks with no assignee fall through every per-user tab — surface them
-  // under their own pseudo-tab so they don't disappear entirely. Doesn't
-  // apply to a self-scoped page (that's inherently "just my own tasks").
-  let unallocatedTasks: any[] = [];
-  if (page.scope !== "self") {
-    const { data: rawUnallocated } = await admin
-      .from("tasks")
-      .select(TASK_SELECT)
-      .is("assignee_id", null)
-      .eq("company_id", page.company_id)
-      .is("deleted_at", null)
-      .order("due_date", { ascending: true, nullsFirst: false })
-      .order("due_time", { ascending: true, nullsFirst: false });
-    unallocatedTasks = isAdmin ? (rawUnallocated || []) : await filterTasksByProjectAccess(admin, user.id, rawUnallocated || []);
   }
 
   // Merging three separately-queried groups (assigned/watched/unallocated)
@@ -106,48 +157,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const tasks = [...(assignedTasks || []), ...watchedTasks, ...unallocatedTasks]
     .sort((a, b) => dueSortKey(a).localeCompare(dueSortKey(b)));
 
-  // ── Follow-up log, grouped per task ──────────────────────────────
-  let followUpsByTask: Record<string, { id: string; followedUpAt: string; isDone: boolean }[]> = {};
-  if (tasks?.length) {
-    const { data: followUps } = await admin
-      .from("task_follow_ups").select("id, task_id, followed_up_at, is_done")
-      .in("task_id", tasks.map((t: any) => t.id));
-    for (const f of followUps || []) {
-      (followUpsByTask[f.task_id] ||= []).push({ id: f.id, followedUpAt: String(f.followed_up_at).slice(0, 10), isDone: f.is_done });
-    }
-  }
+  // Both depend on the final merged `tasks` list, but not on each other.
+  const [{ data: followUps }, { data: overrides }] = tasks?.length
+    ? await Promise.all([
+        admin.from("task_follow_ups").select("id, task_id, followed_up_at, is_done").in("task_id", tasks.map((t: any) => t.id)),
+        // ── Organised-view classification, per (task, whose tab it's in) ──
+        // The same task can be "Action" in the assignee's tab and
+        // "Watching" in a watcher's tab, so this isn't a single value on
+        // the task itself.
+        admin.from("task_group_overrides").select("task_id, profile_id, task_group").in("task_id", tasks.map((t: any) => t.id)),
+      ])
+    : [{ data: [] }, { data: [] }];
 
-  // ── Matter numbers, if requested ────────────────────────────────
-  let matterByProject: Record<string, string> = {};
-  if ((page.columns || []).includes("matter_number") && tasks?.length) {
-    const projectIds = [...new Set(tasks.map((t: any) => t.project_id).filter(Boolean))];
-    const { data: matterField } = await admin
-      .from("company_custom_fields").select("id")
-      .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").is("deleted_at", null).maybeSingle();
-    if (matterField && projectIds.length) {
-      const { data: values } = await admin
-        .from("company_custom_field_values").select("record_id, value_text")
-        .eq("field_id", matterField.id).in("record_id", projectIds);
-      matterByProject = Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || ""]));
-    }
+  const followUpsByTask: Record<string, { id: string; followedUpAt: string; isDone: boolean }[]> = {};
+  for (const f of followUps || []) {
+    (followUpsByTask[f.task_id] ||= []).push({ id: f.id, followedUpAt: String(f.followed_up_at).slice(0, 10), isDone: f.is_done });
   }
-
-  // ── Organised-view classification, per (task, whose tab it's in) ──
-  // The same task can be "Action" in the assignee's tab and "Watching" in
-  // a watcher's tab, so this isn't a single value on the task itself.
-  let taskGroupByTaskAndUser: Record<string, string> = {};
-  if (tasks?.length) {
-    const { data: overrides } = await admin
-      .from("task_group_overrides").select("task_id, profile_id, task_group")
-      .in("task_id", tasks.map((t: any) => t.id));
-    for (const o of overrides || []) {
-      taskGroupByTaskAndUser[`${o.task_id}:${o.profile_id}`] = o.task_group;
-    }
+  const taskGroupByTaskAndUser: Record<string, string> = {};
+  for (const o of overrides || []) {
+    taskGroupByTaskAndUser[`${o.task_id}:${o.profile_id}`] = o.task_group;
   }
-
-  // ── Group into tabs, one per target user ────────────────────────
-  const { data: targetProfiles } = await admin
-    .from("profiles").select("id, full_name, email").in("id", targetUserIds.length ? targetUserIds : ["00000000-0000-0000-0000-000000000000"]);
 
   const mapTask = (t: any, isWatcher: boolean, tabUserId: string) => ({
     id: t.id, name: t.name, isCompleted: t.is_completed, completedAt: t.completed_at,
@@ -197,42 +226,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     });
   }
 
-  // ── Form options for "add/edit task" ────────────────────────────
-  // Full project catalog is loaded once here (not searched per-keystroke) —
-  // the picker filters it client-side, which is far faster than a network
-  // round trip on every keystroke.
-  const { data: allProjects } = await admin
-    .from("projects").select("id, name").eq("company_id", page.company_id).is("deleted_at", null).order("name");
-  const { data: matterFieldForCatalog } = await admin
-    .from("company_custom_fields").select("id")
-    .eq("company_id", page.company_id).eq("table_name", "projects").eq("field_key", "matter_number").is("deleted_at", null).maybeSingle();
-  let matterByProjectCatalog: Record<string, string> = {};
-  if (matterFieldForCatalog && allProjects?.length) {
-    // Don't filter by .in(record_id, ...) with hundreds of IDs — hits URL
-    // limits and silently returns nothing. Fetch all values for this field
-    // (already scoped to this company via field_id) and map in memory.
-    const { data: values } = await admin
-      .from("company_custom_field_values").select("record_id, value_text")
-      .eq("field_id", matterFieldForCatalog.id);
-    matterByProjectCatalog = Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || ""]));
-  }
-
-  const { data: statuses } = await admin
-    .from("task_statuses").select("id, label").eq("is_active", true).order("display_order");
-  const { data: teams } = await admin
-    .from("teams").select("id, team_name").eq("company_id", page.company_id).eq("is_active", true);
-
-  // 'my_and_unassigned' can assign to anyone in the company (enforced above
-  // in POST), so the picker needs the full roster, not just targetProfiles
-  // (== [page.created_by] for this scope).
-  let assigneeProfiles = targetProfiles;
-  if (page.scope === "my_and_unassigned") {
-    const { data: companyMembers } = await admin
-      .from("company_memberships").select("user_id").eq("company_id", page.company_id);
-    const { data: allProfiles } = await admin
-      .from("profiles").select("id, full_name, email").in("id", (companyMembers || []).map((m: any) => m.user_id));
-    assigneeProfiles = allProfiles;
-  }
+  // Form options for "add/edit task" -- projects/matter numbers/statuses/
+  // teams/assignee roster were all already fetched in the two batches
+  // above (allProjects, matterByProject, statuses, teams,
+  // assigneeProfilesForCompany), so this is just assembling the response,
+  // not any new I/O. 'my_and_unassigned' can assign to anyone in the
+  // company (enforced above in POST), so its picker needs the full roster,
+  // not just targetProfiles (== [page.created_by] for this scope).
+  const assigneeProfiles = page.scope === "my_and_unassigned" ? (assigneeProfilesForCompany as any)?.data : targetProfiles;
 
   return NextResponse.json({
     title: page.title,
@@ -242,7 +243,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     companyId: page.company_id,
     tabs,
     formOptions: {
-      projects: (allProjects || []).map((p: any) => ({ id: p.id, name: p.name, matterNumber: matterByProjectCatalog[p.id] || null })),
+      projects: (allProjects || []).map((p: any) => ({ id: p.id, name: p.name, matterNumber: matterByProject[p.id] || null })),
       statuses: statuses || [],
       teams: teams || [],
       assignees: (assigneeProfiles || []).map((p: any) => ({ id: p.id, name: p.full_name || p.email || "Unknown" })),

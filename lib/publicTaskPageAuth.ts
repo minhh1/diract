@@ -18,46 +18,65 @@ export async function loadPageAndAuthorize(admin: any, pageId: string, userId: s
     return { error: NextResponse.json({ error: "This page has expired" }, { status: 410 }) };
   }
 
-  const { data: membership } = await admin
-    .from("company_memberships").select("role").eq("company_id", page.company_id).eq("user_id", userId).maybeSingle();
-  if (!membership) return { error: NextResponse.json({ error: "You don't have access to this company" }, { status: 403 }) };
-  const isAdmin = membership.role === "company_admin";
-
   let targetUserIds: string[] = [];
+  let scopeName = "";
+  let isAdmin = false;
+
   // 'my_and_unassigned' (see app/api/public-tasks/[pageId]/route.ts) is
   // private to its creator exactly like 'self' -- it only differs in also
   // surfacing unallocated tasks and allowing any assignee on new tasks,
   // both handled in that route, not here.
+  //
+  // Every branch below fires its membership check + whatever scope-specific
+  // lookups it needs (targetUserIds, the "Tasks - X" header name) together
+  // via Promise.all instead of one after another -- none of these queries
+  // actually depend on each other's *results*, only on `page` (already
+  // resolved above), so there's no correctness reason to serialize them.
+  // This previously took 2-4 sequential round trips per request; now it's
+  // one round trip's worth of latency regardless of scope.
   if (page.scope === "self" || page.scope === "my_and_unassigned") {
     targetUserIds = [page.created_by];
+    const [{ data: membership }, { data: creator }] = await Promise.all([
+      admin.from("company_memberships").select("role").eq("company_id", page.company_id).eq("user_id", userId).maybeSingle(),
+      admin.from("profiles").select("full_name, email").eq("id", page.created_by).maybeSingle(),
+    ]);
+    if (!membership) return { error: NextResponse.json({ error: "You don't have access to this company" }, { status: 403 }) };
+    isAdmin = membership.role === "company_admin";
     if (!isAdmin && userId !== page.created_by) {
       return { error: NextResponse.json({ error: "This page is private to its creator" }, { status: 403 }) };
     }
+    scopeName = creator?.full_name || creator?.email || "Me";
   } else if (page.scope === "team") {
-    const { data: team } = await admin.from("teams").select("leader_id").eq("id", page.team_id).maybeSingle();
-    const { data: members } = await admin.from("team_members").select("profile_id").eq("team_id", page.team_id);
+    const [{ data: membership }, { data: team }, { data: members }] = await Promise.all([
+      admin.from("company_memberships").select("role").eq("company_id", page.company_id).eq("user_id", userId).maybeSingle(),
+      // team_name (for the header) and leader_id (for the membership check
+      // below) in one query -- the original code fetched this team row
+      // twice, once per purpose.
+      admin.from("teams").select("team_name, leader_id").eq("id", page.team_id).maybeSingle(),
+      admin.from("team_members").select("profile_id").eq("team_id", page.team_id),
+    ]);
+    if (!membership) return { error: NextResponse.json({ error: "You don't have access to this company" }, { status: 403 }) };
+    isAdmin = membership.role === "company_admin";
     targetUserIds = (members || []).map((m: any) => m.profile_id);
     const isTeamMember = targetUserIds.includes(userId) || team?.leader_id === userId;
     if (!isAdmin && !isTeamMember) {
       return { error: NextResponse.json({ error: "You're not a member of this team" }, { status: 403 }) };
     }
-  } else {
-    const { data: members } = await admin.from("company_memberships").select("user_id").eq("company_id", page.company_id);
-    targetUserIds = (members || []).map((m: any) => m.user_id);
-  }
-
-  // What the public page's header shows after "Tasks - " — the team name
-  // for a team-scoped page, the creator's name for a self-scoped page, or
-  // the company name for a company-wide page.
-  let scopeName = "";
-  if (page.scope === "team") {
-    const { data: team } = await admin.from("teams").select("team_name").eq("id", page.team_id).maybeSingle();
     scopeName = team?.team_name || "Team";
-  } else if (page.scope === "self" || page.scope === "my_and_unassigned") {
-    const { data: creator } = await admin.from("profiles").select("full_name, email").eq("id", page.created_by).maybeSingle();
-    scopeName = creator?.full_name || creator?.email || "Me";
   } else {
-    const { data: company } = await admin.from("companies").select("name").eq("id", page.company_id).maybeSingle();
+    // company scope -- targetUserIds (every member) and "is the caller a
+    // member, and are they admin" both come out of the exact same
+    // company_memberships rows, so this is one query doing what used to be
+    // two separate ones (a user-scoped membership check + an unfiltered
+    // all-members list).
+    const [{ data: allMembers }, { data: company }] = await Promise.all([
+      admin.from("company_memberships").select("user_id, role").eq("company_id", page.company_id),
+      admin.from("companies").select("name").eq("id", page.company_id).maybeSingle(),
+    ]);
+    const membership = (allMembers || []).find((m: any) => m.user_id === userId);
+    if (!membership) return { error: NextResponse.json({ error: "You don't have access to this company" }, { status: 403 }) };
+    isAdmin = membership.role === "company_admin";
+    targetUserIds = (allMembers || []).map((m: any) => m.user_id);
     scopeName = company?.name || "Company";
   }
 
