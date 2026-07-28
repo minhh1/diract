@@ -12,6 +12,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
@@ -24,12 +25,24 @@ import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
 import { splitCompletedByRecency } from "@/lib/completedBucket";
 import { classifyTask, TaskGroup, TASK_GROUP_LABELS } from "@/lib/taskGroup";
-import TaskHistoryTab from "@/components/TaskHistoryTab";
-import NewRecordModal from "@/components/dashboard/NewRecordModal";
-import { createRecord } from "@/lib/services/customTableService";
 import { relationCandidates } from "@/lib/dashboardWidgets/linkField";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
+
+// Both deferred -- neither is needed for this page's own initial task-list
+// render, only inside an already-open edit-task modal's "History" tab
+// (TaskHistoryTab) or the rare "Add to Time & Fees" conversion
+// (NewRecordModal, which alone transitively pulls in RelationPicker.tsx
+// (891 lines) + NewEntityModal.tsx (303 lines) -- the dashboard builder's
+// full field/relation-editing stack, otherwise entirely absent from this
+// public route). Same dynamic-import treatment NewRecordModal already gets
+// in components/CustomTableMasterPage.tsx; see that file's comment re: a
+// documented Turbopack dev-mode chunk race when the SAME dynamically
+// imported component is referenced from two routes a user can
+// client-side-navigate between -- not a concern here since /public/tasks
+// isn't soft-navigable to/from that other route tree.
+const TaskHistoryTab = dynamic(() => import("@/components/TaskHistoryTab"));
+const NewRecordModal = dynamic(() => import("@/components/dashboard/NewRecordModal"));
 
 interface Task {
   id: string; name: string; isCompleted: boolean; completedAt: string | null;
@@ -256,6 +269,10 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     if (!timeFeesTable || !data) return "Time & Fee Entries table not found.";
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return "Not signed in.";
+    // Dynamically imported -- only ever reached from the rare "Add to Time
+    // & Fees" conversion, same reasoning as NewRecordModal/TaskHistoryTab
+    // above.
+    const { createRecord } = await import("@/lib/services/customTableService");
     const rec = await createRecord(timeFeesTable.id, data.companyId, user.id, values, timeEntryFields);
     if (rec && "error" in rec) return rec.error;
     if (rec) { setConvertingTask(null); return null; }
