@@ -26,6 +26,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
+import { useDomSettled } from "@/lib/hooks/useDomSettled";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
@@ -125,13 +126,25 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     if (session?.user && await loadAsStaff()) {
       perfLog("public client update page: staff data resolved");
       setLoading(false);
-      perfLogPageReady("public", "client update page");
       return;
     }
     await loadAsClient();
     perfLog("public client update page: client data resolved");
-    perfLogPageReady("public", "client update page");
   }, [loadAsStaff, loadAsClient]);
+
+  // "data resolved" (above) only marks when the fetch promise landed --
+  // for a large matter board that's well before MatterBoard.tsx has
+  // actually finished rendering/painting, which can itself take a real,
+  // separate chunk of time. domSettled (same DOM-mutation-quiet technique
+  // as components/PerfRouteTracker.tsx) fires once the page has actually
+  // stopped changing, so THIS is the moment Admin > Performance's "ready"
+  // marker should land on -- otherwise every recorded load time silently
+  // excludes render time, which is exactly backwards when the render is
+  // the suspect.
+  const domSettled = useDomSettled(!loading);
+  useEffect(() => {
+    if (domSettled) perfLogPageReady("public", "client update page");
+  }, [domSettled]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (!embedded && meta?.title) document.title = meta.title; }, [meta?.title, embedded]);

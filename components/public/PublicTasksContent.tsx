@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
+import { useDomSettled } from "@/lib/hooks/useDomSettled";
 import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
@@ -138,14 +139,27 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     const user = session?.user;
     setSignedIn(!!user);
     setAuthChecked(true);
-    if (!user) { setLoading(false); perfLogPageReady("public", "task page"); return; }
+    if (!user) { setLoading(false); return; }
     await refresh();
     perfLog("public task page: data resolved");
     setLoading(false);
-    perfLogPageReady("public", "task page");
   }, [refresh]);
 
   useEffect(() => { checkAuthAndLoad(); }, [checkAuthAndLoad]);
+
+  // "data resolved" (above) only marks when the fetch promise landed --
+  // for a long task list that's well before React has actually finished
+  // rendering/painting the resulting table, which can itself take a real,
+  // separate chunk of time. domSettled (same DOM-mutation-quiet technique
+  // as components/PerfRouteTracker.tsx) fires once the page has actually
+  // stopped changing, so THIS is the moment Admin > Performance's "ready"
+  // marker should land on -- otherwise every recorded load time silently
+  // excludes render time, which is exactly backwards when the render is
+  // the suspect.
+  const domSettled = useDomSettled(!loading);
+  useEffect(() => {
+    if (domSettled) perfLogPageReady("public", "task page");
+  }, [domSettled]);
 
   // Browser tab title — matches the on-page header instead of the generic
   // site-wide "Diract" title. Skipped when embedded in a dashboard widget,
