@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
 
 export interface RelatedField {
   path: string;
@@ -57,6 +58,10 @@ export function cleanFullLabel(raw: string): string {
 
 const cache = new Map<string, RelatedField[]>();
 
+function shellCacheKey(tableName: string): string {
+  return `related-fields:${tableName}`;
+}
+
 // get_all_related_fields feeds the actual row-fetch query (dotted cross-table
 // columns get silently dropped without it), so it can't be made lazy without
 // risking data loss for already-configured columns. Instead, cap how long we
@@ -66,14 +71,27 @@ const cache = new Map<string, RelatedField[]>();
 const FETCH_TIMEOUT_MS = 4000;
 
 export function useRelatedFields(tableName: string): RelatedFieldsResult {
-  const [fields, setFields] = useState<RelatedField[]>(cache.get(tableName) || []);
-  const [loading, setLoading] = useState(!cache.has(tableName));
+  // get_all_related_fields is a live information_schema/pg_catalog
+  // introspection query -- expensive (recursive FK-graph walk over system
+  // catalogs), and re-run from scratch on every single page load since the
+  // in-memory `cache` above dies on reload. The actual schema it describes
+  // (table FKs/columns) only changes when an admin edits it, so persist the
+  // last-known result to localStorage (same stale-while-revalidate pattern
+  // as lib/shellCache.ts's other consumers) -- every reload after the first
+  // paints instantly from that, with a real fetch still confirming/updating
+  // it in the background.
+  const [fields, setFields] = useState<RelatedField[]>(
+    cache.get(tableName) || readShellCache<RelatedField[]>(shellCacheKey(tableName)) || []
+  );
+  const [loading, setLoading] = useState(!cache.has(tableName) && !readShellCache(shellCacheKey(tableName)));
 
   useEffect(() => {
     if (tableName === '__skip__') { setLoading(false); return; }
+    const persisted = readShellCache<RelatedField[]>(shellCacheKey(tableName));
     if (cache.has(tableName)) { setFields(cache.get(tableName)!); setLoading(false); return; }
+    if (persisted) { cache.set(tableName, persisted); setFields(persisted); setLoading(false); }
     let active = true;
-    perfLog(`useRelatedFields(${tableName}): start`);
+    perfLog(`useRelatedFields(${tableName}): start`, persisted ? "seeded from shellCache, refreshing in background" : undefined);
 
     const rpcPromise = supabase.rpc('get_all_related_fields', {
       base_table: tableName,
@@ -86,13 +104,20 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
 
     Promise.race([rpcPromise, timeoutPromise]).then(({ data, error }) => {
       if (!active) return;
-      if (error) console.error('useRelatedFields error:', error);
+      if (error) {
+        console.error('useRelatedFields error:', error);
+        perfLog(`useRelatedFields(${tableName}): resolved`, String(error.message));
+        // Don't cache a timeout as if it were "no related fields" — a later
+        // mount (e.g. after the slow request actually finishes) should retry
+        // rather than being stuck with an empty result. If we already had a
+        // persisted result, keep showing that instead of clearing it.
+        if (!persisted) { setFields([]); setLoading(false); }
+        return;
+      }
       const result = (data || []) as RelatedField[];
-      perfLog(`useRelatedFields(${tableName}): resolved`, error ? String(error.message) : `${result.length} fields`);
-      // Don't cache a timeout as if it were "no related fields" — a later
-      // mount (e.g. after the slow request actually finishes) should retry
-      // rather than being stuck with an empty result for the whole session.
-      if (!error) cache.set(tableName, result);
+      perfLog(`useRelatedFields(${tableName}): resolved`, `${result.length} fields`);
+      cache.set(tableName, result);
+      writeShellCache(shellCacheKey(tableName), result);
       setFields(result);
       setLoading(false);
     });
