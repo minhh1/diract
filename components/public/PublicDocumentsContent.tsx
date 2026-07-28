@@ -20,6 +20,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, FileText, Download, Check, FileArchive, Lock, Ban, Layers } from "lucide-react";
 import { renderMarkdown } from "@/lib/renderMarkdown";
+import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib/publicPageCache";
 
 interface Field {
   tagKey: string;
@@ -45,6 +46,7 @@ interface ResultBatch { label: string; files: GeneratedFile[]; zipUrl: string | 
 // changed it) — never trusted blindly, always re-verified against the
 // server on load. Wrapped in try/catch for privacy-mode browsers where
 // localStorage access can throw.
+const pageDataCacheKey = (pageId: string) => `docfill_page_${pageId}`;
 const codeCacheKey = (pageId: string) => `docfill_code_${pageId}`;
 function getCachedCode(pageId: string): string | null {
   try { return localStorage.getItem(codeCacheKey(pageId)); } catch { return null; }
@@ -140,6 +142,18 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
     setLoading(true);
     const cachedCode = getCachedCode(pageId);
 
+    // Paint instantly from a previous visit's cache -- but only ever a
+    // payload cached under the EXACT code currently remembered (see
+    // lib/publicPageCache.ts's doc comment). The real validation below
+    // still always runs regardless of whether this produced a paint; it's
+    // purely a "show something now" optimization, not a substitute for it.
+    const cachedData = cachedCode ? readPinGatedCache<PageData>(pageDataCacheKey(pageId), cachedCode) : null;
+    if (cachedData) {
+      setVerifiedCode(cachedCode);
+      applyLoadedData(cachedData);
+      setLoading(false);
+    }
+
     // Try a cached code first (if we have one) so a returning client skips
     // straight to the form. If the server rejects it — wrong, or the admin
     // changed/removed the code — fall through to a normal, code-less load
@@ -150,9 +164,15 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
         setVerifiedCode(cachedCode);
         applyLoadedData(cachedAttempt.json);
         setLoading(false);
+        writePinGatedCache(pageDataCacheKey(pageId), cachedCode, cachedAttempt.json);
         return;
       }
+      // The remembered code no longer works (revoked/rotated/page
+      // deactivated) -- never leave whatever was optimistically painted
+      // above on screen past this point, cached or not.
       clearCachedCode(pageId);
+      clearPinGatedCache(pageDataCacheKey(pageId));
+      if (cachedData) { setData(null); setLoading(true); }
     }
 
     const { ok, json } = await fetchPage();
@@ -185,6 +205,7 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
     setCachedCode(pageId, code);
     setNeedsCode(false);
     applyLoadedData(json);
+    writePinGatedCache(pageDataCacheKey(pageId), code, json);
   };
 
   const setValue = (tagKey: string, v: string) => setValues(prev => ({ ...prev, [tagKey]: v }));

@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
+import { readShellCache } from "@/lib/shellCache";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
 import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign } from "lucide-react";
@@ -199,9 +200,26 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   // Relies on RLS to scope to the signed-in viewer's own company, same as every
   // other direct company_tables query in the app — no need to filter by companyId.
+  //
+  // When this component is the `embedded` dashboard widget, the signed-in
+  // viewer's own session already went through the app's normal bootstrap
+  // (lib/companyBootstrap.ts), which warms every custom table's shell
+  // (tableDef + fields) into shellCache before the splash even dismisses --
+  // so the "time-fee-entries" lookup below is almost always already sitting
+  // in localStorage and these two round trips are skippable entirely. A
+  // genuinely anonymous standalone /public/tasks visitor never ran that
+  // bootstrap, so shellCache is empty for them and this falls through to
+  // the real fetch same as before -- this is a pure speedup, not a
+  // behavior change, for that case.
   useEffect(() => {
     if (!data?.companyId) return;
     (async () => {
+      const cached = readShellCache<{ tableDef: CustomTable; fields: CustomTableField[] }>("table:time-fee-entries");
+      if (cached) {
+        setTimeFeesTable(cached.tableDef);
+        setTimeFeesFields(cached.fields);
+        return;
+      }
       const { data: tbl } = await supabase
         .from("company_tables").select("*")
         .eq("slug", "time-fee-entries").is("deleted_at", null).maybeSingle();

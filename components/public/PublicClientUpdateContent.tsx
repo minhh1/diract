@@ -27,11 +27,13 @@ import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
+import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib/publicPageCache";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
-interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean }
+interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; baseTable?: "projects" | "entities" }
 
+const boardCacheKey = (slug: string) => `client_update_board_${slug}`;
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
 function getCachedCode(slug: string): string | null {
   try { return localStorage.getItem(codeCacheKey(slug)); } catch { return null; }
@@ -75,23 +77,46 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
 
   const loadAsClient = useCallback(async () => {
     const cachedCode = getCachedCode(slug);
+
+    // Paint instantly from a previous visit's cache -- but only ever a
+    // payload cached under the EXACT PIN currently remembered (see
+    // lib/publicPageCache.ts's doc comment). The real validation below
+    // still always runs regardless of whether this produced a paint; it's
+    // purely a "show something now" optimization, not a substitute for it.
+    const cached = cachedCode ? readPinGatedCache<{ meta: PageMeta; board: Board }>(boardCacheKey(slug), cachedCode) : null;
+    if (cached) {
+      setMode("client");
+      setMeta(cached.meta);
+      setBoard(cached.board);
+      setLoading(false);
+    }
+
     if (cachedCode) {
       const attempt = await fetchPublic(cachedCode);
       if (attempt.ok && !attempt.json.requiresCode) {
+        const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn };
+        const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [] };
         setMode("client");
-        setMeta({ title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn });
-        setBoard({ groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [] });
+        setMeta(meta);
+        setBoard(board);
         setLoading(false);
+        writePinGatedCache(boardCacheKey(slug), cachedCode, { meta, board });
         return;
       }
+      // The remembered PIN no longer works (revoked/rotated/page
+      // deactivated) -- never leave whatever was optimistically painted
+      // above on screen past this point, cached or not.
       clearCachedCode(slug);
+      clearPinGatedCache(boardCacheKey(slug));
+      if (cached) { setBoard(null); setLoading(true); }
     }
     const { ok, json } = await fetchPublic();
     if (!ok) { setError(json.error || "This page is not available"); setLoading(false); return; }
     setMode("client");
-    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn });
+    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, baseTable: json.baseTable });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
-    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
+    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
+    setBoard(board);
     setLoading(false);
   }, [fetchPublic, slug]);
 
@@ -102,7 +127,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     const json = await res.json();
     setMode("staff");
     setStaffPageId(json.page.id);
-    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column });
+    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, baseTable: json.page.base_table });
     setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
     return true;
   }, [slug]);
@@ -159,7 +184,12 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     if (!ok) { setCodeError(json.error || "Incorrect access code"); return; }
     setCachedCode(slug, code);
     setNeedsCode(false);
-    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
+    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
+    setBoard(board);
+    // `meta` is already set (loadAsClient sets it before ever showing the
+    // PIN gate) -- cache it alongside this newly-validated code so the next
+    // visit can paint instantly instead of starting cold again.
+    if (meta) writePinGatedCache(boardCacheKey(slug), code, { meta, board });
   };
 
   // ── Optimistic mutation handlers ───────────────────────────────────
@@ -539,8 +569,15 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
       <div className={embedded ? "space-y-4" : "max-w-[1600px] mx-auto space-y-4"}>
         <h1 className="text-[16px] font-bold text-slate-800">{meta.title}</h1>
 
+        {/* Appended emails and AI summaries (onAddEmail/onRemoveEmail/
+            onGenerateSummary/onSummarizeOpenMatters/onClearSummaries below)
+            are projects/matters-only features -- their API routes assume
+            item.project_id, not generalized for an entities-based page, so
+            simply not offered there rather than exposing a button that
+            would error. */}
         <MatterBoard
           pageId={mode === "staff" ? staffPageId! : undefined}
+          baseTable={meta.baseTable}
           groups={board.groups}
           items={board.items}
           fields={board.fields}
@@ -562,11 +599,11 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
           onMoveItem={mode === "staff" ? moveItem : undefined}
           onRemoveItem={mode === "staff" ? removeItem : undefined}
           onAddNote={addNote}
-          onAddEmail={mode === "staff" ? appendEmail : undefined}
-          onRemoveEmail={mode === "staff" ? removeEmail : undefined}
-          onGenerateSummary={mode === "staff" ? generateSummary : undefined}
-          onSummarizeOpenMatters={mode === "staff" ? summarizeOpenMatters : undefined}
-          onClearSummaries={mode === "staff" ? clearSummaries : undefined}
+          onAddEmail={mode === "staff" && meta.baseTable !== "entities" ? appendEmail : undefined}
+          onRemoveEmail={mode === "staff" && meta.baseTable !== "entities" ? removeEmail : undefined}
+          onGenerateSummary={mode === "staff" && meta.baseTable !== "entities" ? generateSummary : undefined}
+          onSummarizeOpenMatters={mode === "staff" && meta.baseTable !== "entities" ? summarizeOpenMatters : undefined}
+          onClearSummaries={mode === "staff" && meta.baseTable !== "entities" ? clearSummaries : undefined}
           onRenameMatter={mode === "staff" ? renameMatter : undefined}
           onReorderFields={mode === "staff" ? reorderFields : undefined}
           onDataChanged={reloadStaffBoard}

@@ -52,14 +52,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     return NextResponse.json({ title: page.title, heading, requiresCode: false, documents: [], fields: [] });
   }
 
-  const { data: templateRows } = await admin
-    .from("document_templates").select("id, name, description").in("id", templateIds);
-
-  const { data: fieldRows } = await admin
-    .from("document_template_fields")
-    .select("id, template_id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, default_value, joined_to_field_id, trigger_field_id, trigger_value, display_order")
-    .in("template_id", templateIds)
-    .order("display_order");
+  // Independent of each other -- both only need templateIds above -- so one
+  // round trip covers both instead of two sequential ones.
+  const [{ data: templateRows }, { data: fieldRows }] = await Promise.all([
+    admin.from("document_templates").select("id, name, description").in("id", templateIds),
+    admin.from("document_template_fields")
+      .select("id, template_id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, default_value, joined_to_field_id, trigger_field_id, trigger_value, display_order")
+      .in("template_id", templateIds)
+      .order("display_order"),
+  ]);
 
   // Resolve each field to its join-root — a field explicitly joined with
   // another (see app/api/document-templates/fields/join/route.ts) collapses
