@@ -20,7 +20,6 @@ export interface FieldLayout {
   relationTable?: string;          // for base relation fields e.g. 'properties', 'entities'
   relationDisplayColumn?: string;  // e.g. 'street_address', 'name'
   relationJunction?: { table: string; sourceCol: string; targetCol: string }; // multi-valued base relations
-  section?: string | null; // AI-classified group name, per company -- see app/api/ai/classify-field-sections
 }
 
 interface Props {
@@ -35,7 +34,11 @@ interface Props {
   onLayoutChange: (fields: FieldLayout[]) => void;
   onAddField: () => void;
   onRemoveField: (fieldKey: string) => void;
-  sectioningFailed?: boolean; // AI classification attempted and failed for this tab -- fall back to flat instead of skeleton-blocking forever
+  // field_key -> AI-classified section name, shared across every record of
+  // this table for the company -- see app/api/ai/classify-field-sections.
+  // Absent/incomplete just means not classified yet; renders flat until it
+  // arrives rather than making the user wait for it.
+  fieldSections?: Record<string, string>;
 }
 
 // ── LinkedRecordModal — multi-select (one row per linked record) ─
@@ -809,7 +812,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
 export default function FieldLayoutEditor({
   fields, recordValues, recordMatterType, linkedItems = {}, isEditing,
   onSave, onAddLinked, onRemoveLinked, onLayoutChange, onAddField, onRemoveField,
-  sectioningFailed = false,
+  fieldSections = {},
 }: Props) {
   const [draggedKey, setDraggedKey]   = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
@@ -949,12 +952,17 @@ export default function FieldLayoutEditor({
     </button>
   );
 
-  // Only group once every field has been AI-classified -- a partially
+  // Only group once every field has a known section -- a partially
   // classified list (still loading, or a freshly added field) stays flat
   // rather than showing one orphaned ungrouped field alongside sections.
-  const allClassified = sorted.length > 0 && sorted.every(f => !!f.section);
+  // Classification is company+table-scoped and shared across every record,
+  // so this is only ever momentarily false right after a brand new field is
+  // added -- there's no loading state to wait for here, it just renders
+  // flat until the (already in-flight, background) classification catches
+  // up on its own.
+  const allClassified = sorted.length > 0 && sorted.every(f => !!fieldSections[f.field_key]);
 
-  if (!allClassified && sectioningFailed) {
+  if (!allClassified) {
     return (
       <div className="space-y-6">
         {renderRows(packRows(sorted))}
@@ -963,29 +971,9 @@ export default function FieldLayoutEditor({
     );
   }
 
-  // Classification is still in flight (or hasn't been kicked off yet) --
-  // show a skeleton shaped like the section cards it'll become, rather
-  // than a flash of the flat, ungrouped list that then jumps into sections
-  // a moment later.
-  if (!allClassified) {
-    return (
-      <div className="space-y-4 animate-pulse">
-        {[0, 1, 2].map(i => (
-          <div key={i} className="border border-slate-100 rounded-xl bg-white p-6 space-y-4">
-            <div className="h-3 w-28 bg-slate-100 rounded-full" />
-            <div className="grid grid-cols-2 gap-5">
-              <div className="h-9 bg-slate-100 rounded-xl" />
-              <div className="h-9 bg-slate-100 rounded-xl" />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   const grouped = new Map<string, FieldLayout[]>();
   sorted.forEach(field => {
-    const section = field.section!;
+    const section = fieldSections[field.field_key];
     if (!grouped.has(section)) grouped.set(section, []);
     grouped.get(section)!.push(field);
   });

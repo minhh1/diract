@@ -910,7 +910,7 @@ export default function RecordDashboard({
     if (saved && saved.length > 0) {
       return saved.map(s => {
         const meta = fields.find(f => f.field_key === s.field_key);
-        return { ...s, ...meta, col_span: s.col_span, row_order: s.row_order, section: s.section };
+        return { ...s, ...meta, col_span: s.col_span, row_order: s.row_order };
       });
     }
     return fields;
@@ -936,48 +936,68 @@ export default function RecordDashboard({
   };
 
   // AI-driven field grouping (see app/api/ai/classify-field-sections) --
-  // fires the first time a fields tab has any unclassified field (brand new
-  // tab, or a field just added via handlePickField) and merges the result
-  // back into local state once it resolves. FieldLayoutEditor shows a
-  // skeleton while this is in flight rather than a flash of the flat list
-  // that then jumps into sections -- classifyFailedTabs is how it knows to
-  // give up on that and fall back to flat instead of skeleton-blocking
-  // forever if the call never succeeds. The ref guard stops a slow response
-  // from being kicked off twice.
-  const classifyingTabsRef = useRef<Set<string>>(new Set());
-  const [classifyFailedTabs, setClassifyFailedTabs] = useState<Set<string>>(new Set());
+  // scoped per (companyId, recordTable), NOT per record. Every record of a
+  // table shares the same field set, so this only needs to run once per
+  // company per table ever (until a field is added that isn't covered
+  // yet), instead of once per individual record a user happens to open --
+  // that per-record version was the earlier design and is why it used to
+  // take a long time: every new record re-ran the AI call from scratch.
+  //
+  // fieldSectionsLoaded distinguishes "still loading" from "loaded, and
+  // genuinely nothing there yet" -- without it, the classify effect below
+  // would fire on the empty map during the initial fetch and re-run even
+  // for already-classified companies.
+  const [fieldSections, setFieldSections] = useState<Record<string, string>>({});
+  const [fieldSectionsLoaded, setFieldSectionsLoaded] = useState(false);
+  const [classifyFailed, setClassifyFailed] = useState(false);
+  const classifyingRef = useRef(false);
 
-  const classifyFieldSections = async (tabId: string, layout: FieldLayout[]) => {
-    if (classifyingTabsRef.current.has(tabId)) return;
-    classifyingTabsRef.current.add(tabId);
+  useEffect(() => {
+    if (!companyId || !recordTable) return;
+    let cancelled = false;
+    setFieldSectionsLoaded(false);
+    supabase
+      .from('company_table_field_sections')
+      .select('field_key, section')
+      .eq('company_id', companyId)
+      .eq('table_name', recordTable)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        (data || []).forEach((r: { field_key: string; section: string }) => { map[r.field_key] = r.section; });
+        setFieldSections(map);
+        setFieldSectionsLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, [companyId, recordTable]);
+
+  const classifyFieldSections = async () => {
+    if (classifyingRef.current) return;
+    classifyingRef.current = true;
     try {
       const res = await fetch('/api/ai/classify-field-sections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tabId,
-          fields: layout.map(f => ({
-            field_key: f.field_key,
-            field_source: f.field_source,
-            label: f.label,
-            col_start: f.col_start,
-            col_span: f.col_span,
-            row_order: f.row_order,
-          })),
+          tableName: recordTable,
+          fields: fields.map(f => ({ field_key: f.field_key, label: f.label })),
         }),
       });
-      if (!res.ok) { setClassifyFailedTabs(prev => new Set(prev).add(tabId)); return; }
+      if (!res.ok) { setClassifyFailed(true); return; }
       const { sections } = await res.json();
-      setTabFieldLayouts(prev => {
-        const current = prev[tabId] || layout;
-        return { ...prev, [tabId]: current.map(f => ({ ...f, section: sections[f.field_key] ?? f.section })) };
-      });
+      setFieldSections(prev => ({ ...prev, ...sections }));
     } catch {
-      setClassifyFailedTabs(prev => new Set(prev).add(tabId));
+      setClassifyFailed(true);
     } finally {
-      classifyingTabsRef.current.delete(tabId);
+      classifyingRef.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!fieldSectionsLoaded || classifyFailed || fields.length === 0) return;
+    if (fields.some(f => !fieldSections[f.field_key])) classifyFieldSections();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldSectionsLoaded, fields, fieldSections, classifyFailed]);
 
   const handleRemoveFieldFromTab = async (tabId: string, fieldKey: string) => {
     await supabase
@@ -1096,18 +1116,6 @@ export default function RecordDashboard({
 
   const activeTab = tabs.find(t => t.id === activeTabId);
 
-  // Kicks off AI classification (see classifyFieldSections above) whenever
-  // the active fields tab has any field without a section -- a brand new
-  // tab, or one a field was just added to via handlePickField.
-  useEffect(() => {
-    if (!activeTab || activeTab.tab_type !== 'fields') return;
-    const layout = getTabFieldLayout(activeTab.id);
-    if (layout.length > 0 && layout.some(f => !f.section)) {
-      classifyFieldSections(activeTab.id, layout);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab?.id, activeTab?.tab_type, tabFieldLayouts, fields]);
-
   // Data-grid tabs (Time & Fees/Disbursements and any other custom_dashboard,
   // plus Invoices) need much more horizontal room than a field-list tab --
   // the shared max-w-4xl wrapper below was clipping grid columns on every
@@ -1121,7 +1129,7 @@ export default function RecordDashboard({
     <>
       {activeTab?.tab_type === 'fields' && (
         <FieldLayoutEditor
-          sectioningFailed={classifyFailedTabs.has(activeTab.id)}
+          fieldSections={fieldSections}
           fields={getTabFieldLayout(activeTab.id)}
           recordValues={record || {}}
           recordMatterType={matterTypeFieldId ? record?.[matterTypeFieldId] : undefined}

@@ -1,10 +1,18 @@
 // app/api/ai/classify-field-sections/route.ts
-// Groups a record-dashboard tab's fields into a handful of named sections
-// (e.g. "Client Details", "Trust Settings") so FieldLayoutEditor can render
-// collapsible groups instead of one long flat list. Companies configure
-// wildly different custom fields on the same system tables, so the grouping
-// is decided per-company by an LLM looking at that company's actual field
-// labels, rather than a hardcoded per-table-type guess.
+// Groups a company's fields for one table (e.g. Projects, or a custom table)
+// into a handful of named sections (e.g. "Client Details", "Trust
+// Settings") so FieldLayoutEditor can render collapsible groups instead of
+// one long flat list. Companies configure wildly different custom fields on
+// the same system tables, so the grouping is decided per-company by an LLM
+// looking at that company's actual field labels, rather than a hardcoded
+// per-table-type guess.
+//
+// Scoped by (company_id, table_name), NOT per record -- every record of a
+// table shares the same field set, so classifying per-record (the original
+// design, keyed by record_tab_fields.tab_id) meant every single new record
+// a user opened re-ran this call. Classifying once per company+table and
+// reusing it for every record means this only ever runs again when a field
+// gets added that isn't covered yet.
 //
 // Deliberately skips the token-cap check and ai_usage_events billing that
 // every other app/api/ai/* route does -- this is a tiny, infrequent
@@ -35,11 +43,7 @@ Rules:
 
 interface InputField {
   field_key: string;
-  field_source: 'base' | 'custom';
   label: string;
-  col_start: number;
-  col_span: number;
-  row_order: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -48,15 +52,10 @@ export async function POST(req: NextRequest) {
   const { admin, companyId } = auth;
 
   const body = await req.json().catch(() => null);
-  const tabId: string | undefined = body?.tabId;
+  const tableName: string | undefined = body?.tableName;
   const fields: InputField[] = Array.isArray(body?.fields) ? body.fields : [];
-  if (!tabId || fields.length === 0) {
-    return NextResponse.json({ error: "tabId and a non-empty fields array are required" }, { status: 400 });
-  }
-
-  const { data: tab } = await admin.from("record_tabs").select("company_id").eq("id", tabId).maybeSingle();
-  if (!tab || tab.company_id !== companyId) {
-    return NextResponse.json({ error: "Tab not found" }, { status: 404 });
+  if (!tableName || fields.length === 0) {
+    return NextResponse.json({ error: "tableName and a non-empty fields array are required" }, { status: 400 });
   }
 
   const userContent = JSON.stringify(fields.map(f => ({ field_key: f.field_key, label: f.label })));
@@ -96,15 +95,14 @@ export async function POST(req: NextRequest) {
   }
 
   const upserts = fields.map(f => ({
-    tab_id: tabId,
+    company_id: companyId,
+    table_name: tableName,
     field_key: f.field_key,
-    field_source: f.field_source,
-    col_start: f.col_start,
-    col_span: f.col_span,
-    row_order: f.row_order,
     section: sections[f.field_key],
   }));
-  const { error } = await admin.from("record_tab_fields").upsert(upserts, { onConflict: "tab_id,field_key" });
+  const { error } = await admin
+    .from("company_table_field_sections")
+    .upsert(upserts, { onConflict: "company_id,table_name,field_key" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ sections });
