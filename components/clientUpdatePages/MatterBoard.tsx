@@ -42,6 +42,7 @@ import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
 import GroupConditionModal from "./GroupConditionModal";
 import ActivityLogModal from "./ActivityLogModal";
+import CellHistoryPopover, { type CellLogEntry } from "./CellHistoryPopover";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
@@ -61,7 +62,8 @@ interface Props {
   freezeFirstColumn?: boolean;
   canEdit: boolean;
   canComment: boolean;
-  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
+  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId: string | undefined, reason: string) => void;
+  onFetchCellHistory: (itemId: string, fieldId: string) => Promise<CellLogEntry[]>;
   onRenameGroup?: (groupId: string, name: string) => void;
   onDeleteGroup?: (groupId: string) => void;
   onAddGroup?: (name: string, parentGroupId: string | null) => void;
@@ -142,7 +144,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
-  onSaveValue, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
+  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
@@ -157,6 +159,13 @@ export default function MatterBoard({
   const [conditionGroupId, setConditionGroupId] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [summarizingAll, setSummarizingAll] = useState(false);
+  // A staff value edit doesn't hit onSaveValue directly -- see
+  // requestSaveValue below -- it stops here first so staff must give a
+  // reason before the change actually saves and lands in the per-cell log
+  // a client can see (CellHistoryPopover).
+  const [pendingSave, setPendingSave] = useState<{ itemId: string; fieldId: string; fieldLabel: string; propertyId?: string; newValue: any } | null>(null);
+  const [reasonInput, setReasonInput] = useState("");
+  const [historyTarget, setHistoryTarget] = useState<{ itemId: string; fieldId: string; fieldLabel: string; field: MatterBoardField } | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
 
   const summarizeOpenMatters = async () => {
@@ -182,6 +191,28 @@ export default function MatterBoard({
     } finally {
       setClearingAll(false);
     }
+  };
+
+  // Opens the reason prompt instead of saving straight away -- passed to
+  // MatterCard/SpreadsheetView in place of onSaveValue, so ValueCell/
+  // SpreadsheetCell's own commit() logic (only fires on a real change)
+  // doesn't need to know anything changed about the flow.
+  const requestSaveValue = (itemId: string, fieldId: string, value: any, propertyId?: string) => {
+    const field = fields.find(f => f.id === fieldId);
+    setReasonInput("");
+    setPendingSave({ itemId, fieldId, propertyId, newValue: value, fieldLabel: field?.label || "this field" });
+  };
+
+  const confirmPendingSave = () => {
+    if (!pendingSave || !reasonInput.trim() || !onSaveValue) return;
+    onSaveValue(pendingSave.itemId, pendingSave.fieldId, pendingSave.newValue, pendingSave.propertyId, reasonInput.trim());
+    setPendingSave(null);
+  };
+
+  const showCellHistory = (itemId: string, fieldId: string, fieldLabel: string) => {
+    const field = fields.find(f => f.id === fieldId);
+    if (!field) return;
+    setHistoryTarget({ itemId, fieldId, fieldLabel, field });
   };
 
   const topGroups = groups.filter(g => !g.parent_group_id);
@@ -679,7 +710,7 @@ export default function MatterBoard({
             <div className="space-y-3">
               {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)}
-                  onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
+                  onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">No matters here yet</p>
@@ -687,7 +718,7 @@ export default function MatterBoard({
             </div>
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} colorForItem={colorForItem}
-              onSaveValue={onSaveValue} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} />
+              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} />
           )}
         </div>
       </div>
@@ -712,6 +743,30 @@ export default function MatterBoard({
           onClose={() => setConditionGroupId(null)} />
       )}
       {showLogs && pageId && <ActivityLogModal pageId={pageId} onClose={() => setShowLogs(false)} />}
+      {pendingSave && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setPendingSave(null); }}>
+          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-sm mx-4 p-8">
+            <h3 className="text-[14px] font-bold text-slate-800">Why is {pendingSave.fieldLabel.toLowerCase()} changing?</h3>
+            <p className="text-[11px] text-slate-400 mt-1">This is shown to the client alongside the change.</p>
+            <textarea autoFocus value={reasonInput} onChange={e => setReasonInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); confirmPendingSave(); } if (e.key === "Escape") setPendingSave(null); }}
+              placeholder="e.g. Settlement pushed back by the vendor's bank"
+              className="w-full mt-4 px-4 py-3 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" rows={3} />
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button onClick={() => setPendingSave(null)} className="px-4 py-2 text-[11px] font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
+              <button onClick={confirmPendingSave} disabled={!reasonInput.trim()}
+                className="px-5 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                Save change
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {historyTarget && (
+        <CellHistoryPopover field={historyTarget.field} fieldLabel={historyTarget.fieldLabel} dateFormat={dateFormat}
+          onFetch={() => onFetchCellHistory(historyTarget.itemId, historyTarget.fieldId)}
+          onClose={() => setHistoryTarget(null)} />
+      )}
     </div>
   );
 }
@@ -909,10 +964,11 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
+function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
+  onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string, propertyId?: string) => void;
@@ -991,7 +1047,8 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {fields.map(f => (
               <ValueCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
-                onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)} />
+                onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
+                onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
           </div>
           <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
@@ -1002,17 +1059,26 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   );
 }
 
-function ValueCell({ field, value, dateFormat, editable: editableProp, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; onSave: (v: any) => void }) {
+function ValueCell({ field, value, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; onSave: (v: any) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
 
   const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
 
+  const labelRow = (
+    <div className="flex items-center gap-1 mb-1">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{field.label}</p>
+      {onShowHistory && (
+        <button onClick={onShowHistory} title="See what changed" className="text-slate-300 hover:text-indigo-600 transition-colors"><History size={9} /></button>
+      )}
+    </div>
+  );
+
   if (field.field_type === "select" && field.select_options?.length) {
     return (
       <div>
-        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{field.label}</p>
+        {labelRow}
         {editable ? (
           <select value={value ?? ""} onChange={e => onSave(e.target.value || null)}
             className="w-full px-2 py-1 border border-slate-200 rounded-lg text-[12px] outline-none bg-white">
@@ -1028,7 +1094,7 @@ function ValueCell({ field, value, dateFormat, editable: editableProp, onSave }:
 
   return (
     <div>
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{field.label}</p>
+      {labelRow}
       {editing ? (
         <input autoFocus type={isDateField(field) ? "date" : "text"} value={draft ?? ""} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
@@ -1197,11 +1263,12 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, colorForItem, onSaveValue, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail }: {
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean;
   colorForItem: (item: MatterBoardItem) => string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
+  onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
@@ -1264,7 +1331,8 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
               </td>
               {fields.map((f, i) => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
-                  onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)} />
+                  onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
+                  onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
               ))}
               {canEdit && onMoveItem && (
                 <td className="px-4 py-4">
@@ -1300,7 +1368,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   );
 }
 
-function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, frozen, frozenBg, onSave }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void }) {
+function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1313,16 +1381,24 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
   // SpreadsheetView) occupies left-0 first; this sits right after it.
   const frozenClass = frozen ? `sm:sticky sm:left-8 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white"}` : "";
 
+  const historyButton = onShowHistory && (
+    <button onClick={e => { e.stopPropagation(); onShowHistory(); }} title="See what changed"
+      className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-indigo-600 transition-opacity shrink-0"><History size={10} /></button>
+  );
+
   if (field.field_type === "select" && field.select_options?.length) {
     return (
-      <td className={`px-4 py-4 ${frozenClass}`}>
-        {editable ? (
-          <select value={value ?? ""} onChange={e => onSave(e.target.value || null)}
-            className="text-[12px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
-            <option value="">—</option>
-            {field.select_options.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        ) : (value || "—")}
+      <td className={`group px-4 py-4 ${frozenClass}`}>
+        <span className="inline-flex items-center gap-1.5">
+          {editable ? (
+            <select value={value ?? ""} onChange={e => onSave(e.target.value || null)}
+              className="text-[12px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
+              <option value="">—</option>
+              {field.select_options.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          ) : (value || "—")}
+          {historyButton}
+        </span>
       </td>
     );
   }
@@ -1338,8 +1414,11 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
   }
   return (
     <td onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
-      className={`px-4 py-4 whitespace-nowrap text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
-      {value == null || value === "" ? "—" : formatValue(value, field, dateFormat)}
+      className={`group px-4 py-4 whitespace-nowrap text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
+      <span className="inline-flex items-center gap-1.5">
+        {value == null || value === "" ? "—" : formatValue(value, field, dateFormat)}
+        {historyButton}
+      </span>
     </td>
   );
 }

@@ -22,8 +22,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (gate.error) return gate.error;
 
   const body = await req.json().catch(() => ({}));
-  const { itemId, fieldId, value, propertyId } = body;
+  const { itemId, fieldId, value, propertyId, reason } = body;
   if (!itemId || !fieldId) return NextResponse.json({ error: "itemId and fieldId are required" }, { status: 400 });
+  const reasonTrimmed = typeof reason === "string" ? reason.trim() : "";
+  if (!reasonTrimmed) return NextResponse.json({ error: "A reason for this change is required" }, { status: 400 });
 
   const [{ data: item }, { data: field }] = await Promise.all([
     admin.from("client_update_page_items").select("id, project_id").eq("id", itemId).eq("page_id", id).maybeSingle(),
@@ -34,10 +36,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: project } = await admin.from("projects").select("id, name, property_id").eq("id", item.project_id).maybeSingle();
 
-  const logAfterSave = async () => {
+  // oldValue is whatever the branch below read before it overwrote the
+  // record -- passed in here so the per-cell history (see
+  // components/clientUpdatePages/CellHistoryPopover.tsx) can show a real
+  // before/after instead of just the new value.
+  const logAfterSave = async (oldValue: any) => {
     const actorName = await resolveActorName(admin, user.id);
     const displayValue = value == null || value === "" ? "(blank)" : String(value);
-    await logChange(admin, id, actorName, "staff", "value_changed", `Set "${field.label}" to ${displayValue} on ${project?.name || "a matter"}`);
+    await logChange(admin, id, actorName, "staff", "value_changed", `Set "${field.label}" to ${displayValue} on ${project?.name || "a matter"}`, {
+      itemId, fieldId,
+      oldValue: oldValue == null || oldValue === "" ? null : String(oldValue),
+      newValue: value == null || value === "" ? null : String(value),
+      reason: reasonTrimmed,
+    });
   };
 
   // Read-only -- see lib/clientUpdatePageDetail.ts's header comment. Editing
@@ -47,10 +58,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (field.field_source === "adhoc") {
+    const { data: existing } = await admin.from("client_update_page_values").select("value_text").eq("item_id", itemId).eq("field_id", fieldId).maybeSingle();
     const { error } = await admin.from("client_update_page_values")
       .upsert({ item_id: itemId, field_id: fieldId, value_text: value ?? null }, { onConflict: "item_id,field_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logAfterSave();
+    await logAfterSave(existing?.value_text ?? null);
     return NextResponse.json({ ok: true });
   }
 
@@ -71,17 +83,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!targetPropertyId) return NextResponse.json({ error: "This matter has no linked property" }, { status: 400 });
 
     if (field.field_key === "property_address") {
+      const { data: existingProp } = await admin.from("properties").select("street_address").eq("id", targetPropertyId).maybeSingle();
       const { error } = await admin.from("properties").update({ street_address: value ?? null }).eq("id", targetPropertyId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      await logAfterSave();
+      await logAfterSave(existingProp?.street_address ?? null);
       return NextResponse.json({ ok: true });
     }
 
     const [kind, key] = String(field.field_key).split(":");
     if (kind === "base") {
+      const { data: existingProp } = await admin.from("properties").select(key).eq("id", targetPropertyId).maybeSingle();
       const { error } = await admin.from("properties").update({ [key]: value ?? null }).eq("id", targetPropertyId);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      await logAfterSave();
+      await logAfterSave((existingProp as any)?.[key] ?? null);
       return NextResponse.json({ ok: true });
     }
 
@@ -90,6 +104,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // branch below, just written against the property record instead.
     const { data: cf } = await admin.from("company_custom_fields").select("field_type").eq("id", key).maybeSingle();
     if (!cf) return NextResponse.json({ error: "Custom field definition not found" }, { status: 404 });
+    const { data: existingVal } = await admin.from("company_custom_field_values").select("value_text, value_number, value_date, value_boolean").eq("field_id", key).eq("record_id", targetPropertyId).maybeSingle();
+    const oldValue = existingVal && (["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
     const row: Record<string, any> = {
       field_id: key, record_id: targetPropertyId, company_id: companyId, table_name: "properties",
       value_text: null, value_number: null, value_date: null, value_boolean: null,
@@ -100,14 +116,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     else row.value_text = value ?? null;
     const { error } = await admin.from("company_custom_field_values").upsert(row, { onConflict: "field_id,record_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logAfterSave();
+    await logAfterSave(oldValue ?? null);
     return NextResponse.json({ ok: true });
   }
 
   if (field.field_source === "base") {
+    const { data: existingProj } = await admin.from("projects").select(field.field_key).eq("id", item.project_id).maybeSingle();
     const { error } = await admin.from("projects").update({ [field.field_key]: value ?? null }).eq("id", item.project_id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logAfterSave();
+    await logAfterSave((existingProj as any)?.[field.field_key] ?? null);
     return NextResponse.json({ ok: true });
   }
 
@@ -115,6 +132,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // field_type to know which typed column to write.
   const { data: cf } = await admin.from("company_custom_fields").select("field_type").eq("id", field.field_key).maybeSingle();
   if (!cf) return NextResponse.json({ error: "Custom field definition not found" }, { status: 404 });
+
+  const { data: existingVal } = await admin.from("company_custom_field_values").select("value_text, value_number, value_date, value_boolean").eq("field_id", field.field_key).eq("record_id", item.project_id).maybeSingle();
+  const oldValue = existingVal && (["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
 
   const row: Record<string, any> = {
     field_id: field.field_key, record_id: item.project_id, company_id: companyId, table_name: "projects",
@@ -127,6 +147,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { error } = await admin.from("company_custom_field_values").upsert(row, { onConflict: "field_id,record_id" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  await logAfterSave();
+  await logAfterSave(oldValue ?? null);
   return NextResponse.json({ ok: true });
 }

@@ -179,7 +179,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     return item.properties.map(p => p.id === targetId ? { ...p, values: { ...p.values, [fieldId]: value } } : p);
   };
 
-  const saveValue = (itemId: string, fieldId: string, value: any, propertyId?: string) => {
+  const saveValue = (itemId: string, fieldId: string, value: any, propertyId: string | undefined, reason: string) => {
     if (mode !== "staff" || !staffPageId) return;
     let prevValue: any;
     let prevProperties: Board["items"][number]["properties"];
@@ -196,7 +196,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
       };
     });
     fetch(`/api/client-update-pages/${staffPageId}/values`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value, propertyId }),
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value, propertyId, reason }),
     }).then(async res => {
       if (res.ok) return;
       // Revert just this one field (not the whole board) so it doesn't
@@ -206,6 +206,20 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
       window.alert(json.error || "Couldn't save that value");
     });
   };
+
+  // Cell history is readable in both modes -- staff via the same
+  // authenticated route ActivityLogModal uses (filtered to one cell),
+  // client via the PIN-gated public route (see
+  // app/api/client-update-pages/public/[slug]/cell-logs/route.ts).
+  const fetchCellHistory = useCallback(async (itemId: string, fieldId: string) => {
+    const url = mode === "staff" && staffPageId
+      ? `/api/client-update-pages/${staffPageId}/logs?itemId=${itemId}&fieldId=${fieldId}`
+      : `/api/client-update-pages/public/${slug}/cell-logs?itemId=${itemId}&fieldId=${fieldId}&code=${encodeURIComponent(getCachedCode(slug) || "")}`;
+    const res = await fetch(url);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Couldn't load history");
+    return json.logs || [];
+  }, [mode, staffPageId, slug]);
 
   const renameGroup = (groupId: string, name: string) => {
     if (mode !== "staff" || !staffPageId) return;
@@ -536,6 +550,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
           canEdit={mode === "staff"}
           canComment
           onSaveValue={mode === "staff" ? saveValue : undefined}
+          onFetchCellHistory={fetchCellHistory}
           onRenameGroup={mode === "staff" ? renameGroup : undefined}
           onDeleteGroup={mode === "staff" ? deleteGroup : undefined}
           onAddGroup={mode === "staff" ? addGroup : undefined}
