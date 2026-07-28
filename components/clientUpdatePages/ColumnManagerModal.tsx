@@ -169,13 +169,15 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
             </p>
             {isCustomized ? (
               onRevert && (
-                <button onClick={handleRevert} disabled={switching} className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-indigo-600 disabled:opacity-40 transition-colors shrink-0">
+                <button onClick={handleRevert} disabled={switching} title="Remove this group's own columns and go back to using the shared set"
+                  className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-indigo-600 disabled:opacity-40 transition-colors shrink-0">
                   {switching && <Loader2 size={11} className="animate-spin" />} Revert to shared
                 </button>
               )
             ) : (
               onCustomize && (
-                <button onClick={handleCustomize} className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0">
+                <button onClick={handleCustomize} title={`Give ${groupName} its own copy of the columns, editable without affecting other groups`}
+                  className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors shrink-0">
                   Customize for {groupName} only
                 </button>
               )
@@ -246,13 +248,13 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Matter fields</p>
             <div className="flex flex-wrap gap-2">
               {catalog?.base.filter(o => !usedKeys.has(o.field_key)).map(o => (
-                <button key={o.field_key} onClick={() => addField("base", o.field_key, o.label)}
+                <button key={o.field_key} onClick={() => addField("base", o.field_key, o.label)} title={`Add ${o.label} as a column on this page`}
                   className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                   + {o.label}
                 </button>
               ))}
               {catalog?.custom.filter(o => !usedKeys.has(o.field_key)).map(o => (
-                <button key={o.field_key} onClick={() => addField("custom", o.field_key, o.label)}
+                <button key={o.field_key} onClick={() => addField("custom", o.field_key, o.label)} title={`Add ${o.label} as a column on this page`}
                   className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                   + {o.label}
                 </button>
@@ -266,13 +268,13 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
               <p className="text-[11px] text-slate-400 mb-2">Lives on the linked property, not the matter -- a matter with 2+ properties shows one row/card per property, each with its own value for this column.</p>
               <div className="flex flex-wrap gap-2">
                 {catalog?.propertyBase.filter(o => !usedKeys.has(o.field_key)).map(o => (
-                  <button key={o.field_key} onClick={() => addField("property", o.field_key, o.label)}
+                  <button key={o.field_key} onClick={() => addField("property", o.field_key, o.label)} title={`Add ${o.label} (from the linked property) as a column on this page`}
                     className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                     + {o.label}
                   </button>
                 ))}
                 {catalog?.propertyCustom.filter(o => !usedKeys.has(o.field_key)).map(o => (
-                  <button key={o.field_key} onClick={() => addField("property", o.field_key, o.label)}
+                  <button key={o.field_key} onClick={() => addField("property", o.field_key, o.label)} title={`Add ${o.label} (from the linked property) as a column on this page`}
                     className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                     + {o.label}
                   </button>
@@ -297,6 +299,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
                       <div className="flex flex-wrap gap-2 p-3">
                         {rt.columns.filter(c => !usedKeys.has(`${rt.linkFieldId}:${c.key}`)).map(c => (
                           <button key={c.key} onClick={() => addField("related_entity", `${rt.linkFieldId}:${c.key}`, `${rt.linkLabel}: ${c.label}`)}
+                            title={`Add ${c.label} (from the ${rt.linkLabel} entity) as a read-only column on this page`}
                             className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                             + {c.label}
                           </button>

@@ -56,7 +56,7 @@ export default function AddMatterModal({ pageId, groupId, onClose, onAdded }: {
       <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0">
           <h3 className="text-[13px] font-bold text-slate-800">Add matters</h3>
-          <button onClick={onClose} className="p-1 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+          <button onClick={onClose} title="Close" className="p-1 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
         <div className="px-6 pb-3 shrink-0">
           <div className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-full">

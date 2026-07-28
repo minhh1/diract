@@ -1086,7 +1086,7 @@ function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoa
           <input value={input} onChange={e => setInput(e.target.value)} placeholder="Add a note..."
             onKeyDown={e => { if (e.key === "Enter") submit(); }}
             className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400" />
-          <button onClick={submit} disabled={submitting || !input.trim()} className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
+          <button onClick={submit} disabled={submitting || !input.trim()} title="Add note" className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
             {submitting ? <Loader2 size={14} className="animate-spin" /> : <MessageSquarePlus size={14} />}
           </button>
         </div>

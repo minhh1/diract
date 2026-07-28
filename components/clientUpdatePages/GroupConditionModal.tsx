@@ -75,7 +75,7 @@ export default function GroupConditionModal({ groupName, fields, currentFieldId,
                       <input value={newOption} onChange={e => setNewOption(e.target.value)} placeholder={`New ${selectedField.label} value`} autoFocus
                         onKeyDown={e => { if (e.key === "Enter") submitNewOption(); if (e.key === "Escape") setAddingOption(false); }}
                         className="flex-1 min-w-0 px-3 py-1.5 border border-indigo-300 rounded-full text-[11px] outline-none" />
-                      <button onClick={submitNewOption} disabled={savingOption || !newOption.trim()}
+                      <button onClick={submitNewOption} disabled={savingOption || !newOption.trim()} title="Add this value"
                         className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
                         {savingOption ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                       </button>
@@ -94,11 +94,12 @@ export default function GroupConditionModal({ groupName, fields, currentFieldId,
 
         <div className="flex gap-2">
           <button onClick={() => onSave(fieldId || null, fieldId ? value : null)} disabled={!!fieldId && !value}
+            title={fieldId ? "Show a matter here automatically whenever that column equals this value" : "Switch this subgroup back to manual (drag matters in yourself)"}
             className="flex-1 py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
             Save
           </button>
           {currentFieldId && (
-            <button onClick={() => onSave(null, null)}
+            <button onClick={() => onSave(null, null)} title="Remove the condition -- matters have to be moved in here manually again"
               className="px-4 py-3 border border-slate-200 text-slate-500 text-[12px] font-bold rounded-full hover:bg-slate-50 transition-colors">
               Clear
             </button>
