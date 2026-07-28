@@ -65,6 +65,8 @@ export function useSystemTableAsCustomTable(
   // source table -- see load() below for how fields resolves first.
   recordsLoading: boolean;
   refetch: () => void;
+  // See useCustomTable.ts's matching doc comment.
+  addRecordOptimistic: (id: string, values: Record<string, any>) => void;
 } {
   const [fields, setFields] = useState<CustomTableField[]>([]);
   const [records, setRecords] = useState<CustomTableRecord[]>([]);
@@ -251,5 +253,15 @@ export function useSystemTableAsCustomTable(
     owner_user_id: null,
   } : null;
 
-  return { tableDef, fields, records, loading, recordsLoading, refetch: load };
+  const addRecordOptimistic = useCallback((id: string, values: Record<string, any>) => {
+    setRecords(prev => {
+      if (prev.some(r => r.id === id)) return prev;
+      const newRecord: CustomTableRecord = {
+        id, table_id: tableName || '', created_at: new Date().toISOString(), values, displayValues: {},
+      };
+      return [newRecord, ...prev];
+    });
+  }, [tableName]);
+
+  return { tableDef, fields, records, loading, recordsLoading, refetch: load, addRecordOptimistic };
 }

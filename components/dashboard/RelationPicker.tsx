@@ -172,6 +172,14 @@ interface Props {
   // field) rather than a blanket default, since most relation pickers on
   // this component have no business creating new rows.
   allowCreateEntity?: boolean;
+  // Pins a clear-the-filter row at the top of the dropdown, labelled with
+  // this text (e.g. "All Staff") -- DashboardFilterBar's own use case: an
+  // admin narrows a filter to one person via the normal search/select
+  // below, then needs an equally obvious way back to "everyone" from
+  // inside the SAME picker, not just the small X next to a value that's
+  // already selected. Undefined (the default) renders nothing extra --
+  // every non-filter caller (quick-add forms, grid cells) is unaffected.
+  clearLabel?: string;
   // Whether the "$current_user"/"$team_scope" auto-select effect below
   // should apply -- true (the default) matches every existing caller
   // (quick-add forms, grid cells: "who am I logging this as" sensibly
@@ -384,7 +392,7 @@ export async function warmRelationOptionsCache(): Promise<void> {
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md', variant = 'pill',
-  allowCreateEntity, autoSelectSelf = true,
+  allowCreateEntity, autoSelectSelf = true, clearLabel,
 }: Props) {
   const plain = variant === 'plain';
   const sizeClass = plain ? 'py-1 px-0.5 text-[12px]' : PILL_SIZE_CLASSES[size];
@@ -823,6 +831,21 @@ export default function RelationPicker({
 
       {open && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-60 overflow-y-auto">
+          {clearLabel && (
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentLabel(''); resolvedForRef.current = null; userClearedRef.current = true;
+                onSelect?.(null, null);
+                setQuery(''); setOpen(false);
+              }}
+              className={`w-full text-left px-4 py-2 text-[12px] font-bold transition-colors border-b border-slate-100 ${
+                !value ? 'text-indigo-600 bg-indigo-50/60' : 'text-slate-500 hover:bg-indigo-50'
+              }`}
+            >
+              {clearLabel}
+            </button>
+          )}
           {loading ? (
             <div className="flex justify-center py-4"><Loader2 size={14} className="animate-spin text-slate-300" /></div>
           ) : options.length === 0 ? (

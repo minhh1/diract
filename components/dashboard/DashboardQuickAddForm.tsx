@@ -19,6 +19,13 @@ interface Props {
   fields: CustomTableField[]; // full field list -- formula fields need their dependencies
   quickAddFieldIds: string[]; // ordered subset to show
   onAdded: () => void;
+  // Inserts the new record into local state directly instead of onAdded's
+  // full refetch (fields + every record + every relation label, all over
+  // again just to show the one row this form already knows the contents
+  // of) -- see useCustomTable.ts's addRecordOptimistic. When given, this
+  // is called instead of onAdded on a successful create; onAdded is only
+  // used as the fallback for callers that haven't wired this up yet.
+  onOptimisticAdd?: (id: string, values: Record<string, any>) => void;
   // Extra field_key -> value pairs merged into every created record, invisible
   // to the form itself -- e.g. a record-scoped dashboard tab (see
   // RecordDashboardTab.tsx) stamping the link field back to its parent record.
@@ -140,7 +147,7 @@ function FieldSlot({
 }
 
 export default function DashboardQuickAddForm({
-  tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
+  tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, onOptimisticAdd, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
   prefill, onPrefillApplied,
 }: Props) {
   const quickAddFields = quickAddFieldIds
@@ -201,22 +208,33 @@ export default function DashboardQuickAddForm({
       setError('Fill in the form before adding a record.');
       return;
     }
-    setSaving(true);
     setError(null);
+    const submittedValues = { ...values, ...fixedValues };
+    // Optimistic: the form is cleared for the NEXT entry immediately, not
+    // after the create round trip below resolves -- confirmed live this
+    // (plus onOptimisticAdd below skipping onAdded's full refetch) is most
+    // of why Add felt slow, not the database write itself. Restored, with
+    // the error shown, if the create call comes back with one.
+    const preview = computeAllPreviews(fields, submittedValues);
+    setValues(getDefaultValues(quickAddFields));
+    setFormGeneration(g => g + 1);
+    setSaving(true);
     const record = sourceKind === 'custom'
-      ? await createRecord(tableId, companyId, userId, { ...values, ...fixedValues }, fields)
-      : await createSystemTableRecord(sourceKind as SystemTableName, companyId, userId, { ...values, ...fixedValues }, fields);
+      ? await createRecord(tableId, companyId, userId, submittedValues, fields)
+      : await createSystemTableRecord(sourceKind as SystemTableName, companyId, userId, submittedValues, fields);
     setSaving(false);
     if (record && 'error' in record) {
       // e.g. a trust-ledger overdraw refusal -- see customTableService's
-      // ledgerErrorMessage; the entry was NOT saved.
+      // ledgerErrorMessage; the entry was NOT saved -- give the viewer
+      // their typed values back rather than making them retype everything.
+      setValues(submittedValues);
+      setFormGeneration(g => g + 1);
       setError(record.error);
       return;
     }
     if (record) {
-      setValues(getDefaultValues(quickAddFields));
-      setFormGeneration(g => g + 1);
-      onAdded();
+      if (onOptimisticAdd) onOptimisticAdd(record.id, preview);
+      else onAdded();
     }
   };
 

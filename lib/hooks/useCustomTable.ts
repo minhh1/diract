@@ -173,6 +173,18 @@ export function useCustomTable(
   // `load` below for why fields reliably lands first.
   recordsLoading: boolean;
   refetch: () => void;
+  // Inserts a just-created record into local state directly, no network
+  // round trip -- see DashboardQuickAddForm.tsx's handleAdd, which uses
+  // this instead of refetch() so "Add" doesn't have to wait out a full
+  // fields+ALL-records-plus-every-relation-label reload (confirmed live:
+  // that's most of why Add felt slow, not the create write itself) just to
+  // show the ONE row it already knows the contents of. `values` should
+  // already be formula-resolved (the caller's own live preview state, e.g.
+  // Amount = Rate x Duration) -- this does no computation of its own.
+  // Relation-field cells resolve their own display label lazily on mount
+  // (RelationPicker's normal behavior when no initialLabel is given), so
+  // this doesn't need one either.
+  addRecordOptimistic: (id: string, values: Record<string, any>) => void;
 } {
   const [tableDef, setTableDef] = useState<CustomTable | null>(null);
   const [fields, setFields] = useState<CustomTableField[]>([]);
@@ -316,6 +328,16 @@ export function useCustomTable(
     load();
   }, [tableSlug, load, preloadedTable]);
 
+  const addRecordOptimistic = useCallback((id: string, values: Record<string, any>) => {
+    setRecords(prev => {
+      if (prev.some(r => r.id === id)) return prev; // a real refetch already landed it first
+      const newRecord: CustomTableRecord = {
+        id, table_id: tableDef?.id || '', created_at: new Date().toISOString(), values, displayValues: {},
+      };
+      return [newRecord, ...prev];
+    });
+  }, [tableDef]);
+
   return {
     tableDef,
     fields,
@@ -323,5 +345,6 @@ export function useCustomTable(
     loading,
     recordsLoading,
     refetch: load,
+    addRecordOptimistic,
   };
 }

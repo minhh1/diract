@@ -19,7 +19,7 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
   const { companyId, userId, isAdmin } = useCompany();
   const {
     dashboard, sourceKind, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, recordsLoading, filters, setFilter,
-    quickAddPrefill, setQuickAddPrefill, refetch, updateWidget,
+    quickAddPrefill, setQuickAddPrefill, refetch, addRecordOptimistic, updateWidget,
   } = useDashboardData(slug);
 
   const isPageLoading = loading || !companyId || !userId;
@@ -143,6 +143,7 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
               quickAddPrefill={quickAddPrefill}
               onQuickAddPrefill={setQuickAddPrefill}
               onChanged={refetch}
+              onOptimisticAdd={addRecordOptimistic}
               mode="view"
               isLedger={tableDef?.is_ledger}
               isAdmin={isAdmin}

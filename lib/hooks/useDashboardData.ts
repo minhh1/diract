@@ -133,7 +133,7 @@ export function useDashboardData(dashboardSlug: string) {
   // dashboard's actual source_table_type ever has real data in it.
   const customTableResult = useCustomTable(sourceKind === 'custom' ? sourceTableSlug : null, sourceTableDef);
   const systemTableResult = useSystemTableAsCustomTable(systemTableName, dashboard?.company_id ?? null);
-  const { tableDef, fields, records, loading: tableLoading, recordsLoading, refetch: refetchTable } =
+  const { tableDef, fields, records, loading: tableLoading, recordsLoading, refetch: refetchTable, addRecordOptimistic } =
     sourceKind === 'custom' ? customTableResult : systemTableResult;
 
   const fieldById = useMemo(() => new Map(fields.map(f => [f.id, f])), [fields]);
@@ -296,6 +296,7 @@ export function useDashboardData(dashboardSlug: string) {
     // swaps records in without flipping a loading flag, so the page never
     // unmounts into a spinner just because one entry was added.
     refetch: refetchTable,
+    addRecordOptimistic,
     updateWidget,
   };
 }

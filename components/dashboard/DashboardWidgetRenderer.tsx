@@ -69,6 +69,12 @@ interface Props {
   filters: Record<string, any>;
   setFilter: (fieldId: string, value: any) => void;
   onChanged: () => void;
+  // Lets quick_add_form insert its new record into local state directly
+  // instead of falling back to onChanged's full refetch -- see
+  // useCustomTable.ts's addRecordOptimistic. Optional/undefined in
+  // contexts that don't have it wired up (builder preview, any quick-add
+  // form not yet updated to use it), where it just falls back to onChanged.
+  onOptimisticAdd?: (id: string, values: Record<string, any>) => void;
   // 'preview' is used by the Code editor's live preview pane, where the
   // dashboard being previewed may not be saved yet -- interactive bits
   // (adding a record, editing a cell) are disabled rather than wired to a
@@ -104,7 +110,7 @@ interface Props {
 
 export default function DashboardWidgetRenderer({
   widget, sourceKind, fields, fieldById, records, recordsLoading, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
-  isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill,
+  isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill, onOptimisticAdd,
 }: Props) {
   switch (widget.type) {
     case 'heading': {
@@ -144,6 +150,7 @@ export default function DashboardWidgetRenderer({
           fields={fields}
           quickAddFieldIds={widget.config.fieldIds}
           onAdded={onChanged}
+          onOptimisticAdd={onOptimisticAdd}
           fixedValues={fixedValues}
           pillSize={widget.config.pillSize}
           pillGap={widget.config.pillGap}

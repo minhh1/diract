@@ -143,6 +143,11 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               // ability to narrow to one person still available via this
               // exact picker. Non-admins keep the existing auto-select.
               autoSelectSelf={!isAdmin}
+              // Pinned at the top of the dropdown -- narrowing to one
+              // person is just a normal pick below, but getting back to
+              // "everyone" from there needs to be exactly as easy, not a
+              // separate hunt for the small X next to the current value.
+              clearLabel="All"
             />
           ) : field.field_type === 'boolean' ? (
             <select
