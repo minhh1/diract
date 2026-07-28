@@ -16,7 +16,7 @@ import { perfLog } from "@/lib/perfLog";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 import { warmCustomDashboards } from "@/lib/hooks/useCustomDashboards";
-import { startBackgroundShellPrefetch, startSystemTableRowPrefetch, warmSystemTableShells } from "@/lib/hooks/prefetchShells";
+import { warmCustomTableShells, startSystemTableRowPrefetch, warmSystemTableShells } from "@/lib/hooks/prefetchShells";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 import type { TableLabelOverrides, DisabledSystemTables } from "@/components/CompanyContext";
 
@@ -35,18 +35,20 @@ export interface CompanyBootstrapResult {
 }
 
 // Seven discrete, real milestones -- not a fake timer -- for AppLoader's
-// progress bar. "tables"/"dashboards"/"relations"/"tableShells" are awaited
-// for real completion, so the bar only reaches those steps once that data
-// is genuinely cached, not just requested. "tableShells" in particular is
-// what makes properties/entities/projects/tasks feel instant the moment the
-// loading screen dismisses (schema/customFields/relatedFields for all four
-// -- previously each was only cached in-memory and re-fetched from scratch
-// on every visit). "shells" is reported as soon as that DIFFERENT, unbounded
-// prefetch (arbitrary custom tables/dashboards, could be dozens) is *kicked
-// off*, not once every one of them has been fetched -- that's meant to keep
-// running quietly in the background; gating the loading screen on it
-// finishing would defeat the point the same way waiting on all of
-// "tableShells" would if it weren't a small, fixed set of exactly 4 tables.
+// progress bar. Every step is awaited for real completion, so the bar only
+// reaches a step once that data is genuinely cached, not just requested.
+// "tableShells" is schema/customFields/relatedFields for the four system
+// tables; "shells" is the same idea for every custom table/dashboard
+// (company-specific, could be dozens) -- together they're what makes EVERY
+// table, system or custom, feel instant the moment the loading screen
+// dismisses, not just whichever one the user happened to land on first.
+// "shells" used to be reported as soon as that prefetch was *kicked off*
+// rather than once it finished, deliberately left running in the
+// background -- which meant a session's first visit to any custom table
+// still paid a full cold load whenever it happened, just silently, after
+// the splash was already gone. Now genuinely awaited like every other step;
+// the AppLoader's own ceiling still protects a company with a very large
+// table count from a truly dead network.
 export type BootstrapStep = "session" | "identity" | "tables" | "dashboards" | "relations" | "tableShells" | "shells";
 export const BOOTSTRAP_STEPS: BootstrapStep[] = ["session", "identity", "tables", "dashboards", "relations", "tableShells", "shells"];
 
@@ -116,8 +118,10 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   notifyStep("relations");
   await warmSystemTableShells(cid).catch(() => {});
   notifyStep("tableShells");
-  // Deliberately not awaited past kickoff -- see BootstrapStep's doc comment.
-  startBackgroundShellPrefetch();
+  await warmCustomTableShells().catch(() => {});
+  // Row data prefetch stays fire-and-forget -- see startSystemTableRowPrefetch's
+  // own doc comment for why (unlike shell/metadata, it's cheap per table but
+  // not bounded, so it isn't part of what the splash gates on).
   startSystemTableRowPrefetch(cid).catch(() => {});
   notifyStep("shells");
 

@@ -1,23 +1,26 @@
 "use client";
 
-// Two related but differently-scheduled warm-up jobs:
+// Two warm-up jobs, both BLOCKING bootstrap steps -- called and awaited
+// directly from lib/companyBootstrap.ts as part of the sequence AppLoader
+// gates the splash on, so neither system nor custom tables/dashboards are
+// still cold the moment it dismisses:
 //
 // - warmSystemTableShells() -- schema/customFields/relatedFields for the
-//   four system tables (properties/entities/projects/tasks), the single
-//   biggest measured contributor to a slow first table load. Exactly 4
-//   known tables, and the whole point is that they're warm the moment the
-//   loading screen dismisses, so this is BLOCKING: called and awaited
-//   directly from lib/companyBootstrap.ts as part of the bootstrap sequence
-//   the AppLoader gates on, not fire-and-forget background work.
+//   four system tables (properties/entities/projects/tasks). Exactly 4
+//   known tables.
 //
-// - startBackgroundShellPrefetch() -- custom tables/dashboards
+// - warmCustomTableShells() -- schema/fields for every custom table
+//   (company_tables) and every custom dashboard's source table
 //   (source_table_type === 'custom'), an open-ended, per-company list that
-//   could be dozens of tables. Genuinely non-blocking background work: a
-//   user's first-ever visit to a custom table/dashboard they haven't opened
-//   yet is normally a cold load (no cache to paint from), and this quietly
-//   turns it into a warm one while they're still looking at whatever page
-//   they landed on -- see that function's own doc comment for the
-//   scheduling/priority reasoning.
+//   could be dozens of tables. Used to be fire-and-forget background work
+//   (a user's first visit to a custom table/dashboard just paid a cold
+//   load whenever it happened) -- now awaited up front instead, so a
+//   custom table isn't the one thing still loading after everything else
+//   already feels instant. Parallel across tables/dashboards (not the
+//   sequential loop this used to be as idle-time-only work) so the wait is
+//   bounded by the slowest single fetch, not their sum; the AppLoader's own
+//   ceiling still protects a company with a large table count from a
+//   truly slow network.
 
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
@@ -113,50 +116,52 @@ async function prefetchTableFields(tbl: CustomTable): Promise<void> {
   writeShellCache(tableShellKey(tbl.slug), { tableDef: tbl, fields: (flds || []) as CustomTableField[] });
 }
 
-// Sequential, not Promise.all -- this is idle-time background work the user
-// never explicitly asked for, so it should never burst enough concurrent
-// requests to compete with whatever page they're actually looking at.
+// Parallel across both tables and dashboards -- this is now a blocking
+// bootstrap step (see this file's top doc comment), so the goal is the
+// opposite of the sequential loop this used to be: bound the wait by the
+// single slowest fetch, not their sum, the same trade-off
+// warmSystemTableShells already makes across its 4 tables.
 async function prefetchAllShells(): Promise<void> {
   const { data: tables } = await supabase
     .from('company_tables').select('*').is('deleted_at', null).order('display_order');
   const tableList = (tables || []) as CustomTable[];
   const tableById = new Map(tableList.map(t => [t.id, t]));
 
-  for (const tbl of tableList) {
-    await prefetchTableFields(tbl);
-  }
-
   const { data: dashboards } = await supabase
     .from('company_dashboards').select('*').is('deleted_at', null).order('display_order');
+  const dashboardList = (dashboards || []) as (CompanyDashboard & { id: string; widgets_migrated_at: string | null })[];
 
-  for (const dash of (dashboards || []) as (CompanyDashboard & { id: string; widgets_migrated_at: string | null })[]) {
-    if (dash.source_table_type !== 'custom' || !dash.source_table_id) continue;
-    if (readShellCache<CachedDashboardShell>(dashboardShellKey(dash.slug))) continue;
-    // Same one-time, idempotent migration useDashboardData.ts's own effect
-    // runs on a real open -- doing it here just means it's already done by
-    // the time the user gets there.
-    if (!dash.widgets_migrated_at) {
-      dash.widgets = await ensureDashboardWidgetsMigrated(dash);
-    }
-    const sourceTableDef = tableById.get(dash.source_table_id) ?? null;
-    writeShellCache(dashboardShellKey(dash.slug), { dashboard: dash, sourceTableDef });
-    if (sourceTableDef) await prefetchTableFields(sourceTableDef);
-  }
+  await Promise.all([
+    ...tableList.map(tbl => prefetchTableFields(tbl).catch(() => {})),
+    ...dashboardList.map(async (dash) => {
+      if (dash.source_table_type !== 'custom' || !dash.source_table_id) return;
+      if (readShellCache<CachedDashboardShell>(dashboardShellKey(dash.slug))) return;
+      try {
+        // Same one-time, idempotent migration useDashboardData.ts's own
+        // effect runs on a real open -- doing it here just means it's
+        // already done by the time the user gets there.
+        if (!dash.widgets_migrated_at) {
+          dash.widgets = await ensureDashboardWidgetsMigrated(dash);
+        }
+        const sourceTableDef = tableById.get(dash.source_table_id) ?? null;
+        writeShellCache(dashboardShellKey(dash.slug), { dashboard: dash, sourceTableDef });
+        if (sourceTableDef) await prefetchTableFields(sourceTableDef);
+      } catch {}
+    }),
+  ]);
 }
 
 let started = false;
 let inFlight: Promise<void> | null = null;
 
 // Call once, right after the company/user identity resolves (CompanyContext
-// / lib/companyBootstrap.ts). Used to be delayed 2.5s to give the current
-// page's own loading a head start -- now called as part of the app's own
-// warm-up sequence (AppLoader awaits this directly for its progress bar),
-// so firing it immediately instead of after a delay is the point: it's no
-// longer background-only work competing with a page the user is already
-// looking at, it's part of what the loading screen is *for*. The `started`
-// guard is mainly for React Strict Mode's double-invoke in dev; in
-// production CompanyProvider only mounts once per session anyway.
-export function startBackgroundShellPrefetch(): Promise<void> {
+// / lib/companyBootstrap.ts), and awaited by it -- see this file's top doc
+// comment for why this is a blocking bootstrap step rather than
+// fire-and-forget. The `started`/`inFlight` guards are mainly for React
+// Strict Mode's double-invoke in dev (so a second caller awaits the same
+// promise instead of re-fetching); in production CompanyProvider only
+// mounts once per session anyway.
+export function warmCustomTableShells(): Promise<void> {
   if (inFlight) return inFlight;
   if (started) return Promise.resolve();
   started = true;
