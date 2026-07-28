@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { readShellCache, writeShellCache, clearShellCache } from "@/lib/shellCache";
 
 export interface ColumnMeta {
   column_name: string;
@@ -23,13 +24,11 @@ function cacheKey(tableName: string, companyId?: string | null): string {
   return `${tableName}:${companyId ?? 'base'}`;
 }
 
-export async function getSchemaMetadata(
-  tableName: string,
-  companyId?: string | null
-): Promise<ColumnMeta[]> {
-  const key = cacheKey(tableName, companyId);
-  if (cache.has(key)) return cache.get(key)!;
+function shellCacheKey(key: string): string {
+  return `schema-metadata:${key}`;
+}
 
+async function fetchSchemaMetadataRemote(tableName: string, companyId: string | null | undefined, key: string): Promise<ColumnMeta[]> {
   const { data, error } = await supabase.rpc('get_schema_metadata', {
     target_table: tableName,
     p_company_id: companyId ?? null,
@@ -42,22 +41,57 @@ export async function getSchemaMetadata(
 
   const result = (data || []) as ColumnMeta[];
   cache.set(key, result);
+  writeShellCache(shellCacheKey(key), result);
   return result;
+}
+
+// get_schema_metadata is a live RPC (column/relation config for a table),
+// re-run from scratch on every page load since the in-memory `cache` above
+// dies on reload -- same gap as get_all_related_fields (see
+// useRelatedFields.ts's fix). The schema it describes only changes when an
+// admin edits it, so persist the last-known result to localStorage: a fresh
+// page load with no in-memory cache yet can still return the persisted
+// result immediately while a real fetch confirms/updates it in the
+// background. `onBackgroundUpdate` lets a caller (useTableSchema.ts) react
+// if that background fetch turns up something different.
+export async function getSchemaMetadata(
+  tableName: string,
+  companyId?: string | null,
+  onBackgroundUpdate?: (cols: ColumnMeta[]) => void
+): Promise<ColumnMeta[]> {
+  const key = cacheKey(tableName, companyId);
+  if (cache.has(key)) return cache.get(key)!;
+
+  const persisted = readShellCache<ColumnMeta[]>(shellCacheKey(key));
+  if (persisted) {
+    cache.set(key, persisted);
+    fetchSchemaMetadataRemote(tableName, companyId, key).then(fresh => {
+      if (onBackgroundUpdate && JSON.stringify(fresh) !== JSON.stringify(persisted)) onBackgroundUpdate(fresh);
+    });
+    return persisted;
+  }
+
+  return fetchSchemaMetadataRemote(tableName, companyId, key);
 }
 
 // Synchronous accessor for use in useState lazy initializers — a component
 // remounting for a table already visited this session (e.g. switching
 // between Properties/Entities/Projects) can read the cache instantly on
 // first render, instead of waiting a tick for the async version to resolve
-// and flash a loading state in between.
+// and flash a loading state in between. Falls back to the persisted
+// localStorage copy so even the FIRST mount in a fresh tab/session paints
+// from a previous visit's schema instead of an empty list.
 export function getCachedSchemaMetadata(tableName: string, companyId?: string | null): ColumnMeta[] | null {
-  return cache.get(cacheKey(tableName, companyId)) ?? null;
+  const key = cacheKey(tableName, companyId);
+  return cache.get(key) ?? readShellCache<ColumnMeta[]>(shellCacheKey(key)) ?? null;
 }
 
 export function invalidateSchemaCache(tableName?: string, companyId?: string) {
   if (tableName) {
     cache.delete(cacheKey(tableName, companyId));
+    clearShellCache(shellCacheKey(cacheKey(tableName, companyId)));
     cache.delete(cacheKey(tableName)); // also bust the base cache
+    clearShellCache(shellCacheKey(cacheKey(tableName)));
   } else {
     cache.clear();
   }

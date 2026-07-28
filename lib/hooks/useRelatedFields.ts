@@ -70,6 +70,34 @@ function shellCacheKey(tableName: string): string {
 // the page responsive even when that happens.
 const FETCH_TIMEOUT_MS = 4000;
 
+interface RelatedFieldsFetchResult { data: RelatedField[] | null; error: Error | null }
+
+async function fetchRelatedFieldsRemote(tableName: string): Promise<RelatedFieldsFetchResult> {
+  const rpcPromise = supabase.rpc('get_all_related_fields', {
+    base_table: tableName,
+    p_company_id: null,
+    max_depth: 2,
+  });
+  const timeoutPromise = new Promise<{ data: null; error: Error }>(resolve => {
+    setTimeout(() => resolve({ data: null, error: new Error('get_all_related_fields client-side timeout') }), FETCH_TIMEOUT_MS);
+  });
+  const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
+  if (error) return { data: null, error };
+  return { data: (data || []) as RelatedField[], error: null };
+}
+
+// Exported so background prefetch (lib/hooks/prefetchShells.ts) can warm a
+// table's related fields into the same shellCache the hook below reads from,
+// without mounting the hook itself. No-ops if already warm (in-memory or
+// persisted) — a real visit's hook will still background-refresh either way.
+export async function warmRelatedFields(tableName: string): Promise<void> {
+  if (cache.has(tableName) || readShellCache<RelatedField[]>(shellCacheKey(tableName))) return;
+  const { data } = await fetchRelatedFieldsRemote(tableName);
+  if (!data) return;
+  cache.set(tableName, data);
+  writeShellCache(shellCacheKey(tableName), data);
+}
+
 export function useRelatedFields(tableName: string): RelatedFieldsResult {
   // get_all_related_fields is a live information_schema/pg_catalog
   // introspection query -- expensive (recursive FK-graph walk over system
@@ -93,16 +121,7 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
     let active = true;
     perfLog(`useRelatedFields(${tableName}): start`, persisted ? "seeded from shellCache, refreshing in background" : undefined);
 
-    const rpcPromise = supabase.rpc('get_all_related_fields', {
-      base_table: tableName,
-      p_company_id: null,
-      max_depth: 2,
-    });
-    const timeoutPromise = new Promise<{ data: null; error: Error }>(resolve => {
-      setTimeout(() => resolve({ data: null, error: new Error('get_all_related_fields client-side timeout') }), FETCH_TIMEOUT_MS);
-    });
-
-    Promise.race([rpcPromise, timeoutPromise]).then(({ data, error }) => {
+    fetchRelatedFieldsRemote(tableName).then(({ data, error }) => {
       if (!active) return;
       if (error) {
         console.error('useRelatedFields error:', error);
@@ -114,7 +133,7 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
         if (!persisted) { setFields([]); setLoading(false); }
         return;
       }
-      const result = (data || []) as RelatedField[];
+      const result = data!;
       perfLog(`useRelatedFields(${tableName}): resolved`, `${result.length} fields`);
       cache.set(tableName, result);
       writeShellCache(shellCacheKey(tableName), result);

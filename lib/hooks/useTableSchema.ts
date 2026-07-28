@@ -92,7 +92,9 @@ export function useTableSchema(tableName: string, externalCompanyId?: string | n
       try {
         perfLog(`useTableSchema(${tableName}): start`, usingExternalCompanyId ? "companyId from context" : "self-resolving companyId");
         const cid = usingExternalCompanyId ? externalCompanyId! : await getCompanyId();
-        const cols = await getSchemaMetadata(tableName, cid);
+        const cols = await getSchemaMetadata(tableName, cid, fresh => {
+          if (active) { setAll(fresh); perfLog(`useTableSchema(${tableName}): schema refreshed in background`, `${fresh.length} cols`); }
+        });
         perfLog(`useTableSchema(${tableName}): schema resolved`, `${cols.length} cols`);
         if (active) {
           setCompanyId(cid);

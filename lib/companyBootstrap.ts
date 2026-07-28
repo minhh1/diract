@@ -16,7 +16,7 @@ import { perfLog } from "@/lib/perfLog";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 import { warmCustomDashboards } from "@/lib/hooks/useCustomDashboards";
-import { startBackgroundShellPrefetch } from "@/lib/hooks/prefetchShells";
+import { startBackgroundShellPrefetch, warmSystemTableShells } from "@/lib/hooks/prefetchShells";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 import type { TableLabelOverrides, DisabledSystemTables } from "@/components/CompanyContext";
 
@@ -34,17 +34,21 @@ export interface CompanyBootstrapResult {
   logoUrl: string | null;
 }
 
-// Six discrete, real milestones -- not a fake timer -- for AppLoader's
-// progress bar. "tables"/"dashboards"/"relations" are awaited for real
-// completion (all three warm* fns return their underlying promise), so the
-// bar only reaches those steps once that data is genuinely cached, not just
-// requested. "shells" is reported as soon as the prefetch is *kicked off*,
-// not once every table/dashboard shell in the company has been fetched --
-// that work is unbounded (scales with how many tables a company has) and is
-// meant to keep running quietly in the background, same as before this
-// change; gating the loading screen on it finishing would defeat the point.
-export type BootstrapStep = "session" | "identity" | "tables" | "dashboards" | "relations" | "shells";
-export const BOOTSTRAP_STEPS: BootstrapStep[] = ["session", "identity", "tables", "dashboards", "relations", "shells"];
+// Seven discrete, real milestones -- not a fake timer -- for AppLoader's
+// progress bar. "tables"/"dashboards"/"relations"/"tableShells" are awaited
+// for real completion, so the bar only reaches those steps once that data
+// is genuinely cached, not just requested. "tableShells" in particular is
+// what makes properties/entities/projects/tasks feel instant the moment the
+// loading screen dismisses (schema/customFields/relatedFields for all four
+// -- previously each was only cached in-memory and re-fetched from scratch
+// on every visit). "shells" is reported as soon as that DIFFERENT, unbounded
+// prefetch (arbitrary custom tables/dashboards, could be dozens) is *kicked
+// off*, not once every one of them has been fetched -- that's meant to keep
+// running quietly in the background; gating the loading screen on it
+// finishing would defeat the point the same way waiting on all of
+// "tableShells" would if it weren't a small, fixed set of exactly 4 tables.
+export type BootstrapStep = "session" | "identity" | "tables" | "dashboards" | "relations" | "tableShells" | "shells";
+export const BOOTSTRAP_STEPS: BootstrapStep[] = ["session", "identity", "tables", "dashboards", "relations", "tableShells", "shells"];
 
 interface BootstrapOptions {
   onStep?: (step: BootstrapStep) => void;
@@ -110,6 +114,8 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   notifyStep("dashboards");
   await warmRelationOptionsCache().catch(() => {});
   notifyStep("relations");
+  await warmSystemTableShells(cid).catch(() => {});
+  notifyStep("tableShells");
   // Deliberately not awaited past kickoff -- see BootstrapStep's doc comment.
   startBackgroundShellPrefetch();
   notifyStep("shells");

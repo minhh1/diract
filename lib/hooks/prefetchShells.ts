@@ -1,26 +1,57 @@
 "use client";
 
-// Background prefetch of every custom table's and custom dashboard's shell
-// (fields / dashboard config / source table def) into the same localStorage
-// cache useCustomTable.ts/useDashboardData.ts already read from (see
-// shellCache.ts). A user's FIRST-EVER visit to a table/dashboard they
-// haven't opened yet is normally a genuinely cold load (no cache to paint
-// from); this turns it into a warm one by doing the fetching in the
-// background while they're still looking at whatever page they landed on
-// (typically Matters/Projects) -- see startBackgroundShellPrefetch()'s own
-// doc comment for the scheduling/priority reasoning.
+// Two related but differently-scheduled warm-up jobs:
 //
-// Scoped to CUSTOM tables/dashboards only (source_table_type === 'custom'),
-// not the three system tables (projects/properties/entities) or dashboards
-// bound to them -- those already have their own, cheaper schema-metadata
-// fetch and aren't the slow path this is solving for.
+// - warmSystemTableShells() -- schema/customFields/relatedFields for the
+//   four system tables (properties/entities/projects/tasks), the single
+//   biggest measured contributor to a slow first table load. Exactly 4
+//   known tables, and the whole point is that they're warm the moment the
+//   loading screen dismisses, so this is BLOCKING: called and awaited
+//   directly from lib/companyBootstrap.ts as part of the bootstrap sequence
+//   the AppLoader gates on, not fire-and-forget background work.
+//
+// - startBackgroundShellPrefetch() -- custom tables/dashboards
+//   (source_table_type === 'custom'), an open-ended, per-company list that
+//   could be dozens of tables. Genuinely non-blocking background work: a
+//   user's first-ever visit to a custom table/dashboard they haven't opened
+//   yet is normally a cold load (no cache to paint from), and this quietly
+//   turns it into a warm one while they're still looking at whatever page
+//   they landed on -- see that function's own doc comment for the
+//   scheduling/priority reasoning.
 
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMigrated";
+import { getSchemaMetadata } from "@/lib/services/schemaService";
+import { fetchCompanyCustomFields } from "./useCompanyCustomFields";
+import { warmRelatedFields } from "./useRelatedFields";
 import type { CustomTable } from "./useCustomTables";
 import type { CustomTableField } from "./useCustomTable";
 import type { CompanyDashboard } from "./useDashboardData";
+
+const SYSTEM_TABLES = ['properties', 'entities', 'projects', 'tasks'] as const;
+
+async function prefetchSystemTableShell(tableName: string, companyId: string | null): Promise<void> {
+  await Promise.all([
+    getSchemaMetadata(tableName, companyId).catch(() => {}),
+    fetchCompanyCustomFields(tableName).catch(() => {}),
+    warmRelatedFields(tableName).catch(() => {}),
+  ]);
+}
+
+// Called directly from lib/companyBootstrap.ts as a blocking bootstrap step
+// (unlike everything else in this file, which is deliberately non-blocking
+// background work) -- schema/customFields/relatedFields for the four system
+// tables is exactly what a first visit to Entities/Projects/Tasks needs, and
+// leaving it to catch up in the background risked a user clicking there
+// before it finished (each table's related-fields alone can take up to
+// FETCH_TIMEOUT_MS). Parallel across all 4 tables (each already fires its 3
+// fetches in parallel too) so the whole step is bounded by the single
+// slowest fetch, not their sum -- worst case ~4s, not ~20s, and the
+// AppLoader's own ceiling still protects against a truly dead network.
+export async function warmSystemTableShells(companyId: string | null): Promise<void> {
+  await Promise.all(SYSTEM_TABLES.map(t => prefetchSystemTableShell(t, companyId)));
+}
 
 // Duplicated from useCustomTable.ts/useDashboardData.ts rather than
 // imported -- both are one-line key formats, and keeping this module
