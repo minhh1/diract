@@ -92,6 +92,15 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   // what it becomes on creation).
   const [existingOwnerUserId, setExistingOwnerUserId] = useState<string | null>(null);
   const [isDefault, setIsDefault] = useState(false);
+  // null = visible to every company member (the default, same as every
+  // dashboard before this existed) -- a team id restricts the sidebar entry
+  // and the view page itself to that team's members plus admins (see
+  // app/dashboard/boards/[slug]/page.tsx and useCustomDashboards.ts's
+  // isVisibleRestrictedDashboard). App-level gate only, not RLS -- matches
+  // how billing/admin pages already gate in this app (see the migration
+  // that added this column).
+  const [restrictedToTeamId, setRestrictedToTeamId] = useState<string | null>(null);
+  const [teams, setTeams] = useState<{ id: string; team_name: string }[]>([]);
 
   const isNoneSource = dashboardKind === 'public_pages';
   const isSystemSource = !isNoneSource && (SYSTEM_TABLE_NAMES as readonly string[]).includes(sourceTableKey);
@@ -116,6 +125,12 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   const fieldById = useMemo(() => new Map(fields.map(f => [f.id, f])), [fields]);
 
   useEffect(() => {
+    if (!isAdmin || !companyId) return;
+    supabase.from('teams').select('id, team_name').eq('company_id', companyId).eq('is_active', true).order('team_name')
+      .then(({ data }) => setTeams(data || []));
+  }, [isAdmin, companyId]);
+
+  useEffect(() => {
     if (isNew) return;
     (async () => {
       const { data } = await supabase.from('company_dashboards').select('*').eq('slug', slugParam).maybeSingle();
@@ -124,7 +139,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
           name: string; icon: string; color: string;
           source_table_id: string | null; source_table_type: DashboardSourceKind;
           code_source: string | null; builder_mode: 'canvas' | 'code';
-          owner_user_id: string | null; is_default: boolean;
+          owner_user_id: string | null; is_default: boolean; restricted_to_team_id: string | null;
         };
         if (!row.widgets_migrated_at) {
           const migrated = await ensureDashboardWidgetsMigrated(row);
@@ -147,6 +162,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         setBuilderMode(row.builder_mode || 'canvas');
         setExistingOwnerUserId(row.owner_user_id ?? null);
         setIsDefault(!!row.is_default);
+        setRestrictedToTeamId(row.restricted_to_team_id ?? null);
       }
       setLoading(false);
     })();
@@ -205,6 +221,12 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       // only rendered for an admin (see the JSX below), and RLS's own
       // WITH CHECK independently rejects is_default = true from anyone else.
       is_default: isAdmin && isDefault,
+      // Only an admin can change this (picker is admin-only, see the JSX
+      // below) -- not RLS-enforced like is_default, since this column gates
+      // at the app level, not via RLS (see the migration that added it).
+      // undefined (not false/null) for a non-admin so the key is dropped
+      // from the JSON body entirely, leaving any existing value untouched.
+      restricted_to_team_id: isAdmin ? restrictedToTeamId : undefined,
     };
 
     if (isNew) {
@@ -312,6 +334,22 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               Set as company default -- mandatory in every member's sidebar, only an admin can remove it
             </span>
           </button>
+        )}
+        {isAdmin && (
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Visible to</label>
+            <select
+              value={restrictedToTeamId || ''}
+              onChange={e => setRestrictedToTeamId(e.target.value || null)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-sm font-medium outline-none appearance-none"
+            >
+              <option value="">Everyone in the company</option>
+              {teams.map(t => <option key={t.id} value={t.id}>{t.team_name}&apos;s leader only</option>)}
+            </select>
+            {restrictedToTeamId && (
+              <p className="text-[10px] text-slate-400 mt-1 px-1">Only that team&apos;s leader and company admins can see this dashboard — not the whole team. Change the leader in Admin → Teams.</p>
+            )}
+          </div>
         )}
         <div className="grid grid-cols-2 gap-3">
           <div>
