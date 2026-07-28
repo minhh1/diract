@@ -5,11 +5,8 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
-import { perfLog } from "@/lib/perfLog";
 import { readShellCache, writeShellCache, clearShellCache } from "@/lib/shellCache";
-import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
-import { warmCustomTables } from "@/lib/hooks/useCustomTables";
-import { startBackgroundShellPrefetch } from "@/lib/hooks/prefetchShells";
+import { resolveCompanyBootstrap } from "@/lib/companyBootstrap";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 
 // Per-company display-name overrides for the three system tables, e.g. a
@@ -86,7 +83,11 @@ interface CachedCompanyState {
   invoiceSettings: InvoiceSettings;
   logoUrl: string | null;
 }
-const COMPANY_CACHE_KEY = "company-context";
+// Exported so components/AppLoader.tsx can check "is there already a warm
+// cached identity" directly (it sits above CompanyProvider in the tree, so
+// it can't use useCompany() -- but readShellCache is a plain function
+// either side can call against the same key).
+export const COMPANY_CACHE_KEY = "company-context";
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const [cachedBoot] = useState<CachedCompanyState | null>(() => readShellCache<CachedCompanyState>(COMPANY_CACHE_KEY));
@@ -106,19 +107,15 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      perfLog("CompanyContext: start");
-      // getSession() reads the local session (no network round-trip) instead
-      // of getUser() re-validating the JWT against the auth server on every
-      // page load. Safe here because this only bootstraps UI context — every
-      // actual data query that follows is still enforced by RLS using the
-      // real JWT on each request, so a stale/tampered local session can't
-      // grant access to anything; it can at most show slightly-stale
-      // identity info for a moment before a real query fails.
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      perfLog("CompanyContext: auth.getSession resolved");
+      // resolveCompanyBootstrap does the actual session/profile/membership
+      // resolution (and fires the tables/dashboards/relations/shells warm-up)
+      // -- see lib/companyBootstrap.ts. components/AppLoader.tsx calls this
+      // exact same function for its own loading-screen progress bar; the
+      // module-level in-flight dedup there means only one of us ever does
+      // the real network round trip, regardless of which mounts first.
+      const result = await resolveCompanyBootstrap();
       if (cancelled) return;
-      if (!user) {
+      if (!result) {
         // Logged out (or cache left over from a previous account on a
         // shared browser) -- don't leave a stale cached identity showing.
         clearShellCache(COMPANY_CACHE_KEY);
@@ -130,73 +127,25 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Fire the moment we have a real session, not after profile+membership
-      // resolve too -- RelationPicker's cache is company-scoped by RLS, not
-      // by anything CompanyContext itself computes (companyId etc.), so it
-      // has no real dependency on those still-pending queries. Confirmed
-      // live this was costing Matter/Staff pickers ~650ms of otherwise-free
-      // head start (the gap between "auth.getSession resolved" and
-      // "profiles+memberships resolved" in this file's own perfLog marks).
-      warmRelationOptionsCache();
-      // Same reasoning, same early spot -- every custom-table page blocks
-      // on this exact list just to tell a custom table apart from a
-      // dashboard (see app/dashboard/[tableSlug]/page.tsx), so warming it
-      // here removes a whole blank-screen stage before that page even
-      // starts rendering anything.
-      warmCustomTables(user.id);
-
-      // Membership lookup only needs user_id, not active_company_id — so it
-      // doesn't actually have to wait on the profile fetch to resolve first.
-      // Fetching all of this user's memberships (not filtered to one company)
-      // and matching client-side lets both queries run in parallel instead
-      // of a sequential round-trip chain.
-      const [{ data: prof }, { data: allMemberships }] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("active_company_id, is_site_admin, companies:active_company_id(name, company_type, table_label_overrides, disabled_system_tables, invoice_settings, logo_url)")
-          .eq("id", user.id)
-          .single(),
-        supabase
-          .from("company_memberships")
-          .select("company_id, role")
-          .eq("user_id", user.id),
-      ]);
-      perfLog("CompanyContext: profiles+memberships resolved");
-
-      if (cancelled) return;
-      const cid = prof?.active_company_id || null;
-      const cname = (prof?.companies as any)?.name || null;
-      const ctype = (prof?.companies as any)?.company_type || null;
-      const overrides = (prof?.companies as any)?.table_label_overrides || {};
-      const disabled = (prof?.companies as any)?.disabled_system_tables || {};
-      const invoiceSettingsData = (prof?.companies as any)?.invoice_settings;
-      const logo = (prof?.companies as any)?.logo_url || null;
-
-      setUserId(user.id);
-      setUserEmail(user.email ?? null);
-      setCompanyId(cid);
-      setCompanyName(cname);
-      setCompanyType(ctype);
-      setTableLabelOverrides(overrides);
-      setDisabledSystemTables(disabled);
-      setInvoiceSettings({ ...emptyInvoiceSettings(), ...invoiceSettingsData });
-      setLogoUrl(logo);
-      const admin = (allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin";
-      const siteAdmin = !!prof?.is_site_admin;
-      setIsAdmin(admin);
-      setIsSiteAdmin(siteAdmin);
-
+      setUserId(result.userId);
+      setUserEmail(result.userEmail);
+      setCompanyId(result.companyId);
+      setCompanyName(result.companyName);
+      setCompanyType(result.companyType);
+      setTableLabelOverrides(result.tableLabelOverrides);
+      setDisabledSystemTables(result.disabledSystemTables);
+      setInvoiceSettings(result.invoiceSettings);
+      setLogoUrl(result.logoUrl);
+      setIsAdmin(result.isAdmin);
+      setIsSiteAdmin(result.isSiteAdmin);
       setLoading(false);
-      perfLog("CompanyContext: done");
       writeShellCache<CachedCompanyState>(COMPANY_CACHE_KEY, {
-        companyId: cid, companyName: cname, companyType: ctype, userId: user.id, userEmail: user.email ?? null,
-        isAdmin: admin, isSiteAdmin: siteAdmin, tableLabelOverrides: overrides, disabledSystemTables: disabled,
-        invoiceSettings: { ...emptyInvoiceSettings(), ...invoiceSettingsData }, logoUrl: logo,
+        companyId: result.companyId, companyName: result.companyName, companyType: result.companyType,
+        userId: result.userId, userEmail: result.userEmail,
+        isAdmin: result.isAdmin, isSiteAdmin: result.isSiteAdmin,
+        tableLabelOverrides: result.tableLabelOverrides, disabledSystemTables: result.disabledSystemTables,
+        invoiceSettings: result.invoiceSettings, logoUrl: result.logoUrl,
       });
-      // Warms every OTHER custom table/dashboard's shell cache in the
-      // background so whichever one the user clicks into next -- often not
-      // the page they landed on -- is already warm instead of a cold load.
-      startBackgroundShellPrefetch();
     }
     load();
     return () => { cancelled = true; };

@@ -18,7 +18,9 @@ import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
 import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
 import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
-import { useCompany } from "@/components/CompanyContext";
+import { useCompany, COMPANY_CACHE_KEY } from "@/components/CompanyContext";
+import { clearShellCache } from "@/lib/shellCache";
+import { clearPersistedQueryCache } from "@/components/QueryProvider";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
@@ -1232,7 +1234,16 @@ export default function Sidebar() {
         </div>
 
         <button
-          onClick={() => supabase.auth.signOut().then(() => window.location.replace("/login"))}
+          onClick={() => {
+            // Both the persisted React Query cache and the identity
+            // shellCache CompanyContext seeds its first paint from would
+            // otherwise survive this redirect in localStorage and could
+            // briefly show the signed-out user's company/admin status to
+            // the next signed-in user on a shared machine.
+            clearPersistedQueryCache();
+            clearShellCache(COMPANY_CACHE_KEY);
+            supabase.auth.signOut().then(() => window.location.replace("/login"));
+          }}
           title="Sign out"
           aria-label="Sign out"
           className="w-9 h-9 mt-1 rounded-2xl flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"

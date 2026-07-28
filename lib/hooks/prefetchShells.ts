@@ -75,19 +75,21 @@ async function prefetchAllShells(): Promise<void> {
 }
 
 let started = false;
+let inFlight: Promise<void> | null = null;
 
-// Call once, right after the company/user identity resolves (CompanyContext).
-// Delayed via setTimeout rather than fired immediately or via
-// requestIdleCallback -- deliberately gives the CURRENT page's own loading
-// (which the user is actually waiting on) a head start, and a plain delay
-// is predictable across browsers (requestIdleCallback isn't implemented in
-// Safari). The `started` guard is mainly for React Strict Mode's
-// double-invoke in dev; in production CompanyProvider only mounts once per
-// session anyway.
-export function startBackgroundShellPrefetch(): void {
-  if (started) return;
+// Call once, right after the company/user identity resolves (CompanyContext
+// / lib/companyBootstrap.ts). Used to be delayed 2.5s to give the current
+// page's own loading a head start -- now called as part of the app's own
+// warm-up sequence (AppLoader awaits this directly for its progress bar),
+// so firing it immediately instead of after a delay is the point: it's no
+// longer background-only work competing with a page the user is already
+// looking at, it's part of what the loading screen is *for*. The `started`
+// guard is mainly for React Strict Mode's double-invoke in dev; in
+// production CompanyProvider only mounts once per session anyway.
+export function startBackgroundShellPrefetch(): Promise<void> {
+  if (inFlight) return inFlight;
+  if (started) return Promise.resolve();
   started = true;
-  setTimeout(() => {
-    prefetchAllShells().catch(() => {});
-  }, 2500);
+  inFlight = prefetchAllShells().catch(() => {}).then(() => { inFlight = null; });
+  return inFlight;
 }

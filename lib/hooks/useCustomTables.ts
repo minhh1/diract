@@ -99,11 +99,11 @@ function fetchTables(userId: string | null): Promise<CustomTable[]> {
   return promise;
 }
 
-export function warmCustomTables(userId?: string | null): void {
-  (async () => {
+export function warmCustomTables(userId?: string | null): Promise<void> {
+  return (async () => {
     const uid = await resolveUserId(userId);
     if (isCacheWarm(uid) || inFlight) return;
-    fetchTables(uid).catch(() => {});
+    await fetchTables(uid).catch(() => {});
   })();
 }
 
