@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { GripVertical, X, Minus, Plus, Search, ExternalLink, Pencil, ArrowUpRight } from "lucide-react";
+import { GripVertical, X, Minus, Plus, Search, ExternalLink, Pencil, ArrowUpRight, ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getFieldLabel } from "@/lib/fieldLabels";
@@ -20,6 +20,7 @@ export interface FieldLayout {
   relationTable?: string;          // for base relation fields e.g. 'properties', 'entities'
   relationDisplayColumn?: string;  // e.g. 'street_address', 'name'
   relationJunction?: { table: string; sourceCol: string; targetCol: string }; // multi-valued base relations
+  section?: string | null; // AI-classified group name, per company -- see app/api/ai/classify-field-sections
 }
 
 interface Props {
@@ -811,6 +812,13 @@ export default function FieldLayoutEditor({
   const [draggedKey, setDraggedKey]   = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const [companyId, setCompanyId]     = useState('');
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+  const toggleSection = (name: string) => setCollapsedSections(prev => {
+    const next = new Set(prev);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -839,23 +847,26 @@ export default function FieldLayoutEditor({
     ));
   };
 
-  // Pack into 12-col rows
-  const rows: FieldLayout[][] = [];
-  let currentRow: FieldLayout[] = [];
-  let currentWidth = 0;
   const sorted = [...fields].sort((a, b) => a.row_order - b.row_order);
 
-  sorted.forEach(field => {
-    if (currentWidth + field.col_span > 12) {
-      if (currentRow.length) rows.push(currentRow);
-      currentRow = [field];
-      currentWidth = field.col_span;
-    } else {
-      currentRow.push(field);
-      currentWidth += field.col_span;
-    }
-  });
-  if (currentRow.length) rows.push(currentRow);
+  // Pack a field subset into 12-col rows
+  const packRows = (list: FieldLayout[]): FieldLayout[][] => {
+    const out: FieldLayout[][] = [];
+    let row: FieldLayout[] = [];
+    let width = 0;
+    list.forEach(field => {
+      if (width + field.col_span > 12) {
+        if (row.length) out.push(row);
+        row = [field];
+        width = field.col_span;
+      } else {
+        row.push(field);
+        width += field.col_span;
+      }
+    });
+    if (row.length) out.push(row);
+    return out;
+  };
 
   const getFieldValue = (field: FieldLayout) =>
     field.field_source === 'custom'
@@ -874,69 +885,111 @@ export default function FieldLayoutEditor({
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {rows.map((row, rowIdx) => (
-        <div key={rowIdx} className="grid grid-cols-12 gap-5">
-          {row.map(field => {
-            const isDragOver = dragOverKey === field.field_key;
-            return (
-              <div
-                key={field.field_key}
-                draggable={isEditing}
-                onDragStart={() => setDraggedKey(field.field_key)}
-                onDragOver={e => { e.preventDefault(); setDragOverKey(field.field_key); }}
-                onDrop={() => handleDrop(field.field_key)}
-                onDragEnd={() => { setDraggedKey(null); setDragOverKey(null); }}
-                style={{ gridColumn: `span ${field.col_span}` }}
-                className={`relative group/field transition-all ${
-                  isEditing
-                    ? `border-2 rounded-2xl p-4 ${isDragOver ? 'border-indigo-500 bg-indigo-50/30' : 'border-dashed border-slate-200 hover:border-slate-300'}`
-                    : 'py-2'
-                }`}
-              >
-                {isEditing && (
-                  <div className="flex items-center justify-between mb-2">
-                    <GripVertical size={14} className="text-slate-300 cursor-grab active:cursor-grabbing" />
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => changeSpan(field.field_key, -3)} disabled={field.col_span <= 3}
-                        className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30 transition-colors">
-                        <Minus size={12} />
-                      </button>
-                      <span className="text-[9px] text-slate-300 font-mono w-8 text-center">{field.col_span}/12</span>
-                      <button onClick={() => changeSpan(field.field_key, 3)} disabled={field.col_span >= 12}
-                        className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30 transition-colors">
-                        <Plus size={12} />
-                      </button>
-                      <button onClick={() => onRemoveField(field.field_key)}
-                        className="p-1 text-slate-300 hover:text-red-500 transition-colors ml-1">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <EditableValue
-                  field={{ ...field, label: getFieldLabel(field, recordMatterType) }}
-                  value={getFieldValue(field)}
-                  linkedItems={linkedItems[field.id] || linkedItems[field.field_key] || []}
-                  onSave={v => onSave(getSaveKey(field), v)}
-                  onAddLinked={onAddLinked ? (item) => onAddLinked(field.field_source === 'base' ? field.field_key : field.id, item) : undefined}
-                  onRemoveLinked={onRemoveLinked ? (id) => onRemoveLinked(field.field_source === 'base' ? field.field_key : field.id, id) : undefined}
-                  companyId={companyId}
-                />
+  const renderRows = (rowsToRender: FieldLayout[][]) => rowsToRender.map((row, rowIdx) => (
+    <div key={rowIdx} className="grid grid-cols-12 gap-5">
+      {row.map(field => {
+        const isDragOver = dragOverKey === field.field_key;
+        return (
+          <div
+            key={field.field_key}
+            draggable={isEditing}
+            onDragStart={() => setDraggedKey(field.field_key)}
+            onDragOver={e => { e.preventDefault(); setDragOverKey(field.field_key); }}
+            onDrop={() => handleDrop(field.field_key)}
+            onDragEnd={() => { setDraggedKey(null); setDragOverKey(null); }}
+            style={{ gridColumn: `span ${field.col_span}` }}
+            className={`relative group/field transition-all ${
+              isEditing
+                ? `border-2 rounded-2xl p-4 ${isDragOver ? 'border-indigo-500 bg-indigo-50/30' : 'border-dashed border-slate-200 hover:border-slate-300'}`
+                : 'py-2'
+            }`}
+          >
+            {isEditing && (
+              <div className="flex items-center justify-between mb-2">
+                <GripVertical size={14} className="text-slate-300 cursor-grab active:cursor-grabbing" />
+                <div className="flex items-center gap-1">
+                  <button onClick={() => changeSpan(field.field_key, -3)} disabled={field.col_span <= 3}
+                    className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30 transition-colors">
+                    <Minus size={12} />
+                  </button>
+                  <span className="text-[9px] text-slate-300 font-mono w-8 text-center">{field.col_span}/12</span>
+                  <button onClick={() => changeSpan(field.field_key, 3)} disabled={field.col_span >= 12}
+                    className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30 transition-colors">
+                    <Plus size={12} />
+                  </button>
+                  <button onClick={() => onRemoveField(field.field_key)}
+                    className="p-1 text-slate-300 hover:text-red-500 transition-colors ml-1">
+                    <X size={12} />
+                  </button>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      ))}
+            )}
 
-      {isEditing && (
-        <button onClick={onAddField}
-          className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[11px] font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-all">
-          + Add field
-        </button>
-      )}
+            <EditableValue
+              field={{ ...field, label: getFieldLabel(field, recordMatterType) }}
+              value={getFieldValue(field)}
+              linkedItems={linkedItems[field.id] || linkedItems[field.field_key] || []}
+              onSave={v => onSave(getSaveKey(field), v)}
+              onAddLinked={onAddLinked ? (item) => onAddLinked(field.field_source === 'base' ? field.field_key : field.id, item) : undefined}
+              onRemoveLinked={onRemoveLinked ? (id) => onRemoveLinked(field.field_source === 'base' ? field.field_key : field.id, id) : undefined}
+              companyId={companyId}
+            />
+          </div>
+        );
+      })}
+    </div>
+  ));
+
+  const addFieldButton = isEditing && (
+    <button onClick={onAddField}
+      className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[11px] font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-all">
+      + Add field
+    </button>
+  );
+
+  // Only group once every field has been AI-classified -- a partially
+  // classified list (still loading, or a freshly added field) stays flat
+  // rather than showing one orphaned ungrouped field alongside sections.
+  const allClassified = sorted.length > 0 && sorted.every(f => !!f.section);
+
+  if (!allClassified) {
+    return (
+      <div className="space-y-6">
+        {renderRows(packRows(sorted))}
+        {addFieldButton}
+      </div>
+    );
+  }
+
+  const grouped = new Map<string, FieldLayout[]>();
+  sorted.forEach(field => {
+    const section = field.section!;
+    if (!grouped.has(section)) grouped.set(section, []);
+    grouped.get(section)!.push(field);
+  });
+
+  return (
+    <div className="space-y-4">
+      {[...grouped.entries()].map(([sectionName, sectionFields]) => {
+        const isCollapsed = collapsedSections.has(sectionName);
+        return (
+          <div key={sectionName} className="border border-slate-100 rounded-xl bg-white overflow-hidden">
+            <button
+              onClick={() => toggleSection(sectionName)}
+              className="w-full flex items-center gap-2 px-6 py-3.5 hover:bg-slate-50/60 transition-colors"
+            >
+              <ChevronDown size={13} className={`text-slate-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">{sectionName}</span>
+            </button>
+            {!isCollapsed && (
+              <div className="px-6 pb-6 pt-1 space-y-6">
+                {renderRows(packRows(sectionFields))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {addFieldButton}
     </div>
   );
 }

@@ -910,7 +910,7 @@ export default function RecordDashboard({
     if (saved && saved.length > 0) {
       return saved.map(s => {
         const meta = fields.find(f => f.field_key === s.field_key);
-        return { ...s, ...meta, col_span: s.col_span, row_order: s.row_order };
+        return { ...s, ...meta, col_span: s.col_span, row_order: s.row_order, section: s.section };
       });
     }
     return fields;
@@ -933,6 +933,46 @@ export default function RecordDashboard({
 
   const handleLayoutChange = (tabId: string, layout: FieldLayout[]) => {
     setTabFieldLayouts(prev => ({ ...prev, [tabId]: layout }));
+  };
+
+  // AI-driven field grouping (see app/api/ai/classify-field-sections) --
+  // fires the first time a fields tab has any unclassified field (brand new
+  // tab, or a field just added via handlePickField) and merges the result
+  // back into local state once it resolves. Best-effort/background: on
+  // failure it just leaves the tab flat rather than surfacing an error, and
+  // the ref guard stops a slow response from being kicked off twice.
+  const classifyingTabsRef = useRef<Set<string>>(new Set());
+
+  const classifyFieldSections = async (tabId: string, layout: FieldLayout[]) => {
+    if (classifyingTabsRef.current.has(tabId)) return;
+    classifyingTabsRef.current.add(tabId);
+    try {
+      const res = await fetch('/api/ai/classify-field-sections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tabId,
+          fields: layout.map(f => ({
+            field_key: f.field_key,
+            field_source: f.field_source,
+            label: f.label,
+            col_start: f.col_start,
+            col_span: f.col_span,
+            row_order: f.row_order,
+          })),
+        }),
+      });
+      if (!res.ok) return;
+      const { sections } = await res.json();
+      setTabFieldLayouts(prev => {
+        const current = prev[tabId] || layout;
+        return { ...prev, [tabId]: current.map(f => ({ ...f, section: sections[f.field_key] ?? f.section })) };
+      });
+    } catch {
+      // Best-effort background task -- fields just stay flat on failure.
+    } finally {
+      classifyingTabsRef.current.delete(tabId);
+    }
   };
 
   const handleRemoveFieldFromTab = async (tabId: string, fieldKey: string) => {
@@ -973,16 +1013,12 @@ export default function RecordDashboard({
   const handleSaveSubProject = async () => {
     const name = newSubProjectName.trim();
     if (!name) return;
-    const parentName = record?.name || '';
-    const baseName = parentName.includes('/')
-      ? parentName.split('/').slice(-1)[0].trim()
-      : parentName;
     const { data: newSub } = await supabase
       .from('projects')
       .insert({
         company_id: companyId,
         parent_project_id: recordId,
-        name: `${baseName}/${name}`,
+        name,
       })
       .select('id, name')
       .single();
@@ -1055,6 +1091,18 @@ export default function RecordDashboard({
   const RecordTypeIcon = (systemTable && RECORD_TYPE_ICON[systemTable]) || Table2;
 
   const activeTab = tabs.find(t => t.id === activeTabId);
+
+  // Kicks off AI classification (see classifyFieldSections above) whenever
+  // the active fields tab has any field without a section -- a brand new
+  // tab, or one a field was just added to via handlePickField.
+  useEffect(() => {
+    if (!activeTab || activeTab.tab_type !== 'fields') return;
+    const layout = getTabFieldLayout(activeTab.id);
+    if (layout.length > 0 && layout.some(f => !f.section)) {
+      classifyFieldSections(activeTab.id, layout);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.id, activeTab?.tab_type, tabFieldLayouts, fields]);
 
   // Data-grid tabs (Time & Fees/Disbursements and any other custom_dashboard,
   // plus Invoices) need much more horizontal room than a field-list tab --
