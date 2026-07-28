@@ -32,6 +32,8 @@ interface CompanyContextValue {
   userEmail: string | null;
   isAdmin: boolean;
   isSiteAdmin: boolean;
+  myTeamIds: string[];
+  ledTeamIds: string[];
   loading: boolean;
   tableLabelOverrides: TableLabelOverrides;
   refreshTableLabelOverrides: () => Promise<void>;
@@ -51,6 +53,8 @@ const CompanyContext = createContext<CompanyContextValue>({
   userEmail: null,
   isAdmin: false,
   isSiteAdmin: false,
+  myTeamIds: [],
+  ledTeamIds: [],
   loading: true,
   tableLabelOverrides: {},
   refreshTableLabelOverrides: async () => {},
@@ -78,6 +82,8 @@ interface CachedCompanyState {
   userEmail: string | null;
   isAdmin: boolean;
   isSiteAdmin: boolean;
+  myTeamIds: string[];
+  ledTeamIds: string[];
   tableLabelOverrides: TableLabelOverrides;
   disabledSystemTables: DisabledSystemTables;
   invoiceSettings: InvoiceSettings;
@@ -98,6 +104,8 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [userEmail, setUserEmail] = useState<string | null>(cachedBoot?.userEmail ?? null);
   const [isAdmin, setIsAdmin] = useState(cachedBoot?.isAdmin ?? false);
   const [isSiteAdmin, setIsSiteAdmin] = useState(cachedBoot?.isSiteAdmin ?? false);
+  const [myTeamIds, setMyTeamIds] = useState<string[]>(cachedBoot?.myTeamIds ?? []);
+  const [ledTeamIds, setLedTeamIds] = useState<string[]>(cachedBoot?.ledTeamIds ?? []);
   const [loading, setLoading] = useState(!cachedBoot);
   const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>(cachedBoot?.tableLabelOverrides ?? {});
   const [disabledSystemTables, setDisabledSystemTables] = useState<DisabledSystemTables>(cachedBoot?.disabledSystemTables ?? {});
@@ -121,6 +129,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         clearShellCache(COMPANY_CACHE_KEY);
         setCompanyId(null); setCompanyName(null); setCompanyType(null);
         setUserId(null); setUserEmail(null); setIsAdmin(false); setIsSiteAdmin(false);
+        setMyTeamIds([]); setLedTeamIds([]);
         setTableLabelOverrides({}); setDisabledSystemTables({});
         setInvoiceSettings(emptyInvoiceSettings()); setLogoUrl(null);
         setLoading(false);
@@ -138,11 +147,14 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       setLogoUrl(result.logoUrl);
       setIsAdmin(result.isAdmin);
       setIsSiteAdmin(result.isSiteAdmin);
+      setMyTeamIds(result.myTeamIds);
+      setLedTeamIds(result.ledTeamIds);
       setLoading(false);
       writeShellCache<CachedCompanyState>(COMPANY_CACHE_KEY, {
         companyId: result.companyId, companyName: result.companyName, companyType: result.companyType,
         userId: result.userId, userEmail: result.userEmail,
         isAdmin: result.isAdmin, isSiteAdmin: result.isSiteAdmin,
+        myTeamIds: result.myTeamIds, ledTeamIds: result.ledTeamIds,
         tableLabelOverrides: result.tableLabelOverrides, disabledSystemTables: result.disabledSystemTables,
         invoiceSettings: result.invoiceSettings, logoUrl: result.logoUrl,
       });
@@ -188,7 +200,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   return (
     <CompanyContext.Provider value={{
-      companyId, companyName, companyType, userId, userEmail, isAdmin, isSiteAdmin, loading,
+      companyId, companyName, companyType, userId, userEmail, isAdmin, isSiteAdmin, myTeamIds, ledTeamIds, loading,
       tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables,
       invoiceSettings, refreshInvoiceSettings, logoUrl, refreshLogoUrl,
     }}>
