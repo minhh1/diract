@@ -66,13 +66,19 @@ export function clearCache(keyPrefix?: string): void {
     .forEach(k => localStorage.removeItem(k));
 }
 
+// Keyed by cache key, not per-caller -- two callers racing on the same key
+// (React Strict Mode's mount/unmount/remount double-invoke in dev, or any
+// future legitimate double-trigger) share the one real fetch in flight
+// instead of each independently hitting the network for identical data.
+const inFlightFetches = new Map<string, Promise<unknown>>();
+
 /**
  * Stale-while-revalidate fetch.
- * 
+ *
  * 1. Immediately returns cached data (or null if no cache)
  * 2. Fetches fresh data in background
  * 3. Calls onUpdate if fresh data differs from cache
- * 
+ *
  * Usage:
  *   const cached = swr('projects_list', fetchProjects, (fresh) => setItems(fresh));
  *   setItems(cached ?? []);
@@ -84,10 +90,18 @@ export async function swr<T>(
 ): Promise<T | null> {
   const cached = readCache<T>(key);
 
+  const dedupedFetch = (): Promise<T> => {
+    const existing = inFlightFetches.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+    const promise = fetcher().finally(() => { inFlightFetches.delete(key); });
+    inFlightFetches.set(key, promise);
+    return promise;
+  };
+
   // Fetch fresh in background (or immediately if no cache)
   const fetchFresh = async () => {
     try {
-      const fresh = await fetcher();
+      const fresh = await dedupedFetch();
       const prev = readCache<T>(key);
       // Only update if data actually changed
       if (JSON.stringify(fresh) !== JSON.stringify(prev)) {
@@ -106,7 +120,7 @@ export async function swr<T>(
   } else {
     // No cache — must wait for fresh data
     try {
-      const fresh = await fetcher();
+      const fresh = await dedupedFetch();
       writeCache(key, fresh);
       return fresh;
     } catch {

@@ -21,6 +21,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { readCache, writeCache } from "@/lib/queryCache";
 import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMigrated";
 import { getSchemaMetadata } from "@/lib/services/schemaService";
 import { fetchCompanyCustomFields } from "./useCompanyCustomFields";
@@ -51,6 +52,44 @@ async function prefetchSystemTableShell(tableName: string, companyId: string | n
 // AppLoader's own ceiling still protects against a truly dead network.
 export async function warmSystemTableShells(companyId: string | null): Promise<void> {
   await Promise.all(SYSTEM_TABLES.map(t => prefetchSystemTableShell(t, companyId)));
+}
+
+// warmSystemTableShells above only covers schema/customFields/relatedFields
+// -- the metadata GenericMasterTable needs to RENDER a table -- not the row
+// data itself. Without this, a session's first visit to whichever of the 4
+// system tables the user *didn't* land on always hit usePresetTable's cold
+// "blocking fetch" path (nk_cache_rows_<companyId>_<table> empty), paying a
+// real ~1s network round trip in full view of a skeleton, exactly the "still
+// not faster" gap this warms away.
+//
+// Deliberately NOT the same query GenericMasterTable's fetchItems runs (that
+// depends on live schema/column-layout state only available inside the
+// mounted component, plus per-table junction/relation joins -- reproducing
+// it here would mean duplicating that query-building logic outside React,
+// a much larger and riskier change). A plain `select('*')` seed is enough:
+// once cached, the real fetchItems call on first visit takes swr()'s
+// warm-cache path (paint immediately, correct any relation/custom-field
+// columns via its own background refresh) instead of the cold blocking one.
+// Skips any table whose row cache already has real data (e.g. the table the
+// user landed on already warmed it for real) so this never clobbers a fresher
+// cache with this coarser shape.
+async function warmSystemTableRows(tableName: string, companyId: string): Promise<void> {
+  const cacheKey = `rows_${companyId}_${tableName}`;
+  if (readCache(cacheKey)) return;
+  try {
+    const { data } = await supabase.from(tableName).select('*').is('deleted_at', null);
+    if (data) writeCache(cacheKey, data);
+  } catch {}
+}
+
+// Fire-and-forget, called right after warmSystemTableShells -- unlike that
+// blocking step, row data is large enough per table (and inherently
+// per-table-shaped, see above) that awaiting it here would meaningfully
+// lengthen the loading screen for a coarser payload the real fetchItems
+// call replaces within moments of landing anyway.
+export function startSystemTableRowPrefetch(companyId: string | null): Promise<void> {
+  if (!companyId) return Promise.resolve();
+  return Promise.all(SYSTEM_TABLES.map(t => warmSystemTableRows(t, companyId))).then(() => {});
 }
 
 // Duplicated from useCustomTable.ts/useDashboardData.ts rather than

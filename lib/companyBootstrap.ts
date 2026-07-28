@@ -16,7 +16,7 @@ import { perfLog } from "@/lib/perfLog";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 import { warmCustomDashboards } from "@/lib/hooks/useCustomDashboards";
-import { startBackgroundShellPrefetch, warmSystemTableShells } from "@/lib/hooks/prefetchShells";
+import { startBackgroundShellPrefetch, startSystemTableRowPrefetch, warmSystemTableShells } from "@/lib/hooks/prefetchShells";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 import type { TableLabelOverrides, DisabledSystemTables } from "@/components/CompanyContext";
 
@@ -118,6 +118,7 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   notifyStep("tableShells");
   // Deliberately not awaited past kickoff -- see BootstrapStep's doc comment.
   startBackgroundShellPrefetch();
+  startSystemTableRowPrefetch(cid).catch(() => {});
   notifyStep("shells");
 
   perfLog("companyBootstrap: done");
