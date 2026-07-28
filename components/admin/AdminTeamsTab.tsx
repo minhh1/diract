@@ -34,6 +34,20 @@ interface Team {
   // a member can only ever see their own entries. Off by default, same
   // reasoning as delegation above.
   allow_time_entry_view: boolean;
+  // Tasks permission -- separate domain from time entries (project
+  // management vs. billing) and universal (every company has Tasks, unlike
+  // Time & Fee Entries), so not gated behind hasTimeEntries below. See
+  // migration 20260729010000_task_view_scope.sql's
+  // task_visible_to_current_user. Without this, or admin, a member only
+  // sees tasks assigned directly to them (plus team-assigned tasks, if
+  // includeTeamTasksInScope below is on).
+  allow_task_view: boolean;
+  // Per-team toggle for what counts as "theirs" for a member who lacks
+  // allow_task_view: also tasks assigned to this whole team
+  // (tasks.assigned_team_id), not just tasks assigned to them personally.
+  // Defaults true in the DB; irrelevant once allow_task_view is on for the
+  // same team (they already see everything).
+  include_team_tasks_in_scope: boolean;
 }
 
 interface Props {
@@ -55,6 +69,15 @@ export default function AdminTeamsTab({ companyId }: Props) {
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [editName, setEditName]       = useState('');
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  // Whether this company has a Time & Fee Entries table at all -- the two
+  // checkboxes below (delegation, view-all) only make sense for a company
+  // that actually has that concept (currently just the law-firm-seed
+  // template). Checking for the table directly, rather than e.g.
+  // companies.company_type (a free-text, admin-editable field with no
+  // enforced relationship to what tables actually exist), so this stays
+  // correct even if a company's tables drift from whatever template it
+  // started from.
+  const [hasTimeEntries, setHasTimeEntries] = useState(false);
 
   useEffect(() => {
     const isFresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
@@ -65,10 +88,14 @@ export default function AdminTeamsTab({ companyId }: Props) {
   const load = async () => {
     if (!teamsCache.get(companyId)) setLoading(true);
 
+    supabase.from('company_tables').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).eq('slug', 'time-fee-entries').is('deleted_at', null)
+      .then(({ count }) => setHasTimeEntries(!!count));
+
     // Load teams
     const { data: ts } = await supabase
       .from('teams')
-      .select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view')
+      .select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope')
       .order('team_name');
 
     // Load all company members
@@ -137,7 +164,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     if (!name) return;
     setNewTeamName('');
     const { data: created } = await supabase
-      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view').single();
+      .from('teams').insert({ team_name: name, is_active: true }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope').single();
     if (created) {
       const newTeam: Team = { ...created, members: [] };
       updateTeams(prev => [...prev, newTeam].sort((a, b) => a.team_name.localeCompare(b.team_name)));
@@ -194,6 +221,16 @@ export default function AdminTeamsTab({ companyId }: Props) {
   const toggleView = (teamId: string, next: boolean) => {
     updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_time_entry_view: next } : t));
     supabase.from('teams').update({ allow_time_entry_view: next }).eq('id', teamId).then();
+  };
+
+  const toggleTaskView = (teamId: string, next: boolean) => {
+    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, allow_task_view: next } : t));
+    supabase.from('teams').update({ allow_task_view: next }).eq('id', teamId).then();
+  };
+
+  const toggleIncludeTeamTasks = (teamId: string, next: boolean) => {
+    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, include_team_tasks_in_scope: next } : t));
+    supabase.from('teams').update({ include_team_tasks_in_scope: next }).eq('id', teamId).then();
   };
 
   const setLeader = (teamId: string, profileId: string) => {
@@ -282,31 +319,65 @@ export default function AdminTeamsTab({ companyId }: Props) {
             )}
           </div>
 
-          {/* Time entry permission -- see lib/teamScope.ts's getStaffScopeIds */}
+          {/* Time entry permissions -- only shown to companies that actually
+              have a Time & Fee Entries table (currently law-firm-seed only);
+              meaningless (and confusing) to show for e.g. a property
+              company with no Staff/time-entry concept. */}
+          {hasTimeEntries && (
+            <>
+              {/* See lib/teamScope.ts's getStaffScopeIds */}
+              <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={team.allow_time_entry_delegation}
+                  onChange={e => toggleDelegation(team.id, e.target.checked)}
+                  className="w-4 h-4 accent-indigo-600 shrink-0"
+                />
+                <span className="text-[11px] text-slate-600">
+                  Allow members to enter time on behalf of other staff
+                </span>
+              </label>
+
+              {/* Enforced via RLS (time_entry_view_scope_ids, see migration
+                  20260728220000_time_entry_view_scope.sql), not just the UI */}
+              <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={team.allow_time_entry_view}
+                  onChange={e => toggleView(team.id, e.target.checked)}
+                  className="w-4 h-4 accent-indigo-600 shrink-0"
+                />
+                <span className="text-[11px] text-slate-600">
+                  Allow members to view all staff&apos;s time entries
+                </span>
+              </label>
+            </>
+          )}
+
+          {/* Tasks permissions -- universal (every company has Tasks), so
+              not gated behind hasTimeEntries. See migration
+              20260729010000_task_view_scope.sql's task_visible_to_current_user. */}
           <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
             <input
               type="checkbox"
-              checked={team.allow_time_entry_delegation}
-              onChange={e => toggleDelegation(team.id, e.target.checked)}
+              checked={team.allow_task_view}
+              onChange={e => toggleTaskView(team.id, e.target.checked)}
               className="w-4 h-4 accent-indigo-600 shrink-0"
             />
             <span className="text-[11px] text-slate-600">
-              Allow members to enter time on behalf of other staff
+              Allow members to view all company tasks
             </span>
           </label>
 
-          {/* View permission -- enforced via RLS (time_entry_view_scope_ids,
-              see migration 20260728220000_time_entry_view_scope.sql), not
-              just the UI */}
           <label className="flex items-center gap-2.5 px-6 py-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50/50 transition-colors">
             <input
               type="checkbox"
-              checked={team.allow_time_entry_view}
-              onChange={e => toggleView(team.id, e.target.checked)}
+              checked={team.include_team_tasks_in_scope}
+              onChange={e => toggleIncludeTeamTasks(team.id, e.target.checked)}
               className="w-4 h-4 accent-indigo-600 shrink-0"
             />
             <span className="text-[11px] text-slate-600">
-              Allow members to view all staff&apos;s time entries
+              Without the above, members can still see tasks assigned to this team
             </span>
           </label>
 
