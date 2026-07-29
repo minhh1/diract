@@ -15,7 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import {
-  Plus, Copy, Check, Trash2, ExternalLink, X, Pencil, RefreshCw, Users, Globe, Settings2,
+  Plus, Copy, Check, Trash2, ExternalLink, X, Pencil, RefreshCw, Users, Globe, Settings2, AlertTriangle, Loader2,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
@@ -66,6 +66,7 @@ export default function ClientUpdatePagesTab() {
   const [pinDraft, setPinDraft] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
   const [savingPin, setSavingPin] = useState(false);
+  const [installingIrregularities, setInstallingIrregularities] = useState(false);
 
   const { data, isLoading: loading, refetch } = useQuery({
     queryKey: ["client-update-pages", userId],
@@ -104,14 +105,38 @@ export default function ClientUpdatePagesTab() {
     refetch();
   };
 
+  const installIrregularities = async () => {
+    setInstallingIrregularities(true);
+    try {
+      const res = await fetch("/api/client-update-pages/irregularities/install", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { window.alert(json.error || "Couldn't add the irregularity table"); return; }
+      if (json.status === "already_installed") {
+        window.alert("This company already has an Irregularity table.");
+      } else {
+        window.alert(`Irregularity table created — PIN ${json.accessCode}`);
+      }
+      refetch();
+    } finally {
+      setInstallingIrregularities(false);
+    }
+  };
+
   if (loading) return null;
 
   return (
     <div className="space-y-6 animate-in fade-in">
-      <button onClick={() => setShowCreate(true)}
-        className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
-        <Plus size={14} /> Create detailed table page
-      </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
+          <Plus size={14} /> Create detailed table page
+        </button>
+        <button onClick={installIrregularities} disabled={installingIrregularities}
+          title="Auto-flags data-quality issues on Entities/Properties (missing details, invalid TFN, duplicate names, etc.)"
+          className="flex items-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-600 text-[11px] font-bold rounded-full hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
+          {installingIrregularities ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />} Add irregularity table
+        </button>
+      </div>
 
       <div className="space-y-3">
         {pages.length === 0 && <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-12">No detailed table pages yet</p>}
