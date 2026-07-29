@@ -250,6 +250,7 @@ export function useSystemTableAsCustomTable(
     // A system table is the original "always there, can't be removed" case
     // -- is_default true is the closest fit, and it's never privately owned.
     is_default: true,
+    effectiveDefault: true,
     owner_user_id: null,
   } : null;
 
