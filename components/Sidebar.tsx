@@ -28,6 +28,7 @@ import { useProgressBar } from "@/components/TopProgressBar";
 import { pushWithFallback } from "@/lib/navigateWithFallback";
 import { perfLog } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
+import NotificationBell from "@/components/NotificationBell";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -1204,6 +1205,8 @@ export default function Sidebar() {
         </div>
 
         <div className="flex-1" />
+
+        <NotificationBell />
 
         <div className="relative" onClick={e => e.stopPropagation()}>
           {profileLoading ? (

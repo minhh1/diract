@@ -1,0 +1,14 @@
+-- Per-user notification preferences -- the first per-USER notification gate
+-- in this app (email_notification_settings/push_notification_settings on
+-- companies are both per-COMPANY, admin-set for everyone; see
+-- components/admin/AdminEmailTab.tsx). This is the opt-out layer a user
+-- controls for themselves, on top of (not instead of) the company's own
+-- on/off switch -- both must allow an event for email/push to actually send,
+-- see create_notification() in 20260729460000_create_notification_rpc.sql.
+--
+-- Shape: { "<event_type>": { "in_app": bool, "email": bool, "push": bool } }.
+-- A missing key (either the whole event or one channel within it) defaults
+-- to true -- same opt-out convention email_notification_settings already
+-- uses, so a newly-added event type is on for everyone until they turn it
+-- off, not silently off until someone opts in.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS notification_preferences jsonb NOT NULL DEFAULT '{}'::jsonb;

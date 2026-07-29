@@ -42,6 +42,19 @@ export async function createArchiveRequest(
     requested_by: user.id,
   });
   if (error) return { ok: false, error: error.message };
+
+  // Best-effort -- notify_company_admins is SECURITY DEFINER (see
+  // supabase/migrations/20260729460000_create_notification_rpc.sql) so this
+  // plain RLS-scoped client can still call it; a failure here shouldn't
+  // block the archive request itself from having succeeded.
+  await supabase.rpc("notify_company_admins", {
+    p_company_id: companyId,
+    p_event_type: "archive_request_submitted",
+    p_title: `New archive request: ${entityLabel}`,
+    p_link_url: "/dashboard/admin?tab=archiveRequests",
+    p_entity_table: "archive_requests",
+  }).then(() => {}, () => {});
+
   return { ok: true };
 }
 

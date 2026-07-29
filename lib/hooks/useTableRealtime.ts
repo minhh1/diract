@@ -13,7 +13,17 @@ interface RealtimeEvent {
 
 interface UseTableRealtimeOptions {
   tableName: string;
+  // Used as the filter value when filterColumn is left at its default
+  // ("company_id") -- every call site before the notification bell only
+  // ever needed company-scoped filtering. Ignored (but still fine to pass)
+  // once filterValue is provided explicitly.
   companyId: string | null;
+  // Realtime's postgres_changes filter only supports one column=eq.value
+  // clause, so a caller that needs to scope by something other than
+  // company_id (e.g. the notification bell's recipient_user_id=eq.<me>)
+  // overrides both of these instead of company_id/companyId.
+  filterColumn?: string;
+  filterValue?: string | null;
   // Called with the minimal patch needed — the page applies it to its
   // local items array without re-fetching anything from the database.
   onInsert: (row: Record<string, any>) => void;
@@ -22,17 +32,20 @@ interface UseTableRealtimeOptions {
 }
 
 /**
- * Subscribes to Supabase Realtime events for a single table, scoped to
- * the current company. Patches the local items array in-place for each
- * event rather than triggering a full re-fetch — so edits appear
- * instantly without a loading state or network round trip.
+ * Subscribes to Supabase Realtime events for a single table, scoped by
+ * filterColumn=eq.filterValue (company_id=eq.companyId by default). Patches
+ * the local items array in-place for each event rather than triggering a
+ * full re-fetch — so edits appear instantly without a loading state or
+ * network round trip.
  *
  * The subscription is automatically cleaned up when the component
- * unmounts or when tableName/companyId changes.
+ * unmounts or when tableName/filterColumn/filterValue changes.
  */
 export function useTableRealtime({
   tableName,
   companyId,
+  filterColumn = "company_id",
+  filterValue,
   onInsert,
   onUpdate,
   onDelete,
@@ -47,20 +60,22 @@ export function useTableRealtime({
   useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
   useEffect(() => { onDeleteRef.current = onDelete; }, [onDelete]);
 
+  const effectiveFilterValue = filterValue ?? companyId;
+
   useEffect(() => {
-    if (!companyId) return;
+    if (!effectiveFilterValue) return;
 
     const channel = supabase
-      .channel(`realtime:${tableName}:${companyId}`)
+      .channel(`realtime:${tableName}:${filterColumn}:${effectiveFilterValue}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: tableName,
-          // Filter to only this company's rows — prevents receiving
-          // events for other companies' data even if RLS somehow passes.
-          filter: `company_id=eq.${companyId}`,
+          // Prevents receiving events outside this filter even if RLS
+          // somehow passes.
+          filter: `${filterColumn}=eq.${effectiveFilterValue}`,
         },
         (payload) => {
           const { eventType, new: newRow, old: oldRow } = payload;
@@ -79,5 +94,5 @@ export function useTableRealtime({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [tableName, companyId]);
+  }, [tableName, filterColumn, effectiveFilterValue]);
 }

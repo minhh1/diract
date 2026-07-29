@@ -220,6 +220,24 @@ function respond(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 }
 
+// Best-effort -- notifies the SPECIFIC user whose mailbox just got the
+// label (this function already runs once per (job, user), so this is
+// naturally per-recipient already -- no fan-out/dedup needed).
+async function notifyLabelCreated(companyId: string, userId: string, projectId: string) {
+  try {
+    const { data: project } = await db.from("projects").select("name").eq("id", projectId).maybeSingle();
+    await db.rpc("create_notification", {
+      p_company_id: companyId,
+      p_recipient_user_id: userId,
+      p_event_type: "gmail_label_created",
+      p_title: `Gmail label set up for ${project?.name || "a matter"}`,
+      p_link_url: `/dashboard/projects?id=${projectId}`,
+      p_entity_table: "projects",
+      p_entity_id: projectId,
+    });
+  } catch (_) { /* never break label sync over a notification */ }
+}
+
 // ── Function ──────────────────────────────────────────────────────
 
 interface ProcessorRequest {
@@ -275,6 +293,7 @@ Deno.serve(async (req) => {
             project_id: projectId, gmail_label_name: gmailLabelName,
             target_user_id: userId, details: { label_code: labelCode },
           });
+          await notifyLabelCreated(companyId, userId, projectId);
         }
         console.log(`[label-sync-processor] Fast path created=${newId || "FAILED"}`);
       }
@@ -288,6 +307,7 @@ Deno.serve(async (req) => {
             project_id: projectId, gmail_label_name: gmailLabelName,
             target_user_id: userId, details: { label_code: labelCode },
           });
+          await notifyLabelCreated(companyId, userId, projectId);
         }
       }
       if (labelId && dbMsgIds.length) {

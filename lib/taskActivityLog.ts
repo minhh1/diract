@@ -85,4 +85,27 @@ export async function logTaskActivity(
     action: params.action,
     detail: params.detail || null,
   });
+
+  // Best-effort fan-out to this task's watchers (task_watchers, see
+  // lib/taskWatchers.ts), excluding whoever just made the change -- see
+  // supabase/migrations/20260729460000_create_notification_rpc.sql.
+  const [{ data: watchers }, { data: task }] = await Promise.all([
+    supabase.from("task_watchers").select("profile_id").eq("task_id", params.taskId),
+    supabase.from("tasks").select("name").eq("id", params.taskId).maybeSingle(),
+  ]);
+  const recipients = (watchers || [])
+    .map((w: any) => w.profile_id as string)
+    .filter((id: string) => id !== params.actorId);
+  await Promise.all(recipients.map((recipientId: string) =>
+    supabase.rpc("create_notification", {
+      p_company_id: params.companyId,
+      p_recipient_user_id: recipientId,
+      p_event_type: "task_comment",
+      p_title: `Update on ${task?.name || "a task"}`,
+      p_body: params.detail || params.action,
+      p_link_url: `/dashboard/tasks?id=${params.taskId}`,
+      p_entity_table: "tasks",
+      p_entity_id: params.taskId,
+    }).then(() => {}, () => {})
+  ));
 }

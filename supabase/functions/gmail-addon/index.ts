@@ -141,6 +141,19 @@ async function resolveOrCreateRelation(
     if (retryExact) return { id: retryExact.id, flagged: false };
   }
   if (error || !created) throw new Error(error?.message || `Failed to create ${fieldType}`);
+
+  // Best-effort -- this is the one place needs_review ever gets set true
+  // (components/GenericMasterTable.tsx only ever reads/clears it).
+  await db.rpc('notify_company_admins', {
+    p_company_id: companyId,
+    p_event_type: 'gmail_needs_review',
+    p_title: `Needs review: "${trimmed}"`,
+    p_body: reason,
+    p_link_url: `/dashboard/${config.table}?id=${created.id}`,
+    p_entity_table: config.table,
+    p_entity_id: created.id,
+  }).catch(() => {});
+
   return { id: created.id, flagged: true };
 }
 
@@ -152,6 +165,28 @@ async function logTaskActivity(params: { taskId: string; companyId: string; acto
     action: params.action,
     detail: params.detail || null,
   });
+
+  // Best-effort fan-out to watchers -- mirrors lib/taskActivityLog.ts's
+  // logTaskActivity on the web-app side of this event.
+  const [{ data: watchers }, { data: task }] = await Promise.all([
+    db.from('task_watchers').select('profile_id').eq('task_id', params.taskId),
+    db.from('tasks').select('name').eq('id', params.taskId).maybeSingle(),
+  ]);
+  const recipients = (watchers || [])
+    .map((w: any) => w.profile_id as string)
+    .filter((id: string) => id !== params.actorId);
+  await Promise.all(recipients.map((recipientId: string) =>
+    db.rpc('create_notification', {
+      p_company_id: params.companyId,
+      p_recipient_user_id: recipientId,
+      p_event_type: 'task_comment',
+      p_title: `Update on ${task?.name || 'a task'}`,
+      p_body: params.detail || params.action,
+      p_link_url: `/dashboard/tasks?id=${params.taskId}`,
+      p_entity_table: 'tasks',
+      p_entity_id: params.taskId,
+    }).catch(() => {})
+  ));
 }
 
 // Enqueues a label_sync job right after a label is created, instead of
@@ -1430,6 +1465,16 @@ Deno.serve(async (req) => {
         status: 'pending',
       });
       if (insertErr) return json({ error: insertErr.message }, 500, headers);
+
+      // Best-effort -- see lib/archiveRequests.ts's createArchiveRequest for
+      // the same call on the web-app side of this event.
+      await db.rpc('notify_company_admins', {
+        p_company_id: companyId,
+        p_event_type: 'archive_request_submitted',
+        p_title: `New archive request: ${project?.name || 'Untitled project'}`,
+        p_link_url: '/dashboard/admin?tab=archiveRequests',
+        p_entity_table: 'archive_requests',
+      }).catch(() => {});
 
       return json({ ok: true }, 200, headers);
     }

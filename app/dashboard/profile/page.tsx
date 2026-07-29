@@ -6,9 +6,10 @@ import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProfile } from "@/lib/hooks/useProfile";
 import {
-  ArrowLeft, Loader2, Camera, Trash2, CheckCircle2, AlertCircle, User, PenSquare,
+  ArrowLeft, Loader2, Camera, Trash2, CheckCircle2, AlertCircle, User, PenSquare, Bell,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { NOTIFICATION_EVENT_TYPES } from "@/lib/notifications/eventTypes";
 
 export default function ProfilePage() {
   const { data: profile, isLoading: profileLoading } = useProfile();
@@ -44,6 +45,7 @@ export default function ProfilePage() {
                 email={email}
               />
               {profile?.id && <SignoffSection key={profile.id} userId={profile.id} />}
+              {profile?.id && <NotificationPreferencesSection key={profile.id} userId={profile.id} />}
             </>
           )}
         </div>
@@ -353,6 +355,84 @@ function SignoffSection({ userId }: { userId: string }) {
             {saving ? <Loader2 size={14} className="animate-spin" /> : "Save"}
           </button>
           {message && <MessageRow message={message} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Per-user notification preferences -- reads/writes profiles.
+// notification_preferences directly (same direct-client-write convention
+// AdminEmailTab.tsx uses for the company-level version of this). Renders
+// off NOTIFICATION_EVENT_TYPES, the same registry AdminEmailTab.tsx uses,
+// so the two can never list different events. A missing entry (whole event
+// or one channel within it) means "on" -- see that column's own migration
+// comment (supabase/migrations/20260729450000_notification_preferences.sql)
+// for why this has to be opt-out, not opt-in.
+type ChannelPrefs = { in_app?: boolean; email?: boolean; push?: boolean };
+
+function NotificationPreferencesSection({ userId }: { userId: string }) {
+  const [prefs, setPrefs] = useState<Record<string, ChannelPrefs>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("profiles").select("notification_preferences").eq("id", userId).single();
+      setPrefs(data?.notification_preferences || {});
+      setLoading(false);
+    })();
+  }, [userId]);
+
+  const toggle = async (eventKey: string, channel: keyof ChannelPrefs) => {
+    const isOn = prefs[eventKey]?.[channel] !== false;
+    const next = { ...prefs, [eventKey]: { ...prefs[eventKey], [channel]: !isOn } };
+    setPrefs(next);
+    await supabase.from("profiles").update({ notification_preferences: next }).eq("id", userId);
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-[32px] p-8 shadow-sm">
+      <div className="flex items-center gap-2">
+        <Bell size={16} className="text-indigo-600" />
+        <h2 className="text-[15px] font-medium text-slate-900">Notifications</h2>
+      </div>
+      <p className="text-[12px] text-slate-400 mt-1">
+        Choose what you&apos;re notified about, and how. A company admin can still turn an event off for everyone.
+      </p>
+      {loading ? (
+        <div className="mt-4 flex justify-center"><Loader2 size={16} className="animate-spin text-slate-300" /></div>
+      ) : (
+        <div className="mt-4 space-y-2">
+          <div className="grid grid-cols-[1fr_44px_44px_44px] gap-3 px-4">
+            <span />
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center">In-app</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center">Email</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center">Push</span>
+          </div>
+          {NOTIFICATION_EVENT_TYPES.map(eventType => {
+            const eventPrefs = prefs[eventType.key] || {};
+            return (
+              <div key={eventType.key} className="grid grid-cols-[1fr_44px_44px_44px] items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-medium text-slate-700">{eventType.label}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{eventType.description}</p>
+                </div>
+                {(["in_app", "email", "push"] as const).map(channel => {
+                  const isOn = eventPrefs[channel] !== false;
+                  return (
+                    <button
+                      key={channel}
+                      onClick={() => toggle(eventType.key, channel)}
+                      title={`${eventType.label} — ${channel.replace("_", "-")}: ${isOn ? "on" : "off"}`}
+                      className={`w-11 h-6 rounded-full transition-colors shrink-0 mx-auto ${isOn ? "bg-slate-900" : "bg-slate-200"}`}
+                    >
+                      <span className={`block h-5 w-5 rounded-full bg-white shadow transition-transform ${isOn ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

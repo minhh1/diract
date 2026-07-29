@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Mail, Trash2, Loader2, RefreshCw, Copy, Check, CheckCircle2, AlertCircle, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { EMAIL_EVENT_TYPES } from "@/lib/email/eventTypes";
+import { NOTIFICATION_EVENT_TYPES } from "@/lib/notifications/eventTypes";
 
 interface Props {
   companyId: string;
@@ -258,7 +258,7 @@ export default function AdminEmailTab({ companyId }: Props) {
           </div>
         ) : (
           <div className="space-y-2">
-            {EMAIL_EVENT_TYPES.map((eventType) => {
+            {NOTIFICATION_EVENT_TYPES.map((eventType) => {
               const enabled = settings[eventType.key] !== false;
               return (
                 <div key={eventType.key} className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">

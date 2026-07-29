@@ -1,6 +1,6 @@
 // The one gate every "important event" email goes through: checks the
 // company's per-event on/off toggle (companies.email_notification_settings,
-// see lib/email/eventTypes.ts) before handing off to sendEmail. A missing
+// see lib/notifications/eventTypes.ts) before handing off to sendEmail. A missing
 // key means "on" -- only an explicit `false` skips the send.
 import { sendEmail, SendEmailParams } from "@/lib/email/sendEmail";
 
