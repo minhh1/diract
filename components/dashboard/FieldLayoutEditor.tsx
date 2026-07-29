@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getFieldLabel } from "@/lib/fieldLabels";
 import RelationPicker from "./RelationPicker";
+import SmartFieldHint from "@/components/SmartFieldHint";
+import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
 
 export interface FieldLayout {
   id: string;
@@ -257,6 +259,11 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   // its value (e.g. a full legal entity name), and this grid has no
   // horizontal scroll to fall back on the way a table does.
   const [expanded, setExpanded] = useState(false);
+  // Only the record's own name/title field (fieldType falls through to the
+  // default text editor for it, same as every other plain-text field) gets
+  // the smart name-quality hint -- see lib/smartValidation/nameQuality.ts.
+  const isNameField = field.field_key === 'name';
+  const nameQuality = useNameQualityCheck();
 
   // Determine the dashboard path for a linked item
   const getLinkedPath = (item: LinkedItem) => {
@@ -392,6 +399,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
         return (
           <input autoFocus type="text" value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
+            onBlur={() => { if (isNameField) nameQuality.check(draft); }}
             className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none" />
         );
     }
@@ -496,21 +504,28 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
           )}
         </>
       ) : editing ? (
-        <div className="flex items-center gap-2" onBlur={handleBlur}>
-          {renderEditor()}
-          {/* onMouseDown preventDefault, not just onClick -- Safari (unlike
-              Chrome/Firefox) doesn't move focus to a clicked <button> by
-              default, so the input's onBlur (handleBlur, which cancels the
-              edit and resets draft to the old value) fired *before* this
-              button's own onClick ever got a chance to run, on Safari only.
-              Blocking the mousedown's default focus-shift stops the input
-              from blurring at all, so the click reaches handleSave with the
-              edit still open. Enter-to-save was never affected since it
-              saves straight from the input without ever blurring first. */}
-          <button onClick={handleSave} onMouseDown={e => e.preventDefault()} disabled={saving}
-            className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-bold disabled:opacity-50 shrink-0">
-            {saving ? '...' : 'Save'}
-          </button>
+        <div onBlur={handleBlur}>
+          <div className="flex items-center gap-2">
+            {renderEditor()}
+            {/* onMouseDown preventDefault, not just onClick -- Safari (unlike
+                Chrome/Firefox) doesn't move focus to a clicked <button> by
+                default, so the input's onBlur (handleBlur, which cancels the
+                edit and resets draft to the old value) fired *before* this
+                button's own onClick ever got a chance to run, on Safari only.
+                Blocking the mousedown's default focus-shift stops the input
+                from blurring at all, so the click reaches handleSave with the
+                edit still open. Enter-to-save was never affected since it
+                saves straight from the input without ever blurring first. */}
+            <button onClick={handleSave} onMouseDown={e => e.preventDefault()} disabled={saving}
+              className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-bold disabled:opacity-50 shrink-0">
+              {saving ? '...' : 'Save'}
+            </button>
+          </div>
+          {isNameField && (
+            <SmartFieldHint suggestions={nameQuality.suggestions}
+              onApply={s => { if (s.apply) { const r = s.apply(); if ("correctedValue" in r && r.correctedValue) setDraft(r.correctedValue); } nameQuality.dismiss(s.id); }}
+              onDismiss={nameQuality.dismiss} />
+          )}
         </div>
       ) : (
         <div onClick={() => { setEditing(true); setDraft(value ?? ''); }}

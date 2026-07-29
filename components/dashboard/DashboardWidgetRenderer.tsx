@@ -45,6 +45,13 @@ interface Props {
   sourceKind: DashboardSourceKind;
   fields: CustomTableField[];
   fieldById: Map<string, CustomTableField>;
+  // The source table's own company_tables/company_table_fields-equivalent
+  // primary_field_key -- passed straight through to quick_add_form/grid so
+  // FieldValueInput.tsx can gate the smart name-quality hint (see
+  // lib/smartValidation/nameQuality.ts) onto whichever field actually names
+  // the record, not every text field. Undefined in builder-preview
+  // contexts, where nothing's actually being saved anyway.
+  primaryFieldKey?: string | null;
   records: CustomTableRecord[]; // already filtered by the active filter bar
   // True while `records` hasn't landed yet even though the rest of the
   // dashboard (this renderer's own widgets) is already showing -- see
@@ -110,7 +117,7 @@ interface Props {
 
 export default function DashboardWidgetRenderer({
   widget, sourceKind, fields, fieldById, records, recordsLoading, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
-  isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill, onOptimisticAdd,
+  isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill, onOptimisticAdd, primaryFieldKey,
 }: Props) {
   switch (widget.type) {
     case 'heading': {
@@ -148,6 +155,7 @@ export default function DashboardWidgetRenderer({
           companyId={companyId}
           userId={userId}
           fields={fields}
+          primaryFieldKey={primaryFieldKey}
           quickAddFieldIds={widget.config.fieldIds}
           onAdded={onChanged}
           onOptimisticAdd={onOptimisticAdd}
@@ -176,6 +184,7 @@ export default function DashboardWidgetRenderer({
           companyId={companyId}
           userId={userId}
           fields={fields}
+          primaryFieldKey={primaryFieldKey}
           gridFieldIds={widget.config.fieldIds}
           records={filterByConditions(records, widget.config.conditions, fieldById)}
           recordsLoading={recordsLoading}

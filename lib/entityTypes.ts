@@ -7,7 +7,7 @@
 // consumer needed the identical list.
 export const ENTITY_TYPES = [
   'Company', 'Individual', 'Corporate Trustee', 'Non Corporate Trustee',
-  'Discretionary Family Trust', 'Fixed Unit Trust',
+  'Discretionary Family Trust', 'Fixed Unit Trust', 'Unit Trust', 'Discretionary Trust',
   'Lawyer', 'Accountant', 'Mortgage Broker', 'Real Estate Agent',
   'Local Council', 'Bank', 'Staff', 'Other',
 ];

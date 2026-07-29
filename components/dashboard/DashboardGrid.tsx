@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, Fragment } from "react";
-import { X, GripVertical, Loader2 } from "lucide-react";
+import { X, GripVertical } from "lucide-react";
+import { useProgressBar } from "@/components/TopProgressBar";
 import FieldValueInput from "./FieldValueInput";
 import { createRecord, updateRecord, deleteRecord } from "@/lib/services/customTableService";
 import {
@@ -41,6 +42,10 @@ interface Props {
   // it, only creation does (createRecord/createSystemTableRecord's signature).
   userId: string;
   fields: CustomTableField[]; // full field list -- formula recompute needs dependencies
+  // The source table's primary_field_key -- gates FieldValueInput's smart
+  // name-quality hint onto whichever column actually names the record. See
+  // lib/smartValidation/nameQuality.ts.
+  primaryFieldKey?: string | null;
   gridFieldIds: string[]; // ordered subset of columns to show
   records: CustomTableRecord[];
   onChanged: () => void;
@@ -120,10 +125,11 @@ function initials(name: string): string {
 // view (column drawer, search, expand-row) -- this is meant to be one
 // section of a composed dashboard, not a standalone page.
 export default function DashboardGrid({
-  tableId, sourceKind, companyId, userId, fields, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
+  tableId, sourceKind, companyId, userId, fields, primaryFieldKey, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
   columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow, recordsLoading,
   showTimekeeperInitials, staffFieldKey,
 }: Props) {
+  const { start: startProgress, done: doneProgress } = useProgressBar();
   const gridFields = gridFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
@@ -299,9 +305,11 @@ export default function DashboardGrid({
     }
 
     setDraftSaving(prev => ({ ...prev, [rowIndex]: true }));
+    startProgress();
     const record = sourceKind === 'custom'
       ? await createRecord(tableId, companyId, userId, nextValues, fields)
       : await createSystemTableRecord(sourceKind as SystemTableName, companyId, userId, nextValues, fields);
+    doneProgress();
     setDraftSaving(prev => { const { [rowIndex]: _removed, ...rest } = prev; return rest; });
 
     if (record && 'error' in record) {
@@ -389,6 +397,7 @@ export default function DashboardGrid({
                       disabled={readOnly}
                       displayValue={r.displayValues[f.field_key]}
                       variant="plain"
+                      isPrimaryField={f.field_key === primaryFieldKey}
                     />
                   )}
                 </td>
@@ -418,6 +427,7 @@ export default function DashboardGrid({
                       onCommit={v => handleDraftCommit(i, f, v)}
                       disabled={!!draftSaving[i]}
                       variant="plain"
+                      isPrimaryField={f.field_key === primaryFieldKey}
                     />
                     )}
                   </td>

@@ -135,6 +135,7 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
               chartRecords={chartRecords}
               allRecords={allRecords}
               tableId={dashboard.source_table_id ?? dashboard.source_table_type}
+              primaryFieldKey={tableDef?.primary_field_key}
               sourceKind={sourceKind}
               companyId={companyId}
               userId={userId}

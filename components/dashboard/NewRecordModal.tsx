@@ -123,6 +123,7 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose, i
                 field={field}
                 value={values[field.field_key] ?? null}
                 onCommit={v => setValues(p => ({ ...p, [field.field_key]: v }))}
+                isPrimaryField={field.id === fields[0]?.id}
               />
               {field.field_key === aiRewriteFieldKey && (
                 <>

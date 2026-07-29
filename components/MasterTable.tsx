@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, GripVertical, Trash2, ExternalLink, ChevronsUpDown, Baby, CornerDownRight } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Trash2, ExternalLink, ChevronsUpDown, Baby, CornerDownRight, Lightbulb, X } from "lucide-react";
 import DataTable from "@/components/DataTable";
 import RelationSubTable from "@/components/RelationSubTable";
 import UniversalSelectionModal from "@/components/UniversalSelectionModal";
@@ -12,6 +12,7 @@ import { updateRecord, softDeleteRecord } from "@/lib/genericRecordActions";
 import { createArchiveRequest, usePendingArchiveRequests, type ArchiveEntityTable } from "@/lib/archiveRequests";
 import type { RelationDef } from "@/lib/relationDefinitions";
 import type { LogParentType } from "@/lib/logging";
+import { checkNameQuality, type NameSuggestion } from "@/lib/smartValidation/nameQuality";
 
 export interface RelationalEditConfig {
   table: "entities" | "projects" | "properties";
@@ -103,6 +104,15 @@ interface MasterTableRowProps {
   setEditingCell: (v: { rowId: string; colId: string } | null) => void;
   clearCellError: (rowId: string, colId: string) => void;
   handleCellSave: (item: any, colId: string, newValue: string) => void;
+  // Smart name-quality suggestions -- see lib/smartValidation/nameQuality.ts.
+  // Keyed and rendered the same way as cellErrors above (a friendly amber
+  // variant, never blocking), scoped to whichever column is this table's
+  // name/title field (nameColId).
+  nameColId: string;
+  cellSuggestions: Map<string, NameSuggestion[]>;
+  checkCellNameQuality: (rowId: string, colId: string, value: string) => void;
+  applyCellSuggestion: (item: any, colId: string, suggestion: NameSuggestion) => void;
+  dismissCellSuggestion: (rowId: string, colId: string, suggestionId: string) => void;
   setRelationalPicker: (v: { item: any; colId: string } | null) => void;
   setRecordEditTarget: (v: { config: RelationalEditConfig; recordId: string; currentValues: Record<string, any> } | null) => void;
   toggleExpandRow: (id: string) => void;
@@ -128,6 +138,7 @@ function MasterTableRow({
   item, depth, rowKeyStr, isExpanded, tableCols, resolveValue, getLinkTarget,
   resolveColLabel, resolveColTooltip, baseTable, canEdit, editableCols, relationalEditCols,
   editingCell, savingCell, cellErrors, setEditingCell, clearCellError, handleCellSave,
+  nameColId, cellSuggestions, checkCellNameQuality, applyCellSuggestion, dismissCellSuggestion,
   setRelationalPicker, setRecordEditTarget, toggleExpandRow, expandCols, activeRelations,
   parentType, companyId, onRowMutated, pendingArchive, handleRowDelete, colCount,
   childCount, childrenExpanded, onToggleChildren, parentLabel,
@@ -153,6 +164,7 @@ function MasterTableRow({
           const isSaving = savingCell?.rowId === key && savingCell?.colId === colId;
           const rawValue = resolveValue(item, colId);
           const cellError = cellErrors.get(`${key}:${colId}`);
+          const cellSuggestion = colId === nameColId ? cellSuggestions.get(`${key}:${colId}`) : undefined;
 
           const startEdit = (e: React.MouseEvent) => {
             e.stopPropagation();
@@ -185,7 +197,7 @@ function MasterTableRow({
               autoFocus
               defaultValue={rawValue ?? ''}
               onClick={(e) => e.stopPropagation()}
-              onBlur={(e) => handleCellSave(item, colId, e.target.value)}
+              onBlur={(e) => { handleCellSave(item, colId, e.target.value); checkCellNameQuality(key, colId, e.target.value); }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
               className="w-full p-1.5 -m-1.5 border border-indigo-300 rounded-lg text-sm outline-none"
             />
@@ -203,6 +215,40 @@ function MasterTableRow({
                   {cellError}
                 </div>
                 <div className="w-2 h-2 bg-red-600 rotate-45 ml-4 -mt-1" />
+              </div>
+            </div>
+          ) : cellSuggestion && cellSuggestion.length > 0 ? (
+            // Friendly amber variant of the cellError tooltip just above --
+            // a suggestion, never a blocking error, so it stays interactive
+            // (Apply/dismiss) rather than pointer-events-none informational
+            // text. See lib/smartValidation/nameQuality.ts.
+            <div className="relative group/hint">
+              <span
+                onClick={canEditThisCol ? startEdit : undefined}
+                className={`block truncate text-slate-700 border-b border-dashed border-amber-300 ${canEditThisCol ? 'cursor-text' : ''}`}
+              >
+                {String(rawValue || '-')}
+              </span>
+              <div className="absolute bottom-full left-0 mb-2 z-50 hidden group-hover/hint:block">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 max-w-[260px] shadow-lg space-y-1.5">
+                  {cellSuggestion.map(s => (
+                    <div key={s.id} className="flex items-center gap-1.5">
+                      <Lightbulb size={11} className="shrink-0 text-amber-500" />
+                      <span className="flex-1 min-w-0 text-[10px] font-medium text-amber-800 leading-relaxed whitespace-normal">{s.message}</span>
+                      {s.apply && s.actionLabel && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); applyCellSuggestion(item, colId, s); }}
+                          className="shrink-0 px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
+                          {s.actionLabel}
+                        </button>
+                      )}
+                      <button type="button" onClick={(e) => { e.stopPropagation(); dismissCellSuggestion(key, colId, s.id); }}
+                        title="Dismiss" className="shrink-0 text-amber-400 hover:text-amber-700 transition-colors">
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="w-2 h-2 bg-amber-50 border-l border-b border-amber-200 rotate-45 ml-4 -mt-1" />
               </div>
             </div>
           ) : linkTarget ? (
@@ -367,6 +413,10 @@ export default function MasterTable({
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [savingCell, setSavingCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [cellErrors, setCellErrors] = useState<Map<string, string>>(new Map());
+  const [cellSuggestions, setCellSuggestions] = useState<Map<string, NameSuggestion[]>>(new Map());
+  // Same convention as GenericMasterTable.tsx's own primaryCol -- properties
+  // are named by their street address, everything else by `name`.
+  const nameColId = baseTable === 'properties' ? 'street_address' : 'name';
   const [relationalPicker, setRelationalPicker] = useState<{ item: any; colId: string } | null>(null);
   const [recordEditTarget, setRecordEditTarget] = useState<{
     config: RelationalEditConfig;
@@ -395,6 +445,43 @@ export default function MasterTable({
 
   const clearCellError = (rowId: string, colId: string) => {
     setCellErrors(prev => { const next = new Map(prev); next.delete(`${rowId}:${colId}`); return next; });
+  };
+
+  // Smart name-quality suggestions -- see lib/smartValidation/nameQuality.ts.
+  // Kept as their own keyed Map, same shape as cellErrors above, since
+  // handleCellSave below already exits edit mode (setEditingCell(null)) the
+  // instant blur fires -- unlike every other surface this rule engine is
+  // wired into, there's no still-open input left to show the hint under, so
+  // it has to persist as a display-mode affordance on the cell itself
+  // instead (an amber dashed-underline + tooltip, mirroring cellError's own
+  // red one) rather than reusing SmartFieldHint's inline block.
+  const checkCellNameQuality = (rowId: string, colId: string, val: string) => {
+    if (colId !== nameColId) return;
+    const key = `${rowId}:${colId}`;
+    const suggestions = checkNameQuality(val);
+    setCellSuggestions(prev => {
+      const next = new Map(prev);
+      if (suggestions.length) next.set(key, suggestions); else next.delete(key);
+      return next;
+    });
+  };
+
+  const dismissCellSuggestion = (rowId: string, colId: string, suggestionId: string) => {
+    const key = `${rowId}:${colId}`;
+    setCellSuggestions(prev => {
+      const next = new Map(prev);
+      const remaining = (next.get(key) || []).filter(s => s.id !== suggestionId);
+      if (remaining.length) next.set(key, remaining); else next.delete(key);
+      return next;
+    });
+  };
+
+  const applyCellSuggestion = (item: any, colId: string, suggestion: NameSuggestion) => {
+    if (suggestion.apply) {
+      const result = suggestion.apply();
+      if ("correctedValue" in result && result.correctedValue) handleCellSave(item, colId, result.correctedValue);
+    }
+    dismissCellSuggestion(rowKey(item), colId, suggestion.id);
   };
 
   const handleCellSave = async (item: any, colId: string, newValue: string) => {
@@ -507,6 +594,11 @@ export default function MasterTable({
         setEditingCell={setEditingCell}
         clearCellError={clearCellError}
         handleCellSave={handleCellSave}
+        nameColId={nameColId}
+        cellSuggestions={cellSuggestions}
+        checkCellNameQuality={checkCellNameQuality}
+        applyCellSuggestion={applyCellSuggestion}
+        dismissCellSuggestion={dismissCellSuggestion}
         setRelationalPicker={setRelationalPicker}
         setRecordEditTarget={setRecordEditTarget}
         toggleExpandRow={toggleExpandRow}

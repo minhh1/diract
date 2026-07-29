@@ -18,6 +18,9 @@ interface Props {
   userId: string;
   fields: CustomTableField[]; // full field list -- formula fields need their dependencies
   quickAddFieldIds: string[]; // ordered subset to show
+  // The source table's primary_field_key -- gates FieldValueInput's smart
+  // name-quality hint onto whichever column actually names the record.
+  primaryFieldKey?: string | null;
   onAdded: () => void;
   // Inserts the new record into local state directly instead of onAdded's
   // full refetch (fields + every record + every relation label, all over
@@ -124,10 +127,11 @@ function getDefaultValues(quickAddFields: CustomTableField[]): Record<string, an
 }
 
 function FieldSlot({
-  field, value, onCommit, widthClass, size, draggable, onDragStart, onDragOver, onDrop, showGrip,
+  field, value, onCommit, widthClass, size, draggable, onDragStart, onDragOver, onDrop, showGrip, isPrimaryField,
 }: {
   field: CustomTableField; value: any; onCommit: (v: any) => void; widthClass: string; size?: PillSize;
   draggable?: boolean; onDragStart?: () => void; onDragOver?: (e: React.DragEvent) => void; onDrop?: () => void; showGrip?: boolean;
+  isPrimaryField?: boolean;
 }) {
   return (
     <div
@@ -141,13 +145,13 @@ function FieldSlot({
         {showGrip && <GripVertical size={10} className="cursor-move opacity-0 group-hover/pill:opacity-100 transition-opacity shrink-0" />}
         {field.label}{field.is_required && <span className="text-red-400 ml-1">*</span>}
       </label>
-      <FieldValueInput field={field} value={value} onCommit={onCommit} size={size} />
+      <FieldValueInput field={field} value={value} onCommit={onCommit} size={size} isPrimaryField={isPrimaryField} />
     </div>
   );
 }
 
 export default function DashboardQuickAddForm({
-  tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, onAdded, onOptimisticAdd, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
+  tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, primaryFieldKey, onAdded, onOptimisticAdd, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
   prefill, onPrefillApplied,
 }: Props) {
   const quickAddFields = quickAddFieldIds
@@ -344,6 +348,7 @@ export default function DashboardQuickAddForm({
               onDragOver={e => e.preventDefault()}
               onDrop={() => handleDrop(field.id)}
               showGrip={isAdmin && !!onReorder}
+              isPrimaryField={field.field_key === primaryFieldKey}
             />
           );
         })}
