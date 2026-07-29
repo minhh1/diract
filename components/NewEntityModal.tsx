@@ -88,6 +88,14 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
   // ITS trustee is).
   const [trustLinkId, setTrustLinkId] = useState<string | null>(null);
   const [trustLinkLabel, setTrustLinkLabel] = useState<string | null>(null);
+  // Inline "create a new trust" toggle -- deliberately NOT RelationPicker's
+  // own allowCreateEntity (which opens a second NewEntityModal stacked on
+  // top of this one, a nested-modal pattern that's confusing here since
+  // we're already inside the create flow). A plain name input right in
+  // this same box creates the trust directly instead.
+  const [creatingNewTrust, setCreatingNewTrust] = useState(false);
+  const [newTrustName, setNewTrustName] = useState('');
+  const [creatingTrustSaving, setCreatingTrustSaving] = useState(false);
 
   // Smart data-entry assist for the main Legal name field -- see
   // lib/smartValidation/nameQuality.ts. checkEntityTrustStructure (the
@@ -165,6 +173,7 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
     setTrustDeedDate(''); setTrusteeDirectors([]); setAddingDirector(false);
     setNewDirectorId(null); setNewDirectorLabel(null); setNewDirectorRole('Director');
     setAdditionalRoles([]); setTrustLinkId(null); setTrustLinkLabel(null);
+    setCreatingNewTrust(false); setNewTrustName('');
     setCustomValues({}); setSaved(false);
     nameQuality.reset(); setTrustSuggestion(null);
   };
@@ -173,6 +182,20 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
     if (!newDirectorLabel?.trim()) return;
     setTrusteeDirectors(prev => [...prev, { directorEntityId: newDirectorId, label: newDirectorLabel.trim(), role: newDirectorRole }]);
     setAddingDirector(false); setNewDirectorId(null); setNewDirectorLabel(null); setNewDirectorRole('Director');
+  };
+
+  // Creates the trust directly (no nested modal) and selects it, same as
+  // picking an existing one from the RelationPicker above would.
+  const createTrustInline = async () => {
+    if (!newTrustName.trim() || !companyId || creatingTrustSaving) return;
+    setCreatingTrustSaving(true);
+    const { data, error } = await supabase.from('entities')
+      .insert({ company_id: companyId, name: newTrustName.trim(), entity_type: TRUST_TYPES[0], roles: [TRUST_TYPES[0]] })
+      .select('id').single();
+    setCreatingTrustSaving(false);
+    if (error || !data) { alert(error?.message || 'Could not create trust'); return; }
+    setTrustLinkId(data.id); setTrustLinkLabel(newTrustName.trim());
+    setNewTrustName(''); setCreatingNewTrust(false);
   };
 
   const handleClose = () => { resetForm(); onClose(); };
@@ -334,9 +357,27 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
                 <ShieldCheck size={13} className="text-indigo-600" />
                 <p className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Which trust is this the trustee for?</p>
               </div>
-              <RelationPicker linkedSystemTable="entities" value={trustLinkId} initialLabel={trustLinkLabel ?? undefined} allowCreateEntity
+              <RelationPicker linkedSystemTable="entities" value={trustLinkId} initialLabel={trustLinkLabel ?? undefined}
                 onSelect={(id, label) => { setTrustLinkId(id); setTrustLinkLabel(label); }}
-                placeholder="Search or add the trust (optional)..." />
+                placeholder="Search for the trust (optional)..." />
+              {creatingNewTrust ? (
+                <div className="flex items-center gap-2 pt-1">
+                  <input autoFocus value={newTrustName} onChange={e => setNewTrustName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') createTrustInline(); if (e.key === 'Escape') { setCreatingNewTrust(false); setNewTrustName(''); } }}
+                    placeholder="New trust name" className="flex-1 bg-white border border-indigo-100 rounded-full py-2 px-4 text-[12px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
+                  <button type="button" onClick={createTrustInline} disabled={!newTrustName.trim() || creatingTrustSaving}
+                    className="px-3 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40 shrink-0">
+                    {creatingTrustSaving ? <Loader2 size={12} className="animate-spin" /> : 'Create'}
+                  </button>
+                  <button type="button" onClick={() => { setCreatingNewTrust(false); setNewTrustName(''); }}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 shrink-0">Cancel</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setCreatingNewTrust(true)}
+                  className="flex items-center gap-1 text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors">
+                  <Plus size={12} /> Create a new trust
+                </button>
+              )}
             </div>
           )}
 
