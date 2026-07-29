@@ -233,11 +233,16 @@ export function useCustomTable(
   const load = useCallback(async () => {
     if (!tableSlug) return;
     let tbl: CustomTable | null | undefined = preloadedTable?.slug === tableSlug ? preloadedTable : null;
-    if (!tbl) {
+    if (!tbl && companyId) {
+      // .eq('company_id', ...) -- company_tables.slug has no unique
+      // constraint (two companies can each legitimately have a table
+      // slugged e.g. 'irregularities'), so a slug-only lookup relied
+      // entirely on RLS to avoid resolving the wrong tenant's row.
       const { data } = await supabase
         .from('company_tables')
         .select('*')
         .eq('slug', tableSlug)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .single();
       tbl = data;

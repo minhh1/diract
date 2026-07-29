@@ -1,7 +1,7 @@
 // components/ColumnConfigDrawer.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Save, Lock, Check, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, GripVertical, Loader2 } from "lucide-react";
 import FilterPanel from "@/components/FilterPanel";
 import type { ActiveFilter } from "@/lib/types/filters";
@@ -238,6 +238,39 @@ export default function ColumnConfigDrawer({
     setFiltersDirty(false);
     setJustSaved(true);
   };
+
+  // The drawer's copy claims "Filters save automatically for this table" --
+  // that was only true once a value made a filter row feel "worth" clicking
+  // Save for. Picking a field (or an operator) without a value yet, then
+  // closing the drawer (X/backdrop) or navigating away/logging out, silently
+  // dropped that draft -- draftFilters only ever reached the parent (and
+  // whatever persists `filters`, e.g. a saved view) via the explicit Save
+  // button. Refs (not the state values directly) because this effect's
+  // closure is only re-created when `isOpen` changes, so reading
+  // draftFilters/filtersDirty directly here would see whatever they were
+  // the LAST time the drawer opened, not the latest edit.
+  const draftFiltersRef = useRef(draftFilters);
+  const filtersDirtyRef = useRef(filtersDirty);
+  const onFiltersChangeRef = useRef(onFiltersChange);
+  useEffect(() => { draftFiltersRef.current = draftFilters; }, [draftFilters]);
+  useEffect(() => { filtersDirtyRef.current = filtersDirty; }, [filtersDirty]);
+  useEffect(() => { onFiltersChangeRef.current = onFiltersChange; }, [onFiltersChange]);
+
+  const wasOpenRef = useRef(isOpen);
+  useEffect(() => {
+    if (wasOpenRef.current && !isOpen && filtersDirtyRef.current) {
+      onFiltersChangeRef.current?.(draftFiltersRef.current);
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  // Covers the drawer's own component instance being unmounted entirely
+  // (e.g. navigating to a different table) while still open and dirty --
+  // the isOpen-transition effect above only fires when isOpen itself flips
+  // to false first.
+  useEffect(() => () => {
+    if (filtersDirtyRef.current) onFiltersChangeRef.current?.(draftFiltersRef.current);
+  }, []);
 
   const handleClearFilters = () => {
     setDraftFilters([]);

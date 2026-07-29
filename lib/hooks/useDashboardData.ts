@@ -114,8 +114,16 @@ export function useDashboardData(dashboardSlug: string) {
       setDashboardLoading(true);
     }
     (async () => {
+      // .eq('company_id', ...) -- company_dashboards.slug has no unique
+      // constraint (two companies can each legitimately have a dashboard
+      // slugged the same way), so a slug-only lookup relied entirely on
+      // RLS to avoid resolving the wrong tenant's row. Skips the fetch
+      // outright rather than querying with an undefined company_id while
+      // CompanyContext is still resolving -- the effect already re-runs
+      // once companyId is set (see the dependency array below).
+      if (!companyId) { setDashboardLoading(false); return; }
       const { data: dash } = await supabase
-        .from('company_dashboards').select('*').eq('slug', dashboardSlug).is('deleted_at', null).maybeSingle();
+        .from('company_dashboards').select('*').eq('slug', dashboardSlug).eq('company_id', companyId).is('deleted_at', null).maybeSingle();
       if (!active) return;
       if (dash && !dash.widgets_migrated_at) {
         dash.widgets = await ensureDashboardWidgetsMigrated(dash);
