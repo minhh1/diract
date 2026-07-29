@@ -14,15 +14,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Loader2, Check } from "lucide-react";
+import { Plus, Trash2, Loader2, Check, Info } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { relationCandidates } from "@/lib/dashboardWidgets/linkField";
 import { createWidget } from "@/lib/dashboardWidgets/defaults";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { QuickAddFormWidget, GridWidget } from "@/lib/dashboardWidgets/types";
+import type { DefaultScope } from "@/components/admin/AdminDefaultSettingsTab";
 
-interface Props { companyId: string; }
+interface Props { companyId: string; scope: DefaultScope; }
 
 interface DefaultTabRow {
   id: string;
@@ -44,7 +45,8 @@ const BUILT_IN_TABS: { slug: string; title: string; icon: string }[] = [
 
 const ICON_OPTIONS = ['LayoutGrid', 'Landmark', 'FileText', 'Table2', 'CheckSquare', 'FolderKanban', 'Receipt', 'Clock'];
 
-export default function AdminDefaultTabsTab({ companyId }: Props) {
+export default function AdminDefaultTabsTab({ companyId, scope }: Props) {
+  const isCompanyScope = !scope.teamId && !scope.userId;
   const { tables: customTables, loading: tablesLoading } = useCustomTables();
   const [defaults, setDefaults] = useState<DefaultTabRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,6 +154,14 @@ export default function AdminDefaultTabsTab({ companyId }: Props) {
 
   return (
     <div className="space-y-8">
+      {!isCompanyScope && (
+        <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3">
+          <Info size={14} className="text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-700">
+            Default tabs are company-wide only — the team/person scope you picked above doesn&apos;t apply here.
+          </p>
+        </div>
+      )}
       <div>
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">What every Matter gets</p>
         <p className="text-[11px] text-slate-400 mb-4">
