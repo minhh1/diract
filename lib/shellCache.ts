@@ -38,3 +38,17 @@ export function clearShellCache(key: string): void {
     // ignore
   }
 }
+
+// Wipes every shell, not just one key -- see lib/clearClientCaches.ts for
+// why this needs to exist and where it's called from (identity changes:
+// switching active company, signing out).
+export function clearAllShellCache(): void {
+  if (typeof window === "undefined") return;
+  try {
+    Object.keys(window.localStorage)
+      .filter(k => k.startsWith(PREFIX))
+      .forEach(k => window.localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+}

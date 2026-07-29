@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useCompany } from "@/components/CompanyContext";
 
 export interface RelatedField {
   path: string;
@@ -56,10 +57,18 @@ export function cleanFullLabel(raw: string): string {
   return raw.split(' — ').map(fixCasing).join(' — ');
 }
 
+// Scoped by companyId -- a bare tableName key served a previous company's
+// stale related-fields list after switching active company. Same class of
+// bug as lib/hooks/useCompanyCustomFields.ts's cache (see its own doc
+// comment) and lib/hooks/prefetchShells.ts's tableShellKey/dashboardShellKey.
 const cache = new Map<string, RelatedField[]>();
 
-function shellCacheKey(tableName: string): string {
-  return `related-fields:${tableName}`;
+function cacheKey(companyId: string, tableName: string): string {
+  return `${companyId}:${tableName}`;
+}
+
+function shellCacheKey(companyId: string, tableName: string): string {
+  return `related-fields:${companyId}:${tableName}`;
 }
 
 // get_all_related_fields feeds the actual row-fetch query (dotted cross-table
@@ -90,15 +99,17 @@ async function fetchRelatedFieldsRemote(tableName: string): Promise<RelatedField
 // table's related fields into the same shellCache the hook below reads from,
 // without mounting the hook itself. No-ops if already warm (in-memory or
 // persisted) — a real visit's hook will still background-refresh either way.
-export async function warmRelatedFields(tableName: string): Promise<void> {
-  if (cache.has(tableName) || readShellCache<RelatedField[]>(shellCacheKey(tableName))) return;
+export async function warmRelatedFields(tableName: string, companyId: string): Promise<void> {
+  const key = cacheKey(companyId, tableName);
+  if (cache.has(key) || readShellCache<RelatedField[]>(shellCacheKey(companyId, tableName))) return;
   const { data } = await fetchRelatedFieldsRemote(tableName);
   if (!data) return;
-  cache.set(tableName, data);
-  writeShellCache(shellCacheKey(tableName), data);
+  cache.set(key, data);
+  writeShellCache(shellCacheKey(companyId, tableName), data);
 }
 
 export function useRelatedFields(tableName: string): RelatedFieldsResult {
+  const { companyId } = useCompany();
   // get_all_related_fields is a live information_schema/pg_catalog
   // introspection query -- expensive (recursive FK-graph walk over system
   // catalogs), and re-run from scratch on every single page load since the
@@ -109,15 +120,19 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
   // paints instantly from that, with a real fetch still confirming/updating
   // it in the background.
   const [fields, setFields] = useState<RelatedField[]>(
-    cache.get(tableName) || readShellCache<RelatedField[]>(shellCacheKey(tableName)) || []
+    () => (companyId ? cache.get(cacheKey(companyId, tableName)) || readShellCache<RelatedField[]>(shellCacheKey(companyId, tableName)) : null) || []
   );
-  const [loading, setLoading] = useState(!cache.has(tableName) && !readShellCache(shellCacheKey(tableName)));
+  const [loading, setLoading] = useState(
+    () => !companyId || (!cache.has(cacheKey(companyId, tableName)) && !readShellCache(shellCacheKey(companyId, tableName)))
+  );
 
   useEffect(() => {
     if (tableName === '__skip__') { setLoading(false); return; }
-    const persisted = readShellCache<RelatedField[]>(shellCacheKey(tableName));
-    if (cache.has(tableName)) { setFields(cache.get(tableName)!); setLoading(false); return; }
-    if (persisted) { cache.set(tableName, persisted); setFields(persisted); setLoading(false); }
+    if (!companyId) return;
+    const key = cacheKey(companyId, tableName);
+    const persisted = readShellCache<RelatedField[]>(shellCacheKey(companyId, tableName));
+    if (cache.has(key)) { setFields(cache.get(key)!); setLoading(false); return; }
+    if (persisted) { cache.set(key, persisted); setFields(persisted); setLoading(false); }
     let active = true;
     perfLog(`useRelatedFields(${tableName}): start`, persisted ? "seeded from shellCache, refreshing in background" : undefined);
 
@@ -135,14 +150,14 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
       }
       const result = data!;
       perfLog(`useRelatedFields(${tableName}): resolved`, `${result.length} fields`);
-      cache.set(tableName, result);
-      writeShellCache(shellCacheKey(tableName), result);
+      cache.set(key, result);
+      writeShellCache(shellCacheKey(companyId, tableName), result);
       setFields(result);
       setLoading(false);
     });
 
     return () => { active = false; };
-  }, [tableName]);
+  }, [tableName, companyId]);
 
     // In useRelatedFields, the byPath map already handles this since
     // we store the full path. The sections grouping needs updating for

@@ -19,12 +19,12 @@ import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
 import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
 import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
-import { useCompany, COMPANY_CACHE_KEY } from "@/components/CompanyContext";
-import { clearShellCache } from "@/lib/shellCache";
-import { clearPersistedQueryCache } from "@/components/QueryProvider";
+import { useCompany } from "@/components/CompanyContext";
+import { clearAllClientCaches } from "@/lib/clearClientCaches";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
+import { pushWithFallback } from "@/lib/navigateWithFallback";
 import { perfLog } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 
@@ -173,7 +173,7 @@ function TableVisibilityPanel({
 }: {
   visible: string[];
   systemTables: typeof ALL_SYSTEM_TABLES;
-  customTables: { id: string; slug: string; name: string; icon: string; is_default?: boolean }[];
+  customTables: { id: string; slug: string; name: string; icon: string; effectiveDefault?: boolean }[];
   onChange: (slugs: string[]) => void;
   onClose: () => void;
 }) {
@@ -235,7 +235,7 @@ function TableVisibilityPanel({
         {systemTables.map(t => <Row key={t.slug} slug={t.slug} label={t.label} icon={t.icon} />)}
         {customTables.map(t => {
           const Icon = (LucideIcons as any)[t.icon] || Table2;
-          return <Row key={t.slug} slug={t.slug} label={t.name} icon={Icon} isDefault={t.is_default} />;
+          return <Row key={t.slug} slug={t.slug} label={t.name} icon={Icon} isDefault={t.effectiveDefault} />;
         })}
       </div>
     </div>
@@ -619,7 +619,7 @@ export default function Sidebar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Use shared company context — avoids duplicate auth call with GenericMasterTable
-  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, loading: ctxLoading, tableLabelOverrides, disabledSystemTables } = useCompany();
+  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, ledTeamIds: ctxLedTeamIds, loading: ctxLoading, tableLabelOverrides, disabledSystemTables } = useCompany();
 
   // Per-company display-name overrides (e.g. a law firm renaming "Projects"
   // to "Matters") layered over the hardcoded defaults. A "deleted" built-in
@@ -1025,17 +1025,26 @@ export default function Sidebar() {
     const { invalidateSchemaCache, clearCompanyIdCache } = await import('@/lib/services/schemaService');
     invalidateSchemaCache();
     clearCompanyIdCache();
+    // Every localStorage cache, not just schema's -- see
+    // lib/clearClientCaches.ts's doc comment for why this used to be a
+    // second, independently-maintained (and incomplete) list here, which
+    // is exactly what let a previous company's cached identity/shells
+    // flash on screen for a moment after switching before the real fetch
+    // corrected it.
+    clearAllClientCaches();
     setSwitchingCompany(false);
     setShowCompanySwitcher(false);
     window.location.replace('/dashboard/properties');
   };
 
   // ── Derived ────────────────────────────────────────────────────
-  // is_default custom tables are mandatory -- shown regardless of what's in
-  // this user's own stored sidebar_visible_tables preference (which only
-  // ever governs tables the admin hasn't pinned).
+  // effectiveDefault custom tables (company-wide is_default, or a
+  // team/person-scoped default for this viewer -- see useCustomTables.ts)
+  // are mandatory -- shown regardless of what's in this user's own stored
+  // sidebar_visible_tables preference (which only ever governs tables
+  // nothing has pinned for them).
   const visibleSystemTables = systemTables.filter(t => visibleTables.includes(t.slug));
-  const visibleCustomTables = customTables.filter(t => t.is_default || visibleTables.includes(t.slug));
+  const visibleCustomTables = customTables.filter(t => t.effectiveDefault || visibleTables.includes(t.slug));
   const isTableActive = (slug: string) =>
     pathname.includes(slug) &&
     !pathname.includes('gmail') &&
@@ -1051,7 +1060,12 @@ export default function Sidebar() {
   const goToTableList = (slug: string) => {
     if (isTableActive(slug) && !currentId && !activeViewId) return;
     startNavigation();
-    router.push(`/dashboard/${slug}`);
+    // Navigating from a record view back to that same table's list is a
+    // same-pathname, searchParams-only transition -- the one case seen
+    // getting permanently stuck after the tab sits idle a while (see
+    // pushWithFallback). A genuinely different table always gets a fresh
+    // page mount regardless, so it's never at risk the same way.
+    pushWithFallback(router, `/dashboard/${slug}`);
   };
 
   const availableFields = SYSTEM_TABLE_FIELDS[treeTableSlug] || SYSTEM_TABLE_FIELDS.projects;
@@ -1131,7 +1145,7 @@ export default function Sidebar() {
           >
             <Settings size={17} />
           </button>
-          {ctxIsAdmin && (
+          {(ctxIsAdmin || ctxLedTeamIds.length > 0) && (
             <button
               onClick={() => toggleRailSection('admin')}
               title="Admin" aria-label="Admin"
@@ -1237,13 +1251,14 @@ export default function Sidebar() {
 
         <button
           onClick={() => {
-            // Both the persisted React Query cache and the identity
-            // shellCache CompanyContext seeds its first paint from would
-            // otherwise survive this redirect in localStorage and could
-            // briefly show the signed-out user's company/admin status to
-            // the next signed-in user on a shared machine.
-            clearPersistedQueryCache();
-            clearShellCache(COMPANY_CACHE_KEY);
+            // Every localStorage cache -- not just the persisted React
+            // Query cache and the identity shellCache CompanyContext seeds
+            // its first paint from -- would otherwise survive this
+            // redirect and could briefly show the signed-out user's
+            // company/admin status (or any other cached data) to the next
+            // signed-in user on a shared machine. See
+            // lib/clearClientCaches.ts's doc comment.
+            clearAllClientCaches();
             supabase.auth.signOut().then(() => window.location.replace("/login"));
           }}
           title="Sign out"
@@ -1386,7 +1401,7 @@ export default function Sidebar() {
                       >
                         <Icon size={16} className="shrink-0" />
                         <span className="truncate">{d.name}</span>
-                        {d.is_default && (
+                        {d.effectiveDefault && (
                           <Lock size={10} className={`shrink-0 ml-auto ${active ? 'opacity-70' : 'opacity-30'}`} />
                         )}
                       </button>
@@ -1638,10 +1653,13 @@ export default function Sidebar() {
             </nav>
           )}
 
-          {activeRailSection === 'admin' && ctxIsAdmin && (
+          {activeRailSection === 'admin' && (ctxIsAdmin || ctxLedTeamIds.length > 0) && (
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
               <p className="px-3 mb-1 text-[9px] font-bold text-slate-300 uppercase tracking-widest">Admin</p>
-              {ADMIN_LINKS.map(link => (
+              {/* A Team Leader who isn't a company admin only gets Default
+                  Settings, scoped to their own team(s) -- see
+                  app/dashboard/admin/page.tsx's restrictToTeamIds. */}
+              {(ctxIsAdmin ? ADMIN_LINKS : ADMIN_LINKS.filter(link => link.tab === 'defaults')).map(link => (
                 <SidebarNavLink
                   key={link.tab}
                   href={`/dashboard/admin?tab=${link.tab}`}
@@ -1652,14 +1670,16 @@ export default function Sidebar() {
                   activeClassName="bg-amber-600 text-white"
                 />
               ))}
-              <SidebarNavLink
-                href="/dashboard/settings/trash"
-                icon={Trash2}
-                label="Trash"
-                active={pathname === '/dashboard/settings/trash'}
-                collapsed={false}
-                activeClassName="bg-amber-600 text-white"
-              />
+              {ctxIsAdmin && (
+                <SidebarNavLink
+                  href="/dashboard/settings/trash"
+                  icon={Trash2}
+                  label="Trash"
+                  active={pathname === '/dashboard/settings/trash'}
+                  collapsed={false}
+                  activeClassName="bg-amber-600 text-white"
+                />
+              )}
               {ctxIsSiteAdmin && (
                 <>
                   <SidebarNavLink

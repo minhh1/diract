@@ -38,8 +38,8 @@ const SYSTEM_TABLES = ['properties', 'entities', 'projects', 'tasks'] as const;
 async function prefetchSystemTableShell(tableName: string, companyId: string | null): Promise<void> {
   await Promise.all([
     getSchemaMetadata(tableName, companyId).catch(() => {}),
-    fetchCompanyCustomFields(tableName).catch(() => {}),
-    warmRelatedFields(tableName).catch(() => {}),
+    companyId ? fetchCompanyCustomFields(companyId, tableName).catch(() => {}) : Promise.resolve(),
+    companyId ? warmRelatedFields(tableName, companyId).catch(() => {}) : Promise.resolve(),
   ]);
 }
 
@@ -141,7 +141,7 @@ async function warmSystemTableRows(tableName: string, companyId: string): Promis
   const cacheKey = `rows_${companyId}_${tableName}`;
   if (readCache(cacheKey)) return;
   try {
-    const fields = await fetchCompanyCustomFields(tableName);
+    const fields = await fetchCompanyCustomFields(companyId, tableName);
     const [{ data }, byRecord] = await Promise.all([
       supabase.from(tableName).select('*').is('deleted_at', null),
       fetchCustomFieldValues(fields),
