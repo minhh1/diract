@@ -8,7 +8,10 @@ import { supabase } from "@/lib/supabase";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onRefresh: () => void;
+  // newId lets a caller (e.g. RelationPicker's "add new" flow) auto-select
+  // the record just created -- optional so every existing no-arg caller
+  // stays valid unchanged.
+  onRefresh: (newId?: string) => void;
 }
 
 export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
@@ -127,7 +130,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
       }
 
       setSaved(true);
-      setTimeout(() => { onRefresh(); handleClose(); }, 700);
+      setTimeout(() => { onRefresh(proj?.id); handleClose(); }, 700);
     } catch (err: any) {
       alert(err.message);
     } finally {

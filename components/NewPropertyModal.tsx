@@ -8,7 +8,10 @@ import { supabase } from "@/lib/supabase";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onRefresh: () => void;
+  // newId lets a caller (e.g. RelationPicker's "add new" flow) auto-select
+  // the record just created -- optional so every existing no-arg caller
+  // stays valid unchanged.
+  onRefresh: (newId?: string) => void;
   tableName?: string; // defaults to 'properties', can be custom table slug
 }
 
@@ -131,7 +134,7 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
       }
 
       setSaved(true);
-      setTimeout(() => { onRefresh(); handleClose(); }, 700);
+      setTimeout(() => { onRefresh(recordId); handleClose(); }, 700);
     } catch (err: any) {
       alert(err.message);
     } finally {

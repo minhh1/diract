@@ -5,6 +5,11 @@ import { Loader2, X, Check, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSize";
 import NewEntityModal from "@/components/NewEntityModal";
+import NewPropertyModal from "@/components/NewPropertyModal";
+import NewProjectModal from "@/components/NewProjectModal";
+import NewRecordModal, { pickCreateFields } from "@/components/dashboard/NewRecordModal";
+import { createRecord } from "@/lib/services/customTableService";
+import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import { getStaffScopeIds } from "@/lib/teamScope";
 
 interface RelationOption {
@@ -172,6 +177,17 @@ interface Props {
   // field) rather than a blanket default, since most relation pickers on
   // this component have no business creating new rows.
   allowCreateEntity?: boolean;
+  // Broader version of allowCreateEntity -- adds a pinned "+ Add new…" row
+  // for ANY relation target, not just entities: NewPropertyModal/
+  // NewProjectModal for linkedSystemTable 'properties'/'projects', or
+  // NewRecordModal (+ createRecord, same flow CustomTableMasterPage's own
+  // "new record" button uses) for a sibling custom table (linkedTableId).
+  // Independent of allowCreateEntity so existing entities-only callers are
+  // untouched -- a caller that wants entities-only can keep using that prop,
+  // this one is for callers (e.g. an in-cell relation picker that doesn't
+  // know ahead of time what kind of relation it's editing) that want
+  // "create new" for whatever the target turns out to be.
+  allowCreateNew?: boolean;
   // Pins a clear-the-filter row at the top of the dropdown, labelled with
   // this text (e.g. "All Staff") -- DashboardFilterBar's own use case: an
   // admin narrows a filter to one person via the normal search/select
@@ -401,8 +417,18 @@ export async function warmRelationOptionsCache(): Promise<void> {
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md', variant = 'pill',
-  allowCreateEntity, autoSelectSelf = true, clearLabel,
+  allowCreateEntity, allowCreateNew, autoSelectSelf = true, clearLabel,
 }: Props) {
+  // allowCreateEntity keeps its original entities-only behavior untouched;
+  // allowCreateNew widens it to whatever the actual target is.
+  const canCreateNew = allowCreateNew || (allowCreateEntity && linkedSystemTable === 'entities');
+  const createTargetKind: 'entities' | 'properties' | 'projects' | 'custom' | null = !canCreateNew
+    ? null
+    : linkedSystemTable === 'entities' ? 'entities'
+    : linkedSystemTable === 'properties' ? 'properties'
+    : linkedSystemTable === 'projects' ? 'projects'
+    : linkedTableId ? 'custom'
+    : null;
   const plain = variant === 'plain';
   const sizeClass = plain ? 'py-1 px-0.5 text-[12px]' : PILL_SIZE_CLASSES[size];
   const [open, setOpen] = useState(false);
@@ -419,8 +445,13 @@ export default function RelationPicker({
   // only needs to cover ids selected before their label was ever seen in
   // `options` (e.g. on initial load of a record with existing links).
   const [multiLabels, setMultiLabels] = useState<Record<string, string>>({});
-  // allowCreateEntity only -- whether the inline NewEntityModal is open.
+  // canCreateNew only -- whether the inline create-new modal is open, and
+  // (createTargetKind === 'custom' only) the target table's own name/fields,
+  // fetched on demand the moment "+ Add new…" is clicked (this component
+  // never otherwise loads a custom table's field catalog).
   const [showCreateEntity, setShowCreateEntity] = useState(false);
+  const [customCreateInfo, setCustomCreateInfo] = useState<{ tableName: string; primaryFieldKey: string | null; fields: CustomTableField[] } | null>(null);
+  const [loadingCustomCreateInfo, setLoadingCustomCreateInfo] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   // Which value id `currentLabel` is already known-correct for -- set
   // synchronously by the picker's own click handler (it already knows the
@@ -635,22 +666,25 @@ export default function RelationPicker({
     setOpen(false);
   };
 
-  // allowCreateEntity only -- after NewEntityModal creates a row, invalidate
-  // this field's cached candidate list (same key the "fetch on open" effect
-  // reads) and refetch it so the new entity is actually findable, then
-  // auto-select it via the same path a normal click would -- otherwise the
-  // viewer would have to close and reopen the dropdown just to find the row
-  // they were staring at a moment ago. Defined before the `multiple` branch
-  // below (rather than after, where selectOption lived) since that branch
-  // returns early and needs this too -- multi-select ADDS the new entity to
-  // the current selection instead of replacing it.
-  const handleEntityCreated = async (newId?: string) => {
+  // canCreateNew only -- after a create modal makes a row (entity, property,
+  // project, or a custom-table record), invalidate this field's cached
+  // candidate list (same key the "fetch on open" effect reads) and refetch
+  // it so the new row is actually findable, then auto-select it via the same
+  // path a normal click would -- otherwise the viewer would have to close
+  // and reopen the dropdown just to find the row they were staring at a
+  // moment ago. Defined before the `multiple` branch below (rather than
+  // after, where selectOption lived) since that branch returns early and
+  // needs this too -- multi-select ADDS the new row to the current selection
+  // instead of replacing it.
+  const handleCreated = async (newId?: string) => {
     setShowCreateEntity(false);
-    if (!linkedSystemTable) return;
+    if (!linkedSystemTable && !linkedTableId) return;
     const key = optionsCacheKey(linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
     cache.delete(key);
     setLoading(true);
-    const list = await fetchAllSystemTableOptions(linkedSystemTable, displayField, displayField2, searchFieldKeys, filterColumn, filterValue);
+    const list = linkedSystemTable
+      ? await fetchAllSystemTableOptions(linkedSystemTable, displayField, displayField2, searchFieldKeys, filterColumn, filterValue)
+      : await fetchCustomTableRecordLabels(linkedTableId!, undefined, displayField2);
     cache.set(key, { value: list, expiresAt: Date.now() + OPTIONS_CACHE_TTL_MS });
     setFullOptions(list);
     setLoading(false);
@@ -664,6 +698,75 @@ export default function RelationPicker({
       selectOption(match);
     }
   };
+
+  // createTargetKind === 'custom' only -- NewRecordModal needs the target
+  // table's own field catalog to know what to prompt for (same shape
+  // CustomTableMasterPage's "new record" flow already fetches at page load;
+  // fetched lazily here instead, since this component never otherwise needs
+  // a sibling table's fields).
+  const openCreateModal = async () => {
+    setOpen(false);
+    if (createTargetKind === 'custom' && linkedTableId && !customCreateInfo) {
+      setLoadingCustomCreateInfo(true);
+      const [{ data: table }, { data: fields }] = await Promise.all([
+        supabase.from('company_tables').select('name, primary_field_key').eq('id', linkedTableId).maybeSingle(),
+        supabase.from('company_table_fields').select('*').eq('table_id', linkedTableId).is('deleted_at', null).order('display_order'),
+      ]);
+      setCustomCreateInfo({ tableName: table?.name || 'record', primaryFieldKey: table?.primary_field_key || null, fields: (fields || []) as CustomTableField[] });
+      setLoadingCustomCreateInfo(false);
+    }
+    setShowCreateEntity(true);
+  };
+
+  // createTargetKind === 'custom' only -- same createRecord() call
+  // CustomTableMasterPage's own "new record" button makes, just resolving
+  // companyId/userId itself the way NewEntityModal/NewPropertyModal already
+  // do internally (this component has neither in scope otherwise).
+  const createCustomTableRecordHere = async (values: Record<string, any>): Promise<string | null> => {
+    if (!linkedTableId) return 'No target table';
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return 'Not signed in';
+    const { data: profile } = await supabase.from('profiles').select('active_company_id').eq('id', user.id).single();
+    const companyId = profile?.active_company_id;
+    if (!companyId) return 'No active company';
+    const result = await createRecord(linkedTableId, companyId, user.id, values, customCreateInfo?.fields || []);
+    if (!result) return 'Could not create record';
+    if ('error' in result) return result.error;
+    await handleCreated(result.id);
+    return null;
+  };
+
+  const createNewLabel = createTargetKind === 'entities' ? 'Add new entity'
+    : createTargetKind === 'properties' ? 'Add new property'
+    : createTargetKind === 'projects' ? 'Add new matter'
+    : createTargetKind === 'custom' ? `Add new ${customCreateInfo?.tableName || 'record'}`
+    : '';
+
+  const createButton = canCreateNew && (
+    <button
+      type="button"
+      onClick={openCreateModal}
+      className="w-full text-left px-4 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 border-t border-slate-100 flex items-center gap-1.5"
+    >
+      <Plus size={12} /> {loadingCustomCreateInfo ? <Loader2 size={12} className="animate-spin" /> : createNewLabel}
+    </button>
+  );
+
+  const createModal = canCreateNew && (
+    <>
+      {createTargetKind === 'entities' && <NewEntityModal isOpen={showCreateEntity} onClose={() => setShowCreateEntity(false)} onRefresh={handleCreated} />}
+      {createTargetKind === 'properties' && <NewPropertyModal isOpen={showCreateEntity} onClose={() => setShowCreateEntity(false)} onRefresh={handleCreated} />}
+      {createTargetKind === 'projects' && <NewProjectModal isOpen={showCreateEntity} onClose={() => setShowCreateEntity(false)} onRefresh={handleCreated} />}
+      {createTargetKind === 'custom' && showCreateEntity && customCreateInfo && (
+        <NewRecordModal
+          tableName={customCreateInfo.tableName}
+          fields={pickCreateFields(customCreateInfo.fields, customCreateInfo.primaryFieldKey)}
+          onCreate={createCustomTableRecordHere}
+          onClose={() => setShowCreateEntity(false)}
+        />
+      )}
+    </>
+  );
 
   if (multiple) {
     const selectedIds = values || [];
@@ -764,21 +867,11 @@ export default function RelationPicker({
                 );
               })
             )}
-            {allowCreateEntity && linkedSystemTable === 'entities' && (
-              <button
-                type="button"
-                onClick={() => { setOpen(false); setShowCreateEntity(true); }}
-                className="w-full text-left px-4 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 border-t border-slate-100 flex items-center gap-1.5"
-              >
-                <Plus size={12} /> Add new entity
-              </button>
-            )}
+            {createButton}
           </div>
         )}
 
-        {allowCreateEntity && (
-          <NewEntityModal isOpen={showCreateEntity} onClose={() => setShowCreateEntity(false)} onRefresh={handleEntityCreated} />
-        )}
+        {createModal}
       </div>
     );
   }
@@ -880,21 +973,11 @@ export default function RelationPicker({
               </button>
             ))
           )}
-          {allowCreateEntity && linkedSystemTable === 'entities' && (
-            <button
-              type="button"
-              onClick={() => { setOpen(false); setShowCreateEntity(true); }}
-              className="w-full text-left px-4 py-2 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50 border-t border-slate-100 flex items-center gap-1.5"
-            >
-              <Plus size={12} /> Add new entity
-            </button>
-          )}
+          {createButton}
         </div>
       )}
 
-      {allowCreateEntity && (
-        <NewEntityModal isOpen={showCreateEntity} onClose={() => setShowCreateEntity(false)} onRefresh={handleEntityCreated} />
-      )}
+      {createModal}
     </div>
   );
 }
