@@ -16,6 +16,7 @@ import { useState, useEffect } from "react";
 import { ListChecks, X, Loader2, Sparkles, ArrowRight, Check, Trash2, CalendarDays } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface TaskRow {
   id: string;
@@ -57,6 +58,7 @@ export default function MyTasksButtonWidget({ label, companyId, userId, descript
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [rewriting, setRewriting] = useState<Record<string, boolean>>({});
   const [rewriteError, setRewriteError] = useState<Record<string, string>>({});
+  useProgressBarWhile(loading);
 
   useEffect(() => {
     if (!open) return;
@@ -186,9 +188,7 @@ export default function MyTasksButtonWidget({ label, companyId, userId, descript
             )}
 
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-              {loading ? (
-                <div className="flex justify-center py-10"><Loader2 size={16} className="animate-spin text-slate-300" /></div>
-              ) : tasks.length === 0 ? (
+              {loading ? null : tasks.length === 0 ? (
                 <p className="text-center text-[11px] text-slate-300 italic py-10">No open tasks assigned to you</p>
               ) : tasks.map(task => (
                 <div key={task.id} className="border border-slate-200 rounded-2xl p-3 space-y-2">

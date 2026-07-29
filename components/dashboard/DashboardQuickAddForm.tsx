@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Loader2, GripVertical } from "lucide-react";
+import { Plus, GripVertical } from "lucide-react";
+import { useProgressBar } from "@/components/TopProgressBar";
 import FieldValueInput from "./FieldValueInput";
 import { supabase } from "@/lib/supabase";
 import { createRecord } from "@/lib/services/customTableService";
@@ -154,6 +155,7 @@ export default function DashboardQuickAddForm({
   tableId, sourceKind, companyId, userId, fields, quickAddFieldIds, primaryFieldKey, onAdded, onOptimisticAdd, fixedValues, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
   prefill, onPrefillApplied,
 }: Props) {
+  const { start: startProgress, done: doneProgress } = useProgressBar();
   const quickAddFields = quickAddFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
@@ -223,9 +225,11 @@ export default function DashboardQuickAddForm({
     setValues(getDefaultValues(quickAddFields));
     setFormGeneration(g => g + 1);
     setSaving(true);
+    startProgress();
     const record = sourceKind === 'custom'
       ? await createRecord(tableId, companyId, userId, submittedValues, fields)
       : await createSystemTableRecord(sourceKind as SystemTableName, companyId, userId, submittedValues, fields);
+    doneProgress();
     setSaving(false);
     if (record && 'error' in record) {
       // e.g. a trust-ledger overdraw refusal -- see customTableService's
@@ -313,7 +317,7 @@ export default function DashboardQuickAddForm({
       disabled={saving}
       className="px-5 py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2 shrink-0"
     >
-      {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add
+      <Plus size={13} /> Add
     </button>
   );
 
