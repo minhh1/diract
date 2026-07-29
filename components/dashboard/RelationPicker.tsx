@@ -430,7 +430,15 @@ export default function RelationPicker({
     : linkedTableId ? 'custom'
     : null;
   const plain = variant === 'plain';
-  const sizeClass = plain ? 'py-1 px-0.5 text-[12px]' : PILL_SIZE_CLASSES[size];
+  // py-1.5/px-1.5 (not the original py-1/px-0.5) -- DashboardGrid's own
+  // plain usage sits inside a <td> with an explicit fixed pixel width, so a
+  // near-zero click target there still occupies the full cell. MatterBoard's
+  // in-cell picker (Client Update Pages spreadsheet) has no such fixed
+  // width -- an empty relation cell (no label, plain suppresses the
+  // "Select..." placeholder below) could shrink to almost nothing in the
+  // flex layout, making it hard to even find, let alone click. A bit more
+  // padding keeps a real, visible/clickable minimum in both contexts.
+  const sizeClass = plain ? 'py-1.5 px-1.5 text-[12px]' : PILL_SIZE_CLASSES[size];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   // The whole candidate list, fetched once per open (see the effect below)

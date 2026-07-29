@@ -1193,7 +1193,7 @@ function ValueCell({ field, value, relationId, dateFormat, editable: editablePro
         {labelRow}
         {editable ? (
           <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-            value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" />
+            value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" placeholder="—" />
         ) : (
           <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">—</span>}</p>
         )}
@@ -1575,11 +1575,11 @@ function SpreadsheetCell({ field, value, relationId, expanded, dateFormat, edita
 
   if (isRelationField(field)) {
     return (
-      <td className={`group px-4 py-4 ${frozenClass}`}>
-        <span className="inline-flex items-center gap-1.5">
+      <td className={`group px-4 py-4 ${editable ? "hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
+        <span className="inline-flex items-center gap-1.5 min-w-[100px]">
           {editable ? (
             <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-              value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" />
+              value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" placeholder="—" />
           ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "—"}</span>}
           {historyButton}
         </span>
