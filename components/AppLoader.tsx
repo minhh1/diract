@@ -11,6 +11,36 @@ import { APP_CACHE_VERSION } from "@/lib/appCacheVersion";
 // Routes that need none of what this warms -- never gated, not even for a
 // moment.
 const PUBLIC_PATH_PREFIXES = ["/login", "/public", "/auth"];
+// Standalone marketing/legal pages -- exact match, not prefixes ("/" as a
+// prefix would match every route in the app). None of these read any
+// company data, so they used to get pulled behind the full bootstrap gate
+// like a real dashboard page just because they didn't happen to start with
+// one of the prefixes above.
+const PUBLIC_EXACT_PATHS = ["/", "/privacy", "/terms"];
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_EXACT_PATHS.includes(pathname) || PUBLIC_PATH_PREFIXES.some(p => pathname.startsWith(p));
+}
+
+// Set (as a short-lived cookie, not sessionStorage, since the Google OAuth
+// callback that also needs to set it is a server route handler, not client
+// JS -- see app/auth/callback/route.ts) by every real sign-in path right
+// before it hands off to a protected route. A session that's merely still
+// valid from a PREVIOUS visit (the common case this screen's warm-return-
+// visit shortcut below exists for) has no reason to distrust its own
+// COMPANY_CACHE_KEY cache -- but a just-completed sign-in is exactly the
+// moment identity could have changed (different account, different
+// browser profile that happens to share this origin's localStorage from a
+// stale prior session), and is also the one moment a user most expects to
+// SEE confirmation that something is happening. Consumed (cleared) the
+// instant it's read, so it only ever forces the real wait once per login.
+const JUST_LOGGED_IN_COOKIE = "nk_just_logged_in";
+
+function consumeJustLoggedIn(): boolean {
+  const has = document.cookie.split("; ").some(c => c === `${JUST_LOGGED_IN_COOKIE}=1`);
+  if (has) document.cookie = `${JUST_LOGGED_IN_COOKIE}=; path=/; max-age=0`;
+  return has;
+}
 
 // Upper bound so a dead/slow network never traps someone on the splash --
 // falls through to the app, which still has its normal per-page loading
@@ -60,7 +90,7 @@ export default function AppLoader({ children }: { children: ReactNode }) {
     // takes.
     if (doneRef.current) return;
 
-    if (PUBLIC_PATH_PREFIXES.some(p => pathname.startsWith(p))) {
+    if (isPublicPath(pathname)) {
       setReady(true);
       return;
     }
@@ -102,7 +132,11 @@ export default function AppLoader({ children }: { children: ReactNode }) {
     // previous session): CompanyContext will paint from that cache
     // synchronously on its own first render, so there's nothing left for
     // this screen to usefully wait on -- don't gate on the network at all.
-    if (readShellCache(COMPANY_CACHE_KEY)) {
+    // Skipped right after a real sign-in (see consumeJustLoggedIn's own
+    // comment) even if a stale cache from before is sitting there -- that's
+    // exactly the moment identity could have changed, and the one moment a
+    // user most expects to see this screen at all.
+    if (readShellCache(COMPANY_CACHE_KEY) && !consumeJustLoggedIn()) {
       finish();
     } else {
       const ceiling = new Promise<void>(resolve => setTimeout(resolve, CEILING_MS));

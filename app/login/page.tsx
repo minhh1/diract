@@ -66,6 +66,8 @@ function LoginPageInner() {
     note: string | null;
     expires_at: string | null;
     used_at: string | null;
+    default_team_id: string | null;
+    role: string;
   } | null>(null);
 
   // Is this an invite to join an existing company (vs creating a new one)?
@@ -93,7 +95,7 @@ function LoginPageInner() {
   const validateToken = async () => {
     const { data, error } = await supabase
       .from('registration_tokens')
-      .select('id, note, expires_at, used_at, company_id, company:company_id(name)')
+      .select('id, note, expires_at, used_at, company_id, default_team_id, role, company:company_id(name)')
       .eq('token', inviteToken!)
       .single();
 
@@ -121,6 +123,8 @@ function LoginPageInner() {
       note: data.note,
       expires_at: data.expires_at,
       used_at: data.used_at,
+      default_team_id: data.default_team_id,
+      role: data.role || 'operator',
     });
 
     // If joining existing company, default to login mode
@@ -143,7 +147,7 @@ function LoginPageInner() {
       await supabase.from('company_memberships').upsert({
         company_id: tokenData.company_id,
         user_id: userId,
-        role: 'member',
+        role: tokenData.role || 'operator',
       }, { onConflict: 'company_id,user_id' });
 
       await ensureStaffEntity(supabase, tokenData.company_id, userId);
@@ -152,6 +156,14 @@ function LoginPageInner() {
       await supabase.from('profiles')
         .update({ active_company_id: tokenData.company_id })
         .eq('id', userId);
+
+      // Add to default team if specified on the token
+      if (tokenData.default_team_id) {
+        await supabase.from('team_members').upsert({
+          team_id: tokenData.default_team_id,
+          profile_id: userId,
+        }, { onConflict: 'team_id,profile_id' });
+      }
 
       // Mark token used
       await supabase.from('registration_tokens')
@@ -220,6 +232,13 @@ function LoginPageInner() {
       return;
     }
 
+    // Tells components/AppLoader.tsx this is a real sign-in, not just a
+    // revisit with a still-valid session -- see its own comment on why that
+    // distinction matters (skips its warm-return-visit shortcut for one
+    // load, so the splash actually shows here even if a stale cache from
+    // before is sitting in localStorage).
+    document.cookie = "nk_just_logged_in=1; path=/; max-age=60; SameSite=Lax";
+
     const userId = data.user.id;
 
     // If there's a valid company invite token, join that company
@@ -231,7 +250,7 @@ function LoginPageInner() {
           .upsert({
             company_id: tokenData.company_id,
             user_id: userId,
-            role: 'member',
+            role: tokenData.role || 'operator',
           }, { onConflict: 'company_id,user_id' });
 
         if (memberErr) console.error('membership error:', memberErr);
@@ -242,6 +261,14 @@ function LoginPageInner() {
         await supabase.from('profiles')
           .update({ active_company_id: tokenData.company_id })
           .eq('id', userId);
+
+        // Add to default team if specified on the token
+        if (tokenData.default_team_id) {
+          await supabase.from('team_members').upsert({
+            team_id: tokenData.default_team_id,
+            profile_id: userId,
+          }, { onConflict: 'team_id,profile_id' });
+        }
 
         // Mark token as used
         await supabase.from('registration_tokens')
@@ -311,10 +338,18 @@ function LoginPageInner() {
         await supabase.from('company_memberships').upsert({
           company_id: tokenData.company_id,
           user_id: userId,
-          role: 'member',
+          role: tokenData.role || 'operator',
         }, { onConflict: 'company_id,user_id' });
 
         await ensureStaffEntity(supabase, tokenData.company_id, userId);
+
+        // Add to default team if specified on the token
+        if (tokenData.default_team_id) {
+          await supabase.from('team_members').upsert({
+            team_id: tokenData.default_team_id,
+            profile_id: userId,
+          }, { onConflict: 'team_id,profile_id' });
+        }
 
         // Mark token used
         await supabase.from('registration_tokens')
@@ -351,6 +386,7 @@ function LoginPageInner() {
         setSuccess("Account created! Check your inbox and confirm your email to get started.");
         setLoading(false);
       } else {
+        document.cookie = "nk_just_logged_in=1; path=/; max-age=60; SameSite=Lax";
         router.replace(postLoginPath);
       }
     } catch (err: any) {

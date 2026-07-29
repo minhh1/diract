@@ -25,6 +25,13 @@ export async function GET(request: NextRequest) {
   if (code) {
     const response = NextResponse.redirect(`${origin}${destination}`)
     if (postLoginRedirect) response.cookies.set('post_login_redirect', '', { maxAge: 0, path: '/' })
+    // Tells components/AppLoader.tsx this is a real sign-in (Google OAuth),
+    // not just a revisit with a still-valid session -- see its own comment
+    // on why. Set here (not client-side) since this whole request is a
+    // server-issued redirect; the browser follows it as one fresh
+    // navigation, so the client only ever sees the destination page, never
+    // this route directly.
+    response.cookies.set('nk_just_logged_in', '1', { maxAge: 60, path: '/' })
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,7 +68,7 @@ export async function GET(request: NextRequest) {
     if (inviteToken) {
       const { data: tokenData } = await supabase
         .from('registration_tokens')
-        .select('id, company_id, used_at, expires_at, default_team_id')
+        .select('id, company_id, used_at, expires_at, default_team_id, role')
         .eq('token', inviteToken)
         .single()
 
@@ -77,7 +84,7 @@ export async function GET(request: NextRequest) {
           await supabase.from('company_memberships').upsert({
             company_id: companyId,
             user_id: user.id,
-            role: 'operator',
+            role: tokenData.role || 'operator',
           }, { onConflict: 'user_id,company_id' })
 
           await ensureStaffEntity(supabase, companyId, user.id)
