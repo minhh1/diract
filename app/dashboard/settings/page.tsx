@@ -460,36 +460,29 @@ function SettingsPageInner() {
           )}
 
 
-          {/* ── DUPLICATES MENU ── */}
+          {/* ── DUPLICATES MENU ──
+              One flat list of every table -- system and custom are the same
+              app-level machinery behind the scenes (see app/api/duplicates/
+              scan/route.ts and the DupType union above), and that split
+              isn't a distinction a user picking a table to check for
+              duplicates needs to see or think about. */}
           {view === "duplicates_menu" && (
-            <div className="space-y-8 animate-in fade-in">
-              <div>
-                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-3">System tables</p>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {SYSTEM_DUP_CARDS.map((cat) => (
-                    <button key={cat.table} onClick={() => { setActiveDupType({ kind: 'system', table: cat.table }); setView("duplicates_view"); }} className="p-10 bg-white border border-slate-200 rounded-[48px] flex flex-col items-center gap-5 hover:border-indigo-500 hover:shadow-xl transition-all group">
-                      <div className="p-5 bg-slate-50 rounded-[24px] text-slate-400 group-hover:text-indigo-600 transition-all"><cat.icon size={40} /></div>
-                      <span className="font-medium text-slate-700 uppercase text-[11px] tracking-widest">{cat.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {customTables.length > 0 && (
-                <div>
-                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-3">Custom tables</p>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    {customTables.map((t) => {
-                      const Icon = (LucideIcons as any)[t.icon] || Table2;
-                      return (
-                        <button key={t.id} onClick={() => { setActiveDupType({ kind: 'custom', tableId: t.id, tableSlug: t.slug, tableName: t.name }); setView("duplicates_view"); }} className="p-10 bg-white border border-slate-200 rounded-[48px] flex flex-col items-center gap-5 hover:border-indigo-500 hover:shadow-xl transition-all group">
-                          <div className="p-5 bg-slate-50 rounded-[24px] text-slate-400 group-hover:text-indigo-600 transition-all"><Icon size={40} /></div>
-                          <span className="font-medium text-slate-700 uppercase text-[11px] tracking-widest">{t.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in fade-in">
+              {SYSTEM_DUP_CARDS.map((cat) => (
+                <button key={cat.table} onClick={() => { setActiveDupType({ kind: 'system', table: cat.table }); setView("duplicates_view"); }} className="p-10 bg-white border border-slate-200 rounded-[48px] flex flex-col items-center gap-5 hover:border-indigo-500 hover:shadow-xl transition-all group">
+                  <div className="p-5 bg-slate-50 rounded-[24px] text-slate-400 group-hover:text-indigo-600 transition-all"><cat.icon size={40} /></div>
+                  <span className="font-medium text-slate-700 uppercase text-[11px] tracking-widest">{cat.label}</span>
+                </button>
+              ))}
+              {customTables.map((t) => {
+                const Icon = (LucideIcons as any)[t.icon] || Table2;
+                return (
+                  <button key={t.id} onClick={() => { setActiveDupType({ kind: 'custom', tableId: t.id, tableSlug: t.slug, tableName: t.name }); setView("duplicates_view"); }} className="p-10 bg-white border border-slate-200 rounded-[48px] flex flex-col items-center gap-5 hover:border-indigo-500 hover:shadow-xl transition-all group">
+                    <div className="p-5 bg-slate-50 rounded-[24px] text-slate-400 group-hover:text-indigo-600 transition-all"><Icon size={40} /></div>
+                    <span className="font-medium text-slate-700 uppercase text-[11px] tracking-widest">{t.name}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
 

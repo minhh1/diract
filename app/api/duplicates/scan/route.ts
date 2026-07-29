@@ -31,6 +31,28 @@ interface ScannedRecord {
   fields: Record<string, any>;
 }
 
+// PostgREST (and so the Supabase client) caps a single select at 1000 rows
+// by default -- a plain .select() on a table bigger than that silently
+// truncates instead of erroring, which meant this scanner could miss real
+// duplicate pairs whenever one side happened to land past row 1000 (in
+// whatever order the table came back in, not necessarily anything intuitive
+// like alphabetical). Pages through .range() the same way
+// lib/hooks/prefetchShells.ts's fetchCustomFieldValues already does for the
+// same reason.
+const PAGE_SIZE = 1000;
+async function fetchAllRows<T>(
+  queryFactory: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data } = await queryFactory(from, from + PAGE_SIZE - 1);
+    if (!data?.length) break;
+    all.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
+  return all;
+}
+
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
@@ -53,12 +75,15 @@ export async function POST(req: NextRequest) {
     const tableName = table as SystemTableName;
     fields = SYSTEM_TABLE_COMPARISON_FIELDS[tableName];
     const cols = ["id", ...fields.map(f => f.key)];
-    const { data } = await admin
-      .from(tableName)
-      .select(cols.join(", "))
-      .eq("company_id", companyId)
-      .is("deleted_at", null);
-    records = ((data || []) as any[]).map(row => ({
+    const data = await fetchAllRows<any>((from, to) =>
+      admin
+        .from(tableName)
+        .select(cols.join(", "))
+        .eq("company_id", companyId)
+        .is("deleted_at", null)
+        .range(from, to)
+    );
+    records = data.map(row => ({
       id: row.id,
       label: row[fields[0].key] ?? row.id,
       fields: row,
@@ -84,26 +109,37 @@ export async function POST(req: NextRequest) {
     const fieldIdByKey = new Map(fieldList.map(f => [f.field_key, f.id]));
     const relevantFieldIds = fields.map(f => fieldIdByKey.get(f.key)).filter((id): id is string => !!id);
 
-    const { data: recordRows } = await admin
-      .from("company_table_records")
-      .select("id")
-      .eq("table_id", tableDef.id)
-      .is("deleted_at", null);
-    const recordIds = (recordRows || []).map((r: any) => r.id as string);
+    const recordRows = await fetchAllRows<{ id: string }>((from, to) =>
+      admin
+        .from("company_table_records")
+        .select("id")
+        .eq("table_id", tableDef.id)
+        .is("deleted_at", null)
+        .range(from, to)
+    );
+    const recordIds = recordRows.map(r => r.id);
 
     if (recordIds.length === 0 || relevantFieldIds.length === 0) {
       return NextResponse.json({ pairs: [], fields: fields.map(f => f.key) });
     }
 
-    const { data: valueRows } = await admin
-      .from("company_table_values")
-      .select("record_id, field_id, value_text, value_number, value_date, value_boolean")
-      .eq("company_id", companyId)
-      .in("record_id", recordIds)
-      .in("field_id", relevantFieldIds);
+    // record_id/field_id are both already-bounded arrays (recordIds capped
+    // by MAX_RECORDS below before this ever runs at true scale; field count
+    // is a handful), so .in() on them doesn't itself need paging -- it's
+    // the RESULT rows (up to recordIds.length * relevantFieldIds.length)
+    // that can exceed the page cap.
+    const valueRows = await fetchAllRows<any>((from, to) =>
+      admin
+        .from("company_table_values")
+        .select("record_id, field_id, value_text, value_number, value_date, value_boolean")
+        .eq("company_id", companyId)
+        .in("record_id", recordIds)
+        .in("field_id", relevantFieldIds)
+        .range(from, to)
+    );
 
     const byRecord = new Map<string, Record<string, any>>();
-    (valueRows || []).forEach((v: any) => {
+    valueRows.forEach((v: any) => {
       const field = fieldById.get(v.field_id);
       if (!field) return;
       const value = v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
