@@ -485,7 +485,16 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
 
   return {
     groups: groups || [],
-    items: (items || []).map((i: any) => {
+    // Drops any item whose underlying record has since been archived/soft-
+    // deleted (e.g. the "loser" side of a duplicate merge -- see
+    // duplicate_merge_rpc.sql, which sets deleted_at but never touches
+    // client_update_page_items) -- baseRecordById (resolveRecordsBatch) now
+    // excludes deleted_at rows, so "missing from that map" doubles as "gone
+    // from the underlying table" without a separate existence check or any
+    // cleanup trigger. Recomputed on every load, so the board always
+    // reflects current DB state rather than whatever was true when the item
+    // was added.
+    items: (items || []).filter((i: any) => baseRecordById.has(recordId(i))).map((i: any) => {
       const rid = recordId(i);
       return {
         ...i,

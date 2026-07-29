@@ -116,13 +116,22 @@ export async function inferFieldType(
 // (record[col]), and a custom-table record's fields via
 // resolveFieldValuesBatch instead (there's no single "row" shape to hand
 // back generically the way a real Postgres row is for a system table).
+// .is('deleted_at', null) on both branches -- a soft-deleted record (e.g.
+// the "loser" side of a duplicate merge, see duplicate_merge_rpc.sql, or a
+// plain Trash delete) has nothing that ever removes the client_update_page_
+// items row still pointing at it, so it kept showing as a live item
+// indefinitely. Excluding it here means loadPageDetail's "does
+// baseRecordById still have this item's record" check (the only caller of
+// this function) treats a soft-deleted record exactly like a genuinely
+// missing one, and the item stops rendering the moment the underlying
+// record is archived/deleted -- no separate cleanup trigger needed.
 export async function resolveRecordsBatch(admin: any, recordTable: string, recordIds: string[]): Promise<Map<string, any>> {
   if (!recordIds.length) return new Map();
   if (isSystemTable(recordTable)) {
-    const { data } = await admin.from(recordTable).select("*").in("id", recordIds);
+    const { data } = await admin.from(recordTable).select("*").in("id", recordIds).is("deleted_at", null);
     return new Map((data || []).map((r: any) => [r.id, r]));
   }
-  const { data } = await admin.from("company_table_records").select("id").in("id", recordIds);
+  const { data } = await admin.from("company_table_records").select("id").in("id", recordIds).is("deleted_at", null);
   return new Map((data || []).map((r: any) => [r.id, r]));
 }
 
