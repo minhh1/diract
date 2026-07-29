@@ -33,6 +33,18 @@ const SYNTHETIC_PROJECT_BASE_FIELDS = [
   { field_key: "property_address", label: "Property Address" },
 ];
 
+// field_type is snapshotted onto client_update_page_fields at add-time (see
+// the POST handler below) so display doesn't need a second lookup per
+// render. This allow-list previously omitted the 4 relation types
+// (entity/property/project/table_relation) entirely, so adding an
+// entity-relation custom field as a column here silently downgraded it to
+// 'text' -- it then rendered as a plain input instead of RelationPicker,
+// and typing free text into it (rather than picking a record) tried to
+// write that raw string into a value_record_id column. Found live: Huynh
+// Lawyers' "Property Owner" column (a 'property'-sourced custom field of
+// type 'entity').
+const KNOWN_FIELD_TYPES = ["date", "select", "number", "currency", "boolean", "entity", "property", "project", "table_relation"];
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const auth = await authorizeCompanyMember();
@@ -169,7 +181,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } else if (fieldSource === "custom") {
     const { data: cf } = await admin.from("company_custom_fields").select("field_type, select_options").eq("id", fieldKey).maybeSingle();
     if (cf) {
-      fieldType = ["date", "select", "number", "currency", "boolean"].includes(cf.field_type) ? cf.field_type : "text";
+      fieldType = KNOWN_FIELD_TYPES.includes(cf.field_type) ? cf.field_type : "text";
       selectOptions = cf.field_type === "select" ? cf.select_options : null;
     }
   } else if (fieldSource === "related_entity") {
@@ -184,14 +196,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     } else {
       // Custom-table page -- fieldKey is a company_table_fields.id.
       const { data: ctf } = await admin.from("company_table_fields").select("field_type").eq("id", fieldKey).maybeSingle();
-      fieldType = ctf && ["date", "select", "number", "currency", "boolean"].includes(ctf.field_type) ? ctf.field_type : "text";
+      fieldType = ctf && KNOWN_FIELD_TYPES.includes(ctf.field_type) ? ctf.field_type : "text";
     }
   } else if (fieldSource === "property") {
     const [, key] = String(fieldKey).split(":");
     if (propertyFieldKind === "custom") {
       const { data: cf } = await admin.from("company_custom_fields").select("field_type, select_options").eq("id", key).maybeSingle();
       if (cf) {
-        fieldType = ["date", "select", "number", "currency", "boolean"].includes(cf.field_type) ? cf.field_type : "text";
+        fieldType = KNOWN_FIELD_TYPES.includes(cf.field_type) ? cf.field_type : "text";
         selectOptions = cf.field_type === "select" ? cf.select_options : null;
       }
     } else {
@@ -202,7 +214,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } else if (fieldSource === "project_property") {
     const { data: cf } = await admin.from("company_custom_fields").select("field_type, select_options").eq("id", fieldKey).maybeSingle();
     if (cf) {
-      fieldType = ["date", "select", "number", "currency", "boolean"].includes(cf.field_type) ? cf.field_type : "text";
+      fieldType = KNOWN_FIELD_TYPES.includes(cf.field_type) ? cf.field_type : "text";
       selectOptions = cf.field_type === "select" ? cf.select_options : null;
     }
   }

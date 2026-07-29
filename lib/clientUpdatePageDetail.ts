@@ -269,6 +269,37 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     .filter((f: any) => f.field_source === "property" && f.field_key.startsWith("custom:"))
     .map((f: any) => f.field_key.split(":")[1]);
 
+  // Fetched here, ahead of the entities/properties batch below, specifically
+  // so a relation-type property custom field's value_record_id (e.g.
+  // "Property Owner", an 'entity'-type field on properties) can be folded
+  // into relatedEntityIds/allPropertyIds BEFORE those drive that batch's own
+  // entities/properties queries -- the two would otherwise be mutually
+  // dependent (this needs allPropertyIds, which is already known by now;
+  // the entities/properties fetch needs THIS resolved first). Previously
+  // this lived in the batch below and never resolved this case at all, so a
+  // "Property Owner" cell either showed blank or (if some earlier client-side
+  // workaround typed the name in as plain text -- the same bug this fixes on
+  // the write side) looked right by accident, without a real relation link.
+  const { data: propertyCustomValues } = propertyCustomFieldIds.length && allPropertyIds.length
+    ? await admin.from("company_custom_field_values")
+        .select("field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id")
+        .in("field_id", propertyCustomFieldIds).in("record_id", allPropertyIds)
+    : { data: [] as any[] };
+  const propertyCustomValueByKey = new Map<string, any>((propertyCustomValues || []).map((v: any) => [`${v.field_id}:${v.record_id}`, v]));
+  const propertyCustomFieldTypeByKey = new Map<string, string>(
+    propertyFields.filter((f: any) => f.field_source === "property" && f.field_key.startsWith("custom:")).map((f: any) => [f.field_key.split(":")[1], f.field_type])
+  );
+  const propertyCustomRelationEntityIds: string[] = [];
+  const propertyCustomRelationPropertyIds: string[] = [];
+  for (const v of propertyCustomValues || []) {
+    if (!v.value_record_id) continue;
+    const ft = propertyCustomFieldTypeByKey.get(v.field_id);
+    if (ft === "entity") propertyCustomRelationEntityIds.push(v.value_record_id);
+    else if (ft === "property") propertyCustomRelationPropertyIds.push(v.value_record_id);
+  }
+  allPropertyIds = [...new Set([...allPropertyIds, ...propertyCustomRelationPropertyIds])];
+  relatedEntityIds = [...new Set([...relatedEntityIds, ...propertyCustomRelationEntityIds])];
+
   // Per-(project, property) transaction fields (purchase price, deposit/
   // settlement dates, ...) -- a genuinely different mechanism from
   // propertyFields above: those read a PROPERTY's own persistent data
@@ -287,7 +318,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const [
     { data: properties },
     { data: relatedEntities },
-    { data: propertyCustomValues },
     tableRelationNameById,
     { data: projectPropertyValues },
   ] = await Promise.all([
@@ -306,11 +336,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       : Promise.resolve({ data: [] as any[] }),
     relatedEntityIds.length
       ? admin.from("entities").select(`id, ${RELATED_ENTITY_COLUMN_KEYS.join(", ")}`).in("id", relatedEntityIds).is("deleted_at", null)
-      : Promise.resolve({ data: [] as any[] }),
-    propertyCustomFieldIds.length && allPropertyIds.length
-      ? admin.from("company_custom_field_values")
-          .select("field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id")
-          .in("field_id", propertyCustomFieldIds).in("record_id", allPropertyIds)
       : Promise.resolve({ data: [] as any[] }),
     // Same "each custom table's own primary_field_key value" lookup
     // resolveDisplayNamesBatch already does for the page's own items,
@@ -332,7 +357,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   ]);
   const propertyById = new Map<string, any>((properties || []).map((p: any) => [p.id, p]));
   const entityById = new Map<string, any>((relatedEntities || []).map((e: any) => [e.id, e]));
-  const propertyCustomValueByKey = new Map<string, any>((propertyCustomValues || []).map((v: any) => [`${v.field_id}:${v.record_id}`, v]));
   const projectPropertyValueByKey = new Map<string, any>((projectPropertyValues || []).map((v: any) => [`${v.field_id}:${v.project_property_id}`, v]));
 
   function resolveProjectPropertyField(field: any, projectId: string, propertyId: string | undefined): any {
@@ -351,7 +375,21 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     if (kind === "base") return property?.[key] ?? null;
     if (kind === "custom") {
       const v = propertyCustomValueByKey.get(`${key}:${propertyId}`);
-      return v ? (v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null) : null;
+      if (!v) return null;
+      // A relation-type property custom field (e.g. "Property Owner", an
+      // 'entity'-type field on properties) never resolved its
+      // value_record_id to anything here before -- see the KNOWN_FIELD_TYPES
+      // fix in fields/route.ts's header comment for the write-side half of
+      // this same bug.
+      if (field.field_type === "entity" && v.value_record_id) {
+        const entity = entityById.get(v.value_record_id);
+        return entity ? (entity.name ?? "") : "(deleted)";
+      }
+      if (field.field_type === "property" && v.value_record_id) {
+        const relatedProperty = propertyById.get(v.value_record_id);
+        return relatedProperty ? (relatedProperty.street_address ?? "") : "(deleted)";
+      }
+      return v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
     }
     return null;
   }
@@ -455,6 +493,12 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     if (field.field_source === "custom") {
       if (field.field_type !== "entity" && field.field_type !== "property") return null;
       const v = customValueByKey.get(`${field.field_key}:${rid}`);
+      return v?.value_record_id || null;
+    }
+    if (field.field_source === "property" && (field.field_type === "entity" || field.field_type === "property")) {
+      const [, key] = field.field_key.split(":");
+      const propIds = propertyIdsByProject.get(rid) || [];
+      const v = propertyCustomValueByKey.get(`${key}:${propIds[0]}`);
       return v?.value_record_id || null;
     }
     if (isCustomTable) {
