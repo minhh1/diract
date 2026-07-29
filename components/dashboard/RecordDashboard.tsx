@@ -358,7 +358,7 @@ export default function RecordDashboard({
       // trips here at all. Run in parallel regardless, for the cold case.
       const [schemaCols, customFields] = await Promise.all([
         getSchemaMetadata(systemTable, cid),
-        fetchCompanyCustomFields(systemTable),
+        fetchCompanyCustomFields(cid, systemTable),
       ]);
 
       const baseFields: FieldLayout[] = (schemaCols || [])
