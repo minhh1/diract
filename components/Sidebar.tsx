@@ -9,10 +9,11 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark,
+  Landmark, Sun, Moon,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
+import { useTheme } from "next-themes";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
@@ -28,6 +29,7 @@ import { useProgressBar } from "@/components/TopProgressBar";
 import { pushWithFallback } from "@/lib/navigateWithFallback";
 import { perfLog } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
+import NotificationBell from "@/components/NotificationBell";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -664,6 +666,14 @@ export default function Sidebar() {
   const [memberships, setMemberships] = useState<any[]>([]);
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false);
   const [switchingCompany, setSwitchingCompany] = useState(false);
+  // next-themes' `theme` reads as undefined until after mount (it doesn't
+  // know the persisted/system preference during SSR) -- `mounted` gates the
+  // active-option highlight below so the very first client render matches
+  // the server's, instead of momentarily showing no option selected then
+  // flipping.
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const [items, setItems] = useState<any[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
   const [isProjOpen, setIsProjOpen] = useState(false);
@@ -1205,6 +1215,8 @@ export default function Sidebar() {
 
         <div className="flex-1" />
 
+        <NotificationBell />
+
         <div className="relative" onClick={e => e.stopPropagation()}>
           {profileLoading ? (
             <div className="h-9 w-9 rounded-full bg-slate-200 animate-pulse" />
@@ -1290,6 +1302,31 @@ export default function Sidebar() {
               })}
                 </>
               )}
+
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-5 pt-4 pb-2 border-t border-slate-100 mt-1">
+                Theme
+              </p>
+              <div className="flex items-center gap-1.5 px-5 pb-4">
+                {([
+                  { value: 'light', label: 'Light', Icon: Sun },
+                  { value: 'dark', label: 'Dark', Icon: Moon },
+                  { value: 'system', label: 'System', Icon: Monitor },
+                ] as const).map(({ value, label, Icon }) => {
+                  const isActive = mounted && theme === value;
+                  return (
+                    <button
+                      key={value}
+                      onClick={() => setTheme(value)}
+                      className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-2xl text-[9px] font-bold uppercase tracking-wide transition-colors ${
+                        isActive ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

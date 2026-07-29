@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Enables the `dark:` variant for any NEW component code that wants to
+   opt in explicitly (next-themes toggles the `dark` class on <html> --
+   see components/ThemeProvider.tsx). Most of the app doesn't need it,
+   though: see the big override block at the bottom of this file, which
+   re-themes every existing bg-, text-, and border-color utility class
+   already in use across the app directly, without touching a single
+   component file. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* In v4, we define base styles like this */
 @layer base {
   body {
@@ -138,4 +147,295 @@
 .matter-spreadsheet-scroll {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   Dark mode -- app-wide, via direct utility-class overrides
+   ────────────────────────────────────────────────────────────────────
+   This app never used `dark:` variants anywhere (verified: zero usages
+   across every component before this), and hardcodes literal Tailwind
+   color classes throughout (bg-white, text-slate-900, bg-indigo-600,
+   etc. -- thousands of call sites). Rewriting every one of those call
+   sites with a `dark:` counterpart is the "textbook" Tailwind approach,
+   but isn't tractable in one pass across an app this size.
+
+   Instead, this block overrides the *compiled utility classes themselves*
+   (`.bg-slate-50`, `.text-slate-400`, ...) directly, scoped under `.dark`
+   (the class next-themes puts on <html>). Every component that already
+   renders `className="bg-white ..."` gets the dark-mode color for free,
+   with zero component edits, because the class name itself now resolves
+   differently under `.dark`.
+
+   Deliberately NOT done via Tailwind's own `--color-*` CSS variables
+   (which would be less code -- one override per shade instead of one
+   per class): several colors are used in GENUINELY CONFLICTING roles
+   under the same shade number, which a shared variable can't resolve --
+   e.g. `bg-slate-900/NN` is used as a modal backdrop scrim (wants to
+   STAY dark), while `text-slate-900` is the app's primary body-text
+   color (wants to become near-white) -- same shade, opposite intent.
+   Same story for `white`: `bg-white` is the single most common card/
+   panel surface color in the app (531 call sites, wants to go dark),
+   while `text-white` is button/badge text sitting on already-colored
+   backgrounds like bg-indigo-600 (381 call sites, must stay white or
+   those buttons become unreadable). Overriding the classes directly
+   instead of the shared variable lets each role get its own value.
+
+   Palette: a warm charcoal (like Claude's dark theme), not a cold
+   blue-black -- text.tsx below skews the slate/white replacements
+   slightly warm rather than reusing Tailwind's own (cool-toned) slate
+   hex values.
+
+   One accepted trade-off given the scope: `bg-slate-900` opacity
+   variants (e.g. `bg-slate-900/40`) used as modal backdrops keep their
+   dark, unopinionated treatment below rather than being hand-tracked
+   per call site -- see the comment on that rule specifically. */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* ── Base page background/text ──────────────────────────────────────
+   app/globals.css's own `body { @apply bg-slate-50 text-slate-900 }`
+   compiles the utility's properties directly onto `body` (Tailwind's
+   @apply doesn't leave the class name on the element), so the class
+   overrides below never reach it on their own -- restated here
+   explicitly, same values as .bg-slate-50/.text-slate-900. */
+.dark body {
+  background-color: #262624;
+  color: #f5f3ea;
+}
+
+/* ── Neutral surfaces/text (slate + white/black) ──────────────────── */
+/* GenericMasterTable.tsx/CustomTableMasterPage.tsx's shared table-area
+   background -- an arbitrary-value class (bg-[#F9FAFB]), not one of the
+   named Tailwind classes above, so it needs its own override; same page-
+   canvas role as bg-slate-50. */
+.dark .bg-\[\#F9FAFB\] { background-color: #262624; }
+.dark .bg-white { background-color: #2d2c2a; }
+.dark .bg-black { background-color: #0c0b0a; }
+.dark .text-black { color: #f5f3ea; }
+/* text-white / border-white intentionally untouched -- see top comment
+   (button/badge text on an already-colored background). */
+
+.dark .bg-slate-50 { background-color: #262624; }
+.dark .bg-slate-100 { background-color: #2d2c2a; }
+.dark .bg-slate-200 { background-color: #38362f; }
+.dark .bg-slate-300 { background-color: #46443b; }
+.dark .bg-slate-400 { background-color: #55534a; }
+.dark .bg-slate-500 { background-color: #6b6960; }
+.dark .bg-slate-600 { background-color: #35332c; }
+.dark .bg-slate-700 { background-color: #2b2925; }
+.dark .bg-slate-800 { background-color: #211f1c; }
+/* bg-slate-900 kept dark rather than inverted -- its two real uses
+   (opacity-modified backdrop scrims like bg-slate-900/40, and a
+   handful of deliberately-black-ish fills) both want to STAY dark in
+   dark mode; only the shade's TEXT role (below) wants to invert. */
+.dark .bg-slate-900 { background-color: #171614; }
+
+.dark .border-slate-50 { border-color: #2b2925; }
+.dark .border-slate-100 { border-color: #38362f; }
+.dark .border-slate-200 { border-color: #46443b; }
+.dark .border-slate-300 { border-color: #55534a; }
+.dark .border-slate-400 { border-color: #6b6960; }
+.dark .border-slate-500 { border-color: #7d7b71; }
+.dark .border-slate-900 { border-color: #171614; }
+
+.dark .ring-slate-100 { --tw-ring-color: #38362f; }
+.dark .ring-slate-400 { --tw-ring-color: #6b6960; }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #38362f; }
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #46443b; }
+
+.dark .text-slate-50 { color: #37352d; }
+.dark .text-slate-200 { color: #55534a; }
+.dark .text-slate-300 { color: #726f66; }
+.dark .text-slate-400 { color: #8c8a80; }
+.dark .text-slate-500 { color: #a3a196; }
+.dark .text-slate-600 { color: #bebcb0; }
+.dark .text-slate-700 { color: #d6d4c7; }
+.dark .text-slate-800 { color: #e8e6da; }
+.dark .text-slate-900 { color: #f5f3ea; }
+.dark .placeholder-slate-300::placeholder { color: #726f66; }
+.dark .placeholder-slate-400::placeholder { color: #8c8a80; }
+
+/* ── Brand accent (indigo) ──────────────────────────────────────────
+   Buttons/links/focus rings -- kept a vivid, recognizable indigo-purple
+   (not inverted to a muddy pastel like the neutrals above), just tuned
+   per role for contrast against the new dark surfaces. Hover (700)
+   is deliberately LIGHTER than the resting state (600): brightening,
+   not darkening, is the correct hover direction on a dark background. */
+.dark .bg-indigo-50 { background-color: #211f3a; }
+.dark .bg-indigo-100 { background-color: #292759; }
+.dark .bg-indigo-400 { background-color: #6f6bc7; }
+.dark .bg-indigo-500 { background-color: #7875e0; }
+.dark .bg-indigo-600 { background-color: #6c68f0; }
+.dark .bg-indigo-700 { background-color: #7e7bf5; }
+
+.dark .border-indigo-100 { border-color: #322f72; }
+.dark .border-indigo-200 { border-color: #3d3a8a; }
+.dark .border-indigo-300 { border-color: #4f4aa8; }
+.dark .border-indigo-400 { border-color: #6f6bc7; }
+.dark .border-indigo-500 { border-color: #7875e0; }
+.dark .border-indigo-600 { border-color: #6c68f0; }
+.dark .ring-indigo-100 { --tw-ring-color: #322f72; }
+
+.dark .text-indigo-300 { color: #837fec; }
+.dark .text-indigo-400 { color: #938fef; }
+.dark .text-indigo-500 { color: #a09dfa; }
+.dark .text-indigo-600 { color: #a5a2f5; }
+.dark .text-indigo-700 { color: #b7b4f7; }
+.dark .text-indigo-800 { color: #c9c7f9; }
+
+/* ── Status/semantic colors (badges, alerts, pills) ──────────────────
+   Same light-tint-bg + saturated-text pattern throughout the app --
+   dark-mode gets a dark tinted bg + brightened text for each hue,
+   reusing that color family's own Tailwind palette values one shade
+   band over (its 800/900 for backgrounds, its 300/400 for text) rather
+   than hand-tuning 14 families individually. */
+.dark .bg-red-50 { background-color: #3f1d1a; }
+.dark .bg-red-100 { background-color: #4d221d; }
+.dark .text-red-400 { color: #f598a0; }
+.dark .text-red-500 { color: #f8767f; }
+.dark .text-red-600 { color: #fa8a8a; }
+.dark .text-red-700 { color: #fca5a5; }
+.dark .border-red-100 { border-color: #5c231e; }
+.dark .border-red-200 { border-color: #6b2a22; }
+.dark .border-red-300 { border-color: #7f3128; }
+.dark .ring-red-100 { --tw-ring-color: #5c231e; }
+
+.dark .bg-amber-50 { background-color: #3d2f14; }
+.dark .bg-amber-100 { background-color: #4a3a17; }
+.dark .bg-amber-200 { background-color: #58441a; }
+.dark .bg-amber-400 { background-color: #8a6a2a; }
+.dark .bg-amber-600 { background-color: #b9862f; }
+.dark .text-amber-400 { color: #f3cd7e; }
+.dark .text-amber-500 { color: #f5d495; }
+.dark .text-amber-600 { color: #f7dcac; }
+.dark .text-amber-700 { color: #f9e4c0; }
+.dark .text-amber-800 { color: #fbecd4; }
+.dark .border-amber-100 { border-color: #58441a; }
+.dark .border-amber-200 { border-color: #664f1d; }
+.dark .border-amber-300 { border-color: #785e22; }
+.dark .border-amber-400 { border-color: #8a6a2a; }
+.dark .ring-amber-100 { --tw-ring-color: #58441a; }
+
+.dark .bg-emerald-50 { background-color: #123326; }
+.dark .bg-emerald-100 { background-color: #163d2e; }
+.dark .bg-emerald-500 { background-color: #34d399; }
+.dark .text-emerald-500 { color: #6ee7b0; }
+.dark .text-emerald-600 { color: #7feabb; }
+.dark .text-emerald-700 { color: #92eec7; }
+.dark .border-emerald-100 { border-color: #1c4a38; }
+.dark .border-emerald-200 { border-color: #235942; }
+.dark .border-emerald-500 { border-color: #34d399; }
+.dark .ring-emerald-200 { --tw-ring-color: #235942; }
+
+.dark .bg-blue-50 { background-color: #142b47; }
+.dark .bg-blue-100 { background-color: #183456; }
+.dark .bg-blue-200 { background-color: #1c3e66; }
+.dark .bg-blue-400 { background-color: #5b93e0; }
+.dark .bg-blue-500 { background-color: #6ba0e6; }
+.dark .text-blue-500 { color: #8bb7ee; }
+.dark .text-blue-600 { color: #9dc2f0; }
+.dark .text-blue-700 { color: #b0cef3; }
+.dark .border-blue-100 { border-color: #1c3e66; }
+
+.dark .bg-violet-50 { background-color: #241f47; }
+.dark .bg-violet-100 { background-color: #2c2657; }
+.dark .text-violet-400 { color: #ab9ff2; }
+.dark .text-violet-500 { color: #b9aef4; }
+.dark .text-violet-600 { color: #c6bdf6; }
+.dark .text-violet-700 { color: #d2caf8; }
+.dark .border-violet-100 { border-color: #322b6a; }
+.dark .border-violet-200 { border-color: #3a3279; }
+.dark .border-violet-300 { border-color: #453c8f; }
+
+.dark .bg-sky-50 { background-color: #123145; }
+.dark .text-sky-400 { color: #6fc4ee; }
+.dark .text-sky-500 { color: #85cef0; }
+.dark .text-sky-600 { color: #9cd8f3; }
+.dark .text-sky-700 { color: #b2e1f6; }
+.dark .border-sky-200 { border-color: #1c4560; }
+.dark .border-sky-400 { border-color: #4093c4; }
+
+.dark .bg-rose-50 { background-color: #3a1522; }
+.dark .bg-rose-100 { background-color: #471a29; }
+.dark .bg-rose-400 { background-color: #ef7ba0; }
+.dark .text-rose-400 { color: #f496b3; }
+.dark .text-rose-500 { color: #f6a8c1; }
+.dark .text-rose-600 { color: #f8bbcf; }
+.dark .text-rose-700 { color: #facddd; }
+.dark .border-rose-200 { border-color: #55202f; }
+
+.dark .bg-purple-50 { background-color: #2c1d47; }
+.dark .bg-purple-100 { background-color: #352457; }
+.dark .bg-purple-400 { background-color: #af7ef0; }
+.dark .text-purple-500 { color: #c6a3f5; }
+.dark .text-purple-600 { color: #d0b4f7; }
+.dark .border-purple-100 { border-color: #3d2e69; }
+
+.dark .bg-teal-50 { background-color: #113636; }
+.dark .text-teal-600 { color: #7fd6d6; }
+.dark .text-teal-700 { color: #98dfdf; }
+.dark .ring-teal-100 { --tw-ring-color: #1c4a4a; }
+
+.dark .bg-cyan-50 { background-color: #103340; }
+.dark .bg-cyan-100 { background-color: #143d4d; }
+.dark .text-cyan-600 { color: #7fd4ea; }
+.dark .text-cyan-700 { color: #98ddee; }
+
+.dark .bg-yellow-50 { background-color: #3d3512; }
+.dark .text-yellow-600 { color: #f0dc7e; }
+
+.dark .bg-orange-50 { background-color: #3d2614; }
+.dark .text-orange-400 { color: #f5ab7e; }
+.dark .text-orange-600 { color: #f8c19c; }
+.dark .text-orange-700 { color: #fad2b6; }
+
+.dark .bg-pink-50 { background-color: #3a1530; }
+.dark .text-pink-600 { color: #f5a8d9; }
+
+.dark .bg-fuchsia-50 { background-color: #351a3d; }
+.dark .text-fuchsia-600 { color: #eba3f0; }
+
+/* ── Scrollbars ──────────────────────────────────────────────────── */
+.dark ::-webkit-scrollbar-thumb { background-color: #46443b; }
+.dark ::-webkit-scrollbar-thumb:hover { background-color: #55534a; }
+.dark .top-scroll-mirror:hover::-webkit-scrollbar-thumb { background: #55534a; }
+.dark .top-scroll-mirror:hover::-webkit-scrollbar-thumb:hover { background: #6b6960; }
+.dark .matter-spreadsheet-scroll::-webkit-scrollbar-thumb { background: #46443b; }
+.dark .matter-spreadsheet-scroll::-webkit-scrollbar-thumb:hover { background: #55534a; }
+.dark .matter-spreadsheet-scroll { scrollbar-color: #46443b transparent; }
+
+/* ── Buttons: "shading and small light" ──────────────────────────────
+   Claude's own dark UI treats every clickable surface as subtly raised:
+   a soft shadow underneath for depth, plus a thin lighter line along the
+   top edge (as if catching a little light from above) rather than a flat
+   fill. Layered on top of whatever background color the button already
+   has (from the overrides above), so this applies uniformly without
+   needing every button's markup to change. */
+.dark button:not(:disabled),
+.dark a[href] {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.dark button:not(:disabled):hover,
+.dark a[href]:hover {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.dark button:not(:disabled):active,
+.dark a[href]:active {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+/* Primary CTA gets a bit more presence -- a faint indigo-tinted glow on
+   top of the same highlight/shadow treatment. */
+.dark button.bg-indigo-600,
+.dark a.bg-indigo-600 {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.16), 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(129, 140, 248, 0.18);
+}
+.dark button.bg-indigo-600:not(:disabled):hover,
+.dark a.bg-indigo-600:hover {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 2px 6px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(129, 140, 248, 0.28);
+}
+.dark button.bg-indigo-600:not(:disabled):active,
+.dark a.bg-indigo-600:active {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.4);
 }
