@@ -20,7 +20,7 @@ import NewEntityModal from "./NewEntityModal";
 import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
 import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
-import { clearAllClientCaches } from "@/lib/clearClientCaches";
+import { clearAllClientCaches, clearActiveIdentityCache } from "@/lib/clearClientCaches";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
@@ -1069,13 +1069,14 @@ export default function Sidebar() {
     const { invalidateSchemaCache, clearCompanyIdCache } = await import('@/lib/services/schemaService');
     invalidateSchemaCache();
     clearCompanyIdCache();
-    // Every localStorage cache, not just schema's -- see
-    // lib/clearClientCaches.ts's doc comment for why this used to be a
-    // second, independently-maintained (and incomplete) list here, which
-    // is exactly what let a previous company's cached identity/shells
-    // flash on screen for a moment after switching before the real fetch
-    // corrected it.
-    clearAllClientCaches();
+    // Just the identity cache, not a full wipe -- see
+    // lib/clearClientCaches.ts's own doc comment on clearActiveIdentityCache
+    // for why: every OTHER cache is now genuinely companyId-scoped, so a
+    // full clearAllClientCaches() here was only throwing away legitimately
+    // reusable data for a company already visited this session, forcing a
+    // full cold bootstrap on every single switch (confirmed live: switching
+    // back and forth repeatedly never got any faster).
+    clearActiveIdentityCache();
     setSwitchingCompany(false);
     setShowCompanySwitcher(false);
     window.location.replace('/dashboard/properties');
