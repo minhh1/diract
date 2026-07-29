@@ -395,6 +395,30 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     return null;
   }
 
+  // Per-property counterparts to resolveRelationId/resolveRelationCapacity
+  // below -- those two resolve at the MATTER level (propIds[0], the first
+  // linked property) for item.relationIds/relationCapacities, which is
+  // wrong for any row past the first once a matter has 2+ properties
+  // (MatterBoard.tsx's expandByProperty splits the matter into one row per
+  // property, but relationIds/relationCapacities were never split the same
+  // way item.values already is -- confirmed live: a 2-property matter's
+  // second row's "as trustee" popover showed the FIRST property's trust
+  // link, not its own). Exposed per-property (below, in the properties:
+  // map) so expandByProperty can pull the right one per row instead of
+  // falling back to the matter-level, first-property-only maps.
+  function resolvePropertyRelationId(field: any, propertyId: string): string | null {
+    const [kind, key] = field.field_key.split(":");
+    if (kind !== "custom" || (field.field_type !== "entity" && field.field_type !== "property")) return null;
+    const v = propertyCustomValueByKey.get(`${key}:${propertyId}`);
+    return v?.value_record_id || null;
+  }
+  function resolvePropertyRelationCapacity(field: any, propertyId: string): string | null {
+    const [kind, key] = field.field_key.split(":");
+    if (kind !== "custom" || (field.field_type !== "entity" && field.field_type !== "property")) return null;
+    const v = propertyCustomValueByKey.get(`${key}:${propertyId}`);
+    return v?.value_record_capacity || null;
+  }
+
   function resolveValue(field: any, item: any): any {
     const rid = recordId(item);
     const record = baseRecordById.get(rid);
@@ -585,6 +609,8 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
               ...Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyField(f, pid)])),
               ...Object.fromEntries(projectPropertyFields.map((f: any) => [f.id, resolveProjectPropertyField(f, rid, pid)])),
             },
+            relationIds: Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyRelationId(f, pid)])),
+            relationCapacities: Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyRelationCapacity(f, pid)])),
           }))
         : [],
     };

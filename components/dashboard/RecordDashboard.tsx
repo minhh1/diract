@@ -30,8 +30,6 @@ import {
 } from "@/lib/schema/systemTableRelations";
 import { ENTITY_TYPES } from "@/lib/entityTypes";
 import { invalidateEntityRelationCache } from "./RelationPicker";
-import TrustLinkField from "@/components/entities/TrustLinkField";
-
 const TRUSTEE_ROLE_TYPES = ["Corporate Trustee", "Non Corporate Trustee"];
 import { buildMissingDefaultProjectDashboardTabs, buildMissingDefaultTabsFromCompanyDefaults } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
@@ -147,6 +145,23 @@ export default function RecordDashboard({
       .eq('status', 'pending')
       .then(({ count }) => setHasPendingArchiveRequest(!!count));
   }, [recordId, systemTable]);
+
+  // Which trust this entity is trustee for, if any -- feeds the synthetic
+  // "Trust" field (see withTrustField below) the same linkedItems shape
+  // every other relation field already uses, since that field doesn't come
+  // from a real column the normal linkedItems-loading pass would ever see.
+  const trusteeRolesKey = (record?.roles || []).join(',');
+  useEffect(() => {
+    if (systemTable !== 'entities' || !record?.roles?.some((r: string) => TRUSTEE_ROLE_TYPES.includes(r))) return;
+    supabase.from('entity_relationships')
+      .select('parent_entity_id, trust:parent_entity_id(name)')
+      .eq('child_entity_id', recordId).eq('relationship_type', 'Trustee')
+      .or('is_current.is.null,is_current.eq.true')
+      .maybeSingle()
+      .then(({ data }) => {
+        setLinkedItems(prev => ({ ...prev, trust_link: (data as any)?.parent_entity_id ? [{ id: (data as any).parent_entity_id, name: (data as any).trust?.name || 'Untitled' }] : [] }));
+      });
+  }, [systemTable, recordId, trusteeRolesKey]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -768,6 +783,33 @@ export default function RecordDashboard({
   const fallbackLabelValue = fallbackLabelField ? rawFieldValue(fallbackLabelField) : undefined;
 
   const handleAddLinked = async (fieldId: string, item: { id: string; name: string }) => {
+    // The synthetic "Trust" field (see withTrustField) -- not a real field
+    // definition (only injected at render time, never present in the
+    // `fields` state the lookup below needs), so it has to be handled
+    // before that lookup returns early. Writes onto entity_relationships
+    // instead of a real column (same shape components/entities/
+    // TrustLinkField.tsx and the Client Update Page .../trust route both
+    // already use).
+    if (systemTable === 'entities' && fieldId === 'trust_link') {
+      let resolvedId = item.id;
+      const resolvedName = item.name;
+      if (resolvedId.startsWith('__new__')) {
+        const { data: created, error: createError } = await supabase.from('entities')
+          .insert({ company_id: companyId, name: resolvedName, entity_type: 'Discretionary Family Trust' }).select('id').single();
+        if (createError || !created) { window.alert(createError?.message || `Couldn't create "${resolvedName}"`); return; }
+        resolvedId = created.id;
+      }
+      const { data: existing } = await supabase.from('entity_relationships')
+        .select('id').eq('child_entity_id', recordId).eq('relationship_type', 'Trustee').maybeSingle();
+      const { error } = existing
+        ? await supabase.from('entity_relationships').update({ parent_entity_id: resolvedId, is_current: true }).eq('id', existing.id)
+        : await supabase.from('entity_relationships').insert({ parent_entity_id: resolvedId, child_entity_id: recordId, relationship_type: 'Trustee', is_current: true });
+      if (error) { window.alert(error.message); return; }
+      setLinkedItems(prev => ({ ...prev, trust_link: [{ id: resolvedId, name: resolvedName }] }));
+      invalidateEntityRelationCache();
+      return;
+    }
+
     const field = fields.find(f => f.id === fieldId || f.field_key === fieldId);
     if (!field) return;
 
@@ -864,6 +906,17 @@ export default function RecordDashboard({
   };
 
   const handleRemoveLinked = async (fieldId: string, linkedRecordId: string) => {
+    // See handleAddLinked's identical guard -- trust_link isn't in `fields`
+    // state, so the lookup below would never match it.
+    if (systemTable === 'entities' && fieldId === 'trust_link') {
+      const { data: existing } = await supabase.from('entity_relationships')
+        .select('id').eq('child_entity_id', recordId).eq('relationship_type', 'Trustee').maybeSingle();
+      if (existing) await supabase.from('entity_relationships').delete().eq('id', existing.id);
+      setLinkedItems(prev => ({ ...prev, trust_link: [] }));
+      invalidateEntityRelationCache();
+      return;
+    }
+
     const field = fields.find(f => f.id === fieldId || f.field_key === fieldId);
 
     if (field?.field_source === 'base' && field.fieldType === 'relation' && field.relationJunction) {
@@ -1182,12 +1235,35 @@ export default function RecordDashboard({
 
   // ── Shared tab content renderer ────────────────────────────────
 
+  // "Trust" rides alongside "Entity Type" in the same field grid/section
+  // (not a separate block below it) -- a synthetic field, same trick
+  // entity_type itself uses to edit entities.roles, except this one
+  // ('base' + 'relation', no relationJunction) goes through the ordinary
+  // linkedItems/onAddLinked/onRemoveLinked machinery every other relation
+  // field here already uses, special-cased to write entity_relationships
+  // instead of a real column (see handleAddLinked/handleRemoveLinked).
+  // Only injected when the entity actually holds a trustee role, and only
+  // once (skipped if a saved layout already has it from a prior session).
+  const withTrustField = (list: FieldLayout[]): FieldLayout[] => {
+    if (systemTable !== 'entities' || !record?.roles?.some((r: string) => TRUSTEE_ROLE_TYPES.includes(r))) return list;
+    if (list.some(f => f.field_key === 'trust_link')) return list;
+    const anchor = list.find(f => f.field_key === 'entity_type');
+    return [...list, {
+      id: 'trust_link', field_key: 'trust_link', field_source: 'base' as const, label: 'Trust',
+      fieldType: 'relation', relationTable: 'entities', relationDisplayColumn: 'name',
+      col_start: 1, col_span: anchor?.col_span ?? 6, row_order: anchor ? anchor.row_order + 0.5 : list.length,
+    }];
+  };
+  const fieldSectionsWithTrust = systemTable === 'entities' && fieldSections['entity_type']
+    ? { ...fieldSections, trust_link: fieldSections['entity_type'] }
+    : fieldSections;
+
   const renderTabContent = () => (
     <>
       {activeTab?.tab_type === 'fields' && (
         <FieldLayoutEditor
-          fieldSections={fieldSections}
-          fields={getTabFieldLayout(activeTab.id)}
+          fieldSections={fieldSectionsWithTrust}
+          fields={withTrustField(getTabFieldLayout(activeTab.id))}
           recordValues={systemTable === 'entities' && record ? { ...record, entity_type: record.roles ?? [] } : record || {}}
           recordMatterType={matterTypeFieldId ? record?.[matterTypeFieldId] : undefined}
           linkedItems={linkedItems}
@@ -1204,11 +1280,6 @@ export default function RecordDashboard({
             handleRemoveFieldFromTab(activeTab.id, fieldKey)
           }
         />
-      )}
-      {activeTab?.tab_type === 'fields' && systemTable === 'entities' && record?.roles?.some((r: string) => TRUSTEE_ROLE_TYPES.includes(r)) && (
-        <div className="mt-6 pt-6 border-t border-slate-100">
-          <TrustLinkField entityId={recordId} canEdit />
-        </div>
       )}
       {activeTab?.tab_type === 'sub_projects' && (
         <SubProjectsTab recordId={recordId} />

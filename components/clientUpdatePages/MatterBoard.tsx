@@ -57,7 +57,7 @@ function isRelationField(field: MatterBoardField): boolean {
 }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
 export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
-export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; }
+export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; }
 export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
@@ -933,6 +933,16 @@ function expandByProperty(items: MatterBoardItem[], propertyFieldIds: string[]):
       item: {
         ...item,
         values: propertyFieldIds.length ? { ...item.values, ...Object.fromEntries(propertyFieldIds.map(fid => [fid, p.values[fid] ?? null])) } : item.values,
+        // relationIds/relationCapacities need the SAME per-property split as
+        // values above -- without it, every row of a multi-property matter
+        // shared the matter-level maps (first-property-only, see
+        // lib/clientUpdatePageDetail.ts's resolveRelationId doc comment),
+        // so a relation-type property field's picker/popover on the SECOND+
+        // row acted on the wrong property's link entirely (confirmed live:
+        // the "as trustee" popover on a 2-property matter's second row
+        // showed the first property's trust).
+        relationIds: propertyFieldIds.length ? { ...item.relationIds, ...Object.fromEntries(propertyFieldIds.map(fid => [fid, p.relationIds?.[fid] ?? null])) } : item.relationIds,
+        relationCapacities: propertyFieldIds.length ? { ...item.relationCapacities, ...Object.fromEntries(propertyFieldIds.map(fid => [fid, p.relationCapacities?.[fid] ?? null])) } : item.relationCapacities,
         notes: item.notes.filter(n => n.property_id == null || n.property_id === p.id),
       },
     }));

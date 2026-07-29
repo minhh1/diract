@@ -752,7 +752,8 @@ export default function RelationPicker({
   // hidden entirely. Not cached (unlike the options/label fetches above)
   // -- a single lightweight row lookup, fired only on an explicit click,
   // and always-fresh matters more here than saving a round trip, since the
-  // link can change independently via TrustLinkField.tsx.
+  // link can change independently via the entity's own "Trust" field
+  // (RecordDashboard.tsx's withTrustField).
   const toggleTrustPopover = async () => {
     if (showTrustPopover) { setShowTrustPopover(false); return; }
     setShowTrustPopover(true);
