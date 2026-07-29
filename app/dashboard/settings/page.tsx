@@ -88,9 +88,13 @@ async function fetchDuplicatesData(dupType: DupType): Promise<DuplicatePair[]> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) return [];
-  const json = await res.json();
-  return json.pairs || [];
+  const json = await res.json().catch(() => null);
+  // A failed scan used to just come back as an empty pairs array here --
+  // indistinguishable from "genuinely no duplicates" in the UI, with
+  // nothing to go on to debug it. Throwing surfaces the real error via
+  // useQuery's own error state instead (rendered below).
+  if (!res.ok) throw new Error(json?.error || `Scan failed (${res.status})`);
+  return json?.pairs || [];
 }
 
 export default function SettingsPage() {
@@ -134,7 +138,7 @@ function SettingsPageInner() {
     staleTime: 60 * 1000,
   });
   const duplicatesQueryKey = ['settings-duplicates', companyId, dupTypeKey(activeDupType)] as const;
-  const { data: pairs = [], isLoading: duplicatesLoading } = useQuery({
+  const { data: pairs = [], isLoading: duplicatesLoading, error: duplicatesError } = useQuery({
     queryKey: duplicatesQueryKey,
     queryFn: () => fetchDuplicatesData(activeDupType),
     enabled: view === "duplicates_view" && !!companyId,
@@ -492,6 +496,12 @@ function SettingsPageInner() {
               {loading ? (
                 <div className="space-y-8">
                   {[0, 1].map(i => <div key={i} className="h-[220px] bg-white border border-slate-200 rounded-[48px] animate-pulse" />)}
+                </div>
+              ) : duplicatesError ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-2 text-center">
+                  <AlertCircle size={20} className="text-red-400" />
+                  <p className="text-[11px] text-red-500 font-bold uppercase tracking-widest">Scan failed</p>
+                  <p className="text-[12px] text-slate-400">{(duplicatesError as Error).message}</p>
                 </div>
               ) : pairs.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-20">No duplicates found</p>

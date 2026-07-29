@@ -41,11 +41,16 @@ interface ScannedRecord {
 // same reason.
 const PAGE_SIZE = 1000;
 async function fetchAllRows<T>(
-  queryFactory: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
+  queryFactory: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
 ): Promise<T[]> {
   const all: T[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data } = await queryFactory(from, from + PAGE_SIZE - 1);
+    const { data, error } = await queryFactory(from, from + PAGE_SIZE - 1);
+    // A query error used to look identical to "no more rows" here (data
+    // was just null either way) -- silently returning zero rows on a real
+    // failure, which is exactly what made this scanner's "no duplicates
+    // found" indistinguishable from "the query blew up" from the outside.
+    if (error) throw new Error(error.message);
     if (!data?.length) break;
     all.push(...data);
     if (data.length < PAGE_SIZE) break;
@@ -65,6 +70,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "tableKind and table are required" }, { status: 400 });
   }
 
+  try {
+    return await scan(admin, companyId, tableKind, table);
+  } catch (err) {
+    // Every failure below this point used to surface as an opaque 500 (or,
+    // client-side, as a silently swallowed "no duplicates found" -- see
+    // fetchDuplicatesData in app/dashboard/settings/page.tsx) with nothing
+    // to actually debug from. Return the real message instead.
+    console.error("[duplicates/scan]", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Scan failed" },
+      { status: 500 }
+    );
+  }
+}
+
+async function scan(admin: any, companyId: string, tableKind: string, table: string) {
   let records: ScannedRecord[];
   let fields: ComparisonField[];
 
