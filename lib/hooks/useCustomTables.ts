@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
+import { fetchScopedDefaultResourceIds } from "@/lib/hooks/scopedDefaultResources";
 
 export interface CustomTable {
   id: string;
@@ -31,6 +32,13 @@ export interface CustomTable {
   // for why the client still hides it from anyone but the owner regardless
   // of admin status).
   owner_user_id: string | null;
+  // Resolved for the CURRENT viewer: is_default (mandatory for everyone) OR
+  // this viewer's team/person has their own company_default_scopes row for
+  // this table (see 20260729000000_scoped_default_views.sql /
+  // AdminDefaultTablesTab.tsx). Sidebar.tsx uses this, not the raw
+  // is_default, to decide what's pinned/mandatory -- AdminDefaultTablesTab
+  // still reads the raw is_default for its own company-wide toggle.
+  effectiveDefault: boolean;
 }
 
 // Module-level cache, not per-component -- app/dashboard/[tableSlug]/page.tsx
@@ -86,8 +94,11 @@ function fetchTables(userId: string | null): Promise<CustomTable[]> {
       .select('*')
       .is('deleted_at', null);
     query = userId ? query.or(`owner_user_id.is.null,owner_user_id.eq.${userId}`) : query.is('owner_user_id', null);
-    const { data } = await query.order('display_order');
-    const tables = data || [];
+    const [{ data }, scopedIds] = await Promise.all([
+      query.order('display_order'),
+      fetchScopedDefaultResourceIds('table', userId),
+    ]);
+    const tables = (data || []).map((t: any) => ({ ...t, effectiveDefault: t.is_default || scopedIds.has(t.id) }));
     perfLog("useCustomTables: resolved", `${tables.length} tables`);
     cachedTables = tables;
     cachedForUserId = userId;
