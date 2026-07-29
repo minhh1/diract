@@ -1372,6 +1372,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
         <thead>
           <tr className="border-b border-slate-100 text-left">
             <th className="w-8 sm:sticky sm:left-0 sm:z-20 sm:bg-white" />
+            {showFixColumn && <th className="w-16" />}
             {fields.map((f, i) => (
               <th key={f.id} draggable={canEdit && !!onReorderFields}
                 onDragStart={() => setDraggedFieldId(f.id)}
@@ -1385,7 +1386,6 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 </span>
               </th>
             ))}
-            {showFixColumn && <th className="w-16" />}
             {canEdit && onMoveItem && <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Group</th>}
             {canEdit && onRemoveItem && <th className="w-10" />}
           </tr>
@@ -1404,11 +1404,6 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                   <ChevronRight size={13} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
                 </button>
               </td>
-              {fields.map((f, i) => (
-                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
-                  onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
-                  onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
-              ))}
               {showFixColumn && (
                 <td className="px-2 py-4">
                   <button onClick={() => setFixItemId(item.id)} title="Fix this"
@@ -1417,6 +1412,11 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                   </button>
                 </td>
               )}
+              {fields.map((f, i) => (
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
+                  onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
+                  onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
+              ))}
               {canEdit && onMoveItem && (
                 <td className="px-4 py-4">
                   <select value={item.group_id || ""} onChange={e => onMoveItem(item.id, e.target.value || null)}

@@ -30,11 +30,13 @@ import { isSystemTable, resolveRecordsBatch, resolveFieldValuesBatch, resolveDis
 // is one of these. Deliberately excludes tfn/bank_name/bsb/account_number/
 // date_of_birth -- this can end up on a client-facing page, so no
 // financial or personally-sensitive entity columns are offerable here.
+// abn/acn used to be here too -- they're company_custom_fields now (see
+// supabase/migrations/20260729290000_entities_finance_fields_to_custom.sql),
+// and this mechanism only resolves native columns, not custom field values,
+// so they're no longer offerable as a related_entity column at all.
 export const RELATED_ENTITY_COLUMNS: { key: string; label: string }[] = [
   { key: "name", label: "Name" },
   { key: "entity_type", label: "Entity Type" },
-  { key: "abn", label: "ABN" },
-  { key: "acn", label: "ACN" },
   { key: "gst_registered", label: "GST Registered" },
   { key: "email", label: "Email" },
   { key: "phone", label: "Phone" },
@@ -48,9 +50,12 @@ const RELATED_ENTITY_COLUMN_KEYS = RELATED_ENTITY_COLUMNS.map(c => c.key);
 // page -- mirrors the entities-side of NewEntityModal.tsx's fields (plus
 // established_date/gst_report_frequency additions). Staff-only board, so
 // (unlike RELATED_ENTITY_COLUMNS) no need to exclude bank/TFN columns here.
+// acn/abn/tfn/trust_deed_date/bank_name/bsb/account_number/nab_connect_id
+// used to be here too -- they're company_custom_fields now (see
+// supabase/migrations/20260729290000_entities_finance_fields_to_custom.sql),
+// so they're picked up by the normal custom-field catalog instead.
 export const ENTITY_BASE_COLUMNS = [
-  "name", "entity_type", "acn", "abn", "tfn", "gst_registered", "established_date",
-  "trust_deed_date", "bank_name", "bsb", "account_number", "nab_connect_id",
+  "name", "entity_type", "gst_registered", "established_date",
 ];
 
 export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean; baseTable?: string } = {}) {
@@ -328,9 +333,25 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       }
       if (!v) return null;
       const effectiveType = customTableFieldTypeById.get(effectiveFieldKey);
-      if (effectiveType === "entity" && v.value_record_id) return entityById.get(v.value_record_id)?.name ?? null;
-      if (effectiveType === "property" && v.value_record_id) return propertyById.get(v.value_record_id)?.street_address ?? null;
-      if (effectiveType === "table_relation" && v.value_record_id) return tableRelationNameById.get(v.value_record_id) ?? null;
+      // "(deleted)" only when the linked record is genuinely gone (its id
+      // isn't in the lookup map at all) -- NOT when it exists but its own
+      // display field is legitimately blank (e.g. an "Incomplete Name"
+      // violation on an entity whose name really is empty -- that's real
+      // data, not a dangling reference, and showing "(deleted)" for it
+      // would be actively misleading). Found live: an entity removed by the
+      // duplicate-merge flow left its still-open irregularities pointing at
+      // nothing, rendering a silently blank Name with no indication why.
+      if (effectiveType === "entity" && v.value_record_id) {
+        const entity = entityById.get(v.value_record_id);
+        return entity ? (entity.name ?? "") : "(deleted)";
+      }
+      if (effectiveType === "property" && v.value_record_id) {
+        const property = propertyById.get(v.value_record_id);
+        return property ? (property.street_address ?? "") : "(deleted)";
+      }
+      if (effectiveType === "table_relation" && v.value_record_id) {
+        return tableRelationNameById.has(v.value_record_id) ? tableRelationNameById.get(v.value_record_id) : "(deleted)";
+      }
       return v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
     }
     return record?.[field.field_key] ?? null;
