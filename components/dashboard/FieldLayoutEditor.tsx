@@ -399,6 +399,18 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
                     className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors">
                     <ArrowUpRight size={12} />
                   </button>
+                  {/* Clear -- this single-value branch previously had no way
+                      to unset an already-linked record (e.g. a project's
+                      Parent Project) short of opening the modal and
+                      deselecting it there, with zero visual hint that was
+                      even possible. Mirrors the multi-value branch's
+                      per-chip X below. */}
+                  {onRemoveLinked && (
+                    <button onClick={() => onRemoveLinked(linkedItems[0].id)} title="Remove link"
+                      className="p-1.5 text-slate-300 hover:text-red-500 transition-colors">
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
               ) : (
                 /* For multi (entity/property) — chips with actions + add more */
