@@ -4,7 +4,6 @@ import QueryProvider from "@/components/QueryProvider";
 import { CompanyProvider } from "@/components/CompanyContext";
 import { ProgressBarProvider } from "@/components/TopProgressBar";
 import PerfRouteTracker from "@/components/PerfRouteTracker";
-import NotificationBell from "@/components/NotificationBell";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,11 +11,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <CompanyProvider>
         <ProgressBarProvider>
           <PerfRouteTracker />
-          {/* Fixed to the viewport, not this flex row -- there's no shared
-              header across /dashboard/* pages (each page renders its own),
-              so this is the one place a top-right notification icon can
-              live consistently on every page. */}
-          <NotificationBell />
           <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans antialiased text-slate-900">
             {/* COLUMN 1: Sidebar — Sidebar itself controls width so it can collapse */}
             <aside className="flex-shrink-0">
