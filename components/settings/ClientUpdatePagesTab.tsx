@@ -1,28 +1,63 @@
 // components/settings/ClientUpdatePagesTab.tsx
-// Admin management for Client Update Pages -- copies
-// components/settings/PublicTaskPagesTab.tsx's shape exactly: list existing
-// pages, create/revoke, copy/open the link. The one thing beyond that
-// shape is PIN edit/regenerate, inline per row. Everything else (matters,
-// groups, columns, values, notes, date format) is edited on the page
-// itself now, not here -- see app/public/updates/[slug]/page.tsx.
+// Admin (and Team Leader/member, for team-scoped pages) management for
+// "Detailed table pages" (client_update_pages internally -- see
+// lib/clientUpdatePageTableResolver.ts for the generic table support this
+// UI drives). Creation flow mirrors components/settings/PublicTaskPagesTab.tsx's
+// shape (batched {teams, pages} fetch, teamOptions = isAdmin ? allTeams :
+// myTeams, visibility radio, team picker, expiry date + "no expiry"
+// checkbox, create -> success view with a copyable link) plus two steps
+// neither existing feature has: a table picker and a field picker.
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Copy, Check, Trash2, ExternalLink, X, Pencil, RefreshCw } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useCompany } from "@/components/CompanyContext";
+import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import {
+  Plus, Copy, Check, Trash2, ExternalLink, X, Pencil, RefreshCw, Users, Globe,
+} from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
+interface Team { id: string; team_name: string; leader_id: string | null; }
 interface Page {
   id: string; title: string; client_label: string | null; slug: string;
-  access_code: string | null; is_active: boolean; expires_at: string | null; matterCount: number;
+  access_code: string | null; is_active: boolean; expires_at: string | null;
+  matterCount: number; base_table: string; visibility: "public" | "team"; teamNames: string[];
 }
 
-async function fetchPages(): Promise<{ pages: Page[] }> {
-  const res = await fetch("/api/client-update-pages/list");
-  return res.json();
+const SYSTEM_TABLE_OPTIONS = [
+  { id: "projects", label: "Matters" },
+  { id: "entities", label: "Entities" },
+  { id: "properties", label: "Properties" },
+];
+
+function defaultExpiry(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchTabData(userId: string): Promise<{ allTeams: Team[]; myTeams: Team[]; pages: Page[] }> {
+  const [{ data: teams }, { data: myMemberships }, res] = await Promise.all([
+    supabase.from("teams").select("id, team_name, leader_id").eq("is_active", true).order("team_name"),
+    supabase.from("team_members").select("team_id").eq("profile_id", userId),
+    fetch("/api/client-update-pages/list"),
+  ]);
+  const json = await res.json();
+  const myTeamIds = new Set([
+    ...(myMemberships || []).map((m: any) => m.team_id),
+    ...(teams || []).filter((t: any) => t.leader_id === userId).map((t: any) => t.id),
+  ]);
+  return {
+    allTeams: teams || [],
+    myTeams: (teams || []).filter((t: any) => myTeamIds.has(t.id)),
+    pages: json.pages || [],
+  };
 }
 
 export default function ClientUpdatePagesTab() {
+  const { userId, isAdmin } = useCompany();
   const [showCreate, setShowCreate] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
@@ -31,11 +66,15 @@ export default function ClientUpdatePagesTab() {
   const [savingPin, setSavingPin] = useState(false);
 
   const { data, isLoading: loading, refetch } = useQuery({
-    queryKey: ["client-update-pages"],
-    queryFn: fetchPages,
+    queryKey: ["client-update-pages", userId],
+    queryFn: () => fetchTabData(userId!),
+    enabled: !!userId,
     staleTime: 30 * 1000,
   });
+  const allTeams = data?.allTeams ?? [];
+  const myTeams = data?.myTeams ?? [];
   const pages = data?.pages ?? [];
+  const teamOptions = isAdmin ? allTeams : myTeams;
   useProgressBarWhile(loading);
 
   const handleRevoke = async (id: string) => {
@@ -69,11 +108,11 @@ export default function ClientUpdatePagesTab() {
     <div className="space-y-6 animate-in fade-in">
       <button onClick={() => setShowCreate(true)}
         className="flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
-        <Plus size={14} /> Create client update page
+        <Plus size={14} /> Create detailed table page
       </button>
 
       <div className="space-y-3">
-        {pages.length === 0 && <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-12">No client update pages yet</p>}
+        {pages.length === 0 && <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-12">No detailed table pages yet</p>}
         {pages.map(p => (
           <div key={p.id} className="flex items-center gap-4 p-5 bg-white border border-slate-200 rounded-[24px]">
             <div className="flex-1 min-w-0">
@@ -82,9 +121,12 @@ export default function ClientUpdatePagesTab() {
                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${p.is_active ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
                   {p.is_active ? "Active" : "Revoked"}
                 </span>
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-50 text-slate-500">
+                  {p.visibility === "public" ? <><Globe size={9} /> Public</> : <><Users size={9} /> {p.teamNames.join(", ") || "Team-only"}</>}
+                </span>
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                {editingPinId === p.id ? (
+                {p.visibility === "public" && editingPinId === p.id ? (
                   <>
                     <input value={pinDraft} onChange={e => setPinDraft(e.target.value)} autoFocus
                       onKeyDown={e => { if (e.key === "Enter" && pinDraft.trim()) changePin(p.id, { pin: pinDraft.trim() }); if (e.key === "Escape") setEditingPinId(null); }}
@@ -96,10 +138,10 @@ export default function ClientUpdatePagesTab() {
                 ) : (
                   <>
                     <p className="text-[11px] text-slate-400">
-                      {p.matterCount} matter{p.matterCount === 1 ? "" : "s"} · PIN {p.access_code}
-                      {p.expires_at ? ` · expires ${new Date(p.expires_at).toLocaleDateString()}` : " · no expiry"}
+                      {p.matterCount} record{p.matterCount === 1 ? "" : "s"}
+                      {p.visibility === "public" ? ` · PIN ${p.access_code}${p.expires_at ? ` · expires ${new Date(p.expires_at).toLocaleDateString()}` : " · no expiry"}` : ""}
                     </p>
-                    {p.is_active && (
+                    {p.is_active && p.visibility === "public" && (
                       <>
                         <button onClick={() => { setPinDraft(p.access_code || ""); setEditingPinId(p.id); setPinError(null); }} title="Change PIN"
                           className="p-0.5 text-slate-300 hover:text-indigo-600 transition-colors"><Pencil size={11} /></button>
@@ -133,29 +175,79 @@ export default function ClientUpdatePagesTab() {
       </div>
 
       {showCreate && (
-        <CreatePageModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetch(); }} />
+        <CreatePageModal isAdmin={isAdmin} teamOptions={teamOptions} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetch(); }} />
       )}
     </div>
   );
 }
 
-function CreatePageModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
+  isAdmin: boolean; teamOptions: Team[]; onClose: () => void; onCreated: (id: string) => void;
+}) {
+  const { tables: customTables, loading: tablesLoading } = useCustomTables();
+
   const [title, setTitle] = useState("");
   const [clientLabel, setClientLabel] = useState("");
   const [slug, setSlug] = useState("");
+  const [baseTable, setBaseTable] = useState("");
+  const [fieldOptions, setFieldOptions] = useState<{ base: { field_key: string; label: string }[]; custom: { field_key: string; label: string }[] }>({ base: [], custom: [] });
+  const [loadingFields, setLoadingFields] = useState(false);
+  const [pickedFields, setPickedFields] = useState<{ fieldSource: "base" | "custom"; fieldKey: string; label: string }[]>([]);
+  const [visibility, setVisibility] = useState<"public" | "team">("public");
+  const [teamIds, setTeamIds] = useState<Set<string>>(new Set());
+  const [noExpiry, setNoExpiry] = useState(false);
+  const [expiresAt, setExpiresAt] = useState(defaultExpiry());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
 
+  const tableOptions = [
+    ...SYSTEM_TABLE_OPTIONS,
+    ...customTables.filter(t => t.owner_user_id === null).map(t => ({ id: t.id, label: t.name })),
+  ];
+
+  useEffect(() => {
+    if (!baseTable) { setFieldOptions({ base: [], custom: [] }); setPickedFields([]); return; }
+    let active = true;
+    (async () => {
+      setLoadingFields(true);
+      const res = await fetch(`/api/client-update-pages/table-fields?table=${encodeURIComponent(baseTable)}`);
+      const json = await res.json();
+      if (!active) return;
+      setFieldOptions({ base: json.base || [], custom: json.custom || [] });
+      setPickedFields([]);
+      setLoadingFields(false);
+    })();
+    return () => { active = false; };
+  }, [baseTable]);
+
+  const toggleField = (fieldSource: "base" | "custom", f: { field_key: string; label: string }) => {
+    setPickedFields(prev => prev.some(p => p.fieldKey === f.field_key)
+      ? prev.filter(p => p.fieldKey !== f.field_key)
+      : [...prev, { fieldSource, fieldKey: f.field_key, label: f.label }]);
+  };
+
+  const toggleTeam = (id: string) => setTeamIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
   const handleCreate = async () => {
     if (!title.trim()) { setError("Title is required"); return; }
+    if (!baseTable) { setError("Select a table"); return; }
+    if (visibility === "team" && !teamIds.size) { setError("Select at least one team"); return; }
     setSaving(true);
     setError(null);
     const res = await fetch("/api/client-update-pages/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, clientLabel, slug: slug || title }),
+      body: JSON.stringify({
+        title, clientLabel, slug: slug || title, baseTable, fields: pickedFields,
+        visibility, teamIds: visibility === "team" ? [...teamIds] : undefined,
+        expiresAt: visibility === "public" && !noExpiry ? expiresAt : null,
+      }),
     });
     const json = await res.json();
     setSaving(false);
@@ -173,7 +265,11 @@ function CreatePageModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <div className="px-4 py-3 bg-slate-50 rounded-2xl">
             <code className="text-[11px] text-slate-600 break-all">{createdUrl}</code>
           </div>
-          <p className="text-[11px] text-slate-400">Add matters, groups, and columns directly on the page — open it above, sign in, and you'll see full editing controls.</p>
+          <p className="text-[11px] text-slate-400">
+            {visibility === "public"
+              ? "Add more records, groups, and columns directly on the page — open it above, sign in, and you'll see full editing controls."
+              : "Only members of the selected team(s) — and company admins — can open this page."}
+          </p>
           <button onClick={() => { navigator.clipboard.writeText(createdUrl); }}
             className="w-full py-3 bg-slate-900 text-white text-[12px] font-bold rounded-full hover:bg-slate-700 flex items-center justify-center gap-2">
             <Copy size={13} /> Copy link
@@ -190,7 +286,7 @@ function CreatePageModal({ onClose, onCreated }: { onClose: () => void; onCreate
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl w-full max-w-lg mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
-          <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Create client update page</h3>
+          <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Create detailed table page</h3>
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
@@ -199,20 +295,110 @@ function CreatePageModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Niksen — Matter Update"
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
           </div>
+
           <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Client label <span className="normal-case font-normal text-slate-300">(optional)</span></p>
-            <input value={clientLabel} onChange={e => setClientLabel(e.target.value)} placeholder="e.g. Niksen"
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Table</p>
+            <select value={baseTable} onChange={e => setBaseTable(e.target.value)} disabled={tablesLoading}
+              className="w-full bg-white border border-slate-200 rounded-full py-2.5 px-4 text-[13px] outline-none appearance-none">
+              <option value="">Select a table...</option>
+              {tableOptions.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
           </div>
+
+          {baseTable && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Columns to show</p>
+              {loadingFields ? (
+                <p className="text-[11px] text-slate-300">Loading fields...</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {fieldOptions.base.map(f => (
+                    <button key={f.field_key} type="button" onClick={() => toggleField("base", f)}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
+                        pickedFields.some(p => p.fieldKey === f.field_key) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300"
+                      }`}>
+                      {f.label}
+                    </button>
+                  ))}
+                  {fieldOptions.custom.map(f => (
+                    <button key={f.field_key} type="button" onClick={() => toggleField("custom", f)}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
+                        pickedFields.some(p => p.fieldKey === f.field_key) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300"
+                      }`}>
+                      {f.label}
+                    </button>
+                  ))}
+                  {!fieldOptions.base.length && !fieldOptions.custom.length && (
+                    <p className="text-[11px] text-slate-300 italic">No fields found on this table</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Custom URL <span className="normal-case font-normal text-slate-300">(defaults from title)</span></p>
-            <div className="flex items-center gap-1 px-4 py-2.5 border border-slate-200 rounded-full">
-              <span className="text-[12px] text-slate-400 shrink-0">/public/updates/</span>
-              <input value={slug} onChange={e => setSlug(e.target.value)} placeholder="niksen"
-                className="flex-1 min-w-0 text-[13px] outline-none" />
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Who can view this</p>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                <input type="radio" checked={visibility === "public"} onChange={() => setVisibility("public")} />
+                <span className="text-[12px] text-slate-700">Public link (anyone with the link + PIN)</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                <input type="radio" checked={visibility === "team"} onChange={() => setVisibility("team")} />
+                <span className="text-[12px] text-slate-700">Team-only (requires sign-in)</span>
+              </label>
             </div>
           </div>
-          <p className="text-[11px] text-slate-400">A 6-digit PIN is generated automatically — clients enter it once and won't be asked again. Signed-in staff never need it.</p>
+
+          {visibility === "public" && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Client label <span className="normal-case font-normal text-slate-300">(optional)</span></p>
+              <input value={clientLabel} onChange={e => setClientLabel(e.target.value)} placeholder="e.g. Niksen"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
+            </div>
+          )}
+
+          {visibility === "public" && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Custom URL <span className="normal-case font-normal text-slate-300">(defaults from title)</span></p>
+              <div className="flex items-center gap-1 px-4 py-2.5 border border-slate-200 rounded-full">
+                <span className="text-[12px] text-slate-400 shrink-0">/public/updates/</span>
+                <input value={slug} onChange={e => setSlug(e.target.value)} placeholder="niksen"
+                  className="flex-1 min-w-0 text-[13px] outline-none" />
+              </div>
+            </div>
+          )}
+
+          {visibility === "team" && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Teams</p>
+              {teamOptions.length === 0 && <p className="text-[11px] text-slate-300 italic">No teams available</p>}
+              <div className="space-y-1.5">
+                {teamOptions.map(t => (
+                  <label key={t.id} className="flex items-center gap-2.5 px-3 py-2 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                    <input type="checkbox" checked={teamIds.has(t.id)} onChange={() => toggleTeam(t.id)} className="w-4 h-4 accent-indigo-600" />
+                    <span className="text-[12px] text-slate-700">{t.team_name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {visibility === "public" && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Expiry date <span className="text-indigo-500 normal-case font-normal">(strongly recommended)</span></p>
+              <input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} disabled={noExpiry}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none disabled:opacity-40" />
+              <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                <input type="checkbox" checked={noExpiry} onChange={e => setNoExpiry(e.target.checked)} />
+                <span className="text-[11px] text-slate-500">No expiry (not recommended — leaves this link open indefinitely)</span>
+              </label>
+            </div>
+          )}
+
+          {visibility === "public" && (
+            <p className="text-[11px] text-slate-400">A 6-digit PIN is generated automatically — clients enter it once and won't be asked again. Signed-in staff never need it.</p>
+          )}
           {error && <p className="text-[11px] text-red-500">{error}</p>}
         </div>
         <div className="px-8 py-5 border-t border-slate-100 shrink-0">

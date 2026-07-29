@@ -12,13 +12,19 @@ import { NextResponse } from "next/server";
 export async function loadActivePageBySlug(admin: any, slug: string) {
   const { data: page } = await admin
     .from("client_update_pages")
-    .select("id, company_id, title, client_label, slug, expires_at, is_active, access_code, date_format, freeze_first_column, base_table, page_kind")
+    .select("id, company_id, title, client_label, slug, expires_at, is_active, access_code, date_format, freeze_first_column, base_table, page_kind, visibility")
     .eq("slug", slug).maybeSingle();
 
   const notFound = { error: NextResponse.json({ error: "This page is not available" }, { status: 404 }), page: null };
 
   if (!page) return notFound;
   if (!page.is_active) return notFound;
+  // A 'team'-visibility page requires a real signed-in, team-scoped session
+  // (see lib/clientUpdatePageTeamAuth.ts) -- it must never be reachable via
+  // this genuinely-unauthenticated path, PIN or no PIN. Same generic
+  // not-found used for expired/revoked, so a team-only page can't be
+  // distinguished from one that never existed either.
+  if (page.visibility === "team") return notFound;
   if (page.expires_at) {
     // expires_at is a DATE -- the page is valid through the end of that day.
     const expiry = new Date(`${String(page.expires_at).slice(0, 10)}T23:59:59`);

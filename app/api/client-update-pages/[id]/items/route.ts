@@ -3,6 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
 import { logChange, resolveActorName } from "@/lib/clientUpdatePageLog";
+import { isSystemTable, validateRecordBelongsToCompany, resolveDisplayNamesBatch } from "@/lib/clientUpdatePageTableResolver";
+
+const SYSTEM_TABLE_LABEL: Record<string, string> = { projects: "Matter", entities: "Entity", properties: "Property" };
+
+async function recordTableLabel(admin: any, recordTable: string): Promise<string> {
+  if (isSystemTable(recordTable)) return SYSTEM_TABLE_LABEL[recordTable] || "Record";
+  const { data } = await admin.from("company_tables").select("name").eq("id", recordTable).maybeSingle();
+  return data?.name || "Record";
+}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,31 +26,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (gate.page.page_kind === "auto_fed") {
     return NextResponse.json({ error: "Items on this page can't be added manually" }, { status: 400 });
   }
-  const baseTable: "projects" | "entities" = gate.page.base_table === "entities" ? "entities" : "projects";
+  const baseTable: string = gate.page.base_table;
+  const label = await recordTableLabel(admin, baseTable);
 
   const body = await req.json().catch(() => ({}));
-  const { projectId, entityId, groupId } = body;
-  const recordId = baseTable === "projects" ? projectId : entityId;
-  if (!recordId) return NextResponse.json({ error: `${baseTable === "projects" ? "projectId" : "entityId"} is required` }, { status: 400 });
+  const recordId: string | undefined = body.recordId;
+  if (!recordId) return NextResponse.json({ error: "recordId is required" }, { status: 400 });
 
-  const { data: record } = await admin.from(baseTable).select("id, name, company_id").eq("id", recordId).maybeSingle();
-  if (!record || record.company_id !== companyId) {
-    return NextResponse.json({ error: baseTable === "projects" ? "Matter not found" : "Entity not found" }, { status: 404 });
-  }
+  const belongsToCompany = await validateRecordBelongsToCompany(admin, companyId, baseTable, recordId);
+  if (!belongsToCompany) return NextResponse.json({ error: `${label} not found` }, { status: 404 });
 
   const { count } = await admin.from("client_update_page_items").select("id", { count: "exact", head: true }).eq("page_id", id);
-  const insertRow: Record<string, any> = { page_id: id, group_id: groupId || null, display_order: count || 0 };
-  if (baseTable === "projects") insertRow.project_id = recordId; else insertRow.entity_id = recordId;
   const { data: item, error } = await admin.from("client_update_page_items")
-    .insert(insertRow)
-    .select("id, project_id, entity_id, group_id, display_order").single();
+    .insert({ page_id: id, group_id: body.groupId || null, display_order: count || 0, record_table: baseTable, record_id: recordId })
+    .select("id, record_table, record_id, group_id, display_order").single();
   if (error) {
-    if (error.code === "23505") return NextResponse.json({ error: `That ${baseTable === "projects" ? "matter" : "entity"} is already on this page` }, { status: 409 });
+    if (error.code === "23505") return NextResponse.json({ error: `That ${label.toLowerCase()} is already on this page` }, { status: 409 });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const displayNameById = await resolveDisplayNamesBatch(admin, baseTable, [recordId]);
   const actorName = await resolveActorName(admin, user.id);
-  await logChange(admin, id, actorName, "staff", baseTable === "projects" ? "matter_added" : "entity_added", `Added ${baseTable === "projects" ? "matter" : "entity"} "${record.name}" to the page`);
+  await logChange(admin, id, actorName, "staff", "record_added", `Added ${label.toLowerCase()} "${displayNameById.get(recordId) || ""}" to the page`);
 
   return NextResponse.json({ item });
 }

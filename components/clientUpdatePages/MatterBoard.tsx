@@ -61,7 +61,7 @@ interface Props {
   // Directors/Trust inline-expand section on each row instead of the
   // property split. Undefined/'projects' means today's matters-only board,
   // unchanged.
-  baseTable?: "projects" | "entities" | "custom_table";
+  baseTable?: string;
   // 'auto_fed' (see client_update_pages.page_kind) -- items are entirely
   // system-generated (e.g. Irregularities rows, from the auto_fed rule
   // engine), so Add/Remove are hidden and the row-expand area shows the
@@ -742,7 +742,7 @@ export default function MatterBoard({
       </div>
 
       {showAddMatter && pageId && (
-        <AddMatterModal pageId={pageId} groupId={addMatterTargetGroupId} baseTable={baseTable}
+        <AddMatterModal pageId={pageId} groupId={addMatterTargetGroupId} recordTable={baseTable || "projects"}
           onClose={() => setShowAddMatter(false)} onAdded={() => { setShowAddMatter(false); onDataChanged?.(); }} />
       )}
       {showColumns && pageId && (
@@ -984,7 +984,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
-  canEdit: boolean; canComment: boolean; color: string | null; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
+  canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
   onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
@@ -1291,7 +1291,7 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 
 function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
-  freezeFirstColumn: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
+  freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
   onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;

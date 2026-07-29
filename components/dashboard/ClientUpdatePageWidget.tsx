@@ -21,7 +21,7 @@ export default function ClientUpdatePageWidget({ slug }: Props) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 p-4 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
         <Newspaper size={18} className="text-slate-300" />
-        <p className="text-[11px] text-slate-400">Open this widget's settings to create or pick a client update page</p>
+        <p className="text-[11px] text-slate-400">Open this widget's settings to create or pick a detailed table page</p>
       </div>
     );
   }

@@ -15,7 +15,7 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   trust_aged_balances: { label: 'Dormant trust balances', icon: 'AlertTriangle' },
   public_task_page: { label: 'Public task page', icon: 'Share2' },
   public_document_page: { label: 'Public document page', icon: 'FileSignature' },
-  public_client_update_page: { label: 'Public client update page', icon: 'Newspaper' },
+  public_client_update_page: { label: 'Detailed table page', icon: 'Newspaper' },
   my_tasks_button: { label: 'My Tasks button', icon: 'ListChecks' },
 };
 

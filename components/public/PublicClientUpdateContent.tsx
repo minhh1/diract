@@ -66,6 +66,11 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   const [codeInput, setCodeInput] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
   const [checkingCode, setCheckingCode] = useState(false);
+  // Signed-in, but not on any team this 'team'-visibility page is scoped to
+  // (see lib/clientUpdatePageTeamAuth.ts) -- distinct from `error` (page
+  // doesn't exist/expired/revoked) so the message is actionable rather than
+  // just "not available".
+  const [teamRestricted, setTeamRestricted] = useState(false);
 
   // ── Public (PIN-gated) fetch -- unchanged from the original flow ──────
   const fetchPublic = useCallback(async (code?: string) => {
@@ -121,9 +126,18 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   }, [fetchPublic, slug]);
 
   // ── Try staff auth first; anything short of a clean 200 falls back ────
+  // Exception: a 'team_restricted' 403 (signed in, but not on any team this
+  // page is scoped to) is handled here directly rather than falling through
+  // to the client/PIN flow -- that flow will just 404 anyway for a
+  // 'team'-visibility page (see lib/clientUpdatePageGate.ts), which would
+  // show a confusing generic error instead of an actionable one.
   const loadAsStaff = useCallback(async () => {
     const res = await fetch(`/api/client-update-pages/by-slug/${slug}`);
-    if (!res.ok) return false;
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      if (json.reason === "team_restricted") { setTeamRestricted(true); return true; }
+      return false;
+    }
     const json = await res.json();
     setMode("staff");
     setStaffPageId(json.page.id);
@@ -138,7 +152,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     // (not this specific slug) so every distinct client update board
     // aggregates into one "how's this feature performing" stat in
     // Admin > Performance, rather than fragmenting into one row per client.
-    perfLogPageStart("public", "client update page");
+    perfLogPageStart("public", "detailed table page");
     // getSession() reads the local session (no network round-trip) instead
     // of getUser() re-validating the JWT against the auth server on every
     // page load. Safe here because this only decides which fetch to try
@@ -147,14 +161,14 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     // session can't grant staff access, just cause one extra fallback
     // request to loadAsClient.
     const { data: { session } } = await supabase.auth.getSession();
-    perfLog("public client update page: session resolved");
+    perfLog("public detailed table page: session resolved");
     if (session?.user && await loadAsStaff()) {
-      perfLog("public client update page: staff data resolved");
+      perfLog("public detailed table page: staff data resolved");
       setLoading(false);
       return;
     }
     await loadAsClient();
-    perfLog("public client update page: client data resolved");
+    perfLog("public detailed table page: client data resolved");
   }, [loadAsStaff, loadAsClient]);
 
   // "data resolved" (above) only marks when the fetch promise landed --
@@ -168,7 +182,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   // the suspect.
   const domSettled = useDomSettled(!loading);
   useEffect(() => {
-    if (domSettled) perfLogPageReady("public", "client update page");
+    if (domSettled) perfLogPageReady("public", "detailed table page");
   }, [domSettled]);
 
   useEffect(() => { load(); }, [load]);
@@ -529,6 +543,18 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
         <div className="max-w-sm w-full bg-white rounded-[32px] border border-slate-200 p-8 text-center space-y-2">
           <p className="text-[13px] font-bold text-slate-800">This page is not available</p>
           <p className="text-[12px] text-slate-500">The link may have expired or been revoked.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (teamRestricted) {
+    return (
+      <div className={embedded ? "flex items-center justify-center p-6" : "min-h-screen flex items-center justify-center bg-slate-50 p-6"}>
+        <div className="max-w-sm w-full bg-white rounded-[32px] border border-slate-200 p-8 text-center space-y-2">
+          <Lock size={28} className="text-slate-300 mx-auto" />
+          <p className="text-[13px] font-bold text-slate-800">You don't have access to this page</p>
+          <p className="text-[12px] text-slate-500">It's restricted to specific teams. Ask an admin if you think this is wrong.</p>
         </div>
       </div>
     );

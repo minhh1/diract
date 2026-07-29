@@ -360,7 +360,7 @@ function SettingsPageInner() {
                   className={`px-4 py-2 rounded-full text-[11px] font-bold transition-colors ${
                     publicPagesTab === "client_updates" ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-500 hover:border-slate-300"
                   }`}>
-                  Client updates
+                  Detailed tables
                 </button>
               </div>
               {publicPagesTab === "tasks" ? <PublicTaskPagesTab /> : <ClientUpdatePagesTab />}

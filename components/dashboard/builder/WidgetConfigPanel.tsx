@@ -470,7 +470,7 @@ interface ClientUpdatePageSummary {
 // owns (see lib/dashboardWidgets/types.ts) -- same create-or-pick shape as
 // PublicTaskPageConfig above, since a fresh page here only ever needs a
 // title (matters/columns/groups are all added afterward directly on the
-// board itself -- Settings -> Public pages' "Client updates" tab creates
+// board itself -- Settings -> Public pages' "Detailed tables" tab creates
 // pages the exact same minimal way). Keyed by slug, not id, since that's
 // what both the public route and this widget's embedded content address a
 // page by.
@@ -498,10 +498,15 @@ function PublicClientUpdatePageConfig({ slug, onSlugChange }: { slug: string | n
     if (!title.trim()) { setError('Title is required'); return; }
     setSaving(true);
     setError(null);
+    // Quick-create here always starts as a plain public Matters page --
+    // picking a different table/visibility is a Settings -> Public pages ->
+    // "Detailed tables" job (see ClientUpdatePagesTab.tsx's full create
+    // flow); this widget only ever points at an already-configured page's
+    // slug, so its own create shortcut stays minimal on purpose.
     const res = await fetch('/api/client-update-pages/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, baseTable: 'projects', fields: [], visibility: 'public' }),
     });
     const json = await res.json();
     setSaving(false);
@@ -525,7 +530,7 @@ function PublicClientUpdatePageConfig({ slug, onSlugChange }: { slug: string | n
     const activePages = (pages || []).filter(p => p.is_active);
     return (
       <div className="space-y-3">
-        <p className="text-[11px] text-slate-400">Pick one of your existing client update pages to point this widget at.</p>
+        <p className="text-[11px] text-slate-400">Pick one of your existing detailed table pages to point this widget at.</p>
         {activePages.length === 0 ? (
           <p className="text-[11px] text-slate-300 italic py-2">No active pages yet</p>
         ) : (
