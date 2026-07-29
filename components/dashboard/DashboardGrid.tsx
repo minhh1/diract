@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { X, GripVertical } from "lucide-react";
-import { useProgressBar } from "@/components/TopProgressBar";
+import { useProgressBar, useProgressBarWhile } from "@/components/TopProgressBar";
 import FieldValueInput from "./FieldValueInput";
 import { createRecord, updateRecord, deleteRecord } from "@/lib/services/customTableService";
 import {
@@ -130,6 +130,7 @@ export default function DashboardGrid({
   showTimekeeperInitials, staffFieldKey,
 }: Props) {
   const { start: startProgress, done: doneProgress } = useProgressBar();
+  useProgressBarWhile(!!recordsLoading);
   const gridFields = gridFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
@@ -432,7 +433,7 @@ export default function DashboardGrid({
                     )}
                   </td>
                 ))}
-                <td className="px-2">{draftSaving[i] && <Loader2 size={13} className="animate-spin text-slate-300" />}</td>
+                <td className="px-2" />
               </tr>
               {draftErrors[i] && (
                 <tr className="border-b border-slate-50">
@@ -446,7 +447,7 @@ export default function DashboardGrid({
           {records.length === 0 && paddingRowCount === 0 && (
             <tr>
               <td colSpan={gridFields.length + (readOnly ? 0 : 1) + (showInitialsCol ? 1 : 0)} className="text-center py-8 text-[11px] text-slate-300 italic">
-                {recordsLoading ? "Loading…" : "No entries yet"}
+                No entries yet
               </td>
             </tr>
           )}
