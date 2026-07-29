@@ -5,12 +5,14 @@ import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
+import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import {
   Database, Clock, Copy, ArrowLeft,
-  CheckCircle2, ChevronRight, AlertCircle,
-  Trash2, Building2, MapPin, LayoutGrid, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare, Receipt
+  ChevronRight, AlertCircle,
+  Trash2, Building2, MapPin, LayoutGrid, CheckSquare, Table2, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare, Receipt
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
@@ -30,7 +32,34 @@ const InvoiceTemplateSettingsTab = dynamic(() => import("@/components/settings/I
 
 
 type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents" | "invoice_template";
-type DupType = "properties" | "entities" | "projects";
+
+type SystemDupTable = "properties" | "entities" | "projects" | "tasks";
+
+// Discriminated union covering every table the duplicate scanner can run
+// against -- the 4 system tables (hardcoded, they never change) plus
+// whichever custom tables this company has (sourced from useCustomTables()
+// below, so a new custom table shows up here automatically).
+type DupType =
+  | { kind: "system"; table: SystemDupTable }
+  | { kind: "custom"; tableId: string; tableSlug: string; tableName: string };
+
+function dupTypeKey(t: DupType): string {
+  return t.kind === "system" ? `system:${t.table}` : `custom:${t.tableId}`;
+}
+function dupTypeLabel(t: DupType): string {
+  return t.kind === "system" ? t.table.charAt(0).toUpperCase() + t.table.slice(1) : t.tableName;
+}
+
+interface DuplicatePair {
+  idA: string;
+  idB: string;
+  labelA: string;
+  labelB: string;
+  score: number;
+  reason: string;
+  fieldsA: Record<string, any>;
+  fieldsB: Record<string, any>;
+}
 
 // Cached via useQuery (see SettingsPage below) so revisiting either view
 // within staleTime -- even just switching sub-views and back, no full
@@ -45,12 +74,23 @@ async function fetchImportHistory() {
   return data || [];
 }
 
-async function fetchDuplicatesData(companyId: string, dupType: DupType): Promise<any[]> {
-  const rpcName = dupType === 'properties' ? 'find_potential_duplicates'
-    : dupType === 'entities' ? 'find_entity_duplicates'
-    : 'find_project_duplicates';
-  const { data } = await supabase.rpc(rpcName, { similarity_threshold: 0.4, target_company_id: companyId });
-  return data || [];
+// Scans via the app-owned duplicate-matching engine (app/api/duplicates/
+// scan/route.ts) instead of the old find_potential_duplicates/
+// find_entity_duplicates/find_project_duplicates Postgres RPCs -- those were
+// opaque (untracked in this repo), hardcoded to 3 system tables, and had no
+// path to ever support custom tables.
+async function fetchDuplicatesData(dupType: DupType): Promise<DuplicatePair[]> {
+  const body = dupType.kind === "system"
+    ? { tableKind: "system", table: dupType.table }
+    : { tableKind: "custom", table: dupType.tableId };
+  const res = await fetch("/api/duplicates/scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return [];
+  const json = await res.json();
+  return json.pairs || [];
 }
 
 export default function SettingsPage() {
@@ -63,13 +103,14 @@ export default function SettingsPage() {
 
 function SettingsPageInner() {
   const searchParams = useSearchParams();
-  const { companyId } = useCompany();
+  const { companyId, userId } = useCompany();
+  const { tables: customTables } = useCustomTables(userId);
   const [view, setView] = useState<SettingsView>("menu");
   const [publicPagesTab, setPublicPagesTab] = useState<"tasks" | "client_updates">("tasks");
 
   // The sidebar's Settings panel deep-links straight to a view (e.g.
   // ?view=history) instead of always landing on the menu first. This is a
-  // one-way sync (param → state) on top of the existing local nav — back
+  // one-way sync (param → state) on top of the existing local nav -- back
   // button/menu clicks inside this page still just call setView directly.
   useEffect(() => {
     const v = searchParams.get("view");
@@ -78,9 +119,9 @@ function SettingsPageInner() {
     }
   }, [searchParams.get("view")]);
 
-  const [activeDupType, setActiveDupType] = useState<DupType>("properties");
+  const [activeDupType, setActiveDupType] = useState<DupType>({ kind: "system", table: "properties" });
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
+  const [mergingPairKey, setMergingPairKey] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isFormatterOpen, setIsFormatterOpen] = useState(false);
 
@@ -92,10 +133,10 @@ function SettingsPageInner() {
     enabled: view === "history",
     staleTime: 60 * 1000,
   });
-  const duplicatesQueryKey = ['settings-duplicates', companyId, activeDupType] as const;
-  const { data: items = [], isLoading: duplicatesLoading, refetch: refetchDuplicates } = useQuery({
+  const duplicatesQueryKey = ['settings-duplicates', companyId, dupTypeKey(activeDupType)] as const;
+  const { data: pairs = [], isLoading: duplicatesLoading } = useQuery({
     queryKey: duplicatesQueryKey,
-    queryFn: () => fetchDuplicatesData(companyId as string, activeDupType),
+    queryFn: () => fetchDuplicatesData(activeDupType),
     enabled: view === "duplicates_view" && !!companyId,
     staleTime: 60 * 1000,
   });
@@ -146,11 +187,43 @@ function SettingsPageInner() {
     if (!error) queryClient.setQueryData(historyQueryKey, (old: any[] = []) => old.filter(h => h.id !== id));
   };
 
-  const handleBulkDelete = async () => {
-    if (!window.confirm(`Delete ${selected.length} records?`)) return;
-    await supabase.from(activeDupType).update({ deleted_at: new Date().toISOString() }).in("id", selected);
-    setSelected([]);
-    refetchDuplicates();
+  // Merges one duplicate pair: reassigns everything that referenced
+  // `mergeId` onto `keepId` and archives `mergeId` -- see
+  // supabase/migrations/20260729290000_duplicate_merge_rpc.sql for exactly
+  // what gets reassigned. Runs via the caller's own session (not a
+  // service-role API route) so the existing trg_prevent_non_admin_delete
+  // trigger is what actually enforces "only a company admin can do this",
+  // same as every other archive path in this app -- a non-admin gets a
+  // clean rejection here, nothing partially reassigned.
+  const handleMerge = async (pair: DuplicatePair, keepId: string, mergeId: string, keepLabel: string, mergeLabel: string) => {
+    if (!window.confirm(`Keep "${keepLabel}" and merge "${mergeLabel}" into it? Anything referencing "${mergeLabel}" will be repointed to "${keepLabel}", then "${mergeLabel}" will be archived.`)) return;
+    const pairKey = `${pair.idA}:${pair.idB}`;
+    setMergingPairKey(pairKey);
+    try {
+      const { data, error } = await supabase.rpc("merge_duplicate_records", {
+        p_company_id: companyId,
+        p_table_kind: activeDupType.kind,
+        p_table: activeDupType.kind === "system" ? activeDupType.table : null,
+        p_table_id: activeDupType.kind === "custom" ? activeDupType.tableId : null,
+        p_keep_id: keepId,
+        p_merge_id: mergeId,
+      });
+      if (error) {
+        if (error.code === "42501") {
+          window.alert("Only a company admin can merge duplicates.");
+        } else {
+          window.alert(error.message || "Couldn't merge these records.");
+        }
+        return;
+      }
+      queryClient.setQueryData(duplicatesQueryKey, (old: DuplicatePair[] = []) =>
+        old.filter(p => !(p.idA === pair.idA && p.idB === pair.idB))
+      );
+      const reassigned = data?.reassigned ?? 0;
+      window.alert(`Merged. ${reassigned} reference${reassigned === 1 ? '' : 's'} repointed to "${keepLabel}".`);
+    } finally {
+      setMergingPairKey(null);
+    }
   };
 
   const formatTargetTable = (table: string) =>
@@ -161,7 +234,7 @@ function SettingsPageInner() {
     if (view === 'schema') return 'Schema configuration';
     if (view === 'history') return 'Import history';
     if (view === 'duplicates_menu') return 'Duplicates';
-    if (view === 'duplicates_view') return `Duplicates — ${activeDupType}`;
+    if (view === 'duplicates_view') return `Duplicates — ${dupTypeLabel(activeDupType)}`;
     if (view === 'public_pages') return 'Public pages';
     if (view === 'precedents') return 'Precedents';
     if (view === 'invoice_template') return 'Invoice template';
@@ -172,6 +245,13 @@ function SettingsPageInner() {
     if (view === 'duplicates_view') setView('duplicates_menu');
     else setView('menu');
   };
+
+  const SYSTEM_DUP_CARDS: { table: SystemDupTable; label: string; icon: typeof MapPin }[] = [
+    { table: 'properties', label: 'Assets', icon: MapPin },
+    { table: 'entities', label: 'Entities', icon: Building2 },
+    { table: 'projects', label: 'Projects', icon: LayoutGrid },
+    { table: 'tasks', label: 'Tasks', icon: CheckSquare },
+  ];
 
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
@@ -185,14 +265,6 @@ function SettingsPageInner() {
           <h1 className="text-3xl font-light text-slate-900 tracking-tight capitalize">{headerTitle()}</h1>
           <p className="text-[11px] font-medium text-slate-400 uppercase tracking-widest mt-1">Management administration</p>
         </div>
-        {view === 'duplicates_view' && selected.length > 0 && (
-          <button
-            onClick={handleBulkDelete}
-            className="ml-auto px-5 py-2.5 bg-red-500 text-white rounded-full text-[11px] font-bold hover:bg-red-600 transition-all"
-          >
-            Archive {selected.length} selected
-          </button>
-        )}
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
@@ -386,17 +458,38 @@ function SettingsPageInner() {
               <SchemaVisualisation />
             </div>
           )}
-          
+
 
           {/* ── DUPLICATES MENU ── */}
           {view === "duplicates_menu" && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in">
-              {[{ id: 'properties', label: 'Assets', icon: MapPin }, { id: 'entities', label: 'Entities', icon: Building2 }, { id: 'projects', label: 'Projects', icon: LayoutGrid }].map((cat) => (
-                <button key={cat.id} onClick={() => { setActiveDupType(cat.id as DupType); setView("duplicates_view"); }} className="p-10 bg-white border border-slate-200 rounded-[48px] flex flex-col items-center gap-5 hover:border-indigo-500 hover:shadow-xl transition-all group">
-                  <div className="p-5 bg-slate-50 rounded-[24px] text-slate-400 group-hover:text-indigo-600 transition-all"><cat.icon size={40} /></div>
-                  <span className="font-medium text-slate-700 uppercase text-[11px] tracking-widest">{cat.label}</span>
-                </button>
-              ))}
+            <div className="space-y-8 animate-in fade-in">
+              <div>
+                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-3">System tables</p>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  {SYSTEM_DUP_CARDS.map((cat) => (
+                    <button key={cat.table} onClick={() => { setActiveDupType({ kind: 'system', table: cat.table }); setView("duplicates_view"); }} className="p-10 bg-white border border-slate-200 rounded-[48px] flex flex-col items-center gap-5 hover:border-indigo-500 hover:shadow-xl transition-all group">
+                      <div className="p-5 bg-slate-50 rounded-[24px] text-slate-400 group-hover:text-indigo-600 transition-all"><cat.icon size={40} /></div>
+                      <span className="font-medium text-slate-700 uppercase text-[11px] tracking-widest">{cat.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {customTables.length > 0 && (
+                <div>
+                  <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-3">Custom tables</p>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    {customTables.map((t) => {
+                      const Icon = (LucideIcons as any)[t.icon] || Table2;
+                      return (
+                        <button key={t.id} onClick={() => { setActiveDupType({ kind: 'custom', tableId: t.id, tableSlug: t.slug, tableName: t.name }); setView("duplicates_view"); }} className="p-10 bg-white border border-slate-200 rounded-[48px] flex flex-col items-center gap-5 hover:border-indigo-500 hover:shadow-xl transition-all group">
+                          <div className="p-5 bg-slate-50 rounded-[24px] text-slate-400 group-hover:text-indigo-600 transition-all"><Icon size={40} /></div>
+                          <span className="font-medium text-slate-700 uppercase text-[11px] tracking-widest">{t.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -407,43 +500,47 @@ function SettingsPageInner() {
                 <div className="space-y-8">
                   {[0, 1].map(i => <div key={i} className="h-[220px] bg-white border border-slate-200 rounded-[48px] animate-pulse" />)}
                 </div>
-              ) : items.length === 0 ? (
+              ) : pairs.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-20">No duplicates found</p>
               ) : (
-                items.map((pair, idx) => (
-                  <div key={idx} className="bg-white border border-slate-200 rounded-[48px] overflow-hidden shadow-sm mb-6 transition-all hover:border-slate-300">
-                    <div className="bg-slate-50 px-8 py-3 border-b border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      <span>Reason: {pair.match_reason}</span>
-                      <span className="text-indigo-600">Points: {pair.match_score}</span>
-                    </div>
-                    <div className="flex flex-col md:flex-row">
-                      {[1, 2].map(n => (
-                        <div key={pair[`id${n}`]} onClick={() => setSelected(prev => selected.includes(pair[`id${n}`]) ? prev.filter(x => x !== pair[`id${n}`]) : [...prev, pair[`id${n}`]])} className={`flex-1 p-10 flex items-start gap-6 cursor-pointer transition-all ${n === 1 ? 'border-r border-slate-100' : ''} ${selected.includes(pair[`id${n}`]) ? 'bg-red-50/50' : 'hover:bg-slate-50/30'}`}>
-                          <div className={`mt-1 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all ${selected.includes(pair[`id${n}`]) ? 'bg-red-500 border-red-500 shadow-md' : 'border-slate-200'}`}>
-                            {selected.includes(pair[`id${n}`]) && <CheckCircle2 size={14} className="text-white"/>}
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[16px] font-medium text-slate-900 leading-tight uppercase">{pair[`address${n}`] || pair[`name${n}`]}</p>
-                            <div className="mt-6 grid grid-cols-2 gap-y-5 gap-x-12">
-                              {activeDupType === 'properties' ? (
-                                <>
-                                  <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Price</p><p className="text-[13px] font-medium text-slate-700">${pair[`price${n}`]?.toLocaleString() || '0'}</p></div>
-                                  <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Owner</p><p className="text-[13px] font-medium text-slate-700 truncate">{pair[`entity${n}`] || 'Unassigned'}</p></div>
-                                  <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Date</p><p className="text-[13px] font-medium text-slate-700">{pair[`date${n}`] || '—'}</p></div>
-                                </>
-                              ) : (
-                                <>
-                                  <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Type</p><p className="text-[13px] font-medium text-slate-700">{pair[`type${n}`] || '-'}</p></div>
-                                  <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">ABN</p><p className="text-[13px] font-medium text-slate-700">{pair[`abn${n}`] || '-'}</p></div>
-                                </>
-                              )}
+                pairs.map((pair) => {
+                  const pairKey = `${pair.idA}:${pair.idB}`;
+                  const isMerging = mergingPairKey === pairKey;
+                  const sides: { id: string; label: string; fields: Record<string, any>; otherId: string; otherLabel: string }[] = [
+                    { id: pair.idA, label: pair.labelA, fields: pair.fieldsA, otherId: pair.idB, otherLabel: pair.labelB },
+                    { id: pair.idB, label: pair.labelB, fields: pair.fieldsB, otherId: pair.idA, otherLabel: pair.labelA },
+                  ];
+                  return (
+                    <div key={pairKey} className="bg-white border border-slate-200 rounded-[48px] overflow-hidden shadow-sm mb-6 transition-all hover:border-slate-300">
+                      <div className="bg-slate-50 px-8 py-3 border-b border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <span>Matched on: {pair.reason}</span>
+                        <span className="text-indigo-600">Score: {Math.round(pair.score * 100)}%</span>
+                      </div>
+                      <div className="flex flex-col md:flex-row">
+                        {sides.map((side, n) => (
+                          <div key={side.id} className={`flex-1 p-10 ${n === 0 ? 'border-r border-slate-100' : ''}`}>
+                            <p className="text-[16px] font-medium text-slate-900 leading-tight uppercase mb-6">{side.label}</p>
+                            <div className="grid grid-cols-2 gap-y-5 gap-x-12 mb-8">
+                              {Object.entries(side.fields).slice(0, 6).map(([key, value]) => (
+                                <div key={key}>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{key.replace(/_/g, ' ')}</p>
+                                  <p className="text-[13px] font-medium text-slate-700 truncate">{value === null || value === undefined || value === '' ? '—' : String(value)}</p>
+                                </div>
+                              ))}
                             </div>
+                            <button
+                              onClick={() => handleMerge(pair, side.id, side.otherId, side.label, side.otherLabel)}
+                              disabled={isMerging}
+                              className="px-4 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-indigo-600 disabled:opacity-40 transition-all"
+                            >
+                              {isMerging ? 'Merging…' : 'Merge into this record →'}
+                            </button>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
