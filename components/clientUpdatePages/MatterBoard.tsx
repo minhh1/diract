@@ -1422,6 +1422,20 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   const showFixColumn = pageKind === "auto_fed" && canEdit && !!pageId;
   const totalCols = fields.length + 1 + (showFixColumn ? 1 : 0) + (canEdit && onMoveItem ? 1 : 0) + (canEdit && onRemoveItem ? 1 : 0);
 
+  const rows = expandByProperty(items, propertyFieldIdsOf(fields));
+  // Only offer the expand/shrink toggle on columns that actually have
+  // content long enough to hit the 220px truncation cap (see
+  // SpreadsheetCell's truncateClass) -- otherwise every column shows a
+  // useless toggle even when nothing is ever cut off.
+  const truncatedFieldIds = new Set(
+    fields.filter(f => rows.some(({ item }) => {
+      const v = item.values[f.id];
+      if (v == null || v === "") return false;
+      const text = isRelationField(f) || (f.field_type === "select" && f.select_options?.length) ? String(v) : formatValue(v, f, dateFormat);
+      return text.length > 28;
+    })).map(f => f.id)
+  );
+
   const handleColumnDrop = (targetId: string) => {
     if (!draggedFieldId || draggedFieldId === targetId || !onReorderFields) { setDraggedFieldId(null); setDragOverFieldId(null); return; }
     const reordered = [...fields];
@@ -1450,11 +1464,13 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 <span className="inline-flex items-center gap-1">
                   {canEdit && onReorderFields && <GripVertical size={10} className="text-slate-300" />}
                   {f.label}
-                  <button type="button" onClick={e => { e.stopPropagation(); toggleFieldExpanded(f.id); }}
-                    title={expandedFieldIds.has(f.id) ? "Shrink this column" : "Expand this column to see the full content"}
-                    className="shrink-0 text-slate-300 hover:text-indigo-600 transition-colors">
-                    {expandedFieldIds.has(f.id) ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
-                  </button>
+                  {truncatedFieldIds.has(f.id) && (
+                    <button type="button" onClick={e => { e.stopPropagation(); toggleFieldExpanded(f.id); }}
+                      title={expandedFieldIds.has(f.id) ? "Shrink this column" : "Expand this column to see the full content"}
+                      className="shrink-0 text-slate-300 hover:text-indigo-600 transition-colors">
+                      {expandedFieldIds.has(f.id) ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+                    </button>
+                  )}
                 </span>
               </th>
             ))}
@@ -1463,7 +1479,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
           </tr>
         </thead>
         <tbody>
-          {expandByProperty(items, propertyFieldIdsOf(fields)).map(({ key, item, propertyId }) => {
+          {rows.map(({ key, item, propertyId }) => {
             const rowColor = colorForItem(item);
             const rowColorClasses = rowColor ? FORMAT_COLORS[rowColor] : null;
             const expanded = expandedId === item.id;
