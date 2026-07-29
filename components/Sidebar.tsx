@@ -21,6 +21,7 @@ import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
 import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
 import { clearAllClientCaches } from "@/lib/clearClientCaches";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
@@ -62,7 +63,6 @@ const SYSTEM_TABLE_FIELDS: Record<string, { key: string; label: string }[]> = {
   entities: [
     { key: 'name',        label: 'Name' },
     { key: 'entity_type', label: 'Entity Type' },
-    { key: 'abn',         label: 'ABN' },
   ],
 };
 
@@ -130,6 +130,29 @@ const ADMIN_LINKS = [
 ] as const;
 
 // ── DB helpers ─────────────────────────────────────────────────────
+
+// Sidebar's own tree config / saved views / profile were never part of
+// lib/companyBootstrap.ts's warm-up (that's scoped to table/dashboard
+// shells + row data), so even on an otherwise fully-warmed load these three
+// still ran fresh, uncached, every time the Tables panel was open -- a real
+// contributor to visible loading after the splash already dismissed. Same
+// stale-while-revalidate shellCache pattern as everywhere else: paint the
+// last-known value immediately, still always re-fetch to confirm/correct.
+function treeConfigShellKey(userId: string, tableSlug: string): string {
+  return `sidebar-tree-config:${userId}:${tableSlug}`;
+}
+function savedViewsShellKey(userId: string, companyId: string, mode: string): string {
+  return `sidebar-saved-views:${userId}:${companyId}:${mode}`;
+}
+function profileShellKey(userId: string): string {
+  return `sidebar-profile:${userId}`;
+}
+interface CachedSidebarProfile {
+  fullName: string | null;
+  avatarUrl: string | null;
+  visibleTables: string[];
+  memberships: any[];
+}
 
 async function loadTreeConfigFromDB(tableSlug: string, userId: string | null): Promise<TreeConfig> {
   if (!userId) return DEFAULT_TREE_CONFIG[tableSlug] || DEFAULT_TREE_CONFIG.projects;
@@ -717,11 +740,15 @@ export default function Sidebar() {
   // ── Load tree config from DB when the tree's table changes ──────
   useEffect(() => {
     if (!ctxUserId || !tablesPanelOpen) return;
+    const key = treeConfigShellKey(ctxUserId, treeTableSlug);
+    const cached = readShellCache<TreeConfig>(key);
+    if (cached) setTreeConfig({ ...(DEFAULT_TREE_CONFIG[treeTableSlug] || DEFAULT_TREE_CONFIG.projects), ...cached });
     const load = async () => {
-      perfLog(`Sidebar(${treeTableSlug}): treeConfig start`);
+      perfLog(`Sidebar(${treeTableSlug}): treeConfig start`, cached ? "seeded from shellCache, refreshing in background" : undefined);
       const config = await loadTreeConfigFromDB(treeTableSlug, ctxUserId);
       perfLog(`Sidebar(${treeTableSlug}): treeConfig resolved`);
       setTreeConfig(config);
+      writeShellCache(key, config);
     };
     load();
   }, [treeTableSlug, ctxUserId, tablesPanelOpen]);
@@ -729,10 +756,14 @@ export default function Sidebar() {
   // ── Load saved views for the active table ───────────────────────
   useEffect(() => {
     if (!ctxUserId || !ctxCompanyId || !tablesPanelOpen) return;
-    perfLog(`Sidebar(${mode}): savedViews start`);
+    const key = savedViewsShellKey(ctxUserId, ctxCompanyId, mode);
+    const cached = readShellCache<SavedView[]>(key);
+    if (cached) setSavedViews(cached.filter(v => v.view_name !== DEFAULT_VIEW_NAME));
+    perfLog(`Sidebar(${mode}): savedViews start`, cached ? "seeded from shellCache, refreshing in background" : undefined);
     savedViewsService.listByTable(ctxUserId, ctxCompanyId, mode).then(views => {
       perfLog(`Sidebar(${mode}): savedViews resolved`, `${views.length} views`);
       setSavedViews(views.filter(v => v.view_name !== DEFAULT_VIEW_NAME));
+      writeShellCache(key, views);
     });
   }, [mode, ctxUserId, ctxCompanyId, tablesPanelOpen]);
 
@@ -765,7 +796,17 @@ export default function Sidebar() {
     const isInitialLoad = prev === null;
     const leftProfilePage = prev === '/dashboard/profile' && pathname !== '/dashboard/profile';
     if (!isInitialLoad && !leftProfilePage) return;
-    perfLog("Sidebar: fetchProfile start");
+    let cached: CachedSidebarProfile | null = null;
+    if (isInitialLoad) {
+      cached = readShellCache<CachedSidebarProfile>(profileShellKey(ctxUserId));
+      if (cached) {
+        setProfile({ full_name: cached.fullName, avatar_url: cached.avatarUrl });
+        setVisibleTables(cached.visibleTables);
+        setMemberships(cached.memberships);
+        setProfileLoading(false);
+      }
+    }
+    perfLog("Sidebar: fetchProfile start", cached ? "seeded from shellCache, refreshing in background" : undefined);
     fetchProfile().then(() => perfLog("Sidebar: fetchProfile resolved"));
   }, [ctxUserId, pathname]);
 
@@ -830,6 +871,9 @@ export default function Sidebar() {
 
     // Mark profile fully loaded only after all data is set
     setProfileLoading(false);
+    writeShellCache<CachedSidebarProfile>(profileShellKey(ctxUserId), {
+      fullName, avatarUrl, visibleTables: visibleTablesData || ALL_SYSTEM_TABLES.map(t => t.slug), memberships: ms || [],
+    });
   };
 
   // ── Tree data fetch ────────────────────────────────────────────
