@@ -842,14 +842,14 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
 
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Project search fields</p>
           <p className="text-[12px] text-slate-400 mb-4">
-            Beyond a project&apos;s name, which custom fields can also be used to find it (e.g. a matter number)?
+            Beyond a project&apos;s name, which additional fields can also be used to find it (e.g. a matter number)?
           </p>
           {projectSearchFieldsLoading ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 size={16} className="animate-spin text-slate-300" />
             </div>
           ) : projectSearchFields.length === 0 ? (
-            <p className="text-[12px] text-slate-400">No custom fields on Projects yet.</p>
+            <p className="text-[12px] text-slate-400">No additional fields on Projects yet.</p>
           ) : (
             <div className="space-y-2">
               {projectSearchFields.map((field) => (

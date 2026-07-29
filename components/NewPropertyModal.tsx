@@ -4,6 +4,9 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import SmartFieldHint from "@/components/SmartFieldHint";
+import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
+import type { NameSuggestion } from "@/lib/smartValidation/nameQuality";
 
 interface Props {
   isOpen: boolean;
@@ -34,6 +37,15 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
 
   // Generic custom table — just a name field
   const [recordName, setRecordName] = useState('');
+  const nameQuality = useNameQualityCheck();
+
+  const applyNameSuggestion = (s: NameSuggestion, setter: (v: string) => void) => {
+    if (s.apply) {
+      const r = s.apply();
+      if ("correctedValue" in r && r.correctedValue) setter(r.correctedValue);
+    }
+    nameQuality.dismiss(s.id);
+  };
 
   const isProperty = tableName === 'properties';
   const isCustomTable = !isProperty;
@@ -65,7 +77,7 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
     setStreet(''); setSuburb(''); setState('NSW'); setPostcode('');
     setCountry('Australia'); setPurchasePrice(''); setPurchaseDate('');
     setFolioIdentifier(''); setRecordName(''); setCustomValues({});
-    setSaved(false);
+    setSaved(false); nameQuality.reset();
   };
 
   const handleClose = () => { resetForm(); onClose(); };
@@ -167,8 +179,10 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
           {isCustomTable && (
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Name *</label>
-              <input value={recordName} onChange={e => setRecordName(e.target.value)} placeholder="Record name"
+              <input value={recordName} onChange={e => setRecordName(e.target.value)} onBlur={() => nameQuality.check(recordName)} placeholder="Record name"
                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
+              <SmartFieldHint suggestions={nameQuality.suggestions}
+                onApply={s => applyNameSuggestion(s, setRecordName)} onDismiss={nameQuality.dismiss} />
             </div>
           )}
 
@@ -177,8 +191,10 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
               <div>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Address</p>
                 <div className="space-y-3">
-                  <input value={street} onChange={e => setStreet(e.target.value)} placeholder="Street address *"
+                  <input value={street} onChange={e => setStreet(e.target.value)} onBlur={() => nameQuality.check(street)} placeholder="Street address *"
                     className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
+                  <SmartFieldHint suggestions={nameQuality.suggestions}
+                    onApply={s => applyNameSuggestion(s, setStreet)} onDismiss={nameQuality.dismiss} />
                   <div className="grid grid-cols-3 gap-3">
                     <input value={suburb} onChange={e => setSuburb(e.target.value)} placeholder="Suburb"
                       className="bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
@@ -218,7 +234,7 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
 
           {customFields.length > 0 && (
             <div>
-              <p className="text-[9px] font-bold text-violet-400 uppercase tracking-widest mb-3">Custom fields</p>
+              <p className="text-[9px] font-bold text-violet-400 uppercase tracking-widest mb-3">Additional fields</p>
               <div className="space-y-3">
                 {customFields.map(field => (
                   <div key={field.id}>

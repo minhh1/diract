@@ -118,7 +118,7 @@ export default function ImportReviewTable({
                 className="p-3 text-[9px] font-bold text-violet-400 uppercase tracking-widest border-l-2 border-violet-200 whitespace-nowrap bg-violet-50/40"
                 colSpan={customColumns.length}
               >
-                Custom Fields
+                Additional Fields
               </th>
             )}
 

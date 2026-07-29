@@ -126,7 +126,7 @@ export default function AutoAddRulesModal({ pageId, recordLabel, onClose }: { pa
           <div className="pt-2 border-t border-slate-100 space-y-3">
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Add a rule</p>
             {fields.length === 0 ? (
-              <p className="text-[11px] text-slate-400 italic">No custom fields on this table yet.</p>
+              <p className="text-[11px] text-slate-400 italic">No additional fields on this table yet.</p>
             ) : (
               <select value={fieldId} onChange={e => setFieldId(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">

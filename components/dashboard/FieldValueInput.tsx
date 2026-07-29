@@ -7,6 +7,9 @@ import RelationPicker from "./RelationPicker";
 import { getValueColumn, isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
 import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSize";
 import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
+import SmartFieldHint from "@/components/SmartFieldHint";
+import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
+import type { NameSuggestion } from "@/lib/smartValidation/nameQuality";
 
 // Which company_table_values column stores a given field_type's value.
 export const valueColumnFor = getValueColumn;
@@ -40,12 +43,18 @@ interface Props {
   // See Variant above. Undefined means 'pill', what every existing caller
   // besides DashboardGrid already renders at.
   variant?: Variant;
+  // True when this field is the table's own primary/title field (its
+  // company_tables.primary_field_key) -- gates the smart name-quality hint
+  // (see lib/smartValidation/nameQuality.ts) onto the 'text' branches below.
+  // Every other field type/role never gets it: a description, a select, a
+  // number etc. isn't a "name" these checks make sense against.
+  isPrimaryField?: boolean;
 }
 
 // Renders the appropriate input widget for a custom-table field, bound to a
 // value, committing on blur/change. Reuses the field_type conventions shared
 // across the schema system (see components/schema/types.ts).
-export default function FieldValueInput({ field, value, onCommit, disabled, displayValue, size = 'md', variant = 'pill' }: Props) {
+export default function FieldValueInput({ field, value, onCommit, disabled, displayValue, size = 'md', variant = 'pill', isPrimaryField }: Props) {
   const type = field.field_type;
   const inputClass = inputClassFor(size, variant);
   const plain = variant === 'plain';
@@ -55,6 +64,26 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [rewriting, setRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
+
+  // Smart name-quality hint (isPrimaryField only) -- both 'text' branches
+  // below are uncontrolled (defaultValue + commit-on-blur), so "Apply" sets
+  // the DOM node's value directly (same trick the AI-rewrite button already
+  // uses) rather than going through React state.
+  const textInputRef = useRef<HTMLInputElement | null>(null);
+  const nameQuality = useNameQualityCheck();
+  const applyNameSuggestion = (suggestion: NameSuggestion) => {
+    if (!suggestion.apply) return;
+    const result = suggestion.apply();
+    if ("correctedValue" in result && result.correctedValue) {
+      const el = textareaRef.current ?? textInputRef.current;
+      if (el) {
+        el.value = result.correctedValue;
+        if (el instanceof HTMLTextAreaElement) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }
+      }
+      onCommit(result.correctedValue);
+    }
+    nameQuality.dismiss(suggestion.id);
+  };
 
   // Only ever used by the abn/acn branch below, declared here for the same
   // reason as textareaRef above (hooks can't be called conditionally).
@@ -178,6 +207,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
           placeholder={plain ? '' : field.label}
           size={size}
           variant={variant}
+          allowCreateNew
         />
       );
     }
@@ -197,6 +227,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         initialLabel={displayValue}
         size={size}
         variant={variant}
+        allowCreateNew
       />
     );
   }
@@ -315,12 +346,13 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
           ref={el => { textareaRef.current = el; grow(el); }}
           defaultValue={value ?? ''}
           disabled={disabled}
-          onBlur={e => onCommit(e.target.value || null)}
+          onBlur={e => { onCommit(e.target.value || null); if (isPrimaryField) nameQuality.check(e.target.value); }}
           onInput={e => grow(e.currentTarget)}
           rows={1}
           className={`${inputClass.replace('rounded-full', 'rounded-2xl')} resize-none leading-snug pr-8`}
           placeholder={field.label}
         />
+        {isPrimaryField && <SmartFieldHint suggestions={nameQuality.suggestions} onApply={applyNameSuggestion} onDismiss={nameQuality.dismiss} />}
         {!disabled && (
           <button
             type="button"
@@ -338,15 +370,23 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
     );
   }
 
-  // email / url / auto_id fallback (and 'text' in a grid cell)
+  // email / url / auto_id fallback (and 'text' in a grid cell -- non-'plain'
+  // 'text' is already handled by the growing-textarea branch above, so
+  // 'text' reaching here is always the 'plain'/grid-cell case)
   return (
-    <input
-      type={type === 'email' ? 'email' : type === 'url' ? 'url' : 'text'}
-      defaultValue={value ?? ''}
-      disabled={disabled}
-      onBlur={e => onCommit(e.target.value || null)}
-      className={inputClass}
-      placeholder={plain ? undefined : field.label}
-    />
+    <div>
+      <input
+        ref={type === 'text' ? textInputRef : undefined}
+        type={type === 'email' ? 'email' : type === 'url' ? 'url' : 'text'}
+        defaultValue={value ?? ''}
+        disabled={disabled}
+        onBlur={e => { onCommit(e.target.value || null); if (isPrimaryField && type === 'text') nameQuality.check(e.target.value); }}
+        className={inputClass}
+        placeholder={plain ? undefined : field.label}
+      />
+      {isPrimaryField && type === 'text' && (
+        <SmartFieldHint suggestions={nameQuality.suggestions} onApply={applyNameSuggestion} onDismiss={nameQuality.dismiss} />
+      )}
+    </div>
   );
 }

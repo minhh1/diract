@@ -70,6 +70,8 @@ interface Token {
   created_at: string;
   expires_at: string | null;
   used_at: string | null;
+  default_team_id: string | null;
+  role: string;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -280,14 +282,21 @@ function AdminPageInner() {
   // links directly to e.g. ?tab=gmailSync, replacing what used to be a
   // horizontal tab bar crammed with 12 items on this page itself.
   const tabParam = searchParams.get('tab');
-  const activeTab: AdminTab = (tabParam && ADMIN_TABS.includes(tabParam as AdminTab)) ? (tabParam as AdminTab) : 'members';
-  const { companyId, companyName: contextCompanyName, userId, isAdmin, isSiteAdmin, loading: companyLoading } = useCompany();
+  const { companyId, companyName: contextCompanyName, userId, isAdmin, isSiteAdmin, ledTeamIds, loading: companyLoading } = useCompany();
+  const rawTab: AdminTab = (tabParam && ADMIN_TABS.includes(tabParam as AdminTab)) ? (tabParam as AdminTab) : 'members';
+  // A Team Leader who isn't a company admin only ever gets the Default
+  // Settings section (scoped to their own team(s) below) -- every other
+  // tab's own data query is `enabled: isAdmin` anyway (see adminData below),
+  // so forcing the tab here rather than per-section keeps every one of the
+  // ~15 `activeTab === 'x'` blocks below untouched.
+  const activeTab: AdminTab = isAdmin ? rawTab : 'defaults';
   // CompanyContext already resolved companyId + isAdmin (per-company role
-  // check) once for the whole dashboard shell -- once that's settled, no
-  // company or no admin role means this page just isn't reachable for this
-  // user. Derived rather than its own state since it only ever depends on
-  // values CompanyContext already tracks.
-  const unauthorized = !companyLoading && (!companyId || !isAdmin);
+  // check) + ledTeamIds (teams.leader_id === this user) once for the whole
+  // dashboard shell -- once that's settled, no company and neither an admin
+  // nor a Team Leader means this page just isn't reachable for this user.
+  // Derived rather than its own state since it only ever depends on values
+  // CompanyContext already tracks.
+  const unauthorized = !companyLoading && (!companyId || (!isAdmin && ledTeamIds.length === 0));
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -342,8 +351,9 @@ function AdminPageInner() {
   const [newCustomFieldLabel, setNewCustomFieldLabel] = useState('');
   const [savingNewCustomField, setSavingNewCustomField] = useState(false);
 
-  // Invite token default team
+  // Invite token default team + role
   const [newTokenTeamId, setNewTokenTeamId] = useState<string>('');
+  const [newTokenRole, setNewTokenRole] = useState<'operator' | 'company_admin'>('operator');
 
   useEffect(() => { perfLogPageStart("admin", "admin"); }, []);
   useEffect(() => {
@@ -546,12 +556,14 @@ function AdminPageInner() {
         company_id: company.id,
         note: newTokenNote.trim() || null,
         default_team_id: newTokenTeamId || null,
+        role: newTokenRole,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
       .select()
       .single();
     setNewTokenNote('');
     setNewTokenTeamId('');
+    setNewTokenRole('operator');
     setGeneratingToken(false);
     if (data) queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
       ...old,
@@ -798,7 +810,7 @@ function AdminPageInner() {
                   </p>
                   <p className="text-[12px] text-slate-500">
                     Share this link with a new team member. Each link can only be used once and
-                    expires in 7 days. Invited users join as Operator — promote them to Admin after they join.
+                    expires in 7 days. Choose the role and (optionally) the team they join as below.
                   </p>
                 </div>
                 <div className="flex gap-3">
@@ -820,6 +832,24 @@ function AdminPageInner() {
                     }
                     Generate
                   </button>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                    Role on join
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(['operator', 'company_admin'] as const).map(r => (
+                      <button
+                        key={r}
+                        onClick={() => setNewTokenRole(r)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all ${
+                          newTokenRole === r ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                        }`}
+                      >
+                        {ROLE_LABELS[r]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 {allTeams.length > 0 && (
                   <div>
@@ -883,11 +913,12 @@ function AdminPageInner() {
                         {token.note && (
                           <p className="text-[13px] font-bold text-slate-700 mb-1">{token.note}</p>
                         )}
-                        {(token as any).default_team_id && (
-                          <p className="text-[10px] text-indigo-500 font-medium mb-1">
-                            Team: {allTeams.find(t => t.id === (token as any).default_team_id)?.team_name || 'Unknown'}
-                          </p>
-                        )}
+                        <p className="text-[10px] text-slate-400 font-medium mb-1">
+                          Role: <span className={token.role === 'company_admin' ? 'text-indigo-500' : ''}>{ROLE_LABELS[token.role] || token.role}</span>
+                          {token.default_team_id && (
+                            <> · Team: <span className="text-indigo-500">{allTeams.find(t => t.id === token.default_team_id)?.team_name || 'Unknown'}</span></>
+                          )}
+                        </p>
                         <p className="text-[10px] font-mono text-slate-400 truncate">{link}</p>
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
                           {isUsed ? (
@@ -954,9 +985,14 @@ function AdminPageInner() {
           {/* ── Default Settings: views/tabs/tables/dashboards, switched
               via pill tabs inside the component itself (same pattern as
               AdminGmailSyncTab's own sub-sections) rather than 4 separate
-              Admin tabs. ── */}
+              Admin tabs. A Team Leader who isn't a company admin also
+              reaches this (see the activeTab/unauthorized overrides above),
+              restricted to their own led team(s). ── */}
           {activeTab === 'defaults' && companyId && (
-            <AdminDefaultSettingsTab companyId={companyId} />
+            <AdminDefaultSettingsTab
+              companyId={companyId}
+              restrictToTeamIds={isAdmin ? undefined : ledTeamIds}
+            />
           )}
 
           {/* ── Gmail source of truth ── */}
@@ -1240,7 +1276,7 @@ function AdminPageInner() {
                         onClick={() => setAddingCustomField(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-indigo-300 rounded-full text-[11px] text-indigo-600 hover:bg-indigo-50 transition-all"
                       >
-                        <Plus size={12} /> Add custom field
+                        <Plus size={12} /> Add field
                       </button>
                     )}
                   </div>

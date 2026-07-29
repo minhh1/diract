@@ -147,7 +147,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldType: promoteType, table: promoteTable }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) { window.alert(json.error || "Couldn't save that as a custom field"); return; }
+      if (!res.ok) { window.alert(json.error || "Couldn't save that as a field"); return; }
       setPromoteChooserId(null);
       onChanged();
     } finally {
@@ -199,7 +199,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
                     <GripVertical size={13} className="text-slate-300 shrink-0" />
                     <span className="flex-1 text-[12px] text-slate-700">{f.label}</span>
                     {f.field_source === "adhoc" && (
-                      <button onClick={() => openPromoteChooser(f)} disabled={promotingId === f.id} title="Save as a real custom field on the Matter or its linked Property"
+                      <button onClick={() => openPromoteChooser(f)} disabled={promotingId === f.id} title="Save as a real field on the Matter or its linked Property"
                         className="p-1 text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors shrink-0">
                         {promotingId === f.id ? <Loader2 size={13} className="animate-spin" /> : <DatabaseZap size={13} />}
                       </button>
@@ -215,7 +215,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
                   {promoteChooserId === f.id && (
                     <div className="mt-1 ml-5 p-3 border border-indigo-200 bg-indigo-50/50 rounded-xl space-y-2">
                       <p className="text-[11px] text-slate-600">
-                        Save "{f.label}" as a real custom field on {promoteTable === "properties" ? "the linked property" : "Matters"}.
+                        Save "{f.label}" as a real field on {promoteTable === "properties" ? "the linked property" : "Matters"}.
                         {promoteTable === "properties"
                           ? " It'll then vary per property on a matter with 2+, same as Property Address; only entries whose matter has a linked property carry over."
                           : " It'll then show on the normal matter dashboard too, and any values already entered here carry over."}

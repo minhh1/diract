@@ -61,7 +61,7 @@ export default function TemplateDownload({ mode, sectionKey }: Props) {
               : `${mode} template`}
           </p>
           <p className="text-[10px] text-slate-400 font-medium mt-1">
-            Includes all custom fields · fill the headers exactly as shown
+            Includes all additional fields · fill the headers exactly as shown
           </p>
         </div>
       </div>

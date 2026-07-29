@@ -824,7 +824,7 @@ function GenericMasterTableInner({
 
     const customSection = customFieldCols.length > 0
       ? [{
-          label: 'Custom Fields',
+          label: 'Additional Fields',
           fields: customFieldCols.map(f => ({
             id: `custom_field:${f.id}`,
             label: f.label,

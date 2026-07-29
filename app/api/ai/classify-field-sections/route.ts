@@ -39,6 +39,7 @@ Rules:
 - Every field must be assigned to exactly one section.
 - Group by what the field is ABOUT (who it concerns, what kind of data it is), not by its data type.
 - Put the record's own core identity fields (name, description, status, type, number) in a section called "${FALLBACK_SECTION}".
+- Never name a section "Custom Field(s)" or anything containing the words "custom field" -- that describes how a field was configured, not what it's about, so it's never a real grouping. Pick the section based on the field's actual subject matter instead.
 - Output ONLY a JSON array, nothing else -- no markdown fences, no prose. Each element: {"field_key": "<exact key given>", "section": "<section name>"}.`;
 
 interface InputField {

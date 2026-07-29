@@ -105,8 +105,8 @@ export default function SectionPicker({
             <p className="text-[10px] text-slate-400 mt-2">
               {currentSection.headers.length} columns ·{' '}
               {(currentSection.customFields?.length || 0) > 0
-                ? `${currentSection.customFields!.length} custom field${currentSection.customFields!.length !== 1 ? 's' : ''} included`
-                : 'No custom fields'
+                ? `${currentSection.customFields!.length} additional field${currentSection.customFields!.length !== 1 ? 's' : ''} included`
+                : 'No additional fields'
               }
             </p>
           </div>

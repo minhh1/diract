@@ -67,7 +67,7 @@ export default function TrustLinkField({ entityId, canEdit, size = "sm" }: {
       </p>
       {canEdit ? (
         <div className="max-w-xs">
-          <RelationPicker linkedSystemTable="entities" value={trustId} initialLabel={trustName ?? undefined}
+          <RelationPicker linkedSystemTable="entities" value={trustId} initialLabel={trustName ?? undefined} allowCreateEntity
             onSelect={(id, label) => setTrust(id, label)} placeholder="No Trust linked" size={size} disabled={saving} />
         </div>
       ) : (

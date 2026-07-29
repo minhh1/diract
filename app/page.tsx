@@ -5,7 +5,7 @@ const features = [
   {
     icon: "◈",
     title: "Project management",
-    body: "Organise properties, matters, and entities in one place. Custom fields, statuses, and team assignments.",
+    body: "Organise properties, matters, and entities in one place. Additional fields, statuses, and team assignments.",
   },
   {
     icon: "✉",

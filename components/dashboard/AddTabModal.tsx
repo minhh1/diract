@@ -21,7 +21,7 @@ const TEMPLATES: TabTemplate[] = [
     type: 'fields',
     title: 'Details',
     icon: 'FileText',
-    description: 'Custom field layout with drag-to-resize sections',
+    description: 'Additional field layout with drag-to-resize sections',
     color: 'bg-slate-50 text-slate-600',
     iconComponent: FileText,
   },

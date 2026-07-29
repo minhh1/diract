@@ -8,6 +8,9 @@ import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
 import { ENTITY_TYPES } from "@/lib/entityTypes";
 import RelationPicker from "@/components/dashboard/RelationPicker";
+import SmartFieldHint from "@/components/SmartFieldHint";
+import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
+import { checkEntityTrustStructure, type NameSuggestion } from "@/lib/smartValidation/nameQuality";
 
 // Same officeholder role list EntityOfficeholdersPanel.tsx uses for the
 // identical "add a director" flow on an existing entity -- duplicated here
@@ -21,7 +24,7 @@ const OFFICEHOLDER_ROLES = ["Director", "Secretary", "Public Officer", "Sharehol
 // see the plan's "Explicitly out of scope" section for why.
 const ADDITIONAL_ROLE_OPTIONS = ["Corporate Trustee", "Non Corporate Trustee"];
 const TRUSTEE_ROLE_TYPES = ["Corporate Trustee", "Non Corporate Trustee"];
-const TRUST_TYPES = ["Discretionary Family Trust", "Fixed Unit Trust"];
+const TRUST_TYPES = ["Discretionary Family Trust", "Fixed Unit Trust", "Unit Trust", "Discretionary Trust"];
 
 // abn/acn/tfn/bsb/account_number/bank_name/trust_deed_date get their own
 // dedicated UI below (Identifiers/Trustee details/Banking) even though
@@ -86,6 +89,41 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
   const [trustLinkId, setTrustLinkId] = useState<string | null>(null);
   const [trustLinkLabel, setTrustLinkLabel] = useState<string | null>(null);
 
+  // Smart data-entry assist for the main Legal name field -- see
+  // lib/smartValidation/nameQuality.ts. checkEntityTrustStructure (the
+  // "atf" parse) is entity-only, so it's tracked separately here rather
+  // than folded into useNameQualityCheck's generic list.
+  const nameQuality = useNameQualityCheck();
+  const [trustSuggestion, setTrustSuggestion] = useState<NameSuggestion | null>(null);
+  const handleNameBlur = () => {
+    nameQuality.check(name);
+    setTrustSuggestion(checkEntityTrustStructure(name));
+  };
+  const handleApplyNameSuggestion = (suggestion: NameSuggestion) => {
+    if (!suggestion.apply) return;
+    const result = suggestion.apply();
+    if ("trusteeName" in result) {
+      // Switches the form into its existing Trust-creation flow (isTrust)
+      // instead of any new relationship-creation logic -- name becomes the
+      // TRUST's name, the nested Trustee sub-form gets the trustee's name.
+      // entityType defaults to the first trust type just to reveal that
+      // section; the Classification dropdown right above is the "which
+      // trust type is this?" prompt -- still fully editable before saving.
+      setTrusteeName(result.trusteeName);
+      setTrusteeType("Company");
+      setName(result.trustName);
+      setEntityType(TRUST_TYPES[0]);
+      setTrustSuggestion(null);
+    } else if (result.correctedValue) {
+      setName(result.correctedValue);
+      nameQuality.dismiss(suggestion.id);
+    }
+  };
+  const handleDismissNameSuggestion = (id: string) => {
+    if (id === "atf-trust-split") setTrustSuggestion(null);
+    else nameQuality.dismiss(id);
+  };
+
   // Exact match against real trust types only -- NOT a substring check.
   // 'Corporate Trustee'/'Non Corporate Trustee' contain "trust" as a
   // substring of "trustee", which used to wrongly trigger this same "name a
@@ -128,6 +166,7 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
     setNewDirectorId(null); setNewDirectorLabel(null); setNewDirectorRole('Director');
     setAdditionalRoles([]); setTrustLinkId(null); setTrustLinkLabel(null);
     setCustomValues({}); setSaved(false);
+    nameQuality.reset(); setTrustSuggestion(null);
   };
 
   const addTrusteeDirector = () => {
@@ -258,8 +297,13 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none appearance-none">
                 {ENTITY_TYPES.map(t => <option key={t}>{t}</option>)}
               </select>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Legal name *"
+              <input value={name} onChange={e => setName(e.target.value)} onBlur={handleNameBlur} placeholder="Legal name *"
                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
+              <SmartFieldHint
+                suggestions={trustSuggestion ? [trustSuggestion, ...nameQuality.suggestions] : nameQuality.suggestions}
+                onApply={handleApplyNameSuggestion}
+                onDismiss={handleDismissNameSuggestion}
+              />
             </div>
           </div>
 
@@ -290,9 +334,9 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
                 <ShieldCheck size={13} className="text-indigo-600" />
                 <p className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Which trust is this the trustee for?</p>
               </div>
-              <RelationPicker linkedSystemTable="entities" value={trustLinkId} initialLabel={trustLinkLabel ?? undefined}
+              <RelationPicker linkedSystemTable="entities" value={trustLinkId} initialLabel={trustLinkLabel ?? undefined} allowCreateEntity
                 onSelect={(id, label) => { setTrustLinkId(id); setTrustLinkLabel(label); }}
-                placeholder="Search for the trust (optional)..." />
+                placeholder="Search or add the trust (optional)..." />
             </div>
           )}
 
@@ -440,10 +484,10 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
             </div>
           </div>
 
-          {/* Custom fields */}
+          {/* Additional fields */}
           {customFields.length > 0 && (
             <div>
-              <p className="text-[9px] font-bold text-violet-400 uppercase tracking-widest mb-3">Custom fields</p>
+              <p className="text-[9px] font-bold text-violet-400 uppercase tracking-widest mb-3">Additional fields</p>
               <div className="space-y-3">
                 {customFields.map(field => (
                   <div key={field.id}>

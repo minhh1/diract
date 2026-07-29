@@ -4,6 +4,8 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import SmartFieldHint from "@/components/SmartFieldHint";
+import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
 
 interface Props {
   isOpen: boolean;
@@ -22,6 +24,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
 
   const [name, setName] = useState('');
+  const nameQuality = useNameQualityCheck();
   const [status, setStatus] = useState('Open');
   const [description, setDescription] = useState('');
   const [estCompletion, setEstCompletion] = useState('');
@@ -57,7 +60,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
     setName(''); setStatus('Open'); setDescription('');
     setEstCompletion(''); setStreet(''); setSuburb('');
     setState('NSW'); setPostcode(''); setCustomValues({});
-    setSaved(false);
+    setSaved(false); nameQuality.reset();
   };
 
   const handleClose = () => { resetForm(); onClose(); };
@@ -176,7 +179,10 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Project details</p>
             <div className="space-y-3">
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Project name *" className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
+              <input value={name} onChange={e => setName(e.target.value)} onBlur={() => nameQuality.check(name)} placeholder="Project name *" className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
+              <SmartFieldHint suggestions={nameQuality.suggestions}
+                onApply={s => { if (s.apply) { const r = s.apply(); if ("correctedValue" in r && r.correctedValue) setName(r.correctedValue); } nameQuality.dismiss(s.id); }}
+                onDismiss={nameQuality.dismiss} />
               <div className="grid grid-cols-2 gap-3">
                 <select value={status} onChange={e => setStatus(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none appearance-none">
                   <option value="Open">Open</option>
@@ -205,7 +211,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
 
           {customFields.length > 0 && (
             <div>
-              <p className="text-[9px] font-bold text-violet-400 uppercase tracking-widest mb-3">Custom fields</p>
+              <p className="text-[9px] font-bold text-violet-400 uppercase tracking-widest mb-3">Additional fields</p>
               <div className="space-y-3">
                 {customFields.map(field => (
                   <div key={field.id}>
