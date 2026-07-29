@@ -6,6 +6,7 @@ import { X, Loader2, Check, ShieldCheck, AlertCircle, Plus } from "lucide-react"
 import { supabase } from "@/lib/supabase";
 import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
+import { ENTITY_TYPES } from "@/lib/entityTypes";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 
 // Same officeholder role list EntityOfficeholdersPanel.tsx uses for the
@@ -94,13 +95,6 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
   const isTrust = TRUST_TYPES.includes(entityType);
   const isTrusteeRole = TRUSTEE_ROLE_TYPES.includes(entityType) || additionalRoles.some(r => TRUSTEE_ROLE_TYPES.includes(r));
   const roles = Array.from(new Set([entityType, ...additionalRoles]));
-
-  const ENTITY_TYPES = [
-    'Company', 'Individual', 'Corporate Trustee', 'Non Corporate Trustee',
-    'Discretionary Family Trust', 'Fixed Unit Trust',
-    'Lawyer', 'Accountant', 'Mortgage Broker', 'Real Estate Agent',
-    'Local Council', 'Bank', 'Staff', 'Other',
-  ];
 
   useEffect(() => {
     if (!isOpen) return;

@@ -29,6 +29,7 @@ import { fetchCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 import {
   SYSTEM_TABLE_HIDDEN_COLS, SYSTEM_TABLE_RELATION_MAP, SYSTEM_TABLE_PERSON_LINK_COLS,
 } from "@/lib/schema/systemTableRelations";
+import { ENTITY_TYPES } from "@/lib/entityTypes";
 import { buildMissingDefaultProjectDashboardTabs, buildMissingDefaultTabsFromCompanyDefaults } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import { getCompanyId, getSchemaMetadata } from "@/lib/services/schemaService";
@@ -383,19 +384,30 @@ export default function RecordDashboard({
         .map((c: any, i: number) => {
           const relOverride = SYSTEM_TABLE_RELATION_MAP[c.column_name];
           const isPersonLink = SYSTEM_TABLE_PERSON_LINK_COLS.includes(c.column_name);
+          // entities.entity_type doubles as the multi-select editor for
+          // entities.roles (see supabase/migrations/20260729420000_
+          // entities_multi_role.sql) -- 'roles' itself is hidden
+          // (SYSTEM_TABLE_HIDDEN_COLS) so it never shows as a separate
+          // field; this one field edits both together (see the
+          // recordValues override below and handleFieldSave's roles
+          // special-case) instead of showing "Entity Type" and "Roles" as
+          // two confusingly-overlapping fields.
+          const isEntityTypeRoles = systemTable === 'entities' && c.column_name === 'entity_type';
           return {
             id: c.column_name,
             field_key: c.column_name,
             field_source: 'base' as const,
             label: c.label || c.column_name.replace(/_/g, ' '),
             fieldType:
-              relOverride ? 'relation'
+              isEntityTypeRoles ? 'multiselect'
+              : relOverride ? 'relation'
               : isPersonLink ? 'person_link'
               : c.category === 'relation' ? 'relation'
               : c.data_type === 'boolean' ? 'boolean'
               : c.data_type?.includes('timestamp') ? 'date'
               : ['numeric', 'integer'].includes(c.data_type) ? 'number'
               : 'text',
+            selectOptions: isEntityTypeRoles ? ENTITY_TYPES : undefined,
             relationTable: relOverride?.table || c.relation_table || undefined,
             relationDisplayColumn: relOverride?.displayCol || c.relation_display_column || undefined,
             relationJunction: relOverride?.junction || undefined,
@@ -914,6 +926,15 @@ export default function RecordDashboard({
 
       setRecord(prev => prev ? { ...prev, [field.id]: saveValue } : prev);
 
+    } else if (systemTable === 'entities' && fieldKey === 'entity_type' && Array.isArray(value)) {
+      // The "Entity Type" field edits entities.roles directly (multi-select
+      // -- see the isEntityTypeRoles override above); entity_type itself is
+      // kept as roles[0] so every other consumer that still reads the
+      // single entity_type column (staff auto-provisioning, CSV import,
+      // Xero, invoice modal, ...) keeps seeing a sensible primary value.
+      const roles = value as string[];
+      await supabase.from('entities').update({ roles, entity_type: roles[0] || null }).eq('id', recordId);
+      setRecord(prev => prev ? { ...prev, roles, entity_type: roles[0] || null } : prev);
     } else {
       // Base column
       await supabase
@@ -1162,7 +1183,7 @@ export default function RecordDashboard({
         <FieldLayoutEditor
           fieldSections={fieldSections}
           fields={getTabFieldLayout(activeTab.id)}
-          recordValues={record || {}}
+          recordValues={systemTable === 'entities' && record ? { ...record, entity_type: record.roles ?? [] } : record || {}}
           recordMatterType={matterTypeFieldId ? record?.[matterTypeFieldId] : undefined}
           linkedItems={linkedItems}
           isEditing={isEditingLayout}

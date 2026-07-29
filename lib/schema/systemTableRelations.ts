@@ -7,7 +7,11 @@
 // lib/hooks/useSystemTableAsCustomTable.ts's dashboard-widget adapter --
 // can't drift apart.
 
-export const SYSTEM_TABLE_HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id'];
+// 'roles' (entities only, see supabase/migrations/20260729420000_
+// entities_multi_role.sql) is hidden from the generic field list on
+// purpose -- RecordDashboard.tsx special-cases entity_type instead to edit
+// it directly as a multi-select, so it never needs its own separate field.
+export const SYSTEM_TABLE_HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id', 'roles'];
 
 export interface SystemRelationConfig {
   table: string;

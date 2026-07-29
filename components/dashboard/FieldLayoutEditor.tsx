@@ -306,6 +306,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
     }
     if (isLinked) return linkedItems.length > 0 ? linkedItems.map(i => i.name).join(', ') : null;
     if (value === null || value === undefined || value === '') return null;
+    if (field.fieldType === 'multiselect') return Array.isArray(value) && value.length ? value.join(', ') : null;
     if (field.fieldType === 'boolean') return value ? 'Yes' : 'No';
     if (field.fieldType === 'currency') return `$${Number(value).toLocaleString('en-AU')}`;
     if (field.fieldType === 'date') {
@@ -318,6 +319,20 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
 
   const renderEditor = () => {
     switch (field.fieldType) {
+      case 'multiselect': {
+        const selected: string[] = Array.isArray(draft) ? draft : [];
+        const toggle = (opt: string) => setDraft(selected.includes(opt) ? selected.filter(o => o !== opt) : [...selected, opt]);
+        return (
+          <div className="flex-1 flex flex-wrap gap-1.5">
+            {(field.selectOptions || []).map(opt => (
+              <button key={opt} type="button" onClick={() => toggle(opt)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all ${selected.includes(opt) ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-200'}`}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        );
+      }
       case 'boolean':
         return (
           <select autoFocus value={String(draft)} onChange={e => setDraft(e.target.value === 'true')}
