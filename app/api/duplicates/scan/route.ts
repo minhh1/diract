@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { similarity } from "@/lib/duplicates/similarity";
 import {
-  SYSTEM_TABLE_COMPARISON_FIELDS, customTableComparisonFields,
+  SYSTEM_TABLE_COMPARISON_FIELDS, customTableComparisonFields, systemTableCustomComparisonFields,
   type SystemTableName, type ComparisonField,
 } from "@/lib/duplicates/fieldConfig";
 
@@ -85,17 +85,25 @@ export async function POST(req: NextRequest) {
   }
 }
 
+function prettifyKey(key: string): string {
+  return key.replace(/_id$/, "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
 async function scan(admin: any, companyId: string, tableKind: string, table: string) {
   let records: ScannedRecord[];
   let fields: ComparisonField[];
+  // key -> human label, for the pair-review UI (a raw "custom_field:<uuid>"
+  // key -- see systemTableCustomComparisonFields -- is meaningless on
+  // screen otherwise).
+  let fieldLabels: Record<string, string> = {};
 
   if (tableKind === "system") {
     if (!SYSTEM_TABLES.includes(table as SystemTableName)) {
       return NextResponse.json({ error: "Unknown system table" }, { status: 400 });
     }
     const tableName = table as SystemTableName;
-    fields = SYSTEM_TABLE_COMPARISON_FIELDS[tableName];
-    const cols = ["id", ...fields.map(f => f.key)];
+    const baseFields = SYSTEM_TABLE_COMPARISON_FIELDS[tableName];
+    const cols = ["id", ...baseFields.map(f => f.key)];
     const data = await fetchAllRows<any>((from, to) =>
       admin
         .from(tableName)
@@ -106,9 +114,57 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
     );
     records = data.map(row => ({
       id: row.id,
-      label: row[fields[0].key] ?? row.id,
+      label: row[baseFields[0].key] ?? row.id,
       fields: row,
     }));
+
+    // Merge in identifier-looking custom fields defined on this system
+    // table (e.g. entities' abn/acn, which used to be native columns --
+    // see systemTableCustomComparisonFields's own comment) so a field that
+    // moves off a hardcoded column and onto company_custom_fields doesn't
+    // just silently drop out of matching.
+    const { data: customFieldRows } = await admin
+      .from("company_custom_fields")
+      .select("id, field_key, field_type, label")
+      .eq("company_id", companyId)
+      .eq("table_name", tableName)
+      .is("deleted_at", null);
+    const customFieldMeta = (customFieldRows || []) as { id: string; field_key: string; field_type: string; label: string }[];
+    const customFields = systemTableCustomComparisonFields(customFieldMeta);
+    fields = [...baseFields, ...customFields];
+
+    fieldLabels = Object.fromEntries(baseFields.map(f => [f.key, prettifyKey(f.key)]));
+    const customFieldById = new Map(customFieldMeta.map(f => [f.id, f]));
+    customFields.forEach(f => {
+      const meta = customFieldById.get(f.key.replace(/^custom_field:/, ""));
+      if (meta) fieldLabels[f.key] = meta.label;
+    });
+
+    if (customFields.length && records.length) {
+      const fieldIds = customFieldMeta
+        .filter(f => customFields.some(c => c.key === `custom_field:${f.id}`))
+        .map(f => f.id);
+      const recordIds = records.map(r => r.id);
+      const valueRows = await fetchAllRows<any>((from, to) =>
+        admin
+          .from("company_custom_field_values")
+          .select("record_id, field_id, value_text, value_number, value_date, value_boolean")
+          .eq("company_id", companyId)
+          .in("record_id", recordIds)
+          .in("field_id", fieldIds)
+          .range(from, to)
+      );
+      const byRecord = new Map<string, Record<string, any>>();
+      valueRows.forEach((v: any) => {
+        const value = v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
+        if (!byRecord.has(v.record_id)) byRecord.set(v.record_id, {});
+        byRecord.get(v.record_id)![`custom_field:${v.field_id}`] = value;
+      });
+      records.forEach(r => {
+        const extra = byRecord.get(r.id);
+        if (extra) Object.assign(r.fields, extra);
+      });
+    }
   } else if (tableKind === "custom") {
     const { data: tableDef } = await admin
       .from("company_tables")
@@ -121,14 +177,17 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
 
     const { data: tableFields } = await admin
       .from("company_table_fields")
-      .select("id, field_key, field_type")
+      .select("id, field_key, field_type, label")
       .eq("table_id", tableDef.id)
       .is("deleted_at", null);
-    const fieldList = (tableFields || []) as { id: string; field_key: string; field_type: string }[];
+    const fieldList = (tableFields || []) as { id: string; field_key: string; field_type: string; label: string }[];
     fields = customTableComparisonFields(fieldList, tableDef.primary_field_key);
     const fieldById = new Map(fieldList.map(f => [f.id, f]));
     const fieldIdByKey = new Map(fieldList.map(f => [f.field_key, f.id]));
     const relevantFieldIds = fields.map(f => fieldIdByKey.get(f.key)).filter((id): id is string => !!id);
+
+    const fieldByKey = new Map(fieldList.map(f => [f.field_key, f]));
+    fieldLabels = Object.fromEntries(fields.map(f => [f.key, fieldByKey.get(f.key)?.label ?? prettifyKey(f.key)]));
 
     const recordRows = await fetchAllRows<{ id: string }>((from, to) =>
       admin
@@ -141,7 +200,7 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
     const recordIds = recordRows.map(r => r.id);
 
     if (recordIds.length === 0 || relevantFieldIds.length === 0) {
-      return NextResponse.json({ pairs: [], fields: fields.map(f => f.key) });
+      return NextResponse.json({ pairs: [], fieldLabels });
     }
 
     // record_id/field_id are both already-bounded arrays (recordIds capped
@@ -224,7 +283,7 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
           idA: a.id, idB: b.id,
           labelA: String(a.label), labelB: String(b.label),
           score: Math.round(score * 100) / 100,
-          reason: reasons.join(", "),
+          reason: reasons.map(k => fieldLabels[k] || k).join(", "),
           fieldsA: a.fields, fieldsB: b.fields,
         });
       }
@@ -232,5 +291,5 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
   }
 
   pairs.sort((x, y) => y.score - x.score);
-  return NextResponse.json({ pairs, fields: fields.map(f => f.key) });
+  return NextResponse.json({ pairs, fieldLabels });
 }

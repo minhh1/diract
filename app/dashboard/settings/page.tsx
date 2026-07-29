@@ -74,12 +74,20 @@ async function fetchImportHistory() {
   return data || [];
 }
 
+interface DuplicateScanResult {
+  pairs: DuplicatePair[];
+  // key -> human label (e.g. "custom_field:<uuid>" -> "ABN") for rendering
+  // the per-record field grid below -- see app/api/duplicates/scan/
+  // route.ts's fieldLabels.
+  fieldLabels: Record<string, string>;
+}
+
 // Scans via the app-owned duplicate-matching engine (app/api/duplicates/
 // scan/route.ts) instead of the old find_potential_duplicates/
 // find_entity_duplicates/find_project_duplicates Postgres RPCs -- those were
 // opaque (untracked in this repo), hardcoded to 3 system tables, and had no
 // path to ever support custom tables.
-async function fetchDuplicatesData(dupType: DupType): Promise<DuplicatePair[]> {
+async function fetchDuplicatesData(dupType: DupType): Promise<DuplicateScanResult> {
   const body = dupType.kind === "system"
     ? { tableKind: "system", table: dupType.table }
     : { tableKind: "custom", table: dupType.tableId };
@@ -94,7 +102,7 @@ async function fetchDuplicatesData(dupType: DupType): Promise<DuplicatePair[]> {
   // nothing to go on to debug it. Throwing surfaces the real error via
   // useQuery's own error state instead (rendered below).
   if (!res.ok) throw new Error(json?.error || `Scan failed (${res.status})`);
-  return json?.pairs || [];
+  return { pairs: json?.pairs || [], fieldLabels: json?.fieldLabels || {} };
 }
 
 export default function SettingsPage() {
@@ -138,12 +146,14 @@ function SettingsPageInner() {
     staleTime: 60 * 1000,
   });
   const duplicatesQueryKey = ['settings-duplicates', companyId, dupTypeKey(activeDupType)] as const;
-  const { data: pairs = [], isLoading: duplicatesLoading, error: duplicatesError } = useQuery({
+  const { data: duplicatesData, isLoading: duplicatesLoading, error: duplicatesError } = useQuery({
     queryKey: duplicatesQueryKey,
     queryFn: () => fetchDuplicatesData(activeDupType),
     enabled: view === "duplicates_view" && !!companyId,
     staleTime: 60 * 1000,
   });
+  const pairs = duplicatesData?.pairs ?? [];
+  const fieldLabels = duplicatesData?.fieldLabels ?? {};
   const loading = view === "history" ? historyLoading : view === "duplicates_view" ? duplicatesLoading : false;
 
   useProgressBarWhile(loading);
@@ -220,8 +230,8 @@ function SettingsPageInner() {
         }
         return;
       }
-      queryClient.setQueryData(duplicatesQueryKey, (old: DuplicatePair[] = []) =>
-        old.filter(p => !(p.idA === pair.idA && p.idB === pair.idB))
+      queryClient.setQueryData(duplicatesQueryKey, (old?: DuplicateScanResult) =>
+        old ? { ...old, pairs: old.pairs.filter(p => !(p.idA === pair.idA && p.idB === pair.idB)) } : old
       );
       const reassigned = data?.reassigned ?? 0;
       window.alert(`Merged. ${reassigned} reference${reassigned === 1 ? '' : 's'} repointed to "${keepLabel}".`);
@@ -524,9 +534,9 @@ function SettingsPageInner() {
                           <div key={side.id} className={`flex-1 p-10 ${n === 0 ? 'border-r border-slate-100' : ''}`}>
                             <p className="text-[16px] font-medium text-slate-900 leading-tight uppercase mb-6">{side.label}</p>
                             <div className="grid grid-cols-2 gap-y-5 gap-x-12 mb-8">
-                              {Object.entries(side.fields).slice(0, 6).map(([key, value]) => (
+                              {Object.entries(side.fields).filter(([key]) => key !== 'id').slice(0, 6).map(([key, value]) => (
                                 <div key={key}>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{key.replace(/_/g, ' ')}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{fieldLabels[key] || key.replace(/_/g, ' ')}</p>
                                   <p className="text-[13px] font-medium text-slate-700 truncate">{value === null || value === undefined || value === '' ? '—' : String(value)}</p>
                                 </div>
                               ))}
