@@ -304,7 +304,7 @@ function MasterTableRow({
                       <span className="text-[9px] font-bold">{childCount}</span>
                     </button>
                   )}
-                  {isChildStyled && <CornerDownRight size={12} className="text-slate-300 shrink-0" />}
+                  {isChildStyled && <CornerDownRight size={12} className="subproject-corner-icon text-slate-300 shrink-0" />}
                   <span className="min-w-0 flex-1 flex items-center justify-between gap-2 group/expand">
                     <span className="min-w-0 truncate flex-1">{cellValue}</span>
                     {showExpandToggle && (

@@ -218,7 +218,23 @@
    (button/badge text on an already-colored background). */
 
 .dark .bg-slate-50 { background-color: #262624; }
+/* Opacity-modified variants (bg-slate-50/40 etc.) compile to their OWN
+   selector, distinct from plain bg-slate-50 above -- Tailwind couldn't
+   pick up the override otherwise, since these still reference the
+   un-overridden --color-slate-50 blended with transparency, which is
+   what left these panels showing their original light-mode gray
+   (confirmed live: MasterTable.tsx's sub-project rows and MatterBoard.tsx's
+   expand-row panel, both bg-slate-50/NN, stayed light against otherwise-
+   dark surfaces). Subtle-panel role, same idea as bg-slate-100 below,
+   opacity dropped since these are always layered over an already-dark
+   parent background. */
+.dark .bg-slate-50\/30 { background-color: #2b2925; }
+.dark .bg-slate-50\/40 { background-color: #2b2925; }
+.dark .bg-slate-50\/50 { background-color: #2d2c2a; }
+.dark .bg-slate-50\/60 { background-color: #2f2e2b; }
 .dark .bg-slate-100 { background-color: #2d2c2a; }
+.dark .bg-slate-100\/40 { background-color: #2b2925; }
+.dark .bg-slate-100\/70 { background-color: #302f2c; }
 .dark .bg-slate-200 { background-color: #38362f; }
 .dark .bg-slate-300 { background-color: #46443b; }
 .dark .bg-slate-400 { background-color: #55534a; }
@@ -264,6 +280,15 @@
    is deliberately LIGHTER than the resting state (600): brightening,
    not darkening, is the correct hover direction on a dark background. */
 .dark .bg-indigo-50 { background-color: #211f3a; }
+/* Opacity-modified variants -- see bg-slate-50's matching comment above
+   for why these need their own rule. */
+.dark .bg-indigo-50\/20 { background-color: #211f3a; }
+.dark .bg-indigo-50\/30 { background-color: #262351; }
+.dark .bg-indigo-50\/40 { background-color: #262351; }
+.dark .bg-indigo-50\/50 { background-color: #292759; }
+.dark .bg-indigo-50\/60 { background-color: #292759; }
+.dark .bg-indigo-50\/80 { background-color: #2c2960; }
+.dark .bg-indigo-100\/80 { background-color: #2c2960; }
 .dark .bg-indigo-100 { background-color: #292759; }
 .dark .bg-indigo-400 { background-color: #6f6bc7; }
 .dark .bg-indigo-500 { background-color: #7875e0; }
@@ -396,6 +421,18 @@
 
 .dark .bg-fuchsia-50 { background-color: #351a3d; }
 .dark .text-fuchsia-600 { color: #eba3f0; }
+
+/* ── One-off icon overrides ──────────────────────────────────────────
+   A handful of icons need to diverge from their element's own blanket
+   color override above (e.g. still carry text-slate-300 for light mode,
+   but read poorly against the specific dark-mode surface they sit on) --
+   given their own class name here rather than a `dark:` utility, since
+   `dark:` compiles into Tailwind's layered utilities block and would
+   lose the cascade to the unlayered blanket overrides above regardless
+   of source order or specificity (unlayered CSS always outranks
+   layered CSS). Must be declared AFTER the blanket rule it's overriding
+   (equal specificity, so source order decides the winner). */
+.dark .subproject-corner-icon { color: #ffffff; }
 
 /* ── Scrollbars ──────────────────────────────────────────────────── */
 .dark ::-webkit-scrollbar-thumb { background-color: #46443b; }
