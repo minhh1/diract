@@ -146,10 +146,19 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
     warmSystemTableViewConfig(cid, user.id, result.myTeamIds).catch(() => {}),
   ]);
   notifyStep("tableShells");
-  await warmCustomTableShells(cid).catch(() => {});
-  // Row data prefetch stays fire-and-forget -- see startSystemTableRowPrefetch's
-  // own doc comment for why (unlike shell/metadata, it's cheap per table but
-  // not bounded, so it isn't part of what the splash gates on).
+  // Now also warms every custom table's rows + column/sort config + default
+  // filters alongside its schema/fields -- see prefetchShells.ts's own
+  // updated doc comment.
+  await warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {});
+  // System-table row data prefetch stays fire-and-forget -- see
+  // startSystemTableRowPrefetch's own doc comment for why (unlike shell/
+  // metadata, it's cheap per table but not bounded, so it isn't part of
+  // what the splash gates on). Custom-table rows are different: they're
+  // now awaited as part of warmCustomTableShells above instead, since a
+  // company can have a custom table with a genuinely large dashboard-driven
+  // dataset behind it (rollups, invoices) that's worth the same "fully
+  // ready by the time the splash dismisses" guarantee the rest of this
+  // step already makes for schema/fields.
   startSystemTableRowPrefetch(cid).catch(() => {});
   notifyStep("shells");
 

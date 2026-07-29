@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { readCache, writeCache } from "@/lib/queryCache";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import { getSchemaMetadata } from "@/lib/services/schemaService";
 import { resolveRelationLabels, type CustomTableField, type CustomTableRecord } from "./useCustomTable";
@@ -28,7 +29,16 @@ import {
 export type SystemTableName = 'projects' | 'properties' | 'entities';
 export const SYSTEM_TABLE_NAMES: SystemTableName[] = ['projects', 'properties', 'entities'];
 
-const systemTableShellKey = (tableName: string, companyId: string) => `system-table:${companyId}:${tableName}`;
+export const systemTableShellKey = (tableName: string, companyId: string) => `system-table:${companyId}:${tableName}`;
+// Deliberately its own key, distinct from usePresetTable.ts/prefetchShells.ts's
+// `rows_${companyId}_${tableName}` -- that cache holds flat row objects
+// (item[colId]), this hook's `records` are CustomTableRecord-shaped
+// ({ values: { [field_key]: val } }) to match the dashboard-widget engine's
+// expected shape (see this file's own top comment). Same underlying table,
+// incompatible cached shapes. Exported so lib/hooks/prefetchShells.ts's
+// bootstrap warmer can seed this exact slot for every dashboard sourced
+// from one of these 3 system tables.
+export const dashboardSourceRowsKey = (tableName: string, companyId: string) => `dashsrc_rows_${companyId}_${tableName}`;
 
 const SYSTEM_TABLE_ICON: Record<SystemTableName, string> = {
   properties: 'MapPin', entities: 'Building2', projects: 'LayoutGrid',
@@ -69,9 +79,15 @@ export function useSystemTableAsCustomTable(
   addRecordOptimistic: (id: string, values: Record<string, any>) => void;
 } {
   const [fields, setFields] = useState<CustomTableField[]>([]);
-  const [records, setRecords] = useState<CustomTableRecord[]>([]);
+  // Lazily seeded from cache -- same reasoning as useCustomTable.ts's own
+  // lazy row initializer.
+  const [records, setRecords] = useState<CustomTableRecord[]>(
+    () => (tableName && companyId ? readCache<CustomTableRecord[]>(dashboardSourceRowsKey(tableName, companyId)) : null) || []
+  );
   const [loading, setLoading] = useState(true);
-  const [recordsLoading, setRecordsLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(
+    () => !(tableName && companyId && readCache<CustomTableRecord[]>(dashboardSourceRowsKey(tableName, companyId)))
+  );
 
   const load = useCallback(async () => {
     if (!tableName || !companyId) return;
@@ -220,6 +236,7 @@ export function useSystemTableAsCustomTable(
     await resolveRelationLabels(fieldList, hydratedRecords);
     setRecords(hydratedRecords);
     setRecordsLoading(false);
+    if (companyId) writeCache(dashboardSourceRowsKey(tableName, companyId), hydratedRecords);
   }, [tableName, companyId]);
 
   // Layout effect -- see useCustomTable.ts's matching doc comment (same
@@ -233,7 +250,18 @@ export function useSystemTableAsCustomTable(
     } else {
       setLoading(true);
     }
-    setRecordsLoading(true);
+    // Reconcile against the row cache too (not just the lazy initializer
+    // above, which doesn't apply once this effect re-runs on a later
+    // tableName/company change) -- only flip recordsLoading on when
+    // there's truly no cache, same reasoning as useCustomTable.ts.
+    const cachedRows = readCache<CustomTableRecord[]>(dashboardSourceRowsKey(tableName, companyId));
+    if (cachedRows) {
+      setRecords(cachedRows);
+      setRecordsLoading(false);
+    } else {
+      setRecords([]);
+      setRecordsLoading(true);
+    }
     load();
   }, [tableName, companyId, load]);
 

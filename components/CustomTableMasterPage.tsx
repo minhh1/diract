@@ -34,21 +34,12 @@ import ColumnConfigDrawer from "@/components/ColumnConfigDrawer";
 const NewRecordModal = dynamic(() => import("@/components/dashboard/NewRecordModal"));
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import type { ActiveFilter } from "@/lib/types/filters";
+import { matchesAllFilters } from "@/lib/filterMatch";
+import { savedViewsService, readCachedDefaultFilters, writeCachedDefaultFilters } from "@/lib/services/savedViewsService";
 
 interface Props {
   tableSlug: string;
 }
-
-// Custom tables don't have a filters feature yet (see ColumnConfigDrawer's
-// own Filters tab, unused here) -- passed as a stable module-level constant
-// rather than omitted, since ColumnConfigDrawer's `filters` prop defaults to
-// a fresh `[]` on every render when left undefined, and its own effect
-// syncs draftFilters from that prop on every reference change. A new []
-// each render never stops "changing", so its effect never stops firing --
-// confirmed live as an infinite render loop ("Maximum update depth
-// exceeded") that pins the tab, which is what was actually behind the
-// reported "moving between table types freezes the site" bug.
-const NO_FILTERS: ActiveFilter[] = [];
 
 const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
 
@@ -136,6 +127,10 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedId = searchParams.get('id');
+  const viewId = searchParams.get('view');
+  // Sidebar's "All (no filter)" sets this to signal a real reset -- see
+  // GenericMasterTable.tsx's matching comment.
+  const clearFiltersSignal = searchParams.get('clearFilters');
 
   const { tableDef, fields, records, loading, recordsLoading, refetch } = useCustomTable(tableSlug);
   const { isAdmin, companyId: ctxCompanyId, userId: ctxUserId, myTeamIds: ctxMyTeamIds } = useCompany();
@@ -182,6 +177,92 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const { pendingIds: pendingArchiveIds, refreshPendingArchiveRequests } = usePendingArchiveRequests("company_table_records", companyId);
+
+  // ── Filters ──────────────────────────────────────────────────────────
+  // Same savedViewsService-backed persistence GenericMasterTable.tsx uses
+  // for system tables -- either the selected named view (?view=<id>) or,
+  // with no view selected, an implicit per-user/per-table default slot.
+  // Lazily seeded from cache for the no-?view= case, same reasoning as
+  // GenericMasterTable.tsx's own lazy initializer.
+  const [filters, setFilters] = useState<ActiveFilter[]>(() => {
+    if (viewId || !ctxCompanyId || !ctxUserId) return [];
+    return readCachedDefaultFilters(ctxCompanyId, ctxUserId, tableSlug)?.filters ?? [];
+  });
+  const [activeViewName, setActiveViewName] = useState<string | null>(null);
+  const filtersReadyToSave = React.useRef(false);
+
+  useEffect(() => {
+    const loadFilters = async () => {
+      if (clearFiltersSignal) {
+        filtersReadyToSave.current = false;
+        try {
+          setActiveViewName(null);
+          setFilters([]);
+          if (ctxUserId && ctxCompanyId) {
+            await savedViewsService.saveDefaultFilters(ctxUserId, ctxCompanyId, tableSlug, []);
+            writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableSlug, []);
+          }
+          router.replace(`/dashboard/${tableSlug}`);
+        } finally {
+          setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+        }
+        return;
+      }
+
+      if (!viewId) {
+        setActiveViewName(null);
+        if (!ctxUserId || !ctxCompanyId) {
+          setFilters([]);
+          return;
+        }
+
+        const cached = readCachedDefaultFilters(ctxCompanyId, ctxUserId, tableSlug);
+        if (cached) {
+          setFilters(cached.filters);
+          setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+          savedViewsService.getDefaultFilters(ctxUserId, ctxCompanyId, tableSlug)
+            .then(fresh => {
+              writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableSlug, fresh);
+              if (JSON.stringify(fresh) !== JSON.stringify(cached.filters)) setFilters(fresh);
+            })
+            .catch(() => {});
+          return;
+        }
+
+        filtersReadyToSave.current = false;
+        try {
+          const defaultFilters = await savedViewsService.getDefaultFilters(ctxUserId, ctxCompanyId, tableSlug);
+          writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableSlug, defaultFilters);
+          setFilters(defaultFilters);
+        } finally {
+          setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+        }
+        return;
+      }
+
+      // Named view (?view=<id>) -- not cached, same as GenericMasterTable.tsx.
+      filtersReadyToSave.current = false;
+      try {
+        const view = await savedViewsService.get(viewId);
+        setFilters(view?.filters || []);
+        setActiveViewName(view?.view_name || null);
+      } finally {
+        setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+      }
+    };
+    loadFilters();
+  }, [viewId, clearFiltersSignal, ctxUserId, ctxCompanyId, tableSlug, router]);
+
+  useEffect(() => {
+    if (!filtersReadyToSave.current) return;
+
+    if (viewId) {
+      savedViewsService.updateFilters(viewId, filters);
+    } else if (ctxUserId && ctxCompanyId) {
+      savedViewsService.saveDefaultFilters(ctxUserId, ctxCompanyId, tableSlug, filters);
+      writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableSlug, filters);
+    }
+  }, [filters, viewId, ctxUserId, ctxCompanyId, tableSlug]);
 
   // Default column layout before any company_default_views row exists yet --
   // first 6 show_in_table fields (or first 6 fields), the rest start in the
@@ -324,6 +405,17 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     [fields, tableDef]
   );
 
+  // Relation-type fields excluded -- their raw stored value is a linked
+  // record's id, not meaningful text to compare a filter's value against
+  // (matches GenericMasterTable.tsx's own filterableFields, which excludes
+  // its 'relation' category columns for the same reason).
+  const filterableFields = useMemo(
+    () => fields
+      .filter(f => !RELATION_FIELD_TYPES.includes(f.field_type) && !f.allow_multiple)
+      .map(f => ({ id: f.id, label: f.label, fieldType: f.field_type, options: f.select_options || undefined })),
+    [fields]
+  );
+
   // Filtered + sorted records
   const filteredRecords = useMemo(() => {
     let result = records;
@@ -341,6 +433,12 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         searchCols.some(colId => resolveValue(r, colId).toLowerCase().includes(q))
       );
     }
+    if (filters.length > 0) {
+      result = result.filter(r => matchesAllFilters(filters, fieldId => {
+        const field = fields.find(f => f.id === fieldId);
+        return field ? r.values[field.field_key] : undefined;
+      }));
+    }
     const sort = cc.sort;
     if (!sort) return result;
     return [...result].sort((a, b) => {
@@ -349,7 +447,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
       return sort.direction === 'asc' ? cmp : -cmp;
     });
-  }, [records, search, primaryField, cc.tableCols, cc.expandCols, cc.sort, resolveValue]);
+  }, [records, search, primaryField, cc.tableCols, cc.expandCols, cc.sort, resolveValue, filters, fields]);
 
   // Fields the NewRecordModal prompts for -- the primary field plus every
   // other required field, so creating a record here never starts from an
@@ -538,6 +636,11 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
               >
                 <Settings2 size={16} /> Setup
+                {filters.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-indigo-600 text-white rounded-full text-[9px] font-bold">
+                    {filters.length}
+                  </span>
+                )}
               </button>
               <button
                 onClick={handleExportCsv}
@@ -574,6 +677,39 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
               className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-14 pr-8 text-sm font-medium outline-none focus:ring-8 focus:ring-black/5 transition-all"
             />
           </div>
+
+          {/* Active filter chips -- same treatment as GenericMasterTable.tsx */}
+          {filters.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap mt-4">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest shrink-0">
+                Filters:
+              </span>
+              {filters.map((f, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-full"
+                >
+                  <span className="text-[11px] font-bold text-indigo-700">{f.label}</span>
+                  <span className="text-[10px] text-indigo-400">{f.operator.replace(/_/g, ' ')}</span>
+                  {f.value && (
+                    <span className="text-[11px] font-bold text-indigo-700">{f.value}</span>
+                  )}
+                  <button
+                    onClick={() => setFilters(prev => prev.filter((_, fi) => fi !== i))}
+                    className="text-indigo-300 hover:text-indigo-700 transition-colors ml-0.5"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setFilters([])}
+                className="text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -595,9 +731,11 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         sections={drawerSections}
         tableCols={cc.tableCols}
         expandCols={cc.expandCols}
-        activePresetName={cc.activePreset}
+        activePresetName={activeViewName ?? cc.activePreset}
         onToggle={cc.handleToggleColumn}
-        filters={NO_FILTERS}
+        filters={filters}
+        filterableFields={filterableFields}
+        onFiltersChange={setFilters}
         isAdmin={isAdmin}
         resolveColLabel={resolveColLabel}
         onReorderTableCols={cc.handleReorder}

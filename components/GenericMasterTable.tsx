@@ -27,6 +27,7 @@ import { propertyService } from "@/lib/services/propertyService";
 import { buildCredentialColumnSections } from "@/lib/columnDefinitions";
 import { PROPERTY_RELATIONS, ENTITY_RELATIONS } from "@/lib/relationDefinitions";
 import type { ActiveFilter } from "@/lib/types/filters";
+import { matchesAllFilters } from "@/lib/filterMatch";
 import { useInvalidateRows } from "@/lib/hooks/useTableRows";
 import { pushWithFallback } from "@/lib/navigateWithFallback";
 import { swr, clearCache } from "@/lib/queryCache";
@@ -892,32 +893,11 @@ function GenericMasterTableInner({
 
     // Active filters
     if (filters.length > 0) {
-      result = result.filter(item =>
-        filters.every(filter => {
-          const raw = filter.fieldId.startsWith('custom_field:')
-            ? item.__customFields?.[filter.fieldId.replace('custom_field:', '')]
-            : item[filter.fieldId];
-          const itemVal = (raw === null || raw === undefined ? '' : String(raw)).toLowerCase().trim();
-          const filterVal = filter.value.toLowerCase().trim();
-
-          switch (filter.operator) {
-            case 'equals':       return itemVal === filterVal;
-            case 'not_equals':   return itemVal !== filterVal;
-            case 'contains':     return itemVal.includes(filterVal);
-            case 'not_contains': return !itemVal.includes(filterVal);
-            case 'starts_with':  return itemVal.startsWith(filterVal);
-            case 'is_empty':     return itemVal === '';
-            case 'is_not_empty': return itemVal !== '';
-            case 'is_true':      return raw === true || itemVal === 'true' || itemVal === 'yes';
-            case 'is_false':     return raw === false || itemVal === 'false' || itemVal === 'no';
-            case 'gt':           return Number(raw) > Number(filter.value);
-            case 'gte':          return Number(raw) >= Number(filter.value);
-            case 'lt':           return Number(raw) < Number(filter.value);
-            case 'lte':          return Number(raw) <= Number(filter.value);
-            default:             return true;
-          }
-        })
-      );
+      result = result.filter(item => matchesAllFilters(filters, fieldId =>
+        fieldId.startsWith('custom_field:')
+          ? item.__customFields?.[fieldId.replace('custom_field:', '')]
+          : item[fieldId]
+      ));
     }
 
     // Sort

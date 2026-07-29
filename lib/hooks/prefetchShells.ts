@@ -32,8 +32,17 @@ import { warmRelatedFields } from "./useRelatedFields";
 import { fetchScopedDefaultView } from "./scopedDefaultView";
 import { writeCachedScopedView } from "./usePresetTable";
 import { savedViewsService, writeCachedDefaultFilters } from "@/lib/services/savedViewsService";
+import {
+  resolveRelationLabels, type CustomTableField, type CustomTableRecord,
+} from "./useCustomTable";
+import {
+  SYSTEM_TABLE_HIDDEN_COLS, SYSTEM_TABLE_RELATION_MAP, SYSTEM_TABLE_PERSON_LINK_COLS,
+} from "@/lib/schema/systemTableRelations";
+import {
+  SYSTEM_TABLE_NAMES as DASHBOARD_SYSTEM_TABLE_NAMES, systemTableShellKey, dashboardSourceRowsKey,
+  type SystemTableName,
+} from "./useSystemTableAsCustomTable";
 import type { CustomTable } from "./useCustomTables";
-import type { CustomTableField } from "./useCustomTable";
 import type { CompanyDashboard } from "./useDashboardData";
 
 const SYSTEM_TABLES = ['properties', 'entities', 'projects', 'tasks'] as const;
@@ -253,12 +262,235 @@ async function prefetchTableFields(tbl: CustomTable, companyId: string): Promise
   writeShellCache(tableShellKey(companyId, tbl.slug), { tableDef: tbl, fields: (flds || []) as CustomTableField[] });
 }
 
+// Companion to warmSystemTableRows above -- same "seed corrected by the real
+// fetch" trade-off (see that function's own doc comment), for a company's
+// custom tables instead of the 4 system tables. 'table_relation' (custom-
+// table-to-custom-table) relation fields are left as their raw linked-record
+// id here rather than resolved to a display label -- doing so needs an
+// extra lookup of the target table's own display field first, a meaningfully
+// bigger duplicate of useCustomTable.ts's resolveRelationLabels than is
+// worth carrying in this standalone module just for a seed corrected within
+// moments of the real page mounting anyway. entity/property/project
+// relations (the same 3 system-table targets warmSystemTableRows already
+// resolves) still get real labels here, reusing RELATION_TARGET_TABLES as-is.
+async function warmCustomTableRows(tbl: CustomTable, companyId: string): Promise<void> {
+  const cacheKey = `rows_${companyId}_${tbl.slug}`;
+  if (readCache(cacheKey)) return;
+  try {
+    const { data: flds } = await supabase
+      .from('company_table_fields').select('*')
+      .eq('table_id', tbl.id).is('deleted_at', null).order('display_order');
+    const fieldList = (flds || []) as CustomTableField[];
+    const fieldMap = new Map(fieldList.map(f => [f.id, f]));
+
+    const { data: recs } = await supabase
+      .from('company_table_records')
+      .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)')
+      .eq('table_id', tbl.id).is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    const records = (recs || []).map((rec: any) => {
+      const values: Record<string, any> = {};
+      (rec.values || []).forEach((v: any) => {
+        const field = fieldMap.get(v.field_id);
+        if (!field) return;
+        // value_record_id checked FIRST -- see GenericMasterTable.tsx's
+        // fetchCustomFields for why.
+        values[field.field_key] = v.value_record_id ?? v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
+      });
+      return { id: rec.id, table_id: rec.table_id, created_at: rec.created_at, values, displayValues: {} as Record<string, string> };
+    });
+
+    const multiFields = fieldList.filter(f => f.allow_multiple);
+    if (multiFields.length) {
+      const { data: links } = await supabase
+        .from('company_table_value_links')
+        .select('record_id, field_id, value_record_id')
+        .in('field_id', multiFields.map(f => f.id));
+      const byRecord = new Map<string, Record<string, string[]>>();
+      (links || []).forEach(l => {
+        const field = fieldMap.get(l.field_id);
+        if (!field) return;
+        if (!byRecord.has(l.record_id)) byRecord.set(l.record_id, {});
+        const rec = byRecord.get(l.record_id)!;
+        (rec[field.field_key] ||= []).push(l.value_record_id);
+      });
+      for (const rec of records) {
+        for (const field of multiFields) {
+          rec.values[field.field_key] = byRecord.get(rec.id)?.[field.field_key] || [];
+        }
+      }
+    }
+
+    const relationFields = fieldList.filter(f => f.field_type in RELATION_TARGET_TABLES);
+    await Promise.all(relationFields.map(async field => {
+      const { table, nameColumn } = RELATION_TARGET_TABLES[field.field_type];
+      const linkedIds = [...new Set(records.map(r => r.values[field.field_key]).filter(Boolean))]
+        .filter(id => UUID_RE.test(id));
+      if (!linkedIds.length) return;
+      const { data: linked } = await supabase.from(table).select(`id, ${nameColumn}`).in('id', linkedIds);
+      const nameById = new Map((linked || []).map((r: any) => [r.id, r[nameColumn]]));
+      for (const rec of records) {
+        const rawId = rec.values[field.field_key];
+        if (rawId) rec.displayValues[field.field_key] = nameById.get(rawId) || '';
+      }
+    }));
+
+    writeCache(cacheKey, records);
+  } catch {}
+}
+
+// Companion to warmSystemTableViewConfig -- same idea (warm the raw scoped
+// column/sort view and the implicit default-filters slot) for a custom
+// table instead of one of the 4 system tables.
+async function warmCustomTableViewConfig(
+  tbl: CustomTable,
+  companyId: string,
+  userId: string | null,
+  myTeamIds: string[] | undefined,
+): Promise<void> {
+  await Promise.all([
+    fetchScopedDefaultView(companyId, tbl.slug, userId, myTeamIds)
+      .then(view => writeCachedScopedView(companyId, tbl.slug, view))
+      .catch(() => {}),
+    userId
+      ? savedViewsService.getDefaultFilters(userId, companyId, tbl.slug)
+          .then(filters => writeCachedDefaultFilters(companyId, userId, tbl.slug, filters))
+          .catch(() => {})
+      : Promise.resolve(),
+  ]);
+}
+
+// lib/hooks/useSystemTableAsCustomTable.ts's dashboard-widget adapter for a
+// dashboard sourced directly from Properties/Entities/Projects (not a
+// company_tables row) -- unlike every OTHER source kind, it has its own,
+// entirely separate fields/records fetch (a system table needs to be
+// reshaped into the CustomTableField/CustomTableRecord dashboard-widget
+// shape that hook's own top comment explains), so warming it needs its own
+// warmer here too rather than being covered by warmSystemTableShells or
+// warmCustomTableRows above. Field derivation duplicated from that hook's
+// own load() (not imported -- same standalone-module reasoning as the rest
+// of this file) except resolveRelationLabels, which is plain, non-hook code
+// already shared with useCustomTable.ts's own load().
+const DASHBOARD_RELATION_FIELD_TYPE_BY_TABLE: Record<string, 'project' | 'property' | 'entity'> = {
+  projects: 'project', properties: 'property', entities: 'entity',
+};
+function deriveDashboardNativeFieldType(dataType: string): string {
+  if (dataType === 'boolean') return 'boolean';
+  if (dataType === 'date' || dataType?.includes('timestamp')) return 'date';
+  if (['numeric', 'integer', 'bigint', 'smallint', 'real', 'double precision'].includes(dataType)) return 'number';
+  return 'text';
+}
+async function warmDashboardSourceSystemTable(tableName: SystemTableName, companyId: string): Promise<void> {
+  const rowsKey = dashboardSourceRowsKey(tableName, companyId);
+  if (readCache(rowsKey)) return;
+  try {
+    const [cols, { data: customFields }] = await Promise.all([
+      getSchemaMetadata(tableName, companyId),
+      supabase.from('company_custom_fields').select('*').eq('table_name', tableName).is('deleted_at', null).order('display_order'),
+    ]);
+
+    let order = 0;
+    const nativeFields: CustomTableField[] = (cols || [])
+      .filter((c: any) => ['data', 'relation'].includes(c.category) && !c.is_hidden && !SYSTEM_TABLE_HIDDEN_COLS.includes(c.column_name))
+      .map((c: any) => {
+        const relTable = SYSTEM_TABLE_RELATION_MAP[c.column_name]?.table || c.relation_table || undefined;
+        const relDisplayCol = SYSTEM_TABLE_RELATION_MAP[c.column_name]?.displayCol || c.relation_display_column || undefined;
+        const relationFieldType = relTable ? DASHBOARD_RELATION_FIELD_TYPE_BY_TABLE[relTable] : undefined;
+        const junction = SYSTEM_TABLE_RELATION_MAP[c.column_name]?.junction;
+        const isPersonLink = SYSTEM_TABLE_PERSON_LINK_COLS.includes(c.column_name);
+        const field_type = relationFieldType || (isPersonLink ? 'text' : deriveDashboardNativeFieldType(c.data_type));
+        return {
+          id: c.column_name, table_id: tableName, field_key: c.column_name,
+          label: c.label || c.column_name.replace(/_/g, ' '), field_type,
+          select_options: null, default_value: null, linked_table_id: null,
+          linked_system_table: relationFieldType ? relTable! : null,
+          linked_display_field: relationFieldType ? relDisplayCol! : null,
+          linked_display_field_2: null, linked_search_field_keys: null,
+          linked_filter_column: null, linked_filter_value: null,
+          is_required: !c.is_nullable, is_unique: false, show_in_table: true,
+          display_order: order++, section_name: null, help_text: null,
+          formula_type: null, formula_field_a_id: null, formula_field_b_id: null,
+          formula_percent: null, formula_relation_field_id: null,
+          auto_number_prefix: null, allow_multiple: !!junction, field_source: 'native',
+        } as CustomTableField;
+      });
+
+    const cfFields: CustomTableField[] = (customFields || []).map((cf: any) => ({
+      id: cf.id, table_id: tableName, field_key: cf.id, label: cf.label, field_type: cf.field_type,
+      select_options: cf.select_options || null, default_value: cf.default_value ?? null,
+      linked_table_id: null, linked_system_table: cf.linked_table || null,
+      linked_display_field: cf.linked_display_column || null, linked_display_field_2: null,
+      linked_search_field_keys: null, linked_filter_column: null, linked_filter_value: null,
+      is_required: !!cf.is_required, is_unique: !!cf.is_unique, show_in_table: cf.show_in_table ?? true,
+      display_order: order++, section_name: cf.section_name || null, help_text: cf.help_text || null,
+      formula_type: null, formula_field_a_id: null, formula_field_b_id: null,
+      formula_percent: null, formula_relation_field_id: null, auto_number_prefix: null,
+      allow_multiple: false, field_source: 'custom',
+    } as CustomTableField));
+
+    const fieldList = [...nativeFields, ...cfFields];
+    writeShellCache(systemTableShellKey(tableName, companyId), fieldList);
+
+    const { data: baseRows } = await supabase.from(tableName).select('*').is('deleted_at', null);
+
+    const multiFields = nativeFields.filter(f => f.allow_multiple);
+    const multiValuesByRecord = new Map<string, Record<string, string[]>>();
+    if (multiFields.length) {
+      await Promise.all(multiFields.map(async f => {
+        const junction = SYSTEM_TABLE_RELATION_MAP[f.field_key]?.junction;
+        if (!junction) return;
+        const { data: links } = await supabase.from(junction.table).select(`${junction.sourceCol}, ${junction.targetCol}`);
+        (links || []).forEach((row: any) => {
+          const recId = row[junction.sourceCol];
+          if (!multiValuesByRecord.has(recId)) multiValuesByRecord.set(recId, {});
+          const rec = multiValuesByRecord.get(recId)!;
+          (rec[f.field_key] ||= []).push(row[junction.targetCol]);
+        });
+      }));
+    }
+
+    const cfIds = cfFields.map(f => f.id);
+    const cfValuesByRecord = new Map<string, Record<string, any>>();
+    if (cfIds.length) {
+      const { data: cfValues } = await supabase
+        .from('company_custom_field_values')
+        .select('record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id')
+        .in('field_id', cfIds);
+      (cfValues || []).forEach(v => {
+        if (!cfValuesByRecord.has(v.record_id)) cfValuesByRecord.set(v.record_id, {});
+        // value_record_id checked FIRST -- see GenericMasterTable.tsx's
+        // fetchCustomFields for why.
+        cfValuesByRecord.get(v.record_id)![v.field_id] = v.value_record_id ?? v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
+      });
+    }
+
+    const hydratedRecords: CustomTableRecord[] = (baseRows || []).map((row: any) => {
+      const values: Record<string, any> = {};
+      for (const f of nativeFields) {
+        values[f.field_key] = f.allow_multiple
+          ? (multiValuesByRecord.get(row.id)?.[f.field_key] || [])
+          : (row[f.field_key] ?? null);
+      }
+      Object.assign(values, cfValuesByRecord.get(row.id) || {});
+      return { id: row.id, table_id: tableName, created_at: row.created_at || row.updated_at || new Date().toISOString(), values, displayValues: {} };
+    });
+
+    await resolveRelationLabels(fieldList, hydratedRecords);
+    writeCache(rowsKey, hydratedRecords);
+  } catch {}
+}
+
 // Parallel across both tables and dashboards -- this is now a blocking
 // bootstrap step (see this file's top doc comment), so the goal is the
 // opposite of the sequential loop this used to be: bound the wait by the
 // single slowest fetch, not their sum, the same trade-off
 // warmSystemTableShells already makes across its 4 tables.
-async function prefetchAllShells(companyId: string): Promise<void> {
+async function prefetchAllShells(
+  companyId: string,
+  userId: string | null,
+  myTeamIds: string[] | undefined,
+): Promise<void> {
   const { data: tables } = await supabase
     .from('company_tables').select('*').is('deleted_at', null).order('display_order');
   const tableList = (tables || []) as CustomTable[];
@@ -270,21 +502,40 @@ async function prefetchAllShells(companyId: string): Promise<void> {
 
   await Promise.all([
     ...tableList.map(tbl => prefetchTableFields(tbl, companyId).catch(() => {})),
+    // Rows + column/sort config + default filters -- same "nothing left to
+    // load once the main screen appears" guarantee warmSystemTableShells/
+    // warmSystemTableViewConfig already give the 4 system tables, extended
+    // to every custom table too.
+    ...tableList.map(tbl => warmCustomTableRows(tbl, companyId).catch(() => {})),
+    ...tableList.map(tbl => warmCustomTableViewConfig(tbl, companyId, userId, myTeamIds).catch(() => {})),
     ...dashboardList.map(async (dash) => {
-      if (dash.source_table_type !== 'custom' || !dash.source_table_id) return;
       if (readShellCache<CachedDashboardShell>(dashboardShellKey(companyId, dash.slug))) return;
       try {
         // Same one-time, idempotent migration useDashboardData.ts's own
         // effect runs on a real open -- doing it here just means it's
-        // already done by the time the user gets there.
+        // already done by the time the user gets there. Warmed for every
+        // source kind (custom/system/none), not just 'custom' -- this used
+        // to skip system-table-sourced and source-less dashboards entirely,
+        // so useDashboardData.ts's own dashboardShellKey cache never got a
+        // chance to warm for those.
         if (!dash.widgets_migrated_at) {
           dash.widgets = await ensureDashboardWidgetsMigrated(dash);
         }
-        const sourceTableDef = tableById.get(dash.source_table_id) ?? null;
+        const sourceTableDef = dash.source_table_type === 'custom' && dash.source_table_id
+          ? tableById.get(dash.source_table_id) ?? null
+          : null;
         writeShellCache(dashboardShellKey(companyId, dash.slug), { dashboard: dash, sourceTableDef });
         if (sourceTableDef) await prefetchTableFields(sourceTableDef, companyId);
       } catch {}
     }),
+    // Content for a dashboard sourced directly from Properties/Entities/
+    // Projects (not a company_tables row) -- see warmDashboardSourceSystemTable's
+    // own doc comment for why this needs an entirely separate warmer.
+    // Deduped to one warm per distinct system table actually used as a
+    // source, not once per dashboard.
+    ...DASHBOARD_SYSTEM_TABLE_NAMES
+      .filter(name => dashboardList.some(d => d.source_table_type === name))
+      .map(name => warmDashboardSourceSystemTable(name, companyId).catch(() => {})),
   ]);
 }
 
@@ -298,11 +549,15 @@ let inFlight: Promise<void> | null = null;
 // Strict Mode's double-invoke in dev (so a second caller awaits the same
 // promise instead of re-fetching); in production CompanyProvider only
 // mounts once per session anyway.
-export function warmCustomTableShells(companyId: string | null): Promise<void> {
+export function warmCustomTableShells(
+  companyId: string | null,
+  userId: string | null,
+  myTeamIds?: string[],
+): Promise<void> {
   if (!companyId) return Promise.resolve();
   if (inFlight) return inFlight;
   if (started) return Promise.resolve();
   started = true;
-  inFlight = prefetchAllShells(companyId).catch(() => {}).then(() => { inFlight = null; });
+  inFlight = prefetchAllShells(companyId, userId, myTeamIds).catch(() => {}).then(() => { inFlight = null; });
   return inFlight;
 }

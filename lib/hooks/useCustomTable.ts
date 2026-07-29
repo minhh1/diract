@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { readCache, writeCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import type { CustomTable } from "./useCustomTables";
@@ -15,6 +16,14 @@ interface CachedTableShell {
 // doc comment for why (a bare slug-only key served a previous company's
 // stale shell after switching active company).
 const tableShellKey = (companyId: string, slug: string) => `table:${companyId}:${slug}`;
+
+// Same key format GenericMasterTable.tsx/prefetchShells.ts already use for
+// the 4 system tables' row cache (queryCache.ts's readCache/writeCache
+// prefixes this with nk_cache_ and wraps it with a TTL/version envelope) --
+// reusing it here rather than inventing a custom-table-specific scheme
+// means lib/hooks/prefetchShells.ts's bootstrap warmer can seed this same
+// slot for every custom table with the exact key a real mount later reads.
+const rowsCacheKey = (companyId: string, slug: string) => `rows_${companyId}_${slug}`;
 
 export interface CustomTableField {
   id: string;
@@ -90,6 +99,16 @@ export interface CustomTableRecord {
 
 const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property'];
 
+// Guards the `.in('id'/'record_id', targetIds)` lookups below against a
+// value_text-only relation value that was never actually linked to a real
+// record -- see components/GenericMasterTable.tsx's fetchCustomFields for
+// the full story (a value_record_id-typed field can still end up with only
+// a plain display-name string in value_text, and load() below's own
+// value_text-vs-value_record_id merge needs to prefer value_record_id for
+// the same reason). A single such value would otherwise 400 the WHOLE
+// batched lookup, blanking every OTHER record's label for this column too.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Batch-resolves each relation field's target record ids to a human label,
 // one query per relation field (not per row), and writes the results onto
 // each record's `displayValues`. Mirrors the label lookups RelationPicker
@@ -105,7 +124,7 @@ export async function resolveRelationLabels(fieldList: CustomTableField[], recor
     // resolve, same as if every field were scalar.
     const rawValues = records.map(r => r.values[field.field_key]);
     const targetIds = Array.from(new Set(
-      rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string' && v.length > 0)
+      rawValues.flatMap(v => Array.isArray(v) ? v : [v]).filter((v): v is string => typeof v === 'string' && UUID_RE.test(v))
     ));
     if (targetIds.length === 0) return;
 
@@ -193,9 +212,17 @@ export function useCustomTable(
   const { companyId } = useCompany();
   const [tableDef, setTableDef] = useState<CustomTable | null>(null);
   const [fields, setFields] = useState<CustomTableField[]>([]);
-  const [records, setRecords] = useState<CustomTableRecord[]>([]);
+  // Lazily seeded from cache -- a custom table already visited this session
+  // renders its last-known rows immediately instead of blanking to a
+  // skeleton for a frame, same reasoning as usePresetTable.ts's own lazy
+  // row initializer for the 4 system tables.
+  const [records, setRecords] = useState<CustomTableRecord[]>(
+    () => (companyId && tableSlug ? readCache<CustomTableRecord[]>(rowsCacheKey(companyId, tableSlug)) : null) || []
+  );
   const [loading, setLoading] = useState(true);
-  const [recordsLoading, setRecordsLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(
+    () => !(companyId && tableSlug && readCache<CustomTableRecord[]>(rowsCacheKey(companyId, tableSlug)))
+  );
 
   // Fetches table def + fields + records and swaps them in. Deliberately
   // does not touch `loading`/`recordsLoading` itself on entry -- the mount
@@ -261,11 +288,15 @@ export function useCustomTable(
       (rec.values || []).forEach((v: any) => {
         const field = fieldMap.get(v.field_id);
         if (!field) return;
-        values[field.field_key] = v.value_text
+        // value_record_id checked FIRST -- see UUID_RE's comment above and
+        // components/GenericMasterTable.tsx's matching fetchCustomFields for
+        // why (it's the dedicated, authoritative link column; value_text can
+        // hold a stale or never-linked plain display name instead).
+        values[field.field_key] = v.value_record_id
+          ?? v.value_text
           ?? v.value_number
           ?? v.value_date
           ?? v.value_boolean
-          ?? v.value_record_id
           ?? null;
       });
       return { id: rec.id, table_id: rec.table_id, created_at: rec.created_at, values, displayValues: {} };
@@ -300,6 +331,7 @@ export function useCustomTable(
     await resolveRelationLabels(fieldList, hydratedRecords);
     setRecords(hydratedRecords);
     setRecordsLoading(false);
+    if (companyId) writeCache(rowsCacheKey(companyId, tableSlug), hydratedRecords);
   }, [tableSlug, preloadedTable, companyId]);
 
   // Layout effect, not a plain effect -- when a caller reuses this hook's
@@ -329,7 +361,20 @@ export function useCustomTable(
     } else {
       setLoading(true);
     }
-    setRecordsLoading(true);
+    // Reconcile against the row cache here too (not just the lazy
+    // initializer above) -- this effect also re-runs on a slug/company
+    // change after mount, when the lazy initializer no longer applies.
+    // Only flip recordsLoading on when there's truly no cache, so a
+    // cache-seeded "not loading" state isn't clobbered into a skeleton
+    // flash while load() refreshes underneath it.
+    const cachedRows = companyId ? readCache<CustomTableRecord[]>(rowsCacheKey(companyId, tableSlug)) : null;
+    if (cachedRows) {
+      setRecords(cachedRows);
+      setRecordsLoading(false);
+    } else {
+      setRecords([]);
+      setRecordsLoading(true);
+    }
     load();
   }, [tableSlug, load, preloadedTable, companyId]);
 
