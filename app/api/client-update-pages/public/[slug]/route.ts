@@ -31,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     }
   }
 
-  const detail = await loadPageDetail(admin, page.id, { clientVisibleOnly: true, baseTable: page.base_table });
+  const detail = await loadPageDetail(admin, page.id, { clientVisibleOnly: true, baseTable: page.base_table, pageKind: page.page_kind });
 
   return NextResponse.json({
     title: page.title,

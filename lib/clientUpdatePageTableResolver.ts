@@ -138,22 +138,30 @@ export async function resolveRecordsBatch(admin: any, recordTable: string, recor
 // A record's display name -- native `name`/`street_address` column for a
 // system table, or its table's own primary_field_key value for a custom
 // table (same lookup RelationPicker.tsx already does for relation options).
+// .is('deleted_at', null) throughout -- a soft-deleted record (system-
+// table row, or company_table_records row) still resolving its display
+// name here is what let a relation column pointing at an archived/merged
+// record keep showing its real name instead of falling into the caller's
+// "(deleted)" branch.
 export async function resolveDisplayNamesBatch(admin: any, recordTable: string, recordIds: string[]): Promise<Map<string, string>> {
   if (!recordIds.length) return new Map();
   if (isSystemTable(recordTable)) {
     const col = DISPLAY_COLUMN[recordTable];
-    const { data } = await admin.from(recordTable).select(`id, ${col}`).in("id", recordIds);
+    const { data } = await admin.from(recordTable).select(`id, ${col}`).in("id", recordIds).is("deleted_at", null);
     return new Map((data || []).map((r: any) => [r.id, r[col] ?? ""]));
   }
+  const { data: liveRecords } = await admin.from("company_table_records").select("id").in("id", recordIds).is("deleted_at", null);
+  const liveIds = (liveRecords || []).map((r: any) => r.id);
+  if (!liveIds.length) return new Map();
   const { data: table } = await admin.from("company_tables").select("primary_field_key").eq("id", recordTable).maybeSingle();
   const { data: fields } = await admin.from("company_table_fields").select("id, field_key").eq("table_id", recordTable).is("deleted_at", null);
   const primaryField = (fields || []).find((f: any) => f.field_key === table?.primary_field_key) || (fields || [])[0];
-  if (!primaryField) return new Map(recordIds.map((id) => [id, ""]));
+  if (!primaryField) return new Map(liveIds.map((id: string) => [id, ""]));
   const { data: values } = await admin
     .from("company_table_values")
     .select("record_id, value_text, value_number, value_date")
     .eq("field_id", primaryField.id)
-    .in("record_id", recordIds);
+    .in("record_id", liveIds);
   return new Map((values || []).map((v: any) => [v.record_id, String(v.value_text ?? v.value_number ?? v.value_date ?? "")]));
 }
 

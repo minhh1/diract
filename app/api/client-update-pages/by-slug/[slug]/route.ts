@@ -35,6 +35,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     if (!teamAuth.ok) return teamAuth.error;
   }
 
-  const detail = await loadPageDetail(admin, page.id, { baseTable: page.base_table });
+  const detail = await loadPageDetail(admin, page.id, { baseTable: page.base_table, pageKind: page.page_kind });
   return NextResponse.json({ page, ...detail });
 }

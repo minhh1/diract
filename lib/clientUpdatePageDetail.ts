@@ -58,7 +58,7 @@ export const ENTITY_BASE_COLUMNS = [
   "name", "entity_type", "gst_registered", "established_date",
 ];
 
-export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean; baseTable?: string } = {}) {
+export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean; baseTable?: string; pageKind?: string } = {}) {
   const baseTable = opts.baseTable || "projects";
   const isCustomTable = !isSystemTable(baseTable);
   const [{ data: groups }, { data: items }, { data: allFields }, { data: formatRules }, { data: relationFieldDefs }] = await Promise.all([
@@ -240,10 +240,10 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   }
 
   const projectLinkedPropertyIds: string[] = [...propertyIdsByProject.values()].flat();
-  const allPropertyIds = [...new Set([...projectLinkedPropertyIds, ...customTablePropertyRelationIds, ...customFieldRelationPropertyIds])];
+  let allPropertyIds = [...new Set([...projectLinkedPropertyIds, ...customTablePropertyRelationIds, ...customFieldRelationPropertyIds])];
 
   const linkedEntityIdByKey = new Map<string, string>((linkValues || []).filter((v: any) => v.value_record_id).map((v: any) => [`${v.field_id}:${v.record_id}`, v.value_record_id]));
-  const relatedEntityIds = [...new Set([...linkedEntityIdByKey.values(), ...customTableEntityRelationIds, ...customFieldRelationEntityIds])];
+  let relatedEntityIds = [...new Set([...linkedEntityIdByKey.values(), ...customTableEntityRelationIds, ...customFieldRelationEntityIds])];
 
   const adhocValueByKey = new Map<string, any>((adhocValues || []).map((v: any) => [`${v.field_id}:${v.item_id}`, v.value_text]));
 
@@ -295,15 +295,21 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     // base column on properties, picked freely from the fields catalog, so
     // there's no fixed column list to name up front the way the narrower
     // single-column select this replaced had.
+    // .is('deleted_at', null) on both -- without it, a relation column
+    // pointing at an archived/merged-away entity or property still
+    // resolved its real name here (the row still exists, just soft-
+    // deleted), so it never fell into the "(deleted)" branch below. That's
+    // what let an Irregularity about an already-archived entity keep
+    // showing as if nothing had changed.
     allPropertyIds.length
-      ? admin.from("properties").select("*").in("id", allPropertyIds)
+      ? admin.from("properties").select("*").in("id", allPropertyIds).is("deleted_at", null)
       : Promise.resolve({ data: [] as any[] }),
     relatedEntityIds.length
-      ? admin.from("entities").select(`id, ${RELATED_ENTITY_COLUMN_KEYS.join(", ")}`).in("id", relatedEntityIds)
+      ? admin.from("entities").select(`id, ${RELATED_ENTITY_COLUMN_KEYS.join(", ")}`).in("id", relatedEntityIds).is("deleted_at", null)
       : Promise.resolve({ data: [] as any[] }),
     propertyCustomFieldIds.length && allPropertyIds.length
       ? admin.from("company_custom_field_values")
-          .select("field_id, record_id, value_text, value_number, value_date, value_boolean")
+          .select("field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id")
           .in("field_id", propertyCustomFieldIds).in("record_id", allPropertyIds)
       : Promise.resolve({ data: [] as any[] }),
     // Same "each custom table's own primary_field_key value" lookup
@@ -483,38 +489,58 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     return { ...f, linkedSystemTable, linkedTableId: null };
   });
 
+  // Drops any item whose underlying record has since been archived/soft-
+  // deleted (e.g. the "loser" side of a duplicate merge -- see
+  // duplicate_merge_rpc.sql, which sets deleted_at but never touches
+  // client_update_page_items) -- baseRecordById (resolveRecordsBatch) now
+  // excludes deleted_at rows, so "missing from that map" doubles as "gone
+  // from the underlying table" without a separate existence check or any
+  // cleanup trigger. Recomputed on every load, so the board always
+  // reflects current DB state rather than whatever was true when the item
+  // was added.
+  const mappedItems = (items || []).filter((i: any) => baseRecordById.has(recordId(i))).map((i: any) => {
+    const rid = recordId(i);
+    return {
+      ...i,
+      matterName: i.display_name || displayNameById.get(rid) || "",
+      values: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveValue(f, i)])),
+      relationIds: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveRelationId(f, i)])),
+      notes: notesByItem.get(i.id) || [],
+      emails: emailsByItem.get(i.id) || [],
+      properties: baseTable === "projects"
+        ? (propertyIdsByProject.get(rid) || []).map((pid: string) => ({
+            id: pid,
+            address: propertyById.get(pid)?.street_address ?? null,
+            values: {
+              ...Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyField(f, pid)])),
+              ...Object.fromEntries(projectPropertyFields.map((f: any) => [f.id, resolveProjectPropertyField(f, rid, pid)])),
+            },
+          }))
+        : [],
+    };
+  });
+
+  // An auto_fed item (e.g. an Irregularity row) only exists to flag a
+  // problem on the record it links to (Entity/Property/Contact) -- once
+  // that link resolves to "(deleted)" (the linked record itself was
+  // archived/merged away), there's nothing left to action, so the item is
+  // dropped entirely rather than kept around Resolved-but-still-listed.
+  // The recompute trigger (auto_fed_recompute, see
+  // 20260729330000_auto_fed_deleted_record_handling.sql) already marks it
+  // Resolved server-side; this is the display-side "and don't show it
+  // either" half. Checks every resolved value for the literal "(deleted)"
+  // marker rather than pre-filtering by field_type -- a table watched by
+  // more than one auto_fed source (see resolveValue's cross-relation
+  // fallback above) can resolve "(deleted)" through a DIFFERENT field than
+  // the one configured as this page's visible column, so field_type alone
+  // isn't reliable here; the marker itself always is.
+  const finalItems = opts.pageKind === "auto_fed"
+    ? mappedItems.filter((item: any) => !Object.values(item.values).includes("(deleted)"))
+    : mappedItems;
+
   return {
     groups: groups || [],
-    // Drops any item whose underlying record has since been archived/soft-
-    // deleted (e.g. the "loser" side of a duplicate merge -- see
-    // duplicate_merge_rpc.sql, which sets deleted_at but never touches
-    // client_update_page_items) -- baseRecordById (resolveRecordsBatch) now
-    // excludes deleted_at rows, so "missing from that map" doubles as "gone
-    // from the underlying table" without a separate existence check or any
-    // cleanup trigger. Recomputed on every load, so the board always
-    // reflects current DB state rather than whatever was true when the item
-    // was added.
-    items: (items || []).filter((i: any) => baseRecordById.has(recordId(i))).map((i: any) => {
-      const rid = recordId(i);
-      return {
-        ...i,
-        matterName: i.display_name || displayNameById.get(rid) || "",
-        values: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveValue(f, i)])),
-        relationIds: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveRelationId(f, i)])),
-        notes: notesByItem.get(i.id) || [],
-        emails: emailsByItem.get(i.id) || [],
-        properties: baseTable === "projects"
-          ? (propertyIdsByProject.get(rid) || []).map((pid: string) => ({
-              id: pid,
-              address: propertyById.get(pid)?.street_address ?? null,
-              values: {
-                ...Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyField(f, pid)])),
-                ...Object.fromEntries(projectPropertyFields.map((f: any) => [f.id, resolveProjectPropertyField(f, rid, pid)])),
-              },
-            }))
-          : [],
-      };
-    }),
+    items: finalItems,
     fields: fieldsWithRelationMeta,
     formatRules: formatRules || [],
   };

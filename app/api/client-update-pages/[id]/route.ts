@@ -16,6 +16,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const gate = await loadPageForCompany(admin, id, companyId);
   if (gate.error) return gate.error;
 
-  const detail = await loadPageDetail(admin, id, { baseTable: gate.page.base_table });
+  const detail = await loadPageDetail(admin, id, { baseTable: gate.page.base_table, pageKind: gate.page.page_kind });
   return NextResponse.json({ page: gate.page, ...detail });
 }
