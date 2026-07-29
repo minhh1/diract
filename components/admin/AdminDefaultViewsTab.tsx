@@ -4,6 +4,23 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Pencil, Check, X, Trash2, Plus, Table2, GitBranch } from "lucide-react";
+import type { DefaultScope } from "@/components/admin/AdminDefaultSettingsTab";
+
+// A row is scoped to exactly one of: nothing (company-wide), a team, or a
+// person -- matches the three partial unique indexes added in
+// 20260729000000_scoped_default_views.sql. Applied to both the `select`
+// filter (picking which row this scope's card should show) and the
+// `upsert`'s onConflict target (which unique index to resolve against).
+function scopeEq(query: any, scope: DefaultScope) {
+  if (scope.teamId) return query.eq('team_id', scope.teamId).is('user_id', null);
+  if (scope.userId) return query.eq('user_id', scope.userId);
+  return query.is('team_id', null).is('user_id', null);
+}
+function scopeOnConflict(scope: DefaultScope): string {
+  if (scope.teamId) return 'company_id,table_slug,team_id';
+  if (scope.userId) return 'company_id,table_slug,user_id';
+  return 'company_id,table_slug';
+}
 
 interface DefaultView {
   id: string;
@@ -46,9 +63,9 @@ interface SchemaField {
   options?: string[];
 }
 
-interface Props { companyId: string; }
+interface Props { companyId: string; scope: DefaultScope; }
 
-export default function AdminDefaultViewsTab({ companyId }: Props) {
+export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
   const [views, setViews] = useState<DefaultView[]>([]);
   const [loading, setLoading] = useState(true);
   const [editDrafts, setEditDrafts] = useState<Record<string, Partial<DefaultView>>>({});
@@ -56,16 +73,15 @@ export default function AdminDefaultViewsTab({ companyId }: Props) {
   // Schema fields per table slug
   const [tableFields, setTableFields] = useState<Record<string, SchemaField[]>>({});
 
-  useEffect(() => { load(); }, [companyId]);
+  useEffect(() => { load(); }, [companyId, scope.teamId, scope.userId]);
 
   const load = async () => {
     setLoading(true);
 
-    const { data } = await supabase
-      .from('company_default_views')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('table_slug');
+    const { data } = await scopeEq(
+      supabase.from('company_default_views').select('*').eq('company_id', companyId),
+      scope,
+    ).order('table_slug');
     setViews(data || []);
 
     // Load schema fields for each system table
@@ -124,12 +140,14 @@ export default function AdminDefaultViewsTab({ companyId }: Props) {
     await supabase.from('company_default_views').upsert({
       company_id: companyId,
       table_slug: slug,
+      team_id: scope.teamId,
+      user_id: scope.userId,
       columns: draft.columns || [],
       expansion_columns: draft.expansion_columns || [],
       filters: draft.filters || [],
       preset_name: draft.preset_name || 'Default view',
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,table_slug' });
+    }, { onConflict: scopeOnConflict(scope) });
     setSavingSlug(null);
     cancelEdit(slug);
     load();
@@ -159,8 +177,10 @@ export default function AdminDefaultViewsTab({ companyId }: Props) {
 
   const deleteView = async (tableSlug: string) => {
     if (!window.confirm('Remove this default view?')) return;
-    await supabase.from('company_default_views')
-      .delete().eq('company_id', companyId).eq('table_slug', tableSlug);
+    await scopeEq(
+      supabase.from('company_default_views').delete().eq('company_id', companyId).eq('table_slug', tableSlug),
+      scope,
+    );
     load();
   };
 
