@@ -1467,7 +1467,11 @@ export default function RecordDashboard({
 
     return (
       <div className="flex flex-col h-screen bg-white font-sans antialiased overflow-hidden">
-        <header className="px-8 pt-6 pb-0 border-b border-slate-100 shrink-0 bg-white">
+        {/* pt-16 on mobile -- Sidebar.tsx's hamburger toggle is a fixed
+            top-3 left-3 button (md:hidden), floating outside this header's
+            own layout; without the extra clearance it visually overlaps
+            the content below instead of sitting above it. */}
+        <header className="px-8 pt-16 md:pt-6 pb-0 border-b border-slate-100 shrink-0 bg-white">
           <div className="flex items-center justify-between mb-4 animate-pulse">
             <div className="h-6 w-20 rounded-full bg-slate-100" />
             <div className="h-8 w-8 rounded-full bg-slate-100" />
@@ -1565,7 +1569,11 @@ export default function RecordDashboard({
     <div className="flex flex-col h-screen bg-white font-sans antialiased overflow-hidden">
 
       {/* ── Header ── */}
-      <header className="px-8 pt-7 pb-0 border-b border-slate-100 shrink-0 bg-white">
+      {/* pt-16 on mobile -- Sidebar.tsx's hamburger toggle is a fixed
+          top-3 left-3 button (md:hidden), floating outside this header's
+          own layout; without the extra clearance it visually overlaps
+          the content below instead of sitting above it. */}
+      <header className="px-8 pt-16 md:pt-7 pb-0 border-b border-slate-100 shrink-0 bg-white">
 
         {/* Title + actions */}
         <div className="flex items-center justify-between gap-4 mb-1">

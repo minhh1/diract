@@ -1046,8 +1046,9 @@ function GenericMasterTableInner({
   if (schema.loading || t.loading || customFieldsLoading) {
     return (
       <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased overflow-hidden">
-        {/* Header skeleton */}
-        <div className="bg-white border-b border-slate-100 shrink-0 p-8 pb-4 space-y-6">
+        {/* Header skeleton -- pt-16/md:pt-8 matches the real header below
+            (see its own comment) so there's no layout jump once it loads. */}
+        <div className="bg-white border-b border-slate-100 shrink-0 pt-16 md:pt-8 px-8 pb-4 space-y-6">
           <div className="flex justify-between items-center">
             <div className="h-8 w-40 bg-slate-100 animate-pulse rounded-full" />
             <div className="flex gap-2">
@@ -1094,7 +1095,12 @@ function GenericMasterTableInner({
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
       <header className="bg-white border-b border-slate-100 shrink-0">
-        <div className="p-8 pb-4">
+        {/* pt-16 on mobile -- Sidebar.tsx's hamburger toggle is a fixed
+            top-3 left-3 button (md:hidden), floating outside this header's
+            own layout. Without the extra top clearance it visually
+            overlaps/collides with the title below instead of sitting
+            above it. Not needed once the sidebar itself is visible (md+). */}
+        <div className="pt-16 md:pt-8 px-8 pb-4">
 
           {/* Title + actions — wrap instead of overflowing on narrow
               (mobile) widths; the page shell clips overflow, so a
