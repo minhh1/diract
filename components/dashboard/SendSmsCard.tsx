@@ -18,10 +18,9 @@ interface SmsMessage {
   created_at: string;
 }
 
-// On-demand "text this lead/client" action -- entities only, mirrors
-// TeamMemberLinkCard's placement/style. Sends through the platform's shared
-// Twilio account via app/api/sms/send (see lib/sms/sendMessage.ts) -- no
-// per-company setup needed, unlike WhatsApp.
+// On-demand "text this lead/client" action -- entities only. Sends through
+// the platform's shared Twilio account via app/api/sms/send (see
+// lib/sms/sendMessage.ts) -- no per-company setup needed, unlike WhatsApp.
 export default function SendSmsCard({ entityId, entityName, phoneNumber }: Props) {
   const [composing, setComposing] = useState(false);
   const [text, setText] = useState("");

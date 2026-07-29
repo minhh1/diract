@@ -9,7 +9,7 @@
 // Staff field -- see components/dashboard/RelationPicker.tsx's
 // CURRENT_USER_SENTINEL) and be given a default_rate (see
 // supabase/migrations/20260726065536_entities_default_rate.sql) without an
-// admin manually linking them first via components/dashboard/TeamMemberLinkCard.tsx.
+// admin manually linking them first via app/dashboard/admin/page.tsx.
 // Confirmed live this was a real, silent gap: 5 of Huynh Lawyers' 6 real
 // staff members had joined with no Staff entity at all.
 //
@@ -69,8 +69,8 @@ export async function ensureStaffEntity(
     });
   } catch (err) {
     // Best-effort -- never blocks the actual company-join flow calling this.
-    // Worst case, the member falls back to the existing manual
-    // TeamMemberLinkCard flow, same as before this existed.
+    // Worst case, the member falls back to the existing manual linking flow
+    // in app/dashboard/admin/page.tsx, same as before this existed.
     console.error("[ensureStaffEntity] failed", err);
   }
 }
