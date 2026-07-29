@@ -11,23 +11,53 @@
 // compiled route: in `next dev` (Turbopack), the first visit to a route in
 // a session can take several real seconds just to compile on demand (Fast
 // Refresh rebuilds of 2000ms+ are routine, confirmed live) -- nothing to do
-// with router.push being stuck. The original 1200ms was tight enough that
-// this ordinary dev-mode compile lag alone could look "stuck" and trigger
-// the hard-reload fallback on an otherwise completely normal navigation --
-// which then fully remounts the app (including components/AppLoader.tsx),
-// flashing the splash screen on every such navigation. 4000ms keeps the
-// same protection against a genuinely wedged transition while giving a
-// slow-but-succeeding one (dev compile, a slow connection) enough room to
-// actually finish first.
+// with router.push being stuck.
+//
+// Polls for success (or abandonment) instead of a single blind check at the
+// end of timeoutMs -- a single check-once-at-the-end has no way to tell
+// "this exact navigation is still stuck" apart from "this navigation
+// actually succeeded promptly, and the user has since navigated somewhere
+// ELSE entirely of their own accord." Both look identical to a check that
+// only compares the current URL against `href`: neither matches. That
+// false positive was confirmed live -- click a table (kicks off this
+// watchdog targeting it), then click a dashboard link within the timeout
+// window, and the ORIGINAL watchdog fired later, saw the dashboard's URL
+// instead of its own target, wrongly concluded "still stuck," and hard-
+// reloaded back to the table -- a real, reproduced redirect-back bug,
+// not a hypothetical. Tracking the STARTING path and bailing out (no
+// reload) the moment the current URL is neither the start nor the target
+// fixes this: only a URL that's still sitting on the start path after the
+// full timeout is genuinely stuck.
 export function pushWithFallback(
   router: { push: (href: string) => void },
   href: string,
   timeoutMs = 4000,
 ): void {
+  const startPath = window.location.pathname + window.location.search;
   router.push(href);
-  setTimeout(() => {
-    if (window.location.pathname + window.location.search !== href) {
+  const pollMs = 150;
+  let elapsed = 0;
+  const interval = setInterval(() => {
+    elapsed += pollMs;
+    const current = window.location.pathname + window.location.search;
+    if (current === href) {
+      // Reached the destination -- nothing more to watch for.
+      clearInterval(interval);
+      return;
+    }
+    if (current !== startPath) {
+      // Neither the destination nor where we started -- the user (or some
+      // other navigation) has since moved on to a third page entirely.
+      // That's not "stuck," it's just no longer this call's concern; never
+      // force them back to `href`.
+      clearInterval(interval);
+      return;
+    }
+    if (elapsed >= timeoutMs) {
+      // Never left the starting URL at all despite router.push -- genuinely
+      // wedged, same as before.
+      clearInterval(interval);
       window.location.href = href;
     }
-  }, timeoutMs);
+  }, pollMs);
 }
