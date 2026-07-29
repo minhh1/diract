@@ -19,6 +19,36 @@ export interface SavedView {
 // the Sidebar's saved-views list.
 export const DEFAULT_VIEW_NAME = "__default__";
 
+// Caches getDefaultFilters' answer so GenericMasterTable can paint the
+// no-?view= (by far the common) case with the RIGHT filters immediately on
+// mount instead of blanking to "no filters" for a round trip — same
+// raw-answer-plus-lazy-seed pattern as usePresetTable.ts's scoped-view
+// cache, and warmed by the same bootstrap step for the same reason: so
+// there's nothing left to load once the main table screen appears.
+function defaultFiltersCacheKey(companyId: string, userId: string, tableSlug: string): string {
+  return `nk_cache_defaultfilters_${companyId}_${userId}_${tableSlug}`;
+}
+
+interface CachedDefaultFilters { filters: ActiveFilter[] }
+
+export function readCachedDefaultFilters(companyId: string, userId: string, tableSlug: string): CachedDefaultFilters | null {
+  try {
+    const raw = localStorage.getItem(defaultFiltersCacheKey(companyId, userId, tableSlug));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedDefaultFilters(companyId: string, userId: string, tableSlug: string, filters: ActiveFilter[]): void {
+  try {
+    localStorage.setItem(
+      defaultFiltersCacheKey(companyId, userId, tableSlug),
+      JSON.stringify({ filters } as CachedDefaultFilters),
+    );
+  } catch {}
+}
+
 export const savedViewsService = {
   async getDefaultFilters(userId: string, companyId: string, tableSlug: string): Promise<ActiveFilter[]> {
     const { data, error } = await supabase

@@ -28,9 +28,10 @@ import { buildCredentialColumnSections } from "@/lib/columnDefinitions";
 import { PROPERTY_RELATIONS, ENTITY_RELATIONS } from "@/lib/relationDefinitions";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { useInvalidateRows } from "@/lib/hooks/useTableRows";
+import { pushWithFallback } from "@/lib/navigateWithFallback";
 import { swr, clearCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
-import { savedViewsService } from "@/lib/services/savedViewsService";
+import { savedViewsService, readCachedDefaultFilters, writeCachedDefaultFilters } from "@/lib/services/savedViewsService";
 import { useProgressBar } from "@/components/TopProgressBar";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
@@ -143,7 +144,7 @@ function GenericMasterTableInner({
   const clearFiltersSignal = searchParams.get("clearFilters");
 
   // Use shared company context — avoids duplicate auth call with Sidebar
-  const { companyId: ctxCompanyId, isAdmin: ctxIsAdmin, userId: ctxUserId } = useCompany();
+  const { companyId: ctxCompanyId, isAdmin: ctxIsAdmin, userId: ctxUserId, myTeamIds: ctxMyTeamIds } = useCompany();
   const { start: startProgress, done: doneProgress } = useProgressBar();
 
   const [search, setSearch] = useState("");
@@ -151,7 +152,13 @@ function GenericMasterTableInner({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [addressSortOpen, setAddressSortOpen] = useState(false);
-  const [filters, setFilters] = useState<ActiveFilter[]>([]);
+  // Lazily seeded from cache -- but only for the no-?view= (implicit default)
+  // slot; a named view's filters aren't cached (see savedViewsService's own
+  // comment), so those still start empty and wait for loadFilters below.
+  const [filters, setFilters] = useState<ActiveFilter[]>(() => {
+    if (viewId || !ctxCompanyId || !ctxUserId) return [];
+    return readCachedDefaultFilters(ctxCompanyId, ctxUserId, tableName)?.filters ?? [];
+  });
   const [activeViewName, setActiveViewName] = useState<string | null>(null);
   // Off by default -- row clicks open the record (see MasterTable's row
   // onClick); inline cell editing is opt-in per table since it changes what
@@ -426,6 +433,7 @@ function GenericMasterTableInner({
     defaultCols: schema.defaultTableCols,
     userId: ctxUserId,
     companyId: ctxCompanyId,
+    myTeamIds: ctxMyTeamIds,
     isAdmin: ctxIsAdmin,
     // Also wait on customFieldsLoading -- fetchItems resolves relation-type
     // custom fields (e.g. a "Client Name" entity-relation field) using
@@ -485,31 +493,68 @@ function GenericMasterTableInner({
 
   useEffect(() => {
     const loadFilters = async () => {
-      filtersReadyToSave.current = false;  // ← block saves during load
-      startProgress(); // covers view switches — data stays visible while this resolves
-
-      try {
-        if (clearFiltersSignal) {
+      if (clearFiltersSignal) {
+        filtersReadyToSave.current = false;  // ← block saves during load
+        startProgress();
+        try {
           setActiveViewName(null);
           setFilters([]);
           if (ctxUserId && ctxCompanyId) {
             await savedViewsService.saveDefaultFilters(ctxUserId, ctxCompanyId, tableName, []);
+            writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableName, []);
           }
           router.replace(`/dashboard/${tableName}`);
+        } finally {
+          setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+          doneProgress();
+        }
+        return;
+      }
+
+      if (!viewId) {
+        setActiveViewName(null);
+        if (!ctxUserId || !ctxCompanyId) {
+          setFilters([]);
           return;
         }
 
-        if (!viewId) {
-          setActiveViewName(null);
-          if (ctxUserId && ctxCompanyId) {
-            const defaultFilters = await savedViewsService.getDefaultFilters(ctxUserId, ctxCompanyId, tableName);
-            setFilters(defaultFilters);
-          } else {
-            setFilters([]);
-          }
+        const cached = readCachedDefaultFilters(ctxCompanyId, ctxUserId, tableName);
+        if (cached) {
+          // Already applied via the lazy initializer on first mount — but
+          // this effect can re-run later too (e.g. dropping back to the
+          // default slot from a named view), so reconcile here as well.
+          // No startProgress()/blocking here — that's the whole point of
+          // the cache existing. Refresh in the background instead, and
+          // only touch state if the real answer actually changed.
+          setFilters(cached.filters);
+          setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+          savedViewsService.getDefaultFilters(ctxUserId, ctxCompanyId, tableName)
+            .then(fresh => {
+              writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableName, fresh);
+              if (JSON.stringify(fresh) !== JSON.stringify(cached.filters)) setFilters(fresh);
+            })
+            .catch(() => {});
           return;
         }
 
+        filtersReadyToSave.current = false;
+        startProgress();
+        try {
+          const defaultFilters = await savedViewsService.getDefaultFilters(ctxUserId, ctxCompanyId, tableName);
+          writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableName, defaultFilters);
+          setFilters(defaultFilters);
+        } finally {
+          setTimeout(() => { filtersReadyToSave.current = true; }, 100);
+          doneProgress();
+        }
+        return;
+      }
+
+      // Named view (?view=<id>) — not cached, see savedViewsService's own
+      // comment on why only the implicit default-filters slot is warmed.
+      filtersReadyToSave.current = false;
+      startProgress(); // covers view switches — data stays visible while this resolves
+      try {
         const view = await savedViewsService.get(viewId);
         setFilters(view?.filters || []);
         setActiveViewName(view?.view_name || null);
@@ -529,6 +574,7 @@ function GenericMasterTableInner({
       savedViewsService.updateFilters(viewId, filters);
     } else if (ctxUserId && ctxCompanyId) {
       savedViewsService.saveDefaultFilters(ctxUserId, ctxCompanyId, tableName, filters);
+      writeCachedDefaultFilters(ctxCompanyId, ctxUserId, tableName, filters);
     }
   }, [filters, viewId, ctxUserId, ctxCompanyId, tableName]);
 
@@ -978,7 +1024,10 @@ function GenericMasterTableInner({
     const initialRecord = t.items.find(item => item.id === selectedId);
     return <>{renderDashboard(selectedId, () => {
       t.refresh();
-      router.push(`/dashboard/${tableName}`);
+      // Same-pathname, searchParams-only navigation -- see
+      // pushWithFallback's comment for why this is the one case that can
+      // get permanently stuck after the tab sits idle a while.
+      pushWithFallback(router, `/dashboard/${tableName}`);
     }, initialRecord)}</>;
   }
 

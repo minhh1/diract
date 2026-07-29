@@ -29,6 +29,9 @@ import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMig
 import { getSchemaMetadata } from "@/lib/services/schemaService";
 import { fetchCompanyCustomFields, type CompanyCustomField } from "./useCompanyCustomFields";
 import { warmRelatedFields } from "./useRelatedFields";
+import { fetchScopedDefaultView } from "./scopedDefaultView";
+import { writeCachedScopedView } from "./usePresetTable";
+import { savedViewsService, writeCachedDefaultFilters } from "@/lib/services/savedViewsService";
 import type { CustomTable } from "./useCustomTables";
 import type { CustomTableField } from "./useCustomTable";
 import type { CompanyDashboard } from "./useDashboardData";
@@ -55,6 +58,45 @@ async function prefetchSystemTableShell(tableName: string, companyId: string | n
 // AppLoader's own ceiling still protects against a truly dead network.
 export async function warmSystemTableShells(companyId: string | null): Promise<void> {
   await Promise.all(SYSTEM_TABLES.map(t => prefetchSystemTableShell(t, companyId)));
+}
+
+// warmSystemTableShells/startSystemTableRowPrefetch above cover the SCHEMA
+// and ROW data a system table needs to render -- not the per-viewer column
+// layout/sort (usePresetTable.ts's scoped-view cache) or the implicit
+// default-filters slot (GenericMasterTable.tsx's cache, via
+// savedViewsService). Without this, those still did a real, blocking-
+// feeling fetch on first landing even though everything else about the
+// table was already warm -- exactly the "shouldn't be any load at all
+// once the main screen appears" gap. Custom tables aren't covered here:
+// they don't have a filters feature yet (see CustomTableMasterPage.tsx's
+// own NO_FILTERS comment), and unlike the 4 system tables a company can
+// have dozens of them, so their column layout stays warmed lazily by
+// usePresetTable.ts itself rather than paying for all of them up front.
+async function warmTableViewConfig(
+  tableName: string,
+  companyId: string,
+  userId: string | null,
+  myTeamIds: string[] | undefined,
+): Promise<void> {
+  await Promise.all([
+    fetchScopedDefaultView(companyId, tableName, userId, myTeamIds)
+      .then(view => writeCachedScopedView(companyId, tableName, view))
+      .catch(() => {}),
+    userId
+      ? savedViewsService.getDefaultFilters(userId, companyId, tableName)
+          .then(filters => writeCachedDefaultFilters(companyId, userId, tableName, filters))
+          .catch(() => {})
+      : Promise.resolve(),
+  ]);
+}
+
+export async function warmSystemTableViewConfig(
+  companyId: string | null,
+  userId: string | null,
+  myTeamIds?: string[],
+): Promise<void> {
+  if (!companyId) return;
+  await Promise.all(SYSTEM_TABLES.map(t => warmTableViewConfig(t, companyId, userId, myTeamIds)));
 }
 
 // Relation-type custom field values hold a raw linked record id -- resolved

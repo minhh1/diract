@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
+import { fetchScopedDefaultView, type ScopedDefaultView } from "@/lib/hooks/scopedDefaultView";
 
 const DEFAULT_PRESET_NAME = "Default view";
 
@@ -31,7 +32,7 @@ export interface SortState {
   mode?: SortMode;
 }
 
-interface CachedColumnConfig {
+interface ResolvedColumnConfig {
   tableCols: string[];
   expandCols: string[];
   colWidths: Record<string, number>;
@@ -43,8 +44,35 @@ function rowsCacheKey(companyId: string, tableSlug: string): string {
   return `nk_cache_rows_${companyId}_${tableSlug}`;
 }
 
-function columnsCacheKey(companyId: string, tableSlug: string): string {
-  return `nk_cache_columns_${companyId}_${tableSlug}`;
+// Caches fetchScopedDefaultView's RAW answer (including the "genuinely no
+// customization, null" case -- wrapped so that's distinguishable from "never
+// checked") rather than a resolved-with-fallbacks config. Deliberately
+// decoupled from defaultCols/defaultExpandCols (which only this hook's
+// caller knows, per table) -- that split is what lets
+// lib/hooks/prefetchShells.ts's bootstrap-time warming populate this cache
+// for all 4 system tables without needing to duplicate each one's specific
+// defaults; applying the fallback (resolveFromView below) stays exactly
+// where it already was, whether the raw view came from this cache or a
+// fresh fetch.
+interface CachedScopedView { view: ScopedDefaultView | null }
+
+function scopedViewCacheKey(companyId: string, tableSlug: string): string {
+  return `nk_cache_scopedview_${companyId}_${tableSlug}`;
+}
+
+export function readCachedScopedView(companyId: string, tableSlug: string): CachedScopedView | null {
+  try {
+    const raw = localStorage.getItem(scopedViewCacheKey(companyId, tableSlug));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedScopedView(companyId: string, tableSlug: string, view: ScopedDefaultView | null): void {
+  try {
+    localStorage.setItem(scopedViewCacheKey(companyId, tableSlug), JSON.stringify({ view } as CachedScopedView));
+  } catch {}
 }
 
 // Synchronous reads for useState lazy initializers — see the matching
@@ -62,22 +90,6 @@ function readCachedRows(companyId: string | null | undefined, tableSlug: string)
   }
 }
 
-function readCachedColumns(companyId: string | null | undefined, tableSlug: string): CachedColumnConfig | null {
-  if (!companyId) return null;
-  try {
-    const raw = localStorage.getItem(columnsCacheKey(companyId, tableSlug));
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedColumns(companyId: string, tableSlug: string, config: CachedColumnConfig): void {
-  try {
-    localStorage.setItem(columnsCacheKey(companyId, tableSlug), JSON.stringify(config));
-  } catch {}
-}
-
 interface UsePresetTableOptions {
   tableSlug: string;
   defaultCols: string[];
@@ -85,6 +97,7 @@ interface UsePresetTableOptions {
   defaultExpandRelations?: string[];
   userId?: string | null; // pass from context to skip auth call
   companyId?: string | null; // pass from context — columns are company-wide, not personal
+  myTeamIds?: string[]; // pass from context — resolves a team-scoped default view ahead of the company-wide one
   isAdmin?: boolean; // only admins may change the company's column layout
   schemaReady?: boolean; // false while defaultCols/defaultExpandCols are still resolving
   fetchItems: (visibleColumns: string[]) => Promise<any[]>;
@@ -97,6 +110,7 @@ export function usePresetTable({
   defaultExpandRelations = [],
   userId: providedUserId,
   companyId,
+  myTeamIds,
   isAdmin = false,
   schemaReady = true,
   fetchItems,
@@ -109,13 +123,30 @@ export function usePresetTable({
   const [items, setItems] = useState<any[]>(() => readCachedRows(companyId, tableSlug) ?? []);
   const [loading, setLoading] = useState(() => readCachedRows(companyId, tableSlug) === null);
 
-  const cachedColumnsAtMount = useMemo(() => readCachedColumns(companyId, tableSlug), []); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally only read once, at mount
-  const [tableCols, setTableCols] = useState<string[]>(() => cachedColumnsAtMount?.tableCols ?? defaultCols);
-  const [expandCols, setExpandCols] = useState<string[]>(() => cachedColumnsAtMount?.expandCols ?? defaultExpandCols);
-  const [colWidths, setColWidths] = useState<Record<string, number>>(() => cachedColumnsAtMount?.colWidths ?? {});
+  // Applies defaultCols/defaultExpandCols fallback to a raw scoped-view
+  // answer (or its absence) -- the one place that logic lives, whether the
+  // view came from cache or a fresh fetch. Stable across renders (doesn't
+  // close over any state), so it's safe to call from the lazy initializers
+  // below and from init() without needing to be a dependency of either.
+  const resolveFromView = useCallback((view: ScopedDefaultView | null): ResolvedColumnConfig => ({
+    tableCols: view?.columns?.length ? view.columns : defaultCols,
+    expandCols: view?.expansion_columns || defaultExpandCols,
+    colWidths: view?.column_widths || {},
+    presetName: view?.preset_name || DEFAULT_PRESET_NAME,
+    sort: view?.sort || null,
+  }), [defaultCols, defaultExpandCols]);
+
+  const cachedScopedViewAtMount = useMemo(() => (companyId ? readCachedScopedView(companyId, tableSlug) : null), []); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally only read once, at mount
+  const resolvedAtMount = useMemo(
+    () => cachedScopedViewAtMount ? resolveFromView(cachedScopedViewAtMount.view) : null,
+    [], // eslint-disable-line react-hooks/exhaustive-deps -- paired with cachedScopedViewAtMount's own one-time read
+  );
+  const [tableCols, setTableCols] = useState<string[]>(() => resolvedAtMount?.tableCols ?? defaultCols);
+  const [expandCols, setExpandCols] = useState<string[]>(() => resolvedAtMount?.expandCols ?? defaultExpandCols);
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => resolvedAtMount?.colWidths ?? {});
   const [expandRelations, setExpandRelations] = useState<string[]>(defaultExpandRelations);
-  const [activePreset, setActivePreset] = useState(() => cachedColumnsAtMount?.presetName ?? DEFAULT_PRESET_NAME);
-  const [sort, setSort] = useState<SortState | null>(() => cachedColumnsAtMount?.sort ?? null);
+  const [activePreset, setActivePreset] = useState(() => resolvedAtMount?.presetName ?? DEFAULT_PRESET_NAME);
+  const [sort, setSort] = useState<SortState | null>(() => resolvedAtMount?.sort ?? null);
 
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -170,42 +201,50 @@ export function usePresetTable({
     }
 
     // ── Step 2: load the company's column layout (single source of truth) ──
-    let resolvedTableCols = defaultCols;
-    let resolvedExpandCols = defaultExpandCols;
-    let resolvedWidths: Record<string, number> = {};
-    let resolvedPresetName = DEFAULT_PRESET_NAME;
-    let resolvedSort: SortState | null = null;
+    // A cached raw view lets Step 3 fire immediately with the RIGHT column
+    // list instead of defaultCols — the whole point of this cache existing —
+    // while the real answer is still refreshed in the background in case an
+    // admin changed the layout since it was cached.
+    const cachedScopedView = readCachedScopedView(companyId, tableSlug);
+    let resolved: ResolvedColumnConfig;
 
-    const { data: companyView } = await supabase
-      .from('company_default_views')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('table_slug', tableSlug)
-      .maybeSingle();
-    perfLog(`usePresetTable(${tableSlug}): company_default_views resolved`);
+    if (cachedScopedView) {
+      resolved = resolveFromView(cachedScopedView.view);
+      setTableCols(resolved.tableCols);
+      setExpandCols(resolved.expandCols);
+      setColWidths(resolved.colWidths);
+      setActivePreset(resolved.presetName);
+      setSort(resolved.sort);
 
-    if (companyView) {
-      resolvedTableCols = companyView.columns?.length ? companyView.columns : defaultCols;
-      resolvedExpandCols = companyView.expansion_columns || defaultExpandCols;
-      resolvedWidths = companyView.column_widths || {};
-      resolvedPresetName = companyView.preset_name || DEFAULT_PRESET_NAME;
-      resolvedSort = companyView.sort || null;
+      fetchScopedDefaultView(companyId, tableSlug, await resolveUserId(), myTeamIds)
+        .then(fresh => {
+          perfLog(`usePresetTable(${tableSlug}): company_default_views refreshed in background`);
+          if (JSON.stringify(fresh) === JSON.stringify(cachedScopedView.view)) return;
+          writeCachedScopedView(companyId, tableSlug, fresh);
+          const freshResolved = resolveFromView(fresh);
+          setTableCols(freshResolved.tableCols);
+          setExpandCols(freshResolved.expandCols);
+          setColWidths(freshResolved.colWidths);
+          setActivePreset(freshResolved.presetName);
+          setSort(freshResolved.sort);
+        })
+        .catch(() => {});
+    } else {
+      const companyView = await fetchScopedDefaultView(companyId, tableSlug, await resolveUserId(), myTeamIds);
+      perfLog(`usePresetTable(${tableSlug}): company_default_views resolved`);
+      writeCachedScopedView(companyId, tableSlug, companyView);
+      resolved = resolveFromView(companyView);
+      setTableCols(resolved.tableCols);
+      setExpandCols(resolved.expandCols);
+      setColWidths(resolved.colWidths);
+      setActivePreset(resolved.presetName);
+      setSort(resolved.sort);
     }
-
-    writeCachedColumns(companyId, tableSlug, {
-      tableCols: resolvedTableCols, expandCols: resolvedExpandCols,
-      colWidths: resolvedWidths, presetName: resolvedPresetName, sort: resolvedSort,
-    });
-    setTableCols(resolvedTableCols);
-    setExpandCols(resolvedExpandCols);
-    setColWidths(resolvedWidths);
-    setActivePreset(resolvedPresetName);
-    setSort(resolvedSort);
 
     // ── Step 3: fetch fresh data ──────────────────────────────────
     // If we had cached data, fetch in background and only update if changed
     if (hasCachedData) {
-      fetchItemsRef.current([...resolvedTableCols, ...resolvedExpandCols])
+      fetchItemsRef.current([...resolved.tableCols, ...resolved.expandCols])
         .then(fresh => {
           perfLog(`usePresetTable(${tableSlug}): background refresh resolved`, `${fresh?.length ?? 0} rows`);
           if (fresh?.length) setItems(fresh);
@@ -213,12 +252,12 @@ export function usePresetTable({
         .catch(() => {});
     } else {
       // No cache — must wait
-      const data = await fetchItemsRef.current([...resolvedTableCols, ...resolvedExpandCols]);
+      const data = await fetchItemsRef.current([...resolved.tableCols, ...resolved.expandCols]);
       perfLog(`usePresetTable(${tableSlug}): blocking fetch resolved`, `${data?.length ?? 0} rows`);
       if (data?.length) setItems(data);
       setLoading(false);
     }
-  }, [tableSlug, companyId, schemaReady]); // fetchItems/defaultCols accessed via closure — recreated only when identity/company/schema readiness changes
+  }, [tableSlug, companyId, schemaReady, resolveUserId, (myTeamIds || []).join(',')]); // fetchItems/defaultCols/resolveFromView accessed via closure — recreated only when identity/company/schema readiness changes (resolveFromView deliberately excluded: it's recreated whenever a caller passes new defaultCols/defaultExpandCols array literals, which would otherwise re-run init on every render)
 
   useEffect(() => { init(); }, [init]);
 

@@ -16,7 +16,7 @@ import { perfLog } from "@/lib/perfLog";
 import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker";
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 import { warmCustomDashboards } from "@/lib/hooks/useCustomDashboards";
-import { warmCustomTableShells, startSystemTableRowPrefetch, warmSystemTableShells } from "@/lib/hooks/prefetchShells";
+import { warmCustomTableShells, startSystemTableRowPrefetch, warmSystemTableShells, warmSystemTableViewConfig } from "@/lib/hooks/prefetchShells";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 import type { TableLabelOverrides, DisabledSystemTables } from "@/components/CompanyContext";
 
@@ -135,7 +135,16 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   notifyStep("dashboards");
   await warmRelationOptionsCache().catch(() => {});
   notifyStep("relations");
-  await warmSystemTableShells(cid).catch(() => {});
+  // Run alongside warmSystemTableShells rather than after it -- the two warm
+  // independent data (schema/customFields/relatedFields vs. saved column
+  // layout/filters) for the same 4 tables, so there's no reason for one to
+  // wait on the other; the step still only reports done once BOTH finish, so
+  // the splash keeps gating on "the main table screen has nothing left to
+  // fetch," not just its schema.
+  await Promise.all([
+    warmSystemTableShells(cid).catch(() => {}),
+    warmSystemTableViewConfig(cid, user.id, result.myTeamIds).catch(() => {}),
+  ]);
   notifyStep("tableShells");
   await warmCustomTableShells(cid).catch(() => {});
   // Row data prefetch stays fire-and-forget -- see startSystemTableRowPrefetch's
