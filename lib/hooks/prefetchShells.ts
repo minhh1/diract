@@ -113,6 +113,10 @@ const RELATION_TARGET_TABLES: Record<string, { table: string; nameColumn: string
   project: { table: 'projects', nameColumn: 'name' },
 };
 
+// See GenericMasterTable.tsx's matching UUID_RE for why the relation lookup
+// below filters to these before its `.in('id', ...)`.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Values are looked up by field_id alone (scoped to this table's custom
 // fields; RLS scopes to this company) rather than by record_id, matching
 // GenericMasterTable.tsx's own fetchCustomFields -- see its comment for why
@@ -135,14 +139,25 @@ async function fetchCustomFieldValues(fields: CompanyCustomField[]): Promise<Rec
   const byRecord: Record<string, Record<string, any>> = {};
   allValues.forEach(v => {
     if (!byRecord[v.record_id]) byRecord[v.record_id] = {};
+    // value_record_id checked FIRST -- see GenericMasterTable.tsx's matching
+    // fetchCustomFields comment for why (lib/ai/actions.ts's
+    // insertCustomFieldValues writes both columns for entity fields it
+    // creates, and checking value_text first would pick up that plain
+    // display name instead of the real id).
     byRecord[v.record_id][v.field_id] =
-      v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id;
+      v.value_record_id ?? v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
   });
 
   const relationFields = fields.filter(f => f.field_type in RELATION_TARGET_TABLES);
   await Promise.all(relationFields.map(async field => {
     const { table, nameColumn } = RELATION_TARGET_TABLES[field.field_type];
-    const linkedIds = [...new Set(Object.values(byRecord).map(v => v[field.id]).filter(Boolean))];
+    // Filtered to well-formed uuids -- see GenericMasterTable.tsx's matching
+    // fetchCustomFields comment for why a value_text-only "entity" field
+    // value (never actually linked to a real record) would otherwise 400
+    // this whole batched `.in('id', ...)`, blanking every OTHER record's
+    // value for this column too, not just the bad one.
+    const linkedIds = [...new Set(Object.values(byRecord).map(v => v[field.id]).filter(Boolean))]
+      .filter(id => UUID_RE.test(id));
     if (!linkedIds.length) return;
     const { data: linked } = await supabase.from(table).select(`id, ${nameColumn}`).in('id', linkedIds);
     const nameById = new Map((linked || []).map((r: any) => [r.id, r[nameColumn]]));

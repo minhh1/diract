@@ -47,6 +47,12 @@ interface GenericMasterTableProps {
 
 const PROPERTY_CATEGORY_KEYS = ['council', 'electricity', 'water', 'land_tax', 'gas'];
 
+// Guards fetchCustomFields' relation-lookup batch below against a
+// value_text-only custom field value that was never actually linked to a
+// real record (see that comment for how NewProjectModal.tsx's plain-text
+// entity input produces exactly this).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function getCategoryKeyForColumn(colId: string): string | null {
   for (const key of PROPERTY_CATEGORY_KEYS) {
     if (colId.startsWith(`${key}_`)) return key;
@@ -293,13 +299,6 @@ function GenericMasterTableInner({
         allValues.push(...page);
         if (page.length < PAGE_SIZE) break;
       }
-      const byRecord: Record<string, Record<string, any>> = {};
-      allValues.forEach(v => {
-        if (!byRecord[v.record_id]) byRecord[v.record_id] = {};
-        byRecord[v.record_id][v.field_id] =
-          v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id;
-      });
-
       // Relation-type columns (entity/property/project) hold a raw linked
       // record id in value_record_id — resolve each to its display name so
       // the grid shows e.g. "Ipswich Oak Pty Ltd" instead of a bare uuid.
@@ -310,6 +309,23 @@ function GenericMasterTableInner({
         property: { table: 'properties', nameColumn: 'street_address' },
         project: { table: 'projects', nameColumn: 'name' },
       };
+
+      const byRecord: Record<string, Record<string, any>> = {};
+      allValues.forEach(v => {
+        if (!byRecord[v.record_id]) byRecord[v.record_id] = {};
+        // value_record_id checked FIRST, not last -- it's a dedicated column
+        // only ever written alongside a relation-type field's real link (see
+        // lib/ai/actions.ts's insertCustomFieldValues), so its presence alone
+        // means "this is the link," never coincidental. Checking value_text
+        // first used to pick up a bot-written entity field's plain display
+        // name instead (that writer sets BOTH columns, for renderers that
+        // predate this one reading value_record_id at all) and feed it into
+        // the relation lookup's `.in('id', ...)` below as if it were a uuid,
+        // producing a mixed id/name list and a 400 from PostgREST.
+        byRecord[v.record_id][v.field_id] =
+          v.value_record_id ?? v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
+      });
+
       const relationFieldIds = visibleCustomFieldIds.filter(id => {
         const fieldType = customFieldCols.find(f => f.id === id)?.field_type;
         return fieldType && fieldType in RELATION_TARGET_TABLES;
@@ -317,9 +333,17 @@ function GenericMasterTableInner({
       await Promise.all(relationFieldIds.map(async fieldId => {
         const fieldType = customFieldCols.find(f => f.id === fieldId)!.field_type;
         const { table, nameColumn } = RELATION_TARGET_TABLES[fieldType];
+        // Filtered to well-formed uuids -- NewProjectModal.tsx's custom-field
+        // form renders a plain text input for "entity" fields (it only
+        // special-cases number/boolean/date), so a record can genuinely have
+        // a value_text-only plain name here with no value_record_id at all,
+        // not just the bot-written case value_record_id-first already
+        // handles above. A single such value would otherwise 400 the WHOLE
+        // batched `.in('id', ...)` below, blanking this column for every
+        // OTHER record on the page too, not just the bad one.
         const linkedIds = [...new Set(
           Object.values(byRecord).map(fields => fields[fieldId]).filter(Boolean)
-        )];
+        )].filter(id => UUID_RE.test(id));
         if (!linkedIds.length) return;
         const { data: linked } = await supabase.from(table).select(`id, ${nameColumn}`).in('id', linkedIds);
         const nameById = new Map((linked || []).map((r: any) => [r.id, r[nameColumn]]));

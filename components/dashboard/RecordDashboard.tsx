@@ -50,6 +50,12 @@ interface Props {
   initialRecord?: any; // pre-fetched row from master table — skips first loadRecord fetch
 }
 
+// Guards resolveLinkedItems' relation lookup below against a value_text-only
+// custom field value that was never actually linked to a real record (see
+// that comment for how NewProjectModal.tsx's plain-text entity input
+// produces exactly this).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ── Main component ─────────────────────────────────────────────────
 
 export default function RecordDashboard({
@@ -250,8 +256,14 @@ export default function RecordDashboard({
       // writes straight back into this same column.
       const customValues: Record<string, any> = {};
       (cfValues || []).forEach(v => {
+        // value_record_id checked FIRST -- see
+        // components/GenericMasterTable.tsx's fetchCustomFields for why
+        // (lib/ai/actions.ts's insertCustomFieldValues writes both this and
+        // value_text for an entity field it creates; checking value_text
+        // first would pick up that plain display name instead of the real
+        // linked id resolveLinkedItems below needs).
         customValues[v.field_id] =
-          v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id;
+          v.value_record_id ?? v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean;
       });
 
       const merged = { ...data, ...customValues };
@@ -302,7 +314,12 @@ export default function RecordDashboard({
     );
     await Promise.all(customLinkedFields.map(async f => {
       const storedId = currentRecord?.[f.id];
-      if (!storedId) return;
+      // NewProjectModal.tsx's custom-field form renders a plain text input
+      // for "entity" fields (only number/boolean/date get special
+      // handling), so storedId can genuinely be a typed display name with
+      // no real link behind it, never written to value_record_id at all --
+      // skip rather than let a malformed uuid 400 this lookup.
+      if (!storedId || !UUID_RE.test(storedId)) return;
       const { table, nameColumn } = CUSTOM_LINKED_TABLES[f.fieldType];
       const { data } = await supabase.from(table).select(`id, ${nameColumn}`).eq('id', storedId).single();
       if (data) map[f.id] = [{ id: storedId, name: (data as any)[nameColumn] || 'Untitled' }];

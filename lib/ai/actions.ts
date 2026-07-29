@@ -278,9 +278,12 @@ export interface CustomFieldValueInput {
 // Same per-type coercion components/NewProjectModal.tsx:82-104 already uses
 // when writing custom field values from the regular UI -- kept as one
 // shared helper so a bot-created record's custom fields look identical to
-// one entered by hand. "entity" fields get both value_text (the resolved
-// name, so every existing renderer -- none of which read value_record_id --
-// keeps displaying it correctly) and value_record_id (the real link).
+// one entered by hand. "entity" fields get both value_text (a display-name
+// snapshot) and value_record_id (the real, authoritative link) -- every
+// reader that merges these columns must check value_record_id FIRST (see
+// components/GenericMasterTable.tsx's fetchCustomFields), since this
+// value_text snapshot can go stale if the linked entity is later renamed,
+// and would otherwise get fed into an id lookup as if it were a uuid.
 export async function insertCustomFieldValues(
   admin: any,
   companyId: string,
