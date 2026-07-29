@@ -36,7 +36,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -45,6 +45,7 @@ import ActivityLogModal from "./ActivityLogModal";
 import CellHistoryPopover, { type CellLogEntry } from "./CellHistoryPopover";
 import EntityOfficeholdersPanel from "./EntityOfficeholdersPanel";
 import IrregularityFixPanel from "./IrregularityFixPanel";
+import IrregularityFixModal from "./IrregularityFixModal";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
@@ -143,6 +144,26 @@ function getSavedStatusNames(groupId: string): string[] | null {
 }
 function saveStatusNames(groupId: string, names: string[]) {
   try { localStorage.setItem(statusPrefKey(groupId), JSON.stringify(names)); } catch { /* ignore */ }
+}
+
+// Ad-hoc filters (the "Add filter" sidebar section -- pick a field, then
+// its checkbox values) have no server-side "page default" the way Status
+// does, so unlike statusPrefKey above this is the ONLY place a filter
+// choice lives, for both staff and client -- previously nowhere, so a
+// filter was silently lost on every reload/navigation. Saved on every
+// change, including a filter row that's been added but has no checked
+// values yet (fieldId set, values still empty) -- that's a real, deliberate
+// in-progress choice, not "nothing to remember". Same URL-path + group-id
+// keying convention as statusPrefKey.
+const filtersPrefKey = (groupId: string) => `client_update_filters_pref_${typeof window !== "undefined" ? window.location.pathname : ""}_${groupId}`;
+function getSavedFilters(groupId: string): { fieldId: string; values: string[] }[] | null {
+  try {
+    const raw = localStorage.getItem(filtersPrefKey(groupId));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function saveFilters(groupId: string, filters: { fieldId: string; values: Set<string> }[]) {
+  try { localStorage.setItem(filtersPrefKey(groupId), JSON.stringify(filters.map(f => ({ fieldId: f.fieldId, values: [...f.values] })))); } catch { /* ignore */ }
 }
 
 // Fixed swatch -> full, statically-written Tailwind class strings (never
@@ -333,12 +354,27 @@ export default function MatterBoard({
   }, [activeTopGroup?.id, activeTopGroup?.default_status_names, canEdit, subGroups.map(g => g.id).join(",")]);
 
   // Ad-hoc filters reference a specific field id, which is only meaningful
-  // within the active group's own visible columns -- reset on group change
-  // for the same reason the status filter does.
+  // within the active group's own visible columns -- restore whatever was
+  // saved for THIS group (see filtersPrefKey) on group change, same
+  // guarded-init pattern as the status effect above, rather than always
+  // resetting to blank.
+  const [filtersInitialisedFor, setFiltersInitialisedFor] = useState<string | null>(null);
   useEffect(() => {
-    setFilters([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTop]);
+    const groupKey = activeTop;
+    if (filtersInitialisedFor === groupKey) return;
+    const saved = getSavedFilters(groupKey);
+    setFilters(saved ? saved.map(f => ({ fieldId: f.fieldId, values: new Set(f.values) })) : []);
+    setFiltersInitialisedFor(groupKey);
+  }, [activeTop, filtersInitialisedFor]);
+
+  // Saves on every change, but only once the group's saved filters have
+  // actually been loaded (filtersInitialisedFor set) -- otherwise this
+  // would fire on mount with the blank initial useState([]) and overwrite
+  // a real saved filter with nothing before the load effect above even runs.
+  useEffect(() => {
+    if (filtersInitialisedFor !== activeTop) return;
+    saveFilters(activeTop, filters);
+  }, [filters, activeTop, filtersInitialisedFor]);
 
   const toggleStatus = (id: string) => {
     setSelectedStatuses(prev => {
@@ -999,6 +1035,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   const [generating, setGenerating] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(item.matterName);
+  const [showFix, setShowFix] = useState(false);
 
   const generateSummary = async () => {
     if (!onGenerateSummary || generating) return;
@@ -1050,6 +1087,12 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
             </button>
           ) : null}
         </div>
+        {pageKind === "auto_fed" && pageId && canEdit && (
+          <button onClick={e => { e.stopPropagation(); setShowFix(true); }} title="Fix this"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold hover:bg-indigo-100 transition-colors shrink-0">
+            <Wrench size={11} /> Fix
+          </button>
+        )}
         {canEdit && onMoveItem && (
           <select value={item.group_id || ""} onChange={e => { e.stopPropagation(); onMoveItem(item.id, e.target.value || null); }} onClick={e => e.stopPropagation()}
             className="text-[11px] border border-slate-200 rounded-full px-2.5 py-1 outline-none bg-white">
@@ -1060,6 +1103,9 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
           <button onClick={e => { e.stopPropagation(); onRemoveItem(item.id); }} title="Remove from this page" className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
         )}
       </div>
+      {showFix && pageId && (
+        <IrregularityFixModal pageId={pageId} itemId={item.id} canEdit={canEdit} onClose={() => setShowFix(false)} />
+      )}
       {expanded && (
         <div className="border-t border-slate-100 px-4 py-4 space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1305,7 +1351,9 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const totalCols = fields.length + 1 + (canEdit && onMoveItem ? 1 : 0) + (canEdit && onRemoveItem ? 1 : 0);
+  const [fixItemId, setFixItemId] = useState<string | null>(null);
+  const showFixColumn = pageKind === "auto_fed" && canEdit && !!pageId;
+  const totalCols = fields.length + 1 + (showFixColumn ? 1 : 0) + (canEdit && onMoveItem ? 1 : 0) + (canEdit && onRemoveItem ? 1 : 0);
 
   const handleColumnDrop = (targetId: string) => {
     if (!draggedFieldId || draggedFieldId === targetId || !onReorderFields) { setDraggedFieldId(null); setDragOverFieldId(null); return; }
@@ -1337,6 +1385,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 </span>
               </th>
             ))}
+            {showFixColumn && <th className="w-16" />}
             {canEdit && onMoveItem && <th className="px-4 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Group</th>}
             {canEdit && onRemoveItem && <th className="w-10" />}
           </tr>
@@ -1360,6 +1409,14 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                   onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
               ))}
+              {showFixColumn && (
+                <td className="px-2 py-4">
+                  <button onClick={() => setFixItemId(item.id)} title="Fix this"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold hover:bg-indigo-100 transition-colors whitespace-nowrap">
+                    <Wrench size={11} /> Fix
+                  </button>
+                </td>
+              )}
               {canEdit && onMoveItem && (
                 <td className="px-4 py-4">
                   <select value={item.group_id || ""} onChange={e => onMoveItem(item.id, e.target.value || null)}
@@ -1398,6 +1455,9 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
           )}
         </tbody>
       </table>
+      {fixItemId && pageId && (
+        <IrregularityFixModal pageId={pageId} itemId={fixItemId} canEdit={canEdit} onClose={() => setFixItemId(null)} />
+      )}
     </div>
   );
 }

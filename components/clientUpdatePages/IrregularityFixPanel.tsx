@@ -19,7 +19,7 @@ interface FixTarget {
   selectOptions?: string[] | null; currentValue: any; currentLabel?: string | null;
 }
 
-export default function IrregularityFixPanel({ pageId, itemId, canEdit }: { pageId: string; itemId: string; canEdit: boolean }) {
+export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered = true }: { pageId: string; itemId: string; canEdit: boolean; bordered?: boolean }) {
   const [target, setTarget] = useState<FixTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<any>(null);
@@ -49,11 +49,11 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit }: { page
     if (res.ok) { setSaved(true); load(); }
   };
 
-  if (loading) return <div className="border-t border-slate-100 pt-3"><Loader2 size={14} className="animate-spin text-slate-300" /></div>;
+  if (loading) return <div className={bordered ? "border-t border-slate-100 pt-3" : ""}><Loader2 size={14} className="animate-spin text-slate-300" /></div>;
   if (!target) return null;
 
   return (
-    <div className="border-t border-slate-100 pt-3 space-y-2">
+    <div className={`${bordered ? "border-t border-slate-100 pt-3" : ""} space-y-2`}>
       <p className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
         <Wrench size={11} className="text-indigo-400" /> Fix: {target.fieldLabel} on {target.entityName}
       </p>
