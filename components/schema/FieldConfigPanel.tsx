@@ -18,8 +18,11 @@ const RELATION_TYPES: FieldType[] = RELATION_FIELD_TYPES;
 // acn/abn used to be here too -- they're company_custom_fields now (see
 // supabase/migrations/20260729290000_entities_finance_fields_to_custom.sql),
 // and this relation-picker search only covers native columns.
+// folio_identifier used to be here too -- it's a company_custom_field now
+// (see supabase/migrations/20260730100000_property_folio_identifier_to_custom.sql),
+// and this relation-picker search only covers native columns.
 const SEARCH_COLUMNS: Record<string, string[]> = {
-  properties: ['street_address', 'suburb', 'postcode', 'folio_identifier'],
+  properties: ['street_address', 'suburb', 'postcode'],
   entities: ['name', 'entity_type'],
   projects: ['name', 'description'],
 };

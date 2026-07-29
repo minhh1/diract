@@ -7,6 +7,13 @@ import { supabase } from "@/lib/supabase";
 import SmartFieldHint from "@/components/SmartFieldHint";
 import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
 import type { NameSuggestion } from "@/lib/smartValidation/nameQuality";
+import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
+
+// folio_identifier gets its own dedicated UI below (Details) even though
+// it's now a company_custom_field, not a native column -- excluded here so
+// it doesn't also show up a second time in the generic "Additional fields"
+// section (see supabase/migrations/20260730100000_property_folio_identifier_to_custom.sql).
+const NATIVE_UI_KEYS = ['folio_identifier'];
 
 interface Props {
   isOpen: boolean;
@@ -70,7 +77,7 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
       .eq('company_id', cid)
       .is('deleted_at', null)
       .order('display_order');
-    setCustomFields(cf || []);
+    setCustomFields((cf || []).filter(f => tableName !== 'properties' || !NATIVE_UI_KEYS.includes(f.field_key)));
   };
 
   const resetForm = () => {
@@ -107,11 +114,11 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
             country: country.trim() || null,
             purchase_price: purchasePrice ? parseFloat(purchasePrice) : null,
             purchase_date: purchaseDate || null,
-            folio_identifier: folioIdentifier.trim() || null,
           })
           .select('id').single();
         if (error) throw error;
         recordId = prop.id;
+        await writeEntityCustomFieldValues(companyId!, recordId, 'properties', { folio_identifier: folioIdentifier });
       } else {
         // Generic custom table record
         const { data: rec, error } = await supabase

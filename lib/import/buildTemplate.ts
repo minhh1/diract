@@ -24,9 +24,13 @@ export interface ImportSection {
 
 // ── Static base section definitions ───────────────────────────────
 
+// folio_identifier used to be here too -- it's a company_custom_field now
+// (see supabase/migrations/20260730100000_property_folio_identifier_to_custom.sql),
+// so it's appended automatically via appendCustomFieldHeaders below instead
+// of being listed as a static native header.
 const PROPERTY_HEADERS = [
   'full_address', 'suburb', 'state', 'postcode', 'country',
-  'folio_identifier', 'purchase_price', 'purchase_date',
+  'purchase_price', 'purchase_date',
   'entity_name', 'entity_type',
   'project_manager', 'project_owner', 'last_coc_date',
 ];

@@ -72,11 +72,14 @@ const RELATION_DISPLAY_COLS: Record<string, { id: string; label: string }[]> = {
     { id: 'description', label: 'Description' },
     { id: 'estimated_completion_date', label: 'Est. Completion' },
   ],
-  // Child properties (lots) shown under a project
+  // Child properties (lots) shown under a project. folio_identifier used to
+  // be here too -- it's a company_custom_field now (see
+  // supabase/migrations/20260730100000_property_folio_identifier_to_custom.sql),
+  // and RelationSubTable only resolves native columns, not custom field
+  // values, so it's no longer offerable here.
   properties: [
     { id: 'street_address', label: 'Address' },
     { id: 'suburb', label: 'Suburb' },
-    { id: 'folio_identifier', label: 'Folio' },
     { id: 'purchase_price', label: 'Price' },
   ],
 };

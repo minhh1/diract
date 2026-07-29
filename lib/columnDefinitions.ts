@@ -17,9 +17,11 @@ const CREDENTIAL_FIELD_LABELS: { suffix: string; label: string }[] = [
   { suffix: 'bill_provider', label: 'Provider (Bill)' },
 ];
 
+// folio_identifier used to be here too -- it's a company_custom_field now
+// (see supabase/migrations/20260730100000_property_folio_identifier_to_custom.sql).
 export const PROPERTY_COLUMNS = [
   'street_address', 'suburb', 'state', 'postcode', 'country',
-  'folio_identifier', 'holding_entity_id', 'purchase_date',
+  'holding_entity_id', 'purchase_date',
   'insurer_name', 'insurance_expiry', 'purchase_entity_id', 'policy_number',
   'project_manager', 'project_owner', 'last_coc_date', 'council_entity_id',
   'insurer_entity_id', 'is_sold', 'sold_date', 'sold_price',

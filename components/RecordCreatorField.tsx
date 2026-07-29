@@ -6,10 +6,11 @@ import { supabase } from "@/lib/supabase";
 import { ChevronDown, ChevronUp, Loader2, Check, AlertCircle, MapPin, Building2 } from "lucide-react";
 import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
 
-// abn/acn are now company_custom_fields (not native entities columns), so
-// they're written separately after the entity row is created, not spread
-// into the entities.insert() payload below.
+// abn/acn (entities) and folio_identifier (properties) are now
+// company_custom_fields (not native columns), so they're written separately
+// after the record is created, not spread into the .insert() payload below.
 const ENTITY_CUSTOM_FIELD_KEYS = ['abn', 'acn'];
+const PROPERTY_CUSTOM_FIELD_KEYS = ['folio_identifier'];
 
 interface RecordCreatorFieldProps {
   fieldType: 'property' | 'entity';
@@ -65,10 +66,12 @@ export default function RecordCreatorField({
       [primaryKey]: primaryValue.trim(),
     };
 
-    // Add any extra fields that have values (except entity custom fields --
+    const customFieldKeys = isProperty ? PROPERTY_CUSTOM_FIELD_KEYS : ENTITY_CUSTOM_FIELD_KEYS;
+
+    // Add any extra fields that have values (except custom fields --
     // written separately below once the record exists)
     Object.entries(extraValues).forEach(([key, val]) => {
-      if (val?.trim() && !(!isProperty && ENTITY_CUSTOM_FIELD_KEYS.includes(key))) {
+      if (val?.trim() && !customFieldKeys.includes(key)) {
         if (key === 'purchase_price') {
           insertData[key] = parseFloat(val.replace(/[$,\s]/g, '')) || null;
         } else {
@@ -83,10 +86,9 @@ export default function RecordCreatorField({
       .select('id')
       .single();
 
-    if (!err && !isProperty) {
-      await writeEntityCustomFieldValues(companyId, data.id, tableName, {
-        abn: extraValues.abn, acn: extraValues.acn,
-      });
+    if (!err) {
+      const customValues = Object.fromEntries(customFieldKeys.map(key => [key, extraValues[key]]));
+      await writeEntityCustomFieldValues(companyId, data.id, tableName, customValues);
     }
 
     setSaving(false);
