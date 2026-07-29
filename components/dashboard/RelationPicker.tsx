@@ -468,7 +468,21 @@ export default function RelationPicker({
 
   // Resolve the current value's display label whenever it changes.
   useEffect(() => {
-    if (multiple || !value) { setCurrentLabel(''); resolvedForRef.current = null; return; }
+    if (multiple) return;
+    if (!value) {
+      // No id to resolve a label for. Normally that just means "nothing
+      // selected" -- but a caller can pass initialLabel with no matching id
+      // at all (e.g. MatterBoard's in-cell picker for a field that used to
+      // be plain text before it became a real relation: existing rows have
+      // a free-text value_text and no value_record_id yet). Only clear an
+      // already-resolved label when `value` genuinely changed away from a
+      // real id (resolvedForRef.current not null) -- on first mount with no
+      // id, resolvedForRef.current is already null, so this leaves
+      // useState's initialLabel-seeded currentLabel alone instead of
+      // wiping it to blank the instant the component mounts.
+      if (resolvedForRef.current !== null) { setCurrentLabel(''); resolvedForRef.current = null; }
+      return;
+    }
     if (resolvedForRef.current === value) return;
     let active = true;
     const cacheKey = `label:${linkedSystemTable ?? ''}:${linkedTableId ?? ''}:${displayField ?? ''}:${displayField2 ?? ''}:${value}`;
