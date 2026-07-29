@@ -20,22 +20,27 @@ export async function GET() {
       ? admin.from("client_update_page_items").select("page_id").in("page_id", pageIds)
       : Promise.resolve({ data: [] as any[] }),
     pageIds.length
-      ? admin.from("client_update_page_teams").select("page_id, teams(team_name)").in("page_id", pageIds)
+      ? admin.from("client_update_page_teams").select("page_id, team_id, teams(team_name)").in("page_id", pageIds)
       : Promise.resolve({ data: [] as any[] }),
   ]);
   const countByPage = new Map<string, number>();
   for (const i of itemCounts || []) countByPage.set(i.page_id, (countByPage.get(i.page_id) || 0) + 1);
   const teamNamesByPage = new Map<string, string[]>();
+  const teamIdsByPage = new Map<string, string[]>();
   for (const t of pageTeams || []) {
     const name = (t as any).teams?.team_name;
-    if (!name) continue;
-    if (!teamNamesByPage.has(t.page_id)) teamNamesByPage.set(t.page_id, []);
-    teamNamesByPage.get(t.page_id)!.push(name);
+    if (name) {
+      if (!teamNamesByPage.has(t.page_id)) teamNamesByPage.set(t.page_id, []);
+      teamNamesByPage.get(t.page_id)!.push(name);
+    }
+    if (!teamIdsByPage.has(t.page_id)) teamIdsByPage.set(t.page_id, []);
+    teamIdsByPage.get(t.page_id)!.push(t.team_id);
   }
 
   return NextResponse.json({
     pages: (pages || []).map((p: any) => ({
-      ...p, matterCount: countByPage.get(p.id) || 0, teamNames: teamNamesByPage.get(p.id) || [],
+      ...p, matterCount: countByPage.get(p.id) || 0,
+      teamNames: teamNamesByPage.get(p.id) || [], teamIds: teamIdsByPage.get(p.id) || [],
     })),
   });
 }

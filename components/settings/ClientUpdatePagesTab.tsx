@@ -15,7 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import {
-  Plus, Copy, Check, Trash2, ExternalLink, X, Pencil, RefreshCw, Users, Globe,
+  Plus, Copy, Check, Trash2, ExternalLink, X, Pencil, RefreshCw, Users, Globe, Settings2,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
@@ -23,7 +23,8 @@ interface Team { id: string; team_name: string; leader_id: string | null; }
 interface Page {
   id: string; title: string; client_label: string | null; slug: string;
   access_code: string | null; is_active: boolean; expires_at: string | null;
-  matterCount: number; base_table: string; visibility: "public" | "team"; teamNames: string[];
+  matterCount: number; base_table: string; visibility: "public" | "team";
+  teamNames: string[]; teamIds: string[];
 }
 
 const SYSTEM_TABLE_OPTIONS = [
@@ -59,6 +60,7 @@ async function fetchTabData(userId: string): Promise<{ allTeams: Team[]; myTeams
 export default function ClientUpdatePagesTab() {
   const { userId, isAdmin } = useCompany();
   const [showCreate, setShowCreate] = useState(false);
+  const [editingPage, setEditingPage] = useState<Page | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [pinDraft, setPinDraft] = useState("");
@@ -164,6 +166,12 @@ export default function ClientUpdatePagesTab() {
                   className="p-2 text-slate-400 hover:text-indigo-600 transition-colors shrink-0">
                   <ExternalLink size={15} />
                 </a>
+                {isAdmin && (
+                  <button onClick={() => setEditingPage(p)} title="Edit settings"
+                    className="p-2 text-slate-400 hover:text-indigo-600 transition-colors shrink-0">
+                    <Settings2 size={15} />
+                  </button>
+                )}
                 <button onClick={() => handleRevoke(p.id)} title="Revoke"
                   className="p-2 text-slate-400 hover:text-red-500 transition-colors shrink-0">
                   <Trash2 size={15} />
@@ -176,6 +184,10 @@ export default function ClientUpdatePagesTab() {
 
       {showCreate && (
         <CreatePageModal isAdmin={isAdmin} teamOptions={teamOptions} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetch(); }} />
+      )}
+
+      {editingPage && (
+        <EditPageModal page={editingPage} teamOptions={teamOptions} onClose={() => setEditingPage(null)} onSaved={() => { setEditingPage(null); refetch(); }} />
       )}
     </div>
   );
@@ -405,6 +417,134 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
           <button onClick={handleCreate} disabled={saving}
             className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
             {saving ? "Creating..." : "Create page"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Edits an existing page's title/visibility/team(s)/expiry -- unlike Public
+// Task Pages' equivalent (which deliberately treats scope as baked into the
+// already-shared URL, not editable), this DOES allow flipping between
+// public and team-only after the fact, since the URL itself doesn't change
+// either way (still /public/updates/<slug>) -- only who can reach it does.
+// No table/field picker here -- changing the underlying table out from
+// under a page's existing items/fields isn't something this supports.
+function EditPageModal({ page, teamOptions, onClose, onSaved }: {
+  page: Page; teamOptions: Team[]; onClose: () => void; onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(page.title);
+  const [clientLabel, setClientLabel] = useState(page.client_label || "");
+  const [visibility, setVisibility] = useState<"public" | "team">(page.visibility);
+  const [teamIds, setTeamIds] = useState<Set<string>>(new Set(page.teamIds));
+  const [noExpiry, setNoExpiry] = useState(!page.expires_at);
+  const [expiresAt, setExpiresAt] = useState(page.expires_at || defaultExpiry());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggleTeam = (id: string) => setTeamIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const handleSave = async () => {
+    if (!title.trim()) { setError("Title is required"); return; }
+    if (visibility === "team" && !teamIds.size) { setError("Select at least one team"); return; }
+    setSaving(true);
+    setError(null);
+    const res = await fetch(`/api/client-update-pages/${page.id}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title, clientLabel, visibility,
+        teamIds: visibility === "team" ? [...teamIds] : undefined,
+        expiresAt: visibility === "public" && !noExpiry ? expiresAt : null,
+      }),
+    });
+    const json = await res.json();
+    setSaving(false);
+    if (!res.ok) { setError(json.error || "Failed to save"); return; }
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl w-full max-w-lg mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
+          <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide">Edit detailed table page</h3>
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Title</p>
+            <input value={title} onChange={e => setTitle(e.target.value)}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
+          </div>
+
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Who can view this</p>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                <input type="radio" checked={visibility === "public"} onChange={() => setVisibility("public")} />
+                <span className="text-[12px] text-slate-700">Public link (anyone with the link + PIN)</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                <input type="radio" checked={visibility === "team"} onChange={() => setVisibility("team")} />
+                <span className="text-[12px] text-slate-700">Team-only (requires sign-in)</span>
+              </label>
+            </div>
+            {visibility !== page.visibility && (
+              <p className="text-[10px] text-amber-600 mt-1.5">
+                {visibility === "public"
+                  ? "Switching to public removes the team restriction — anyone with the link (and PIN) will be able to open it."
+                  : "Switching to team-only immediately revokes the public link — the PIN and expiry stop applying."}
+              </p>
+            )}
+          </div>
+
+          {visibility === "public" && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Client label <span className="normal-case font-normal text-slate-300">(optional)</span></p>
+              <input value={clientLabel} onChange={e => setClientLabel(e.target.value)} placeholder="e.g. Niksen"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
+            </div>
+          )}
+
+          {visibility === "team" && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Teams</p>
+              {teamOptions.length === 0 && <p className="text-[11px] text-slate-300 italic">No teams available</p>}
+              <div className="space-y-1.5">
+                {teamOptions.map(t => (
+                  <label key={t.id} className="flex items-center gap-2.5 px-3 py-2 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                    <input type="checkbox" checked={teamIds.has(t.id)} onChange={() => toggleTeam(t.id)} className="w-4 h-4 accent-indigo-600" />
+                    <span className="text-[12px] text-slate-700">{t.team_name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {visibility === "public" && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Expiry date</p>
+              <input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} disabled={noExpiry}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none disabled:opacity-40" />
+              <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                <input type="checkbox" checked={noExpiry} onChange={e => setNoExpiry(e.target.checked)} />
+                <span className="text-[11px] text-slate-500">No expiry (not recommended — leaves this link open indefinitely)</span>
+              </label>
+            </div>
+          )}
+
+          {error && <p className="text-[11px] text-red-500">{error}</p>}
+        </div>
+        <div className="px-8 py-5 border-t border-slate-100 shrink-0">
+          <button onClick={handleSave} disabled={saving}
+            className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+            {saving ? "Saving..." : "Save changes"}
           </button>
         </div>
       </div>
