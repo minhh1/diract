@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, FileText, Download, Check, FileArchive, Lock, Ban, Layers } from "lucide-react";
 import { renderMarkdown } from "@/lib/renderMarkdown";
 import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib/publicPageCache";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Field {
   tagKey: string;
@@ -112,6 +113,12 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
   const [values, setValues] = useState<Record<string, string>>({});
   const [naFields, setNaFields] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState<"all" | string | null>(null);
+  // Embedded (inside a dashboard widget) has the app's shared top progress
+  // bar available -- drive that instead of the full-panel spinner below,
+  // which only makes sense for the standalone /public/documents/[pageId]
+  // route (no ProgressBarProvider out there, so this safely no-ops when
+  // !embedded).
+  useProgressBarWhile(loading);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [results, setResults] = useState<ResultBatch[]>([]);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -331,7 +338,8 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
   };
 
   if (loading) {
-    return <div className={embedded ? "flex items-center justify-center py-12" : "min-h-screen flex items-center justify-center bg-slate-50"}><Loader2 className="animate-spin text-slate-400" /></div>;
+    if (embedded) return null;
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-slate-400" /></div>;
   }
 
   if (error) {

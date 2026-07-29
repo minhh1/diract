@@ -27,13 +27,24 @@ import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib/publicPageCache";
+import { readCache, writeCache } from "@/lib/queryCache";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
 interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; logCellChanges: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed" }
 
 const boardCacheKey = (slug: string) => `client_update_board_${slug}`;
+// Separate from boardCacheKey above, which is the PIN-gated CLIENT path's
+// own cache (keyed by the remembered PIN -- not applicable here). Exported
+// so lib/hooks/prefetchShells.ts's bootstrap warmer can pre-fetch this
+// exact endpoint for every public_client_update_page widget across every
+// dashboard during login (under the current viewer's own staff session)
+// and seed this same slot -- this component's embedded/staff path otherwise
+// has no caching of its own at all, unlike the rest of the app's
+// dashboards/tables.
+export const staffClientUpdateCacheKey = (slug: string) => `client_update_staff_${slug}`;
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
 function getCachedCode(slug: string): string | null {
   try { return localStorage.getItem(codeCacheKey(slug)); } catch { return null; }
@@ -61,6 +72,11 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   const [staffPageId, setStaffPageId] = useState<string | null>(null);
   const [meta, setMeta] = useState<PageMeta | null>(null);
   const [board, setBoard] = useState<Board | null>(null);
+  // Embedded (inside a dashboard widget) has the app's shared top progress
+  // bar available -- drive that instead of the full-panel spinner below,
+  // which only makes sense for the standalone /public/updates/[slug] route
+  // (no ProgressBarProvider out there, so this safely no-ops when !embedded).
+  useProgressBarWhile(loading);
 
   const [needsCode, setNeedsCode] = useState(false);
   const [codeInput, setCodeInput] = useState("");
@@ -127,6 +143,16 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     setLoading(false);
   }, [fetchPublic, slug]);
 
+  // Shared by loadAsStaff's live-fetch success path and load()'s own
+  // cache-paint below, so the by-slug JSON -> PageMeta/Board mapping only
+  // lives in one place.
+  const applyStaffJson = useCallback((json: any) => {
+    setMode("staff");
+    setStaffPageId(json.page.id);
+    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind });
+    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
+  }, []);
+
   // ── Try staff auth first; anything short of a clean 200 falls back ────
   // Exception: a 'team_restricted' 403 (signed in, but not on any team this
   // page is scoped to) is handled here directly rather than falling through
@@ -141,12 +167,10 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
       return false;
     }
     const json = await res.json();
-    setMode("staff");
-    setStaffPageId(json.page.id);
-    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind });
-    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
+    applyStaffJson(json);
+    writeCache(staffClientUpdateCacheKey(slug), json);
     return true;
-  }, [slug]);
+  }, [slug, applyStaffJson]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -164,14 +188,22 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     // request to loadAsClient.
     const { data: { session } } = await supabase.auth.getSession();
     perfLog("public detailed table page: session resolved");
-    if (session?.user && await loadAsStaff()) {
-      perfLog("public detailed table page: staff data resolved");
-      setLoading(false);
-      return;
+    if (session?.user) {
+      // Paint instantly from whatever the login bootstrap (or a previous
+      // visit this session) already cached for this exact board -- see
+      // prefetchShells.ts's warmEmbeddedPublicPages. loadAsStaff() below
+      // still always runs regardless of this hit, to revalidate.
+      const cached = readCache<any>(staffClientUpdateCacheKey(slug));
+      if (cached) { applyStaffJson(cached); setLoading(false); }
+      if (await loadAsStaff()) {
+        perfLog("public detailed table page: staff data resolved");
+        setLoading(false);
+        return;
+      }
     }
     await loadAsClient();
     perfLog("public detailed table page: client data resolved");
-  }, [loadAsStaff, loadAsClient]);
+  }, [loadAsStaff, loadAsClient, slug, applyStaffJson]);
 
   // "data resolved" (above) only marks when the fetch promise landed --
   // for a large matter board that's well before MatterBoard.tsx has
@@ -544,7 +576,8 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   const reloadStaffBoard = () => { if (mode === "staff") loadAsStaff(); };
 
   if (loading) {
-    return <div className={embedded ? "flex items-center justify-center py-12" : "min-h-screen flex items-center justify-center bg-slate-50"}><Loader2 className="animate-spin text-slate-400" /></div>;
+    if (embedded) return null;
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-slate-400" /></div>;
   }
 
   if (error) {
