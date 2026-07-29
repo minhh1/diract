@@ -195,6 +195,66 @@ function invalidateTaskCache(companyId) {
   } catch(e) {}
 }
 
+// ── Cache warming ──────────────────────────────────────────────────
+// getUserCache() is scoped per (script, Google account) — a trigger only
+// ever runs as one fixed account, so it can only ever warm its OWN
+// user-cache bucket, never every real user's. getScriptCache() is instead
+// shared across every execution of the script regardless of which account
+// is running it, which is what makes pre-warming actually reach real users.
+// Only company-scoped data (never anything that varies by calling user,
+// like isAdmin or a per-assignee task list) is safe to put in here — see
+// /warm-cache's comment on the backend for the same constraint.
+var WARM_CACHE_TTL_SECONDS = 360; // comfortably longer than the 5-min trigger interval
+
+function warmCacheGet(key) {
+  try {
+    var v = CacheService.getScriptCache().get(key);
+    return v ? JSON.parse(v) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Runs on a time-based trigger (see setupWarmingTrigger) — fetches every
+// active company's card-building data in one backend call and stashes it in
+// the shared script cache, so a real user's card build hits a cache read
+// instead of a live multi-query fetch.
+function warmAddonCaches() {
+  var res = apiGet('/warm-cache', ScriptApp.getOAuthToken());
+  if (!res.ok) {
+    Logger.log('[warmAddonCaches] fetch failed: ' + JSON.stringify(res.data));
+    return;
+  }
+  var cache = CacheService.getScriptCache();
+  var companies = res.data.companies || [];
+  companies.forEach(function(c) {
+    try {
+      if (c.labelSettings) cache.put('warm_label_' + c.companyId, JSON.stringify(c.labelSettings), WARM_CACHE_TTL_SECONDS);
+      if (c.projectFields) cache.put('warm_projfields_' + c.companyId, JSON.stringify(c.projectFields), WARM_CACHE_TTL_SECONDS);
+      if (c.taskContext) cache.put('warm_taskctx_' + c.companyId, JSON.stringify(c.taskContext), WARM_CACHE_TTL_SECONDS);
+      if (c.unallocatedTasks) cache.put('warm_unalloc_' + c.companyId, JSON.stringify(c.unallocatedTasks), WARM_CACHE_TTL_SECONDS);
+    } catch (e) {
+      Logger.log('[warmAddonCaches] cache.put failed for ' + c.companyId + ': ' + e.message);
+    }
+  });
+  Logger.log('[warmAddonCaches] warmed ' + companies.length + ' companies');
+}
+
+// One-time setup — run this manually from the Apps Script editor (select
+// setupWarmingTrigger in the function dropdown, then Run) once after
+// deploying. Safe to re-run: clears any existing warmAddonCaches trigger
+// first, so repeated runs don't stack up duplicate triggers.
+function setupWarmingTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'warmAddonCaches') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('warmAddonCaches').timeBased().everyMinutes(5).create();
+  Logger.log('[setupWarmingTrigger] installed 5-minute trigger for warmAddonCaches');
+}
+
 
 
 function apiPost(path, body, token) {
@@ -568,15 +628,28 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
 
   // Every card section below reads from one of these — none depend on each
   // other, only on activeCompanyId/ctx.userId/messageId (already known), so
-  // they're fetched as a single batch instead of six sequential round trips.
+  // whatever isn't already warm is fetched as a single batch instead of one
+  // round trip after another.
   var allTasksPageSize = 20;
   var unallocatedPageSize = 20;
+
+  // These three are company-wide (not per-user), so the warming trigger
+  // (warmAddonCaches) may already have them sitting in the shared script
+  // cache — checked first since a cache hit here is effectively instant,
+  // with no network call at all. The warm copy of "unallocated" only ever
+  // covers page 0; deeper pages always go live.
+  var warmLabel = warmCacheGet('warm_label_' + activeCompanyId);
+  var warmProjFields = warmCacheGet('warm_projfields_' + activeCompanyId);
+  var warmUnalloc = unallocatedOffset === 0 ? warmCacheGet('warm_unalloc_' + activeCompanyId) : null;
+
   var mainCardSpecs = {
-    label: { path: '/label-settings?companyId=' + activeCompanyId, ttl: 60 },
-    projFields: { path: '/project-field-settings?companyId=' + activeCompanyId, ttl: 60 },
     job: { path: '/import-job-status?companyId=' + activeCompanyId },
-    unallocated: { path: '/unallocated-tasks?companyId=' + activeCompanyId + '&limit=' + unallocatedPageSize + '&offset=' + unallocatedOffset, ttl: 30 },
   };
+  if (!warmLabel) mainCardSpecs.label = { path: '/label-settings?companyId=' + activeCompanyId, ttl: 60 };
+  if (!warmProjFields) mainCardSpecs.projFields = { path: '/project-field-settings?companyId=' + activeCompanyId, ttl: 60 };
+  if (!warmUnalloc) {
+    mainCardSpecs.unallocated = { path: '/unallocated-tasks?companyId=' + activeCompanyId + '&limit=' + unallocatedPageSize + '&offset=' + unallocatedOffset, ttl: 30 };
+  }
   if (messageId) {
     mainCardSpecs.check = { path: '/check-message?messageId=' + messageId + '&companyId=' + activeCompanyId };
   }
@@ -586,7 +659,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
   }
   var mainCardRes = batchApiGet(mainCardSpecs, token);
 
-  var labelRes = mainCardRes.label;
+  var labelRes = warmLabel ? { ok: true, data: warmLabel } : mainCardRes.label;
   var labelSettings = labelRes.ok ? labelRes.data : null;
 
   var existingProject = null;
@@ -726,7 +799,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
     // Any other configured project fields (e.g. required-by-admin ones, see
     // "⚙ Settings") — the matter-number field is skipped here since it's
     // already collected above, tied to the Gmail label format.
-    var projFieldsRes = mainCardRes.projFields;
+    var projFieldsRes = warmProjFields ? { ok: true, data: warmProjFields } : mainCardRes.projFields;
     var projFields = projFieldsRes.ok ? (projFieldsRes.data.fields || []) : [];
     var blockedProjectField = null;
     for (var pfi = 0; pfi < projFields.length; pfi++) {
@@ -1006,7 +1079,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
   // Company-wide tasks with no assignee — these fall through "All My
   // Tasks" and every other per-person view, so they need somewhere to
   // surface or they're effectively invisible. Paginated 20 at a time.
-  var unallocatedRes = mainCardRes.unallocated;
+  var unallocatedRes = warmUnalloc ? { ok: true, data: warmUnalloc } : mainCardRes.unallocated;
   var unallocatedData = unallocatedRes.ok ? unallocatedRes.data : null;
 
   var unallocatedSection = CardService.newCardSection()
@@ -1466,6 +1539,13 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
   var cached = cache.get(cacheKey);
   if (cached) {
     try { ctxData = JSON.parse(cached); Logger.log('[buildTaskCardById] ctx from cache'); } catch(e) {}
+  }
+  if (!ctxData) {
+    // Nothing in this user's own cache yet — company-wide task-context is
+    // also company-scoped, not per-user, so the warming trigger may
+    // already have it sitting in the shared script cache.
+    ctxData = warmCacheGet('warm_taskctx_' + companyId);
+    if (ctxData) Logger.log('[buildTaskCardById] ctx from warm cache');
   }
 
   // ── Fetch tasks (always fresh) ────────────────────────────────────

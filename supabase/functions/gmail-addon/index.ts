@@ -257,6 +257,191 @@ async function matterNumbersForProjects(companyId: string, projectIds: string[])
   return Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || '']));
 }
 
+// Company-scoped Gmail label settings — no calling-user data in here
+// (isAdmin is layered on by /label-settings itself), so this is safe to
+// share verbatim across every user of a company via /warm-cache.
+async function getLabelSettingsCore(companyId: string): Promise<{ parentLabel: string; parentCode: string; separator: string; tokens: string[] } | null> {
+  const { data: company } = await db
+    .from('companies')
+    .select('gmail_label_format, gmail_parent_label, gmail_parent_code, gmail_sublabel_separator, gmail_label_tokens, gmail_source_emails')
+    .eq('id', companyId)
+    .single();
+  if (!company) return null;
+  return {
+    parentLabel: company.gmail_parent_label || 'Shared Emails',
+    parentCode: company.gmail_parent_code || '',
+    separator: company.gmail_sublabel_separator || ' — ',
+    tokens: company.gmail_label_tokens || ['project_name'],
+  };
+}
+
+// Company-scoped project custom-field settings — likewise no calling-user
+// data (isAdmin is layered on by /project-field-settings itself).
+async function getProjectFieldsCore(companyId: string): Promise<{ fields: any[] }> {
+  const { data: fields } = await db
+    .from('company_custom_fields')
+    .select('id, field_key, label, field_type, is_required, is_unique, select_options, display_order')
+    .eq('company_id', companyId)
+    .eq('table_name', 'projects')
+    .is('deleted_at', null)
+    .order('display_order');
+
+  return {
+    fields: (fields || []).map((f: any) => ({
+      id: f.id,
+      fieldKey: f.field_key,
+      label: f.label,
+      fieldType: f.field_type,
+      isRequired: f.is_required,
+      isUnique: f.is_unique,
+      selectOptions: f.select_options || [],
+      isRelationType: isRelationFieldType(f.field_type),
+      isResolvableRelation: isResolvableRelationType(f.field_type),
+    })),
+  };
+}
+
+// Company-scoped task-building blocks (profiles/statuses/teams/templates) —
+// nothing here varies per calling user, so it's shared as-is via /warm-cache.
+async function getTaskContextCore(companyId: string) {
+  const [
+    { data: members, error: membersErr },
+    { data: statuses },
+    { data: teams, error: teamsErr },
+    { data: templates },
+  ] = await Promise.all([
+    db.from('company_memberships')
+      .select('user_id')
+      .eq('company_id', companyId),
+    db.from('task_statuses')
+      .select('id, label, color_hex')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true }),
+    db.from('teams')
+      .select('id, team_name')
+      .eq('company_id', companyId)
+      .eq('is_active', true),
+    db.from('checklist_templates')
+      .select('id, name, items:checklist_template_items(id, title, due_offset_days, due_anchor, assignee_id, assigned_team_id, is_monetary, estimated_cost, display_order)')
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: true }),
+  ]);
+
+  if (membersErr) console.error('[task-context] members error:', membersErr.message);
+  if (teamsErr) console.error('[task-context] teams error:', teamsErr.message);
+
+  const userIds = (members || []).map((m: any) => m.user_id);
+  const { data: profileRows, error: profilesErr } = await db
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', userIds.length ? userIds : ['00000000-0000-0000-0000-000000000000']);
+
+  if (profilesErr) console.error('[task-context] profiles error:', profilesErr.message);
+  const profiles = profileRows || [];
+
+  const sortedTemplates = (templates || []).map((t: any) => ({
+    ...t,
+    items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
+  }));
+
+  return {
+    profiles,
+    statuses: statuses || [],
+    teams: teams || [],
+    templates: sortedTemplates,
+    reminderOptions: [
+      { value: 'none', label: 'No reminder' },
+      { value: '15min', label: '15 minutes before' },
+      { value: '30min', label: '30 minutes before' },
+      { value: '1hour', label: '1 hour before' },
+      { value: '2hours', label: '2 hours before' },
+      { value: '1day', label: '1 day before' },
+      { value: '2days', label: '2 days before' },
+      { value: '1week', label: '1 week before' },
+    ],
+  };
+}
+
+// Company-wide unallocated tasks — no calling-user data, shared as-is via
+// /warm-cache (only page 0 is worth pre-warming; deeper pages stay live).
+async function getUnallocatedTasksCore(companyId: string, limit: number, offset: number): Promise<{ tasks: any[]; limit: number; offset: number; totalCount: number | null; error?: string }> {
+  const [
+    { data: tasks, error: tasksErr },
+    { count: totalCount },
+  ] = await Promise.all([
+    db.from('tasks')
+      .select(`
+        id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
+        status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar,
+        project_id,
+        projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
+        teams:assigned_team_id(team_name),
+        task_statuses:status_id(label, color_hex),
+        creator:created_by(full_name, email)
+      `)
+      .eq('company_id', companyId)
+      .is('assignee_id', null)
+      .eq('is_completed', false)
+      .is('deleted_at', null)
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('due_time', { ascending: true, nullsFirst: false })
+      .range(offset, offset + limit - 1),
+    db.from('tasks').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).is('assignee_id', null).eq('is_completed', false).is('deleted_at', null),
+  ]);
+
+  if (tasksErr) return { tasks: [], limit, offset, totalCount: null, error: tasksErr.message };
+
+  const taskIds = (tasks || []).map((t: any) => t.id);
+  const projectIds: string[] = [...new Set<string>((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
+  const [
+    { counts: followUpCounts, scheduled: scheduledFollowUpDates },
+    watchersByTask,
+    matterByProject,
+  ] = await Promise.all([
+    followUpSummary(taskIds),
+    watchersByTaskIds(taskIds),
+    matterNumbersForProjects(companyId, projectIds),
+  ]);
+
+  return {
+    tasks: (tasks || []).map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      isCompleted: t.is_completed,
+      dueDate: t.due_date,
+      dueTime: t.due_time,
+      projectId: t.project_id,
+      projectName: t.projects?.name || null,
+      matterNumber: t.project_id ? matterByProject[t.project_id] || null : null,
+      labelName: t.projects?.project_gmail_labels?.[0]?.gmail_label_name || null,
+      labelCode: t.projects?.project_gmail_labels?.[0]?.label_code || null,
+      assignedTeamId: t.assigned_team_id,
+      assignedTeam: t.teams?.team_name || null,
+      statusId: t.status_id,
+      status: t.task_statuses?.label || null,
+      statusColor: t.task_statuses?.color_hex || null,
+      isMonetary: t.is_monetary,
+      estimatedCost: t.estimated_cost,
+      createdBy: t.creator?.full_name || t.creator?.email || null,
+      awaitingFollowUp: t.awaiting_follow_up,
+      followUpDate: t.follow_up_date,
+      followUpCount: followUpCounts[t.id] || 0,
+      scheduledFollowUpDate: scheduledFollowUpDates[t.id] || null,
+      notes: t.notes,
+      sourceMessageId: t.source_message_id,
+      sourceEmailSubject: t.source_email_subject,
+      sourceEmailBody: t.source_email_body,
+      calendarTarget: t.calendar_target,
+      syncToCompanyCalendar: t.sync_to_company_calendar,
+      watchers: watchersByTask[t.id] || [],
+    })),
+    limit,
+    offset,
+    totalCount,
+  };
+}
+
 // Reconciles a task's watcher list to exactly `newIds`, logging the diff.
 async function saveWatchers(taskId: string, companyId: string, newIds: string[], actorEmail: string): Promise<void> {
   const { data: existing } = await db.from('task_watchers').select('profile_id').eq('task_id', taskId);
@@ -356,18 +541,48 @@ Deno.serve(async (req) => {
       return json({ ok: true, companyName: company?.name }, 200, headers);
     }
 
+    // ── GET /warm-cache ─────────────────────────────────────────────
+    // Called by the add-on's own time-based trigger (warmAddonCaches in
+    // gmail-addon.gs), not by any user action — bulk-fetches the
+    // company-scoped (never per-calling-user) data every real card build
+    // reads, for every company with at least one connected Gmail user, so
+    // the trigger's script-wide cache is warm before anyone opens the
+    // add-on. Deliberately excludes anything that varies per calling user
+    // (isAdmin, per-assignee task lists) — those still need their own
+    // live/per-user-cached fetch.
+    if (req.method === 'GET' && path === '/warm-cache') {
+      const { data: connections } = await db
+        .from('user_gmail_tokens')
+        .select('user_id');
+      const connectedUserIds = [...new Set((connections || []).map((c: any) => c.user_id))];
+      if (!connectedUserIds.length) return json({ companies: [] }, 200, headers);
+
+      const { data: memberships } = await db
+        .from('company_memberships')
+        .select('company_id')
+        .in('user_id', connectedUserIds);
+      const companyIds: string[] = [...new Set<string>((memberships || []).map((m: any) => m.company_id))];
+
+      const companies = await Promise.all(companyIds.map(async (companyId) => {
+        const [labelSettings, projectFields, taskContext, unallocatedTasks] = await Promise.all([
+          getLabelSettingsCore(companyId),
+          getProjectFieldsCore(companyId),
+          getTaskContextCore(companyId),
+          getUnallocatedTasksCore(companyId, 20, 0),
+        ]);
+        return { companyId, labelSettings, projectFields, taskContext, unallocatedTasks };
+      }));
+
+      return json({ companies }, 200, headers);
+    }
+
     // ── GET /label-settings ────────────────────────────────────────
     if (req.method === 'GET' && path === '/label-settings') {
       const companyId = url.searchParams.get('companyId') || '';
       if (!companyId) return json({ error: 'Missing companyId' }, 400, headers);
 
-      const { data: company } = await db
-        .from('companies')
-        .select('gmail_label_format, gmail_parent_label, gmail_parent_code, gmail_sublabel_separator, gmail_label_tokens, gmail_source_emails')
-        .eq('id', companyId)
-        .single();
-
-      if (!company) return json({ error: 'Company not found' }, 404, headers);
+      const labelSettings = await getLabelSettingsCore(companyId);
+      if (!labelSettings) return json({ error: 'Company not found' }, 404, headers);
 
       const { data: profile } = await db
         .from('profiles').select('id').eq('email', userEmail).single();
@@ -375,10 +590,7 @@ Deno.serve(async (req) => {
         .from('company_memberships').select('role').eq('user_id', profile?.id).eq('company_id', companyId).single();
 
       return json({
-        parentLabel: company.gmail_parent_label || 'Shared Emails',
-        parentCode: company.gmail_parent_code || '',
-        separator: company.gmail_sublabel_separator || ' — ',
-        tokens: company.gmail_label_tokens || ['project_name'],
+        ...labelSettings,
         isAdmin: mem?.role === 'company_admin',
       }, 200, headers);
     }
@@ -867,30 +1079,12 @@ Deno.serve(async (req) => {
       const companyId = url.searchParams.get('companyId') || '';
       if (!companyId) return json({ error: 'Missing companyId' }, 400, headers);
 
-      const { data: fields } = await db
-        .from('company_custom_fields')
-        .select('id, field_key, label, field_type, is_required, is_unique, select_options, display_order')
-        .eq('company_id', companyId)
-        .eq('table_name', 'projects')
-        .is('deleted_at', null)
-        .order('display_order');
+      const [projectFields, isAdmin] = await Promise.all([
+        getProjectFieldsCore(companyId),
+        isCompanyAdmin(userEmail, companyId),
+      ]);
 
-      const isAdmin = await isCompanyAdmin(userEmail, companyId);
-
-      return json({
-        isAdmin,
-        fields: (fields || []).map((f: any) => ({
-          id: f.id,
-          fieldKey: f.field_key,
-          label: f.label,
-          fieldType: f.field_type,
-          isRequired: f.is_required,
-          isUnique: f.is_unique,
-          selectOptions: f.select_options || [],
-          isRelationType: isRelationFieldType(f.field_type),
-          isResolvableRelation: isResolvableRelationType(f.field_type),
-        })),
-      }, 200, headers);
+      return json({ isAdmin, ...projectFields }, 200, headers);
     }
 
     // ── POST /project-field-settings ────────────────────────────────
@@ -2254,69 +2448,7 @@ Deno.serve(async (req) => {
 
     if (req.method === 'GET' && path === '/task-context') {
       const companyId = url.searchParams.get('companyId') || '';
-
-      const [
-        { data: members, error: membersErr },
-        { data: statuses },
-        { data: teams, error: teamsErr },
-        { data: templates },
-      ] = await Promise.all([
-        db.from('company_memberships')
-          .select('user_id')
-          .eq('company_id', companyId),
-        db.from('task_statuses')
-          .select('id, label, color_hex')
-          .eq('is_active', true)
-          .order('display_order', { ascending: true }),
-        db.from('teams')
-          .select('id, team_name')
-          .eq('company_id', companyId)
-          .eq('is_active', true),
-        db.from('checklist_templates')
-          .select('id, name, items:checklist_template_items(id, title, due_offset_days, due_anchor, assignee_id, assigned_team_id, is_monetary, estimated_cost, display_order)')
-          .eq('company_id', companyId)
-          .order('created_at', { ascending: true }),
-      ]);
-
-      if (membersErr) console.error('[task-context] members error:', membersErr.message);
-      if (teamsErr) console.error('[task-context] teams error:', teamsErr.message);
-
-      // Fetch profiles separately for each member
-      const userIds = (members || []).map((m: any) => m.user_id);
-      const { data: profileRows, error: profilesErr } = await db
-        .from('profiles')
-        .select('id, full_name, email')
-        .in('id', userIds.length ? userIds : ['00000000-0000-0000-0000-000000000000']);
-
-      if (profilesErr) console.error('[task-context] profiles error:', profilesErr.message);
-      const profiles = profileRows || [];
-
-      console.log(`[task-context] companyId=${companyId} userIds=${userIds.length} profiles=${profiles.length} teams=${teams?.length} templates=${templates?.length}`);
-      if (profiles.length) console.log(`[task-context] sample profile: ${JSON.stringify(profiles[0])}`);
-      if (teams?.length) console.log(`[task-context] sample team: ${JSON.stringify(teams[0])}`);
-
-      // Sort template items
-      const sortedTemplates = (templates || []).map((t: any) => ({
-        ...t,
-        items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
-      }));
-
-      return json({
-        profiles,
-        statuses: statuses || [],
-        teams: teams || [],
-        templates: sortedTemplates,
-        reminderOptions: [
-          { value: 'none', label: 'No reminder' },
-          { value: '15min', label: '15 minutes before' },
-          { value: '30min', label: '30 minutes before' },
-          { value: '1hour', label: '1 hour before' },
-          { value: '2hours', label: '2 hours before' },
-          { value: '1day', label: '1 day before' },
-          { value: '2days', label: '2 days before' },
-          { value: '1week', label: '1 week before' },
-        ],
-      }, 200, headers);
+      return json(await getTaskContextCore(companyId), 200, headers);
     }
 
     // ── GET /all-tasks ──────────────────────────────────────────────
@@ -2422,81 +2554,9 @@ Deno.serve(async (req) => {
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '20') || 20, 100);
       const offset = Math.max(parseInt(url.searchParams.get('offset') || '0') || 0, 0);
 
-      const [
-        { data: tasks, error: tasksErr },
-        { count: totalCount },
-      ] = await Promise.all([
-        db.from('tasks')
-          .select(`
-            id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
-            status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar,
-            project_id,
-            projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
-            teams:assigned_team_id(team_name),
-            task_statuses:status_id(label, color_hex),
-            creator:created_by(full_name, email)
-          `)
-          .eq('company_id', companyId)
-          .is('assignee_id', null)
-          .eq('is_completed', false)
-          .is('deleted_at', null)
-          .order('due_date', { ascending: true, nullsFirst: false })
-          .order('due_time', { ascending: true, nullsFirst: false })
-          .range(offset, offset + limit - 1),
-        db.from('tasks').select('id', { count: 'exact', head: true })
-          .eq('company_id', companyId).is('assignee_id', null).eq('is_completed', false).is('deleted_at', null),
-      ]);
-
-      if (tasksErr) return json({ error: tasksErr.message }, 500, headers);
-
-      const taskIds = (tasks || []).map((t: any) => t.id);
-      const projectIds: string[] = [...new Set<string>((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
-      const [
-        { counts: followUpCounts, scheduled: scheduledFollowUpDates },
-        watchersByTask,
-        matterByProject,
-      ] = await Promise.all([
-        followUpSummary(taskIds),
-        watchersByTaskIds(taskIds),
-        matterNumbersForProjects(companyId, projectIds),
-      ]);
-
-      return json({
-        tasks: (tasks || []).map((t: any) => ({
-          id: t.id,
-          name: t.name,
-          isCompleted: t.is_completed,
-          dueDate: t.due_date,
-          dueTime: t.due_time,
-          projectId: t.project_id,
-          projectName: t.projects?.name || null,
-          matterNumber: t.project_id ? matterByProject[t.project_id] || null : null,
-          labelName: t.projects?.project_gmail_labels?.[0]?.gmail_label_name || null,
-          labelCode: t.projects?.project_gmail_labels?.[0]?.label_code || null,
-          assignedTeamId: t.assigned_team_id,
-          assignedTeam: t.teams?.team_name || null,
-          statusId: t.status_id,
-          status: t.task_statuses?.label || null,
-          statusColor: t.task_statuses?.color_hex || null,
-          isMonetary: t.is_monetary,
-          estimatedCost: t.estimated_cost,
-          createdBy: t.creator?.full_name || t.creator?.email || null,
-          awaitingFollowUp: t.awaiting_follow_up,
-          followUpDate: t.follow_up_date,
-          followUpCount: followUpCounts[t.id] || 0,
-          scheduledFollowUpDate: scheduledFollowUpDates[t.id] || null,
-          notes: t.notes,
-          sourceMessageId: t.source_message_id,
-          sourceEmailSubject: t.source_email_subject,
-          sourceEmailBody: t.source_email_body,
-          calendarTarget: t.calendar_target,
-          syncToCompanyCalendar: t.sync_to_company_calendar,
-          watchers: watchersByTask[t.id] || [],
-        })),
-        limit,
-        offset,
-        totalCount,
-      }, 200, headers);
+      const result = await getUnallocatedTasksCore(companyId, limit, offset);
+      if (result.error) return json({ error: result.error }, 500, headers);
+      return json(result, 200, headers);
     }
 
     // ── POST /apply-template ───────────────────────────────────────
