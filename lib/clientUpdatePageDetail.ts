@@ -359,19 +359,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const entityById = new Map<string, any>((relatedEntities || []).map((e: any) => [e.id, e]));
   const projectPropertyValueByKey = new Map<string, any>((projectPropertyValues || []).map((v: any) => [`${v.field_id}:${v.project_property_id}`, v]));
 
-  // Which trust each related entity is trustee FOR, if any -- looked up
-  // live (not stored on the value) so a link made/changed later via
-  // TrustLinkField.tsx is always reflected here, the same "(as trustee for
-  // <trust>)" a RelationPicker shows at selection time (see
-  // fetchAllSystemTableOptions's identical query).
-  const { data: trustLinks } = relatedEntityIds.length
-    ? await admin.from("entity_relationships")
-        .select("child_entity_id, trust:parent_entity_id(name)")
-        .in("child_entity_id", relatedEntityIds).eq("relationship_type", "Trustee")
-        .or("is_current.is.null,is_current.eq.true")
-    : { data: [] as any[] };
-  const trustNameByEntityId = new Map<string, string>((trustLinks || []).filter((r: any) => r.trust?.name).map((r: any) => [r.child_entity_id, r.trust.name]));
-
   function resolveProjectPropertyField(field: any, projectId: string, propertyId: string | undefined): any {
     if (!propertyId) return null;
     const projectPropertyId = projectPropertyIdByPair.get(`${projectId}:${propertyId}`);
@@ -397,7 +384,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       if (field.field_type === "entity" && v.value_record_id) {
         const entity = entityById.get(v.value_record_id);
         if (!entity) return "(deleted)";
-        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee${trustNameByEntityId.has(v.value_record_id) ? ` for ${trustNameByEntityId.get(v.value_record_id)}` : ""})` : (entity.name ?? "");
+        return entity.name ?? "";
       }
       if (field.field_type === "property" && v.value_record_id) {
         const relatedProperty = propertyById.get(v.value_record_id);
@@ -428,7 +415,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       if (field.field_type === "entity" && v.value_record_id) {
         const entity = entityById.get(v.value_record_id);
         if (!entity) return "(deleted)";
-        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee${trustNameByEntityId.has(v.value_record_id) ? ` for ${trustNameByEntityId.get(v.value_record_id)}` : ""})` : (entity.name ?? "");
+        return entity.name ?? "";
       }
       if (field.field_type === "property" && v.value_record_id) {
         const property = propertyById.get(v.value_record_id);
@@ -531,6 +518,29 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     return null;
   }
 
+  // Sibling to resolveRelationId above, same 2 branches that actually have
+  // a value_record_capacity column (company_custom_field_values -- custom
+  // tables' company_table_values has no such column, so isCustomTable is
+  // deliberately not covered here). Exposed as item.relationCapacities,
+  // read by RelationPicker to know whether to show its "as trustee"
+  // affordance for the currently-selected value -- see
+  // supabase/migrations/20260729430000_relation_value_capacity.sql.
+  function resolveRelationCapacity(field: any, item: any): string | null {
+    const rid = recordId(item);
+    if (field.field_source === "custom") {
+      if (field.field_type !== "entity" && field.field_type !== "property") return null;
+      const v = customValueByKey.get(`${field.field_key}:${rid}`);
+      return v?.value_record_capacity || null;
+    }
+    if (field.field_source === "property" && (field.field_type === "entity" || field.field_type === "property")) {
+      const [, key] = field.field_key.split(":");
+      const propIds = propertyIdsByProject.get(rid) || [];
+      const v = propertyCustomValueByKey.get(`${key}:${propIds[0]}`);
+      return v?.value_record_capacity || null;
+    }
+    return null;
+  }
+
   // Attaches where a relation-type field's picker should search/create --
   // 'entity'/'property'/'project' always point at their same-named system
   // table (true whether the field is a company_custom_fields row on a
@@ -564,6 +574,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       matterName: i.display_name || displayNameById.get(rid) || "",
       values: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveValue(f, i)])),
       relationIds: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveRelationId(f, i)])),
+      relationCapacities: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveRelationCapacity(f, i)])),
       notes: notesByItem.get(i.id) || [],
       emails: emailsByItem.get(i.id) || [],
       properties: baseTable === "projects"

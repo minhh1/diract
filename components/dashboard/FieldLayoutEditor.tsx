@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { GripVertical, X, Minus, Plus, Search, ExternalLink, Pencil, ArrowUpRight, ChevronDown } from "lucide-react";
+import { GripVertical, X, Minus, Plus, Search, ExternalLink, Pencil, ArrowUpRight, ChevronDown, Maximize2, Minimize2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getFieldLabel } from "@/lib/fieldLabels";
@@ -251,6 +251,12 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   const [saving, setSaving]         = useState(false);
   const [showModal, setShowModal]   = useState(false);
   const [editingLinked, setEditingLinked] = useState<LinkedItem | null>(null);
+  // Session-only display preference, same "truncate by default, toggle to
+  // see the whole thing" convention as MatterBoard.tsx's spreadsheet
+  // columns -- a field's own column width here can be much narrower than
+  // its value (e.g. a full legal entity name), and this grid has no
+  // horizontal scroll to fall back on the way a table does.
+  const [expanded, setExpanded] = useState(false);
 
   // Determine the dashboard path for a linked item
   const getLinkedPath = (item: LinkedItem) => {
@@ -507,16 +513,26 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
           </button>
         </div>
       ) : (
-        <button onClick={() => { setEditing(true); setDraft(value ?? ''); }}
-          title={dv && field.fieldType !== 'url' ? dv : undefined}
-          className="flex items-center gap-2 group/field text-left w-full min-w-0">
-          <span className={`block truncate text-[14px] font-medium transition-colors ${dv ? 'text-slate-800 group-hover/field:text-indigo-600' : 'text-slate-300 italic'}`}>
+        <div onClick={() => { setEditing(true); setDraft(value ?? ''); }}
+          title={dv && field.fieldType !== 'url' && !expanded ? dv : undefined}
+          className="flex items-center gap-1.5 group/field text-left w-full min-w-0 cursor-pointer">
+          <span className={`text-[14px] font-medium transition-colors min-w-0 ${expanded ? '' : 'block truncate'} ${dv ? 'text-slate-800 group-hover/field:text-indigo-600' : 'text-slate-300 italic'}`}>
             {field.fieldType === 'url' && dv
               ? <a href={dv} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
                   className="text-indigo-600 hover:underline text-[13px]">{dv}</a>
               : dv || 'Click to edit'}
           </span>
-        </button>
+          {/* Same "only offer the toggle when it's actually needed" rule as
+              MatterBoard.tsx's spreadsheet columns -- a short value never
+              shows this, avoiding a useless icon on every field. */}
+          {dv && dv.length > 40 && (
+            <button type="button" onClick={e => { e.stopPropagation(); setExpanded(x => !x); }}
+              title={expanded ? 'Shrink' : 'Show full value'}
+              className="shrink-0 text-slate-300 hover:text-indigo-600 transition-colors">
+              {expanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

@@ -58,7 +58,7 @@ function isRelationField(field: MatterBoardField): boolean {
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
 export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
 export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; }
-export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
+export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
@@ -1153,7 +1153,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
         <div className="border-t border-slate-100 px-4 py-4 space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {fields.map(f => (
-              <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
+              <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
                 onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
@@ -1174,7 +1174,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   );
 }
 
-function ValueCell({ field, value, relationId, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; dateFormat: string; editable: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
+function ValueCell({ field, value, relationId, relationCapacity, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; dateFormat: string; editable: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1196,7 +1196,7 @@ function ValueCell({ field, value, relationId, dateFormat, editable: editablePro
         {labelRow}
         {editable ? (
           <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-            value={relationId ?? null} initialLabel={value ?? undefined} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
+            value={relationId ?? null} initialLabel={value ?? undefined} initialCapacity={relationCapacity} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
         ) : (
           <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">—</span>}</p>
         )}
@@ -1504,7 +1504,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 </td>
               )}
               {fields.map((f, i) => (
-                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
                   onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
               ))}
@@ -1553,7 +1553,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   );
 }
 
-function SpreadsheetCell({ field, value, relationId, expanded, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; expanded?: boolean; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
+function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; expanded?: boolean; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1581,8 +1581,17 @@ function SpreadsheetCell({ field, value, relationId, expanded, dateFormat, edita
       <td className={`group px-4 py-4 ${editable ? "hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
         <span className="inline-flex items-center gap-1.5 min-w-[100px]">
           {editable ? (
-            <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-              value={relationId ?? null} initialLabel={value ?? undefined} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
+            // Same cap as the read-only truncateClass span below -- without
+            // it, RelationPicker renders at its natural (unbounded) width,
+            // so a long entity name (or one with the "as trustee" suffix
+            // below) could make this column, and the whole horizontally-
+            // scrolling table, far wider than intended. expanded (the
+            // header's own toggle -- see SpreadsheetView) lifts the cap the
+            // same way it already does for every other column.
+            <div className={expanded ? "" : "max-w-[220px]"}>
+              <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
+                value={relationId ?? null} initialLabel={value ?? undefined} initialCapacity={relationCapacity} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
+            </div>
           ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "—"}</span>}
           {historyButton}
         </span>

@@ -25,11 +25,6 @@ interface RelationOption {
   // prompt in selectOption below -- never part of label/searchText, purely
   // a selection-time signal.
   hasTrusteeRole?: boolean;
-  // entities only -- the trust this entity is ALREADY linked as trustee
-  // for (TrustLinkField.tsx), if any. Lets the capacity prompt read "as
-  // trustee for <trust>" instead of a bare "as trustee" once that link
-  // exists; still just "as trustee" (no name) when it doesn't yet.
-  trustName?: string | null;
 }
 
 // The two role values that make an entity a trustee -- kept in sync with
@@ -183,6 +178,12 @@ interface Props {
   // grid). Only ever used to seed the initial label -- if `value` changes
   // later without a matching prop update, the normal fetch path resolves it.
   initialLabel?: string;
+  // Seeds the "as trustee" affordance the same way initialLabel seeds the
+  // label -- 'Trustee' when this value was picked/saved with that capacity
+  // (see supabase/migrations/20260729430000_relation_value_capacity.sql),
+  // null/undefined otherwise. Single-select, linkedSystemTable="entities"
+  // only; ignored everywhere else.
+  initialCapacity?: string | null;
   // Visual size (padding/text) -- see lib/dashboardWidgets/pillSize.ts.
   // Undefined means 'md', the size every existing caller already renders at.
   size?: PillSize;
@@ -346,20 +347,6 @@ async function fetchAllSystemTableOptions(
   const { data: rows } = await q;
   const ids = (rows || []).map((r: any) => r.id);
 
-  // Which trust each candidate is trustee FOR, if any -- entities only,
-  // batched alongside roles above. Lets the capacity prompt say "as
-  // trustee for <trust>" instead of just "as trustee" when the link
-  // already exists (see TrustLinkField.tsx, the place that sets it).
-  const trustNameById = new Map<string, string>();
-  if (isEntities && ids.length) {
-    const { data: trustRows } = await supabase
-      .from('entity_relationships')
-      .select('child_entity_id, trust:parent_entity_id(name)')
-      .in('child_entity_id', ids).eq('relationship_type', 'Trustee')
-      .or('is_current.is.null,is_current.eq.true');
-    (trustRows || []).forEach((r: any) => { if (r.trust?.name) trustNameById.set(r.child_entity_id, r.trust.name); });
-  }
-
   // Every cf: field this option list needs a value for (search fields plus
   // a cf: displayField2), resolved in one batched query per distinct field
   // id -- same batching approach as resolveRelationLabels in
@@ -391,7 +378,7 @@ async function fetchAllSystemTableOptions(
     ].filter((v): v is string | number => v !== null && v !== undefined);
     return {
       id: r.id, label, searchText: searchParts.join(' ').toLowerCase(),
-      ...(isEntities ? { hasTrusteeRole: (r.roles || []).some((role: string) => TRUSTEE_ROLE_TYPES.includes(role)), trustName: trustNameById.get(r.id) ?? null } : {}),
+      ...(isEntities ? { hasTrusteeRole: (r.roles || []).some((role: string) => TRUSTEE_ROLE_TYPES.includes(role)) } : {}),
     };
   });
 }
@@ -474,7 +461,7 @@ export function invalidateEntityRelationCache(): void {
 
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
-  value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md', variant = 'pill',
+  value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, initialCapacity, size = 'md', variant = 'pill',
   allowCreateEntity, allowCreateNew, autoSelectSelf = true, clearLabel,
 }: Props) {
   // allowCreateEntity keeps its original entities-only behavior untouched;
@@ -510,6 +497,16 @@ export default function RelationPicker({
   const [fullOptions, setFullOptions] = useState<RelationOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentLabel, setCurrentLabel] = useState(initialLabel ?? '');
+  // 'Trustee' or null -- see the Props doc comment on initialCapacity.
+  // Drives the underlined "as trustee" affordance in the closed-state
+  // label; the trust's actual name is deliberately NOT fetched/shown here
+  // -- it's fetched on demand (loadTrustName below) only when the user
+  // clicks that affordance, keeping this component's normal render/fetch
+  // path untouched for every value that doesn't need it.
+  const [capacity, setCapacity] = useState<string | null>(initialCapacity ?? null);
+  const [showTrustPopover, setShowTrustPopover] = useState(false);
+  const [trustPopoverName, setTrustPopoverName] = useState<string | null>(null);
+  const [trustPopoverLoading, setTrustPopoverLoading] = useState(false);
   // Multi-select mode only -- id -> resolved label, for rendering chips.
   // Options already carry their own label once fetched/searched, so this
   // only needs to cover ids selected before their label was ever seen in
@@ -715,7 +712,7 @@ export default function RelationPicker({
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) { setOpen(false); setQuery(''); setPendingCapacityOpt(null); }
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) { setOpen(false); setQuery(''); setPendingCapacityOpt(null); setShowTrustPopover(false); }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -738,13 +735,36 @@ export default function RelationPicker({
   // Finalizes a pick with a specific capacity -- shared by selectOption
   // below (the no-ambiguity path) and the capacity-prompt buttons rendered
   // when pendingCapacityOpt is set.
-  const finalizeSelection = (opt: RelationOption, capacity: string | null) => {
-    setCurrentLabel(capacity ? `${opt.label} (as trustee${opt.trustName ? ` for ${opt.trustName}` : ''})` : opt.label);
+  const finalizeSelection = (opt: RelationOption, pickedCapacity: string | null) => {
+    setCurrentLabel(opt.label);
+    setCapacity(pickedCapacity);
+    setTrustPopoverName(null);
     resolvedForRef.current = opt.id;
-    onSelect?.(opt.id, opt.label, capacity);
+    onSelect?.(opt.id, opt.label, pickedCapacity);
     setQuery('');
     setOpen(false);
     setPendingCapacityOpt(null);
+  };
+
+  // "as trustee" is shown as a click-to-reveal affordance, not baked into
+  // the label -- which trust stays out of the label text (that's what made
+  // Property Owner too wide) but is still one click away rather than
+  // hidden entirely. Not cached (unlike the options/label fetches above)
+  // -- a single lightweight row lookup, fired only on an explicit click,
+  // and always-fresh matters more here than saving a round trip, since the
+  // link can change independently via TrustLinkField.tsx.
+  const toggleTrustPopover = async () => {
+    if (showTrustPopover) { setShowTrustPopover(false); return; }
+    setShowTrustPopover(true);
+    if (!value) { setTrustPopoverName(null); return; }
+    setTrustPopoverLoading(true);
+    const { data } = await supabase.from('entity_relationships')
+      .select('trust:parent_entity_id(name)')
+      .eq('child_entity_id', value).eq('relationship_type', 'Trustee')
+      .or('is_current.is.null,is_current.eq.true')
+      .maybeSingle();
+    setTrustPopoverName((data as any)?.trust?.name || null);
+    setTrustPopoverLoading(false);
   };
 
   // Shared by the option click handler and the Tab/Enter-with-one-match
@@ -1021,23 +1041,40 @@ export default function RelationPicker({
             className="w-full bg-transparent outline-none"
           />
         ) : (
-          <span
-            title={currentLabel || undefined}
-            className={`truncate ${currentLabel ? 'text-slate-700' : 'text-slate-400'}`}
-          >
-            {currentLabel || placeholder || (plain ? '' : 'Select...')}
+          <span className="flex items-center gap-1 min-w-0">
+            <span
+              title={currentLabel || undefined}
+              className={`truncate ${currentLabel ? 'text-slate-700' : 'text-slate-400'}`}
+            >
+              {currentLabel || placeholder || (plain ? '' : 'Select...')}
+            </span>
+            {capacity === 'Trustee' && (
+              <button type="button" onClick={e => { e.stopPropagation(); toggleTrustPopover(); }}
+                className="shrink-0 underline decoration-dotted text-slate-400 hover:text-indigo-600 transition-colors">
+                as trustee
+              </button>
+            )}
           </span>
         )}
         {currentLabel && !open && (
           <button
             type="button"
-            onClick={e => { e.stopPropagation(); setCurrentLabel(''); resolvedForRef.current = null; userClearedRef.current = true; onSelect?.(null, null); }}
+            onClick={e => { e.stopPropagation(); setCurrentLabel(''); setCapacity(null); setShowTrustPopover(false); resolvedForRef.current = null; userClearedRef.current = true; onSelect?.(null, null); }}
             className="text-slate-300 hover:text-red-500 shrink-0"
           >
             <X size={12} />
           </button>
         )}
       </div>
+
+      {showTrustPopover && !open && (
+        <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 px-3 py-2 min-w-[160px]">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Trust</p>
+          <p className="text-[12px] font-medium text-slate-700">
+            {trustPopoverLoading ? <Loader2 size={12} className="animate-spin text-slate-300" /> : (trustPopoverName || <span className="text-slate-300 italic">No trust linked</span>)}
+          </p>
+        </div>
+      )}
 
       {open && pendingCapacityOpt && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-indigo-200 rounded-2xl shadow-xl z-50 p-3 space-y-2">
@@ -1048,7 +1085,7 @@ export default function RelationPicker({
           </button>
           <button type="button" onClick={() => finalizeSelection(pendingCapacityOpt, 'Trustee')}
             className="w-full text-left px-3 py-2 text-[12px] font-medium text-slate-700 rounded-xl hover:bg-indigo-50 transition-colors">
-            {pendingCapacityOpt.label} <span className="text-slate-400">(as trustee{pendingCapacityOpt.trustName ? ` for ${pendingCapacityOpt.trustName}` : ''})</span>
+            {pendingCapacityOpt.label} <span className="text-slate-400">(as trustee)</span>
           </button>
           <button type="button" onClick={() => setPendingCapacityOpt(null)}
             className="w-full text-left px-3 py-1 text-[11px] text-slate-400 hover:text-slate-600">Back</button>
