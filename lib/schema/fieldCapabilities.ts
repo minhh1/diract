@@ -25,6 +25,8 @@ export const DATE_FIELD_TYPES: FieldType[] = ['date'];
 
 const CAPABILITIES: Record<FieldType, FieldCapability[]> = {
   text:     ['countable', 'filterable-equality', 'filterable-text', 'chart-axis-categorical'],
+  abn:      ['countable', 'filterable-equality', 'filterable-text', 'chart-axis-categorical'],
+  acn:      ['countable', 'filterable-equality', 'filterable-text', 'chart-axis-categorical'],
   number:   ['numeric-aggregatable', 'countable', 'filterable-equality', 'filterable-range'],
   currency: ['numeric-aggregatable', 'countable', 'filterable-equality', 'filterable-range'],
   date:     ['countable', 'filterable-equality', 'filterable-range', 'chart-axis-temporal'],
@@ -70,7 +72,7 @@ export type TileOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lt
 export function operatorsForType(fieldType: string): { value: TileOperator; label: string }[] {
   if (fieldType === 'boolean') return [{ value: 'eq', label: 'is' }];
   if (fieldType === 'select') return [{ value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }];
-  if (fieldType === 'text' || fieldType === 'email' || fieldType === 'url') return [
+  if (fieldType === 'text' || fieldType === 'email' || fieldType === 'url' || fieldType === 'abn' || fieldType === 'acn') return [
     { value: 'eq', label: 'is' }, { value: 'neq', label: 'is not' }, { value: 'contains', label: 'contains' },
     { value: 'is_set', label: 'is set' }, { value: 'is_empty', label: 'is empty' },
   ];

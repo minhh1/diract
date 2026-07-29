@@ -5,6 +5,16 @@ import { useState, useEffect } from "react";
 import { X, Loader2, Check, ShieldCheck, AlertCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
+import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
+
+// abn/acn/tfn/bsb/account_number/bank_name/trust_deed_date get their own
+// dedicated UI below (Identifiers/Trustee details/Banking) even though
+// they're now company_custom_fields, not native columns -- excluded here so
+// they don't also show up a second time in the generic "Custom fields"
+// section. nab_connect_id has no dedicated UI (it never did -- see
+// supabase/migrations/20260729290000_entities_finance_fields_to_custom.sql),
+// so it's left to render generically below like any other custom field.
+const NATIVE_UI_KEYS = ['abn', 'acn', 'tfn', 'bsb', 'account_number', 'bank_name', 'trust_deed_date'];
 
 interface Props {
   isOpen: boolean;
@@ -71,7 +81,7 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
       .eq('company_id', cid)
       .is('deleted_at', null)
       .order('display_order');
-    setCustomFields(cf || []);
+    setCustomFields((cf || []).filter(f => !NATIVE_UI_KEYS.includes(f.field_key)));
   };
 
   const resetForm = () => {
@@ -103,13 +113,14 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
       if (isTrust) {
         const { data: trustee, error: tErr } = await supabase
           .from('entities')
-          .insert({ company_id: companyId, name: trusteeName.trim(), entity_type: trusteeType, abn: trusteeAbn.trim() || null })
+          .insert({ company_id: companyId, name: trusteeName.trim(), entity_type: trusteeType })
           .select('id').single();
         if (tErr) throw tErr;
+        if (trusteeAbn.trim()) await writeEntityCustomFieldValues(companyId!, trustee.id, 'entities', { abn: trusteeAbn.trim() });
 
         const { data: trust, error: trErr } = await supabase
           .from('entities')
-          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, abn: abn.trim() || null, tfn: tfn.trim() || null, trust_deed_date: trustDeedDate || null, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null, bank_name: bankName.trim() || null, bsb: bsb.trim() || null, account_number: accountNumber.trim() || null })
+          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null })
           .select('id').single();
         if (trErr) throw trErr;
 
@@ -117,13 +128,19 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
           parent_entity_id: trust.id, child_entity_id: trustee.id, relationship_type: 'Trustee',
         });
         mainEntityId = trust.id;
+        await writeEntityCustomFieldValues(companyId!, mainEntityId, 'entities', {
+          abn, tfn, trust_deed_date: trustDeedDate, bank_name: bankName, bsb, account_number: accountNumber,
+        });
       } else {
         const { data: ent, error: entErr } = await supabase
           .from('entities')
-          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, abn: abn.trim() || null, acn: acn.trim() || null, tfn: tfn.trim() || null, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null, bank_name: bankName.trim() || null, bsb: bsb.trim() || null, account_number: accountNumber.trim() || null })
+          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null })
           .select('id').single();
         if (entErr) throw entErr;
         mainEntityId = ent.id;
+        await writeEntityCustomFieldValues(companyId!, mainEntityId, 'entities', {
+          abn, acn, tfn, bank_name: bankName, bsb, account_number: accountNumber,
+        });
       }
 
       if (customFields.length > 0) {

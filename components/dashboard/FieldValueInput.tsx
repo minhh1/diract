@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, BadgeCheck, AlertCircle } from "lucide-react";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import RelationPicker from "./RelationPicker";
 import { getValueColumn, isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
 import { PILL_SIZE_CLASSES, type PillSize } from "@/lib/dashboardWidgets/pillSize";
+import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 
 // Which company_table_values column stores a given field_type's value.
 export const valueColumnFor = getValueColumn;
@@ -54,6 +55,14 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [rewriting, setRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
+
+  // Only ever used by the abn/acn branch below, declared here for the same
+  // reason as textareaRef above (hooks can't be called conditionally).
+  const abnInputRef = useRef<HTMLInputElement | null>(null);
+  const [checksumValid, setChecksumValid] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   // Computed fields are never hand-edited — see supabase/company_table_fields_formula.sql.
   if (field.formula_type) {
@@ -189,6 +198,71 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         size={size}
         variant={variant}
       />
+    );
+  }
+
+  // ABN/ACN — checksum-validated (isValidABN/isValidACN) with an inline
+  // "Verify" button that calls the ABR ABN Lookup web service
+  // (app/api/abn-lookup/route.ts) to confirm the number is actually
+  // registered, not just structurally well-formed.
+  if (type === 'abn' || type === 'acn') {
+    const validator = type === 'abn' ? isValidABN : isValidACN;
+    const isValid = (v: string) => !v.trim() || validator(v);
+    const handleVerify = async () => {
+      const raw = abnInputRef.current?.value.trim();
+      if (!raw || !validator(raw)) return;
+      setVerifying(true);
+      setVerifyResult(null);
+      setVerifyError(null);
+      try {
+        const res = await fetch('/api/abn-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, value: raw }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Lookup failed');
+        setVerifyResult(json.status ? `${json.entityName} — ${json.status}` : json.entityName || 'No match found');
+      } catch (err) {
+        setVerifyError(err instanceof Error ? err.message : 'Lookup failed');
+      } finally {
+        setVerifying(false);
+      }
+    };
+    return (
+      <div>
+        <div className="relative">
+          <input
+            ref={abnInputRef}
+            type="text"
+            defaultValue={value ?? ''}
+            disabled={disabled}
+            onChange={e => { setChecksumValid(isValid(e.target.value)); setVerifyResult(null); setVerifyError(null); }}
+            onBlur={e => onCommit(e.target.value.trim() || null)}
+            className={`${inputClass} pr-8 ${!checksumValid ? '!border-red-300 focus:!ring-red-100' : ''}`}
+            placeholder={plain ? undefined : field.label}
+          />
+          {!disabled && (
+            <button
+              type="button"
+              onClick={handleVerify}
+              disabled={verifying || !checksumValid || !abnInputRef.current?.value.trim()}
+              title={`Verify with ABN Lookup`}
+              aria-label="Verify"
+              className="absolute top-1/2 -translate-y-1/2 right-2 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-40"
+            >
+              {verifying ? <Loader2 size={12} className="animate-spin" /> : <BadgeCheck size={12} />}
+            </button>
+          )}
+        </div>
+        {!checksumValid && (
+          <p className="text-[10px] text-red-500 font-medium mt-1 px-1 flex items-center gap-1">
+            <AlertCircle size={10} /> Not a valid {type.toUpperCase()} (fails the checksum)
+          </p>
+        )}
+        {verifyResult && <p className="text-[10px] text-emerald-600 font-medium mt-1 px-1">{verifyResult}</p>}
+        {verifyError && <p className="text-[10px] text-red-500 font-medium mt-1 px-1">{verifyError}</p>}
+      </div>
     );
   }
 

@@ -1,12 +1,13 @@
 import {
   Type, Hash, Calendar, ToggleLeft, List, Link2,
-  Fingerprint, Mail, Globe, DollarSign, MapPin, Building2, Briefcase
+  Fingerprint, Mail, Globe, DollarSign, MapPin, Building2, Briefcase, BadgeCheck
 } from "lucide-react";
 
 export type FieldType =
   | 'text' | 'number' | 'date' | 'boolean' | 'select'
   | 'auto_id' | 'email' | 'url' | 'currency' | 'link'
-  | 'property' | 'entity' | 'project' | 'table_relation';
+  | 'property' | 'entity' | 'project' | 'table_relation'
+  | 'abn' | 'acn';
 
 export interface CustomField {
   id: string;
@@ -87,6 +88,8 @@ export const FIELD_TYPES: {
   { type: 'entity',        label: 'Entity',      icon: Building2,   color: 'bg-pink-50 text-pink-600' },
   { type: 'project',       label: 'Project',     icon: Briefcase,   color: 'bg-amber-50 text-amber-600' },
   { type: 'table_relation',label: 'Relation',    icon: Link2,       color: 'bg-slate-50 text-slate-600' },
+  { type: 'abn',            label: 'ABN',         icon: BadgeCheck,  color: 'bg-sky-50 text-sky-600' },
+  { type: 'acn',            label: 'ACN',         icon: BadgeCheck,  color: 'bg-fuchsia-50 text-fuchsia-600' },
 ];
 
 export function getFieldTypeConfig(type: string) {

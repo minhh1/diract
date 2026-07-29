@@ -31,10 +31,14 @@ const PROPERTY_HEADERS = [
   'project_manager', 'project_owner', 'last_coc_date',
 ];
 
+// abn/acn/trust_deed_date/bank_name/bsb/account_number/tfn/nab_connect_id
+// used to be here too -- they're company_custom_fields now (see
+// supabase/migrations/20260729290000_entities_finance_fields_to_custom.sql),
+// so they're appended automatically via appendCustomFieldHeaders below
+// instead of being listed as static native headers.
 const ENTITY_HEADERS = [
-  'entity_name', 'entity_type', 'abn', 'acn',
-  'gst_registered', 'trust_deed_date', 'established_date',
-  'bank_name', 'bsb', 'account_number',
+  'entity_name', 'entity_type',
+  'gst_registered', 'established_date',
 ];
 
 const PROJECT_HEADERS = [

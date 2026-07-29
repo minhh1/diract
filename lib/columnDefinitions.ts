@@ -25,9 +25,10 @@ export const PROPERTY_COLUMNS = [
   'insurer_entity_id', 'is_sold', 'sold_date', 'sold_price',
 ];
 
+// acn/abn/trust_deed_date used to be here too -- they're company_custom_fields
+// now (see supabase/migrations/20260729290000_entities_finance_fields_to_custom.sql).
 export const ENTITY_COLUMNS = [
-  'name', 'entity_type', 'acn', 'abn', 'gst_registered',
-  'trust_deed_date', 'established_date',
+  'name', 'entity_type', 'gst_registered', 'established_date',
 ];
 
 // purchase_price moved here from PROPERTY_COLUMNS (Client Update Pages --

@@ -15,9 +15,12 @@ const RELATION_TYPES: FieldType[] = RELATION_FIELD_TYPES;
 // restrict-to filter for a relation linked to a system table (see
 // lib/columnDefinitions.ts for the full column lists -- these are the
 // subset that make sense to ilike/eq against from a picker).
+// acn/abn used to be here too -- they're company_custom_fields now (see
+// supabase/migrations/20260729290000_entities_finance_fields_to_custom.sql),
+// and this relation-picker search only covers native columns.
 const SEARCH_COLUMNS: Record<string, string[]> = {
   properties: ['street_address', 'suburb', 'postcode', 'folio_identifier'],
-  entities: ['name', 'entity_type', 'acn', 'abn'],
+  entities: ['name', 'entity_type'],
   projects: ['name', 'description'],
 };
 const FILTER_COLUMNS: Record<string, string[]> = {
@@ -752,7 +755,9 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           );
         })()}
 
-        {/* Text regex validation */}
+        {/* Text regex validation -- not offered for abn/acn, which get
+            checksum validation (isValidABN/isValidACN) instead of a
+            user-supplied pattern */}
         {draft.field_type === 'text' && (
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">

@@ -4,6 +4,12 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ChevronDown, ChevronUp, Loader2, Check, AlertCircle, MapPin, Building2 } from "lucide-react";
+import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
+
+// abn/acn are now company_custom_fields (not native entities columns), so
+// they're written separately after the entity row is created, not spread
+// into the entities.insert() payload below.
+const ENTITY_CUSTOM_FIELD_KEYS = ['abn', 'acn'];
 
 interface RecordCreatorFieldProps {
   fieldType: 'property' | 'entity';
@@ -59,9 +65,10 @@ export default function RecordCreatorField({
       [primaryKey]: primaryValue.trim(),
     };
 
-    // Add any extra fields that have values
+    // Add any extra fields that have values (except entity custom fields --
+    // written separately below once the record exists)
     Object.entries(extraValues).forEach(([key, val]) => {
-      if (val?.trim()) {
+      if (val?.trim() && !(!isProperty && ENTITY_CUSTOM_FIELD_KEYS.includes(key))) {
         if (key === 'purchase_price') {
           insertData[key] = parseFloat(val.replace(/[$,\s]/g, '')) || null;
         } else {
@@ -75,6 +82,12 @@ export default function RecordCreatorField({
       .insert(insertData)
       .select('id')
       .single();
+
+    if (!err && !isProperty) {
+      await writeEntityCustomFieldValues(companyId, data.id, tableName, {
+        abn: extraValues.abn, acn: extraValues.acn,
+      });
+    }
 
     setSaving(false);
 
