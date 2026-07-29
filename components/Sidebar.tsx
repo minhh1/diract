@@ -693,7 +693,7 @@ export default function Sidebar() {
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
   const { tables: customTables, refetch: refetchCustomTables } = useCustomTables(ctxUserId);
-  const { dashboards, refetch: refetchDashboards } = useCustomDashboards(ctxUserId);
+  const { dashboards, loading: dashboardsLoading, refetch: refetchDashboards } = useCustomDashboards(ctxUserId);
 
   const mode = pathname.includes("projects") ? "projects"
     : pathname.includes("properties") ? "properties"
@@ -1431,44 +1431,68 @@ export default function Sidebar() {
                     <Plus size={12} strokeWidth={3} />
                   </button>
                 </div>
-                {dashboards.map(d => {
-                  const Icon = (LucideIcons as any)[d.icon] || LayoutDashboard;
-                  const active = pathname === `/dashboard/${d.slug}`;
-                  const isMine = !!ctxUserId && d.owner_user_id === ctxUserId;
-                  return (
-                    <div key={d.id} className="group/dash flex items-center">
+                {dashboardsLoading ? (
+                  // Reserves roughly the space a couple of real dashboard
+                  // buttons would take -- without this, the "no dashboards
+                  // yet" text below rendered immediately (before this hook
+                  // had actually resolved anything), then got replaced by
+                  // the real list a moment later, shifting everything below
+                  // it. Right after switching company especially (the list
+                  // is never warm for a company you're just landing in --
+                  // see lib/clearClientCaches.ts's clearActiveIdentityCache),
+                  // a click aimed at where a dashboard button was about to
+                  // appear could land on whatever that shift put there
+                  // instead once real content popped in.
+                  <div className="space-y-1 px-1">
+                    {[1, 2].map(i => (
+                      <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-2xl">
+                        <div className="h-4 w-4 rounded bg-slate-100 animate-pulse shrink-0" />
+                        <div className={`h-3 bg-slate-100 animate-pulse rounded-full ${i === 1 ? 'w-24' : 'w-16'}`} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    {dashboards.map(d => {
+                      const Icon = (LucideIcons as any)[d.icon] || LayoutDashboard;
+                      const active = pathname === `/dashboard/${d.slug}`;
+                      const isMine = !!ctxUserId && d.owner_user_id === ctxUserId;
+                      return (
+                        <div key={d.id} className="group/dash flex items-center">
+                          <button
+                            onClick={() => { if (!active) { startNavigation(); router.push(`/dashboard/${d.slug}`); } }}
+                            aria-label={d.name}
+                            className={`flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                              active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
+                          >
+                            <Icon size={16} className="shrink-0" />
+                            <span className="truncate">{d.name}</span>
+                            {d.effectiveDefault && (
+                              <Lock size={10} className={`shrink-0 ml-auto ${active ? 'opacity-70' : 'opacity-30'}`} />
+                            )}
+                          </button>
+                          {isMine && (
+                            <button
+                              onClick={(e) => handleDeleteMyDashboard(d, e)}
+                              title={`Delete "${d.name}"`}
+                              className="p-1 mr-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/dash:opacity-100 transition-all shrink-0"
+                            >
+                              <X size={11} strokeWidth={3} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {dashboards.length === 0 && (
                       <button
-                        onClick={() => { if (!active) { startNavigation(); router.push(`/dashboard/${d.slug}`); } }}
-                        aria-label={d.name}
-                        className={`flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
-                          active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                        }`}
+                        onClick={() => { startNavigation(); router.push('/dashboard/new/builder'); }}
+                        className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
                       >
-                        <Icon size={16} className="shrink-0" />
-                        <span className="truncate">{d.name}</span>
-                        {d.effectiveDefault && (
-                          <Lock size={10} className={`shrink-0 ml-auto ${active ? 'opacity-70' : 'opacity-30'}`} />
-                        )}
+                        No dashboards yet — click + to build one
                       </button>
-                      {isMine && (
-                        <button
-                          onClick={(e) => handleDeleteMyDashboard(d, e)}
-                          title={`Delete "${d.name}"`}
-                          className="p-1 mr-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/dash:opacity-100 transition-all shrink-0"
-                        >
-                          <X size={11} strokeWidth={3} />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-                {dashboards.length === 0 && (
-                  <button
-                    onClick={() => { startNavigation(); router.push('/dashboard/new/builder'); }}
-                    className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
-                  >
-                    No dashboards yet — click + to build one
-                  </button>
+                    )}
+                  </>
                 )}
               </div>
 
