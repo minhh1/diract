@@ -135,7 +135,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     // None of this applies to a non-projects page -- other tables don't
     // have linked properties, so every map here just stays empty.
     baseTable === "projects" && recordIds.length
-      ? admin.from("project_properties").select("project_id, property_id").in("project_id", recordIds).order("created_at", { ascending: true })
+      ? admin.from("project_properties").select("id, project_id, property_id").in("project_id", recordIds).order("created_at", { ascending: true })
       : Promise.resolve({ data: [] as any[] }),
     resolveFieldValuesBatch(admin, baseTable, customFieldIds, recordIds),
     linkFieldIds.length && recordIds.length
@@ -160,9 +160,17 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   ]);
 
   const propertyIdsByProject = new Map<string, string[]>();
+  // (project_id, property_id) -> project_properties.id -- the actual
+  // pairing project_property_values is keyed by (see resolveProjectPropertyField
+  // below). Only ever populated for a real junction row; a project on the
+  // legacy-fallback single property_id column (no junction row at all --
+  // "shouldn't happen post-backfill" per the comment above) has nowhere to
+  // attach a per-property value, so it simply resolves to nothing there.
+  const projectPropertyIdByPair = new Map<string, string>();
   for (const link of projectPropertyLinks || []) {
     if (!propertyIdsByProject.has(link.project_id)) propertyIdsByProject.set(link.project_id, []);
     propertyIdsByProject.get(link.project_id)!.push(link.property_id);
+    projectPropertyIdByPair.set(`${link.project_id}:${link.property_id}`, link.id);
   }
   for (const [pid, record] of baseRecordById) {
     if (!propertyIdsByProject.has(pid) && record?.property_id) propertyIdsByProject.set(pid, [record.property_id]);
@@ -209,11 +217,33 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     tableRelationIdsByLinkedTable.get(linkedTableId)!.push((v as any).value_record_id as string);
   }
 
+  // A 'custom' field_source field (a company_custom_fields row on the page's
+  // OWN system table, e.g. projects' "Client"/"Debtor" entity fields) can
+  // itself be a relation type -- resolveValue's 'custom' branch below needs
+  // these ids' target rows fetched the same way the isCustomTable branch
+  // already fetches its own relation targets. table_relation never occurs
+  // here (that field_type is company_table_fields-only); 'project' isn't
+  // resolved to a name anywhere in this file yet (no such field exists in
+  // practice today), so it's left unhandled rather than adding a whole new
+  // projects lookup for a case that's never actually hit.
+  const customFieldTypeByKey = new Map<string, string>(
+    (fields || []).filter((f: any) => f.field_source === "custom").map((f: any) => [f.field_key, f.field_type])
+  );
+  const customFieldRelationEntityIds: string[] = [];
+  const customFieldRelationPropertyIds: string[] = [];
+  for (const [key, v] of customValueByKey.entries()) {
+    const recordId = (v as any)?.value_record_id;
+    if (!recordId) continue;
+    const fieldType = customFieldTypeByKey.get(key.split(":")[0]);
+    if (fieldType === "entity") customFieldRelationEntityIds.push(recordId);
+    else if (fieldType === "property") customFieldRelationPropertyIds.push(recordId);
+  }
+
   const projectLinkedPropertyIds: string[] = [...propertyIdsByProject.values()].flat();
-  const allPropertyIds = [...new Set([...projectLinkedPropertyIds, ...customTablePropertyRelationIds])];
+  const allPropertyIds = [...new Set([...projectLinkedPropertyIds, ...customTablePropertyRelationIds, ...customFieldRelationPropertyIds])];
 
   const linkedEntityIdByKey = new Map<string, string>((linkValues || []).filter((v: any) => v.value_record_id).map((v: any) => [`${v.field_id}:${v.record_id}`, v.value_record_id]));
-  const relatedEntityIds = [...new Set([...linkedEntityIdByKey.values(), ...customTableEntityRelationIds])];
+  const relatedEntityIds = [...new Set([...linkedEntityIdByKey.values(), ...customTableEntityRelationIds, ...customFieldRelationEntityIds])];
 
   const adhocValueByKey = new Map<string, any>((adhocValues || []).map((v: any) => [`${v.field_id}:${v.item_id}`, v.value_text]));
 
@@ -239,6 +269,18 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     .filter((f: any) => f.field_source === "property" && f.field_key.startsWith("custom:"))
     .map((f: any) => f.field_key.split(":")[1]);
 
+  // Per-(project, property) transaction fields (purchase price, deposit/
+  // settlement dates, ...) -- a genuinely different mechanism from
+  // propertyFields above: those read a PROPERTY's own persistent data
+  // (shared across every matter that ever links to it), these read data
+  // scoped to THIS matter's own pairing with that property, so a resold
+  // property never carries a past matter's price/dates forward. field_key
+  // is directly a company_custom_fields.id (table_name='project_properties'),
+  // no "base:"/"custom:" prefix since every field here is a custom field --
+  // see supabase/migrations/20260729360000_project_property_values.sql.
+  const projectPropertyFields = (fields || []).filter((f: any) => f.field_source === "project_property");
+  const projectPropertyIds = [...new Set([...projectPropertyIdByPair.values()])];
+
   // Both of these only need allPropertyIds/relatedEntityIds (resolved just
   // above from the previous batch) -- independent of each other, so one
   // more real round trip covers both instead of two.
@@ -247,6 +289,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     { data: relatedEntities },
     { data: propertyCustomValues },
     tableRelationNameById,
+    { data: projectPropertyValues },
   ] = await Promise.all([
     // select("*") -- a 'property' field_source (see below) can point at any
     // base column on properties, picked freely from the fields catalog, so
@@ -275,10 +318,24 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       }));
       return merged;
     })(),
+    projectPropertyFields.length && projectPropertyIds.length
+      ? admin.from("project_property_values")
+          .select("field_id, project_property_id, value_text, value_number, value_date, value_boolean, value_record_id")
+          .in("field_id", projectPropertyFields.map((f: any) => f.field_key)).in("project_property_id", projectPropertyIds)
+      : Promise.resolve({ data: [] as any[] }),
   ]);
   const propertyById = new Map<string, any>((properties || []).map((p: any) => [p.id, p]));
   const entityById = new Map<string, any>((relatedEntities || []).map((e: any) => [e.id, e]));
   const propertyCustomValueByKey = new Map<string, any>((propertyCustomValues || []).map((v: any) => [`${v.field_id}:${v.record_id}`, v]));
+  const projectPropertyValueByKey = new Map<string, any>((projectPropertyValues || []).map((v: any) => [`${v.field_id}:${v.project_property_id}`, v]));
+
+  function resolveProjectPropertyField(field: any, projectId: string, propertyId: string | undefined): any {
+    if (!propertyId) return null;
+    const projectPropertyId = projectPropertyIdByPair.get(`${projectId}:${propertyId}`);
+    if (!projectPropertyId) return null;
+    const v = projectPropertyValueByKey.get(`${field.field_key}:${projectPropertyId}`);
+    return v ? (v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id ?? null) : null;
+  }
 
   function resolvePropertyField(field: any, propertyId: string | undefined): any {
     if (!propertyId) return null;
@@ -305,11 +362,33 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     }
     if (field.field_source === "custom") {
       const v = customValueByKey.get(`${field.field_key}:${rid}`);
-      return v ? (v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null) : null;
+      if (!v) return null;
+      // A relation-type field's raw value_record_id was never resolved to
+      // anything here before -- this column always rendered blank
+      // regardless of whether it actually had a linked entity/property.
+      // Mirrors the isCustomTable branch below's existing resolution.
+      if (field.field_type === "entity" && v.value_record_id) {
+        const entity = entityById.get(v.value_record_id);
+        return entity ? (entity.name ?? "") : "(deleted)";
+      }
+      if (field.field_type === "property" && v.value_record_id) {
+        const property = propertyById.get(v.value_record_id);
+        return property ? (property.street_address ?? "") : "(deleted)";
+      }
+      return v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
     }
     if (baseTable === "projects" && (field.field_key === "property_address" || field.field_source === "property")) {
       const propIds = propertyIdsByProject.get(rid) || [];
       return resolvePropertyField(field, propIds[0]);
+    }
+    // Only reached for a single-(or zero-)property matter -- MatterBoard's
+    // expandByProperty reads item.values (this) directly in that case,
+    // falling back to the matter's one property, and only reads
+    // item.properties[].values (populated separately below) once a matter
+    // actually has 2+, splitting into one row per property.
+    if (baseTable === "projects" && field.field_source === "project_property") {
+      const propIds = propertyIdsByProject.get(rid) || [];
+      return resolveProjectPropertyField(field, rid, propIds[0]);
     }
     if (isCustomTable) {
       let v = customTableValueByKey.get(`${field.field_key}:${rid}`);
@@ -357,6 +436,53 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     return record?.[field.field_key] ?? null;
   }
 
+  // resolveValue above returns a relation-type field's resolved DISPLAY
+  // LABEL (a plain string) -- deliberately not an {id, label} shape, since
+  // `values` already feeds a dozen other things (search, sort, group
+  // conditions, saved filters, format-rule coloring) that all just do
+  // String(value) and would silently break on an object. An in-cell
+  // RelationPicker needs the real id too, so this is a parallel, narrower
+  // lookup returning just that, exposed as its own item.relationIds map --
+  // additive, touches nothing that already works off `values`.
+  function resolveRelationId(field: any, item: any): string | null {
+    const rid = recordId(item);
+    if (field.field_source === "custom") {
+      if (field.field_type !== "entity" && field.field_type !== "property") return null;
+      const v = customValueByKey.get(`${field.field_key}:${rid}`);
+      return v?.value_record_id || null;
+    }
+    if (isCustomTable) {
+      const RELATION_TYPES = new Set(["entity", "property", "project", "table_relation"]);
+      let v = customTableValueByKey.get(`${field.field_key}:${rid}`);
+      if (!v?.value_record_id && RELATION_TYPES.has(customTableFieldTypeById.get(field.field_key) as string)) {
+        for (const [key, fieldType] of customTableFieldTypeById) {
+          if (!RELATION_TYPES.has(fieldType)) continue;
+          const candidate = customTableValueByKey.get(`${key}:${rid}`);
+          if (candidate?.value_record_id) { v = candidate; break; }
+        }
+      }
+      return v?.value_record_id || null;
+    }
+    return null;
+  }
+
+  // Attaches where a relation-type field's picker should search/create --
+  // 'entity'/'property'/'project' always point at their same-named system
+  // table (true whether the field is a company_custom_fields row on a
+  // system-table page, or a company_table_fields row on a custom-table
+  // page); 'table_relation' (custom-table fields only) needs its own
+  // linked_table_id, already resolved above into relationFieldMetaById for
+  // the cross-relation value-fallback logic.
+  const RELATION_FIELD_TYPES = new Set(["entity", "property", "project", "table_relation"]);
+  const fieldsWithRelationMeta = (fields || []).map((f: any) => {
+    if (!RELATION_FIELD_TYPES.has(f.field_type)) return f;
+    if (f.field_type === "table_relation") {
+      return { ...f, linkedSystemTable: null, linkedTableId: relationFieldMetaById.get(f.field_key)?.linkedTableId || null };
+    }
+    const linkedSystemTable = f.field_type === "entity" ? "entities" : f.field_type === "property" ? "properties" : "projects";
+    return { ...f, linkedSystemTable, linkedTableId: null };
+  });
+
   return {
     groups: groups || [],
     items: (items || []).map((i: any) => {
@@ -365,18 +491,22 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
         ...i,
         matterName: i.display_name || displayNameById.get(rid) || "",
         values: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveValue(f, i)])),
+        relationIds: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveRelationId(f, i)])),
         notes: notesByItem.get(i.id) || [],
         emails: emailsByItem.get(i.id) || [],
         properties: baseTable === "projects"
           ? (propertyIdsByProject.get(rid) || []).map((pid: string) => ({
               id: pid,
               address: propertyById.get(pid)?.street_address ?? null,
-              values: Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyField(f, pid)])),
+              values: {
+                ...Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyField(f, pid)])),
+                ...Object.fromEntries(projectPropertyFields.map((f: any) => [f.id, resolveProjectPropertyField(f, rid, pid)])),
+              },
             }))
           : [],
       };
     }),
-    fields: fields || [],
+    fields: fieldsWithRelationMeta,
     formatRules: formatRules || [],
   };
 }

@@ -31,7 +31,6 @@ import { isSystemTable, resolveTableFields } from "@/lib/clientUpdatePageTableRe
 const SYNTHETIC_PROJECT_BASE_FIELDS = [
   { field_key: "name", label: "Matter" },
   { field_key: "property_address", label: "Property Address" },
-  { field_key: "purchase_price", label: "Purchase Price" },
 ];
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -50,18 +49,28 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // file header) -- not absorbed into the generic resolver, since they're a
   // genuinely narrower, one-hop relation drill (deferred generalization).
   if (!isSystemTable(baseTable) || baseTable !== "projects") {
-    return NextResponse.json({ base, custom, relatedTables: [], propertyBase: [], propertyCustom: [] });
+    return NextResponse.json({ base, custom, relatedTables: [], propertyBase: [], propertyCustom: [], projectProperty: [] });
   }
 
-  const [{ data: entityLinkFields }, { data: propertySchemaCols }, { data: propertyCustomFields }] = await Promise.all([
+  const [{ data: entityLinkFields }, { data: propertySchemaCols }, { data: propertyCustomFields }, { data: projectPropertyFields }] = await Promise.all([
     admin.from("company_custom_fields").select("id, label").eq("company_id", companyId).eq("table_name", "projects").eq("field_type", "entity").is("deleted_at", null),
     admin.rpc("get_schema_metadata", { target_table: "properties", p_company_id: companyId }),
     admin.from("company_custom_fields").select("id, field_key, label").eq("company_id", companyId).eq("table_name", "properties").is("deleted_at", null),
+    // Per-(project, property) transaction fields (purchase price, deposit/
+    // settlement dates, ...) -- one value per pairing, not per project, so a
+    // matter with 2+ linked properties can have a genuinely different
+    // purchase price/date for each one, and a resold property never keeps a
+    // past matter's terms attached to it. See
+    // supabase/migrations/20260729360000_project_property_values.sql.
+    admin.from("company_custom_fields").select("id, field_key, label").eq("company_id", companyId).eq("table_name", "project_properties").is("deleted_at", null).order("display_order"),
   ]);
 
-  // "name" and "purchase_price" are already covered by the synthetic fields
-  // below (with nicer labels than the schema RPC's underscore-replaced
-  // fallback would give), so excluded here to avoid a duplicate entry.
+  // "name" is already covered by the synthetic fields below (a nicer label
+  // than the schema RPC's underscore-replaced fallback would give);
+  // "purchase_price" is excluded outright -- it's still a real column on
+  // projects (left untouched, old data preserved), but purchase price is
+  // now a per-property field (see projectPropertyOptions below), so the old
+  // project-level column is never offered as a pickable field anymore.
   const baseOptions = [
     ...SYNTHETIC_PROJECT_BASE_FIELDS,
     ...base.filter((f) => f.field_key !== "name" && f.field_key !== "purchase_price"),
@@ -78,8 +87,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .filter((c: any) => c.category === "data" && !c.is_hidden && c.column_name !== "street_address")
     .map((c: any) => ({ field_key: `base:${c.column_name}`, label: c.label || c.column_name.replace(/_/g, " ") }));
   const propertyCustomOptions = (propertyCustomFields || []).map((f: any) => ({ field_key: `custom:${f.id}`, label: f.label }));
+  const projectPropertyOptions = (projectPropertyFields || []).map((f: any) => ({ field_key: f.id, label: f.label }));
 
-  return NextResponse.json({ base: baseOptions, custom, relatedTables, propertyBase: propertyBaseOptions, propertyCustom: propertyCustomOptions });
+  return NextResponse.json({ base: baseOptions, custom, relatedTables, propertyBase: propertyBaseOptions, propertyCustom: propertyCustomOptions, projectProperty: projectPropertyOptions });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -95,10 +105,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
   const { fieldSource, fieldKey, label } = body;
   const groupId: string | null = body.groupId || null;
-  if (!["base", "custom", "adhoc", "related_entity", "property"].includes(fieldSource)) {
+  if (!["base", "custom", "adhoc", "related_entity", "property", "project_property"].includes(fieldSource)) {
     return NextResponse.json({ error: "Invalid field source" }, { status: 400 });
   }
-  if ((fieldSource === "related_entity" || fieldSource === "property") && baseTable !== "projects") {
+  if ((fieldSource === "related_entity" || fieldSource === "property" || fieldSource === "project_property") && baseTable !== "projects") {
     return NextResponse.json({ error: "Not available on this page" }, { status: 400 });
   }
   if (!label?.trim()) return NextResponse.json({ error: "Label is required" }, { status: 400 });
@@ -112,6 +122,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: linkField } = await admin.from("company_custom_fields")
       .select("id").eq("id", linkFieldId).eq("company_id", companyId).eq("table_name", "projects").eq("field_type", "entity").is("deleted_at", null).maybeSingle();
     if (!linkField) return NextResponse.json({ error: "Related link field not found" }, { status: 404 });
+  }
+
+  // Every project_property field is a real company_custom_fields row --
+  // unlike 'property' below, there's no native-column concept here (see
+  // 20260729360000_project_property_values.sql), so fieldKey is just the id
+  // directly, no "base:"/"custom:" prefix to split.
+  if (fieldSource === "project_property") {
+    const { data: cf } = await admin.from("company_custom_fields")
+      .select("id").eq("id", fieldKey).eq("company_id", companyId).eq("table_name", "project_properties").is("deleted_at", null).maybeSingle();
+    if (!cf) return NextResponse.json({ error: "Project-property field not found" }, { status: 404 });
   }
 
   // "base:<column>" or "custom:<company_custom_fields.id>" -- see the GET
@@ -178,6 +198,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const { data: schemaCols } = await admin.rpc("get_schema_metadata", { target_table: "properties", p_company_id: companyId });
       const col = (schemaCols || []).find((c: any) => c.column_name === key);
       fieldType = col?.data_type?.includes("date") ? "date" : ["numeric", "integer"].includes(col?.data_type) ? "number" : "text";
+    }
+  } else if (fieldSource === "project_property") {
+    const { data: cf } = await admin.from("company_custom_fields").select("field_type, select_options").eq("id", fieldKey).maybeSingle();
+    if (cf) {
+      fieldType = ["date", "select", "number", "currency", "boolean"].includes(cf.field_type) ? cf.field_type : "text";
+      selectOptions = cf.field_type === "select" ? cf.select_options : null;
     }
   }
 

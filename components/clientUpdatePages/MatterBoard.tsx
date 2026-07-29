@@ -36,22 +36,29 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2 } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
 import GroupConditionModal from "./GroupConditionModal";
 import ActivityLogModal from "./ActivityLogModal";
+import AutoAddRulesModal from "./AutoAddRulesModal";
 import CellHistoryPopover, { type CellLogEntry } from "./CellHistoryPopover";
 import EntityOfficeholdersPanel from "./EntityOfficeholdersPanel";
 import IrregularityFixPanel from "./IrregularityFixPanel";
 import IrregularityFixModal from "./IrregularityFixModal";
+import RelationPicker from "@/components/dashboard/RelationPicker";
 
-export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; }
+export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; linkedSystemTable?: string | null; linkedTableId?: string | null; }
+
+const RELATION_FIELD_TYPES = new Set(["entity", "property", "project", "table_relation"]);
+function isRelationField(field: MatterBoardField): boolean {
+  return !!field.field_type && RELATION_FIELD_TYPES.has(field.field_type) && (!!field.linkedSystemTable || !!field.linkedTableId);
+}
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
 export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
 export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; }
-export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
+export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
@@ -77,6 +84,11 @@ interface Props {
   formatRules: MatterBoardFormatRule[];
   dateFormat: string;
   freezeFirstColumn?: boolean;
+  // Defaults true (matches client_update_pages.log_cell_changes' DB
+  // default) -- when false, skips the "why is this changing?" prompt and
+  // saves immediately with no reason, and the values route skips writing
+  // activity-log/cell-history rows for the edit (see requestSaveValue below).
+  logCellChanges?: boolean;
   canEdit: boolean;
   canComment: boolean;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId: string | undefined, reason: string) => void;
@@ -102,6 +114,7 @@ interface Props {
   onDataChanged?: () => void; // matters added / columns changed -- needs a full refetch
   onDateFormatChanged?: (format: string) => void;
   onFreezeFirstColumnChanged?: (freeze: boolean) => void;
+  onLogCellChangesChanged?: (logCellChanges: boolean) => void;
   onAddFormatRule?: (fieldId: string, value: string, color: string) => void;
   onUpdateFormatRule?: (ruleId: string, patch: { fieldId?: string; value?: string; color?: string }) => void;
   onRemoveFormatRule?: (ruleId: string) => void;
@@ -180,8 +193,8 @@ const FORMAT_COLORS: Record<string, { swatch: string; row: string; smRow: string
 const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
-  pageId, baseTable = "projects", pageKind = "user_dependent", groups, items, fields, formatRules, dateFormat, freezeFirstColumn, canEdit, canComment,
-  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
+  pageId, baseTable = "projects", pageKind = "user_dependent", groups, items, fields, formatRules, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
+  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
@@ -192,6 +205,7 @@ export default function MatterBoard({
   const [sorts, setSorts] = useState<{ fieldId: string; dir: "asc" | "desc" }[]>([]);
   const [showAddMatter, setShowAddMatter] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
+  const [showAutoAddRules, setShowAutoAddRules] = useState(false);
   const [showDateFormat, setShowDateFormat] = useState(false);
   const [conditionGroupId, setConditionGroupId] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -235,6 +249,11 @@ export default function MatterBoard({
   // SpreadsheetCell's own commit() logic (only fires on a real change)
   // doesn't need to know anything changed about the flow.
   const requestSaveValue = (itemId: string, fieldId: string, value: any, propertyId?: string) => {
+    // logCellChanges off -- save immediately with no reason and no prompt,
+    // matching this page's own setting for the "why is this changing?"
+    // requirement (see values/route.ts, which skips the reason check and
+    // the activity-log write the same way when this page has it off).
+    if (!logCellChanges) { onSaveValue?.(itemId, fieldId, value, propertyId, ""); return; }
     const field = fields.find(f => f.id === fieldId);
     setReasonInput("");
     setPendingSave({ itemId, fieldId, propertyId, newValue: value, fieldLabel: field?.label || "this field" });
@@ -556,6 +575,12 @@ export default function MatterBoard({
                 className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                 <Columns3 size={14} />
               </button>
+              {pageKind !== "auto_fed" && (
+                <button onClick={() => setShowAutoAddRules(true)} title="Auto-add rules"
+                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                  <Zap size={14} />
+                </button>
+              )}
               {onSummarizeOpenMatters && (
                 <button onClick={summarizeOpenMatters} disabled={summarizingAll} title="Generate AI summaries for open matters with emails, that don't have one yet"
                   className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
@@ -572,6 +597,13 @@ export default function MatterBoard({
                 className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                 <History size={14} />
               </button>
+              {onLogCellChangesChanged && (
+                <button onClick={() => onLogCellChangesChanged(!logCellChanges)}
+                  title={logCellChanges ? "Cell change logging is on -- click to turn off (skips the reason prompt and stops recording history)" : "Cell change logging is off -- click to turn on"}
+                  className={`p-2 border rounded-full transition-colors ${logCellChanges ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
+                  <FileText size={14} />
+                </button>
+              )}
               <div className="relative">
                 <button onClick={() => setShowDateFormat(v => !v)} title="Date format"
                   className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
@@ -797,6 +829,9 @@ export default function MatterBoard({
           onClose={() => setConditionGroupId(null)} />
       )}
       {showLogs && pageId && <ActivityLogModal pageId={pageId} onClose={() => setShowLogs(false)} />}
+      {showAutoAddRules && pageId && (
+        <AutoAddRulesModal pageId={pageId} recordLabel={baseTable === "entities" ? "entity" : "matter"} onClose={() => setShowAutoAddRules(false)} />
+      )}
       {pendingSave && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setPendingSave(null); }}>
           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-sm mx-4 p-8">
@@ -877,7 +912,12 @@ function descendantOf(groups: MatterBoardGroup[], item: MatterBoardItem, topId: 
 // row of the matter; one tagged to a specific property only shows on that
 // row.
 function propertyFieldIdsOf(fields: MatterBoardField[]): string[] {
-  return fields.filter(f => f.field_key === "property_address" || f.field_source === "property").map(f => f.id);
+  // 'project_property' (per-matter transaction fields -- purchase price,
+  // deposit/settlement dates -- see lib/clientUpdatePageDetail.ts) splits
+  // into one row/card per property the exact same way 'property' (a
+  // property's own persistent data) already does -- both need their value
+  // pulled from THIS row's specific property, not the matter as a whole.
+  return fields.filter(f => f.field_key === "property_address" || f.field_source === "property" || f.field_source === "project_property").map(f => f.id);
 }
 
 function expandByProperty(items: MatterBoardItem[], propertyFieldIds: string[]): { key: string; item: MatterBoardItem; propertyId: string | undefined }[] {
@@ -1110,7 +1150,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
         <div className="border-t border-slate-100 px-4 py-4 space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {fields.map(f => (
-              <ValueCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
+              <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
                 onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
@@ -1131,7 +1171,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   );
 }
 
-function ValueCell({ field, value, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; onSave: (v: any) => void; onShowHistory?: () => void }) {
+function ValueCell({ field, value, relationId, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; dateFormat: string; editable: boolean; onSave: (v: any) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1146,6 +1186,20 @@ function ValueCell({ field, value, dateFormat, editable: editableProp, onSave, o
       )}
     </div>
   );
+
+  if (isRelationField(field)) {
+    return (
+      <div>
+        {labelRow}
+        {editable ? (
+          <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
+            value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" />
+        ) : (
+          <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">—</span>}</p>
+        )}
+      </div>
+    );
+  }
 
   if (field.field_type === "select" && field.select_options?.length) {
     return (
@@ -1351,6 +1405,19 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Session-only (resets on reload) -- purely a display preference for how
+  // wide a column's cells render, nothing persisted server-side. Columns
+  // truncate to a fixed width by default (see SpreadsheetCell); toggling a
+  // field id into this set drops that cap so long content (e.g. a
+  // description field) can be read in full without leaving the table.
+  const [expandedFieldIds, setExpandedFieldIds] = useState<Set<string>>(new Set());
+  const toggleFieldExpanded = (fieldId: string) => {
+    setExpandedFieldIds(prev => {
+      const next = new Set(prev);
+      if (next.has(fieldId)) next.delete(fieldId); else next.add(fieldId);
+      return next;
+    });
+  };
   const [fixItemId, setFixItemId] = useState<string | null>(null);
   const showFixColumn = pageKind === "auto_fed" && canEdit && !!pageId;
   const totalCols = fields.length + 1 + (showFixColumn ? 1 : 0) + (canEdit && onMoveItem ? 1 : 0) + (canEdit && onRemoveItem ? 1 : 0);
@@ -1383,6 +1450,11 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 <span className="inline-flex items-center gap-1">
                   {canEdit && onReorderFields && <GripVertical size={10} className="text-slate-300" />}
                   {f.label}
+                  <button type="button" onClick={e => { e.stopPropagation(); toggleFieldExpanded(f.id); }}
+                    title={expandedFieldIds.has(f.id) ? "Shrink this column" : "Expand this column to see the full content"}
+                    className="shrink-0 text-slate-300 hover:text-indigo-600 transition-colors">
+                    {expandedFieldIds.has(f.id) ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+                  </button>
                 </span>
               </th>
             ))}
@@ -1413,7 +1485,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 </td>
               )}
               {fields.map((f, i) => (
-                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
                   onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
               ))}
@@ -1462,12 +1534,17 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   );
 }
 
-function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void; onShowHistory?: () => void }) {
+function SpreadsheetCell({ field, value, relationId, expanded, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; expanded?: boolean; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
 
   const commit = () => { setEditing(false); if (draft !== (value ?? "")) onSave(draft === "" ? null : draft); };
+  // Default truncated width (see the header toggle in SpreadsheetView) --
+  // only applied to a read-only value's own content span, never to an
+  // active editing control (input/select/RelationPicker), which should
+  // always render at its natural width regardless of this toggle.
+  const truncateClass = expanded ? "" : "max-w-[220px] truncate";
   // sm: prefixed -- see the header comment above SpreadsheetView for why
   // freezing only applies from that breakpoint up, never on a touch/mobile
   // viewport.
@@ -1480,6 +1557,20 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
       className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-indigo-600 transition-opacity shrink-0"><History size={10} /></button>
   );
 
+  if (isRelationField(field)) {
+    return (
+      <td className={`group px-4 py-4 ${frozenClass}`}>
+        <span className="inline-flex items-center gap-1.5">
+          {editable ? (
+            <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
+              value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" />
+          ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "—"}</span>}
+          {historyButton}
+        </span>
+      </td>
+    );
+  }
+
   if (field.field_type === "select" && field.select_options?.length) {
     return (
       <td className={`group px-4 py-4 ${frozenClass}`}>
@@ -1490,7 +1581,7 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
               <option value="">—</option>
               {field.select_options.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
-          ) : (value || "—")}
+          ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "—"}</span>}
           {historyButton}
         </span>
       </td>
@@ -1508,9 +1599,11 @@ function SpreadsheetCell({ field, value, dateFormat, editable: editableProp, fro
   }
   return (
     <td onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
-      className={`group px-4 py-4 whitespace-nowrap text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
+      className={`group px-4 py-4 text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
       <span className="inline-flex items-center gap-1.5">
-        {value == null || value === "" ? "—" : formatValue(value, field, dateFormat)}
+        <span className={`inline-block align-bottom ${expanded ? "whitespace-nowrap" : truncateClass}`}>
+          {value == null || value === "" ? "—" : formatValue(value, field, dateFormat)}
+        </span>
         {historyButton}
       </span>
     </td>

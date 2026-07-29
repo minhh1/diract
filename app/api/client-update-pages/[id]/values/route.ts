@@ -16,6 +16,30 @@ import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
 import { logChange, resolveActorName } from "@/lib/clientUpdatePageLog";
 import { isSystemTable, resolveDisplayNamesBatch } from "@/lib/clientUpdatePageTableResolver";
 
+const RELATION_FIELD_TYPES = ["entity", "property", "project", "table_relation"];
+
+// Maps a relation field_type to what to read/write against for its
+// value_record_id -- 'entity'/'property'/'project' always point at their
+// same-named system table; 'table_relation' (custom-table fields only)
+// points at whatever company_tables.id linked_table_id names.
+function relationRecordTable(fieldType: string, linkedTableId?: string | null): string | null {
+  if (fieldType === "entity") return "entities";
+  if (fieldType === "property") return "properties";
+  if (fieldType === "project") return "projects";
+  if (fieldType === "table_relation") return linkedTableId || null;
+  return null;
+}
+
+// A relation cell's old/new "value" is a record id -- resolve it to that
+// record's display name before it goes into the human-readable activity
+// log/cell history, same way every other field type's typed value already
+// reads naturally there.
+async function resolveRelationLabel(admin: any, recordTable: string | null, recordId: any): Promise<string | null> {
+  if (!recordTable || !recordId) return null;
+  const map = await resolveDisplayNamesBatch(admin, recordTable, [recordId]);
+  return map.get(recordId) || null;
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const auth = await authorizeCompanyMember();
@@ -28,8 +52,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json().catch(() => ({}));
   const { itemId, fieldId, value, propertyId, reason } = body;
   if (!itemId || !fieldId) return NextResponse.json({ error: "itemId and fieldId are required" }, { status: 400 });
+  // log_cell_changes defaults true (matches the DB column's own default) --
+  // off skips both the reason requirement and every logChange call below.
+  const cellLoggingEnabled = gate.page.log_cell_changes !== false;
   const reasonTrimmed = typeof reason === "string" ? reason.trim() : "";
-  if (!reasonTrimmed) return NextResponse.json({ error: "A reason for this change is required" }, { status: 400 });
+  if (cellLoggingEnabled && !reasonTrimmed) return NextResponse.json({ error: "A reason for this change is required" }, { status: 400 });
 
   const [{ data: item }, { data: field }] = await Promise.all([
     admin.from("client_update_page_items").select("id, record_table, record_id").eq("id", itemId).eq("page_id", id).maybeSingle(),
@@ -69,10 +96,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { error } = await admin.from("company_table_values")
       .upsert({ company_id: companyId, table_id: gate.page.source_table_id, record_id: item.record_id, field_id: field.field_key, value_text: value ?? null }, { onConflict: "field_id,record_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const actorName = await resolveActorName(admin, user.id);
-    await logChange(admin, id, actorName, "staff", "value_changed", `Set "${field.label}" to ${value || "(blank)"}`, {
-      itemId, fieldId, oldValue: existing?.value_text ?? null, newValue: value || null, reason: reasonTrimmed,
-    });
+    if (cellLoggingEnabled) {
+      const actorName = await resolveActorName(admin, user.id);
+      await logChange(admin, id, actorName, "staff", "value_changed", `Set "${field.label}" to ${value || "(blank)"}`, {
+        itemId, fieldId, oldValue: existing?.value_text ?? null, newValue: value || null, reason: reasonTrimmed,
+      });
+    }
     return NextResponse.json({ ok: true });
   }
   const baseTable: string = gate.page.base_table;
@@ -92,14 +121,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // record -- passed in here so the per-cell history (see
   // components/clientUpdatePages/CellHistoryPopover.tsx) can show a real
   // before/after instead of just the new value.
-  const logAfterSave = async (oldValue: any) => {
+  // newValueLabel overrides the raw `value` for display -- relation fields
+  // pass their picked record's resolved name here instead of its raw id.
+  const logAfterSave = async (oldValue: any, newValueLabel?: string | null) => {
+    if (!cellLoggingEnabled) return;
     const actorName = await resolveActorName(admin, user.id);
-    const displayValue = value == null || value === "" ? "(blank)" : String(value);
+    const newDisplay = newValueLabel !== undefined ? newValueLabel : value;
+    const displayValue = newDisplay == null || newDisplay === "" ? "(blank)" : String(newDisplay);
     const recordName = record?.name || displayNameById?.get(recordId) || "this record";
     await logChange(admin, id, actorName, "staff", "value_changed", `Set "${field.label}" to ${displayValue} on ${recordName}`, {
       itemId, fieldId,
       oldValue: oldValue == null || oldValue === "" ? null : String(oldValue),
-      newValue: value == null || value === "" ? null : String(value),
+      newValue: newDisplay == null || newDisplay === "" ? null : String(newDisplay),
       reason: reasonTrimmed,
     });
   };
@@ -159,19 +192,71 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // branch below, just written against the property record instead.
     const { data: cf } = await admin.from("company_custom_fields").select("field_type").eq("id", key).maybeSingle();
     if (!cf) return NextResponse.json({ error: "Custom field definition not found" }, { status: 404 });
-    const { data: existingVal } = await admin.from("company_custom_field_values").select("value_text, value_number, value_date, value_boolean").eq("field_id", key).eq("record_id", targetPropertyId).maybeSingle();
-    const oldValue = existingVal && (["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
+    const isRelation = RELATION_FIELD_TYPES.includes(cf.field_type);
+    const relationTable = isRelation ? relationRecordTable(cf.field_type) : null;
+    const { data: existingVal } = await admin.from("company_custom_field_values").select("value_text, value_number, value_date, value_boolean, value_record_id").eq("field_id", key).eq("record_id", targetPropertyId).maybeSingle();
+    const oldValue = existingVal && (isRelation ? existingVal.value_record_id : ["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
     const row: Record<string, any> = {
       field_id: key, record_id: targetPropertyId, company_id: companyId, table_name: "properties",
-      value_text: null, value_number: null, value_date: null, value_boolean: null,
+      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
     };
-    if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
+    if (isRelation) row.value_record_id = value || null;
+    else if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
     else if (cf.field_type === "date") row.value_date = value || null;
     else if (cf.field_type === "boolean") row.value_boolean = !!value;
     else row.value_text = value ?? null;
     const { error } = await admin.from("company_custom_field_values").upsert(row, { onConflict: "field_id,record_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logAfterSave(oldValue ?? null);
+    if (isRelation) {
+      const [oldLabel, newLabel] = await Promise.all([resolveRelationLabel(admin, relationTable, oldValue), resolveRelationLabel(admin, relationTable, value)]);
+      await logAfterSave(oldLabel, newLabel);
+    } else {
+      await logAfterSave(oldValue ?? null);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // Per-(project, property) transaction fields (purchase price, deposit/
+  // settlement dates, ...) -- a genuinely different mechanism from the
+  // 'property' block above: those write onto a PROPERTY's own persistent
+  // row (shared across every matter that ever links to it); this writes
+  // onto THIS matter's own pairing with that property instead, so a resold
+  // property never keeps a past matter's price/dates attached to it. See
+  // supabase/migrations/20260729360000_project_property_values.sql. Same
+  // "which property did this edit come from" resolution as the 'property'
+  // block, since it's the identical multi-property-matter problem.
+  if (baseTable === "projects" && field.field_source === "project_property") {
+    const { data: links } = await admin.from("project_properties").select("id, property_id").eq("project_id", recordId).order("created_at", { ascending: true });
+    const linkedRows = links || [];
+    const fallback = linkedRows[0] || null;
+    const targetLink = (propertyId && linkedRows.find((l: any) => l.property_id === propertyId)) || fallback;
+    if (!targetLink) return NextResponse.json({ error: "This matter has no linked property" }, { status: 400 });
+    const projectPropertyId = targetLink.id;
+
+    const { data: cf } = await admin.from("company_custom_fields").select("field_type").eq("id", field.field_key).maybeSingle();
+    if (!cf) return NextResponse.json({ error: "Field definition not found" }, { status: 404 });
+    const isRelation = RELATION_FIELD_TYPES.includes(cf.field_type);
+    const relationTable = isRelation ? relationRecordTable(cf.field_type) : null;
+    const { data: existingVal } = await admin.from("project_property_values").select("value_text, value_number, value_date, value_boolean, value_record_id").eq("field_id", field.field_key).eq("project_property_id", projectPropertyId).maybeSingle();
+    const oldValue = existingVal && (isRelation ? existingVal.value_record_id : ["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
+    const row: Record<string, any> = {
+      field_id: field.field_key, project_property_id: projectPropertyId, company_id: companyId,
+      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
+      updated_at: new Date().toISOString(),
+    };
+    if (isRelation) row.value_record_id = value || null;
+    else if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
+    else if (cf.field_type === "date") row.value_date = value || null;
+    else if (cf.field_type === "boolean") row.value_boolean = !!value;
+    else row.value_text = value ?? null;
+    const { error } = await admin.from("project_property_values").upsert(row, { onConflict: "project_property_id,field_id" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (isRelation) {
+      const [oldLabel, newLabel] = await Promise.all([resolveRelationLabel(admin, relationTable, oldValue), resolveRelationLabel(admin, relationTable, value)]);
+      await logAfterSave(oldLabel, newLabel);
+    } else {
+      await logAfterSave(oldValue ?? null);
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -179,21 +264,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // field.field_key is a company_table_fields.id -- a custom table has no
     // native columns of its own, every 'base' field's value lives in
     // company_table_values, typed by that field's own field_type.
-    const { data: ctf } = await admin.from("company_table_fields").select("field_type").eq("id", field.field_key).maybeSingle();
+    const { data: ctf } = await admin.from("company_table_fields").select("field_type, linked_table_id").eq("id", field.field_key).maybeSingle();
     if (!ctf) return NextResponse.json({ error: "Field definition not found" }, { status: 404 });
-    const { data: existingVal } = await admin.from("company_table_values").select("value_text, value_number, value_date, value_boolean").eq("field_id", field.field_key).eq("record_id", recordId).maybeSingle();
-    const oldValue = existingVal && (["number", "currency"].includes(ctf.field_type) ? existingVal.value_number : ctf.field_type === "date" ? existingVal.value_date : ctf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
+    const isRelation = RELATION_FIELD_TYPES.includes(ctf.field_type);
+    const relationTable = isRelation ? relationRecordTable(ctf.field_type, ctf.linked_table_id) : null;
+    const { data: existingVal } = await admin.from("company_table_values").select("value_text, value_number, value_date, value_boolean, value_record_id").eq("field_id", field.field_key).eq("record_id", recordId).maybeSingle();
+    const oldValue = existingVal && (isRelation ? existingVal.value_record_id : ["number", "currency"].includes(ctf.field_type) ? existingVal.value_number : ctf.field_type === "date" ? existingVal.value_date : ctf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
     const row: Record<string, any> = {
       field_id: field.field_key, record_id: recordId, table_id: baseTable,
-      value_text: null, value_number: null, value_date: null, value_boolean: null,
+      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
     };
-    if (["number", "currency"].includes(ctf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
+    if (isRelation) row.value_record_id = value || null;
+    else if (["number", "currency"].includes(ctf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
     else if (ctf.field_type === "date") row.value_date = value || null;
     else if (ctf.field_type === "boolean") row.value_boolean = !!value;
     else row.value_text = value ?? null;
     const { error } = await admin.from("company_table_values").upsert(row, { onConflict: "field_id,record_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    await logAfterSave(oldValue ?? null);
+    if (isRelation) {
+      const [oldLabel, newLabel] = await Promise.all([resolveRelationLabel(admin, relationTable, oldValue), resolveRelationLabel(admin, relationTable, value)]);
+      await logAfterSave(oldLabel, newLabel);
+    } else {
+      await logAfterSave(oldValue ?? null);
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -209,21 +302,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // field_type to know which typed column to write.
   const { data: cf } = await admin.from("company_custom_fields").select("field_type").eq("id", field.field_key).maybeSingle();
   if (!cf) return NextResponse.json({ error: "Custom field definition not found" }, { status: 404 });
+  const isRelation = RELATION_FIELD_TYPES.includes(cf.field_type);
+  const relationTable = isRelation ? relationRecordTable(cf.field_type) : null;
 
-  const { data: existingVal } = await admin.from("company_custom_field_values").select("value_text, value_number, value_date, value_boolean").eq("field_id", field.field_key).eq("record_id", recordId).maybeSingle();
-  const oldValue = existingVal && (["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
+  const { data: existingVal } = await admin.from("company_custom_field_values").select("value_text, value_number, value_date, value_boolean, value_record_id").eq("field_id", field.field_key).eq("record_id", recordId).maybeSingle();
+  const oldValue = existingVal && (isRelation ? existingVal.value_record_id : ["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
 
   const row: Record<string, any> = {
     field_id: field.field_key, record_id: recordId, company_id: companyId, table_name: baseTable,
-    value_text: null, value_number: null, value_date: null, value_boolean: null,
+    value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
   };
-  if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
+  if (isRelation) row.value_record_id = value || null;
+  else if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
   else if (cf.field_type === "date") row.value_date = value || null;
   else if (cf.field_type === "boolean") row.value_boolean = !!value;
   else row.value_text = value ?? null;
 
   const { error } = await admin.from("company_custom_field_values").upsert(row, { onConflict: "field_id,record_id" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  await logAfterSave(oldValue ?? null);
+  if (isRelation) {
+    const [oldLabel, newLabel] = await Promise.all([resolveRelationLabel(admin, relationTable, oldValue), resolveRelationLabel(admin, relationTable, value)]);
+    await logAfterSave(oldLabel, newLabel);
+  } else {
+    await logAfterSave(oldValue ?? null);
+  }
   return NextResponse.json({ ok: true });
 }
