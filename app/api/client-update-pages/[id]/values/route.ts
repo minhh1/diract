@@ -50,7 +50,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (gate.error) return gate.error;
 
   const body = await req.json().catch(() => ({}));
-  const { itemId, fieldId, value, propertyId, reason } = body;
+  // capacity: optional, entity-relation fields only -- 'Trustee' when
+  // RelationPicker's capacity prompt was answered "acting as trustee for
+  // this", null/undefined otherwise. See supabase/migrations/20260729430000_
+  // relation_value_capacity.sql -- per LINK, not a fixed property of the
+  // entity, since the same entity can act differently on different matters.
+  const { itemId, fieldId, value, propertyId, reason, capacity } = body;
   if (!itemId || !fieldId) return NextResponse.json({ error: "itemId and fieldId are required" }, { status: 400 });
   // log_cell_changes defaults true (matches the DB column's own default) --
   // off skips both the reason requirement and every logChange call below.
@@ -198,9 +203,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const oldValue = existingVal && (isRelation ? existingVal.value_record_id : ["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
     const row: Record<string, any> = {
       field_id: key, record_id: targetPropertyId, company_id: companyId, table_name: "properties",
-      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
+      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null, value_record_capacity: null,
     };
-    if (isRelation) row.value_record_id = value || null;
+    if (isRelation) { row.value_record_id = value || null; row.value_record_capacity = value ? (capacity || null) : null; }
     else if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
     else if (cf.field_type === "date") row.value_date = value || null;
     else if (cf.field_type === "boolean") row.value_boolean = !!value;
@@ -241,10 +246,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const oldValue = existingVal && (isRelation ? existingVal.value_record_id : ["number", "currency"].includes(cf.field_type) ? existingVal.value_number : cf.field_type === "date" ? existingVal.value_date : cf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
     const row: Record<string, any> = {
       field_id: field.field_key, project_property_id: projectPropertyId, company_id: companyId,
-      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
+      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null, value_record_capacity: null,
       updated_at: new Date().toISOString(),
     };
-    if (isRelation) row.value_record_id = value || null;
+    if (isRelation) { row.value_record_id = value || null; row.value_record_capacity = value ? (capacity || null) : null; }
     else if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
     else if (cf.field_type === "date") row.value_date = value || null;
     else if (cf.field_type === "boolean") row.value_boolean = !!value;
@@ -310,9 +315,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const row: Record<string, any> = {
     field_id: field.field_key, record_id: recordId, company_id: companyId, table_name: baseTable,
-    value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
+    value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null, value_record_capacity: null,
   };
-  if (isRelation) row.value_record_id = value || null;
+  if (isRelation) { row.value_record_id = value || null; row.value_record_capacity = value ? (capacity || null) : null; }
   else if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
   else if (cf.field_type === "date") row.value_date = value || null;
   else if (cf.field_type === "boolean") row.value_boolean = !!value;

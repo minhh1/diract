@@ -225,7 +225,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     return item.properties.map(p => p.id === targetId ? { ...p, values: { ...p.values, [fieldId]: value } } : p);
   };
 
-  const saveValue = (itemId: string, fieldId: string, value: any, propertyId: string | undefined, reason: string) => {
+  const saveValue = (itemId: string, fieldId: string, value: any, propertyId: string | undefined, reason: string, capacity?: string | null) => {
     if (mode !== "staff" || !staffPageId) return;
     let prevValue: any;
     let prevProperties: Board["items"][number]["properties"];
@@ -242,7 +242,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
       };
     });
     fetch(`/api/client-update-pages/${staffPageId}/values`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value, propertyId, reason }),
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, fieldId, value, propertyId, reason, capacity }),
     }).then(async res => {
       if (res.ok) return;
       // Revert just this one field (not the whole board) so it doesn't

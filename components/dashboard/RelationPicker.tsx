@@ -20,7 +20,19 @@ interface RelationOption {
   // were resolved individually rather than through the full candidate list
   // (e.g. a single already-selected value's label), which never need it.
   searchText?: string;
+  // entities only -- set when this option's entities.roles includes a
+  // trustee-type role. Drives the "acting as trustee for this?" capacity
+  // prompt in selectOption below -- never part of label/searchText, purely
+  // a selection-time signal.
+  hasTrusteeRole?: boolean;
 }
+
+// The two role values that make an entity a trustee -- kept in sync with
+// components/NewEntityModal.tsx's own TRUSTEE_ROLE_TYPES (not shared/
+// imported since that file is client-creation-form-specific and this one is
+// a much more widely reused primitive; a fixed 2-item list is cheap to keep
+// duplicated).
+const TRUSTEE_ROLE_TYPES = ['Corporate Trustee', 'Non Corporate Trustee'];
 
 // Sentinel filterValue set by FieldConfigPanel when an admin restricts a
 // relation to "Signed-in user only" -- there's no static value to type in
@@ -134,7 +146,12 @@ interface Props {
   // true, so optional here rather than forcing every multi-select caller to
   // pass a no-op.
   value?: string | null;
-  onSelect?: (id: string | null, label: string | null) => void;
+  // 3rd arg (capacity) is additive -- every existing caller ignoring it is
+  // unaffected. Only set (non-null) for linkedSystemTable="entities" when
+  // the picked entity holds a trustee role and the user answered the
+  // capacity prompt below with "Acting as trustee" -- 'Trustee' string, or
+  // null for "plain/primary capacity, nothing changes" (see selectOption).
+  onSelect?: (id: string | null, label: string | null, capacity?: string | null) => void;
   // Multi-select mode (field.allow_multiple) -- renders every selected
   // option as a removable chip instead of one label, and clicking an option
   // in the dropdown toggles it instead of selecting-and-closing. Reuses this
@@ -297,7 +314,11 @@ async function fetchAllSystemTableOptions(
   const cfSearchIds = (searchFieldKeys || []).filter(k => k.startsWith('cf:')).map(k => k.slice(3));
   const col2IsCf = !!displayField2 && displayField2.startsWith('cf:');
   const col2Native = displayField2 && !col2IsCf ? displayField2 : null;
-  const nativeCols = Array.from(new Set([col, ...nativeExtra, ...(col2Native ? [col2Native] : [])]));
+  // roles only exists on entities -- fetched here (not just on open, see
+  // isRelationField's isEntities check below) so the capacity prompt in
+  // selectOption knows before the user picks, not after.
+  const isEntities = linkedSystemTable === 'entities';
+  const nativeCols = Array.from(new Set([col, ...nativeExtra, ...(col2Native ? [col2Native] : []), ...(isEntities ? ['roles'] : [])]));
 
   let q = supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null).order(col).limit(5000);
   if (filterColumn && filterValue === TEAM_SCOPE_SENTINEL) {
@@ -349,7 +370,10 @@ async function fetchAllSystemTableOptions(
       ...nativeExtra.map(c => r[c]),
       ...cfSearchIds.map(id => cfByField.get(id)?.get(r.id)),
     ].filter((v): v is string | number => v !== null && v !== undefined);
-    return { id: r.id, label, searchText: searchParts.join(' ').toLowerCase() };
+    return {
+      id: r.id, label, searchText: searchParts.join(' ').toLowerCase(),
+      ...(isEntities ? { hasTrusteeRole: (r.roles || []).some((role: string) => TRUSTEE_ROLE_TYPES.includes(role)) } : {}),
+    };
   });
 }
 
@@ -441,6 +465,10 @@ export default function RelationPicker({
   const sizeClass = plain ? 'py-1.5 px-1.5 text-[12px]' : PILL_SIZE_CLASSES[size];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // Single-select, entities only -- set when the just-picked option holds a
+  // trustee role, swapping the dropdown's option list for a "which
+  // capacity?" choice until answered (see selectOption/finalizeSelection).
+  const [pendingCapacityOpt, setPendingCapacityOpt] = useState<RelationOption | null>(null);
   // The whole candidate list, fetched once per open (see the effect below)
   // and cached -- `options` (further down) is a client-side `.filter()` of
   // this on `query`, not a separate fetch, so typing has zero network
@@ -653,7 +681,7 @@ export default function RelationPicker({
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) { setOpen(false); setQuery(''); }
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) { setOpen(false); setQuery(''); setPendingCapacityOpt(null); }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -673,11 +701,29 @@ export default function RelationPicker({
     );
   }
 
+  // Finalizes a pick with a specific capacity -- shared by selectOption
+  // below (the no-ambiguity path) and the capacity-prompt buttons rendered
+  // when pendingCapacityOpt is set.
+  const finalizeSelection = (opt: RelationOption, capacity: string | null) => {
+    setCurrentLabel(capacity ? `${opt.label} (as trustee)` : opt.label);
+    resolvedForRef.current = opt.id;
+    onSelect?.(opt.id, opt.label, capacity);
+    setQuery('');
+    setOpen(false);
+    setPendingCapacityOpt(null);
+  };
+
   // Shared by the option click handler and the Tab/Enter-with-one-match
   // shortcut below, so the two ways of confirming a pick can't drift apart.
   // Single-select only -- multi-select's own `toggle` (inside the
   // `multiple` branch below) is its equivalent.
   const selectOption = (opt: RelationOption) => {
+    // entities only -- an entity holding a trustee role is ambiguous about
+    // which capacity it's acting in for THIS specific link (the same
+    // company can be "just itself" on one matter and "as trustee" on
+    // another), so always ask instead of guessing. Keeps the dropdown open,
+    // swapping its content for the capacity choice (see the render below).
+    if (opt.hasTrusteeRole) { setPendingCapacityOpt(opt); return; }
     // Already know the label from the option clicked -- set it immediately
     // instead of waiting on the value-resolution effect below to re-fetch
     // it from the server, which was the visible lag on every relation pick.
@@ -959,7 +1005,22 @@ export default function RelationPicker({
         )}
       </div>
 
-      {open && (
+      {open && pendingCapacityOpt && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-indigo-200 rounded-2xl shadow-xl z-50 p-3 space-y-2">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Acting as, for this?</p>
+          <button type="button" onClick={() => finalizeSelection(pendingCapacityOpt, null)}
+            className="w-full text-left px-3 py-2 text-[12px] font-medium text-slate-700 rounded-xl hover:bg-indigo-50 transition-colors">
+            {pendingCapacityOpt.label} <span className="text-slate-400">(itself)</span>
+          </button>
+          <button type="button" onClick={() => finalizeSelection(pendingCapacityOpt, 'Trustee')}
+            className="w-full text-left px-3 py-2 text-[12px] font-medium text-slate-700 rounded-xl hover:bg-indigo-50 transition-colors">
+            {pendingCapacityOpt.label} <span className="text-slate-400">(as trustee)</span>
+          </button>
+          <button type="button" onClick={() => setPendingCapacityOpt(null)}
+            className="w-full text-left px-3 py-1 text-[11px] text-slate-400 hover:text-slate-600">Back</button>
+        </div>
+      )}
+      {open && !pendingCapacityOpt && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-60 overflow-y-auto">
           {clearLabel && (
             <button

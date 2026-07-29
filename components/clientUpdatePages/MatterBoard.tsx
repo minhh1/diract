@@ -91,7 +91,10 @@ interface Props {
   logCellChanges?: boolean;
   canEdit: boolean;
   canComment: boolean;
-  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId: string | undefined, reason: string) => void;
+  // capacity: entity-relation fields only, threaded from RelationPicker's
+  // capacity prompt through requestSaveValue below -- see
+  // supabase/migrations/20260729430000_relation_value_capacity.sql.
+  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId: string | undefined, reason: string, capacity?: string | null) => void;
   onFetchCellHistory: (itemId: string, fieldId: string) => Promise<CellLogEntry[]>;
   onRenameGroup?: (groupId: string, name: string) => void;
   onDeleteGroup?: (groupId: string) => void;
@@ -214,7 +217,7 @@ export default function MatterBoard({
   // requestSaveValue below -- it stops here first so staff must give a
   // reason before the change actually saves and lands in the per-cell log
   // a client can see (CellHistoryPopover).
-  const [pendingSave, setPendingSave] = useState<{ itemId: string; fieldId: string; fieldLabel: string; propertyId?: string; newValue: any } | null>(null);
+  const [pendingSave, setPendingSave] = useState<{ itemId: string; fieldId: string; fieldLabel: string; propertyId?: string; newValue: any; capacity?: string | null } | null>(null);
   const [reasonInput, setReasonInput] = useState("");
   const [historyTarget, setHistoryTarget] = useState<{ itemId: string; fieldId: string; fieldLabel: string; field: MatterBoardField } | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
@@ -248,20 +251,20 @@ export default function MatterBoard({
   // MatterCard/SpreadsheetView in place of onSaveValue, so ValueCell/
   // SpreadsheetCell's own commit() logic (only fires on a real change)
   // doesn't need to know anything changed about the flow.
-  const requestSaveValue = (itemId: string, fieldId: string, value: any, propertyId?: string) => {
+  const requestSaveValue = (itemId: string, fieldId: string, value: any, propertyId?: string, capacity?: string | null) => {
     // logCellChanges off -- save immediately with no reason and no prompt,
     // matching this page's own setting for the "why is this changing?"
     // requirement (see values/route.ts, which skips the reason check and
     // the activity-log write the same way when this page has it off).
-    if (!logCellChanges) { onSaveValue?.(itemId, fieldId, value, propertyId, ""); return; }
+    if (!logCellChanges) { onSaveValue?.(itemId, fieldId, value, propertyId, "", capacity); return; }
     const field = fields.find(f => f.id === fieldId);
     setReasonInput("");
-    setPendingSave({ itemId, fieldId, propertyId, newValue: value, fieldLabel: field?.label || "this field" });
+    setPendingSave({ itemId, fieldId, propertyId, newValue: value, fieldLabel: field?.label || "this field", capacity });
   };
 
   const confirmPendingSave = () => {
     if (!pendingSave || !reasonInput.trim() || !onSaveValue) return;
-    onSaveValue(pendingSave.itemId, pendingSave.fieldId, pendingSave.newValue, pendingSave.propertyId, reasonInput.trim());
+    onSaveValue(pendingSave.itemId, pendingSave.fieldId, pendingSave.newValue, pendingSave.propertyId, reasonInput.trim(), pendingSave.capacity);
     setPendingSave(null);
   };
 
@@ -1061,7 +1064,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
-  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
+  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string, capacity?: string | null) => void;
   onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
@@ -1151,7 +1154,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {fields.map(f => (
               <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
-                onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
+                onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
           </div>
@@ -1171,7 +1174,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   );
 }
 
-function ValueCell({ field, value, relationId, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; dateFormat: string; editable: boolean; onSave: (v: any) => void; onShowHistory?: () => void }) {
+function ValueCell({ field, value, relationId, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; dateFormat: string; editable: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1193,7 +1196,7 @@ function ValueCell({ field, value, relationId, dateFormat, editable: editablePro
         {labelRow}
         {editable ? (
           <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-            value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" placeholder="—" />
+            value={relationId ?? null} initialLabel={value ?? undefined} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
         ) : (
           <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">—</span>}</p>
         )}
@@ -1393,7 +1396,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
-  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string) => void;
+  onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string, capacity?: string | null) => void;
   onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
@@ -1502,7 +1505,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
               )}
               {fields.map((f, i) => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
-                  onSave={v => onSaveValue?.(item.id, f.id, v, propertyId)}
+                  onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
               ))}
               {canEdit && onMoveItem && (
@@ -1550,7 +1553,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   );
 }
 
-function SpreadsheetCell({ field, value, relationId, expanded, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; expanded?: boolean; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any) => void; onShowHistory?: () => void }) {
+function SpreadsheetCell({ field, value, relationId, expanded, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; expanded?: boolean; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1579,7 +1582,7 @@ function SpreadsheetCell({ field, value, relationId, expanded, dateFormat, edita
         <span className="inline-flex items-center gap-1.5 min-w-[100px]">
           {editable ? (
             <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-              value={relationId ?? null} initialLabel={value ?? undefined} onSelect={id => onSave(id)} allowCreateNew variant="plain" placeholder="—" />
+              value={relationId ?? null} initialLabel={value ?? undefined} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
           ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "—"}</span>}
           {historyButton}
         </span>

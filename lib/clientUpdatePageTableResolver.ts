@@ -176,7 +176,13 @@ export async function resolveFieldValuesBatch(
   recordIds: string[]
 ): Promise<Map<string, any>> {
   if (!fieldKeys.length || !recordIds.length) return new Map();
-  const table = isSystemTable(recordTable) ? "company_custom_field_values" : "company_table_values";
+  const isSystem = isSystemTable(recordTable);
+  const table = isSystem ? "company_custom_field_values" : "company_table_values";
+  // value_record_capacity only exists on company_custom_field_values (see
+  // supabase/migrations/20260729430000_relation_value_capacity.sql) --
+  // company_table_values has no such column, so this is only ever selected
+  // for a system-table (isSystem) target.
+  const cols = `field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id${isSystem ? ", value_record_capacity" : ""}`;
   // One row per (field, record) pair, so this can easily exceed PostgREST's
   // default page cap (1000) on a wide/busy table -- e.g. the Irregularities
   // board crossed it at 2752 rows (8 fields x 344 records), which silently
@@ -188,7 +194,7 @@ export async function resolveFieldValuesBatch(
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data } = await admin
       .from(table)
-      .select("field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id")
+      .select(cols)
       .in("field_id", fieldKeys)
       .in("record_id", recordIds)
       .range(from, from + PAGE_SIZE - 1);

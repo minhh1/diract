@@ -36,10 +36,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const [{ data: officeholders }, { data: entity }] = await Promise.all([
     admin.from("entity_officeholders").select("id, full_name, role, officeholder_entity_id, is_active")
       .eq("entity_id", entityId).eq("is_active", true).order("role"),
-    admin.from("entities").select("entity_type").eq("id", entityId).maybeSingle(),
+    admin.from("entities").select("entity_type, roles").eq("id", entityId).maybeSingle(),
   ]);
 
-  return NextResponse.json({ officeholders: officeholders || [], entityType: entity?.entity_type ?? null });
+  return NextResponse.json({ officeholders: officeholders || [], entityType: entity?.entity_type ?? null, roles: entity?.roles ?? [] });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {

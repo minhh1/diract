@@ -23,6 +23,7 @@ export default function EntityOfficeholdersPanel({ pageId, itemId, canEdit }: {
 }) {
   const [officeholders, setOfficeholders] = useState<Officeholder[]>([]);
   const [entityType, setEntityType] = useState<string | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
   const [trust, setTrust] = useState<TrustLink | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingDirector, setAddingDirector] = useState(false);
@@ -31,14 +32,21 @@ export default function EntityOfficeholdersPanel({ pageId, itemId, canEdit }: {
   const [newDirectorRole, setNewDirectorRole] = useState("Director");
   const [saving, setSaving] = useState(false);
 
-  const isCorporateTrustee = entityType === "Corporate Trustee";
+  // Checks both entities.roles (see supabase/migrations/20260729420000_
+  // entities_multi_role.sql -- covers an entity holding Corporate/Non
+  // Corporate Trustee as an ADDITIONAL role, not just its primary
+  // entity_type) and the old exact entity_type match, belt and suspenders.
+  const isCorporateTrustee = roles.includes("Corporate Trustee") || roles.includes("Non Corporate Trustee")
+    || entityType === "Corporate Trustee" || entityType === "Non Corporate Trustee";
 
   const load = useCallback(async () => {
     setLoading(true);
     const officeholdersJson = await fetch(`/api/client-update-pages/${pageId}/items/${itemId}/officeholders`).then(r => r.json());
     setOfficeholders(officeholdersJson.officeholders || []);
     setEntityType(officeholdersJson.entityType ?? null);
-    if (officeholdersJson.entityType === "Corporate Trustee") {
+    const entityRoles: string[] = officeholdersJson.roles || [];
+    setRoles(entityRoles);
+    if (entityRoles.includes("Corporate Trustee") || entityRoles.includes("Non Corporate Trustee") || officeholdersJson.entityType === "Corporate Trustee" || officeholdersJson.entityType === "Non Corporate Trustee") {
       const trustJson = await fetch(`/api/client-update-pages/${pageId}/items/${itemId}/trust`).then(r => r.json());
       setTrust(trustJson.trust || null);
     }

@@ -2,10 +2,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Loader2, Check, ShieldCheck, AlertCircle } from "lucide-react";
+import { X, Loader2, Check, ShieldCheck, AlertCircle, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
+import RelationPicker from "@/components/dashboard/RelationPicker";
+
+// Same officeholder role list EntityOfficeholdersPanel.tsx uses for the
+// identical "add a director" flow on an existing entity -- duplicated here
+// rather than shared, it's a fixed 7-item list unlikely to drift.
+const OFFICEHOLDER_ROLES = ["Director", "Secretary", "Public Officer", "Shareholder", "Trustee", "Beneficiary", "Other"];
+
+// Only these two are offered as an ADDITIONAL role today (multi-select,
+// stackable with any primary Classification type) -- the concrete case the
+// user asked for (a Company that's ALSO Corporate Trustee for some trust).
+// Other types stay single-select via the Classification dropdown for now;
+// see the plan's "Explicitly out of scope" section for why.
+const ADDITIONAL_ROLE_OPTIONS = ["Corporate Trustee", "Non Corporate Trustee"];
+const TRUSTEE_ROLE_TYPES = ["Corporate Trustee", "Non Corporate Trustee"];
+const TRUST_TYPES = ["Discretionary Family Trust", "Fixed Unit Trust"];
 
 // abn/acn/tfn/bsb/account_number/bank_name/trust_deed_date get their own
 // dedicated UI below (Identifiers/Trustee details/Banking) even though
@@ -50,9 +65,35 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
   const [trusteeName, setTrusteeName] = useState('');
   const [trusteeType, setTrusteeType] = useState('Company');
   const [trusteeAbn, setTrusteeAbn] = useState('');
+  const [trusteeAcn, setTrusteeAcn] = useState('');
+  const [trusteeEstablishedDate, setTrusteeEstablishedDate] = useState('');
   const [trustDeedDate, setTrustDeedDate] = useState('');
+  const [trusteeDirectors, setTrusteeDirectors] = useState<{ directorEntityId: string | null; label: string; role: string }[]>([]);
+  const [addingDirector, setAddingDirector] = useState(false);
+  const [newDirectorId, setNewDirectorId] = useState<string | null>(null);
+  const [newDirectorLabel, setNewDirectorLabel] = useState<string | null>(null);
+  const [newDirectorRole, setNewDirectorRole] = useState('Director');
+  // Additional roles (multi-select, stackable with the primary
+  // Classification type below) -- e.g. a "Company" that's ALSO Corporate
+  // Trustee for some specific trust, at the same time.
+  const [additionalRoles, setAdditionalRoles] = useState<string[]>([]);
+  const toggleAdditionalRole = (role: string) => setAdditionalRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]);
+  // Which trust this entity is trustee FOR -- only relevant when the entity
+  // itself holds a trustee role (primary type or additional role), separate
+  // from isTrust below (creating an actual Trust, which instead asks who
+  // ITS trustee is).
+  const [trustLinkId, setTrustLinkId] = useState<string | null>(null);
+  const [trustLinkLabel, setTrustLinkLabel] = useState<string | null>(null);
 
-  const isTrust = entityType.toLowerCase().includes('trust');
+  // Exact match against real trust types only -- NOT a substring check.
+  // 'Corporate Trustee'/'Non Corporate Trustee' contain "trust" as a
+  // substring of "trustee", which used to wrongly trigger this same "name a
+  // sub-trustee" flow when picking Corporate Trustee as the type (see
+  // isTrusteeRole below for the correct, opposite flow that should trigger
+  // instead: "which trust is THIS entity trustee for").
+  const isTrust = TRUST_TYPES.includes(entityType);
+  const isTrusteeRole = TRUSTEE_ROLE_TYPES.includes(entityType) || additionalRoles.some(r => TRUSTEE_ROLE_TYPES.includes(r));
+  const roles = Array.from(new Set([entityType, ...additionalRoles]));
 
   const ENTITY_TYPES = [
     'Company', 'Individual', 'Corporate Trustee', 'Non Corporate Trustee',
@@ -88,7 +129,17 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
     setEntityType('Company'); setName(''); setAbn(''); setAcn(''); setTfn('');
     setEmail(''); setPhone(''); setAddress(''); setBankName(''); setBsb('');
     setAccountNumber(''); setTrusteeName(''); setTrusteeType('Company');
-    setTrusteeAbn(''); setTrustDeedDate(''); setCustomValues({}); setSaved(false);
+    setTrusteeAbn(''); setTrusteeAcn(''); setTrusteeEstablishedDate('');
+    setTrustDeedDate(''); setTrusteeDirectors([]); setAddingDirector(false);
+    setNewDirectorId(null); setNewDirectorLabel(null); setNewDirectorRole('Director');
+    setAdditionalRoles([]); setTrustLinkId(null); setTrustLinkLabel(null);
+    setCustomValues({}); setSaved(false);
+  };
+
+  const addTrusteeDirector = () => {
+    if (!newDirectorLabel?.trim()) return;
+    setTrusteeDirectors(prev => [...prev, { directorEntityId: newDirectorId, label: newDirectorLabel.trim(), role: newDirectorRole }]);
+    setAddingDirector(false); setNewDirectorId(null); setNewDirectorLabel(null); setNewDirectorRole('Director');
   };
 
   const handleClose = () => { resetForm(); onClose(); };
@@ -99,6 +150,7 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
     if (abn.trim() && !isValidABN(abn)) { alert('ABN is not valid (must be 11 digits and pass the ABN checksum)'); return; }
     if (!isTrust && acn.trim() && !isValidACN(acn)) { alert('ACN is not valid (must be 9 digits and pass the ACN checksum)'); return; }
     if (isTrust && trusteeAbn.trim() && !isValidABN(trusteeAbn)) { alert('Trustee ABN is not valid (must be 11 digits and pass the ABN checksum)'); return; }
+    if (isTrust && trusteeType === 'Company' && trusteeAcn.trim() && !isValidACN(trusteeAcn)) { alert('Trustee ACN is not valid (must be 9 digits and pass the ACN checksum)'); return; }
     const missingRequired = customFields.filter(f => f.is_required && !customValues[f.id]?.trim());
     if (missingRequired.length > 0) {
       alert(`Please fill in required field${missingRequired.length > 1 ? 's' : ''}: ${missingRequired.map(f => f.label).join(', ')}`);
@@ -111,21 +163,32 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
       let mainEntityId: string;
 
       if (isTrust) {
+        const trusteeRoles = Array.from(new Set([trusteeType]));
         const { data: trustee, error: tErr } = await supabase
           .from('entities')
-          .insert({ company_id: companyId, name: trusteeName.trim(), entity_type: trusteeType })
+          .insert({ company_id: companyId, name: trusteeName.trim(), entity_type: trusteeType, established_date: trusteeType === 'Company' ? (trusteeEstablishedDate || null) : null, roles: trusteeRoles })
           .select('id').single();
         if (tErr) throw tErr;
-        if (trusteeAbn.trim()) await writeEntityCustomFieldValues(companyId!, trustee.id, 'entities', { abn: trusteeAbn.trim() });
+        if (trusteeAbn.trim() || (trusteeType === 'Company' && trusteeAcn.trim())) {
+          await writeEntityCustomFieldValues(companyId!, trustee.id, 'entities', {
+            ...(trusteeAbn.trim() ? { abn: trusteeAbn.trim() } : {}),
+            ...(trusteeType === 'Company' && trusteeAcn.trim() ? { acn: trusteeAcn.trim() } : {}),
+          });
+        }
+        for (const d of trusteeDirectors) {
+          await supabase.from('entity_officeholders').insert({
+            entity_id: trustee.id, officeholder_entity_id: d.directorEntityId, full_name: d.label, role: d.role, is_active: true,
+          });
+        }
 
         const { data: trust, error: trErr } = await supabase
           .from('entities')
-          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null })
+          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null, roles })
           .select('id').single();
         if (trErr) throw trErr;
 
         await supabase.from('entity_relationships').insert({
-          parent_entity_id: trust.id, child_entity_id: trustee.id, relationship_type: 'Trustee',
+          parent_entity_id: trust.id, child_entity_id: trustee.id, relationship_type: 'Trustee', is_current: true,
         });
         mainEntityId = trust.id;
         await writeEntityCustomFieldValues(companyId!, mainEntityId, 'entities', {
@@ -134,13 +197,18 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
       } else {
         const { data: ent, error: entErr } = await supabase
           .from('entities')
-          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null })
+          .insert({ company_id: companyId, name: name.trim(), entity_type: entityType, email: email.trim() || null, phone: phone.trim() || null, registered_address_text: address.trim() || null, roles })
           .select('id').single();
         if (entErr) throw entErr;
         mainEntityId = ent.id;
         await writeEntityCustomFieldValues(companyId!, mainEntityId, 'entities', {
           abn, acn, tfn, bank_name: bankName, bsb, account_number: accountNumber,
         });
+        if (isTrusteeRole && trustLinkId) {
+          await supabase.from('entity_relationships').insert({
+            parent_entity_id: trustLinkId, child_entity_id: mainEntityId, relationship_type: 'Trustee', is_current: true,
+          });
+        }
       }
 
       if (customFields.length > 0) {
@@ -201,32 +269,124 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
             </div>
           </div>
 
-          {/* Trust specific */}
-          {isTrust && (
-            <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-3xl space-y-3">
-              <div className="flex items-center gap-2 mb-1">
+          {/* Additional roles -- stackable with the primary Classification
+              type above, e.g. a "Company" that's ALSO Corporate Trustee for
+              some specific trust at the same time. */}
+          {!isTrust && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Additional roles</p>
+              <div className="flex flex-wrap gap-2">
+                {ADDITIONAL_ROLE_OPTIONS.filter(r => r !== entityType).map(role => (
+                  <button key={role} type="button" onClick={() => toggleAdditionalRole(role)}
+                    className={`px-4 py-2 rounded-full text-[11px] font-bold border transition-all ${additionalRoles.includes(role) ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-200'}`}>
+                    {role}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Which trust this entity is trustee FOR -- shown whenever the
+              entity holds a trustee role (primary type or additional role).
+              Optional/skippable, same as EntityOfficeholdersPanel's own
+              "No Trust linked" empty state -- can be linked later there too. */}
+          {isTrusteeRole && (
+            <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-3xl space-y-2">
+              <div className="flex items-center gap-2">
                 <ShieldCheck size={13} className="text-indigo-600" />
-                <p className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Trustee details</p>
+                <p className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Which trust is this the trustee for?</p>
               </div>
-              <input value={trusteeName} onChange={e => setTrusteeName(e.target.value)} placeholder="Trustee name *"
-                className="w-full bg-white border border-indigo-100 rounded-full py-3 px-5 text-[13px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
-              <div className="grid grid-cols-2 gap-3">
-                <select value={trusteeType} onChange={e => setTrusteeType(e.target.value)}
-                  className="bg-white border border-indigo-100 rounded-full py-3 px-5 text-[13px] font-medium outline-none appearance-none">
-                  <option>Company</option><option>Individual</option>
-                </select>
-                <div>
-                  <input value={trusteeAbn} onChange={e => setTrusteeAbn(e.target.value)} placeholder="Trustee ABN"
-                    className={`w-full bg-white border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${trusteeAbn.trim() && !isValidABN(trusteeAbn) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-indigo-100'}`} />
-                  {trusteeAbn.trim() && !isValidABN(trusteeAbn) && (
-                    <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid ABN</p>
-                  )}
-                </div>
-              </div>
+              <RelationPicker linkedSystemTable="entities" value={trustLinkId} initialLabel={trustLinkLabel ?? undefined}
+                onSelect={(id, label) => { setTrustLinkId(id); setTrustLinkLabel(label); }}
+                placeholder="Search for the trust (optional)..." />
+            </div>
+          )}
+
+          {/* Trust specific -- creating an actual Trust entity, which asks
+              who ITS trustee is (opposite direction from isTrusteeRole
+              above). Trust-level fields (deed date) first, then a nested
+              Trustee card for the sub-entity being created alongside it. */}
+          {isTrust && (
+            <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-3xl space-y-4">
               <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldCheck size={13} className="text-indigo-600" />
+                  <p className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Trust details</p>
+                </div>
                 <label className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest block mb-1.5 px-1">Trust deed date</label>
                 <input type="date" value={trustDeedDate} onChange={e => setTrustDeedDate(e.target.value)}
                   className="w-full bg-white border border-indigo-100 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
+              </div>
+
+              <div className="p-4 bg-white border border-indigo-100 rounded-2xl space-y-3">
+                <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">Trustee</p>
+                <input value={trusteeName} onChange={e => setTrusteeName(e.target.value)} placeholder="Trustee name *"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none focus:ring-4 focus:ring-indigo-100" />
+                <div className="grid grid-cols-2 gap-3">
+                  <select value={trusteeType} onChange={e => setTrusteeType(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none appearance-none">
+                    <option>Company</option><option>Individual</option>
+                  </select>
+                  <div>
+                    <input value={trusteeAbn} onChange={e => setTrusteeAbn(e.target.value)} placeholder="Trustee ABN"
+                      className={`w-full bg-slate-50 border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${trusteeAbn.trim() && !isValidABN(trusteeAbn) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-slate-200'}`} />
+                    {trusteeAbn.trim() && !isValidABN(trusteeAbn) && (
+                      <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid ABN</p>
+                    )}
+                  </div>
+                </div>
+                {trusteeType === 'Company' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <input value={trusteeAcn} onChange={e => setTrusteeAcn(e.target.value)} placeholder="Trustee ACN"
+                        className={`w-full bg-slate-50 border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${trusteeAcn.trim() && !isValidACN(trusteeAcn) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-slate-200'}`} />
+                      {trusteeAcn.trim() && !isValidACN(trusteeAcn) && (
+                        <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid ACN</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 px-1">Established date</label>
+                      <input type="date" value={trusteeEstablishedDate} onChange={e => setTrusteeEstablishedDate(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 px-1">Directors</label>
+                  {trusteeDirectors.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {trusteeDirectors.map((d, i) => (
+                        <span key={i} className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-[11px] text-slate-600">
+                          {d.label} <span className="text-slate-400">· {d.role}</span>
+                          <button type="button" onClick={() => setTrusteeDirectors(prev => prev.filter((_, idx) => idx !== i))}
+                            className="text-slate-300 hover:text-red-500 transition-colors"><X size={11} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {addingDirector ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="min-w-[180px]">
+                        <RelationPicker linkedSystemTable="entities" value={newDirectorId} allowCreateEntity
+                          onSelect={(id, label) => { setNewDirectorId(id); setNewDirectorLabel(label); }}
+                          placeholder="Search or add a person..." size="sm" />
+                      </div>
+                      <select value={newDirectorRole} onChange={e => setNewDirectorRole(e.target.value)}
+                        className="text-[11px] border border-slate-200 rounded-full px-2.5 py-1.5 outline-none bg-white">
+                        {OFFICEHOLDER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                      <button type="button" onClick={addTrusteeDirector} disabled={!newDirectorLabel?.trim()}
+                        className="px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40">Add</button>
+                      <button type="button" onClick={() => { setAddingDirector(false); setNewDirectorId(null); setNewDirectorLabel(null); }}
+                        className="text-[11px] text-slate-400 hover:text-slate-600">Cancel</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setAddingDirector(true)} className="flex items-center gap-1 text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors">
+                      <Plus size={12} /> Add director/officeholder
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}

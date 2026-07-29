@@ -282,7 +282,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   // the write side) looked right by accident, without a real relation link.
   const { data: propertyCustomValues } = propertyCustomFieldIds.length && allPropertyIds.length
     ? await admin.from("company_custom_field_values")
-        .select("field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id")
+        .select("field_id, record_id, value_text, value_number, value_date, value_boolean, value_record_id, value_record_capacity")
         .in("field_id", propertyCustomFieldIds).in("record_id", allPropertyIds)
     : { data: [] as any[] };
   const propertyCustomValueByKey = new Map<string, any>((propertyCustomValues || []).map((v: any) => [`${v.field_id}:${v.record_id}`, v]));
@@ -383,7 +383,8 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       // this same bug.
       if (field.field_type === "entity" && v.value_record_id) {
         const entity = entityById.get(v.value_record_id);
-        return entity ? (entity.name ?? "") : "(deleted)";
+        if (!entity) return "(deleted)";
+        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee)` : (entity.name ?? "");
       }
       if (field.field_type === "property" && v.value_record_id) {
         const relatedProperty = propertyById.get(v.value_record_id);
@@ -413,7 +414,8 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       // Mirrors the isCustomTable branch below's existing resolution.
       if (field.field_type === "entity" && v.value_record_id) {
         const entity = entityById.get(v.value_record_id);
-        return entity ? (entity.name ?? "") : "(deleted)";
+        if (!entity) return "(deleted)";
+        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee)` : (entity.name ?? "");
       }
       if (field.field_type === "property" && v.value_record_id) {
         const property = propertyById.get(v.value_record_id);
