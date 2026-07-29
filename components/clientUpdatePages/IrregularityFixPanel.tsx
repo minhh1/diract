@@ -8,15 +8,22 @@
 // writes straight onto that entity -- never onto the irregularity row
 // itself, which is trigger-managed and flips to Resolved on its own once
 // the underlying entity is genuinely fixed.
+//
+// Duplicate Name is the one rule where "fix" doesn't mean editing a field
+// (its target_field_key, 'name', is just a normal renameable native field)
+// -- it means merging the two duplicate entities together, so it gets its
+// own branch (fieldType 'duplicate_merge') instead of falling into the
+// generic editors below.
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Wrench, Check } from "lucide-react";
+import { Loader2, Wrench, Check, GitMerge } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 
 interface FixTarget {
   entityId: string; entityName: string; fieldKey: string; fieldLabel: string; fieldType: string;
   selectOptions?: string[] | null; currentValue: any; currentLabel?: string | null;
+  duplicateEntityId?: string | null; duplicateEntityName?: string | null;
 }
 
 export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered = true }: { pageId: string; itemId: string; canEdit: boolean; bordered?: boolean }) {
@@ -25,6 +32,9 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
   const [draft, setDraft] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [merged, setMerged] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,8 +59,49 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
     if (res.ok) { setSaved(true); load(); }
   };
 
+  const merge = async () => {
+    if (!target?.duplicateEntityId) return;
+    if (!window.confirm(`Keep "${target.entityName}" and merge "${target.duplicateEntityName}" into it? Anything referencing "${target.duplicateEntityName}" will be repointed to "${target.entityName}", then "${target.duplicateEntityName}" will be archived.`)) return;
+    setMerging(true);
+    setMergeError(null);
+    const res = await fetch(`/api/client-update-pages/${pageId}/items/${itemId}/fix`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mergeId: target.duplicateEntityId }),
+    });
+    setMerging(false);
+    if (res.ok) { setMerged(true); load(); }
+    else { const json = await res.json().catch(() => ({})); setMergeError(json.error || "Couldn't merge these records."); }
+  };
+
   if (loading) return <div className={bordered ? "border-t border-slate-100 pt-3" : ""}><Loader2 size={14} className="animate-spin text-slate-300" /></div>;
   if (!target) return null;
+
+  if (target.fieldType === "duplicate_merge") {
+    return (
+      <div className={`${bordered ? "border-t border-slate-100 pt-3" : ""} space-y-2`}>
+        <p className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+          <Wrench size={11} className="text-indigo-400" /> Fix: Duplicate Name
+        </p>
+        {!target.duplicateEntityId ? (
+          <p className="text-[11px] text-slate-500 italic">No other active entity shares this name anymore.</p>
+        ) : !canEdit ? (
+          <p className="text-[11px] text-slate-500">Duplicate of <span className="font-semibold">{target.duplicateEntityName}</span></p>
+        ) : merged ? (
+          <span className="flex items-center gap-1 text-[10px] text-emerald-600"><Check size={11} /> Merged</span>
+        ) : (
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-slate-600">
+              Keep <span className="font-semibold">{target.entityName}</span>, merge and archive <span className="font-semibold">{target.duplicateEntityName}</span>.
+            </p>
+            <button onClick={merge} disabled={merging}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40">
+              {merging ? <Loader2 size={12} className="animate-spin" /> : <GitMerge size={12} />} Merge duplicates
+            </button>
+            {mergeError && <p className="text-[10px] text-rose-600">{mergeError}</p>}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`${bordered ? "border-t border-slate-100 pt-3" : ""} space-y-2`}>

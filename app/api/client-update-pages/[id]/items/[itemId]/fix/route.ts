@@ -76,8 +76,27 @@ async function resolveTarget(admin: any, pageId: string, itemId: string, company
     if (!record || record.company_id !== companyId) return { error: NextResponse.json({ error: "Record not found" }, { status: 404 }) };
   }
   const recordName = (await resolveDisplayNamesBatch(admin, sourceTable, [recordId])).get(recordId) || "";
+  const ruleLabel: string | undefined = rows.find((v: any) => v.field?.field_key === "issue_type")?.value_text;
 
-  return { recordId, recordName, sourceTable, targetFieldKey };
+  return { recordId, recordName, sourceTable, targetFieldKey, ruleLabel };
+}
+
+// Duplicate Name's target_field_key ('name') is a normal renameable native
+// field, but renaming isn't really "the fix" a user reaches for here --
+// they want to merge the two duplicate entities together (see
+// merge_duplicate_records, already the reconciliation tool's own merge
+// path in app/dashboard/settings/page.tsx). Finds this entity's one
+// currently-active name-duplicate, mirroring the exact
+// lower(btrim(name)) match auto_fed_rules' duplicate_name condition_sql
+// uses so "the other duplicate record" here is always the same entity the
+// irregularity itself was raised against.
+async function findDuplicatePartner(admin: any, companyId: string, entityId: string) {
+  const { data: current } = await admin.from("entities").select("name").eq("id", entityId).maybeSingle();
+  const normalized = (current?.name || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const { data: candidates } = await admin.from("entities").select("id, name")
+    .eq("company_id", companyId).is("deleted_at", null).neq("id", entityId);
+  return (candidates || []).find((e: any) => (e.name || "").trim().toLowerCase() === normalized) ?? null;
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
@@ -91,7 +110,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const resolved = await resolveTarget(admin, id, itemId, companyId);
   if ("error" in resolved) return resolved.error;
-  const { recordId, recordName, sourceTable, targetFieldKey } = resolved;
+  const { recordId, recordName, sourceTable, targetFieldKey, ruleLabel } = resolved;
+
+  if (targetFieldKey === "name" && sourceTable === "entities" && ruleLabel === "Duplicate Name") {
+    const partner = await findDuplicatePartner(admin, companyId, recordId);
+    return NextResponse.json({
+      entityId: recordId, entityName: recordName, fieldKey: "name", fieldLabel: "Duplicate Name",
+      fieldType: "duplicate_merge",
+      duplicateEntityId: partner?.id ?? null, duplicateEntityName: partner?.name ?? null,
+    });
+  }
 
   if (targetFieldKey === "trust_link") {
     // Only ever meaningful for an entities-sourced item (a Corporate
@@ -202,4 +230,44 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { error } = await admin.from("company_custom_field_values").upsert(row, { onConflict: "field_id,record_id" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
+}
+
+// Duplicate Name's "fix": merge the flagged entity's duplicate into it via
+// merge_duplicate_records (see that migration for exactly what gets
+// reassigned), keeping this item's own entity and archiving the partner
+// found by findDuplicatePartner. merge_duplicate_records is SECURITY
+// INVOKER and normally relies on the calling browser session hitting
+// trg_prevent_non_admin_delete under the real user -- but
+// prevent_non_admin_delete() explicitly no-ops for auth.role() =
+// 'service_role' (see supabase/archive_requests.sql), which is exactly the
+// role this route's admin client runs as. So the admin check below is not
+// optional -- without it, any company member could merge entities through
+// this endpoint regardless of role.
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
+  const { id, itemId } = await params;
+  const auth = await authorizeCompanyMember();
+  if ("error" in auth) return auth.error;
+  const { admin, companyId, isAdmin } = auth;
+  if (!isAdmin) return NextResponse.json({ error: "Only a company admin can merge duplicates." }, { status: 403 });
+
+  const gate = await loadPageForCompany(admin, id, companyId);
+  if (gate.error) return gate.error;
+
+  const resolved = await resolveTarget(admin, id, itemId, companyId);
+  if ("error" in resolved) return resolved.error;
+  const { recordId, sourceTable, targetFieldKey, ruleLabel } = resolved;
+  if (targetFieldKey !== "name" || sourceTable !== "entities" || ruleLabel !== "Duplicate Name") {
+    return NextResponse.json({ error: "This item isn't a duplicate-name irregularity" }, { status: 400 });
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const mergeId: string | undefined = body?.mergeId;
+  if (!mergeId) return NextResponse.json({ error: "mergeId is required" }, { status: 400 });
+
+  const { data, error } = await admin.rpc("merge_duplicate_records", {
+    p_company_id: companyId, p_table_kind: "system", p_table: "entities", p_table_id: null,
+    p_keep_id: recordId, p_merge_id: mergeId,
+  });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true, ...(data || {}) });
 }
