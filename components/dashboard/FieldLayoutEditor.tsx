@@ -508,8 +508,9 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
         </div>
       ) : (
         <button onClick={() => { setEditing(true); setDraft(value ?? ''); }}
-          className="flex items-center gap-2 group/field text-left w-full">
-          <span className={`text-[14px] font-medium transition-colors ${dv ? 'text-slate-800 group-hover/field:text-indigo-600' : 'text-slate-300 italic'}`}>
+          title={dv && field.fieldType !== 'url' ? dv : undefined}
+          className="flex items-center gap-2 group/field text-left w-full min-w-0">
+          <span className={`block truncate text-[14px] font-medium transition-colors ${dv ? 'text-slate-800 group-hover/field:text-indigo-600' : 'text-slate-300 italic'}`}>
             {field.fieldType === 'url' && dv
               ? <a href={dv} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
                   className="text-indigo-600 hover:underline text-[13px]">{dv}</a>

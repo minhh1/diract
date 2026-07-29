@@ -22,7 +22,6 @@ import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
 import PrecedentsTab from "./tabs/PrecedentsTab";
 import RecordDashboardTab from "./tabs/RecordDashboardTab";
 import InvoicesTab from "./tabs/InvoicesTab";
-import TeamMemberLinkCard from "./TeamMemberLinkCard";
 import SendSmsCard from "./SendSmsCard";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { fetchCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
@@ -31,6 +30,9 @@ import {
 } from "@/lib/schema/systemTableRelations";
 import { ENTITY_TYPES } from "@/lib/entityTypes";
 import { invalidateEntityRelationCache } from "./RelationPicker";
+import TrustLinkField from "@/components/entities/TrustLinkField";
+
+const TRUSTEE_ROLE_TYPES = ["Corporate Trustee", "Non Corporate Trustee"];
 import { buildMissingDefaultProjectDashboardTabs, buildMissingDefaultTabsFromCompanyDefaults } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import { getCompanyId, getSchemaMetadata } from "@/lib/services/schemaService";
@@ -1203,6 +1205,11 @@ export default function RecordDashboard({
           }
         />
       )}
+      {activeTab?.tab_type === 'fields' && systemTable === 'entities' && record?.roles?.some((r: string) => TRUSTEE_ROLE_TYPES.includes(r)) && (
+        <div className="mt-6 pt-6 border-t border-slate-100">
+          <TrustLinkField entityId={recordId} canEdit />
+        </div>
+      )}
       {activeTab?.tab_type === 'sub_projects' && (
         <SubProjectsTab recordId={recordId} />
       )}
@@ -1536,17 +1543,6 @@ export default function RecordDashboard({
             </span>
           )}
         </p>
-
-        {/* Team member link — entities only */}
-        {systemTable === 'entities' && companyId && (
-          <TeamMemberLinkCard
-            companyId={companyId}
-            entityId={recordId}
-            entityName={record.name || ''}
-            linkedProfileId={record.linked_profile_id || null}
-            onLinked={profileId => setRecord(prev => prev ? { ...prev, linked_profile_id: profileId } : prev)}
-          />
-        )}
 
         {/* Send SMS — entities only */}
         {systemTable === 'entities' && (

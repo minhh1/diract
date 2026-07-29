@@ -359,6 +359,19 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const entityById = new Map<string, any>((relatedEntities || []).map((e: any) => [e.id, e]));
   const projectPropertyValueByKey = new Map<string, any>((projectPropertyValues || []).map((v: any) => [`${v.field_id}:${v.project_property_id}`, v]));
 
+  // Which trust each related entity is trustee FOR, if any -- looked up
+  // live (not stored on the value) so a link made/changed later via
+  // TrustLinkField.tsx is always reflected here, the same "(as trustee for
+  // <trust>)" a RelationPicker shows at selection time (see
+  // fetchAllSystemTableOptions's identical query).
+  const { data: trustLinks } = relatedEntityIds.length
+    ? await admin.from("entity_relationships")
+        .select("child_entity_id, trust:parent_entity_id(name)")
+        .in("child_entity_id", relatedEntityIds).eq("relationship_type", "Trustee")
+        .or("is_current.is.null,is_current.eq.true")
+    : { data: [] as any[] };
+  const trustNameByEntityId = new Map<string, string>((trustLinks || []).filter((r: any) => r.trust?.name).map((r: any) => [r.child_entity_id, r.trust.name]));
+
   function resolveProjectPropertyField(field: any, projectId: string, propertyId: string | undefined): any {
     if (!propertyId) return null;
     const projectPropertyId = projectPropertyIdByPair.get(`${projectId}:${propertyId}`);
@@ -384,7 +397,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       if (field.field_type === "entity" && v.value_record_id) {
         const entity = entityById.get(v.value_record_id);
         if (!entity) return "(deleted)";
-        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee)` : (entity.name ?? "");
+        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee${trustNameByEntityId.has(v.value_record_id) ? ` for ${trustNameByEntityId.get(v.value_record_id)}` : ""})` : (entity.name ?? "");
       }
       if (field.field_type === "property" && v.value_record_id) {
         const relatedProperty = propertyById.get(v.value_record_id);
@@ -415,7 +428,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       if (field.field_type === "entity" && v.value_record_id) {
         const entity = entityById.get(v.value_record_id);
         if (!entity) return "(deleted)";
-        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee)` : (entity.name ?? "");
+        return v.value_record_capacity === "Trustee" ? `${entity.name ?? ""} (as trustee${trustNameByEntityId.has(v.value_record_id) ? ` for ${trustNameByEntityId.get(v.value_record_id)}` : ""})` : (entity.name ?? "");
       }
       if (field.field_type === "property" && v.value_record_id) {
         const property = propertyById.get(v.value_record_id);

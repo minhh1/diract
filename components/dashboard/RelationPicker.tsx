@@ -25,6 +25,11 @@ interface RelationOption {
   // prompt in selectOption below -- never part of label/searchText, purely
   // a selection-time signal.
   hasTrusteeRole?: boolean;
+  // entities only -- the trust this entity is ALREADY linked as trustee
+  // for (TrustLinkField.tsx), if any. Lets the capacity prompt read "as
+  // trustee for <trust>" instead of a bare "as trustee" once that link
+  // exists; still just "as trustee" (no name) when it doesn't yet.
+  trustName?: string | null;
 }
 
 // The two role values that make an entity a trustee -- kept in sync with
@@ -341,6 +346,20 @@ async function fetchAllSystemTableOptions(
   const { data: rows } = await q;
   const ids = (rows || []).map((r: any) => r.id);
 
+  // Which trust each candidate is trustee FOR, if any -- entities only,
+  // batched alongside roles above. Lets the capacity prompt say "as
+  // trustee for <trust>" instead of just "as trustee" when the link
+  // already exists (see TrustLinkField.tsx, the place that sets it).
+  const trustNameById = new Map<string, string>();
+  if (isEntities && ids.length) {
+    const { data: trustRows } = await supabase
+      .from('entity_relationships')
+      .select('child_entity_id, trust:parent_entity_id(name)')
+      .in('child_entity_id', ids).eq('relationship_type', 'Trustee')
+      .or('is_current.is.null,is_current.eq.true');
+    (trustRows || []).forEach((r: any) => { if (r.trust?.name) trustNameById.set(r.child_entity_id, r.trust.name); });
+  }
+
   // Every cf: field this option list needs a value for (search fields plus
   // a cf: displayField2), resolved in one batched query per distinct field
   // id -- same batching approach as resolveRelationLabels in
@@ -372,7 +391,7 @@ async function fetchAllSystemTableOptions(
     ].filter((v): v is string | number => v !== null && v !== undefined);
     return {
       id: r.id, label, searchText: searchParts.join(' ').toLowerCase(),
-      ...(isEntities ? { hasTrusteeRole: (r.roles || []).some((role: string) => TRUSTEE_ROLE_TYPES.includes(role)) } : {}),
+      ...(isEntities ? { hasTrusteeRole: (r.roles || []).some((role: string) => TRUSTEE_ROLE_TYPES.includes(role)), trustName: trustNameById.get(r.id) ?? null } : {}),
     };
   });
 }
@@ -720,7 +739,7 @@ export default function RelationPicker({
   // below (the no-ambiguity path) and the capacity-prompt buttons rendered
   // when pendingCapacityOpt is set.
   const finalizeSelection = (opt: RelationOption, capacity: string | null) => {
-    setCurrentLabel(capacity ? `${opt.label} (as trustee)` : opt.label);
+    setCurrentLabel(capacity ? `${opt.label} (as trustee${opt.trustName ? ` for ${opt.trustName}` : ''})` : opt.label);
     resolvedForRef.current = opt.id;
     onSelect?.(opt.id, opt.label, capacity);
     setQuery('');
@@ -1029,7 +1048,7 @@ export default function RelationPicker({
           </button>
           <button type="button" onClick={() => finalizeSelection(pendingCapacityOpt, 'Trustee')}
             className="w-full text-left px-3 py-2 text-[12px] font-medium text-slate-700 rounded-xl hover:bg-indigo-50 transition-colors">
-            {pendingCapacityOpt.label} <span className="text-slate-400">(as trustee)</span>
+            {pendingCapacityOpt.label} <span className="text-slate-400">(as trustee{pendingCapacityOpt.trustName ? ` for ${pendingCapacityOpt.trustName}` : ''})</span>
           </button>
           <button type="button" onClick={() => setPendingCapacityOpt(null)}
             className="w-full text-left px-3 py-1 text-[11px] text-slate-400 hover:text-slate-600">Back</button>
