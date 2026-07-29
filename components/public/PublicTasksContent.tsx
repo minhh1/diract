@@ -18,7 +18,7 @@ import { readShellCache } from "@/lib/shellCache";
 import { tableShellKey } from "@/lib/hooks/prefetchShells";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
-import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign } from "lucide-react";
+import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign, Calendar as CalendarIcon } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
 import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker";
@@ -108,6 +108,12 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   const [timeFeesTable, setTimeFeesTable] = useState<CustomTable | null>(null);
   const [timeFeesFields, setTimeFeesFields] = useState<CustomTableField[]>([]);
   const [convertingTask, setConvertingTask] = useState<Task | null>(null);
+  // Users in this company with a connected Gmail/Calendar account (see
+  // company_gmail_connections — a view bypassing user_gmail_tokens' own-row-only RLS,
+  // scoped to the caller's company). Drives whether the per-task "Add to calendar"
+  // action shows at all: only when that task's assignee has a calendar to add it to.
+  const [connectedAssigneeIds, setConnectedAssigneeIds] = useState<Set<string>>(new Set());
+  const [syncingTaskId, setSyncingTaskId] = useState<string | null>(null);
 
   // Persist the organised-view preference per browser (it's a display
   // choice, not something that needs to sync across viewers).
@@ -235,6 +241,32 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
       }
     })();
   }, [data?.companyId]);
+
+  useEffect(() => {
+    if (!data?.companyId) return;
+    (async () => {
+      const { data: connections } = await supabase.from("company_gmail_connections").select("user_id");
+      setConnectedAssigneeIds(new Set((connections || []).map((c: any) => c.user_id)));
+    })();
+  }, [data?.companyId]);
+
+  // Fires the same calendar-sync edge function the public tasks page's PATCH route
+  // already triggers on save -- this is a one-off manual push for a task that hasn't
+  // changed since (or was created before this action existed). The event title uses
+  // whatever format the company has configured (Settings -> Calendar sync), not
+  // anything decided here.
+  const syncToCalendar = async (task: Task) => {
+    setSyncingTaskId(task.id);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/sync-calendar`, { method: "POST" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(json.error || "Failed to add to calendar");
+      }
+    } finally {
+      setSyncingTaskId(null);
+    }
+  };
 
   // Cross-origin iframe embedding (e.g. a Teams tab) -- distinct from this
   // component's own `embedded` prop (a dashboard widget, same-origin,
@@ -549,6 +581,10 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               {timeFeesTable && t.projectId && (
                 <button onClick={() => setConvertingTask(t)} title="Add to Time & Fees" className="p-1.5 text-slate-300 hover:text-emerald-600"><DollarSign size={13} /></button>
+              )}
+              {t.assigneeId && t.dueDate && connectedAssigneeIds.has(t.assigneeId) && (
+                <button onClick={() => syncToCalendar(t)} disabled={syncingTaskId === t.id} title="Add to calendar"
+                  className="p-1.5 text-slate-300 hover:text-sky-600 disabled:opacity-40"><CalendarIcon size={13} /></button>
               )}
               <button onClick={() => setEditingTask(t)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600"><Pencil size={13} /></button>
               <button onClick={() => deleteTask(t)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>

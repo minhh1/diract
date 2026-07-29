@@ -37,7 +37,7 @@ interface Team { id: string; team_name: string; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, canLogTimeEntry, onLogTimeEntry }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, canLogTimeEntry, onLogTimeEntry, connectedAssigneeIds, onSyncCalendar, syncingTaskId }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
@@ -110,6 +110,10 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
           {canLogTimeEntry && (
             <button onClick={() => onLogTimeEntry(task)} title="Add to Time & Fees" className="p-1.5 text-slate-300 hover:text-emerald-600 transition-colors"><DollarSign size={12} /></button>
           )}
+          {task.assignee_id && task.due_date && connectedAssigneeIds?.has(task.assignee_id) && (
+            <button onClick={() => onSyncCalendar(task)} disabled={syncingTaskId === task.id} title="Add to calendar"
+              className="p-1.5 text-slate-300 hover:text-sky-600 transition-colors disabled:opacity-40"><Calendar size={12} /></button>
+          )}
           <button onClick={() => onAddSubtask(task.id)} title="Add subtask" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors"><Plus size={12} /></button>
           <button onClick={() => onEdit(task)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors"><Pencil size={12} /></button>
           <button onClick={() => onDelete(task.id)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
@@ -122,7 +126,8 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
               profiles={profiles} teams={teams} depth={depth + 1} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit}
               onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} onMarkFollowUpDone={onMarkFollowUpDone}
-              canLogTimeEntry={canLogTimeEntry} onLogTimeEntry={onLogTimeEntry} />
+              canLogTimeEntry={canLogTimeEntry} onLogTimeEntry={onLogTimeEntry}
+              connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={onSyncCalendar} syncingTaskId={syncingTaskId} />
           ))}
         </div>
       )}
@@ -331,12 +336,19 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   const [timeFeesTable, setTimeFeesTable] = useState<CustomTable | null>(null);
   const [timeFeesFields, setTimeFeesFields] = useState<CustomTableField[]>([]);
   const [convertingTask, setConvertingTask] = useState<Task | null>(null);
+  // Users in this company with a connected Gmail/Calendar account (see
+  // company_gmail_connections — a view bypassing user_gmail_tokens' own-row-only RLS,
+  // scoped to the caller's company). Drives whether the per-task "Add to calendar"
+  // action shows at all: only when that task's assignee has a calendar to add it to.
+  const [connectedAssigneeIds, setConnectedAssigneeIds] = useState<Set<string>>(new Set());
+  const [syncingTaskId, setSyncingTaskId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const [
       { data: taskData }, { data: profileData }, { data: teamData },
       { data: templateData }, { data: projectData }, { data: timeFeesTableData },
+      { data: gmailConnections },
     ] = await Promise.all([
       supabase.from('tasks').select('*').eq('project_id', recordId).is('deleted_at', null).order('date_entered'),
       supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
@@ -344,11 +356,13 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       supabase.from('checklist_templates').select('*, items:checklist_template_items(*)').eq('company_id', companyId).order('created_at'),
       supabase.from('projects').select('created_at, estimated_completion_date').eq('id', recordId).single(),
       supabase.from('company_tables').select('*').eq('slug', 'time-fee-entries').is('deleted_at', null).maybeSingle(),
+      supabase.from('company_gmail_connections').select('user_id'),
     ]);
     setTasks(taskData || []);
     setProfiles(profileData || []);
     setTeams(teamData || []);
     setProject(projectData);
+    setConnectedAssigneeIds(new Set((gmailConnections || []).map((c: any) => c.user_id)));
     setTemplates((templateData || []).map((t: any) => ({
       ...t, items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
     })));
@@ -410,6 +424,24 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     if (rec && 'error' in rec) return rec.error;
     if (rec) { setConvertingTask(null); return null; }
     return 'Could not create the record.';
+  };
+
+  // Fires the same calendar-sync edge function the public tasks page and Gmail Add-on
+  // already trigger on save — ChecklistTab itself never does, so this is the only way a
+  // task edited from the main dashboard gets pushed to the assignee's calendar. The
+  // event title uses whatever format the company has configured (Settings -> Calendar
+  // sync), not anything decided here.
+  const handleSyncCalendar = async (task: Task) => {
+    setSyncingTaskId(task.id);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/sync-calendar`, { method: 'POST' });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(json.error || 'Failed to add to calendar');
+      }
+    } finally {
+      setSyncingTaskId(null);
+    }
   };
 
   const saveWatchers = async (taskId: string, newIds: string[], oldIds: string[], actorId: string | null) => {
@@ -650,7 +682,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
               allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
               onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
               onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
-              canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)} />
+              canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
+              connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId} />
           ))}
         </div>
       )}
@@ -668,7 +701,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                   allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
-                  canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)} />
+                  canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
+                  connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId} />
               ))}
             </div>
           )}
@@ -688,7 +722,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                   allTasks={tasks} profiles={profiles} teams={teams} depth={0} followUpsByTask={followUpsByTask} watchersByTask={watchersByTask}
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
-                  canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)} />
+                  canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
+                  connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId} />
               ))}
             </div>
           )}
