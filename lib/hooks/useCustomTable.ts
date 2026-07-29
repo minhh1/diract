@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { readCache, writeCache } from "@/lib/queryCache";
@@ -182,6 +182,11 @@ export function useCustomTable(
   // before. Relies on ordinary useState reference stability -- the caller's
   // own state only changes identity when it actually re-fetches, not on
   // every render -- so this doesn't need memoizing at the call site.
+  // NOTE: this hook keys its dependency on this off preloadedTable?.id, not
+  // the object itself -- see preloadedTableRef below for why passing a
+  // fresh-but-equivalent object on every render (e.g. useDashboardData.ts's
+  // own always-on background revalidation) must NOT be treated as "the
+  // table changed."
   preloadedTable?: CustomTable | null
 ): {
   tableDef: CustomTable | null;
@@ -224,6 +229,29 @@ export function useCustomTable(
     () => !(companyId && tableSlug && readCache<CustomTableRecord[]>(rowsCacheKey(companyId, tableSlug)))
   );
 
+  // useDashboardData.ts always re-fetches the dashboard's source table row
+  // live in the background (correct -- stale-while-revalidate), even when
+  // it just painted from cache, and hands the result over as
+  // preloadedTable. That live re-fetch produces a brand-new object every
+  // time it resolves, even when the row is byte-for-byte identical to what
+  // was already shown -- if `load`/the effect below depended on
+  // preloadedTable directly, that harmless reference change would retrigger
+  // this hook's ENTIRE fields+records+relation-label fetch a second time on
+  // every single dashboard open (confirmed: this was the actual cause of a
+  // dashboard still not feeling instant even with a fully warm cache).
+  // Reading the live value through a ref -- kept current via a layout
+  // effect that runs after every render, registered before the one below
+  // that calls load(), so it's always up to date by the time that reads it
+  // -- while keying the effect/callback's dependency on just its id (a
+  // table's id is stable across re-fetches of the same table) fixes that
+  // without losing the "skip the network round trip when we already have
+  // the row" behavior load() below relies on.
+  const preloadedTableRef = useRef(preloadedTable);
+  useIsomorphicLayoutEffect(() => {
+    preloadedTableRef.current = preloadedTable;
+  });
+  const preloadedTableId = preloadedTable?.slug === tableSlug ? preloadedTable?.id : undefined;
+
   // Fetches table def + fields + records and swaps them in. Deliberately
   // does not touch `loading`/`recordsLoading` itself on entry -- the mount
   // effect below wraps the *first* call in both loading flags; a later
@@ -232,7 +260,8 @@ export function useCustomTable(
   // unmounting into a spinner.
   const load = useCallback(async () => {
     if (!tableSlug) return;
-    let tbl: CustomTable | null | undefined = preloadedTable?.slug === tableSlug ? preloadedTable : null;
+    const currentPreload = preloadedTableRef.current;
+    let tbl: CustomTable | null | undefined = currentPreload?.slug === tableSlug ? currentPreload : null;
     if (!tbl && companyId) {
       // .eq('company_id', ...) -- company_tables.slug has no unique
       // constraint (two companies can each legitimately have a table
@@ -337,7 +366,12 @@ export function useCustomTable(
     setRecords(hydratedRecords);
     setRecordsLoading(false);
     if (companyId) writeCache(rowsCacheKey(companyId, tableSlug), hydratedRecords);
-  }, [tableSlug, preloadedTable, companyId]);
+    // preloadedTableId isn't read in this body (the ref is, above) -- it's
+    // listed deliberately so a genuine table change still gets a fresh
+    // `load` identity, without a harmless preloadedTable object-reference
+    // change (see preloadedTableRef's doc comment) doing the same.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableSlug, preloadedTableId, companyId]);
 
   // Layout effect, not a plain effect -- when a caller reuses this hook's
   // component instance across a slug change (e.g. clicking between two
@@ -357,7 +391,7 @@ export function useCustomTable(
     // unconditionally is what lets a repeat visit paint the shell with zero
     // network wait even on the dashboard-driven path.
     const cached = companyId ? readShellCache<CachedTableShell>(tableShellKey(companyId, tableSlug)) : null;
-    const preload = preloadedTable?.slug === tableSlug ? preloadedTable : null;
+    const preload = preloadedTableRef.current?.slug === tableSlug ? preloadedTableRef.current : null;
     if (preload) setTableDef(preload);
     else if (cached) setTableDef(cached.tableDef);
     if (cached) {
@@ -381,7 +415,7 @@ export function useCustomTable(
       setRecordsLoading(true);
     }
     load();
-  }, [tableSlug, load, preloadedTable, companyId]);
+  }, [tableSlug, load, preloadedTableId, companyId]);
 
   const addRecordOptimistic = useCallback((id: string, values: Record<string, any>) => {
     setRecords(prev => {

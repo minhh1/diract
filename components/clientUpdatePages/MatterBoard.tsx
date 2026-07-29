@@ -807,7 +807,7 @@ export default function MatterBoard({
             </div>
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
-              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} />
+              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} />
           )}
         </div>
       </div>
@@ -1260,6 +1260,54 @@ function formatNoteTimestamp(note: MatterBoardNote, dateFormat: string): string 
   return `${datePart}, ${time.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
 }
 
+// ai_summary_generated_at is a real timestamptz (e.g. from Postgres now()),
+// not the plain YYYY-MM-DD date string formatDate() expects (it appends
+// "T00:00:00" to whatever it's given, which mangles a full ISO timestamp
+// into an invalid date) -- so this formats the Date directly against the
+// page's chosen DATE_FORMATS entry instead, same pattern as
+// formatNoteTimestamp just above using note.created_at.
+function formatSummaryGeneratedAt(iso: string, dateFormat: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const match = DATE_FORMATS.find(f => f.value === dateFormat) || DATE_FORMATS[0];
+  return `${match.format(d)}, ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+// Spreadsheet mode's own view of the AI summary MatterCard already shows in
+// its collapsed header (card mode has no equivalent "expanded" state to put
+// this in, so it stays in the header there) -- spreadsheet mode's expanded
+// row had no summary of any kind until now, so this also carries the
+// generated-at date the card header never had room to show.
+function SummaryPanel({ summary, generatedAt, dateFormat, canEdit, generating, onGenerate }: {
+  summary?: string | null; generatedAt?: string | null; dateFormat: string; canEdit: boolean; generating: boolean; onGenerate?: () => void;
+}) {
+  return (
+    <div className="border-t border-slate-100 pt-3 space-y-1">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Summary</p>
+      {summary ? (
+        <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
+          <span className="italic flex-1">{summary}</span>
+          {canEdit && onGenerate && (
+            <button onClick={onGenerate} disabled={generating} title="Regenerate summary"
+              className="shrink-0 text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
+              {generating ? <Loader2 size={11} className="animate-spin" /> : <RotateCw size={11} />}
+            </button>
+          )}
+        </div>
+      ) : canEdit && onGenerate ? (
+        <button onClick={onGenerate} disabled={generating}
+          className="flex items-center gap-1 text-[11px] text-indigo-500 hover:text-indigo-700 disabled:opacity-40 transition-colors">
+          {generating ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+          {generating ? "Summarising..." : "Summarise emails"}
+        </button>
+      ) : null}
+      {summary && generatedAt && (
+        <p className="text-[10px] text-slate-400">Generated {formatSummaryGeneratedAt(generatedAt, dateFormat)}</p>
+      )}
+    </div>
+  );
+}
+
 function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoardNote[]; dateFormat: string; canComment: boolean; onAdd: (note: string) => void }) {
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1402,7 +1450,7 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail }: {
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
@@ -1414,9 +1462,20 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   onAddNote: (itemId: string, note: string, propertyId?: string) => void;
   onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
   onRemoveEmail?: (itemId: string, emailId: string) => void;
+  onGenerateSummary?: (itemId: string) => Promise<void>;
 }) {
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
+  // Unlike MatterCard (one instance per item, so its own local `generating`
+  // state is naturally scoped to that item), this is one component for the
+  // whole table -- keyed by item id so regenerating one row's summary
+  // doesn't show a spinner on every other row.
+  const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
+  const handleGenerateSummary = async (itemId: string) => {
+    if (!onGenerateSummary || generatingSummaryId) return;
+    setGeneratingSummaryId(itemId);
+    try { await onGenerateSummary(itemId); } finally { setGeneratingSummaryId(null); }
+  };
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // Session-only (resets on reload) -- purely a display preference for how
   // wide a column's cells render, nothing persisted server-side. Columns
@@ -1542,6 +1601,10 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                     <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
                   )}
                   <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
+                  {(item.ai_summary || (canEdit && onGenerateSummary)) && (
+                    <SummaryPanel summary={item.ai_summary} generatedAt={item.ai_summary_generated_at} dateFormat={dateFormat} canEdit={canEdit}
+                      generating={generatingSummaryId === item.id} onGenerate={onGenerateSummary ? () => handleGenerateSummary(item.id) : undefined} />
+                  )}
                   {baseTable !== "entities" && pageKind !== "auto_fed" && (
                     <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
                   )}
