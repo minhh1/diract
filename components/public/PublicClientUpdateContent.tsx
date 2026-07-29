@@ -31,7 +31,7 @@ import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
 interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
-interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed" }
+interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; logCellChanges: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed" }
 
 const boardCacheKey = (slug: string) => `client_update_board_${slug}`;
 const codeCacheKey = (slug: string) => `client_update_code_${slug}`;
@@ -99,7 +99,9 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     if (cachedCode) {
       const attempt = await fetchPublic(cachedCode);
       if (attempt.ok && !attempt.json.requiresCode) {
-        const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind };
+        // logCellChanges is a staff-only editing preference -- a client PIN
+        // visitor never edits cells, so it's always true here (unused).
+        const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, logCellChanges: true, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind };
         const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [] };
         setMode("client");
         setMeta(meta);
@@ -118,7 +120,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     const { ok, json } = await fetchPublic();
     if (!ok) { setError(json.error || "This page is not available"); setLoading(false); return; }
     setMode("client");
-    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, baseTable: json.baseTable, pageKind: json.pageKind });
+    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, logCellChanges: true, baseTable: json.baseTable, pageKind: json.pageKind });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
     const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
     setBoard(board);
@@ -141,7 +143,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     const json = await res.json();
     setMode("staff");
     setStaffPageId(json.page.id);
-    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, baseTable: json.page.base_table, pageKind: json.page.page_kind });
+    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind });
     setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
     return true;
   }, [slug]);
@@ -528,6 +530,14 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
     });
   };
 
+  const changeCellLogging = (logCellChanges: boolean) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setMeta(prev => prev && { ...prev, logCellChanges });
+    fetch(`/api/client-update-pages/${staffPageId}/cell-logging`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logCellChanges }),
+    });
+  };
+
   // Matters added or columns changed via their modals write straight to the
   // server (new rows need real ids) -- simplest to just reload the board
   // afterward rather than hand-reconcile every possible shape.
@@ -611,6 +621,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
           formatRules={board.formatRules}
           dateFormat={meta.dateFormat}
           freezeFirstColumn={meta.freezeFirstColumn}
+          logCellChanges={meta.logCellChanges}
           canEdit={mode === "staff"}
           canComment
           onSaveValue={mode === "staff" ? saveValue : undefined}
@@ -641,6 +652,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
           onFreezeFirstColumnChanged={mode === "staff" ? changeFreezeColumn : undefined}
+          onLogCellChangesChanged={mode === "staff" ? changeCellLogging : undefined}
           onAddFormatRule={mode === "staff" ? addFormatRule : undefined}
           onUpdateFormatRule={mode === "staff" ? updateFormatRule : undefined}
           onRemoveFormatRule={mode === "staff" ? removeFormatRule : undefined}
