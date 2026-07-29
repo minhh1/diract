@@ -12,7 +12,8 @@ import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import {
   Database, Clock, Copy, ArrowLeft,
   ChevronRight, AlertCircle,
-  Trash2, Building2, MapPin, LayoutGrid, CheckSquare, Table2, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare, Receipt
+  Trash2, Building2, MapPin, LayoutGrid, CheckSquare, Table2, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare, Receipt,
+  Loader2, ArrowLeftRight,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
@@ -136,6 +137,11 @@ function SettingsPageInner() {
   const [mergingPairKey, setMergingPairKey] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isFormatterOpen, setIsFormatterOpen] = useState(false);
+  const [selectedPairKeys, setSelectedPairKeys] = useState<Set<string>>(new Set());
+  const [keepSideByPair, setKeepSideByPair] = useState<Record<string, "A" | "B">>({});
+  const [expandedPairKey, setExpandedPairKey] = useState<string | null>(null);
+  const [bulkMerging, setBulkMerging] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState("");
 
   const queryClient = useQueryClient();
   const historyQueryKey = ['settings-history', companyId] as const;
@@ -155,6 +161,17 @@ function SettingsPageInner() {
   const pairs = duplicatesData?.pairs ?? [];
   const fieldLabels = duplicatesData?.fieldLabels ?? {};
   const loading = view === "history" ? historyLoading : view === "duplicates_view" ? duplicatesLoading : false;
+
+  // Selection/expansion state is keyed by pair, which only ever makes sense
+  // for whichever table is currently active -- switching tables (or away
+  // from this view entirely) without clearing it would let a stale
+  // selection silently carry over and get bulk-merged against the wrong
+  // table on the next click.
+  useEffect(() => {
+    setSelectedPairKeys(new Set());
+    setKeepSideByPair({});
+    setExpandedPairKey(null);
+  }, [duplicatesQueryKey.join("|")]);
 
   useProgressBarWhile(loading);
 
@@ -238,6 +255,70 @@ function SettingsPageInner() {
     } finally {
       setMergingPairKey(null);
     }
+  };
+
+  // Best-effort guess at which side of a pair to keep when the user bulk-
+  // merges instead of picking a side by hand: whichever record has more
+  // populated fields wins (less data loss), and if that's a tie, whichever
+  // is older (closer to how this record actually first entered the
+  // system). Purely a default -- clicking either name in a row overrides it
+  // per-pair before merging.
+  const fieldCompleteness = (fields: Record<string, any>) =>
+    Object.entries(fields || {}).filter(([k, v]) => k !== "id" && k !== "created_at" && v !== null && v !== undefined && v !== "").length;
+  const defaultKeepSide = (pair: DuplicatePair): "A" | "B" => {
+    const ca = fieldCompleteness(pair.fieldsA);
+    const cb = fieldCompleteness(pair.fieldsB);
+    if (ca !== cb) return ca > cb ? "A" : "B";
+    const da = pair.fieldsA?.created_at, db = pair.fieldsB?.created_at;
+    if (da && db && da !== db) return da < db ? "A" : "B";
+    return "A";
+  };
+  const keepSideFor = (pair: DuplicatePair): "A" | "B" =>
+    keepSideByPair[`${pair.idA}:${pair.idB}`] ?? defaultKeepSide(pair);
+
+  const allPairsSelected = pairs.length > 0 && selectedPairKeys.size === pairs.length;
+  const toggleSelectAll = () =>
+    setSelectedPairKeys(allPairsSelected ? new Set() : new Set(pairs.map(p => `${p.idA}:${p.idB}`)));
+  const toggleSelectPair = (pairKey: string) =>
+    setSelectedPairKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(pairKey)) next.delete(pairKey); else next.add(pairKey);
+      return next;
+    });
+
+  // Runs one RPC call per selected pair sequentially (not in parallel) --
+  // two selected pairs can share a record (A/B and B/C both selected), so a
+  // later call in the same batch can legitimately find its target already
+  // archived by an earlier one. That shows up as a normal per-pair RPC
+  // error here, not a crash -- counted as "skipped" and reported in the
+  // summary rather than aborting the whole batch.
+  const handleBulkMerge = async () => {
+    const targets = pairs.filter(p => selectedPairKeys.has(`${p.idA}:${p.idB}`));
+    if (!targets.length) return;
+    if (!window.confirm(`Merge ${targets.length} duplicate pair${targets.length === 1 ? "" : "s"}? For each pair, the less-complete record will be repointed onto the other and then archived.`)) return;
+    setBulkMerging(true);
+    let merged = 0, failed = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const pair = targets[i];
+      setBulkProgress(`${i + 1}/${targets.length}`);
+      const keep = keepSideFor(pair);
+      const keepId = keep === "A" ? pair.idA : pair.idB;
+      const mergeId = keep === "A" ? pair.idB : pair.idA;
+      const { error } = await supabase.rpc("merge_duplicate_records", {
+        p_company_id: companyId,
+        p_table_kind: activeDupType.kind,
+        p_table: activeDupType.kind === "system" ? activeDupType.table : null,
+        p_table_id: activeDupType.kind === "custom" ? activeDupType.tableId : null,
+        p_keep_id: keepId,
+        p_merge_id: mergeId,
+      });
+      if (error) failed++; else merged++;
+    }
+    setBulkMerging(false);
+    setBulkProgress("");
+    setSelectedPairKeys(new Set());
+    await queryClient.invalidateQueries({ queryKey: duplicatesQueryKey });
+    window.alert(`${merged} merged.${failed ? ` ${failed} skipped (already merged, or only a company admin can merge).` : ""}`);
   };
 
   const formatTargetTable = (table: string) =>
@@ -500,12 +581,17 @@ function SettingsPageInner() {
             </div>
           )}
 
-          {/* ── DUPLICATES VIEW ── */}
+          {/* ── DUPLICATES VIEW ──
+              Rows, not one giant side-by-side card per pair (the previous
+              design) -- lets a user scan a whole scan result at a glance and
+              select several pairs at once. Each row still expands (chevron)
+              into the original two-column field comparison + per-side merge
+              buttons for a closer look before committing. */}
           {view === "duplicates_view" && (
-            <div className="space-y-8 animate-in fade-in">
+            <div className="space-y-4 animate-in fade-in">
               {loading ? (
-                <div className="space-y-8">
-                  {[0, 1].map(i => <div key={i} className="h-[220px] bg-white border border-slate-200 rounded-[48px] animate-pulse" />)}
+                <div className="space-y-3">
+                  {[0, 1, 2].map(i => <div key={i} className="h-16 bg-white border border-slate-200 rounded-2xl animate-pulse" />)}
                 </div>
               ) : duplicatesError ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-2 text-center">
@@ -516,44 +602,90 @@ function SettingsPageInner() {
               ) : pairs.length === 0 ? (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-20">No duplicates found</p>
               ) : (
-                pairs.map((pair) => {
-                  const pairKey = `${pair.idA}:${pair.idB}`;
-                  const isMerging = mergingPairKey === pairKey;
-                  const sides: { id: string; label: string; fields: Record<string, any>; otherId: string; otherLabel: string }[] = [
-                    { id: pair.idA, label: pair.labelA, fields: pair.fieldsA, otherId: pair.idB, otherLabel: pair.labelB },
-                    { id: pair.idB, label: pair.labelB, fields: pair.fieldsB, otherId: pair.idA, otherLabel: pair.labelA },
-                  ];
-                  return (
-                    <div key={pairKey} className="bg-white border border-slate-200 rounded-[48px] overflow-hidden shadow-sm mb-6 transition-all hover:border-slate-300">
-                      <div className="bg-slate-50 px-8 py-3 border-b border-slate-100 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        <span>Matched on: {pair.reason}</span>
-                        <span className="text-indigo-600">Score: {Math.round(pair.score * 100)}%</span>
-                      </div>
-                      <div className="flex flex-col md:flex-row">
-                        {sides.map((side, n) => (
-                          <div key={side.id} className={`flex-1 p-10 ${n === 0 ? 'border-r border-slate-100' : ''}`}>
-                            <p className="text-[16px] font-medium text-slate-900 leading-tight uppercase mb-6">{side.label}</p>
-                            <div className="grid grid-cols-2 gap-y-5 gap-x-12 mb-8">
-                              {Object.entries(side.fields).filter(([key]) => key !== 'id').slice(0, 6).map(([key, value]) => (
-                                <div key={key}>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{fieldLabels[key] || key.replace(/_/g, ' ')}</p>
-                                  <p className="text-[13px] font-medium text-slate-700 truncate">{value === null || value === undefined || value === '' ? '—' : String(value)}</p>
+                <>
+                  <div className="flex items-center justify-between px-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={allPairsSelected} onChange={toggleSelectAll} className="w-4 h-4 rounded accent-indigo-600" />
+                      <span className="text-[11px] font-bold text-slate-500">{selectedPairKeys.size} of {pairs.length} selected</span>
+                    </label>
+                    <button
+                      onClick={handleBulkMerge}
+                      disabled={!selectedPairKeys.size || bulkMerging}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-indigo-600 disabled:opacity-40 transition-all"
+                    >
+                      {bulkMerging ? <Loader2 size={12} className="animate-spin" /> : <CheckSquare size={12} />}
+                      {bulkMerging ? `Merging ${bulkProgress}…` : `Merge selected (${selectedPairKeys.size})`}
+                    </button>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm divide-y divide-slate-100">
+                    {pairs.map((pair) => {
+                      const pairKey = `${pair.idA}:${pair.idB}`;
+                      const isMerging = mergingPairKey === pairKey;
+                      const isSelected = selectedPairKeys.has(pairKey);
+                      const isExpanded = expandedPairKey === pairKey;
+                      const keep = keepSideFor(pair);
+                      const sides: { id: string; label: string; fields: Record<string, any>; otherId: string; otherLabel: string }[] = [
+                        { id: pair.idA, label: pair.labelA, fields: pair.fieldsA, otherId: pair.idB, otherLabel: pair.labelB },
+                        { id: pair.idB, label: pair.labelB, fields: pair.fieldsB, otherId: pair.idA, otherLabel: pair.labelA },
+                      ];
+                      return (
+                        <div key={pairKey} className={isSelected ? "bg-indigo-50/50" : ""}>
+                          <div className="flex items-center gap-4 px-6 py-3.5">
+                            <input type="checkbox" checked={isSelected} onChange={() => toggleSelectPair(pairKey)} className="w-4 h-4 rounded accent-indigo-600 shrink-0" />
+                            <button onClick={() => setExpandedPairKey(isExpanded ? null : pairKey)} className="text-slate-300 hover:text-slate-600 shrink-0" title={isExpanded ? "Collapse" : "Compare fields"}>
+                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                            <div className="flex-1 min-w-0 flex items-center gap-2.5">
+                              <button onClick={() => setKeepSideByPair(prev => ({ ...prev, [pairKey]: "A" }))} title="Keep this one"
+                                className={`text-[13px] font-medium truncate text-left transition-colors ${keep === "A" ? "text-slate-900" : "text-slate-400 line-through decoration-slate-300 hover:text-slate-600"}`}>
+                                {pair.labelA}
+                              </button>
+                              <ArrowLeftRight size={11} className="text-slate-300 shrink-0" />
+                              <button onClick={() => setKeepSideByPair(prev => ({ ...prev, [pairKey]: "B" }))} title="Keep this one"
+                                className={`text-[13px] font-medium truncate text-left transition-colors ${keep === "B" ? "text-slate-900" : "text-slate-400 line-through decoration-slate-300 hover:text-slate-600"}`}>
+                                {pair.labelB}
+                              </button>
+                            </div>
+                            <span className="hidden md:block text-[9px] text-slate-400 uppercase font-bold tracking-widest shrink-0 max-w-[160px] truncate">{pair.reason}</span>
+                            <span className="text-[11px] font-bold text-indigo-600 shrink-0 w-10 text-right">{Math.round(pair.score * 100)}%</span>
+                            <button
+                              onClick={() => handleMerge(pair, keep === "A" ? pair.idA : pair.idB, keep === "A" ? pair.idB : pair.idA, keep === "A" ? pair.labelA : pair.labelB, keep === "A" ? pair.labelB : pair.labelA)}
+                              disabled={isMerging || bulkMerging}
+                              className="px-3 py-1.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-indigo-600 disabled:opacity-40 transition-all shrink-0"
+                            >
+                              {isMerging ? <Loader2 size={12} className="animate-spin" /> : "Merge"}
+                            </button>
+                          </div>
+                          {isExpanded && (
+                            <div className="bg-slate-50 border-t border-slate-100 flex flex-col md:flex-row">
+                              {sides.map((side, n) => (
+                                <div key={side.id} className={`flex-1 p-8 ${n === 0 ? "md:border-r border-slate-200" : ""}`}>
+                                  <p className="text-[15px] font-medium text-slate-900 leading-tight uppercase mb-5">{side.label}</p>
+                                  <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-6">
+                                    {Object.entries(side.fields).filter(([key]) => key !== "id" && key !== "created_at").slice(0, 6).map(([key, value]) => (
+                                      <div key={key}>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{fieldLabels[key] || key.replace(/_/g, " ")}</p>
+                                        <p className="text-[13px] font-medium text-slate-700 truncate">{value === null || value === undefined || value === "" ? "—" : String(value)}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <button
+                                    onClick={() => handleMerge(pair, side.id, side.otherId, side.label, side.otherLabel)}
+                                    disabled={isMerging || bulkMerging}
+                                    className="px-4 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-indigo-600 disabled:opacity-40 transition-all"
+                                  >
+                                    {isMerging ? "Merging…" : "Merge into this record →"}
+                                  </button>
                                 </div>
                               ))}
                             </div>
-                            <button
-                              onClick={() => handleMerge(pair, side.id, side.otherId, side.label, side.otherLabel)}
-                              disabled={isMerging}
-                              className="px-4 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-indigo-600 disabled:opacity-40 transition-all"
-                            >
-                              {isMerging ? 'Merging…' : 'Merge into this record →'}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           )}

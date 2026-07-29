@@ -103,7 +103,11 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
     }
     const tableName = table as SystemTableName;
     const baseFields = SYSTEM_TABLE_COMPARISON_FIELDS[tableName];
-    const cols = ["id", ...baseFields.map(f => f.key)];
+    // created_at isn't a comparison field (never scored), just carried
+    // through onto each record's fields object so the review UI can default
+    // "which one to keep" to the older record when nothing else
+    // distinguishes a pair.
+    const cols = ["id", "created_at", ...baseFields.map(f => f.key)];
     const data = await fetchAllRows<any>((from, to) =>
       admin
         .from(tableName)
@@ -189,15 +193,16 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
     const fieldByKey = new Map(fieldList.map(f => [f.field_key, f]));
     fieldLabels = Object.fromEntries(fields.map(f => [f.key, fieldByKey.get(f.key)?.label ?? prettifyKey(f.key)]));
 
-    const recordRows = await fetchAllRows<{ id: string }>((from, to) =>
+    const recordRows = await fetchAllRows<{ id: string; created_at: string }>((from, to) =>
       admin
         .from("company_table_records")
-        .select("id")
+        .select("id, created_at")
         .eq("table_id", tableDef.id)
         .is("deleted_at", null)
         .range(from, to)
     );
     const recordIds = recordRows.map(r => r.id);
+    const createdAtById = new Map(recordRows.map(r => [r.id, r.created_at]));
 
     if (recordIds.length === 0 || relevantFieldIds.length === 0) {
       return NextResponse.json({ pairs: [], fieldLabels });
@@ -229,7 +234,9 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
 
     const primaryKey = fields[0]?.key;
     records = recordIds.map(id => {
-      const rowFields = byRecord.get(id) || {};
+      // created_at carried through the same way as the system-table branch
+      // above -- see that branch's comment.
+      const rowFields: Record<string, any> = { ...(byRecord.get(id) || {}), created_at: createdAtById.get(id) };
       return { id, label: rowFields[primaryKey] ?? id, fields: rowFields };
     });
   } else {
