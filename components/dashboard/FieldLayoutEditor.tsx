@@ -979,17 +979,15 @@ export default function FieldLayoutEditor({
     </button>
   );
 
-  // Only group once every field has a known section -- a partially
-  // classified list (still loading, or a freshly added field) stays flat
-  // rather than showing one orphaned ungrouped field alongside sections.
-  // Classification is company+table-scoped and shared across every record,
-  // so this is only ever momentarily false right after a brand new field is
-  // added -- there's no loading state to wait for here, it just renders
-  // flat until the (already in-flight, background) classification catches
-  // up on its own.
-  const allClassified = sorted.length > 0 && sorted.every(f => !!fieldSections[f.field_key]);
+  // Stay flat only if this company+table has never been classified at all.
+  // Once a classification exists, keep showing it (persisted, permanent)
+  // even while a newly-added field is still unclassified -- that field
+  // just lands in a temporary "New Fields" bucket until the in-flight
+  // background reclassification (triggered by RecordDashboard whenever any
+  // field lacks a section) finishes and persists the real grouping for it.
+  const hasAnyClassification = sorted.some(f => !!fieldSections[f.field_key]);
 
-  if (!allClassified) {
+  if (!hasAnyClassification) {
     return (
       <div className="space-y-6">
         {renderRows(packRows(sorted))}
@@ -1000,7 +998,7 @@ export default function FieldLayoutEditor({
 
   const grouped = new Map<string, FieldLayout[]>();
   sorted.forEach(field => {
-    const section = fieldSections[field.field_key];
+    const section = fieldSections[field.field_key] || 'New Fields';
     if (!grouped.has(section)) grouped.set(section, []);
     grouped.get(section)!.push(field);
   });
