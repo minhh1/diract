@@ -119,6 +119,72 @@ function invalidateCachedApiGet(path) {
   try { CacheService.getUserCache().remove(cacheKeyForPath(path)); } catch (e) {}
 }
 
+// Fetches several independent GET endpoints in one round trip via
+// UrlFetchApp.fetchAll instead of one apiGet/cachedApiGet call after
+// another — Apps Script's UrlFetchApp blocks the whole script on each call,
+// so N sequential calls cost N network round trips, while fetchAll runs
+// them concurrently for close to the cost of one. `specsByName` maps an
+// arbitrary name to { path, ttl } (ttl optional — omit for endpoints that
+// must always be live, e.g. a running-job status check); returns an object
+// with the same names mapped to the usual { ok, code, data } shape.
+function batchApiGet(specsByName, token) {
+  var cache = CacheService.getUserCache();
+  var email = getUserEmail();
+  var results = {};
+  var toFetch = [];
+
+  Object.keys(specsByName).forEach(function(name) {
+    var spec = specsByName[name];
+    if (spec.ttl) {
+      var hit = cache.get(cacheKeyForPath(spec.path));
+      if (hit) {
+        try {
+          results[name] = { ok: true, code: 200, data: JSON.parse(hit), fromCache: true };
+          return;
+        } catch (e) {}
+      }
+    }
+    toFetch.push({ name: name, spec: spec });
+  });
+
+  if (toFetch.length === 1) {
+    // A single miss doesn't benefit from fetchAll's batching — skip the
+    // extra request-array bookkeeping and just fetch it directly.
+    results[toFetch[0].name] = apiGet(toFetch[0].spec.path, token);
+  } else if (toFetch.length > 1) {
+    var requests = toFetch.map(function(f) {
+      return {
+        url: DIRACT_API_URL + f.spec.path,
+        headers: { 'X-User-Email': email, 'X-Gmail-Access-Token': token },
+        muteHttpExceptions: true,
+      };
+    });
+    var responses = null;
+    try {
+      responses = UrlFetchApp.fetchAll(requests);
+    } catch (err) {
+      toFetch.forEach(function(f) {
+        results[f.name] = { ok: false, code: 0, data: { error: err.message } };
+      });
+    }
+    if (responses) {
+      responses.forEach(function(res, i) {
+        var f = toFetch[i];
+        var code = res.getResponseCode();
+        var text = res.getContentText();
+        var data;
+        try { data = JSON.parse(text); } catch (e) { data = { error: 'Bad response' }; }
+        results[f.name] = { ok: code === 200, code: code, data: data };
+        if (code === 200 && f.spec.ttl) {
+          try { cache.put(cacheKeyForPath(f.spec.path), text, f.spec.ttl); } catch (e) {}
+        }
+      });
+    }
+  }
+
+  return results;
+}
+
 // Call after any mutation (create/update/delete task, apply template)
 function invalidateTaskCache(companyId) {
   var cache = CacheService.getUserCache();
@@ -409,13 +475,20 @@ function onGmailMessage(e) {
   if (!ctx) return buildMainCard(cleanMessageId, apiToken);
   var activeCompanyId = ctx.activeCompanyId;
 
-  // Use ScriptApp token to fetch message labels from Gmail REST API
+  // Use ScriptApp token to fetch message labels from Gmail REST API. The
+  // message and the full label list are independent of each other — fetched
+  // together via fetchAll instead of message-then-labels, since the second
+  // fetch never actually needed the first one's result.
   try {
-    Logger.log('[onGmailMessage] Fetching message with ScriptApp token, id=' + cleanMessageId);
-    var msgRes = UrlFetchApp.fetch(
-      'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + cleanMessageId + '?format=minimal',
-      { headers: { Authorization: 'Bearer ' + apiToken }, muteHttpExceptions: true }
-    );
+    Logger.log('[onGmailMessage] Fetching message + labels concurrently, id=' + cleanMessageId);
+    var gmailResponses = UrlFetchApp.fetchAll([
+      { url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + cleanMessageId + '?format=minimal',
+        headers: { Authorization: 'Bearer ' + apiToken }, muteHttpExceptions: true },
+      { url: 'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+        headers: { Authorization: 'Bearer ' + apiToken }, muteHttpExceptions: true },
+    ]);
+    var msgRes = gmailResponses[0];
+    var labelsRes = gmailResponses[1];
     Logger.log('[onGmailMessage] message fetch status: ' + msgRes.getResponseCode());
     var msgText = msgRes.getContentText();
     Logger.log('[onGmailMessage] message response: ' + msgText.substring(0, 500));
@@ -425,11 +498,6 @@ function onGmailMessage(e) {
       var labelIds = msgData.labelIds || [];
       Logger.log('[onGmailMessage] labelIds: ' + JSON.stringify(labelIds));
 
-      // Fetch all user labels
-      var labelsRes = UrlFetchApp.fetch(
-        'https://gmail.googleapis.com/gmail/v1/users/me/labels',
-        { headers: { Authorization: 'Bearer ' + apiToken }, muteHttpExceptions: true }
-      );
       Logger.log('[onGmailMessage] labels fetch status: ' + labelsRes.getResponseCode());
       if (labelsRes.getResponseCode() === 200) {
         var allLabels = JSON.parse(labelsRes.getContentText()).labels || [];
@@ -498,12 +566,32 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
     }
   }
 
-  var labelRes = cachedApiGet('/label-settings?companyId=' + activeCompanyId, token, 60);
+  // Every card section below reads from one of these — none depend on each
+  // other, only on activeCompanyId/ctx.userId/messageId (already known), so
+  // they're fetched as a single batch instead of six sequential round trips.
+  var allTasksPageSize = 20;
+  var unallocatedPageSize = 20;
+  var mainCardSpecs = {
+    label: { path: '/label-settings?companyId=' + activeCompanyId, ttl: 60 },
+    projFields: { path: '/project-field-settings?companyId=' + activeCompanyId, ttl: 60 },
+    job: { path: '/import-job-status?companyId=' + activeCompanyId },
+    unallocated: { path: '/unallocated-tasks?companyId=' + activeCompanyId + '&limit=' + unallocatedPageSize + '&offset=' + unallocatedOffset, ttl: 30 },
+  };
+  if (messageId) {
+    mainCardSpecs.check = { path: '/check-message?messageId=' + messageId + '&companyId=' + activeCompanyId };
+  }
+  if (ctx.userId) {
+    mainCardSpecs.allTasks = { path: '/all-tasks?companyId=' + activeCompanyId + '&assigneeId=' + ctx.userId +
+      '&limit=' + allTasksPageSize + '&offset=' + allTasksOffset, ttl: 30 };
+  }
+  var mainCardRes = batchApiGet(mainCardSpecs, token);
+
+  var labelRes = mainCardRes.label;
   var labelSettings = labelRes.ok ? labelRes.data : null;
 
   var existingProject = null;
   if (messageId) {
-    var checkRes = apiGet('/check-message?messageId=' + messageId + '&companyId=' + activeCompanyId, token);
+    var checkRes = mainCardRes.check;
     if (checkRes.ok && checkRes.data.projectId) existingProject = checkRes.data;
   }
 
@@ -638,7 +726,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
     // Any other configured project fields (e.g. required-by-admin ones, see
     // "⚙ Settings") — the matter-number field is skipped here since it's
     // already collected above, tied to the Gmail label format.
-    var projFieldsRes = cachedApiGet('/project-field-settings?companyId=' + activeCompanyId, token, 60);
+    var projFieldsRes = mainCardRes.projFields;
     var projFields = projFieldsRes.ok ? (projFieldsRes.data.fields || []) : [];
     var blockedProjectField = null;
     for (var pfi = 0; pfi < projFields.length; pfi++) {
@@ -720,7 +808,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
           })))));
 
   // ── Import labels (filtered, background) ─────────────────────
-  var jobRes = apiGet('/import-job-status?companyId=' + activeCompanyId, token);
+  var jobRes = mainCardRes.job;
   var runningJob = jobRes.ok ? jobRes.data.job : null;
 
   var importSection = CardService.newCardSection()
@@ -820,11 +908,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
   // The requesting user's own active tasks across every project — every
   // field we track, with the Gmail label shown first so it's obvious which
   // label/thread a task lives under. Paginated 20 at a time.
-  var allTasksPageSize = 20;
-  var allTasksRes = ctx.userId
-    ? cachedApiGet('/all-tasks?companyId=' + activeCompanyId + '&assigneeId=' + ctx.userId +
-        '&limit=' + allTasksPageSize + '&offset=' + allTasksOffset, token, 30)
-    : { ok: false };
+  var allTasksRes = mainCardRes.allTasks || { ok: false };
   var allTasksData = allTasksRes.ok ? allTasksRes.data : null;
 
   var allTasksSimplified = isSimplifiedTaskView();
@@ -922,9 +1006,7 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
   // Company-wide tasks with no assignee — these fall through "All My
   // Tasks" and every other per-person view, so they need somewhere to
   // surface or they're effectively invisible. Paginated 20 at a time.
-  var unallocatedPageSize = 20;
-  var unallocatedRes = cachedApiGet('/unallocated-tasks?companyId=' + activeCompanyId +
-      '&limit=' + unallocatedPageSize + '&offset=' + unallocatedOffset, token, 30);
+  var unallocatedRes = mainCardRes.unallocated;
   var unallocatedData = unallocatedRes.ok ? unallocatedRes.data : null;
 
   var unallocatedSection = CardService.newCardSection()
@@ -1385,11 +1467,31 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
   if (cached) {
     try { ctxData = JSON.parse(cached); Logger.log('[buildTaskCardById] ctx from cache'); } catch(e) {}
   }
-  if (!ctxData) {
-    var ctxRes = apiGet('/task-context?companyId=' + companyId, token);
-    ctxData = ctxRes.ok ? ctxRes.data : {};
-    try { cache.put(cacheKey, JSON.stringify(ctxData), 300); } catch(e) {} // 5 min TTL
+
+  // ── Fetch tasks (always fresh) ────────────────────────────────────
+  var tasksRes;
+  if (ctxData) {
+    tasksRes = apiGet('/project-tasks?projectId=' + projectId, token);
+  } else {
+    // ctx cache miss — task-context and project-tasks don't depend on each
+    // other, so fetch both together instead of one after the other.
+    var email = getUserEmail();
+    var authHeaders = { 'X-User-Email': email, 'X-Gmail-Access-Token': token };
+    var responses = UrlFetchApp.fetchAll([
+      { url: DIRACT_API_URL + '/task-context?companyId=' + companyId, headers: authHeaders, muteHttpExceptions: true },
+      { url: DIRACT_API_URL + '/project-tasks?projectId=' + projectId, headers: authHeaders, muteHttpExceptions: true },
+    ]);
+
+    var ctxCode = responses[0].getResponseCode();
+    var ctxText = responses[0].getContentText();
+    try { ctxData = ctxCode === 200 ? JSON.parse(ctxText) : {}; } catch (e) { ctxData = {}; }
+    if (ctxCode === 200) { try { cache.put(cacheKey, ctxText, 300); } catch(e) {} } // 5 min TTL
     Logger.log('[buildTaskCardById] ctx fetched fresh');
+
+    var tasksCode = responses[1].getResponseCode();
+    var tasksData;
+    try { tasksData = JSON.parse(responses[1].getContentText()); } catch (e) { tasksData = { error: 'Bad response' }; }
+    tasksRes = { ok: tasksCode === 200, code: tasksCode, data: tasksData };
   }
   var statuses = ctxData.statuses || [];
   var profiles = ctxData.profiles || [];
@@ -1397,8 +1499,6 @@ function buildTaskCardById(projectId, projectName, labelCode, companyId, token, 
   var reminderOptions = ctxData.reminderOptions || [];
   var templates = ctxData.templates || [];
 
-  // ── Fetch tasks (always fresh) ────────────────────────────────────
-  var tasksRes = apiGet('/project-tasks?projectId=' + projectId, token);
   var tasks = tasksRes.ok ? (tasksRes.data.tasks || []) : [];
   var projectMatterNumber = tasksRes.ok ? (tasksRes.data.matterNumber || null) : null;
   var tasksSimplified = isSimplifiedTaskView();

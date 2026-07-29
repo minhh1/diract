@@ -226,6 +226,37 @@ async function watchersByTaskIds(taskIds: string[]): Promise<Record<string, { id
   return result;
 }
 
+// Per-task follow-up count (done entries) and next scheduled date (earliest
+// pending entry) — shared by /project-tasks, /all-tasks, /unallocated-tasks,
+// run alongside their other independent lookups via Promise.all rather than
+// after them, since none of these three depend on each other.
+async function followUpSummary(taskIds: string[]): Promise<{ counts: Record<string, number>; scheduled: Record<string, string> }> {
+  const counts: Record<string, number> = {};
+  const scheduled: Record<string, string> = {};
+  if (!taskIds.length) return { counts, scheduled };
+  const { data: followUps } = await db.from('task_follow_ups').select('task_id, is_done, followed_up_at').in('task_id', taskIds);
+  for (const f of followUps || []) {
+    if (f.is_done) {
+      counts[f.task_id] = (counts[f.task_id] || 0) + 1;
+    } else if (!scheduled[f.task_id] || f.followed_up_at < scheduled[f.task_id]) {
+      scheduled[f.task_id] = f.followed_up_at;
+    }
+  }
+  return { counts, scheduled };
+}
+
+// Matter-number custom-field value per project, for the simplified task-row
+// view — shared by /all-tasks and /unallocated-tasks.
+async function matterNumbersForProjects(companyId: string, projectIds: string[]): Promise<Record<string, string>> {
+  if (!projectIds.length) return {};
+  const { data: matterField } = await db.from('company_custom_fields')
+    .select('id').eq('company_id', companyId).eq('table_name', 'projects').eq('field_key', 'matter_number').maybeSingle();
+  if (!matterField) return {};
+  const { data: values } = await db.from('company_custom_field_values')
+    .select('record_id, value_text').eq('field_id', matterField.id).in('record_id', projectIds);
+  return Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || '']));
+}
+
 // Reconciles a task's watcher list to exactly `newIds`, logging the diff.
 async function saveWatchers(taskId: string, companyId: string, newIds: string[], actorEmail: string): Promise<void> {
   const { data: existing } = await db.from('task_watchers').select('profile_id').eq('task_id', taskId);
@@ -615,6 +646,22 @@ Deno.serve(async (req) => {
       const propertyAddress: string = (body.propertyAddress || '').trim();
 
       if (!projectName || !companyId) return json({ error: 'Missing required fields' }, 400, headers);
+
+      // Exact-name duplicate guard — case-insensitive (ilike with no
+      // wildcards), so "Smith v Jones" and "smith v jones" count as the same
+      // matter. Only an exact match is blocked; anything less certain is
+      // left for a human to notice and merge via Reconciliation.
+      const { data: dupProject } = await db
+        .from('projects')
+        .select('id')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .ilike('name', projectName.trim())
+        .limit(1)
+        .maybeSingle();
+      if (dupProject) {
+        return json({ error: `A matter named "${projectName.trim()}" already exists.` }, 409, headers);
+      }
 
       const { data: profile } = await db
         .from('profiles').select('id').eq('email', userEmail).single();
@@ -1529,55 +1576,51 @@ Deno.serve(async (req) => {
       const projectId = url.searchParams.get('projectId') || '';
       if (!projectId) return json({ error: 'Missing projectId' }, 400, headers);
 
-      const { data: tasks, error: tasksErr } = await db
-        .from('tasks')
-        .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
-        .eq('project_id', projectId)
-        .is('deleted_at', null)
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('due_time', { ascending: true, nullsFirst: false });
-
-      if (tasksErr) console.error('[project-tasks] error:', tasksErr.message);
-
       // Matter number — a project-level custom field, same for every task
-      // in this list, used by the simplified task-row view.
-      let matterNumber: string | null = null;
-      const { data: projectRow } = await db.from('projects').select('company_id').eq('id', projectId).maybeSingle();
-      if (projectRow?.company_id) {
+      // in this list, used by the simplified task-row view. This chain
+      // (projects → company_custom_fields → company_custom_field_values)
+      // doesn't depend on the tasks/statuses queries below, so all three run
+      // concurrently instead of one after another.
+      async function matterNumberForProject(): Promise<string | null> {
+        const { data: projectRow } = await db.from('projects').select('company_id').eq('id', projectId).maybeSingle();
+        if (!projectRow?.company_id) return null;
         const { data: matterField } = await db.from('company_custom_fields')
           .select('id').eq('company_id', projectRow.company_id).eq('table_name', 'projects').eq('field_key', 'matter_number').maybeSingle();
-        if (matterField) {
-          const { data: matterValue } = await db.from('company_custom_field_values')
-            .select('value_text').eq('field_id', matterField.id).eq('record_id', projectId).maybeSingle();
-          matterNumber = matterValue?.value_text || null;
-        }
+        if (!matterField) return null;
+        const { data: matterValue } = await db.from('company_custom_field_values')
+          .select('value_text').eq('field_id', matterField.id).eq('record_id', projectId).maybeSingle();
+        return matterValue?.value_text || null;
       }
+
+      const [
+        { data: tasks, error: tasksErr },
+        { data: statuses },
+        matterNumber,
+      ] = await Promise.all([
+        db.from('tasks')
+          .select('id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id, status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar, profiles:assignee_id(full_name, email), teams:assigned_team_id(team_name), task_statuses:status_id(label, color_hex), creator:created_by(full_name, email)')
+          .eq('project_id', projectId)
+          .is('deleted_at', null)
+          .order('due_date', { ascending: true, nullsFirst: false })
+          .order('due_time', { ascending: true, nullsFirst: false }),
+        db.from('task_statuses')
+          .select('id, label, color_hex')
+          .eq('is_active', true),
+        matterNumberForProject(),
+      ]);
+
+      if (tasksErr) console.error('[project-tasks] error:', tasksErr.message);
       console.log(`[project-tasks] projectId=${projectId} count=${tasks?.length}`);
       if (tasks?.length) {
         const sample = tasks[0] as any;
         console.log(`[project-tasks] sample: assignee_id=${sample.assignee_id} profiles=${JSON.stringify(sample.profiles)} assigned_team_id=${sample.assigned_team_id} teams=${JSON.stringify(sample.teams)}`);
       }
 
-      const { data: statuses } = await db
-        .from('task_statuses')
-        .select('id, label, color_hex')
-        .eq('is_active', true);
-
-      const followUpCounts: Record<string, number> = {};
-      const scheduledFollowUpDates: Record<string, string> = {};
-      if (tasks?.length) {
-        const { data: followUps } = await db.from('task_follow_ups').select('task_id, is_done, followed_up_at')
-          .in('task_id', tasks.map((t: any) => t.id));
-        for (const f of followUps || []) {
-          if (f.is_done) {
-            followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
-          } else if (!scheduledFollowUpDates[f.task_id] || f.followed_up_at < scheduledFollowUpDates[f.task_id]) {
-            scheduledFollowUpDates[f.task_id] = f.followed_up_at;
-          }
-        }
-      }
-
-      const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
+      const taskIds = (tasks || []).map((t: any) => t.id);
+      const [{ counts: followUpCounts, scheduled: scheduledFollowUpDates }, watchersByTask] = await Promise.all([
+        followUpSummary(taskIds),
+        watchersByTaskIds(taskIds),
+      ]);
 
       return json({
         tasks: (tasks || []).map((t: any) => ({
@@ -2289,60 +2332,45 @@ Deno.serve(async (req) => {
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '20') || 20, 100);
       const offset = Math.max(parseInt(url.searchParams.get('offset') || '0') || 0, 0);
 
-      const { data: tasks, error: tasksErr } = await db
-        .from('tasks')
-        .select(`
-          id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
-          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar,
-          project_id,
-          projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
-          profiles:assignee_id(full_name, email),
-          teams:assigned_team_id(team_name),
-          task_statuses:status_id(label, color_hex),
-          creator:created_by(full_name, email)
-        `)
-        .eq('company_id', companyId)
-        .eq('assignee_id', assigneeId)
-        .eq('is_completed', false)
-        .is('deleted_at', null)
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('due_time', { ascending: true, nullsFirst: false })
-        .range(offset, offset + limit - 1);
+      const [
+        { data: tasks, error: tasksErr },
+        { count: totalCount },
+      ] = await Promise.all([
+        db.from('tasks')
+          .select(`
+            id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
+            status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar,
+            project_id,
+            projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
+            profiles:assignee_id(full_name, email),
+            teams:assigned_team_id(team_name),
+            task_statuses:status_id(label, color_hex),
+            creator:created_by(full_name, email)
+          `)
+          .eq('company_id', companyId)
+          .eq('assignee_id', assigneeId)
+          .eq('is_completed', false)
+          .is('deleted_at', null)
+          .order('due_date', { ascending: true, nullsFirst: false })
+          .order('due_time', { ascending: true, nullsFirst: false })
+          .range(offset, offset + limit - 1),
+        db.from('tasks').select('id', { count: 'exact', head: true })
+          .eq('company_id', companyId).eq('assignee_id', assigneeId).eq('is_completed', false).is('deleted_at', null),
+      ]);
 
       if (tasksErr) return json({ error: tasksErr.message }, 500, headers);
 
-      const { count: totalCount } = await db
-        .from('tasks').select('id', { count: 'exact', head: true })
-        .eq('company_id', companyId).eq('assignee_id', assigneeId).eq('is_completed', false).is('deleted_at', null);
-
-      const followUpCounts: Record<string, number> = {};
-      const scheduledFollowUpDates: Record<string, string> = {};
-      if (tasks?.length) {
-        const { data: followUps } = await db.from('task_follow_ups').select('task_id, is_done, followed_up_at')
-          .in('task_id', tasks.map((t: any) => t.id));
-        for (const f of followUps || []) {
-          if (f.is_done) {
-            followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
-          } else if (!scheduledFollowUpDates[f.task_id] || f.followed_up_at < scheduledFollowUpDates[f.task_id]) {
-            scheduledFollowUpDates[f.task_id] = f.followed_up_at;
-          }
-        }
-      }
-
-      const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
-
-      // Matter number per project, for the simplified task-row view.
-      let matterByProject: Record<string, string> = {};
-      const projectIds = [...new Set((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
-      if (projectIds.length) {
-        const { data: matterField } = await db.from('company_custom_fields')
-          .select('id').eq('company_id', companyId).eq('table_name', 'projects').eq('field_key', 'matter_number').maybeSingle();
-        if (matterField) {
-          const { data: values } = await db.from('company_custom_field_values')
-            .select('record_id, value_text').eq('field_id', matterField.id).in('record_id', projectIds);
-          matterByProject = Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || '']));
-        }
-      }
+      const taskIds = (tasks || []).map((t: any) => t.id);
+      const projectIds: string[] = [...new Set<string>((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
+      const [
+        { counts: followUpCounts, scheduled: scheduledFollowUpDates },
+        watchersByTask,
+        matterByProject,
+      ] = await Promise.all([
+        followUpSummary(taskIds),
+        watchersByTaskIds(taskIds),
+        matterNumbersForProjects(companyId, projectIds),
+      ]);
 
       return json({
         tasks: (tasks || []).map((t: any) => ({
@@ -2394,58 +2422,44 @@ Deno.serve(async (req) => {
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '20') || 20, 100);
       const offset = Math.max(parseInt(url.searchParams.get('offset') || '0') || 0, 0);
 
-      const { data: tasks, error: tasksErr } = await db
-        .from('tasks')
-        .select(`
-          id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
-          status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar,
-          project_id,
-          projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
-          teams:assigned_team_id(team_name),
-          task_statuses:status_id(label, color_hex),
-          creator:created_by(full_name, email)
-        `)
-        .eq('company_id', companyId)
-        .is('assignee_id', null)
-        .eq('is_completed', false)
-        .is('deleted_at', null)
-        .order('due_date', { ascending: true, nullsFirst: false })
-        .order('due_time', { ascending: true, nullsFirst: false })
-        .range(offset, offset + limit - 1);
+      const [
+        { data: tasks, error: tasksErr },
+        { count: totalCount },
+      ] = await Promise.all([
+        db.from('tasks')
+          .select(`
+            id, name, is_completed, due_date, due_time, assignee_id, assigned_team_id,
+            status_id, is_monetary, estimated_cost, created_by, awaiting_follow_up, follow_up_date, notes, source_message_id, source_email_subject, source_email_body, calendar_target, sync_to_company_calendar,
+            project_id,
+            projects:project_id(id, name, project_gmail_labels(gmail_label_name, label_code)),
+            teams:assigned_team_id(team_name),
+            task_statuses:status_id(label, color_hex),
+            creator:created_by(full_name, email)
+          `)
+          .eq('company_id', companyId)
+          .is('assignee_id', null)
+          .eq('is_completed', false)
+          .is('deleted_at', null)
+          .order('due_date', { ascending: true, nullsFirst: false })
+          .order('due_time', { ascending: true, nullsFirst: false })
+          .range(offset, offset + limit - 1),
+        db.from('tasks').select('id', { count: 'exact', head: true })
+          .eq('company_id', companyId).is('assignee_id', null).eq('is_completed', false).is('deleted_at', null),
+      ]);
 
       if (tasksErr) return json({ error: tasksErr.message }, 500, headers);
 
-      const { count: totalCount } = await db
-        .from('tasks').select('id', { count: 'exact', head: true })
-        .eq('company_id', companyId).is('assignee_id', null).eq('is_completed', false).is('deleted_at', null);
-
-      const followUpCounts: Record<string, number> = {};
-      const scheduledFollowUpDates: Record<string, string> = {};
-      if (tasks?.length) {
-        const { data: followUps } = await db.from('task_follow_ups').select('task_id, is_done, followed_up_at')
-          .in('task_id', tasks.map((t: any) => t.id));
-        for (const f of followUps || []) {
-          if (f.is_done) {
-            followUpCounts[f.task_id] = (followUpCounts[f.task_id] || 0) + 1;
-          } else if (!scheduledFollowUpDates[f.task_id] || f.followed_up_at < scheduledFollowUpDates[f.task_id]) {
-            scheduledFollowUpDates[f.task_id] = f.followed_up_at;
-          }
-        }
-      }
-
-      const watchersByTask = await watchersByTaskIds((tasks || []).map((t: any) => t.id));
-
-      let matterByProject: Record<string, string> = {};
-      const projectIds = [...new Set((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
-      if (projectIds.length) {
-        const { data: matterField } = await db.from('company_custom_fields')
-          .select('id').eq('company_id', companyId).eq('table_name', 'projects').eq('field_key', 'matter_number').maybeSingle();
-        if (matterField) {
-          const { data: values } = await db.from('company_custom_field_values')
-            .select('record_id, value_text').eq('field_id', matterField.id).in('record_id', projectIds);
-          matterByProject = Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || '']));
-        }
-      }
+      const taskIds = (tasks || []).map((t: any) => t.id);
+      const projectIds: string[] = [...new Set<string>((tasks || []).map((t: any) => t.project_id).filter(Boolean))];
+      const [
+        { counts: followUpCounts, scheduled: scheduledFollowUpDates },
+        watchersByTask,
+        matterByProject,
+      ] = await Promise.all([
+        followUpSummary(taskIds),
+        watchersByTaskIds(taskIds),
+        matterNumbersForProjects(companyId, projectIds),
+      ]);
 
       return json({
         tasks: (tasks || []).map((t: any) => ({

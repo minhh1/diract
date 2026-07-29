@@ -77,6 +77,25 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
       alert('Please fill in the property address — required for Conveyancing matters.');
       return;
     }
+
+    // Exact-name duplicate guard — case-insensitive, so "Smith v Jones" and
+    // "smith v jones" count as the same matter. Only an exact match is
+    // blocked; anything less certain is left for a human to notice and
+    // merge via Reconciliation.
+    const trimmedName = name.trim();
+    const { data: dupProject } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('company_id', companyId)
+      .is('deleted_at', null)
+      .ilike('name', trimmedName)
+      .limit(1)
+      .maybeSingle();
+    if (dupProject) {
+      alert(`A matter named "${trimmedName}" already exists.`);
+      return;
+    }
+
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     try {
