@@ -9,7 +9,7 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark, Sun, Moon,
+  Landmark, Sun, Moon, FlaskConical,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -872,12 +872,16 @@ export default function Sidebar() {
     // Set visible tables
     setVisibleTables(visibleTablesData || ALL_SYSTEM_TABLES.map(t => t.slug));
 
-    // Get memberships
+    // Get memberships -- filtered client-side (rather than a PostgREST
+    // embedded-resource filter, whose "drop the parent row" semantics
+    // aren't guaranteed without an !inner join hint) to exclude closed
+    // trial sandboxes (status 'suspended', see close_trial_sandbox_company)
+    // so an ended trial drops out of the switcher instead of lingering.
     const { data: ms } = await supabase
       .from("company_memberships")
-      .select("company_id, role, company:company_id(id, name, status)")
+      .select("company_id, role, company:company_id(id, name, status, company_type)")
       .eq("user_id", ctxUserId);
-    setMemberships(ms || []);
+    setMemberships((ms || []).filter((m: any) => m.company && m.company.status !== 'suspended'));
 
     // Mark profile fully loaded only after all data is set
     setProfileLoading(false);
@@ -1282,9 +1286,10 @@ export default function Sidebar() {
                       {m.company?.name?.substring(0, 2)?.toUpperCase() || '??'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-[12px] font-bold truncate ${
+                      <p className={`text-[12px] font-bold truncate flex items-center gap-1 ${
                         isActive ? 'text-slate-900' : 'text-slate-600'
                       }`}>
+                        {m.company?.company_type === 'trial_sandbox' && <FlaskConical size={10} className="text-amber-500 shrink-0" />}
                         {m.company?.name || 'Unknown'}
                       </p>
                       <p className="text-[9px] text-slate-400 uppercase font-medium">

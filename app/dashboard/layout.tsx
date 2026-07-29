@@ -4,6 +4,7 @@ import QueryProvider from "@/components/QueryProvider";
 import { CompanyProvider } from "@/components/CompanyContext";
 import { ProgressBarProvider } from "@/components/TopProgressBar";
 import PerfRouteTracker from "@/components/PerfRouteTracker";
+import TrialWorkspaceBanner from "@/components/TrialWorkspaceBanner";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -20,7 +21,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </aside>
 
             {/* COLUMN 2: Content Area */}
-            <main className="flex-1 flex flex-col overflow-hidden">
+            <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+              <TrialWorkspaceBanner />
               <div className="flex-1 overflow-y-auto">
                 {children}
               </div>

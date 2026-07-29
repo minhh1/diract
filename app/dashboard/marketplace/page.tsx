@@ -6,11 +6,12 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as LucideIcons from "lucide-react";
-import { Store, Plus, Loader2, Check, X, Trash2 } from "lucide-react";
+import { Store, Plus, Loader2, Check, X, Trash2, FlaskConical } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import TemplateTableBuilder from "@/components/marketplace/TemplateTableBuilder";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
+import { clearActiveIdentityCache } from "@/lib/clearClientCaches";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
@@ -235,6 +236,12 @@ export default function MarketplacePage() {
   const [installBusy, setInstallBusy] = useState(false);
   const [installError, setInstallError] = useState('');
 
+  // Trial mode: a brand-new sandbox company, so there's never a naming
+  // conflict to review -- unlike a real install, "Try it" needs no preview
+  // modal, just a single click (see app/api/templates/[slug]/trial/start).
+  const [startingTrialId, setStartingTrialId] = useState<string | null>(null);
+  const [trialError, setTrialError] = useState('');
+
   const [managing, setManaging] = useState<Template | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -289,6 +296,31 @@ export default function MarketplacePage() {
     if (!res.ok) { setInstallError(data.error || (preview?.alreadyInstalled ? 'Upgrade failed' : 'Install failed')); return; }
     setInstalling(null);
     refetch();
+  };
+
+  // "Try it": spins up a brand-new sandbox company with the template
+  // installed + sample data (see create_trial_sandbox_company), then
+  // switches into it -- same active_company_id flip + cache clear +
+  // hard-navigate Sidebar.tsx's handleSwitchCompany uses, since a fresh
+  // page load is what makes CompanyContext/companyBootstrap pick up the new
+  // company at all.
+  const startTrial = async (template: Template) => {
+    if (!userId) return;
+    setStartingTrialId(template.id);
+    setTrialError('');
+    const res = await fetch(`/api/templates/${template.slug}/trial/start`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      setStartingTrialId(null);
+      setTrialError(data.error || 'Could not start trial');
+      return;
+    }
+    await supabase.from('profiles').update({ active_company_id: data.company_id }).eq('id', userId);
+    const { invalidateSchemaCache, clearCompanyIdCache } = await import('@/lib/services/schemaService');
+    invalidateSchemaCache();
+    clearCompanyIdCache();
+    clearActiveIdentityCache();
+    window.location.replace('/dashboard/properties');
   };
 
   // Owner-only: push this company's live dashboards (fields, layout, empty
@@ -377,7 +409,17 @@ export default function MarketplacePage() {
               <button onClick={() => uninstall(template)} className="px-4 py-2 bg-slate-50 text-slate-500 rounded-full text-[11px] font-bold hover:bg-red-50 hover:text-red-500 transition-all">Uninstall</button>
             </div>
           ) : (
-            <button onClick={() => openInstall(template)} className="px-4 py-2 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all">Install</button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => startTrial(template)}
+                disabled={startingTrialId === template.id}
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all disabled:opacity-50"
+              >
+                {startingTrialId === template.id ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
+                Try it
+              </button>
+              <button onClick={() => openInstall(template)} className="px-4 py-2 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all">Install</button>
+            </div>
           )
         )}
         {mode === 'mine' && isAdmin && (
@@ -410,6 +452,10 @@ export default function MarketplacePage() {
           <p className="text-[11px] text-slate-400">Install ready-made tables and fields, or publish your own for other companies to take.</p>
         </div>
       </div>
+
+      {trialError && (
+        <p className="text-[11px] text-red-600 bg-red-50 rounded-2xl px-4 py-2">{trialError}</p>
+      )}
 
       <div className="flex gap-2">
         <button onClick={() => setTab('browse')} className={`px-4 py-2 rounded-full text-[11px] font-bold transition-all ${tab === 'browse' ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500'}`}>Browse</button>
