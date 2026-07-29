@@ -30,6 +30,7 @@ import {
   SYSTEM_TABLE_HIDDEN_COLS, SYSTEM_TABLE_RELATION_MAP, SYSTEM_TABLE_PERSON_LINK_COLS,
 } from "@/lib/schema/systemTableRelations";
 import { ENTITY_TYPES } from "@/lib/entityTypes";
+import { invalidateEntityRelationCache } from "./RelationPicker";
 import { buildMissingDefaultProjectDashboardTabs, buildMissingDefaultTabsFromCompanyDefaults } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import { getCompanyId, getSchemaMetadata } from "@/lib/services/schemaService";
@@ -935,6 +936,7 @@ export default function RecordDashboard({
       const roles = value as string[];
       await supabase.from('entities').update({ roles, entity_type: roles[0] || null }).eq('id', recordId);
       setRecord(prev => prev ? { ...prev, roles, entity_type: roles[0] || null } : prev);
+      invalidateEntityRelationCache();
     } else {
       // Base column
       await supabase
@@ -942,6 +944,7 @@ export default function RecordDashboard({
         .update({ [fieldKey]: value || null })
         .eq('id', recordId);
       setRecord(prev => prev ? { ...prev, [fieldKey]: value } : prev);
+      if (systemTable === 'entities') invalidateEntityRelationCache();
     }
 
   } else if (tableId) {

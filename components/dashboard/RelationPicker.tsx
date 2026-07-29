@@ -438,6 +438,21 @@ export async function warmRelationOptionsCache(): Promise<void> {
   }
 }
 
+// Drops every cached entities candidate-list and label entry (both keyed
+// with a "options:entities:..."/"label:entities:..." prefix -- see
+// optionsCacheKey/the label-resolution effect below) -- called after an
+// entity is edited elsewhere (RecordDashboard.tsx's roles multi-select)
+// so a picker opened moments later doesn't show a stale hasTrusteeRole
+// flag or label from before the edit. OPTIONS_CACHE_TTL_MS (5 minutes) is
+// long enough that without this, a just-added Corporate Trustee role
+// wouldn't show the capacity prompt until the cache aged out on its own --
+// confirmed live, that's exactly what a real edit-then-pick test hit.
+export function invalidateEntityRelationCache(): void {
+  for (const key of cache.keys()) {
+    if (key.startsWith('options:entities:') || key.startsWith('label:entities:')) cache.delete(key);
+  }
+}
+
 export default function RelationPicker({
   linkedSystemTable, linkedTableId, displayField, displayField2, searchFieldKeys, filterColumn, filterValue,
   value, onSelect, multiple, values, onSelectMulti, disabled, placeholder, initialLabel, size = 'md', variant = 'pill',
