@@ -35,7 +35,7 @@ import { invalidateEntityRelationCache } from "./RelationPicker";
 const TRUSTEE_ROLE_TYPES = ["Corporate Trustee", "Non Corporate Trustee"];
 import { buildMissingDefaultProjectDashboardTabs, buildMissingDefaultTabsFromCompanyDefaults } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
-import { getCompanyId, getSchemaMetadata } from "@/lib/services/schemaService";
+import { getSchemaMetadata } from "@/lib/services/schemaService";
 import { createArchiveRequest, type ArchiveEntityTable } from "@/lib/archiveRequests";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { useCompany } from "@/components/CompanyContext";
@@ -217,29 +217,47 @@ export default function RecordDashboard({
 
     // companyId/isAdmin are already resolved once per session by
     // CompanyContext (see app/dashboard/layout.tsx) -- reusing that instead
-    // of re-running getCompanyId()+auth.getUser()+a company_memberships
-    // query on every single record open removes 3 sequential round trips
-    // from the critical path in the common case. Falls back to the direct
-    // lookups only if context genuinely hasn't resolved yet (e.g. a very
-    // early deep link).
+    // of re-running auth.getUser()+profiles+company_memberships on every
+    // single record open removes sequential round trips from the critical
+    // path in the common case. Falls back to the direct lookups only if
+    // context genuinely hasn't resolved yet (e.g. a very early deep link).
+    //
+    // loadRecord/loadSubProjects don't depend on companyId at all (they key
+    // purely off recordId, relying on RLS) -- kicking them off here, before
+    // companyId/admin resolve, instead of behind them removes that wait
+    // from the critical path entirely rather than just shortening it.
+    // Confirmed live: the fallback branch used to serialize auth.getUser()
+    // twice (once inside the old getCompanyId() call, once again right
+    // after) plus a separate company_memberships query, all before the
+    // record fetch even started -- exactly the "session resolves, then a
+    // wait, then data resolves" pattern reported. Only loadTabs/loadFields
+    // actually need companyId (schema is company-scoped), so only those
+    // wait on it now.
+    const recordPromise = loadRecord();
+    const subProjectsPromise = loadSubProjects();
+
     let cid = ctxCompanyId;
     let admin = ctxIsAdmin;
     if (!cid) {
-      cid = await getCompanyId();
-      if (!cid) { setLoading(false); return; }
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: mem } = await supabase
-          .from('company_memberships').select('role')
-          .eq('user_id', user.id).eq('company_id', cid).single();
-        admin = mem?.role === 'company_admin';
-      }
+      if (!user) { setLoading(false); return; }
+      // Same "one getUser() call, then parallel profile+membership" shape
+      // as lib/documentTemplateAuth.ts's authorizeCompanyMember() -- fetch
+      // every membership (not company-filtered, since cid isn't known yet)
+      // and match it client-side once cid resolves.
+      const [{ data: prof }, { data: memberships }] = await Promise.all([
+        supabase.from('profiles').select('active_company_id').eq('id', user.id).single(),
+        supabase.from('company_memberships').select('company_id, role').eq('user_id', user.id),
+      ]);
+      cid = prof?.active_company_id;
+      if (!cid) { setLoading(false); return; }
+      admin = memberships?.find(m => m.company_id === cid)?.role === 'company_admin';
     }
     setCompanyId(cid);
     setIsAdmin(admin);
     perfLog(`RecordDashboard(${perfName}): companyId+admin resolved`);
 
-    const [rec, , flds] = await Promise.all([loadRecord(cid), loadTabs(cid), loadFields(cid), loadSubProjects()]);
+    const [rec, , flds] = await Promise.all([recordPromise, loadTabs(cid), loadFields(cid), subProjectsPromise]);
     setTabsLoaded(true);
     perfLog(`RecordDashboard(${perfName}): record/tabs/fields/subProjects resolved`);
     await Promise.all([resolveLinkedItems(rec, flds), loadParent(rec)]);
@@ -248,7 +266,7 @@ export default function RecordDashboard({
     perfLogPageReady('record', perfName);
   };
 
-  const loadRecord = async (cid: string) => {
+  const loadRecord = async () => {
     if (systemTable) {
       // Fetch the row + its custom field values in parallel -- both are
       // independent lookups keyed only on recordId, no need to serialize

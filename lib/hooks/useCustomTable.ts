@@ -316,17 +316,24 @@ export function useCustomTable(
   const { companyId } = useCompany();
   const [tableDef, setTableDef] = useState<CustomTable | null>(null);
   const [fields, setFields] = useState<CustomTableField[]>([]);
-  // Lazily seeded from cache -- a custom table already visited this session
-  // renders its last-known rows immediately instead of blanking to a
-  // skeleton for a frame, same reasoning as usePresetTable.ts's own lazy
-  // row initializer for the 4 system tables.
-  const [records, setRecords] = useState<CustomTableRecord[]>(
-    () => (companyId && tableSlug ? readCache<CustomTableRecord[]>(rowsCacheKey(companyId, tableSlug)) : null) || []
-  );
+  // Plain initial values, not lazily cache-seeded here -- the mount layout
+  // effect below (useIsomorphicLayoutEffect) is the ONLY place that reads
+  // the row cache, same as it already is for tableDef/fields/loading. This
+  // used to also attempt a cache read right here, in the useState
+  // initializer -- but that read is gated on `companyId`, which isn't
+  // reliably available synchronously on this exact first render (context
+  // resolving a tick later, or this hook instance being reused across a
+  // slug change per DashboardViewPage.tsx). When it missed, records/
+  // recordsLoading started wrong ([]/true) and only got corrected once the
+  // layout effect ran a moment later -- two independent attempts at the
+  // same read that could disagree, which is what caused a genuine empty-
+  // state flash even when a valid cache entry existed the whole time.
+  // useIsomorphicLayoutEffect runs before the browser paints, so seeding
+  // exclusively there is exactly as flash-free as a lazy initializer would
+  // be if it always managed to hit the cache -- just without the race.
+  const [records, setRecords] = useState<CustomTableRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [recordsLoading, setRecordsLoading] = useState(
-    () => !(companyId && tableSlug && readCache<CustomTableRecord[]>(rowsCacheKey(companyId, tableSlug)))
-  );
+  const [recordsLoading, setRecordsLoading] = useState(true);
 
   // useDashboardData.ts always re-fetches the dashboard's source table row
   // live in the background (correct -- stale-while-revalidate), even when
