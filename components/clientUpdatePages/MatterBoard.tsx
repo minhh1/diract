@@ -530,13 +530,6 @@ export default function MatterBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchedItems, sorts]);
 
-  // Cards view has the exact same un-virtualized-render cost as
-  // SpreadsheetView's matching cap below (see its comment) -- a MatterCard
-  // per item is heavier than a spreadsheet row, if anything.
-  const CARDS_INITIAL_CAP = 30;
-  const [visibleCardCount, setVisibleCardCount] = useState(CARDS_INITIAL_CAP);
-  useEffect(() => { setVisibleCardCount(CARDS_INITIAL_CAP); }, [visibleItems]);
-
   const addSort = () => {
     const used = new Set(sorts.map(s => s.fieldId));
     const next = sortOptions.find(o => !used.has(o.id));
@@ -802,26 +795,17 @@ export default function MatterBoard({
         </div>
 
         <div className="w-full flex-1 min-w-0">
-          {mode === "cards" ? (() => {
-            const expandedCards = expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields));
-            return (
+          {mode === "cards" ? (
             <div className="space-y-3">
-              {expandedCards.slice(0, visibleCardCount).map(({ key, item, propertyId }) => (
+              {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
                   onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged} />
               ))}
-              {expandedCards.length === 0 && (
+              {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</p>
               )}
-              {expandedCards.length > visibleCardCount && (
-                <button type="button" onClick={() => setVisibleCardCount(c => c + CARDS_INITIAL_CAP)}
-                  className="w-full py-3 text-center text-[11px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors">
-                  Show {Math.min(CARDS_INITIAL_CAP, expandedCards.length - visibleCardCount)} more (of {expandedCards.length})
-                </button>
-              )}
             </div>
-            );
-          })() : (
+          ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
               onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged} />
           )}
@@ -1512,25 +1496,13 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   const showFixColumn = pageKind === "auto_fed" && canEdit && !!pageId;
   const totalCols = fields.length + 1 + (showFixColumn ? 1 : 0) + (canEdit && onMoveItem ? 1 : 0) + (canEdit && onRemoveItem ? 1 : 0);
 
-  const allRows = expandByProperty(items, propertyFieldIdsOf(fields));
-  // A single un-virtualized <tr> for every row is a real, synchronous DOM
-  // cost (rows x fields cells) paid on every mount -- for a 300+-row board
-  // this dwarfs everything else once the data itself is instant from
-  // cache. Rendering only an initial page's worth up front (with an
-  // explicit "Show more" affordance below) cuts that first-paint cost by
-  // an order of magnitude for a large board, without the bigger risk of a
-  // full scroll-virtualization rewrite (sticky columns, grouping, and
-  // expand/collapse all interact with row rendering here).
-  const INITIAL_ROW_CAP = 60;
-  const [visibleRowCount, setVisibleRowCount] = useState(INITIAL_ROW_CAP);
-  useEffect(() => { setVisibleRowCount(INITIAL_ROW_CAP); }, [items]);
-  const rows = allRows.slice(0, visibleRowCount);
-  // Scans the FULL row set (not just the capped/visible slice) -- a column
-  // whose long content only shows up on a not-yet-revealed row should still
-  // offer the expand toggle once that row comes into view, not just for
-  // whatever happened to be in the first page.
+  const rows = expandByProperty(items, propertyFieldIdsOf(fields));
+  // Only offer the expand/shrink toggle on columns that actually have
+  // content long enough to hit the 220px truncation cap (see
+  // SpreadsheetCell's truncateClass) -- otherwise every column shows a
+  // useless toggle even when nothing is ever cut off.
   const truncatedFieldIds = new Set(
-    fields.filter(f => allRows.some(({ item }) => {
+    fields.filter(f => rows.some(({ item }) => {
       const v = item.values[f.id];
       if (v == null || v === "") return false;
       const text = isRelationField(f) || (f.field_type === "select" && f.select_options?.length) ? String(v) : formatValue(v, f, dateFormat);
@@ -1656,16 +1628,6 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
           })}
           {items.length === 0 && (
             <tr><td colSpan={totalCols} className="px-4 py-10 text-center text-[12px] text-slate-300 italic">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</td></tr>
-          )}
-          {allRows.length > rows.length && (
-            <tr>
-              <td colSpan={totalCols} className="px-4 py-3 text-center">
-                <button type="button" onClick={() => setVisibleRowCount(c => c + INITIAL_ROW_CAP)}
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors">
-                  Show {Math.min(INITIAL_ROW_CAP, allRows.length - rows.length)} more (of {allRows.length})
-                </button>
-              </td>
-            </tr>
           )}
         </tbody>
       </table>

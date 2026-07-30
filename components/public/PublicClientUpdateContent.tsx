@@ -233,12 +233,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   // marker should land on -- otherwise every recorded load time silently
   // excludes render time, which is exactly backwards when the render is
   // the suspect.
-  // 120ms, not the hook's 400ms default -- safe here specifically because
-  // the cache-warm path is now a genuine single-pass render (applyStaffJson
-  // bails out to the same object reference when a revalidate confirms
-  // nothing changed, so there's no legitimate late second render to wait
-  // out).
-  const domSettled = useDomSettled(!loading, 120);
+  const domSettled = useDomSettled(!loading);
   useEffect(() => {
     if (domSettled) perfLogPageReady("public", "detailed table page");
   }, [domSettled]);
