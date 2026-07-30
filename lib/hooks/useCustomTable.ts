@@ -390,12 +390,19 @@ export function useCustomTable(
     const recordsHydratedPromise = fetchTableRecordsHydrated(key, tbl.id, fieldsPromise);
 
     const fieldList = await fieldsPromise;
-    setFields(fieldList);
+    // Bail out to the same array reference when this call (which runs
+    // unconditionally on every single mount/visit, cache or not -- see the
+    // layout effect below) just confirms the cache was already correct --
+    // otherwise every dashboard/custom-table page pays a full re-render on
+    // every open regardless of whether anything actually changed, which is
+    // what showed up as a table's rows/fields still visibly "refetching"
+    // every time despite painting instantly from cache first.
+    setFields(prev => JSON.stringify(prev) === JSON.stringify(fieldList) ? prev : fieldList);
     setLoading(false);
     if (companyId) writeShellCache(tableShellKey(companyId, tableSlug), { tableDef: tbl, fields: fieldList });
 
     const hydratedRecords = await recordsHydratedPromise;
-    setRecords(hydratedRecords);
+    setRecords(prev => JSON.stringify(prev) === JSON.stringify(hydratedRecords) ? prev : hydratedRecords);
     setRecordsLoading(false);
     if (companyId) writeCache(rowsCacheKey(companyId, tableSlug), hydratedRecords);
     // preloadedTableId isn't read in this body (the ref is, above) -- it's

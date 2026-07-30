@@ -181,7 +181,10 @@ export function useSystemTableAsCustomTable(
     });
 
     const fieldList = [...nativeFields, ...cfFields];
-    setFields(fieldList);
+    // Bail out to the same array reference when this call (which runs
+    // unconditionally on every mount/visit, cache or not) just confirms the
+    // cache was already correct -- see useCustomTable.ts's matching comment.
+    setFields(prev => JSON.stringify(prev) === JSON.stringify(fieldList) ? prev : fieldList);
     setLoading(false);
     writeShellCache(systemTableShellKey(tableName, companyId), fieldList);
 
@@ -234,7 +237,7 @@ export function useSystemTableAsCustomTable(
     });
 
     await resolveRelationLabels(fieldList, hydratedRecords);
-    setRecords(hydratedRecords);
+    setRecords(prev => JSON.stringify(prev) === JSON.stringify(hydratedRecords) ? prev : hydratedRecords);
     setRecordsLoading(false);
     if (companyId) writeCache(dashboardSourceRowsKey(tableName, companyId), hydratedRecords);
   }, [tableName, companyId]);
