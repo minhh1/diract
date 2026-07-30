@@ -247,15 +247,7 @@ export function usePresetTable({
       fetchItemsRef.current([...resolved.tableCols, ...resolved.expandCols])
         .then(fresh => {
           perfLog(`usePresetTable(${tableSlug}): background refresh resolved`, `${fresh?.length ?? 0} rows`);
-          if (!fresh?.length) return;
-          // Bail out to the same array reference when this revalidate just
-          // confirms the cached rows were already correct -- same reasoning
-          // as the column-layout background refresh right above (which
-          // already does this): without it, EVERY visit forces a full
-          // re-render of the whole table even when nothing changed, which
-          // is what showed up as rows/sort still visibly "refetching" on
-          // every open despite the cache paint.
-          setItems(prev => JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh);
+          if (fresh?.length) setItems(fresh);
         })
         .catch(() => {});
     } else {
