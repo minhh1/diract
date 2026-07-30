@@ -235,7 +235,7 @@ export async function searchRecords(
 ): Promise<{ id: string; name: string }[]> {
   if (isSystemTable(recordTable)) {
     const col = DISPLAY_COLUMN[recordTable];
-    const { data } = await admin
+    const { data: nameMatches } = await admin
       .from(recordTable)
       .select(`id, ${col}`)
       .eq("company_id", companyId)
@@ -243,7 +243,45 @@ export async function searchRecords(
       .ilike(col, `%${query}%`)
       .order(col)
       .limit(20);
-    return (data || []).map((r: any) => ({ id: r.id, name: r[col] ?? "" }));
+
+    // Also match against every custom field defined on this table (e.g. "Matter
+    // Number" on projects) -- AddMatterModal.tsx's picker only ever displays a
+    // record's name, but staff building a page need to find it by any field they
+    // know it by, not just name. `admin` is service-role (bypasses RLS), so
+    // company_id must be filtered explicitly here, same as the name-column query
+    // above -- these two tables aren't scoped by RLS the way a browser client's
+    // queries would be.
+    const { data: customFields } = await admin
+      .from("company_custom_fields")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("table_name", recordTable)
+      .is("deleted_at", null);
+    const customFieldIds = (customFields || []).map((f: any) => f.id);
+
+    let extraRecords: any[] = [];
+    if (customFieldIds.length) {
+      const { data: valueMatches } = await admin
+        .from("company_custom_field_values")
+        .select("record_id")
+        .eq("company_id", companyId)
+        .in("field_id", customFieldIds)
+        .ilike("value_text", `%${query}%`)
+        .limit(20);
+      const nameMatchIds = new Set((nameMatches || []).map((r: any) => r.id));
+      const extraIds = [...new Set((valueMatches || []).map((v: any) => v.record_id))].filter(id => !nameMatchIds.has(id));
+      if (extraIds.length) {
+        const { data } = await admin
+          .from(recordTable)
+          .select(`id, ${col}`)
+          .eq("company_id", companyId)
+          .is("deleted_at", null)
+          .in("id", extraIds);
+        extraRecords = data || [];
+      }
+    }
+
+    return [...(nameMatches || []), ...extraRecords].slice(0, 20).map((r: any) => ({ id: r.id, name: r[col] ?? "" }));
   }
 
   const { data: table } = await admin.from("company_tables").select("primary_field_key").eq("id", recordTable).eq("company_id", companyId).maybeSingle();

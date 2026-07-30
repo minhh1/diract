@@ -71,7 +71,7 @@ export default function AddMatterModal({ pageId, groupId, recordTable, recordLab
         <div className="px-6 pb-3 shrink-0">
           <div className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-full">
             <Search size={14} className="text-slate-300" />
-            <input value={q} onChange={e => search(e.target.value)} placeholder="Search by name..." autoFocus
+            <input value={q} onChange={e => search(e.target.value)} placeholder={`Search by name or any ${label.singular} field...`} autoFocus
               className="flex-1 text-[13px] outline-none" />
           </div>
         </div>
