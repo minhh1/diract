@@ -6,6 +6,7 @@ import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { readCache, writeCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
+import { perfLog } from "@/lib/perfLog";
 import type { CustomTable } from "./useCustomTables";
 
 interface CachedTableShell {
@@ -366,6 +367,7 @@ export function useCustomTable(
   // unmounting into a spinner.
   const load = useCallback(async () => {
     if (!tableSlug) return;
+    perfLog(`useCustomTable(${tableSlug}): load start`);
     const currentPreload = preloadedTableRef.current;
     let tbl: CustomTable | null | undefined = currentPreload?.slug === tableSlug ? currentPreload : null;
     if (!tbl && companyId) {
@@ -399,11 +401,13 @@ export function useCustomTable(
     const fieldList = await fieldsPromise;
     setFields(fieldList);
     setLoading(false);
+    perfLog(`useCustomTable(${tableSlug}): fields resolved`, `${fieldList.length} fields`);
     if (companyId) writeShellCache(tableShellKey(companyId, tableSlug), { tableDef: tbl, fields: fieldList });
 
     const hydratedRecords = await recordsHydratedPromise;
     setRecords(hydratedRecords);
     setRecordsLoading(false);
+    perfLog(`useCustomTable(${tableSlug}): records resolved`, `${hydratedRecords.length} records`);
     if (companyId) writeCache(rowsCacheKey(companyId, tableSlug), hydratedRecords);
     // preloadedTableId isn't read in this body (the ref is, above) -- it's
     // listed deliberately so a genuine table change still gets a fresh
@@ -423,6 +427,7 @@ export function useCustomTable(
   // second, spurious start/stop of the page's loading indicator.
   useIsomorphicLayoutEffect(() => {
     if (!tableSlug) return;
+    perfLog(`useCustomTable(${tableSlug}): mount effect start`, `companyId=${companyId ?? 'null'}`);
     // Fields are cached independently of preloadedTable -- a caller
     // handing over a known tableDef (useDashboardData.ts's own cache) only
     // means the table ROW lookup can be skipped inside load() below, not
