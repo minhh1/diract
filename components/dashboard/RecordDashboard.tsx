@@ -14,6 +14,7 @@ import ProjectDeletedTasksPanel from "@/components/projects/ProjectDeletedTasksP
 import TabBar, { type RecordTab } from "./TabBar";
 import AddTabModal from "./AddTabModal";
 import FieldLayoutEditor, { type FieldLayout } from "./FieldLayoutEditor";
+import type { AutoNumberConfigValue } from "@/lib/schema/autoNumberPresets";
 import SubProjectsTab from "./tabs/SubProjectsTab";
 import RelatedMattersTab from "./tabs/RelatedMattersTab";
 import ChecklistTab from "./tabs/ChecklistTab";
@@ -446,6 +447,7 @@ export default function RecordDashboard({
         col_start: 1,
         col_span: 6,
         row_order: baseFields.length + i,
+        autoNumber: { prefix: cf.auto_number_prefix ?? null, start: cf.auto_number_start ?? null, pad: cf.auto_number_pad ?? null },
       }));
 
       setMatterTypeFieldId((customFields || []).find((cf: any) => cf.field_key === 'matter_type')?.id ?? null);
@@ -471,6 +473,7 @@ export default function RecordDashboard({
         col_start: 1,
         col_span: 6,
         row_order: i,
+        autoNumber: { prefix: f.auto_number_prefix ?? null, start: f.auto_number_start ?? null, pad: f.auto_number_pad ?? null },
       }));
       setFields(mappedFields);
       return mappedFields;
@@ -1043,6 +1046,19 @@ export default function RecordDashboard({
     return fields;
   };
 
+  // Backs FieldAutoNumberPopover's inline toggle (see FieldLayoutEditor.tsx)
+  // -- a schema-level change (company-wide, not just this record), so it
+  // writes to company_custom_fields (system tables) or company_table_fields
+  // (custom tables), same tables/columns FieldConfigPanel.tsx's full config
+  // panel writes, just via the quicker inline path.
+  const handleSaveAutoNumber = async (field: FieldLayout, next: AutoNumberConfigValue) => {
+    const table = systemTable ? 'company_custom_fields' : 'company_table_fields';
+    await supabase.from(table).update({
+      auto_number_prefix: next.prefix, auto_number_start: next.start, auto_number_pad: next.pad,
+    }).eq('id', field.id);
+    setFields(prev => prev.map(f => f.id === field.id ? { ...f, autoNumber: next } : f));
+  };
+
   const saveTabFieldLayout = async (tabId: string, layout: FieldLayout[]) => {
     const upserts = layout.map(f => ({
       tab_id: tabId,
@@ -1296,6 +1312,8 @@ export default function RecordDashboard({
           onRemoveField={fieldKey =>
             handleRemoveFieldFromTab(activeTab.id, fieldKey)
           }
+          onSaveAutoNumber={isAdmin ? handleSaveAutoNumber : undefined}
+          autoNumberValueTable={systemTable ? 'company_custom_field_values' : 'company_table_values'}
         />
       )}
       {activeTab?.tab_type === 'sub_projects' && (

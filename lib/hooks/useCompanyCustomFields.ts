@@ -13,6 +13,12 @@ export interface CompanyCustomField {
   field_type: string;
   show_in_table: boolean;
   select_options: string[] | null;
+  // Auto numbering (see lib/schema/autoNumberPresets.ts +
+  // supabase/migrations/20260730180000_custom_field_auto_numbering.sql) --
+  // auto_number_prefix null means off; '' is a valid "bare number" prefix.
+  auto_number_prefix: string | null;
+  auto_number_start: number | null;
+  auto_number_pad: number | null;
 }
 
 // Module-level cache shared by every caller — Sidebar's tree section and
@@ -42,7 +48,7 @@ async function fetchRemote(companyId: string, tableName: string): Promise<Compan
   perfLog(`useCompanyCustomFields(${tableName}): start`);
   const { data } = await supabase
     .from("company_custom_fields")
-    .select("id, field_key, label, field_type, show_in_table, select_options")
+    .select("id, field_key, label, field_type, show_in_table, select_options, auto_number_prefix, auto_number_start, auto_number_pad")
     .eq("table_name", tableName)
     .is("deleted_at", null)
     .order("display_order");

@@ -9,6 +9,8 @@ import { getFieldLabel } from "@/lib/fieldLabels";
 import RelationPicker from "./RelationPicker";
 import SmartFieldHint from "@/components/SmartFieldHint";
 import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
+import FieldAutoNumberPopover from "./FieldAutoNumberPopover";
+import type { AutoNumberConfigValue } from "@/lib/schema/autoNumberPresets";
 
 export interface FieldLayout {
   id: string;
@@ -23,6 +25,10 @@ export interface FieldLayout {
   relationTable?: string;          // for base relation fields e.g. 'properties', 'entities'
   relationDisplayColumn?: string;  // e.g. 'street_address', 'name'
   relationJunction?: { table: string; sourceCol: string; targetCol: string }; // multi-valued base relations
+  // Auto numbering (see lib/schema/autoNumberPresets.ts) -- only meaningful
+  // for field_source 'custom' + fieldType 'text'; undefined for every other
+  // field, same as every other optional column-specific prop above.
+  autoNumber?: AutoNumberConfigValue;
 }
 
 interface Props {
@@ -42,6 +48,16 @@ interface Props {
   // Absent/incomplete just means not classified yet; renders flat until it
   // arrives rather than making the user wait for it.
   fieldSections?: Record<string, string>;
+  // Present only when the caller wants the inline auto-numbering toggle
+  // available at all (e.g. gated to admins) -- every custom text field then
+  // gets a small Hash icon next to it in edit mode. autoNumberValueTable is
+  // fixed per FieldLayoutEditor instance since every custom field it
+  // renders belongs to the same underlying table (either all
+  // company_custom_fields, for a system table, or all company_table_fields,
+  // for an ordinary custom table -- RecordDashboard never mixes the two in
+  // one instance).
+  onSaveAutoNumber?: (field: FieldLayout, next: AutoNumberConfigValue) => Promise<void>;
+  autoNumberValueTable?: 'company_custom_field_values' | 'company_table_values';
 }
 
 // ── LinkedRecordModal — multi-select (one row per linked record) ─
@@ -889,7 +905,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
 export default function FieldLayoutEditor({
   fields, recordValues, recordMatterType, linkedItems = {}, isEditing,
   onSave, onAddLinked, onRemoveLinked, onLayoutChange, onAddField, onRemoveField,
-  fieldSections = {},
+  fieldSections = {}, onSaveAutoNumber, autoNumberValueTable,
 }: Props) {
   const [draggedKey, setDraggedKey]   = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
@@ -996,6 +1012,14 @@ export default function FieldLayoutEditor({
               <div className="flex items-center justify-between mb-2">
                 <GripVertical size={14} className="text-slate-300 cursor-grab active:cursor-grabbing" />
                 <div className="flex items-center gap-1">
+                  {onSaveAutoNumber && autoNumberValueTable && field.field_source === 'custom' && field.fieldType === 'text' && (
+                    <FieldAutoNumberPopover
+                      fieldId={field.id}
+                      valueTable={autoNumberValueTable}
+                      value={field.autoNumber ?? { prefix: null, start: null, pad: null }}
+                      onSave={next => onSaveAutoNumber(field, next)}
+                    />
+                  )}
                   <button onClick={() => changeSpan(field.field_key, -3)} disabled={field.col_span <= 3}
                     className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30 transition-colors">
                     <Minus size={12} />
