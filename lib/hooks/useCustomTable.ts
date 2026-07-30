@@ -109,6 +109,105 @@ const RELATION_FIELD_TYPES = ['table_relation', 'entity', 'project', 'property']
 // batched lookup, blanking every OTHER record's label for this column too.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Module-level in-flight dedup for load()'s two network phases, keyed by
+// companyId:tableId. load() genuinely re-runs more than once per real page
+// open -- React Strict Mode's dev double-invoke (mount, cleanup, mount
+// again), AND a real third trigger: useDashboardData.ts's own
+// sourceTableDef starts null and resolves a moment later, which flips this
+// hook's preloadedTableId from undefined to a real id and re-fires the
+// mount effect below (see its dependency array) even though the table
+// itself never changed. Without this, each of those (Strict Mode: 2, plus
+// that flip: 1 more) fired its own full fields+records+resolveRelationLabels
+// round trip -- confirmed live: company_table_fields for the dashboard's
+// source table fetched 3 times on one open, which is also why a Staff-type
+// relation field on it (e.g. Time Entry's "All Staff" filter) visibly
+// reloaded more than once. Sharing one promise per phase across every
+// redundant call collapses that back to one real fetch each, while still
+// letting a genuine refetch() (after add/edit/delete, well after the first
+// load's promise already resolved and was evicted here) hit the network
+// fresh -- this is in-flight-only, no TTL.
+const fieldsFetchInFlight = new Map<string, Promise<CustomTableField[]>>();
+function fetchTableFields(key: string, tableId: string): Promise<CustomTableField[]> {
+  const existing = fieldsFetchInFlight.get(key);
+  if (existing) return existing;
+  const promise = (async () => {
+    const { data } = await supabase
+      .from('company_table_fields')
+      .select('*')
+      .eq('table_id', tableId)
+      .is('deleted_at', null)
+      .order('display_order');
+    return (data || []) as CustomTableField[];
+  })();
+  fieldsFetchInFlight.set(key, promise);
+  promise.finally(() => fieldsFetchInFlight.delete(key));
+  return promise;
+}
+
+const recordsFetchInFlight = new Map<string, Promise<CustomTableRecord[]>>();
+function fetchTableRecordsHydrated(
+  key: string, tableId: string, fieldListPromise: Promise<CustomTableField[]>
+): Promise<CustomTableRecord[]> {
+  const existing = recordsFetchInFlight.get(key);
+  if (existing) return existing;
+  const promise = (async () => {
+    // Fires immediately, in parallel with fields -- same "don't wait on the
+    // slower query before starting the other" reasoning load() always used.
+    const recordsPromise = supabase
+      .from('company_table_records')
+      .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)')
+      .eq('table_id', tableId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    const fieldList = await fieldListPromise;
+    const fieldMap = new Map(fieldList.map(f => [f.id, f]));
+    const { data: recs } = await recordsPromise;
+
+    const hydratedRecords: CustomTableRecord[] = (recs || []).map(rec => {
+      const values: Record<string, any> = {};
+      (rec.values || []).forEach((v: any) => {
+        const field = fieldMap.get(v.field_id);
+        if (!field) return;
+        values[field.field_key] = v.value_record_id
+          ?? v.value_text
+          ?? v.value_number
+          ?? v.value_date
+          ?? v.value_boolean
+          ?? null;
+      });
+      return { id: rec.id, table_id: rec.table_id, created_at: rec.created_at, values, displayValues: {} };
+    });
+
+    const multiFields = fieldList.filter(f => f.allow_multiple);
+    if (multiFields.length) {
+      const { data: links } = await supabase
+        .from('company_table_value_links')
+        .select('record_id, field_id, value_record_id')
+        .in('field_id', multiFields.map(f => f.id));
+      const byRecord = new Map<string, Record<string, string[]>>();
+      (links || []).forEach(l => {
+        const field = fieldMap.get(l.field_id);
+        if (!field) return;
+        if (!byRecord.has(l.record_id)) byRecord.set(l.record_id, {});
+        const rec = byRecord.get(l.record_id)!;
+        (rec[field.field_key] ||= []).push(l.value_record_id);
+      });
+      for (const rec of hydratedRecords) {
+        for (const field of multiFields) {
+          rec.values[field.field_key] = byRecord.get(rec.id)?.[field.field_key] || [];
+        }
+      }
+    }
+
+    await resolveRelationLabels(fieldList, hydratedRecords);
+    return hydratedRecords;
+  })();
+  recordsFetchInFlight.set(key, promise);
+  promise.finally(() => recordsFetchInFlight.delete(key));
+  return promise;
+}
+
 // Batch-resolves each relation field's target record ids to a human label,
 // one query per relation field (not per row), and writes the results onto
 // each record's `displayValues`. Mirrors the label lookups RelationPicker
@@ -280,89 +379,22 @@ export function useCustomTable(
     if (!tbl) return;
     setTableDef(tbl);
 
-    // Both fire in the same tick (no new round trip vs. before), but only
-    // FIELDS is awaited up front -- records is wrapped in an immediately-
-    // invoked async function so its own request starts right away too,
-    // without forcing the caller to wait for it before painting anything.
-    // Fields is a handful of rows and reliably resolves first; records is
-    // a join across company_table_values for every row in the table, and
-    // was the real reason the page's whole shell (quick-add form, grid's
-    // own column headers -- neither of which needs a single row of data to
-    // render) sat behind one combined skeleton for as long as the slower
-    // of the two, even though a viewer spends a couple of seconds just
-    // orienting on a fresh page before touching anything anyway.
-    const recordsPromise = (async () => {
-      const { data } = await supabase
-        .from('company_table_records')
-        .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)')
-        .eq('table_id', tbl!.id)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-      return data;
-    })();
+    // Both phases are deduped/shared across every redundant load() call for
+    // this same table (see fetchTableFields/fetchTableRecordsHydrated above)
+    // -- only FIELDS is awaited up front, records resolves in the
+    // background, same "paint the shell before the slower query lands"
+    // reasoning as before, now just backed by a shared promise instead of a
+    // fresh request every time load() itself gets re-invoked.
+    const key = `${companyId ?? ''}:${tbl.id}`;
+    const fieldsPromise = fetchTableFields(key, tbl.id);
+    const recordsHydratedPromise = fetchTableRecordsHydrated(key, tbl.id, fieldsPromise);
 
-    const { data: flds } = await supabase
-      .from('company_table_fields')
-      .select('*')
-      .eq('table_id', tbl.id)
-      .is('deleted_at', null)
-      .order('display_order');
-
-    const fieldList = (flds || []) as CustomTableField[];
+    const fieldList = await fieldsPromise;
     setFields(fieldList);
     setLoading(false);
     if (companyId) writeShellCache(tableShellKey(companyId, tableSlug), { tableDef: tbl, fields: fieldList });
 
-    // Build a field_id → field_key map for resolving values
-    const fieldMap = new Map(fieldList.map(f => [f.id, f]));
-    const recs = await recordsPromise;
-
-    const hydratedRecords: CustomTableRecord[] = (recs || []).map(rec => {
-      const values: Record<string, any> = {};
-      (rec.values || []).forEach((v: any) => {
-        const field = fieldMap.get(v.field_id);
-        if (!field) return;
-        // value_record_id checked FIRST -- see UUID_RE's comment above and
-        // components/GenericMasterTable.tsx's matching fetchCustomFields for
-        // why (it's the dedicated, authoritative link column; value_text can
-        // hold a stale or never-linked plain display name instead).
-        values[field.field_key] = v.value_record_id
-          ?? v.value_text
-          ?? v.value_number
-          ?? v.value_date
-          ?? v.value_boolean
-          ?? null;
-      });
-      return { id: rec.id, table_id: rec.table_id, created_at: rec.created_at, values, displayValues: {} };
-    });
-
-    // Multi-record relations (allow_multiple) hold their links in a
-    // separate junction table, not company_table_values -- overwrite those
-    // fields' values with the real string[] once loaded. field_id already
-    // scopes to this table (a field belongs to exactly one table), so no
-    // need to also filter by this table's record ids.
-    const multiFields = fieldList.filter(f => f.allow_multiple);
-    if (multiFields.length) {
-      const { data: links } = await supabase
-        .from('company_table_value_links')
-        .select('record_id, field_id, value_record_id')
-        .in('field_id', multiFields.map(f => f.id));
-      const byRecord = new Map<string, Record<string, string[]>>();
-      (links || []).forEach(l => {
-        const field = fieldMap.get(l.field_id);
-        if (!field) return;
-        if (!byRecord.has(l.record_id)) byRecord.set(l.record_id, {});
-        const rec = byRecord.get(l.record_id)!;
-        (rec[field.field_key] ||= []).push(l.value_record_id);
-      });
-      for (const rec of hydratedRecords) {
-        for (const field of multiFields) {
-          rec.values[field.field_key] = byRecord.get(rec.id)?.[field.field_key] || [];
-        }
-      }
-    }
-
-    await resolveRelationLabels(fieldList, hydratedRecords);
+    const hydratedRecords = await recordsHydratedPromise;
     setRecords(hydratedRecords);
     setRecordsLoading(false);
     if (companyId) writeCache(rowsCacheKey(companyId, tableSlug), hydratedRecords);
