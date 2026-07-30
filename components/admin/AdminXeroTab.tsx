@@ -10,7 +10,32 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Landmark, Trash2, Loader2, ExternalLink, CheckCircle2 } from "lucide-react";
+import { Landmark, Trash2, Loader2, HelpCircle, CheckCircle2 } from "lucide-react";
+import CredentialsHelpDrawer from "./CredentialsHelpDrawer";
+
+// Customer-facing walkthrough of the OAuth consent flow -- unlike
+// WhatsApp/Teams' help steps (which point at credentials the customer has
+// to go dig up themselves), there's nothing to "find" here: one shared
+// Diract-owned Xero app handles every company, so this just narrates what
+// clicking "Connect an organisation" actually does.
+const XERO_HELP_STEPS = [
+  {
+    title: "Click \"Connect an organisation\"",
+    description: "This opens Xero's own sign-in and consent screen in a new step -- nothing to set up beforehand.",
+  },
+  {
+    title: "Sign in to Xero and choose an organisation",
+    description: "Log in with your usual Xero account, then pick which organisation to connect. To connect more than one, just repeat this process again afterwards.",
+  },
+  {
+    title: "Approve access",
+    description: "Xero shows exactly what's being requested (read-only access to your organisation's settings) -- click \"Allow access\" to finish.",
+  },
+  {
+    title: "You're redirected back here, connected",
+    description: "The organisation now appears in the list below. Disconnect it any time with the trash icon, and link any entity to it further down so its records can be matched to this organisation.",
+  },
+];
 
 interface Connection {
   id: string;
@@ -38,6 +63,7 @@ export default function AdminXeroTab() {
   const [entities, setEntities] = useState<EntityRow[]>([]);
   const [entitiesLoading, setEntitiesLoading] = useState(true);
   const [linking, setLinking] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,11 +131,10 @@ export default function AdminXeroTab() {
 
         {!loading && connections.length === 0 && (
           <p className="text-[12px] text-slate-400">
-            Not connected. Requires a Xero app registered at{" "}
-            <a href="https://developer.xero.com/app/manage" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline inline-flex items-center gap-1">
-              developer.xero.com <ExternalLink size={10} />
-            </a>{" "}
-            with XERO_CLIENT_ID/XERO_CLIENT_SECRET set (see .env.example) -- one app is shared across every company, each admin just connects their own organisation(s) here.
+            Not connected yet. Click "Connect an organisation" above and sign in to Xero -- it takes about a minute.{" "}
+            <button type="button" onClick={() => setHelpOpen(true)} className="inline-flex items-center gap-1 text-indigo-600 hover:underline font-bold">
+              <HelpCircle size={11} /> How does this work?
+            </button>
           </p>
         )}
 
@@ -165,6 +190,14 @@ export default function AdminXeroTab() {
           )}
         </div>
       )}
+
+      <CredentialsHelpDrawer
+        isOpen={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title="Connecting your Xero organisation"
+        intro="Diract connects to Xero using Xero's own sign-in screen -- there's nothing to look up or copy in beforehand."
+        steps={XERO_HELP_STEPS}
+      />
     </div>
   );
 }
