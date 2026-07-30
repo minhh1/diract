@@ -85,6 +85,43 @@ export const dashboardShellKey = (companyId: string, slug: string) => `dashboard
 // less often than which dashboards exist at all.
 const DASHBOARD_CONFIG_TTL_MS = 5 * 60_000;
 
+// Module-level in-flight dedup, keyed by companyId:slug -- React Strict
+// Mode double-invokes every effect once in development (mount, cleanup,
+// mount again), which without this fired the exact same company_dashboards
+// (and, if source_table_type is 'custom', company_tables) query twice on a
+// single real page load -- confirmed live: two identical requests back to
+// back, and since each independently called setDashboard/setSourceTableDef,
+// the second response landing (however marginally later) could visibly
+// flip summary-tile numbers a moment after the first ones already painted.
+// Same reasoning as useCustomTables.ts's own inFlight guard.
+const dashboardFetchInFlight = new Map<string, Promise<{ dashboard: CompanyDashboard | null; sourceTableDef: CustomTable | null }>>();
+
+function fetchDashboardAndSourceTable(companyId: string, dashboardSlug: string): Promise<{ dashboard: CompanyDashboard | null; sourceTableDef: CustomTable | null }> {
+  const key = `${companyId}:${dashboardSlug}`;
+  const existing = dashboardFetchInFlight.get(key);
+  if (existing) return existing;
+  const promise = (async () => {
+    // .eq('company_id', ...) -- company_dashboards.slug has no unique
+    // constraint (two companies can each legitimately have a dashboard
+    // slugged the same way), so a slug-only lookup relied entirely on RLS
+    // to avoid resolving the wrong tenant's row.
+    const { data: dash } = await supabase
+      .from('company_dashboards').select('*').eq('slug', dashboardSlug).eq('company_id', companyId).is('deleted_at', null).maybeSingle();
+    if (dash && !dash.widgets_migrated_at) {
+      dash.widgets = await ensureDashboardWidgetsMigrated(dash);
+    }
+    let tbl: CustomTable | null = null;
+    if (dash?.source_table_type === 'custom' && dash?.source_table_id) {
+      const { data } = await supabase.from('company_tables').select('*').eq('id', dash.source_table_id).maybeSingle();
+      tbl = data ?? null;
+    }
+    return { dashboard: dash, sourceTableDef: tbl };
+  })();
+  dashboardFetchInFlight.set(key, promise);
+  promise.finally(() => { dashboardFetchInFlight.delete(key); });
+  return promise;
+}
+
 // Loads a dashboard's config, resolves its source custom table via
 // useCustomTable, and computes filtered records + summary tile values +
 // daily chart series client-side over that table's full (unpaginated)
@@ -135,30 +172,15 @@ export function useDashboardData(dashboardSlug: string) {
       return () => { active = false; };
     }
     (async () => {
-      // .eq('company_id', ...) -- company_dashboards.slug has no unique
-      // constraint (two companies can each legitimately have a dashboard
-      // slugged the same way), so a slug-only lookup relied entirely on
-      // RLS to avoid resolving the wrong tenant's row. Skips the fetch
-      // outright rather than querying with an undefined company_id while
-      // CompanyContext is still resolving -- the effect already re-runs
-      // once companyId is set (see the dependency array below).
+      // Skips the fetch outright rather than querying with an undefined
+      // company_id while CompanyContext is still resolving -- the effect
+      // already re-runs once companyId is set (see the dependency array
+      // below).
       if (!companyId) { setDashboardLoading(false); return; }
-      const { data: dash } = await supabase
-        .from('company_dashboards').select('*').eq('slug', dashboardSlug).eq('company_id', companyId).is('deleted_at', null).maybeSingle();
-      if (!active) return;
-      if (dash && !dash.widgets_migrated_at) {
-        dash.widgets = await ensureDashboardWidgetsMigrated(dash);
-      }
+      const { dashboard: dash, sourceTableDef: tbl } = await fetchDashboardAndSourceTable(companyId, dashboardSlug);
       if (!active) return;
       setDashboard(dash);
-      let tbl: CustomTable | null = null;
-      if (dash?.source_table_type === 'custom' && dash?.source_table_id) {
-        const { data } = await supabase.from('company_tables').select('*').eq('id', dash.source_table_id).maybeSingle();
-        tbl = data ?? null;
-        if (active) setSourceTableDef(tbl);
-      } else if (active) {
-        setSourceTableDef(null);
-      }
+      setSourceTableDef(tbl);
       setDashboardLoading(false);
       if (dash && companyId) writeShellCache(dashboardShellKey(companyId, dashboardSlug), { dashboard: dash, sourceTableDef: tbl, cachedAt: Date.now() });
     })();
