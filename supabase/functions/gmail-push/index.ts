@@ -198,6 +198,30 @@ async function invalidateSyncJob(companyId: string, projectId: string, userId: s
   }).eq("id", job.id);
 }
 
+// Same as invalidateSyncJob, but both job types -- used when this user's
+// entire copy of a label needs recreating (not just one message re-labeled),
+// since the regular label-sync processor is also what re-applies the label
+// to every one of this project's known emails once it recreates it, and
+// that backlog lives behind email_sync, not label_sync.
+async function invalidateUserForProject(companyId: string, projectId: string, userId: string): Promise<void> {
+  for (const jobType of ["label_sync", "email_sync"]) {
+    const { data: job } = await db.from("gmail_sync_jobs")
+      .select("id, completed_users")
+      .eq("job_type", jobType)
+      .eq("company_id", companyId)
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (!job) continue;
+    const updated = (job.completed_users || []).filter((u: string) => u !== userId);
+    await db.from("gmail_sync_jobs").update({
+      completed_users: updated,
+      status: "pending",
+      is_realtime: true,
+      updated_at: new Date().toISOString(),
+    }).eq("id", job.id);
+  }
+}
+
 // A genuinely new email needs to reach EVERY other team member, not just
 // the one this push event was about — reset the whole job (both types),
 // not just this one user, so the dispatcher reconsiders everyone next
@@ -453,6 +477,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Set when a labelsRemoved event references a label ID that no longer
+    // exists in this user's CURRENT label list at all -- unlike an ordinary
+    // per-message removal (the label object is still there, just off this
+    // one message), that's the signature of the label ITSELF having been
+    // deleted from Gmail entirely. Gmail's history API has no dedicated
+    // "label deleted" event and, once deleted, the label's name is
+    // unrecoverable from its id (getGmailLabels() below no longer has it) --
+    // so this can't identify WHICH label was deleted from the event alone.
+    // Used below to gate a cheap reconciliation pass (this user's active
+    // company labels vs. what they actually have right now) that identifies
+    // it instead, without running that check on every push regardless.
+    let wholeLabelDeletionSuspected = false;
+
     for (const event of history) {
 
       // ── Labels removed: only an admin's removal sticks ────────────
@@ -466,7 +503,7 @@ Deno.serve(async (req) => {
         if (!msgId) continue;
         for (const removedLabelId of (item.labelIds || [])) {
           const gmailLabel = gmailLabels.find(l => l.id === removedLabelId);
-          if (!gmailLabel) continue;
+          if (!gmailLabel) { wholeLabelDeletionSuspected = true; continue; }
           const companyId = getCompanyFromLabelName(gmailLabel.name);
           if (!companyId) continue;
           const codeMatch = gmailLabel.name.match(/\[([A-Z0-9]{4,6})\]$/);
@@ -676,6 +713,35 @@ Deno.serve(async (req) => {
         // so it doesn't linger as a stale "they have this" record; a
         // restore (if any) will create a fresh row once the re-sync runs.
         await db.from("project_emails").delete().eq("user_id", userId).eq("gmail_message_id", msgId);
+      }
+    }
+
+    // ── Whole label deleted (not just removed from one message) ───────
+    // Only runs when the loop above actually saw evidence of it, so an
+    // active project whose label simply hasn't been created for this user
+    // yet (brand new project, hasn't hit its first sync cycle) never gets
+    // flagged here — there's no labelsRemoved event for a label that was
+    // never applied in the first place. dbLabelsByCode/gmailLabels are
+    // already loaded for every other check above, so this reconciliation
+    // (this user's active company labels vs. what they actually have) costs
+    // no extra API calls or queries beyond the writes it triggers. Applies
+    // regardless of admin status, unlike per-message removal -- deleting
+    // the label OBJECT isn't a supported way to opt out of one (Gmail's own
+    // per-label "hide" setting already covers that); it only ever means
+    // "never created yet" or "deleted by mistake," and either way the fix
+    // is the same: let the regular label-sync processor recreate it and
+    // re-apply it to every known email for this project.
+    if (wholeLabelDeletionSuspected) {
+      for (const [labelCode, dbLabel] of dbLabelsByCode) {
+        const stillExists = gmailLabels.some(l => l.name.includes(`[${labelCode}]`));
+        if (stillExists) continue;
+        console.log(`[push] "${dbLabel.gmail_label_name}" missing entirely for ${userId} — flagging for recreation`);
+        await invalidateUserForProject(dbLabel.company_id, dbLabel.project_id, userId);
+        await logActivity({
+          company_id: dbLabel.company_id, triggered_by: null, action: "label_recreated",
+          project_id: dbLabel.project_id, gmail_label_name: dbLabel.gmail_label_name,
+          target_user_id: userId, details: { label_code: labelCode },
+        });
       }
     }
 
