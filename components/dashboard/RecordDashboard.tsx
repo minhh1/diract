@@ -80,12 +80,6 @@ export default function RecordDashboard({
 
   const [record, setRecord] = useState<Record<string, any> | null>(initialRecord ?? null);
   const [fields, setFields] = useState<FieldLayout[]>([]);
-  // The 'matter_type' custom field's own id (its field_key inside `record`,
-  // since custom fields are keyed by their company_custom_fields.id there,
-  // not their semantic field_key) -- captured once so the Settlement Date
-  // label override (lib/fieldLabels.ts) can read this record's current
-  // Matter Type without a second query.
-  const [matterTypeFieldId, setMatterTypeFieldId] = useState<string | null>(null);
   const [tabs, setTabs] = useState<RecordTab[]>([]);
   // Distinguishes "still loading" from "genuinely has no tabs" -- tabs
   // starts empty on every load (it isn't part of initialRecord), so without
@@ -449,8 +443,6 @@ export default function RecordDashboard({
         row_order: baseFields.length + i,
         autoNumber: { prefix: cf.auto_number_prefix ?? null, start: cf.auto_number_start ?? null, pad: cf.auto_number_pad ?? null },
       }));
-
-      setMatterTypeFieldId((customFields || []).find((cf: any) => cf.field_key === 'matter_type')?.id ?? null);
 
       const allFields = [...baseFields, ...cfFields];
       setFields(allFields);
@@ -1298,7 +1290,6 @@ export default function RecordDashboard({
           fieldSections={fieldSectionsWithTrust}
           fields={withTrustField(getTabFieldLayout(activeTab.id))}
           recordValues={systemTable === 'entities' && record ? { ...record, entity_type: record.roles ?? [] } : record || {}}
-          recordMatterType={matterTypeFieldId ? record?.[matterTypeFieldId] : undefined}
           linkedItems={linkedItems}
           isEditing={isEditingLayout}
           onSave={handleFieldSave}

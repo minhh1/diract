@@ -5,7 +5,6 @@ import { useState, useEffect, useCallback } from "react";
 import { GripVertical, X, Minus, Plus, Search, ExternalLink, Pencil, ArrowUpRight, ChevronDown, Maximize2, Minimize2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getFieldLabel } from "@/lib/fieldLabels";
 import RelationPicker from "./RelationPicker";
 import SmartFieldHint from "@/components/SmartFieldHint";
 import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
@@ -34,7 +33,6 @@ export interface FieldLayout {
 interface Props {
   fields: FieldLayout[];
   recordValues: Record<string, any>;
-  recordMatterType?: string; // this record's Matter Type value, if any -- see lib/fieldLabels.ts
   linkedItems?: Record<string, LinkedItem[]>; // fieldId → array of linked records
   isEditing: boolean;
   onSave: (fieldKey: string, value: any) => Promise<void>;
@@ -903,7 +901,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
 // ── FieldLayoutEditor ──────────────────────────────────────────────
 
 export default function FieldLayoutEditor({
-  fields, recordValues, recordMatterType, linkedItems = {}, isEditing,
+  fields, recordValues, linkedItems = {}, isEditing,
   onSave, onAddLinked, onRemoveLinked, onLayoutChange, onAddField, onRemoveField,
   fieldSections = {}, onSaveAutoNumber, autoNumberValueTable,
 }: Props) {
@@ -1038,7 +1036,7 @@ export default function FieldLayoutEditor({
             )}
 
             <EditableValue
-              field={{ ...field, label: getFieldLabel(field, recordMatterType) }}
+              field={field}
               value={getFieldValue(field)}
               linkedItems={linkedItems[field.id] || linkedItems[field.field_key] || []}
               onSave={v => onSave(getSaveKey(field), v)}
