@@ -1,7 +1,7 @@
 // components/gmail/GmailHeader.tsx
 "use client";
 
-import { RefreshCw, Send, Settings, Search, Mail } from "lucide-react";
+import { RefreshCw, Send, Settings, Search, Mail, UserPlus } from "lucide-react";
 import { GMAIL_FILTERS } from "@/lib/gmail/types";
 
 interface Props {
@@ -20,6 +20,9 @@ interface Props {
   onLabelSettings: () => void;
   onToggleActivityLog: () => void;
   onDisconnect: () => void;
+  syncingLeads: boolean;
+  pendingLeadCount: number;
+  onSyncLeads: () => void;
 }
 
 export default function GmailHeader({
@@ -27,6 +30,7 @@ export default function GmailHeader({
   search, showActivityLog,
   onSearch, onFilter, onRefresh, onSync, onCompose,
   onLabelSettings, onToggleActivityLog, onDisconnect,
+  syncingLeads, pendingLeadCount, onSyncLeads,
 }: Props) {
   return (
     <header className="bg-white border-b border-slate-100 shrink-0 px-8 pt-8 pb-4">
@@ -70,6 +74,20 @@ export default function GmailHeader({
           >
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Syncing...' : 'Sync'}
+          </button>
+          <button
+            onClick={onSyncLeads}
+            disabled={syncingLeads}
+            title="Scan the shared Leads label for new emails to assign"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-[10px] font-bold text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-all disabled:opacity-50"
+          >
+            <UserPlus size={12} className={syncingLeads ? 'animate-pulse' : ''} />
+            {syncingLeads ? 'Syncing leads...' : 'Sync leads'}
+            {pendingLeadCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] leading-none">
+                {pendingLeadCount}
+              </span>
+            )}
           </button>
           <button
             onClick={onLabelSettings}

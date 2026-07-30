@@ -35,6 +35,8 @@ const AdminAiAssistantTab = dynamic(() => import("@/components/admin/AdminAiAssi
 const AdminPerfTab = dynamic(() => import("@/components/admin/AdminPerfTab"));
 const AdminPlatformHealthTab = dynamic(() => import("@/components/admin/AdminPlatformHealthTab"));
 const AdminArchiveRequestsTab = dynamic(() => import("@/components/admin/AdminArchiveRequestsTab"));
+const AdminLeadEmailAssignmentsTab = dynamic(() => import("@/components/admin/AdminLeadEmailAssignmentsTab"));
+const AdminPropertyAutoLinkTab = dynamic(() => import("@/components/admin/AdminPropertyAutoLinkTab"));
 
 interface Member {
   id: string;
@@ -257,14 +259,15 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests'];
+type AdminTab = 'members' | 'teams' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', defaults: 'Default Settings', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
   oneDrive: 'OneDrive', xero: 'Xero', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
-  platformHealth: 'Platform health', archiveRequests: 'Archive requests',
+  platformHealth: 'Platform health', archiveRequests: 'Archive requests', leadEmailAssignments: 'Lead email assignments',
+  propertyAutoLink: 'Property auto-link',
 };
 
 export default function AdminPage() {
@@ -1062,6 +1065,16 @@ function AdminPageInner() {
           {/* ── Archive requests ── */}
           {activeTab === 'archiveRequests' && companyId && (
             <AdminArchiveRequestsTab companyId={companyId} />
+          )}
+
+          {/* ── Lead email assignments ── */}
+          {activeTab === 'leadEmailAssignments' && companyId && (
+            <AdminLeadEmailAssignmentsTab companyId={companyId} />
+          )}
+
+          {/* ── Property auto-link ── */}
+          {activeTab === 'propertyAutoLink' && companyId && (
+            <AdminPropertyAutoLinkTab companyId={companyId} />
           )}
 
           {/* ── Virtual computers ── */}

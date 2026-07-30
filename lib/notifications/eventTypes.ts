@@ -69,4 +69,9 @@ export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
     label: "Gmail sync failure",
     description: "Your connected Gmail account loses sync and needs reconnecting.",
   },
+  {
+    key: "lead_email_assignment_submitted",
+    label: "Lead email needs review",
+    description: "A new email in the shared Leads inbox is proposed for assignment to a Lead and needs approval. (Admins only.)",
+  },
 ];

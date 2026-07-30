@@ -71,6 +71,9 @@ export default function GmailPage() {
   // ── Sync
   const [syncing, setSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [syncingLeads, setSyncingLeads] = useState(false);
+  const [pendingLeadCount, setPendingLeadCount] = useState(0);
 
   // ── UI
   const [showActivityLog, setShowActivityLog] = useState(false);
@@ -168,6 +171,8 @@ export default function GmailPage() {
 
     if (prof?.gmail_search_fields) setSearchFields(prof.gmail_search_fields);
     if (!prof?.active_company_id) return;
+    setCompanyId(prof.active_company_id);
+    loadPendingLeadCount(prof.active_company_id);
 
     const { data: company } = await supabase
       .from('companies')
@@ -522,6 +527,27 @@ export default function GmailPage() {
     }
   };
 
+  const loadPendingLeadCount = async (id: string) => {
+    const { count } = await supabase
+      .from('lead_email_assignment_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', id)
+      .eq('status', 'pending');
+    setPendingLeadCount(count || 0);
+  };
+
+  const handleGmailLeadsSync = async () => {
+    setSyncingLeads(true);
+    try {
+      await fetch('/api/gmail/leads-sync', { method: 'POST' });
+      if (companyId) await loadPendingLeadCount(companyId);
+    } catch (err) {
+      console.error('Leads sync error:', err);
+    } finally {
+      setSyncingLeads(false);
+    }
+  };
+
   // ── Send
 
   const handleSend = async (to: string, subject: string, body: string) => {
@@ -654,6 +680,9 @@ export default function GmailPage() {
         onLabelSettings={() => setShowLabelSettings(true)}
         onToggleActivityLog={() => setShowActivityLog(p => !p)}
         onDisconnect={handleDisconnect}
+        syncingLeads={syncingLeads}
+        pendingLeadCount={pendingLeadCount}
+        onSyncLeads={handleGmailLeadsSync}
       />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">

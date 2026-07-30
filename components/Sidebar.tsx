@@ -9,7 +9,7 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark, Sun, Moon, FlaskConical,
+  Landmark, Sun, Moon, FlaskConical, UserPlus,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -128,6 +128,8 @@ const ADMIN_LINKS = [
   { tab: 'aiAssistant', icon: Sparkles, label: 'AI Assistant' },
   { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },
   { tab: 'archiveRequests', icon: Archive, label: 'Archive requests' },
+  { tab: 'leadEmailAssignments', icon: UserPlus, label: 'Lead email assignments' },
+  { tab: 'propertyAutoLink', icon: Building2, label: 'Property auto-link' },
   { tab: 'company', icon: Settings, label: 'Company' },
 ] as const;
 
