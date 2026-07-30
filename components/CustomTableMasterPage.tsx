@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { Search, Settings2, X, Plus, ChevronDown, ChevronUp, ChevronsUpDown, GripVertical, Loader2, Trash2, Download } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { readCache, writeCache } from "@/lib/queryCache";
 import DataTable from "@/components/DataTable";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useTableColumnConfig } from "@/lib/hooks/useTableColumnConfig";
@@ -105,6 +106,19 @@ function parseRelatedColId(colId: string): { relationFieldId: string; targetKind
   if (targetKind !== 'custom' && targetKind !== 'system') return null;
   return { relationFieldId, targetKind, targetFieldId };
 }
+
+// Plain-object mirror of the relatedValues/relatedColMeta Maps below, for
+// localStorage -- keyed by tableSlug (known immediately, unlike tableDef.id
+// which only resolves once useCustomTable's own fetch lands) so a repeat
+// visit can seed both from cache on the very first render instead of
+// starting blank and only filling in once the network round trip below
+// resolves, same "paint instantly, revalidate in background" shape as the
+// rest of the app's shell caches.
+interface CachedRelatedCols {
+  meta: Record<string, { headerLabel: string }>;
+  values: Record<string, Record<string, string>>;
+}
+const relatedColsCacheKey = (companyId: string, tableSlug: string) => `related_cols_${companyId}_${tableSlug}`;
 
 // ── Format a cell value for display ───────────────────────────────
 // Relation-type fields store a target record id in `values` — the resolved
@@ -364,8 +378,16 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     [relatedTargetIdsByCol]
   );
 
-  const [relatedValues, setRelatedValues] = useState<Map<string, Map<string, string>>>(new Map());
-  const [relatedColMeta, setRelatedColMeta] = useState<Map<string, { headerLabel: string }>>(new Map());
+  const [relatedValues, setRelatedValues] = useState<Map<string, Map<string, string>>>(() => {
+    const cached = ctxCompanyId ? readCache<CachedRelatedCols>(relatedColsCacheKey(ctxCompanyId, tableSlug)) : null;
+    if (!cached) return new Map();
+    return new Map(Object.entries(cached.values).map(([colId, byTarget]) => [colId, new Map(Object.entries(byTarget))]));
+  });
+  const [relatedColMeta, setRelatedColMeta] = useState<Map<string, { headerLabel: string }>>(() => {
+    const cached = ctxCompanyId ? readCache<CachedRelatedCols>(relatedColsCacheKey(ctxCompanyId, tableSlug)) : null;
+    if (!cached) return new Map();
+    return new Map(Object.entries(cached.meta));
+  });
   useEffect(() => {
     if (relatedColIds.length === 0) {
       setRelatedValues(new Map());
@@ -402,7 +424,16 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         });
         nextValues.set(colId, byTarget);
       }));
-      if (active) { setRelatedValues(nextValues); setRelatedColMeta(nextMeta); }
+      if (active) {
+        setRelatedValues(nextValues);
+        setRelatedColMeta(nextMeta);
+        if (ctxCompanyId) {
+          writeCache(relatedColsCacheKey(ctxCompanyId, tableSlug), {
+            meta: Object.fromEntries(nextMeta),
+            values: Object.fromEntries(Array.from(nextValues.entries()).map(([colId, byTarget]) => [colId, Object.fromEntries(byTarget)])),
+          });
+        }
+      }
     })();
     return () => { active = false; };
     // relatedTargetIdsKey stands in for records -- see relatedTargetIdsByCol's
