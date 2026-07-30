@@ -1,10 +1,11 @@
 // lib/hooks/usePresetTable.ts
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
 import { fetchScopedDefaultView, type ScopedDefaultView } from "@/lib/hooks/scopedDefaultView";
+import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 
 const DEFAULT_PRESET_NAME = "Default view";
 
@@ -259,7 +260,20 @@ export function usePresetTable({
     }
   }, [tableSlug, companyId, schemaReady, resolveUserId, (myTeamIds || []).join(',')]); // fetchItems/defaultCols/resolveFromView accessed via closure — recreated only when identity/company/schema readiness changes (resolveFromView deliberately excluded: it's recreated whenever a caller passes new defaultCols/defaultExpandCols array literals, which would otherwise re-run init on every render)
 
-  useEffect(() => { init(); }, [init]);
+  // Layout effect, not a plain effect -- init()'s cache-hit paths (Step 1's
+  // items/loading correction, Step 2's tableCols/expandCols/colWidths/sort
+  // correction) are synchronous code (localStorage reads, no `await` before
+  // their setState calls) even though init() itself is an async function --
+  // an async function's body runs synchronously up to its first real
+  // `await`, so those corrections land within this layout effect's flush,
+  // before the browser paints. Previously this was a plain useEffect, which
+  // runs AFTER paint -- so on any render where the lazy useState/useMemo
+  // initializers above (each gated on `companyId` being synchronously
+  // available at that exact first render) missed the cache, the user
+  // visibly saw the wrong sort/columns/rows for a frame before init()
+  // corrected it. Mirrors the identical fix already applied to
+  // useCustomTable.ts's mount effect.
+  useIsomorphicLayoutEffect(() => { init(); }, [init]);
 
   // Persists the company-wide column layout (+ sort). Admin-only — every
   // member reads this same row, so an admin's change is immediately
