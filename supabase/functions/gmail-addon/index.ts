@@ -143,16 +143,24 @@ async function resolveOrCreateRelation(
   if (error || !created) throw new Error(error?.message || `Failed to create ${fieldType}`);
 
   // Best-effort -- this is the one place needs_review ever gets set true
-  // (components/GenericMasterTable.tsx only ever reads/clears it).
-  await db.rpc('notify_company_admins', {
-    p_company_id: companyId,
-    p_event_type: 'gmail_needs_review',
-    p_title: `Needs review: "${trimmed}"`,
-    p_body: reason,
-    p_link_url: `/dashboard/${config.table}?id=${created.id}`,
-    p_entity_table: config.table,
-    p_entity_id: created.id,
-  }).catch(() => {});
+  // (components/GenericMasterTable.tsx only ever reads/clears it). try/catch,
+  // not .catch() chained directly on the rpc() call -- this Supabase client's
+  // query builder is thenable (awaitable) but doesn't implement a real
+  // .catch() method, so chaining one throws synchronously ("X.catch is not
+  // a function") instead of ever reaching the actual RPC (confirmed live:
+  // this broke every create-project call that flagged a new entity/project
+  // for review, well before auto-numbering existed).
+  try {
+    await db.rpc('notify_company_admins', {
+      p_company_id: companyId,
+      p_event_type: 'gmail_needs_review',
+      p_title: `Needs review: "${trimmed}"`,
+      p_body: reason,
+      p_link_url: `/dashboard/${config.table}?id=${created.id}`,
+      p_entity_table: config.table,
+      p_entity_id: created.id,
+    });
+  } catch (_) { /* best-effort */ }
 
   return { id: created.id, flagged: true };
 }
@@ -175,18 +183,23 @@ async function logTaskActivity(params: { taskId: string; companyId: string; acto
   const recipients = (watchers || [])
     .map((w: any) => w.profile_id as string)
     .filter((id: string) => id !== params.actorId);
-  await Promise.all(recipients.map((recipientId: string) =>
-    db.rpc('create_notification', {
-      p_company_id: params.companyId,
-      p_recipient_user_id: recipientId,
-      p_event_type: 'task_comment',
-      p_title: `Update on ${task?.name || 'a task'}`,
-      p_body: params.detail || params.action,
-      p_link_url: `/dashboard/tasks?id=${params.taskId}`,
-      p_entity_table: 'tasks',
-      p_entity_id: params.taskId,
-    }).catch(() => {})
-  ));
+  // try/catch per-recipient, not .catch() chained on the rpc() call itself --
+  // see resolveOrCreateRelation's matching comment for why that throws
+  // synchronously instead of ever making the request.
+  await Promise.all(recipients.map(async (recipientId: string) => {
+    try {
+      await db.rpc('create_notification', {
+        p_company_id: params.companyId,
+        p_recipient_user_id: recipientId,
+        p_event_type: 'task_comment',
+        p_title: `Update on ${task?.name || 'a task'}`,
+        p_body: params.detail || params.action,
+        p_link_url: `/dashboard/tasks?id=${params.taskId}`,
+        p_entity_table: 'tasks',
+        p_entity_id: params.taskId,
+      });
+    } catch (_) { /* best-effort */ }
+  }));
 }
 
 // Enqueues a label_sync job right after a label is created, instead of
@@ -1497,14 +1510,19 @@ Deno.serve(async (req) => {
       if (insertErr) return json({ error: insertErr.message }, 500, headers);
 
       // Best-effort -- see lib/archiveRequests.ts's createArchiveRequest for
-      // the same call on the web-app side of this event.
-      await db.rpc('notify_company_admins', {
-        p_company_id: companyId,
-        p_event_type: 'archive_request_submitted',
-        p_title: `New archive request: ${project?.name || 'Untitled project'}`,
-        p_link_url: '/dashboard/admin?tab=archiveRequests',
-        p_entity_table: 'archive_requests',
-      }).catch(() => {});
+      // the same call on the web-app side of this event. try/catch, not
+      // .catch() chained on the rpc() call -- see resolveOrCreateRelation's
+      // matching comment for why that throws synchronously instead of ever
+      // making the request.
+      try {
+        await db.rpc('notify_company_admins', {
+          p_company_id: companyId,
+          p_event_type: 'archive_request_submitted',
+          p_title: `New archive request: ${project?.name || 'Untitled project'}`,
+          p_link_url: '/dashboard/admin?tab=archiveRequests',
+          p_entity_table: 'archive_requests',
+        });
+      } catch (_) { /* best-effort */ }
 
       return json({ ok: true }, 200, headers);
     }
