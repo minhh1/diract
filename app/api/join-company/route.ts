@@ -31,10 +31,10 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-  // Look up token — include default_team_id
+  // Look up token — include default_team_id + role
   const { data: tokenData, error: tokenError } = await supabaseAdmin
     .from('registration_tokens')
-    .select('id, company_id, used_at, expires_at, default_team_id, company:company_id(id, name)')
+    .select('id, company_id, used_at, expires_at, default_team_id, role, company:company_id(id, name)')
     .eq('token', token)
     .single();
 
@@ -55,13 +55,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Token has no company associated' }, { status: 400 });
   }
 
-  // Upsert membership as operator
+  // Upsert membership with the role chosen on the invite (defaults to operator)
   const { error: memberError } = await supabaseAdmin
     .from('company_memberships')
     .upsert({
       company_id: companyId,
       user_id: user.id,
-      role: 'operator',
+      role: tokenData.role || 'operator',
     }, { onConflict: 'company_id,user_id', ignoreDuplicates: false });
 
   if (memberError) {
