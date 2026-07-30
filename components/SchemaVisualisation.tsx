@@ -330,6 +330,9 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
         auto_generate: updates.auto_generate,
         auto_generate_type: updates.auto_generate_type,
         auto_generate_prefix: updates.auto_generate_prefix,
+        auto_number_prefix: updates.auto_number_prefix ?? null,
+        auto_number_start: updates.auto_number_start ?? null,
+        auto_number_pad: updates.auto_number_pad ?? null,
         linked_table: updates.linked_table || null,          // ← single column
         linked_display_column: updates.linked_display_column || null,
       })

@@ -423,6 +423,32 @@ export async function createProject(admin: any, companyId: string, userId: strin
     await insertCustomFieldValues(admin, companyId, project.id, "projects", params.customFieldValues);
   }
 
+  // Auto-numbered fields (e.g. Matter Number) are never asked for (see
+  // actionFields.ts's loadFieldConfig, which drops them from what the bot
+  // can even prompt for) -- assigned here instead, after the project row
+  // exists, same server-side sequence every other creation path uses (see
+  // supabase/migrations/20260730180000_custom_field_auto_numbering.sql).
+  // Reported back on the return value since the user never typed these
+  // themselves and the bot's reply is their only way to find out what got
+  // assigned.
+  const { data: autoNumberFields } = await admin
+    .from("company_custom_fields")
+    .select("id, label")
+    .eq("company_id", companyId)
+    .eq("table_name", "projects")
+    .is("deleted_at", null)
+    .not("auto_number_prefix", "is", null);
+  const autoAssigned: { label: string; value: string }[] = [];
+  for (const field of autoNumberFields || []) {
+    const { data: num } = await admin.rpc("next_custom_field_sequence", { p_field_id: field.id });
+    if (num) {
+      autoAssigned.push({ label: field.label, value: num });
+      await admin.from("company_custom_field_values").insert({
+        company_id: companyId, record_id: project.id, field_id: field.id, table_name: "projects", value_text: num,
+      });
+    }
+  }
+
   // Best-effort, same as NewProjectModal.tsx's own fire-and-forget call to
   // this route -- a bot-created project should still count as created even
   // if Gmail label setup fails (e.g. company hasn't configured Gmail sync).
@@ -434,7 +460,7 @@ export async function createProject(admin: any, companyId: string, userId: strin
     console.error("[createProject] Gmail label creation failed:", err);
   }
 
-  return project;
+  return { ...project, autoAssigned };
 }
 
 export interface UpdateProjectParams {

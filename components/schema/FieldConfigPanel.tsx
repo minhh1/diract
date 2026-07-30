@@ -558,9 +558,12 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           </div>
         )}
 
-        {/* Auto numbering — custom-table text fields (server-side sequence,
-            see supabase/company_table_field_sequences.sql) */}
-        {field.isCustomTable && draft.field_type === 'text' && !draft.formula_type && (
+        {/* Auto numbering — text fields on either a custom table (server-
+            side sequence, see supabase/company_table_field_sequences.sql)
+            or a system table like projects' Matter Number (see
+            supabase/migrations/20260730180000_custom_field_auto_numbering.sql
+            -- same UI/columns, separate counter table per side). */}
+        {draft.field_type === 'text' && !draft.formula_type && (
           <div className="space-y-3">
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">

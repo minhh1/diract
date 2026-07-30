@@ -315,7 +315,7 @@ async function getLabelSettingsCore(companyId: string): Promise<{ parentLabel: s
 async function getProjectFieldsCore(companyId: string): Promise<{ fields: any[] }> {
   const { data: fields } = await db
     .from('company_custom_fields')
-    .select('id, field_key, label, field_type, is_required, is_unique, select_options, display_order')
+    .select('id, field_key, label, field_type, is_required, is_unique, select_options, display_order, auto_number_prefix')
     .eq('company_id', companyId)
     .eq('table_name', 'projects')
     .is('deleted_at', null)
@@ -332,6 +332,11 @@ async function getProjectFieldsCore(companyId: string): Promise<{ fields: any[] 
       selectOptions: f.select_options || [],
       isRelationType: isRelationFieldType(f.field_type),
       isResolvableRelation: isResolvableRelationType(f.field_type),
+      // Assigned server-side on creation (see /create-project below and
+      // supabase/migrations/20260730180000_custom_field_auto_numbering.sql)
+      // -- the add-on's own create-project card (gmail-addon.gs) uses this
+      // to hide/replace this field's input with an "auto-assigned" note.
+      autoNumber: !!f.auto_number_prefix,
     })),
   };
 }
@@ -920,15 +925,52 @@ Deno.serve(async (req) => {
         .select('gmail_parent_label, gmail_parent_code, gmail_sublabel_separator, gmail_label_tokens')
         .eq('id', companyId).single();
 
+      // All configurable fields for projects, used for required/unique
+      // enforcement and to know which DB column each value belongs in.
+      const { data: projectFields } = await db
+        .from('company_custom_fields')
+        .select('id, label, field_key, field_type, is_required, is_unique, auto_number_prefix')
+        .eq('company_id', companyId)
+        .eq('table_name', 'projects')
+        .is('deleted_at', null);
+      const allFields = projectFields || [];
+
+      // Auto-numbered fields (see supabase/migrations/
+      // 20260730180000_custom_field_auto_numbering.sql) are assigned here,
+      // BEFORE the label is built below -- unlike every other creation path,
+      // the Gmail label name itself can include the matter number (via the
+      // matter_number label token), so that value has to exist before the
+      // label string is built, not just before the project row is created.
+      // Accepted trade-off: a number assigned here is "spent" even if a
+      // later validation in this same request fails and no project ends up
+      // created -- fine for an ordinary matter number, unlike the dedicated
+      // ledger-numbering system for r 36 trust receipts, which really does
+      // need gapless consecutiveness.
+      const autoAssignedValues: Record<string, string> = {};
+      const autoAssignedNumbers: { label: string; value: string }[] = [];
+      for (const field of allFields) {
+        if ((field as any).auto_number_prefix == null) continue; // != null, not truthiness: '' is a valid prefix (bare numbers)
+        const { data: num } = await db.rpc('next_custom_field_sequence', { p_field_id: field.id });
+        if (num) {
+          autoAssignedValues[field.id] = num;
+          autoAssignedNumbers.push({ label: field.label, value: num });
+        }
+      }
+
       // Build label name
       const tokens: string[] = company?.gmail_label_tokens || ['project_name'];
       const separator = company?.gmail_sublabel_separator || ' — ';
       const parentLabel = company?.gmail_parent_label || 'Shared Emails';
       const labelCode = await generateUniqueLabelCode(companyId);
 
+      const matterFieldForLabel = allFields.find((f: any) =>
+        f.label.toLowerCase().includes('matter') && f.label.toLowerCase().includes('number')
+      );
+      const resolvedMatterNumber = (matterFieldForLabel && autoAssignedValues[matterFieldForLabel.id]) || matterNumber || '';
+
       const parts = tokens.map((t: string) => {
         if (t === 'project_name') return projectName;
-        if (t === 'matter_number') return matterNumber || '';
+        if (t === 'matter_number') return resolvedMatterNumber;
         if (t === 'year') return new Date().getFullYear().toString();
         return t;
       }).filter(Boolean);
@@ -938,28 +980,16 @@ Deno.serve(async (req) => {
       const sublabel = cleanParts.join(separator) + ` [${labelCode}]`;
       const fullLabelName = `${parentLabel}/${sublabel}`;
 
-      // All configurable fields for projects, used for required/unique
-      // enforcement and to know which DB column each value belongs in.
-      const { data: projectFields } = await db
-        .from('company_custom_fields')
-        .select('id, label, field_key, field_type, is_required, is_unique')
-        .eq('company_id', companyId)
-        .eq('table_name', 'projects')
-        .is('deleted_at', null);
-      const allFields = projectFields || [];
-
       // The dedicated "matter number" input (tied to the Gmail label format,
       // see gmail_label_tokens above) maps onto whichever custom field looks
       // like a matter number, same heuristic used since this field predates
-      // the generic customFieldValues collection below.
-      const fieldValues: Record<string, string> = { ...customFieldValues };
-      if (matterNumber) {
-        const matterField = allFields.find((f: any) =>
-          f.label.toLowerCase().includes('matter') && f.label.toLowerCase().includes('number')
-        );
-        if (matterField && isEmptyFieldValue(fieldValues[matterField.id])) {
-          fieldValues[matterField.id] = matterNumber;
-        }
+      // the generic customFieldValues collection below. Auto-assigned values
+      // always win over a client-supplied matterNumber (an older add-on
+      // build could still send one even though the current UI no longer
+      // shows that input once auto-numbering is on).
+      const fieldValues: Record<string, string> = { ...customFieldValues, ...autoAssignedValues };
+      if (matterNumber && matterFieldForLabel && !autoAssignedValues[matterFieldForLabel.id] && isEmptyFieldValue(fieldValues[matterFieldForLabel.id])) {
+        fieldValues[matterFieldForLabel.id] = matterNumber;
       }
 
       // Resolvable relation fields (entity/property/project — e.g. "Client
@@ -1104,7 +1134,7 @@ Deno.serve(async (req) => {
         }, { onConflict: 'company_id,user_id,gmail_message_id', ignoreDuplicates: true });
       }
 
-      return json({ ok: true, projectId: project.id, labelName: fullLabelName, labelCode, flaggedNames }, 200, headers);
+      return json({ ok: true, projectId: project.id, labelName: fullLabelName, labelCode, flaggedNames, autoAssignedNumbers }, 200, headers);
     }
 
     // ── GET /project-field-settings ─────────────────────────────────

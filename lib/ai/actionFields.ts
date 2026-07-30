@@ -60,7 +60,7 @@ export async function loadFieldConfig(admin: any, companyId: string, actionType:
   const [{ data: customFieldRows }, { data: settingsRows }] = await Promise.all([
     admin
       .from("company_custom_fields")
-      .select("id, field_key, label, field_type, select_options, is_unique, display_order")
+      .select("id, field_key, label, field_type, select_options, is_unique, display_order, auto_number_prefix")
       .eq("company_id", companyId)
       .eq("table_name", tableName)
       .is("deleted_at", null)
@@ -92,8 +92,15 @@ export async function loadFieldConfig(admin: any, companyId: string, actionType:
     };
   });
 
-  const customFields: FieldDef[] = (customFieldRows ?? []).map(
-    (cf: { id: string; field_key: string; label: string; field_type: string; select_options: string[] | null; is_unique: boolean }) => {
+  // Auto-numbered fields (e.g. Matter Number) are assigned server-side
+  // after the record is created (see createProject in lib/ai/actions.ts) --
+  // never something to ask the user for, so they're dropped here rather
+  // than exposed as an optional/required tool property. Same exclusion
+  // NewRecordModal.tsx's pickCreateFields applies for ordinary custom
+  // tables' auto_number_prefix fields.
+  const customFields: FieldDef[] = (customFieldRows ?? [])
+    .filter((cf: { auto_number_prefix: string | null }) => cf.auto_number_prefix == null)
+    .map((cf: { id: string; field_key: string; label: string; field_type: string; select_options: string[] | null; is_unique: boolean }) => {
       const override = settingsByKey.get(cf.field_key);
       const kind: FieldKind =
         cf.field_type === "select" ? "select" : cf.field_type === "date" ? "date" : cf.field_type === "entity" ? "reference:entity" : "text";
@@ -113,8 +120,7 @@ export async function loadFieldConfig(admin: any, companyId: string, actionType:
         selectOptions: cf.select_options ?? undefined,
         isUnique: cf.is_unique,
       };
-    }
-  );
+    });
 
   return [...builtins, ...customFields];
 }

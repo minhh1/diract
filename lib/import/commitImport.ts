@@ -45,6 +45,37 @@ async function saveCustomFieldValues(
   customFields: Record<string, string>
 ) {
   const entries = Object.entries(customFields).filter(([, v]) => v?.trim());
+
+  // Auto-numbered fields (e.g. Matter Number) never appear in `customFields`
+  // at all when the CSV cell was blank -- parseImportFile.ts only puts a
+  // field in there once it's seen a real value (see its `if (fieldId &&
+  // val)` guard) -- so this can't be a per-entry "was it typed?" check the
+  // way every other creation path's exclusion works. Instead: look up every
+  // auto-numbered field on this table once, and assign one to any row that
+  // didn't already bring its own value for it, same server-side sequence
+  // every other path uses (see supabase/migrations/
+  // 20260730180000_custom_field_auto_numbering.sql).
+  const { data: autoNumberFields } = await supabase
+    .from('company_custom_fields')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('table_name', tableName)
+    .is('deleted_at', null)
+    .not('auto_number_prefix', 'is', null);
+  for (const f of autoNumberFields || []) {
+    if (entries.some(([id]) => id === f.id)) continue;
+    // A row being UPDATED (not created) can already have a real value for
+    // this field even though this particular import didn't map/include it
+    // -- e.g. re-importing to update unrelated columns. Only assign a fresh
+    // number when the record genuinely has none yet, never overwrite an
+    // existing one just because this row's data happened to omit it.
+    const { data: existing } = await supabase
+      .from('company_custom_field_values').select('id').eq('record_id', recordId).eq('field_id', f.id).maybeSingle();
+    if (existing) continue;
+    const { data: num } = await supabase.rpc('next_custom_field_sequence', { p_field_id: f.id });
+    if (num) entries.push([f.id, num]);
+  }
+
   if (!entries.length) return;
 
   const fieldIds = entries.map(([id]) => id);

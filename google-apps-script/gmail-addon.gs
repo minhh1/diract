@@ -762,6 +762,20 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
     var previewParts = tokens.map(function(t) { return '[' + (tokenLabels[t] || t) + ']'; });
     var preview = parentLabel + '/' + previewParts.join(separator) + ' [CODE]';
 
+    // Resolved here (rather than down where the rest of projFields gets
+    // looped over) so the dedicated Matter number input below can already
+    // check whether that field has auto-numbering enabled (see
+    // supabase/migrations/20260730180000_custom_field_auto_numbering.sql) --
+    // an auto-numbered Matter Number is assigned server-side on creation,
+    // same as every other creation path, so it's never a manual input here.
+    var projFieldsRes = warmProjFields ? { ok: true, data: warmProjFields } : mainCardRes.projFields;
+    var projFields = projFieldsRes.ok ? (projFieldsRes.data.fields || []) : [];
+    var matterField = null;
+    for (var mfi = 0; mfi < projFields.length; mfi++) {
+      var mfLabel = projFields[mfi].label.toLowerCase();
+      if (mfLabel.indexOf('matter') !== -1 && mfLabel.indexOf('number') !== -1) { matterField = projFields[mfi]; break; }
+    }
+
     var createSection = CardService.newCardSection()
       .setHeader(existingProject ? 'Create another project' : 'Create project & label')
       .setCollapsible(!!existingProject)
@@ -775,8 +789,13 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
       if (tokens[ti] === 'matter_number') { hasMatter = true; break; }
     }
     if (hasMatter) {
-      createSection.addWidget(CardService.newTextInput()
-        .setFieldName('matterNumber').setTitle('Matter number'));
+      if (matterField && matterField.autoNumber) {
+        createSection.addWidget(CardService.newTextParagraph()
+          .setText('Matter number: auto-assigned when this project is created'));
+      } else {
+        createSection.addWidget(CardService.newTextInput()
+          .setFieldName('matterNumber').setTitle('Matter number'));
+      }
     }
 
     createSection
@@ -798,14 +817,19 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
 
     // Any other configured project fields (e.g. required-by-admin ones, see
     // "⚙ Settings") — the matter-number field is skipped here since it's
-    // already collected above, tied to the Gmail label format.
-    var projFieldsRes = warmProjFields ? { ok: true, data: warmProjFields } : mainCardRes.projFields;
-    var projFields = projFieldsRes.ok ? (projFieldsRes.data.fields || []) : [];
+    // already collected above, tied to the Gmail label format. projFields
+    // itself was already resolved further up, right before the dedicated
+    // Matter number input.
     var blockedProjectField = null;
     for (var pfi = 0; pfi < projFields.length; pfi++) {
       var pf = projFields[pfi];
       var isMatterField = pf.label.toLowerCase().indexOf('matter') !== -1 && pf.label.toLowerCase().indexOf('number') !== -1;
       if (isMatterField) continue;
+      // Any OTHER auto-numbered field (not just Matter Number) is likewise
+      // assigned server-side on creation -- never a manual input, and never
+      // "blocked" the way a required-but-unenterable relation field is,
+      // since it'll always end up filled regardless.
+      if (pf.autoNumber) continue;
       // Resolvable relation fields (entity/property/project — e.g. "Client
       // Name") get a plain text input — there's no search-and-pick UI here,
       // so the typed value is matched against existing records server-side
@@ -3329,6 +3353,7 @@ function onCreateProject(e) {
     // buildMainCard) — every other relation type has no add-on input and
     // is skipped.
     if (pf.isRelationType && !pf.isResolvableRelation) continue;
+    if (pf.autoNumber) continue; // assigned server-side -- never rendered as an input, see buildMainCard
     var pfName = 'projField_' + pf.id;
     if (pf.fieldType === 'boolean') {
       customFieldValues[pf.id] = (formInputs[pfName] || []).indexOf('true') !== -1 ? 'true' : 'false';
@@ -3376,7 +3401,15 @@ function onCreateProject(e) {
     }
   }
   var flaggedNames = result.data.flaggedNames || [];
+  var autoAssignedNumbers = result.data.autoAssignedNumbers || [];
   var successMsg = '✓ Project "' + projectName + '" created — label applied.';
+  if (autoAssignedNumbers.length) {
+    var assignedParts = [];
+    for (var ani = 0; ani < autoAssignedNumbers.length; ani++) {
+      assignedParts.push(autoAssignedNumbers[ani].label + ': ' + autoAssignedNumbers[ani].value);
+    }
+    successMsg += ' ' + assignedParts.join(', ') + '.';
+  }
   if (flaggedNames.length) {
     successMsg += ' New record "' + flaggedNames.join('", "') + '" needs review.';
   }

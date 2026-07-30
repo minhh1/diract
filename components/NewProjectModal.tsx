@@ -22,6 +22,11 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [customFields, setCustomFields] = useState<any[]>([]);
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  // Assigned server-side (see next_custom_field_sequence RPC) for whichever
+  // fields have auto-numbering enabled -- shown on the success state below
+  // since the user never typed these themselves and has no other way to
+  // know what got assigned.
+  const [assignedAutoNumbers, setAssignedAutoNumbers] = useState<{ label: string; value: string }[]>([]);
 
   const [name, setName] = useState('');
   const nameQuality = useNameQualityCheck();
@@ -48,7 +53,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
     if (!cid) return;
     const { data: cf } = await supabase
       .from('company_custom_fields')
-      .select('id, field_key, label, field_type, is_required, select_options, display_order')
+      .select('id, field_key, label, field_type, is_required, select_options, display_order, auto_number_prefix')
       .eq('table_name', 'projects')
       .eq('company_id', cid)
       .is('deleted_at', null)
@@ -60,14 +65,16 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
     setName(''); setStatus('Open'); setDescription('');
     setEstCompletion(''); setStreet(''); setSuburb('');
     setState('NSW'); setPostcode(''); setCustomValues({});
-    setSaved(false); nameQuality.reset();
+    setSaved(false); setAssignedAutoNumbers([]); nameQuality.reset();
   };
 
   const handleClose = () => { resetForm(); onClose(); };
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
-    const missingRequired = customFields.filter(f => f.is_required && !customValues[f.id]?.trim());
+    // Auto-numbered fields are assigned server-side below, never typed by
+    // hand -- required or not, they can never be "missing" here.
+    const missingRequired = customFields.filter(f => f.auto_number_prefix == null && f.is_required && !customValues[f.id]?.trim());
     if (missingRequired.length > 0) {
       alert(`Please fill in required field${missingRequired.length > 1 ? 's' : ''}: ${missingRequired.map(f => f.label).join(', ')}`);
       return;
@@ -101,6 +108,11 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
 
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
+    // Hoisted above the try block (not just declared where it's assigned)
+    // so the setTimeout below can read it directly instead of the
+    // assignedAutoNumbers state var, which wouldn't have this render's
+    // value yet -- setAssignedAutoNumbers is async, same as any setState.
+    const assigned: { label: string; value: string }[] = [];
     try {
       let propertyId: string | null = null;
       if (street.trim()) {
@@ -118,7 +130,23 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
       if (projErr) throw projErr;
 
       if (customFields.length > 0 && proj) {
-        const cfInserts = Object.entries(customValues)
+        // Auto-numbered fields (e.g. Matter Number) are assigned server-
+        // side so the sequence stays consecutive under concurrent writers
+        // -- see supabase/migrations/20260730180000_custom_field_auto_numbering.sql.
+        // Assigned AFTER the project row exists (not before) so a failed
+        // project insert above never consumes a number for nothing.
+        const autoNumberFields = customFields.filter(f => f.auto_number_prefix != null);
+        const autoValues: Record<string, string> = {};
+        for (const field of autoNumberFields) {
+          const { data: num } = await supabase.rpc('next_custom_field_sequence', { p_field_id: field.id });
+          if (num) {
+            autoValues[field.id] = num;
+            assigned.push({ label: field.label, value: num });
+          }
+        }
+        setAssignedAutoNumbers(assigned);
+
+        const cfInserts = Object.entries({ ...customValues, ...autoValues })
           .filter(([, val]) => val?.trim())
           .map(([fieldId, val]) => {
             const field = customFields.find(f => f.id === fieldId);
@@ -152,7 +180,10 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
       }
 
       setSaved(true);
-      setTimeout(() => { onRefresh(proj?.id); handleClose(); }, 700);
+      // Longer pause when there's an auto-assigned value to actually read
+      // -- closing after the same 700ms as a plain save would flash it by
+      // before anyone could see what got assigned.
+      setTimeout(() => { onRefresh(proj?.id); handleClose(); }, assigned.length ? 2200 : 700);
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -218,7 +249,14 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 px-1">
                       {field.label}{field.is_required && <span className="text-red-400 ml-1">*</span>}
                     </label>
-                    {field.field_type === 'boolean' ? (
+                    {field.auto_number_prefix != null ? (
+                      <input
+                        disabled
+                        value="Auto-complete"
+                        title="Assigned automatically when this project is created"
+                        className="w-full bg-slate-100 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium text-slate-400 outline-none cursor-not-allowed"
+                      />
+                    ) : field.field_type === 'boolean' ? (
                       <div className="flex gap-3">
                         {['true', 'false'].map(v => (
                           <button key={v} type="button" onClick={() => setCustomValues(p => ({ ...p, [field.id]: v }))}
@@ -246,6 +284,16 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
             </div>
           )}
         </div>
+
+        {saved && assignedAutoNumbers.length > 0 && (
+          <div className="px-8 pb-2 shrink-0">
+            {assignedAutoNumbers.map(a => (
+              <p key={a.label} className="text-[11px] font-bold text-emerald-600">
+                {a.label}: {a.value}
+              </p>
+            ))}
+          </div>
+        )}
 
         <div className="px-8 py-6 border-t border-slate-100 shrink-0 flex gap-3">
           <button onClick={handleClose} className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all">Cancel</button>

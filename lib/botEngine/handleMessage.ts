@@ -1163,7 +1163,8 @@ async function executeAction(admin: any, companyId: string, userId: string, acti
   }
   if (actionType === "create_project") {
     const project = await createProject(admin, companyId, userId, params);
-    return `Done — created project "${project.name}".`;
+    const autoNumbers = project.autoAssigned?.map((a: { label: string; value: string }) => `${a.label}: ${a.value}`).join(", ");
+    return `Done — created project "${project.name}".${autoNumbers ? ` ${autoNumbers}.` : ""}`;
   }
   if (actionType === "update_project") {
     await updateProject(admin, companyId, params);
