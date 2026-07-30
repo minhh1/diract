@@ -35,6 +35,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
   const [userId, setUserId] = useState('');
   const [fields, setFields] = useState<CustomTableField[]>([]);
   const [isLedger, setIsLedger] = useState(false);
+  const [tableSlug, setTableSlug] = useState<string | null>(null);
   const [records, setRecords] = useState<CustomTableRecord[]>([]);
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [linkFieldId, setLinkFieldId] = useState<string | null>(null);
@@ -53,7 +54,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
       const [{ data: { user } }, { data: flds }, { data: tbl }, { data: tab }, { data: widgetRow }] = await Promise.all([
         supabase.auth.getUser(),
         supabase.from('company_table_fields').select('*').eq('table_id', linkedTableId).is('deleted_at', null).order('display_order'),
-        supabase.from('company_tables').select('is_ledger').eq('id', linkedTableId).maybeSingle(),
+        supabase.from('company_tables').select('is_ledger, slug').eq('id', linkedTableId).maybeSingle(),
         supabase.from('record_tabs').select('link_field_id, billing_role').eq('id', tabId).single(),
         supabase.from('record_tab_dashboard_widgets').select('widgets').eq('tab_id', tabId).maybeSingle(),
       ]);
@@ -62,6 +63,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
       const fieldList = (flds || []) as CustomTableField[];
       setFields(fieldList);
       setIsLedger(!!tbl?.is_ledger);
+      setTableSlug(tbl?.slug ?? null);
       setUserId(user?.id || '');
       setWidgets(((widgetRow?.widgets as DashboardWidget[]) || []));
       // "Create invoice" only ever makes sense from a fee-source tab (Time &
@@ -231,6 +233,18 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
           >
             <Plus size={14} /> Create invoice
           </button>
+        </div>
+      )}
+      {tableSlug === 'trust-transactions' && (
+        <div className="flex items-center justify-end">
+          <a
+            href={`/api/trust-ledger/${recordId}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2.5 bg-teal-700 text-white rounded-full text-[11px] font-bold hover:bg-teal-800 transition-all"
+          >
+            Print ledger
+          </a>
         </div>
       )}
       <StaticWidgetGrid widgets={widgets}>

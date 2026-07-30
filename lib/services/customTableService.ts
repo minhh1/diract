@@ -90,7 +90,7 @@ export async function createRecord(
   userId: string,
   values: Record<string, any>,
   fields: CustomTableField[]
-): Promise<{ id: string } | { error: string } | null> {
+): Promise<{ id: string; number?: string } | { error: string } | null> {
   // Ledger tables (see supabase/company_table_ledger.sql) can only be
   // written through insert_ledger_record -- it assigns the consecutive
   // receipt number, computes the matter's running balance and refuses
@@ -109,7 +109,13 @@ export async function createRecord(
       console.error('createRecord(ledger):', error);
       return { error: ledgerErrorMessage(error.message) || error.message };
     }
-    return { id: data.id };
+    // `number` is whichever auto-numbered field insert_ledger_record just
+    // assigned (e.g. a Trust Transactions receipt_number) -- undefined for
+    // ledger tables with no auto-numbered field. Callers that need to reuse
+    // the SAME number across several rows (e.g. one deposit receipt split
+    // across multiple matters) pass it back in explicitly on the next call;
+    // insert_ledger_record only auto-assigns when the field arrives empty.
+    return { id: data.id, number: data.number ?? undefined };
   }
 
   // Refuse valueless creates outright -- every "new record" surface (the

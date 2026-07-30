@@ -40,6 +40,10 @@ DECLARE
   v_disb_table_id uuid;
   v_trust_table_id uuid;
   v_receipts_table_id uuid;
+  v_accounts_table_id uuid;
+  v_protected_table_id uuid;
+  v_recon_table_id uuid;
+  v_credits_table_id uuid;
   v_leads_table_id uuid;
   v_leadact_table_id uuid;
 BEGIN
@@ -294,6 +298,110 @@ BEGIN
     SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
   );
 
+  -- ── Trust Accounts (multiple bank accounts per firm) ──────────────────
+  -- Backs the bespoke /dashboard/trust-account page (not the generic
+  -- dashboard-widget system) -- see supabase/migrations/20260731100000_trust_account_page.sql
+  -- for the full rationale, the trust_account/payment_method/cheque_number
+  -- fields added to Trust Transactions above, and the insert_ledger_record()
+  -- change that scopes per-matter running balances by trust_account too.
+  INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order)
+  SELECT v_template_id, 'trust-accounts', 'Trust Accounts', 'Landmark', '#0f766e', 'account_name', 7
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'trust-accounts');
+
+  SELECT id INTO v_accounts_table_id FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'trust-accounts';
+
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, display_order)
+  SELECT v_accounts_table_id, v.field_key, v.label, v.field_type, v.select_options, v.display_order
+  FROM (VALUES
+    ('account_name',   'Account Name',   'text',    NULL::jsonb, 0),
+    ('bsb',            'BSB',            'text',    NULL::jsonb, 1),
+    ('account_number', 'Account Number', 'text',    NULL::jsonb, 2),
+    ('is_active',      'Active',         'boolean', NULL::jsonb, 3)
+  ) AS v(field_key, label, field_type, select_options, display_order)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_accounts_table_id AND field_key = v.field_key
+  );
+
+  -- ── Trust Protected Funds (a hold, not a ledger movement) ──────────────
+  INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order)
+  SELECT v_template_id, 'trust-protected-funds', 'Trust Protected Funds', 'ShieldCheck', '#b45309', 'matter', 8
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'trust-protected-funds');
+
+  SELECT id INTO v_protected_table_id FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'trust-protected-funds';
+
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order)
+  SELECT v_protected_table_id, v.field_key, v.label, v.field_type, v.select_options, v.linked_system_table, v.linked_template_table_id, v.linked_display_field, v.display_order
+  FROM (VALUES
+    ('matter',          'Matter',         'project',  NULL::jsonb, 'projects'::text, NULL::uuid,          'name'::text, 0),
+    ('trust_account',   'Trust Account',  'table_relation', NULL::jsonb, NULL::text, v_accounts_table_id, 'account_name'::text, 1),
+    ('amount',          'Amount',         'currency', NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 2),
+    ('reason',          'Reason',         'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 3),
+    ('date_protected',  'Date Protected', 'date',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 4),
+    ('released_at',     'Released',       'date',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 5),
+    ('released_reason', 'Release Reason', 'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 6)
+  ) AS v(field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_protected_table_id AND field_key = v.field_key
+  );
+
+  -- ── Bank Reconciliations ────────────────────────────────────────────────
+  INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order)
+  SELECT v_template_id, 'bank-reconciliations', 'Bank Reconciliations', 'ClipboardCheck', '#0f766e', 'period_start', 9
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'bank-reconciliations');
+
+  SELECT id INTO v_recon_table_id FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'bank-reconciliations';
+
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, linked_template_table_id, linked_display_field, display_order)
+  SELECT v_recon_table_id, v.field_key, v.label, v.field_type, v.select_options, v.linked_template_table_id, v.linked_display_field, v.display_order
+  FROM (VALUES
+    ('trust_account',          'Trust Account',           'table_relation', NULL::jsonb, v_accounts_table_id, 'account_name'::text, 0),
+    ('period_start',           'Period Start',            'date',     NULL::jsonb, NULL::uuid, NULL::text, 1),
+    ('period_end',             'Period End',              'date',     NULL::jsonb, NULL::uuid, NULL::text, 2),
+    ('status',                 'Status',                  'select',   to_jsonb(ARRAY['Draft','Reconciled']), NULL::uuid, NULL::text, 3),
+    ('bank_statement_balance', 'Bank Statement Balance',  'currency', NULL::jsonb, NULL::uuid, NULL::text, 4),
+    ('prepared_by',            'Prepared By',             'text',     NULL::jsonb, NULL::uuid, NULL::text, 5),
+    ('prepared_at',            'Date Of Preparation',     'date',     NULL::jsonb, NULL::uuid, NULL::text, 6),
+    ('reviewed_by',            'Reviewed By',             'text',     NULL::jsonb, NULL::uuid, NULL::text, 7),
+    ('reviewed_at',            'Review Date',             'date',     NULL::jsonb, NULL::uuid, NULL::text, 8)
+  ) AS v(field_key, label, field_type, select_options, linked_template_table_id, linked_display_field, display_order)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_recon_table_id AND field_key = v.field_key
+  );
+
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, linked_template_table_id, linked_display_field, display_order)
+  SELECT v_trust_table_id, 'reconciled_in', 'Reconciled In', 'table_relation', v_recon_table_id, 'period_start', 16
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = 'reconciled_in');
+
+  -- ── Client Credits (operating-side ledger -- NOT trust; client credit
+  -- balances / overpayments against invoices, entirely separate account) ──
+  INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order, is_ledger)
+  SELECT v_template_id, 'client-credits', 'Client Credits', 'BadgePercent', '#0891b2', 'credit_number', 10, true
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'client-credits');
+
+  SELECT id INTO v_credits_table_id FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'client-credits';
+
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order, auto_number_prefix, help_text)
+  SELECT v_credits_table_id, v.field_key, v.label, v.field_type, v.select_options, v.linked_system_table, v.linked_template_table_id, v.linked_display_field, v.display_order, v.auto_number_prefix, v.help_text
+  FROM (VALUES
+    ('credit_number',   'Credit No.',     'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 0, 'CR-'::text, 'Assigned automatically in consecutive sequence -- leave blank'::text),
+    ('date',            'Date',           'date',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 1, NULL, NULL),
+    ('matter',          'Matter',         'project',  NULL::jsonb, 'projects'::text, NULL::uuid,          'name'::text, 2, NULL, NULL),
+    ('client',          'Contact',        'entity',   NULL::jsonb, 'entities'::text, NULL::uuid,          'name'::text, 3, NULL, NULL),
+    ('description',     'Description',    'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 4, NULL, NULL),
+    ('amount_in',       'Credit Issued',  'currency', NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 5, NULL, NULL),
+    ('amount_out',      'Credit Applied', 'currency', NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 6, NULL, NULL),
+    ('invoice',         'Invoice',        'table_relation', NULL::jsonb, NULL::text, v_invoices_table_id, 'invoice_number'::text, 7, NULL, NULL),
+    ('running_balance', 'Balance',        'currency', NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 8, NULL, 'Running balance -- computed automatically')
+  ) AS v(field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order, auto_number_prefix, help_text)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_credits_table_id AND field_key = v.field_key
+  );
+
   -- ── Receipts (operating account ledger) ──────────────────────────────
   -- Like Trust Transactions, but for payments/waivers against the firm's own
   -- operating/office account rather than client trust money -- one immutable
@@ -421,44 +529,14 @@ BEGIN
   ]'::jsonb
   WHERE NOT EXISTS (SELECT 1 FROM template_definition_dashboards WHERE template_id = v_template_id AND slug = 'time-entry');
 
-  INSERT INTO template_definition_dashboards (template_id, source_template_table_id, name, slug, icon, color, display_order, widgets_template)
-  SELECT v_template_id, v_trust_table_id, 'Trust Account', 'trust-account', 'Landmark', '#0f766e', 1, '[
-    {"id":"ta1","type":"filter_bar","layout":{"x":0,"y":0,"w":12,"h":2},"config":{"fieldIds":["matter","client"]}},
-    {"id":"ta2","type":"quick_add_form","layout":{"x":0,"y":2,"w":12,"h":2},"config":{"fieldIds":["date","matter","client","type","payor_payee","purpose","bank_reference","amount_in","amount_out","invoice","authority_reference"]}},
-    {"id":"ta3","type":"summary_tile","layout":{"x":0,"y":4,"w":3,"h":2},"config":{"label":"Funds received","fieldId":"amount_in","aggregate":"sum"}},
-    {"id":"ta4","type":"summary_tile","layout":{"x":3,"y":4,"w":3,"h":2},"config":{"label":"Funds disbursed","fieldId":"amount_out","aggregate":"sum"}},
-    {"id":"ta5","type":"summary_tile","layout":{"x":6,"y":4,"w":3,"h":2},"config":{"label":"Trust balance","fieldId":"amount_in","aggregate":"net","fieldBId":"amount_out"}},
-    {"id":"ta6","type":"summary_tile","layout":{"x":9,"y":4,"w":3,"h":2},"config":{"label":"Transactions","fieldId":null,"aggregate":"count"}},
-    {"id":"ta7","type":"chart","layout":{"x":0,"y":6,"w":12,"h":4},"config":{"dateFieldId":"date","valueFieldId":"amount_in","aggregate":"sum"}},
-    {"id":"ta8","type":"grid","layout":{"x":0,"y":10,"w":12,"h":6},"config":{"fieldIds":["receipt_number","date","matter","client","type","payor_payee","purpose","bank_reference","amount_in","amount_out","running_balance"]}},
-    {"id":"ta9","type":"trust_reconciliation","layout":{"x":0,"y":16,"w":12,"h":10},"config":{}},
-    {"id":"ta10","type":"trust_ledger_statement","layout":{"x":0,"y":26,"w":12,"h":8},"config":{}},
-    {"id":"ta11","type":"trust_cash_book","layout":{"x":0,"y":34,"w":12,"h":8},"config":{}},
-    {"id":"ta12","type":"trust_aged_balances","layout":{"x":0,"y":42,"w":12,"h":6},"config":{"dormantDays":365}}
-  ]'::jsonb
-  WHERE NOT EXISTS (SELECT 1 FROM template_definition_dashboards WHERE template_id = v_template_id AND slug = 'trust-account');
-
-  -- Catalog-only refresh for a re-run after the dashboard row already
-  -- exists (the INSERT above is a create-once guard, so a later addition to
-  -- this dashboard's widgets_template -- e.g. the three trust-reporting
-  -- widgets added after the dashboard was first seeded -- needs its own
-  -- UPDATE to reach the catalog). Never touches any company's own installed
-  -- copy -- see supabase/trust_reporting_widgets_backfill.sql for that.
-  UPDATE template_definition_dashboards SET widgets_template = '[
-    {"id":"ta1","type":"filter_bar","layout":{"x":0,"y":0,"w":12,"h":2},"config":{"fieldIds":["matter","client"]}},
-    {"id":"ta2","type":"quick_add_form","layout":{"x":0,"y":2,"w":12,"h":2},"config":{"fieldIds":["date","matter","client","type","payor_payee","purpose","bank_reference","amount_in","amount_out","invoice","authority_reference"]}},
-    {"id":"ta3","type":"summary_tile","layout":{"x":0,"y":4,"w":3,"h":2},"config":{"label":"Funds received","fieldId":"amount_in","aggregate":"sum"}},
-    {"id":"ta4","type":"summary_tile","layout":{"x":3,"y":4,"w":3,"h":2},"config":{"label":"Funds disbursed","fieldId":"amount_out","aggregate":"sum"}},
-    {"id":"ta5","type":"summary_tile","layout":{"x":6,"y":4,"w":3,"h":2},"config":{"label":"Trust balance","fieldId":"amount_in","aggregate":"net","fieldBId":"amount_out"}},
-    {"id":"ta6","type":"summary_tile","layout":{"x":9,"y":4,"w":3,"h":2},"config":{"label":"Transactions","fieldId":null,"aggregate":"count"}},
-    {"id":"ta7","type":"chart","layout":{"x":0,"y":6,"w":12,"h":4},"config":{"dateFieldId":"date","valueFieldId":"amount_in","aggregate":"sum"}},
-    {"id":"ta8","type":"grid","layout":{"x":0,"y":10,"w":12,"h":6},"config":{"fieldIds":["receipt_number","date","matter","client","type","payor_payee","purpose","bank_reference","amount_in","amount_out","running_balance"]}},
-    {"id":"ta9","type":"trust_reconciliation","layout":{"x":0,"y":16,"w":12,"h":10},"config":{}},
-    {"id":"ta10","type":"trust_ledger_statement","layout":{"x":0,"y":26,"w":12,"h":8},"config":{}},
-    {"id":"ta11","type":"trust_cash_book","layout":{"x":0,"y":34,"w":12,"h":8},"config":{}},
-    {"id":"ta12","type":"trust_aged_balances","layout":{"x":0,"y":42,"w":12,"h":6},"config":{"dormantDays":365}}
-  ]'::jsonb
-  WHERE template_id = v_template_id AND slug = 'trust-account';
+  -- The generic "Trust Account" dashboard (admin-configurable widgets) is
+  -- retired -- superseded by the bespoke /dashboard/trust-account page (see
+  -- supabase/migrations/20260731100000_trust_account_page.sql), which reuses
+  -- Trust Transactions and the three Trust*Widget.tsx report components
+  -- directly rather than through the generic dashboard-widget system. This
+  -- guards a fresh install from ever creating the old dashboard; the
+  -- migration handles removing it for already-installed companies.
+  DELETE FROM template_definition_dashboards WHERE template_id = v_template_id AND slug = 'trust-account';
 
   INSERT INTO template_definition_dashboards (template_id, source_template_table_id, name, slug, icon, color, display_order, widgets_template)
   SELECT v_template_id, v_invoices_table_id, 'Client Billing', 'client-billing', 'Receipt', '#0891b2', 2, '[

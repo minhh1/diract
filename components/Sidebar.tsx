@@ -50,6 +50,10 @@ const ALL_SYSTEM_TABLES = [
   { slug: 'tasks',      label: 'Tasks',      icon: CheckSquare },
 ];
 
+// See visibleCustomTables' own comment -- these back /dashboard/trust-account
+// and the Credit Ledger tab exclusively, not the generic table browser.
+const TRUST_PAGE_MANAGED_SLUGS = new Set(['trust-accounts', 'trust-protected-funds', 'bank-reconciliations', 'client-credits']);
+
 const SYSTEM_TABLE_FIELDS: Record<string, { key: string; label: string }[]> = {
   projects: [
     { key: 'name',       label: 'Project Name' },
@@ -1096,7 +1100,15 @@ export default function Sidebar() {
   // sidebar_visible_tables preference (which only ever governs tables
   // nothing has pinned for them).
   const visibleSystemTables = systemTables.filter(t => visibleTables.includes(t.slug));
-  const visibleCustomTables = customTables.filter(t => t.effectiveDefault || visibleTables.includes(t.slug));
+  // Trust Accounts/Protected Funds/Bank Reconciliations/Client Credits are
+  // managed exclusively through the bespoke pages below (/dashboard/trust-account,
+  // the Credit Ledger tab) -- hidden from the generic table browser so
+  // there's only one way to edit them, not a second raw-grid path that
+  // bypasses the guided deposit/transfer/protect/reconcile workflows and
+  // the receipt-number/balance mechanics those pages own.
+  const visibleCustomTables = customTables.filter(t =>
+    !TRUST_PAGE_MANAGED_SLUGS.has(t.slug) && (t.effectiveDefault || visibleTables.includes(t.slug))
+  );
   const isTableActive = (slug: string) =>
     pathname.includes(slug) &&
     !pathname.includes('gmail') &&
@@ -1450,6 +1462,27 @@ export default function Sidebar() {
                   </button>
                 )}
               </div>
+
+              {/* Trust Account — fixed, bespoke page (not a company_dashboards
+                  row), gated on the company actually having the Trust
+                  Accounts table (Law Firm template) so it's invisible to
+                  every other company. See app/dashboard/trust-account/page.tsx. */}
+              {customTables.some(t => t.slug === 'trust-accounts') && (
+                <div className="mb-2 space-y-1">
+                  <button
+                    onClick={() => { if (!pathname.startsWith('/dashboard/trust-account')) { startNavigation(); router.push('/dashboard/trust-account'); } }}
+                    aria-label="Trust Account"
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                      pathname.startsWith('/dashboard/trust-account')
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Landmark size={16} className="shrink-0" />
+                    <span className="truncate">Trust Account</span>
+                  </button>
+                </div>
+              )}
 
               {/* Dashboards — custom, user-built screens bound to one
                   custom table (quick-add form + grid + stats + activity

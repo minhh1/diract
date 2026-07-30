@@ -29,6 +29,13 @@ interface DefaultDashboardTabSpec {
   icon: string;
   gridFieldKeys: string[]; // display order, left to right
   quickAddFieldKeys: string[]; // 'matter' deliberately omitted from both -- fixedValues locks it, see RecordDashboardTab.tsx
+  // Only Time & Fees/Disbursements are real "fee sources" -- CreateInvoiceModal.tsx
+  // pulls unbilled line items from every tab tagged 'fee_source' when
+  // generating an invoice. Trust and Credits move money but are never
+  // themselves billable line items, so they're deliberately left untagged
+  // (billing_role stays null) -- tagging them would let trust movements or
+  // client credit entries leak onto a client invoice.
+  isFeeSource?: boolean;
 }
 
 export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
@@ -38,6 +45,7 @@ export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
     icon: 'Clock',
     gridFieldKeys: ['date', 'staff', 'type', 'description', 'rate', 'duration_hours', 'billable', 'gst_status', 'amount'],
     quickAddFieldKeys: ['date', 'staff', 'type', 'task_code', 'description', 'activity_code', 'rate', 'duration_hours', 'billable', 'gst_status'],
+    isFeeSource: true,
   },
   {
     slug: 'disbursements',
@@ -49,6 +57,32 @@ export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
     // it there can add it back via the grid's own column customization.
     gridFieldKeys: ['date', 'staff', 'description', 'rate', 'quantity', 'gst_status', 'billable', 'amount'],
     quickAddFieldKeys: ['date', 'staff', 'supplier_name', 'expense_code', 'description', 'rate', 'quantity', 'gst_status', 'billable'],
+    isFeeSource: true,
+  },
+  {
+    slug: 'trust-transactions',
+    title: 'Trust',
+    icon: 'Landmark',
+    // Empty quickAddFieldKeys -- deliberately view/print-only (see
+    // buildMissingDefaultProjectDashboardTabs below, which skips the
+    // quick_add_form widget entirely for an empty spec). New trust entries
+    // only ever go through the Deposit/Transfer/Protect/Print Cheques
+    // actions on /dashboard/trust-account (see components/trust/), which
+    // own the shared-receipt-number/trust_account/cheque_number mechanics a
+    // bare quick-add form here would bypass.
+    gridFieldKeys: ['receipt_number', 'date', 'trust_account', 'type', 'payor_payee', 'purpose', 'amount_in', 'amount_out', 'running_balance'],
+    quickAddFieldKeys: [],
+  },
+  {
+    slug: 'client-credits',
+    title: 'Credits',
+    icon: 'BadgePercent',
+    // Operating-side ledger (NOT trust -- see 20260731100000_trust_account_page.sql).
+    // Unlike Trust, there's no multi-matter/shared-receipt or PDF workflow
+    // to protect here, so a plain quick-add form (same shape as Time &
+    // Fees/Disbursements) is the right size -- no bespoke modal needed.
+    gridFieldKeys: ['credit_number', 'date', 'description', 'client', 'invoice', 'amount_in', 'amount_out', 'running_balance'],
+    quickAddFieldKeys: ['date', 'client', 'description', 'amount_in', 'amount_out', 'invoice'],
   },
 ];
 
@@ -65,7 +99,7 @@ interface RecordTabInsert {
   tab_type: 'custom_dashboard' | 'invoice_dashboard';
   linked_table_id: string;
   display_order: number;
-  billing_role: 'fee_source' | 'invoices';
+  billing_role: 'fee_source' | 'invoices' | null;
 }
 
 // company_record_tab_defaults only changes when a company (re-)installs a
@@ -159,18 +193,25 @@ export async function buildMissingDefaultProjectDashboardTabs(
     const idByKey = new Map((fields || []).map(f => [f.field_key, f.id]));
     const resolve = (keys: string[]) => keys.map(k => idByKey.get(k)).filter((id): id is string => !!id);
 
-    const quickAdd = createWidget('quick_add_form', []) as QuickAddFormWidget;
-    quickAdd.config.fieldIds = resolve(spec.quickAddFieldKeys);
-    const grid = createWidget('grid', [quickAdd]) as GridWidget;
+    // A spec with no quickAddFieldKeys (Trust) gets NO quick_add_form widget
+    // at all -- view/print-only, see its own doc comment above.
+    const widgets: DashboardWidget[] = [];
+    if (spec.quickAddFieldKeys.length) {
+      const quickAdd = createWidget('quick_add_form', []) as QuickAddFormWidget;
+      quickAdd.config.fieldIds = resolve(spec.quickAddFieldKeys);
+      widgets.push(quickAdd);
+    }
+    const grid = createWidget('grid', widgets) as GridWidget;
     grid.config.fieldIds = resolve(spec.gridFieldKeys);
     grid.config.showTotalsRow = true;
+    widgets.push(grid);
 
     tabs.push({
       company_id: companyId, record_id: recordId, record_table: 'projects',
       title: spec.title, icon: spec.icon, tab_type: 'custom_dashboard',
-      linked_table_id: table.id, display_order: order++, billing_role: 'fee_source',
+      linked_table_id: table.id, display_order: order++, billing_role: spec.isFeeSource ? 'fee_source' : null,
     });
-    widgetsByLinkedTableId.set(table.id, [quickAdd, grid]);
+    widgetsByLinkedTableId.set(table.id, widgets);
   }
 
   // Invoices -- bespoke tab_type, no widgets to seed.
