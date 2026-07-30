@@ -102,6 +102,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   const relatedEntityFields = baseTable === "projects" ? (fields || []).filter((f: any) => f.field_source === "related_entity") : [];
   const linkFieldIds = [...new Set(relatedEntityFields.map((f: any) => f.field_key.split(":")[0]))];
   const adhocFieldIds = (fields || []).filter((f: any) => f.field_source === "adhoc").map((f: any) => f.id);
+  const hasEntityRelationField = baseTable === "entities" && (fields || []).some((f: any) => f.field_source === "entity_relation");
 
   // Every query in this batch depends only on round 1's results above (or
   // nothing at all) -- none of them read each other's output, so despite
@@ -120,6 +121,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     { data: customTableFieldDefs },
     customTableValueByKey,
     displayNameById,
+    { data: trustRelationships },
   ] = await Promise.all([
     resolveRecordsBatch(admin, baseTable, recordIds),
     // Purchase Price lives on projects, not properties (see the migration's
@@ -157,7 +159,17 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       : Promise.resolve({ data: [] as any[] }),
     resolveFieldValuesBatch(admin, baseTable, customTableFieldIds, recordIds),
     resolveDisplayNamesBatch(admin, baseTable, recordIds),
+    // Trust link -- entity_relationships, not a value table (see
+    // .../fields/route.ts's entity_relation bucket). Same shape
+    // .../items/[itemId]/trust/route.ts GET already reads.
+    hasEntityRelationField
+      ? admin.from("entity_relationships").select("child_entity_id, parent_entity_id, trust:parent_entity_id(name)")
+          .in("child_entity_id", recordIds).eq("relationship_type", "Trustee").or("is_current.is.null,is_current.eq.true")
+      : Promise.resolve({ data: [] as any[] }),
   ]);
+  const trustByEntityId = new Map<string, { trustId: string; trustName: string | null }>(
+    (trustRelationships || []).map((r: any) => [r.child_entity_id, { trustId: r.parent_entity_id, trustName: r.trust?.name ?? null }])
+  );
 
   const propertyIdsByProject = new Map<string, string[]>();
   // (project_id, property_id) -> project_properties.id -- the actual
@@ -423,6 +435,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     const rid = recordId(item);
     const record = baseRecordById.get(rid);
     if (field.field_source === "adhoc") return adhocValueByKey.get(`${field.id}:${item.id}`) ?? null;
+    if (field.field_source === "entity_relation") return trustByEntityId.get(rid)?.trustName ?? null;
     if (field.field_source === "related_entity") {
       const [linkFieldId, column] = field.field_key.split(":");
       const entityId = linkedEntityIdByKey.get(`${linkFieldId}:${rid}`);
@@ -516,6 +529,7 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   // additive, touches nothing that already works off `values`.
   function resolveRelationId(field: any, item: any): string | null {
     const rid = recordId(item);
+    if (field.field_source === "entity_relation") return trustByEntityId.get(rid)?.trustId ?? null;
     if (field.field_source === "custom") {
       if (field.field_type !== "entity" && field.field_type !== "property") return null;
       const v = customValueByKey.get(`${field.field_key}:${rid}`);

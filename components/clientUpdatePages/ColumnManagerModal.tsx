@@ -41,7 +41,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
   const [order, setOrder] = useState(currentFields);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [catalog, setCatalog] = useState<{ base: CatalogOption[]; custom: CatalogOption[]; relatedTables: RelatedTableOption[]; propertyBase: CatalogOption[]; propertyCustom: CatalogOption[]; projectProperty: CatalogOption[] } | null>(null);
+  const [catalog, setCatalog] = useState<{ base: CatalogOption[]; custom: CatalogOption[]; relatedTables: RelatedTableOption[]; propertyBase: CatalogOption[]; propertyCustom: CatalogOption[]; projectProperty: CatalogOption[]; entityRelation: CatalogOption[] } | null>(null);
   const [expandedLink, setExpandedLink] = useState<string | null>(null);
   const [adhocLabel, setAdhocLabel] = useState("");
   const [adhocIsSelect, setAdhocIsSelect] = useState(false);
@@ -120,7 +120,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
     onChanged();
   };
 
-  const addField = async (fieldSource: "base" | "custom" | "adhoc" | "related_entity" | "property" | "project_property", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
+  const addField = async (fieldSource: "base" | "custom" | "adhoc" | "related_entity" | "property" | "project_property" | "entity_relation", fieldKey: string | undefined, label: string, selectOptions?: string[]) => {
     await fetch(`/api/client-update-pages/${pageId}/fields`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldSource, fieldKey, label, selectOptions, groupId }),
     });
@@ -255,6 +255,12 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
               ))}
               {catalog?.custom.filter(o => !usedKeys.has(o.field_key)).map(o => (
                 <button key={o.field_key} onClick={() => addField("custom", o.field_key, o.label)} title={`Add ${o.label} as a column on this page`}
+                  className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+                  + {o.label}
+                </button>
+              ))}
+              {catalog?.entityRelation.filter(o => !usedKeys.has(o.field_key)).map(o => (
+                <button key={o.field_key} onClick={() => addField("entity_relation", o.field_key, o.label)} title={`Add ${o.label} as a column on this page`}
                   className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                   + {o.label}
                 </button>

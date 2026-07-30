@@ -17,8 +17,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Wrench, Check, GitMerge } from "lucide-react";
+import { Loader2, Wrench, Check, GitMerge, Plus } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
+import { useCompany } from "@/components/CompanyContext";
+import { supabase } from "@/lib/supabase";
 
 interface FixTarget {
   entityId: string; entityName: string; fieldKey: string; fieldLabel: string; fieldType: string;
@@ -26,8 +28,14 @@ interface FixTarget {
   duplicateEntityId?: string | null; duplicateEntityName?: string | null;
 }
 
-export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered = true }: { pageId: string; itemId: string; canEdit: boolean; bordered?: boolean }) {
+// Same trust-entity_type list NewEntityModal's own createTrustInline() uses
+// -- duplicated rather than shared since neither file exports it.
+const TRUST_TYPES = ["Discretionary Family Trust", "Fixed Unit Trust", "Unit Trust", "Discretionary Trust"];
+
+export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered = true, onResolved }: { pageId: string; itemId: string; canEdit: boolean; bordered?: boolean; onResolved?: () => void }) {
+  const { companyId } = useCompany();
   const [target, setTarget] = useState<FixTarget | null>(null);
+  const [resolved, setResolved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<any>(null);
   const [saving, setSaving] = useState(false);
@@ -35,17 +43,28 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [merged, setMerged] = useState(false);
+  const [creatingTrust, setCreatingTrust] = useState(false);
+  const [newTrustName, setNewTrustName] = useState("");
+  const [creatingTrustSaving, setCreatingTrustSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setSaved(false);
     const json = await fetch(`/api/client-update-pages/${pageId}/items/${itemId}/fix`).then(r => r.json());
-    if (json.fieldKey) {
+    if (json.resolved) {
+      // The underlying auto_fed rule cleared on its own (see route.ts) --
+      // signal this up so the board (MatterBoard's onDataChanged) refetches
+      // and the row actually drops off, instead of silently re-showing the
+      // exact same stale form after a successful save.
+      setTarget(null);
+      setResolved(true);
+      onResolved?.();
+    } else if (json.fieldKey) {
       setTarget(json);
       setDraft(json.fieldType === "entity" ? json.currentValue : (json.currentValue ?? ""));
+      setResolved(false);
     }
     setLoading(false);
-  }, [pageId, itemId]);
+  }, [pageId, itemId, onResolved]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -57,6 +76,20 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
     });
     setSaving(false);
     if (res.ok) { setSaved(true); load(); }
+  };
+
+  const createTrustInline = async () => {
+    if (!newTrustName.trim() || !companyId || creatingTrustSaving) return;
+    setCreatingTrustSaving(true);
+    const { data, error } = await supabase.from("entities")
+      .insert({ company_id: companyId, name: newTrustName.trim(), entity_type: TRUST_TYPES[0], roles: [TRUST_TYPES[0]] })
+      .select("id").single();
+    setCreatingTrustSaving(false);
+    if (error || !data) { alert(error?.message || "Could not create trust"); return; }
+    setNewTrustName("");
+    setCreatingTrust(false);
+    setDraft(data.id);
+    save(data.id);
   };
 
   const merge = async () => {
@@ -73,6 +106,13 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
   };
 
   if (loading) return <div className={bordered ? "border-t border-slate-100 pt-3" : ""}><Loader2 size={14} className="animate-spin text-slate-300" /></div>;
+  if (resolved) {
+    return (
+      <div className={bordered ? "border-t border-slate-100 pt-3" : ""}>
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600"><Check size={13} /> This irregularity has been resolved.</span>
+      </div>
+    );
+  }
   if (!target) return null;
 
   if (target.fieldType === "duplicate_merge") {
@@ -113,9 +153,26 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
           {target.fieldType === "entity" ? (
-            <div className="min-w-[200px]">
+            <div className="min-w-[200px] space-y-1.5">
               <RelationPicker linkedSystemTable="entities" value={draft} initialLabel={target.currentLabel ?? undefined}
                 onSelect={(id) => { setDraft(id); save(id); }} placeholder="Search entities..." size="sm" />
+              {target.fieldKey === "trust_link" && (
+                creatingTrust ? (
+                  <div className="flex items-center gap-1.5">
+                    <input autoFocus value={newTrustName} onChange={e => setNewTrustName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") createTrustInline(); if (e.key === "Escape") { setCreatingTrust(false); setNewTrustName(""); } }}
+                      placeholder="New trust name" className="flex-1 min-w-[140px] px-3 py-1.5 border border-indigo-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
+                    <button onClick={createTrustInline} disabled={!newTrustName.trim() || creatingTrustSaving}
+                      className="px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40 shrink-0">
+                      {creatingTrustSaving ? <Loader2 size={12} className="animate-spin" /> : "Create"}
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setCreatingTrust(true)} className="flex items-center gap-1 text-[11px] text-indigo-500 hover:text-indigo-700">
+                    <Plus size={12} /> Create a new trust
+                  </button>
+                )
+              )}
             </div>
           ) : target.fieldType === "select" && target.selectOptions?.length ? (
             <select value={draft ?? ""} onChange={e => { setDraft(e.target.value); save(e.target.value); }}

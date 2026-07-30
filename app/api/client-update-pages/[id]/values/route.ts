@@ -148,6 +148,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "This column isn't editable here" }, { status: 400 });
   }
 
+  // Trust link (entities pages only) -- lives on entity_relationships, not
+  // a value table, same write this mirrors from
+  // .../items/[itemId]/trust/route.ts PUT (and the Irregularities "fix"
+  // flow's 'trust_link' sentinel branch).
+  if (field.field_source === "entity_relation") {
+    const { data: existing } = await admin.from("entity_relationships")
+      .select("id, parent_entity_id").eq("child_entity_id", recordId).eq("relationship_type", "Trustee").maybeSingle();
+    const oldTrustId = existing?.parent_entity_id ?? null;
+    if (!value) {
+      if (existing) await admin.from("entity_relationships").delete().eq("id", existing.id);
+    } else if (existing) {
+      await admin.from("entity_relationships").update({ parent_entity_id: value, is_current: true }).eq("id", existing.id);
+    } else {
+      await admin.from("entity_relationships").insert({ parent_entity_id: value, child_entity_id: recordId, relationship_type: "Trustee", is_current: true });
+    }
+    const [oldLabel, newLabel] = await Promise.all([resolveRelationLabel(admin, "entities", oldTrustId), resolveRelationLabel(admin, "entities", value)]);
+    await logAfterSave(oldLabel, newLabel);
+    return NextResponse.json({ ok: true });
+  }
+
   if (field.field_source === "adhoc") {
     const { data: existing } = await admin.from("client_update_page_values").select("value_text").eq("item_id", itemId).eq("field_id", fieldId).maybeSingle();
     const { error } = await admin.from("client_update_page_values")

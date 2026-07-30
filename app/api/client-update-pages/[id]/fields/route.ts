@@ -57,11 +57,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const baseTable: string = gate.page.base_table;
   const { base, custom } = await resolveTableFields(admin, companyId, baseTable);
 
+  // Trust is a Corporate/Non Corporate Trustee entity's own relationship
+  // (entity_relationships, relationship_type='Trustee') -- not a
+  // company_custom_fields row, so it can't come out of resolveTableFields'
+  // generic 'custom' bucket the way Trust Deed Date does. Entities pages
+  // only, one fixed synthetic option (mirrors SYNTHETIC_PROJECT_BASE_FIELDS
+  // below). See clientUpdatePageDetail.ts's loadPageDetail for the read
+  // side and values/route.ts for the write side.
+  const entityRelation = baseTable === "entities" ? [{ field_key: "trust_link", label: "Trust" }] : [];
+
   // Property/related-table options stay projects-only special cases (see
   // file header) -- not absorbed into the generic resolver, since they're a
   // genuinely narrower, one-hop relation drill (deferred generalization).
   if (!isSystemTable(baseTable) || baseTable !== "projects") {
-    return NextResponse.json({ base, custom, relatedTables: [], propertyBase: [], propertyCustom: [], projectProperty: [] });
+    return NextResponse.json({ base, custom, relatedTables: [], propertyBase: [], propertyCustom: [], projectProperty: [], entityRelation });
   }
 
   const [{ data: entityLinkFields }, { data: propertySchemaCols }, { data: propertyCustomFields }, { data: projectPropertyFields }] = await Promise.all([
@@ -101,7 +110,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const propertyCustomOptions = (propertyCustomFields || []).map((f: any) => ({ field_key: `custom:${f.id}`, label: f.label }));
   const projectPropertyOptions = (projectPropertyFields || []).map((f: any) => ({ field_key: f.id, label: f.label }));
 
-  return NextResponse.json({ base: baseOptions, custom, relatedTables, propertyBase: propertyBaseOptions, propertyCustom: propertyCustomOptions, projectProperty: projectPropertyOptions });
+  return NextResponse.json({ base: baseOptions, custom, relatedTables, propertyBase: propertyBaseOptions, propertyCustom: propertyCustomOptions, projectProperty: projectPropertyOptions, entityRelation });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -117,10 +126,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
   const { fieldSource, fieldKey, label } = body;
   const groupId: string | null = body.groupId || null;
-  if (!["base", "custom", "adhoc", "related_entity", "property", "project_property"].includes(fieldSource)) {
+  if (!["base", "custom", "adhoc", "related_entity", "property", "project_property", "entity_relation"].includes(fieldSource)) {
     return NextResponse.json({ error: "Invalid field source" }, { status: 400 });
   }
   if ((fieldSource === "related_entity" || fieldSource === "property" || fieldSource === "project_property") && baseTable !== "projects") {
+    return NextResponse.json({ error: "Not available on this page" }, { status: 400 });
+  }
+  if (fieldSource === "entity_relation" && (baseTable !== "entities" || fieldKey !== "trust_link")) {
     return NextResponse.json({ error: "Not available on this page" }, { status: 400 });
   }
   if (!label?.trim()) return NextResponse.json({ error: "Label is required" }, { status: 400 });
@@ -186,6 +198,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   } else if (fieldSource === "related_entity") {
     fieldType = "text"; // read-only display column -- see the file header comment
+  } else if (fieldSource === "entity_relation") {
+    fieldType = "entity"; // renders/edits via RelationPicker, same as any other entity-relation field
   } else if (fieldSource === "base") {
     if (fieldKey === "purchase_price") fieldType = "currency";
     else if (fieldKey === "property_address" || fieldKey === "name") fieldType = "text";

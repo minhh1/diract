@@ -799,7 +799,7 @@ export default function MatterBoard({
             <div className="space-y-3">
               {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
-                  onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} />
+                  onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</p>
@@ -807,7 +807,7 @@ export default function MatterBoard({
             </div>
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
-              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} />
+              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged} />
           )}
         </div>
       </div>
@@ -1071,7 +1071,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter }: {
+function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string, capacity?: string | null) => void;
@@ -1083,6 +1083,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onRenameMatter?: (itemId: string, name: string) => void;
+  onDataChanged?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -1157,7 +1158,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
         )}
       </div>
       {showFix && pageId && (
-        <IrregularityFixModal pageId={pageId} itemId={item.id} canEdit={canEdit} onClose={() => setShowFix(false)} />
+        <IrregularityFixModal pageId={pageId} itemId={item.id} canEdit={canEdit} onClose={() => setShowFix(false)} onResolved={onDataChanged} />
       )}
       {expanded && (
         <div className="border-t border-slate-100 px-4 py-4 space-y-4">
@@ -1172,7 +1173,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
             <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
           )}
           {pageKind === "auto_fed" && pageId && (
-            <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
+            <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} onResolved={onDataChanged} />
           )}
           <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
           {baseTable !== "entities" && pageKind !== "auto_fed" && (
@@ -1450,7 +1451,7 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary }: {
+function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onDataChanged }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
@@ -1463,6 +1464,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
   onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
+  onDataChanged?: () => void;
 }) {
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
@@ -1608,7 +1610,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                     <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
                   )}
                   {pageKind === "auto_fed" && pageId && (
-                    <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
+                    <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} onResolved={onDataChanged} />
                   )}
                   <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
                   {(item.ai_summary || (canEdit && onGenerateSummary)) && (
@@ -1630,7 +1632,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
         </tbody>
       </table>
       {fixItemId && pageId && (
-        <IrregularityFixModal pageId={pageId} itemId={fixItemId} canEdit={canEdit} onClose={() => setFixItemId(null)} />
+        <IrregularityFixModal pageId={pageId} itemId={fixItemId} canEdit={canEdit} onClose={() => setFixItemId(null)} onResolved={onDataChanged} />
       )}
     </div>
   );

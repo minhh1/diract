@@ -77,8 +77,13 @@ async function resolveTarget(admin: any, pageId: string, itemId: string, company
   }
   const recordName = (await resolveDisplayNamesBatch(admin, sourceTable, [recordId])).get(recordId) || "";
   const ruleLabel: string | undefined = rows.find((v: any) => v.field?.field_key === "issue_type")?.value_text;
+  // auto_fed_recompute() flips this to 'Resolved' on its own once the
+  // underlying record no longer trips the rule (see file header) -- GET
+  // uses this to tell the panel the fix already landed instead of
+  // re-resolving and re-rendering the same stale target payload forever.
+  const statusValue: string | undefined = rows.find((v: any) => v.field?.field_key === "status")?.value_text;
 
-  return { recordId, recordName, sourceTable, targetFieldKey, ruleLabel };
+  return { recordId, recordName, sourceTable, targetFieldKey, ruleLabel, statusValue };
 }
 
 // Duplicate Name's target_field_key ('name') is a normal renameable native
@@ -110,7 +115,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const resolved = await resolveTarget(admin, id, itemId, companyId);
   if ("error" in resolved) return resolved.error;
-  const { recordId, recordName, sourceTable, targetFieldKey, ruleLabel } = resolved;
+  const { recordId, recordName, sourceTable, targetFieldKey, ruleLabel, statusValue } = resolved;
+
+  if (statusValue === "Resolved") {
+    return NextResponse.json({ resolved: true });
+  }
 
   if (targetFieldKey === "name" && sourceTable === "entities" && ruleLabel === "Duplicate Name") {
     const partner = await findDuplicatePartner(admin, companyId, recordId);
