@@ -18,7 +18,7 @@ import { loadFieldConfig, type ActionType, type FieldDef } from "@/lib/ai/action
 import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
   resolveTaskByName, resolveStatusByLabel, resolveProjectByName, resolveProfileByName,
-  createTask, updateTask, createProject, updateProject,
+  createTask, updateTask, createProject, updateProject, addProjectLabel,
   createOnedriveFile, updateOnedriveFile, isOnedriveConnected,
 } from "@/lib/ai/actions";
 import { advanceFileAction, buildFileMissingFieldsTool, type FileAdvanceResult } from "@/lib/ai/fileActions";
@@ -632,6 +632,19 @@ async function handleToolCall(
     );
   }
 
+  if (toolCall.name === "add_project_label") {
+    const projectName = args.project_name as string | undefined;
+    if (!projectName) return reply("Which project should I apply a Gmail label to? (name or matter number)");
+    const project = await resolveProjectByName(admin, companyId, projectName);
+    if (project.status !== "found") return askAbout("project", project, projectName);
+
+    return storePending(
+      "add_project_label",
+      { projectId: project.match.id },
+      `I'll apply a Gmail label to project "${project.match.name}".`
+    );
+  }
+
   await reply("I didn't understand that request.");
 }
 
@@ -1155,6 +1168,12 @@ async function executeAction(admin: any, companyId: string, userId: string, acti
   if (actionType === "update_project") {
     await updateProject(admin, companyId, params);
     return "Done — updated the project.";
+  }
+  if (actionType === "add_project_label") {
+    const result = await addProjectLabel(admin, companyId, userId, params.projectId);
+    return result.existed
+      ? `That project already has a Gmail label: ${result.labelName}`
+      : `Done — created Gmail label "${result.labelName}". It'll sync to everyone's mailbox shortly.`;
   }
   if (actionType === "create_file") {
     const file = await createOnedriveFile(admin, companyId, userId, params);

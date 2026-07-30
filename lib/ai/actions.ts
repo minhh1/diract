@@ -454,6 +454,23 @@ export async function updateProject(admin: any, companyId: string, params: Updat
   if (error) throw new Error(error.message);
 }
 
+export interface AddProjectLabelResult {
+  labelName: string;
+  existed: boolean;
+}
+
+// Bot-facing equivalent of NewProjectModal's own "create label" fetch, for a
+// project that doesn't have one yet -- e.g. one created before createProject
+// started calling createProjectGmailLabel itself, or a Gmail Add-on-created
+// project whose label was somehow never synced. Unlike createProject's own
+// best-effort call, this one throws on failure -- the user explicitly asked
+// for a label here, so a silent no-op would look like nothing happened.
+export async function addProjectLabel(admin: any, companyId: string, userId: string, projectId: string): Promise<AddProjectLabelResult> {
+  const result = await createProjectGmailLabel(admin, companyId, projectId, userId);
+  if (!result.ok) throw new Error(result.error);
+  return { labelName: result.labelName, existed: !!result.existed };
+}
+
 // Fuzzy match against files already synced in from OneDrive (onedrive_files,
 // kept fresh by supabase/functions/onedrive-sync-worker) -- mirrors
 // resolveTaskByName's found/ambiguous/not_found shape exactly.

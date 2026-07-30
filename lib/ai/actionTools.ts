@@ -199,6 +199,27 @@ const UPDATE_PROJECT_TOOL = {
   },
 };
 
+// A project only gets a Gmail label automatically at creation time
+// (createProject in lib/ai/actions.ts) -- this covers the gap for a project
+// that somehow ended up without one (e.g. created before that existed, or
+// Gmail sync wasn't configured for the company yet at the time). No other
+// fields: applying a label isn't something the user customizes per-call, the
+// company's own label format settings (Admin > Gmail Sync) always apply.
+const ADD_PROJECT_LABEL_TOOL = {
+  type: "function",
+  function: {
+    name: "add_project_label",
+    description: "Apply/create the shared Gmail label for a project that doesn't have one yet, so its emails can be shared across the firm's mailboxes.",
+    parameters: {
+      type: "object",
+      properties: {
+        project_name: { type: "string", description: "The project to apply a Gmail label to -- its name OR a known identifier like a matter number." },
+      },
+      required: ["project_name"],
+    },
+  },
+};
+
 const CREATE_FILE_TOOL = {
   type: "function",
   function: {
@@ -359,6 +380,7 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
       },
     },
     UPDATE_PROJECT_TOOL,
+    ADD_PROJECT_LABEL_TOOL,
     CREATE_FILE_TOOL,
     UPDATE_FILE_TOOL,
     ISSUE_PRECEDENT_TOOL,
