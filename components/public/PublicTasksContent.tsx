@@ -84,6 +84,18 @@ interface PageData { title: string; scopeName: string; scope: string; columns: s
 // bootstrap could otherwise warm generically.
 export const publicTasksCacheKey = (pageId: string) => `public_tasks_${pageId}`;
 
+// Company-wide (not page-specific), so bootstrap can warm this once per
+// company alongside everything else in lib/hooks/prefetchShells.ts -- unlike
+// publicTasksCacheKey above, which needs a specific pageId this component
+// doesn't know until the main data fetch resolves.
+export const gmailConnectionsCacheKey = (companyId: string) => `gmail_connections_${companyId}`;
+
+// Page-scoped (the exact set of visible task ids differs per page), so this
+// one is only ever warmed here, on a previous visit to this same page --
+// unlike gmailConnectionsCacheKey above, bootstrap has no way to know a
+// page's task ids ahead of the page's own data fetch resolving.
+const taskDependenciesCacheKey = (pageId: string) => `task_dependencies_${pageId}`;
+
 // Columns whose content can run long (project names, people's names) should
 // wrap within their cell instead of forcing the table wider — everything
 // else (dates, status, cost) is short enough to stay on one line.
@@ -290,9 +302,22 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   useEffect(() => {
     if (!data?.companyId) return;
+    const companyId = data.companyId;
+    const cached = readCache<string[]>(gmailConnectionsCacheKey(companyId));
+    if (cached) setConnectedAssigneeIds(new Set(cached));
     (async () => {
       const { data: connections } = await supabase.from("company_gmail_connections").select("user_id");
-      setConnectedAssigneeIds(new Set((connections || []).map((c: any) => c.user_id)));
+      const ids = (connections || []).map((c: any) => c.user_id);
+      writeCache(gmailConnectionsCacheKey(companyId), ids);
+      // Bail out to the same Set reference when this revalidate didn't
+      // actually change anything -- same reasoning as
+      // PublicClientUpdateContent's applyStaffJson: an unconditional setState
+      // here would re-render every task row's "connected" badge a moment
+      // after they already painted correctly from cache.
+      setConnectedAssigneeIds(prev => {
+        if (prev.size === ids.length && ids.every(id => prev.has(id))) return prev;
+        return new Set(ids);
+      });
     })();
   }, [data?.companyId]);
 
@@ -307,14 +332,19 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   useEffect(() => {
     const ids = allVisibleTasks.map(t => t.id);
     if (!ids.length) { setDependenciesByTask({}); return; }
+    const cached = readCache<Record<string, string[]>>(taskDependenciesCacheKey(pageId));
+    if (cached) setDependenciesByTask(cached);
     (async () => {
       const { data: deps } = await supabase.from("task_dependencies").select("task_id, depends_on_task_id").in("task_id", ids);
       const grouped: Record<string, string[]> = {};
       for (const d of deps || []) (grouped[d.task_id] ||= []).push(d.depends_on_task_id);
-      setDependenciesByTask(grouped);
+      writeCache(taskDependenciesCacheKey(pageId), grouped);
+      // Bail out to the same reference when unchanged -- see
+      // connectedAssigneeIds' matching comment above.
+      setDependenciesByTask(prev => JSON.stringify(prev) === JSON.stringify(grouped) ? prev : grouped);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+  }, [data, pageId]);
 
   const handleAddDependency = async (taskId: string, dependsOnTaskId: string) => {
     if (!data) return;

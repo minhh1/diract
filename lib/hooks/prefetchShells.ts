@@ -44,7 +44,7 @@ import {
 } from "./useSystemTableAsCustomTable";
 import type { CustomTable } from "./useCustomTables";
 import type { CompanyDashboard } from "./useDashboardData";
-import { publicTasksCacheKey } from "@/components/public/PublicTasksContent";
+import { publicTasksCacheKey, gmailConnectionsCacheKey } from "@/components/public/PublicTasksContent";
 import { staffClientUpdateCacheKey } from "@/components/public/PublicClientUpdateContent";
 
 const SYSTEM_TABLES = ['properties', 'entities', 'projects', 'tasks'] as const;
@@ -514,6 +514,20 @@ async function warmStaffClientUpdatePage(slug: string): Promise<void> {
   } catch {}
 }
 
+// Who on this company has a connected Gmail/Calendar account -- read
+// directly by PublicTasksContent (and ChecklistTab, the internal
+// equivalent) on every load, previously with no caching at all. Company-wide
+// and rarely changes (only when someone connects/disconnects), so it's safe
+// to warm once here rather than paying this query fresh on every task-page
+// visit.
+async function warmGmailConnections(companyId: string): Promise<void> {
+  if (readCache(gmailConnectionsCacheKey(companyId))) return;
+  try {
+    const { data } = await supabase.from("company_gmail_connections").select("user_id");
+    writeCache(gmailConnectionsCacheKey(companyId), (data || []).map((c: any) => c.user_id));
+  } catch {}
+}
+
 // Every client_update_page / public_task_page this viewer can see, straight
 // from the same list routes Settings > Public pages itself calls -- not
 // just the ones a dashboard happens to embed as a widget (see
@@ -594,6 +608,7 @@ async function prefetchAllShells(
   const allPublicPagesPromise = listAllPublicPageIdsAndSlugs();
 
   await Promise.all([
+    warmGmailConnections(companyId).catch(() => {}),
     ...tableList.map(tbl => prefetchTableFields(tbl, companyId).catch(() => {})),
     // Rows + column/sort config + default filters -- same "nothing left to
     // load once the main screen appears" guarantee warmSystemTableShells/
