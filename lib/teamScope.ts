@@ -11,7 +11,13 @@
 import { supabase } from "@/lib/supabase";
 
 export async function getStaffScopeIds(): Promise<string[] | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  // getSession() reads the local session (no network round trip) instead of
+  // getUser() re-validating the JWT against the auth server -- safe here
+  // since every query below is still subject to RLS regardless of what a
+  // stale/tampered local session claims; this only shapes a client-side
+  // candidate list, never the real access check.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return [];
 
   const { data: prof } = await supabase
@@ -55,7 +61,10 @@ export async function getStaffScopeIds(): Promise<string[] | null> {
 // UI can decide upfront whether a viewer is even ELIGIBLE to set a
 // non-"myself" default view, without waiting on a table fetch to find out.
 export async function getTimeEntryViewScopeIds(): Promise<string[] | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  // See getStaffScopeIds' matching comment -- getSession() is local-only,
+  // no network round trip, and safe here for the same reason.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return [];
 
   const { data: prof } = await supabase

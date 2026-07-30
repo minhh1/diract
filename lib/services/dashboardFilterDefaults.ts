@@ -10,7 +10,11 @@ import { supabase } from "@/lib/supabase";
 // distinct from "this user has never set one" (which the caller represents
 // as the field_id simply being absent from the returned map).
 export async function getFilterDefaults(dashboardId: string): Promise<Record<string, string | null>> {
-  const { data: { user } } = await supabase.auth.getUser();
+  // getSession() is local-only (no network round trip), unlike getUser() --
+  // safe here since this only seeds a client-side filter default, not a
+  // real access check.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return {};
   const { data } = await supabase
     .from('user_field_filter_defaults')
@@ -23,7 +27,8 @@ export async function getFilterDefaults(dashboardId: string): Promise<Record<str
 }
 
 export async function setFilterDefault(dashboardId: string, fieldId: string, valueRecordId: string | null): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return;
   await supabase.from('user_field_filter_defaults').upsert({
     user_id: user.id, dashboard_id: dashboardId, field_id: fieldId,
@@ -32,7 +37,8 @@ export async function setFilterDefault(dashboardId: string, fieldId: string, val
 }
 
 export async function clearFilterDefault(dashboardId: string, fieldId: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return;
   await supabase.from('user_field_filter_defaults')
     .delete().eq('user_id', user.id).eq('dashboard_id', dashboardId).eq('field_id', fieldId);

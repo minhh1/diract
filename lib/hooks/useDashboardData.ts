@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { readCache, writeCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import { useCustomTable } from "./useCustomTable";
@@ -131,7 +132,7 @@ function fetchDashboardAndSourceTable(companyId: string, dashboardSlug: string):
 // record set -- same scale assumption useCustomTable already makes
 // elsewhere in the app.
 export function useDashboardData(dashboardSlug: string) {
-  const { companyId } = useCompany();
+  const { companyId, userId } = useCompany();
   const [dashboard, setDashboard] = useState<CompanyDashboard | null>(null);
   // Full row, not just the slug -- fetched once source_table_id is known,
   // handed straight to useCustomTable below as its preloadedTable so that
@@ -248,6 +249,10 @@ export function useDashboardData(dashboardSlug: string) {
     }
   }, [dashboard, fields]);
 
+  // Scoped by user + dashboard -- this viewer's own saved default on THIS
+  // dashboard's scoped field(s), distinct from any other user or dashboard.
+  const viewScopeDefaultsCacheKey = (uid: string, dashboardId: string) => `view_scope_defaults_${uid}_${dashboardId}`;
+
   // Seeds any $current_user/$team_scope filter field with this viewer's
   // saved default (see lib/services/dashboardFilterDefaults.ts) -- e.g. a
   // team lead who's set their Time Entry Staff filter to default to "All"
@@ -257,6 +262,12 @@ export function useDashboardData(dashboardSlug: string) {
   // Separate ref from defaultsSeededRef above -- this one waits on two
   // network round trips (scope check + saved defaults), so it can legitimately
   // still be pending after the date-defaults effect has already finished.
+  // canViewMultipleTimeEntries() alone is up to 5 sequential DB round trips
+  // (see lib/teamScope.ts) with no caching of its own, previously paid in
+  // full on every single visit to a Time Entry-style dashboard -- cached
+  // here (paint from a previous visit instantly, revalidate in the
+  // background, same bail-if-unchanged pattern used elsewhere in the app) so
+  // only the very first visit ever pays for it.
   const viewDefaultsSeededRef = useRef(false);
   useEffect(() => {
     if (viewDefaultsSeededRef.current || !dashboard || fields.length === 0) return;
@@ -268,23 +279,36 @@ export function useDashboardData(dashboardSlug: string) {
     });
     if (!scopedFieldIds.length) { viewDefaultsSeededRef.current = true; return; }
     viewDefaultsSeededRef.current = true;
+
+    const apply = (canSeeMultiple: boolean, defaults: Record<string, string | null>) => {
+      setCanSeeMultipleScope(canSeeMultiple);
+      const nextFieldIds = new Set(scopedFieldIds.filter(id => id in defaults));
+      setViewDefaultFieldIds(prev =>
+        prev.size === nextFieldIds.size && [...prev].every(id => nextFieldIds.has(id)) ? prev : nextFieldIds);
+      const toSeed = scopedFieldIds.filter(id => id in defaults);
+      if (toSeed.length) {
+        setFilters(prev => {
+          const next = { ...prev };
+          let changed = false;
+          for (const id of toSeed) if (next[id] === undefined) { next[id] = defaults[id]; changed = true; }
+          return changed ? next : prev;
+        });
+      }
+    };
+
+    const cacheKey = userId ? viewScopeDefaultsCacheKey(userId, dashboard.id) : null;
+    const cached = cacheKey ? readCache<{ canSeeMultiple: boolean; defaults: Record<string, string | null> }>(cacheKey) : null;
+    if (cached) apply(cached.canSeeMultiple, cached.defaults);
+
     (async () => {
       const [canSeeMultiple, defaults] = await Promise.all([
         canViewMultipleTimeEntries(),
         getFilterDefaults(dashboard.id),
       ]);
-      setCanSeeMultipleScope(canSeeMultiple);
-      setViewDefaultFieldIds(new Set(scopedFieldIds.filter(id => id in defaults)));
-      const toSeed = scopedFieldIds.filter(id => id in defaults);
-      if (toSeed.length) {
-        setFilters(prev => {
-          const next = { ...prev };
-          for (const id of toSeed) if (next[id] === undefined) next[id] = defaults[id];
-          return next;
-        });
-      }
+      if (cacheKey) writeCache(cacheKey, { canSeeMultiple, defaults });
+      apply(canSeeMultiple, defaults);
     })();
-  }, [dashboard, fields]);
+  }, [dashboard, fields, userId]);
 
   // Persists (or clears) this viewer's default for one $current_user/
   // $team_scope filter field -- "All" is `value: null`, still a real saved
@@ -292,17 +316,34 @@ export function useDashboardData(dashboardSlug: string) {
   // viewDefaultFieldIds so the UI flips immediately; the writes themselves
   // are fire-and-forget best-effort, matching setFilter's own no-error-
   // handling convention for this purely-cosmetic preference.
+  // Keeps the view-scope-defaults cache above in step with an explicit
+  // change here -- without this, a save/clear here would look silently
+  // reverted for up to this session's lifetime (the cache has no TTL) the
+  // next time this dashboard mounts, since the cached-paint branch above
+  // would still hand back whatever was cached before this change.
+  const patchViewDefaultsCache = (fieldId: string, value: string | null | undefined) => {
+    if (!dashboard || !userId) return;
+    const cacheKey = viewScopeDefaultsCacheKey(userId, dashboard.id);
+    const cached = readCache<{ canSeeMultiple: boolean; defaults: Record<string, string | null> }>(cacheKey);
+    if (!cached) return;
+    const defaults = { ...cached.defaults };
+    if (value === undefined) delete defaults[fieldId]; else defaults[fieldId] = value;
+    writeCache(cacheKey, { ...cached, defaults });
+  };
+
   const setViewDefault = useCallback((fieldId: string, value: string | null) => {
     if (!dashboard) return;
     setViewDefaultFieldIds(prev => new Set(prev).add(fieldId));
+    patchViewDefaultsCache(fieldId, value);
     setFilterDefault(dashboard.id, fieldId, value);
-  }, [dashboard]);
+  }, [dashboard, userId]);
 
   const clearViewDefault = useCallback((fieldId: string) => {
     if (!dashboard) return;
     setViewDefaultFieldIds(prev => { const next = new Set(prev); next.delete(fieldId); return next; });
+    patchViewDefaultsCache(fieldId, undefined);
     clearFilterDefault(dashboard.id, fieldId);
-  }, [dashboard]);
+  }, [dashboard, userId]);
 
   // Persists a single widget's config change (column reorder/resize from
   // DashboardGrid today) back into company_dashboards.widgets. Updates
