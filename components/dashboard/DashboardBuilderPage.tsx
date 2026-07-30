@@ -13,11 +13,12 @@ import { Loader2, Trash2, LayoutGrid, Code2, LayoutDashboard, Table2, Share2, Ch
 import * as LucideIcons from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { supabase } from "@/lib/supabase";
+import { clearShellCache } from "@/lib/shellCache";
 import { useCompany } from "@/components/CompanyContext";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
-import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
+import { dashboardShellKey, type DashboardSourceKind } from "@/lib/hooks/useDashboardData";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { ensureDashboardWidgetsMigrated, type RawCompanyDashboardRow } from "@/lib/dashboardWidgets/ensureMigrated";
@@ -263,6 +264,11 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     if (err) { setError(err.message); return; }
     if (data && before) {
       logSchemaChange({ companyId, actorId: userId, entityType: 'company_dashboard', entityId: dashboardId!, entityLabel: data.name, action: 'update', before, after: data });
+      // useDashboardData.ts now trusts a cache hit for up to
+      // DASHBOARD_CONFIG_TTL_MS with no live re-check at all -- without
+      // this, the view page could show this edit's pre-save state for up
+      // to 5 minutes if it was visited recently enough to still be warm.
+      clearShellCache(dashboardShellKey(companyId, data.slug));
       router.push(`/dashboard/${data.slug}`);
     }
   };

@@ -63,11 +63,27 @@ export interface CompanyDashboard {
 interface CachedDashboardShell {
   dashboard: CompanyDashboard;
   sourceTableDef: CustomTable | null;
+  // ms epoch this was written -- see DASHBOARD_CONFIG_TTL_MS below.
+  cachedAt: number;
 }
 // Scoped by companyId -- see lib/hooks/prefetchShells.ts's tableShellKey
 // doc comment for why (a bare slug-only key served a previous company's
 // stale shell after switching active company).
-const dashboardShellKey = (companyId: string, slug: string) => `dashboard:${companyId}:${slug}`;
+// Exported so DashboardBuilderPage.tsx can clear this exact slot on save --
+// see DASHBOARD_CONFIG_TTL_MS below for why that's now necessary (a cache
+// hit can be up to 5 minutes stale otherwise, where before this hook always
+// re-fetched live on every mount regardless of cache state).
+export const dashboardShellKey = (companyId: string, slug: string) => `dashboard:${companyId}:${slug}`;
+
+// A dashboard's own config (name/widgets/filters/source table) only ever
+// changes when someone explicitly edits and saves it in the builder --
+// nowhere near often enough to justify a live round trip on every single
+// click between dashboards the way records genuinely do. A cache hit
+// younger than this is trusted outright and skips the network fetch below
+// entirely, same TTL convention as useCustomDashboards.ts's sidebar list.
+// Longer than that one (60s) since a dashboard's own config changes even
+// less often than which dashboards exist at all.
+const DASHBOARD_CONFIG_TTL_MS = 5 * 60_000;
 
 // Loads a dashboard's config, resolves its source custom table via
 // useCustomTable, and computes filtered records + summary tile values +
@@ -113,6 +129,11 @@ export function useDashboardData(dashboardSlug: string) {
     } else {
       setDashboardLoading(true);
     }
+    // A fresh-enough cache hit is trusted outright -- no live re-fetch at
+    // all, not even in the background. See DASHBOARD_CONFIG_TTL_MS above.
+    if (cached && Date.now() - cached.cachedAt < DASHBOARD_CONFIG_TTL_MS) {
+      return () => { active = false; };
+    }
     (async () => {
       // .eq('company_id', ...) -- company_dashboards.slug has no unique
       // constraint (two companies can each legitimately have a dashboard
@@ -139,7 +160,7 @@ export function useDashboardData(dashboardSlug: string) {
         setSourceTableDef(null);
       }
       setDashboardLoading(false);
-      if (dash && companyId) writeShellCache(dashboardShellKey(companyId, dashboardSlug), { dashboard: dash, sourceTableDef: tbl });
+      if (dash && companyId) writeShellCache(dashboardShellKey(companyId, dashboardSlug), { dashboard: dash, sourceTableDef: tbl, cachedAt: Date.now() });
     })();
     return () => { active = false; };
   }, [dashboardSlug, companyId]);
@@ -200,7 +221,16 @@ export function useDashboardData(dashboardSlug: string) {
     if (!dashboard) return;
     const before = dashboard;
     const nextWidgets = dashboard.widgets.map(w => w.id === updated.id ? updated : w);
-    setDashboard({ ...dashboard, widgets: nextWidgets });
+    const nextDashboard = { ...dashboard, widgets: nextWidgets };
+    setDashboard(nextDashboard);
+    // Keep the shell cache in step with this optimistic update -- a
+    // fresh-enough cache hit now skips a live re-fetch entirely (see
+    // DASHBOARD_CONFIG_TTL_MS above), so without this a resize/reorder here
+    // would look silently undone for up to that long if the viewer
+    // navigates away and back. The builder's own save path clears this same
+    // slot instead (DashboardBuilderPage.tsx's handleSave) since it doesn't
+    // have a live sourceTableDef to write alongside it the way this does.
+    if (companyId) writeShellCache(dashboardShellKey(companyId, dashboardSlug), { dashboard: nextDashboard, sourceTableDef, cachedAt: Date.now() });
 
     const { data: { user } } = await supabase.auth.getUser();
     const { data: after } = await supabase
@@ -211,7 +241,7 @@ export function useDashboardData(dashboardSlug: string) {
         entityId: dashboard.id, entityLabel: dashboard.name, action: 'update', before, after,
       });
     }
-  }, [dashboard]);
+  }, [dashboard, companyId, dashboardSlug, sourceTableDef]);
 
   const activeFilters = useMemo(
     () => Object.entries(filters).filter(([, v]) => v !== null && v !== undefined && v !== ''),

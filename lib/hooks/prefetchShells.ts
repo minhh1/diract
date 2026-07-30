@@ -251,7 +251,11 @@ export const tableShellKey = (companyId: string, slug: string) => `table:${compa
 export const dashboardShellKey = (companyId: string, slug: string) => `dashboard:${companyId}:${slug}`;
 
 interface CachedTableShell { tableDef: CustomTable; fields: CustomTableField[] }
-interface CachedDashboardShell { dashboard: CompanyDashboard; sourceTableDef: CustomTable | null }
+// cachedAt matches useDashboardData.ts's own CachedDashboardShell shape --
+// that hook's DASHBOARD_CONFIG_TTL_MS check reads it to decide whether a
+// cache hit can skip a live re-fetch entirely, so a warmed-but-not-yet-
+// visited dashboard needs a real timestamp here too, not just the fields.
+interface CachedDashboardShell { dashboard: CompanyDashboard; sourceTableDef: CustomTable | null; cachedAt: number }
 
 async function prefetchTableFields(tbl: CustomTable, companyId: string): Promise<void> {
   if (readShellCache<CachedTableShell>(tableShellKey(companyId, tbl.slug))) return;
@@ -574,7 +578,7 @@ async function prefetchAllShells(
         const sourceTableDef = dash.source_table_type === 'custom' && dash.source_table_id
           ? tableById.get(dash.source_table_id) ?? null
           : null;
-        writeShellCache(dashboardShellKey(companyId, dash.slug), { dashboard: dash, sourceTableDef });
+        writeShellCache(dashboardShellKey(companyId, dash.slug), { dashboard: dash, sourceTableDef, cachedAt: Date.now() });
         if (sourceTableDef) await prefetchTableFields(sourceTableDef, companyId);
       } catch {}
     }),
