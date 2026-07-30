@@ -13,10 +13,10 @@ export async function GET(req: NextRequest) {
   const expectedState = cookieStore.get('xero_oauth_state')?.value;
 
   if (error) {
-    return NextResponse.redirect(`${APP_URL}/dashboard/admin?xero=error&message=${encodeURIComponent(error)}`);
+    return NextResponse.redirect(`${APP_URL}/dashboard/admin?tab=xero&xero=error&message=${encodeURIComponent(error)}`);
   }
   if (!code || !state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(`${APP_URL}/dashboard/admin?xero=error&message=${encodeURIComponent('Invalid or expired request')}`);
+    return NextResponse.redirect(`${APP_URL}/dashboard/admin?tab=xero&xero=error&message=${encodeURIComponent('Invalid or expired request')}`);
   }
 
   // Exchange code for tokens
@@ -39,7 +39,8 @@ export async function GET(req: NextRequest) {
   const tokens = await tokenRes.json();
 
   if (tokens.error) {
-    return NextResponse.redirect(`${APP_URL}/dashboard/admin?xero=error&message=${encodeURIComponent(tokens.error)}`);
+    const detail = tokens.error_description ? `${tokens.error}: ${tokens.error_description}` : tokens.error;
+    return NextResponse.redirect(`${APP_URL}/dashboard/admin?tab=xero&xero=error&message=${encodeURIComponent(detail)}`);
   }
 
   const supabase = createServerClient(
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
     .single();
   const companyId = profile?.active_company_id;
   if (!companyId) {
-    return NextResponse.redirect(`${APP_URL}/dashboard/admin?xero=error&message=${encodeURIComponent('No active company')}`);
+    return NextResponse.redirect(`${APP_URL}/dashboard/admin?tab=xero&xero=error&message=${encodeURIComponent('No active company')}`);
   }
 
   // Which organisation(s) the user just authorized -- a single grant can
@@ -83,7 +84,7 @@ export async function GET(req: NextRequest) {
   const tenants = await connectionsRes.json();
 
   if (!Array.isArray(tenants) || tenants.length === 0) {
-    return NextResponse.redirect(`${APP_URL}/dashboard/admin?xero=error&message=${encodeURIComponent('No organisations were authorized')}`);
+    return NextResponse.redirect(`${APP_URL}/dashboard/admin?tab=xero&xero=error&message=${encodeURIComponent('No organisations were authorized')}`);
   }
 
   const expiresAt = new Date(Date.now() + (tokens.expires_in || 1800) * 1000).toISOString();
@@ -105,8 +106,8 @@ export async function GET(req: NextRequest) {
 
   const response = NextResponse.redirect(
     upsertError
-      ? `${APP_URL}/dashboard/admin?xero=error&message=${encodeURIComponent(upsertError.message)}`
-      : `${APP_URL}/dashboard/admin?xero=connected`
+      ? `${APP_URL}/dashboard/admin?tab=xero&xero=error&message=${encodeURIComponent(upsertError.message)}`
+      : `${APP_URL}/dashboard/admin?tab=xero&xero=connected`
   );
   response.cookies.set('xero_oauth_state', '', { maxAge: 0, path: '/' });
   return response;
