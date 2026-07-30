@@ -833,7 +833,8 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
         }
         createSection.addWidget(pfSelect);
       } else if (pf.fieldType === 'date') {
-        createSection.addWidget(CardService.newDatePicker().setFieldName(pfName).setTitle(pfLabel));
+        createSection.addWidget(CardService.newDatePicker().setFieldName(pfName).setTitle(pfLabel)
+          .setValueInMsSinceEpoch(dateStrToUtcMidnight(todayDateStr()).getTime()));
       } else {
         createSection.addWidget(CardService.newTextInput().setFieldName(pfName).setTitle(pfLabel));
       }
@@ -1379,7 +1380,8 @@ function buildCreateTableRecordCard(companyId, tableId, tableName, token) {
       }
       section.addWidget(sel);
     } else if (f.fieldType === 'date') {
-      section.addWidget(CardService.newDatePicker().setFieldName(fieldName).setTitle(label));
+      section.addWidget(CardService.newDatePicker().setFieldName(fieldName).setTitle(label)
+        .setValueInMsSinceEpoch(dateStrToUtcMidnight(todayDateStr()).getTime()));
     } else {
       section.addWidget(CardService.newTextInput()
         .setFieldName(fieldName)
