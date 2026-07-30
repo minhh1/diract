@@ -1450,25 +1450,15 @@ export default function Sidebar() {
                     </div>
                   );
                 })}
-                  </>
-                )}
 
-                {!profileLoading && visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
-                  <button
-                    onClick={() => setShowTableSettings(true)}
-                    className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
-                  >
-                    No tables visible — click eye to configure
-                  </button>
-                )}
-              </div>
-
-              {/* Trust Account — fixed, bespoke page (not a company_dashboards
-                  row), gated on the company actually having the Trust
-                  Accounts table (Law Firm template) so it's invisible to
-                  every other company. See app/dashboard/trust-account/page.tsx. */}
-              {customTables.some(t => t.slug === 'trust-accounts') && (
-                <div className="mb-2 space-y-1">
+                {/* Trust Account — fixed, bespoke page (not a
+                    company_dashboards row), gated on the company actually
+                    having the Trust Accounts table (Law Firm template) so
+                    it's invisible to every other company. Rendered as a
+                    plain table-list row, not its own section -- there's
+                    nothing to name it after (it isn't a "Tables"-managed
+                    table itself). See app/dashboard/trust-account/page.tsx. */}
+                {customTables.some(t => t.slug === 'trust-accounts') && (
                   <button
                     onClick={() => { if (!pathname.startsWith('/dashboard/trust-account')) { startNavigation(); router.push('/dashboard/trust-account'); } }}
                     aria-label="Trust Account"
@@ -1481,8 +1471,19 @@ export default function Sidebar() {
                     <Landmark size={16} className="shrink-0" />
                     <span className="truncate">Trust Account</span>
                   </button>
-                </div>
-              )}
+                )}
+                  </>
+                )}
+
+                {!profileLoading && visibleSystemTables.length === 0 && visibleCustomTables.length === 0 && (
+                  <button
+                    onClick={() => setShowTableSettings(true)}
+                    className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
+                  >
+                    No tables visible — click eye to configure
+                  </button>
+                )}
+              </div>
 
               {/* Dashboards — custom, user-built screens bound to one
                   custom table (quick-add form + grid + stats + activity
