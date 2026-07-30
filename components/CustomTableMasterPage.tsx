@@ -331,6 +331,39 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     [cc.tableCols, cc.expandCols]
   );
 
+  // records gets a brand-new array reference on every navigation to this
+  // table (useCustomTable always live-fetches), which -- before this --
+  // re-ran this effect's own network calls (a metaTable lookup for the
+  // target field's label, practically never-changing, plus a values lookup)
+  // on literally every single visit, even when the actual set of ids being
+  // looked up (and their label/values) was identical to last time. Deriving
+  // a flat, comparable key from just the ids this effect actually cares
+  // about -- recomputed cheaply (no network) whenever records changes, but
+  // only used to decide whether the expensive effect below needs to re-run
+  // at all -- fixes that without losing correctness when a record's related
+  // link genuinely changes.
+  const relatedTargetIdsByCol = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const colId of relatedColIds) {
+      const parsed = parseRelatedColId(colId);
+      if (!parsed) continue;
+      const relationField = fields.find(f => f.id === parsed.relationFieldId);
+      if (!relationField) continue;
+      const ids = Array.from(new Set(
+        records.flatMap(r => {
+          const v = r.values[relationField.field_key];
+          return Array.isArray(v) ? v : (v ? [v] : []);
+        })
+      )).sort();
+      map.set(colId, ids);
+    }
+    return map;
+  }, [relatedColIds, records, fields]);
+  const relatedTargetIdsKey = useMemo(
+    () => Array.from(relatedTargetIdsByCol.entries()).map(([colId, ids]) => `${colId}=${ids.join(',')}`).join('|'),
+    [relatedTargetIdsByCol]
+  );
+
   const [relatedValues, setRelatedValues] = useState<Map<string, Map<string, string>>>(new Map());
   const [relatedColMeta, setRelatedColMeta] = useState<Map<string, { headerLabel: string }>>(new Map());
   useEffect(() => {
@@ -350,19 +383,18 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         if (!relationField) return;
         const valuesTable = parsed.targetKind === 'custom' ? 'company_table_values' : 'company_custom_field_values';
         const metaTable = parsed.targetKind === 'custom' ? 'company_table_fields' : 'company_custom_fields';
-        const targetIds = Array.from(new Set(
-          records.flatMap(r => {
-            const v = r.values[relationField.field_key];
-            return Array.isArray(v) ? v : (v ? [v] : []);
-          })
-        ));
+        const targetIds = relatedTargetIdsByCol.get(colId) || [];
         const [{ data: targetField }, { data: values }] = await Promise.all([
           supabase.from(metaTable).select('label').eq('id', parsed.targetFieldId).maybeSingle(),
           targetIds.length
             ? supabase.from(valuesTable).select('record_id, value_text, value_number, value_date, value_boolean').eq('field_id', parsed.targetFieldId).in('record_id', targetIds)
             : Promise.resolve({ data: [] as any[] }),
         ]);
-        nextMeta.set(colId, { headerLabel: `${relationField.label} · ${targetField?.label ?? 'Field'}` });
+        // Just the target field's own label -- prefixing the relation
+        // field's name too (e.g. "Matter · Matter Number") was redundant
+        // for the common case of a table with only one relation field to
+        // that target, which is the only case this ever runs against today.
+        nextMeta.set(colId, { headerLabel: targetField?.label ?? 'Field' });
         const byTarget = new Map<string, string>();
         (values || []).forEach((v: any) => {
           const val = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? String(v.value_boolean) : null);
@@ -373,7 +405,11 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
       if (active) { setRelatedValues(nextValues); setRelatedColMeta(nextMeta); }
     })();
     return () => { active = false; };
-  }, [relatedColIds, records, fields]);
+    // relatedTargetIdsKey stands in for records -- see relatedTargetIdsByCol's
+    // doc comment above for why depending on records directly re-ran this on
+    // every navigation regardless of whether anything it reads had changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relatedColIds, relatedTargetIdsKey, fields]);
 
   const resolveValue = useCallback((record: CustomTableRecord, colId: string): string => {
     const parsed = parseRelatedColId(colId);
