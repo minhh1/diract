@@ -1557,8 +1557,17 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
             const expanded = expandedId === item.id;
             return (
             <Fragment key={key}>
-            <tr className={`border-b ${expanded ? "border-transparent" : "border-slate-50 last:border-0"} ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
-              <td className={`sm:sticky sm:left-0 sm:z-10 ${rowColorClasses?.smRow || "sm:bg-white"}`}>
+            {/* group/row -- named so it doesn't collide with each cell's own
+                plain `group` below (used for that cell's own hover-reveal
+                history button, a different, per-cell hover). Lets the sticky
+                columns below pick up the SAME hover state as the row itself:
+                without it, an uncolored row's hover is hover-only
+                (hover:bg-slate-50) while its sticky columns had an always-on
+                static bg (sm:bg-white) with no hover variant at all, so
+                hovering such a row visibly showed two different shades where
+                the sticky column met the rest of the row. */}
+            <tr className={`group/row border-b ${expanded ? "border-transparent" : "border-slate-50 last:border-0"} ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
+              <td className={`sm:sticky sm:left-0 sm:z-10 ${rowColorClasses?.smRow || "sm:bg-white sm:group-hover/row:bg-slate-50"}`}>
                 <button onClick={() => setExpandedId(expanded ? null : item.id)} title={expanded ? "Collapse" : "Expand for notes"}
                   className="flex items-center justify-center w-8 h-8 text-slate-300 hover:text-indigo-600 transition-colors">
                   <ChevronRight size={13} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
@@ -1642,7 +1651,12 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
   // viewport.
   // sm:left-8 (not left-0) -- the always-sticky expand-toggle column (see
   // SpreadsheetView) occupies left-0 first; this sits right after it.
-  const frozenClass = frozen ? `sm:sticky sm:left-8 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white"}` : "";
+  // group-hover/row -- see the tr's own comment above: keeps this frozen
+  // cell in sync with the row's hover background when the row has no
+  // color-coding of its own (frozenBg is only passed down for a color-coded
+  // row, which already matches the row's own always-on bg with no hover
+  // mismatch to fix).
+  const frozenClass = frozen ? `sm:sticky sm:left-8 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white sm:group-hover/row:bg-slate-50"}` : "";
 
   const historyButton = onShowHistory && (
     <button onClick={e => { e.stopPropagation(); onShowHistory(); }} title="See what changed"

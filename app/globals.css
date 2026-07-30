@@ -243,10 +243,15 @@
 .dark .bg-slate-50\/40 { background-color: #2b2925; }
 .dark .bg-slate-50\/50 { background-color: #2d2c2a; }
 .dark .bg-slate-50\/60 { background-color: #2f2e2b; }
-.dark .bg-slate-100 { background-color: #2d2c2a; }
-.dark .bg-slate-100\/40 { background-color: #2b2925; }
-.dark .bg-slate-100\/70 { background-color: #302f2c; }
-.dark .bg-slate-200 { background-color: #38362f; }
+/* Distinctly lighter than bg-white above, not the same value -- these two
+   used to collide exactly (both #2d2c2a), which made every loading
+   skeleton (bg-slate-100 animate-pulse, almost always sitting inside a
+   bg-white card/header) render completely invisible: same color as its
+   own background, confirmed live ("skeleton just invisible"). */
+.dark .bg-slate-100 { background-color: #34322e; }
+.dark .bg-slate-100\/40 { background-color: #302f2b; }
+.dark .bg-slate-100\/70 { background-color: #322f2b; }
+.dark .bg-slate-200 { background-color: #3f3d37; }
 .dark .bg-slate-300 { background-color: #46443b; }
 .dark .bg-slate-400 { background-color: #55534a; }
 .dark .bg-slate-500 { background-color: #6b6960; }
