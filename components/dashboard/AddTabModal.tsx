@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   X, FileText, ListChecks, Calendar, Mail,
-  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard, PenSquare
+  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard, PenSquare, Briefcase
 } from "lucide-react";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
@@ -40,6 +40,14 @@ const TEMPLATES: TabTemplate[] = [
     description: 'Task checklist linked to this project',
     color: 'bg-emerald-50 text-emerald-600',
     iconComponent: ListChecks,
+  },
+  {
+    type: 'related_matters',
+    title: 'Related Matters',
+    icon: 'Briefcase',
+    description: 'Every matter this entity is linked to (as Client, Debtor, etc.)',
+    color: 'bg-indigo-50 text-indigo-600',
+    iconComponent: Briefcase,
   },
   {
     type: 'calendar',

@@ -15,6 +15,7 @@ import TabBar, { type RecordTab } from "./TabBar";
 import AddTabModal from "./AddTabModal";
 import FieldLayoutEditor, { type FieldLayout } from "./FieldLayoutEditor";
 import SubProjectsTab from "./tabs/SubProjectsTab";
+import RelatedMattersTab from "./tabs/RelatedMattersTab";
 import ChecklistTab from "./tabs/ChecklistTab";
 import CalendarTab from "./tabs/CalendarTab";
 import EmailsTab from "./tabs/EmailsTab";
@@ -552,6 +553,13 @@ export default function RecordDashboard({
           display_order: finalTabs.length + missingCoreTabs.length,
         });
       }
+      if (systemTable === 'entities' && !uniqueTabs.some(t => t.tab_type === 'related_matters')) {
+        missingCoreTabs.push({
+          company_id: cid, record_id: recordId, record_table: recordTable,
+          title: 'Related Matters', icon: 'Briefcase', tab_type: 'related_matters',
+          display_order: finalTabs.length + missingCoreTabs.length,
+        });
+      }
       if (missingCoreTabs.length) {
         const { data: insertedCoreTabs } = await supabase.from('record_tabs').insert(missingCoreTabs).select();
         if (insertedCoreTabs?.length) finalTabs = [...finalTabs, ...insertedCoreTabs];
@@ -638,6 +646,15 @@ export default function RecordDashboard({
           title: 'Checklist',
           icon: 'CheckSquare',
           tab_type: 'checklist',
+          display_order: 1,
+        }] : []),
+        ...(systemTable === 'entities' ? [{
+          company_id: cid,
+          record_id: recordId,
+          record_table: recordTable,
+          title: 'Related Matters',
+          icon: 'Briefcase',
+          tab_type: 'related_matters',
           display_order: 1,
         }] : []),
       ];
@@ -1283,6 +1300,9 @@ export default function RecordDashboard({
       )}
       {activeTab?.tab_type === 'sub_projects' && (
         <SubProjectsTab recordId={recordId} />
+      )}
+      {activeTab?.tab_type === 'related_matters' && (
+        <RelatedMattersTab recordId={recordId} />
       )}
       {activeTab?.tab_type === 'checklist' && (
         <ChecklistTab recordId={recordId} companyId={companyId} />
