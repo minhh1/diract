@@ -268,6 +268,7 @@ export async function findExistingCustomFieldValue(
   const { data: record } = await admin
     .from(tableName)
     .select("id, name")
+    .eq("company_id", companyId)
     .in("id", data.map((d: { record_id: string }) => d.record_id))
     .is("deleted_at", null)
     .limit(1)
