@@ -70,6 +70,7 @@ function describeActivity(row: ActivityRow): string {
     case "label_removed": return row.reapplied
       ? `${row.user_name} removed the label — auto re-applied`
       : `${row.user_name} removed this (admin) — staying removed`;
+    case "label_deleted": return `Label deleted for ${row.user_name}`;
     case "message_deleted": return row.restored
       ? `${row.user_name} deleted this — not an admin, so it was restored automatically`
       : `Message deleted by ${row.user_name} (admin)`;
@@ -122,6 +123,7 @@ const ACTION_META: Record<string, { label: string; icon: any; style: string }> =
   sync_to_user: { label: "Synced to user", icon: Inbox, style: "bg-indigo-50 text-indigo-600" },
   label_applied: { label: "Label applied", icon: Tag, style: "bg-sky-50 text-sky-600" },
   label_removed: { label: "Label removed", icon: MinusCircle, style: "bg-slate-100 text-slate-500" },
+  label_deleted: { label: "Label deleted", icon: Trash2, style: "bg-red-50 text-red-600" },
   message_deleted: { label: "Message deleted", icon: Trash2, style: "bg-red-50 text-red-600" },
   archived: { label: "Archived", icon: PlusCircle, style: "bg-purple-50 text-purple-600" },
   email_trashed: { label: "Deleted (archived)", icon: Trash2, style: "bg-red-50 text-red-600" },

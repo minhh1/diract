@@ -315,7 +315,7 @@ Deno.serve(async (_req) => {
     // Get removed labels (need cleanup) — skip ones already handled by archiving
     const { data: removedLabels } = await db
       .from("project_gmail_labels")
-      .select("project_id, label_code, gmail_label_name")
+      .select("project_id, label_code, gmail_label_name, removed_at")
       .eq("company_id", companyId)
       .not("removed_at", "is", null)
       .is("archived_at", null);
@@ -329,7 +329,7 @@ Deno.serve(async (_req) => {
 
     // Batch fetch ALL existing jobs for this company in one query
     const { data: existingJobs } = await db.from("gmail_sync_jobs")
-      .select("id, status, project_id, completed_users, total_users")
+      .select("id, status, project_id, completed_users, total_users, updated_at")
       .eq("job_type", "label_sync")
       .eq("company_id", companyId);
 
@@ -351,15 +351,30 @@ Deno.serve(async (_req) => {
         continue;
       }
 
-      // A job that's already "done" only needs redoing if the company's
-      // connected-member count changed since (someone joined/connected
-      // Gmail and needs the label too) — otherwise leave it alone. This
-      // used to reset EVERY done job to pending on EVERY 15-min sweep
-      // unconditionally, which meant the whole system was perpetually
-      // re-verifying every label against every user's mailbox forever —
-      // the real cause of most of the load/starvation issues chased down
-      // on 2026-07-21/22, not just a symptom of them.
-      if (existing?.status === "done" && existing.total_users === totalUsers) {
+      // A "done" job also needs redoing if the label was removed AFTER that
+      // job last completed — otherwise a job that finished applying the
+      // label (completed_users full, status "done") stays "done" forever
+      // once someone deletes the label, since total_users alone never
+      // changes just because a label was removed. That silently stopped
+      // the removal from ever reaching anyone but whoever did the
+      // deleting (their own copy is handled synchronously elsewhere) —
+      // every other connected user's mailbox kept the "deleted" label
+      // forever. Confirmed in production 2026-07-29/30 (matter 260598):
+      // job marked done at 06:50 (the original create), label removed_at
+      // 07:03, job never reset since total_users (8) never changed.
+      const removalMissed = !!(label as any).removed_at && existing?.status === "done"
+        && new Date((label as any).removed_at).getTime() > new Date(existing.updated_at).getTime();
+
+      // A job that's already "done" and reflects the label's current state
+      // only needs redoing if the company's connected-member count changed
+      // since (someone joined/connected Gmail and needs the label too) —
+      // otherwise leave it alone. This used to reset EVERY done job to
+      // pending on EVERY 15-min sweep unconditionally, which meant the
+      // whole system was perpetually re-verifying every label against every
+      // user's mailbox forever — the real cause of most of the
+      // load/starvation issues chased down on 2026-07-21/22, not just a
+      // symptom of them.
+      if (existing?.status === "done" && existing.total_users === totalUsers && !removalMissed) {
         skippedAlreadyDone++;
         continue;
       }

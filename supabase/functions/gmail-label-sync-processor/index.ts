@@ -277,8 +277,16 @@ Deno.serve(async (req) => {
     if (isRemoved) {
       if (existingLabelId) {
         await deleteGmailLabel(token, existingLabelId);
+        // Distinct from gmail-push's "label_removed" (someone unlabeled ONE
+        // email, possibly auto-restored) -- this is the whole project's
+        // label being deleted outright, propagating to every connected
+        // user's mailbox. Sharing one action name made this admin-facing
+        // log unreadable: this event has no `reapplied` field, so it fell
+        // through to describeActivity's "label_removed" case and rendered
+        // as the nonsensical "$user removed this (admin) — staying
+        // removed" regardless of who actually deleted the project.
         await logActivity({
-          company_id: companyId, triggered_by: null, action: "label_removed",
+          company_id: companyId, triggered_by: null, action: "label_deleted",
           project_id: projectId, gmail_label_name: gmailLabelName,
           target_user_id: userId, details: { label_code: labelCode },
         });
