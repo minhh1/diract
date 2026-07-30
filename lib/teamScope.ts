@@ -45,3 +45,48 @@ export async function getStaffScopeIds(): Promise<string[] | null> {
     .is('deleted_at', null);
   return (staffEntities || []).map(e => e.id);
 }
+
+// Mirrors getStaffScopeIds() above, but for VIEWING other staff's rows
+// (teams.allow_time_entry_view, set in Admin > Teams) rather than logging
+// time AS them (allow_time_entry_delegation) -- a deliberately separate
+// permission, see supabase/migrations/20260728220000_time_entry_view_scope.sql.
+// Client-side mirror of that migration's time_entry_view_scope_ids() (which
+// actually enforces the read restriction via RLS); this copy exists so the
+// UI can decide upfront whether a viewer is even ELIGIBLE to set a
+// non-"myself" default view, without waiting on a table fetch to find out.
+export async function getTimeEntryViewScopeIds(): Promise<string[] | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: prof } = await supabase
+    .from('profiles').select('active_company_id').eq('id', user.id).maybeSingle();
+  const companyId = prof?.active_company_id;
+  if (!companyId) return [];
+
+  const { data: membership } = await supabase
+    .from('company_memberships').select('role').eq('user_id', user.id).eq('company_id', companyId).maybeSingle();
+  if (membership?.role === 'company_admin') return null;
+
+  const { data: myTeams } = await supabase
+    .from('team_members').select('team_id').eq('profile_id', user.id);
+  const myTeamIds = (myTeams || []).map(t => t.team_id);
+  if (myTeamIds.length) {
+    const { data: viewTeam } = await supabase
+      .from('teams').select('id').in('id', myTeamIds).eq('allow_time_entry_view', true).limit(1).maybeSingle();
+    if (viewTeam) return null;
+  }
+
+  const { data: staffEntities } = await supabase
+    .from('entities').select('id')
+    .eq('company_id', companyId)
+    .eq('linked_profile_id', user.id)
+    .is('deleted_at', null);
+  return (staffEntities || []).map(e => e.id);
+}
+
+// Convenience boolean for gating UI (e.g. "set default view") -- null from
+// getTimeEntryViewScopeIds() means unrestricted, i.e. more than just their
+// own rows.
+export async function canViewMultipleTimeEntries(): Promise<boolean> {
+  return (await getTimeEntryViewScopeIds()) === null;
+}

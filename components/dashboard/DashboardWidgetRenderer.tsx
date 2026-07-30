@@ -75,6 +75,14 @@ interface Props {
   userId: string;
   filters: Record<string, any>;
   setFilter: (fieldId: string, value: any) => void;
+  // "Set as default view" support for $current_user/$team_scope filter
+  // fields -- see useDashboardData's matching state/callbacks. All
+  // undefined in builder-preview contexts (no real viewer/preference to
+  // save there), which DashboardFilterBar treats as "feature not available".
+  canSeeMultipleScope?: boolean | null;
+  viewDefaultFieldIds?: Set<string>;
+  onSetViewDefault?: (fieldId: string, value: string | null) => void;
+  onClearViewDefault?: (fieldId: string) => void;
   onChanged: () => void;
   // Lets quick_add_form insert its new record into local state directly
   // instead of falling back to onChanged's full refetch -- see
@@ -118,6 +126,7 @@ interface Props {
 export default function DashboardWidgetRenderer({
   widget, sourceKind, fields, fieldById, records, recordsLoading, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
   isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill, onOptimisticAdd, primaryFieldKey,
+  canSeeMultipleScope, viewDefaultFieldIds, onSetViewDefault, onClearViewDefault,
 }: Props) {
   switch (widget.type) {
     case 'heading': {
@@ -141,6 +150,10 @@ export default function DashboardWidgetRenderer({
           fieldLayout={widget.config.fieldLayout}
           isAdmin={mode === 'view' ? isAdmin : undefined}
           onReorder={onWidgetChange ? (fieldIds) => onWidgetChange({ ...widget, config: { ...widget.config, fieldIds } }) : undefined}
+          canSeeMultipleScope={mode === 'view' ? canSeeMultipleScope : undefined}
+          viewDefaultFieldIds={viewDefaultFieldIds}
+          onSetViewDefault={mode === 'view' ? onSetViewDefault : undefined}
+          onClearViewDefault={mode === 'view' ? onClearViewDefault : undefined}
         />
       );
 

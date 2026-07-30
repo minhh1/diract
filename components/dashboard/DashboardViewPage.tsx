@@ -20,6 +20,7 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
   const { companyId, userId, isAdmin } = useCompany();
   const {
     dashboard, sourceKind, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, recordsLoading, filters, setFilter,
+    canSeeMultipleScope, viewDefaultFieldIds, setViewDefault, clearViewDefault,
     quickAddPrefill, setQuickAddPrefill, refetch, addRecordOptimistic, updateWidget,
   } = useDashboardData(slug);
 
@@ -143,6 +144,10 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
               userId={userId}
               filters={filters}
               setFilter={setFilter}
+              canSeeMultipleScope={canSeeMultipleScope}
+              viewDefaultFieldIds={viewDefaultFieldIds}
+              onSetViewDefault={setViewDefault}
+              onClearViewDefault={clearViewDefault}
               quickAddPrefill={quickAddPrefill}
               onQuickAddPrefill={setQuickAddPrefill}
               onChanged={refetch}

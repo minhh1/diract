@@ -38,7 +38,7 @@ const TRUSTEE_ROLE_TYPES = ['Corporate Trustee', 'Non Corporate Trustee'];
 // relation to "Signed-in user only" -- there's no static value to type in
 // for "whoever is signed in", so it's resolved to the real auth uid here at
 // query time instead.
-const CURRENT_USER_SENTINEL = '$current_user';
+export const CURRENT_USER_SENTINEL = '$current_user';
 
 // Sentinel filterValue for a role-aware "Staff" relation: a company admin
 // can bill as anyone (sees every Staff entity), everyone else can only bill
@@ -49,7 +49,7 @@ const CURRENT_USER_SENTINEL = '$current_user';
 // sense for a Staff-typed field) -- that companion filter is what actually
 // fixes a picker showing non-staff entities (e.g. property-owning
 // companies) even for an admin, who gets no id restriction at all.
-const TEAM_SCOPE_SENTINEL = '$team_scope';
+export const TEAM_SCOPE_SENTINEL = '$team_scope';
 
 // Module-level (not per-component) dedup + short-lived cache for the two
 // mount-time fetches below (label resolution, "signed-in user" auto-select).

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { GripVertical } from "lucide-react";
-import RelationPicker from "./RelationPicker";
+import RelationPicker, { CURRENT_USER_SENTINEL, TEAM_SCOPE_SENTINEL } from "./RelationPicker";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import { isRelationType, isNumericType } from "@/lib/schema/fieldCapabilities";
 import { PILL_SIZE_CLASSES, PILL_GAP_CLASSES, FIELD_WIDTH_CLASSES, defaultFieldWidth, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
@@ -68,6 +68,18 @@ interface Props {
   // grid's isAdmin.
   isAdmin?: boolean;
   onReorder?: (fieldIds: string[]) => void;
+  // "Set as default view" for a $current_user/$team_scope field (e.g. Time
+  // Entry's Staff filter) -- see useDashboardData's matching state. true
+  // only for a viewer who can actually see more than their own rows;
+  // undefined/false/null all render the control nowhere (no permission, or
+  // this context -- builder preview, a record tab -- doesn't support it).
+  canSeeMultipleScope?: boolean | null;
+  // Field ids this viewer has an explicit saved default for (including an
+  // explicit "All") -- suppresses RelationPicker's own auto-select-self so
+  // the saved default isn't immediately overridden back to "just me".
+  viewDefaultFieldIds?: Set<string>;
+  onSetViewDefault?: (fieldId: string, value: string | null) => void;
+  onClearViewDefault?: (fieldId: string) => void;
 }
 
 // Renders a dashboard's configured filter fields as a top toolbar, feeding
@@ -75,7 +87,10 @@ interface Props {
 // String(value) === String(filterValue) match, so any field type works as
 // long as the control here produces a comparable value. Type-aware, mirrors
 // WidgetConfigPanel's ConditionRow value control.
-export default function DashboardFilterBar({ fields, filterFieldIds, filters, onFilterChange, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder }: Props) {
+export default function DashboardFilterBar({
+  fields, filterFieldIds, filters, onFilterChange, pillSize = 'md', pillGap = 'normal', fieldLayout, isAdmin, onReorder,
+  canSeeMultipleScope, viewDefaultFieldIds, onSetViewDefault, onClearViewDefault,
+}: Props) {
   const filterFields = filterFieldIds
     .map(id => fields.find(f => f.id === id))
     .filter((f): f is CustomTableField => !!f);
@@ -123,29 +138,75 @@ export default function DashboardFilterBar({ fields, filterFieldIds, filters, on
               className={controlClass}
             />
           ) : isRelationType(field.field_type) ? (
-            <RelationPicker
-              linkedSystemTable={field.linked_system_table}
-              linkedTableId={field.linked_system_table ? null : field.linked_table_id}
-              displayField={field.linked_display_field}
-              displayField2={field.linked_display_field_2}
-              searchFieldKeys={field.linked_search_field_keys}
-              filterColumn={field.linked_filter_column}
-              filterValue={field.linked_filter_value}
-              value={filters[field.id] || null}
-              onSelect={id => onFilterChange(field.id, id)}
-              placeholder={`All`}
-              size={pillSize}
-              // A "$current_user"/"$team_scope" Staff filter (e.g. Time &
-              // Fee Entries) always defaults to the viewer's own entries,
-              // admin included -- an admin who wants everyone's entries
-              // switches to "All" explicitly via the pinned clearLabel row
-              // below, same picker either way.
-              // Pinned at the top of the dropdown -- narrowing to one
-              // person is just a normal pick below, but getting back to
-              // "everyone" from there needs to be exactly as easy, not a
-              // separate hunt for the small X next to the current value.
-              clearLabel="All"
-            />
+            (() => {
+              const isScopeField = field.linked_filter_value === CURRENT_USER_SENTINEL || field.linked_filter_value === TEAM_SCOPE_SENTINEL;
+              const hasSavedDefault = isScopeField && !!viewDefaultFieldIds?.has(field.id);
+              // A restricted viewer (can only ever see their own rows
+              // anyway, or this dashboard/context doesn't support the
+              // default-view feature at all) keeps the original always-
+              // narrow-to-self behavior. A viewer who CAN see multiple
+              // people's rows gets "All" out of the box instead (the more
+              // useful default for someone with that visibility) unless
+              // they've saved an explicit preference -- either way, once a
+              // preference IS saved (including an explicit "All"),
+              // RelationPicker's own auto-select must stay off so it can't
+              // silently override it back to "just me".
+              // canSeeMultipleScope is null while useDashboardData's scope
+              // check is still in flight -- deliberately NOT treated as
+              // "restricted" here (that was the bug: RelationPicker's own
+              // auto-select-self effect fires on first paint and, once it
+              // sets a value, canSeeMultipleScope resolving to true a moment
+              // later can no longer undo it, since the effect's own guard
+              // is `if (... || value || ...) return`). Only a CONFIRMED
+              // `false` narrows to self; unknown briefly renders "All" and
+              // corrects itself once the check resolves, same as a
+              // known-multi-view viewer would render from the start.
+              const autoSelectSelf = isScopeField
+                ? (hasSavedDefault ? false : canSeeMultipleScope === false)
+                : undefined;
+              return (
+                <div className="space-y-1">
+                  <RelationPicker
+                    linkedSystemTable={field.linked_system_table}
+                    linkedTableId={field.linked_system_table ? null : field.linked_table_id}
+                    displayField={field.linked_display_field}
+                    displayField2={field.linked_display_field_2}
+                    searchFieldKeys={field.linked_search_field_keys}
+                    filterColumn={field.linked_filter_column}
+                    filterValue={field.linked_filter_value}
+                    value={filters[field.id] || null}
+                    onSelect={id => onFilterChange(field.id, id)}
+                    placeholder={`All`}
+                    size={pillSize}
+                    autoSelectSelf={autoSelectSelf}
+                    // Pinned at the top of the dropdown -- narrowing to one
+                    // person is just a normal pick below, but getting back to
+                    // "everyone" from there needs to be exactly as easy, not a
+                    // separate hunt for the small X next to the current value.
+                    clearLabel="All"
+                  />
+                  {isScopeField && canSeeMultipleScope && (onSetViewDefault || onClearViewDefault) && (
+                    hasSavedDefault ? (
+                      <button
+                        type="button"
+                        onClick={() => onClearViewDefault?.(field.id)}
+                        className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 px-1"
+                      >
+                        ✓ Default view — click to remove
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onSetViewDefault?.(field.id, filters[field.id] || null)}
+                        className="text-[9px] font-bold text-slate-300 hover:text-indigo-600 px-1"
+                      >
+                        Set as my default view
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })()
           ) : field.field_type === 'boolean' ? (
             <select
               value={filters[field.id] ?? ''}

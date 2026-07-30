@@ -12,6 +12,9 @@ import { ensureDashboardWidgetsMigrated } from "@/lib/dashboardWidgets/ensureMig
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import { toRelativeDateToken, relativeDateFromToken, matchesRelativeDate } from "@/lib/dashboardWidgets/relativeDates";
+import { CURRENT_USER_SENTINEL, TEAM_SCOPE_SENTINEL } from "@/components/dashboard/RelationPicker";
+import { canViewMultipleTimeEntries } from "@/lib/teamScope";
+import { getFilterDefaults, setFilterDefault, clearFilterDefault } from "@/lib/services/dashboardFilterDefaults";
 
 // 'none' is a dashboard with no source table at all -- only ever meaningful
 // for table-independent widgets like public_task_page/public_document_page
@@ -204,6 +207,20 @@ export function useDashboardData(dashboardSlug: string) {
     setFilters(prev => ({ ...prev, [fieldId]: value }));
   }, []);
 
+  // Whether the signed-in viewer is allowed to see more than just their own
+  // rows on a $current_user/$team_scope filter field (e.g. Time Entry's
+  // Staff filter) -- gates DashboardFilterBar's "set as default view"
+  // control and, below, whether that field auto-narrows to "just me" on a
+  // fresh visit with no saved preference. null while unknown/not applicable
+  // (no such field on this dashboard, so never fetched).
+  const [canSeeMultipleScope, setCanSeeMultipleScope] = useState<boolean | null>(null);
+  // Field ids (company_table_fields.id) this user has an explicit saved
+  // default for on THIS dashboard -- includes an explicit "All" (see
+  // dashboardFilterDefaults.ts), not just a picked person, so
+  // DashboardFilterBar knows to suppress RelationPicker's own auto-select-
+  // self effect even when the saved default IS "All" (value null).
+  const [viewDefaultFieldIds, setViewDefaultFieldIds] = useState<Set<string>>(new Set());
+
   // Any date-type field in the filter bar defaults to today the first time
   // the dashboard's config + fields are both available -- e.g. a Time Entry
   // dashboard should open already scoped to today's entries (grid, summary
@@ -230,6 +247,62 @@ export function useDashboardData(dashboardSlug: string) {
       });
     }
   }, [dashboard, fields]);
+
+  // Seeds any $current_user/$team_scope filter field with this viewer's
+  // saved default (see lib/services/dashboardFilterDefaults.ts) -- e.g. a
+  // team lead who's set their Time Entry Staff filter to default to "All"
+  // gets that instead of RelationPicker's own always-narrow-to-self
+  // behavior (see DashboardFilterBar.tsx, which reads canSeeMultipleScope/
+  // viewDefaultFieldIds below to suppress that effect appropriately).
+  // Separate ref from defaultsSeededRef above -- this one waits on two
+  // network round trips (scope check + saved defaults), so it can legitimately
+  // still be pending after the date-defaults effect has already finished.
+  const viewDefaultsSeededRef = useRef(false);
+  useEffect(() => {
+    if (viewDefaultsSeededRef.current || !dashboard || fields.length === 0) return;
+    const filterBarWidget = dashboard.widgets.find(w => w.type === 'filter_bar');
+    if (!filterBarWidget || filterBarWidget.type !== 'filter_bar') { viewDefaultsSeededRef.current = true; return; }
+    const scopedFieldIds = filterBarWidget.config.fieldIds.filter(id => {
+      const f = fields.find(f => f.id === id);
+      return f && (f.linked_filter_value === CURRENT_USER_SENTINEL || f.linked_filter_value === TEAM_SCOPE_SENTINEL);
+    });
+    if (!scopedFieldIds.length) { viewDefaultsSeededRef.current = true; return; }
+    viewDefaultsSeededRef.current = true;
+    (async () => {
+      const [canSeeMultiple, defaults] = await Promise.all([
+        canViewMultipleTimeEntries(),
+        getFilterDefaults(dashboard.id),
+      ]);
+      setCanSeeMultipleScope(canSeeMultiple);
+      setViewDefaultFieldIds(new Set(scopedFieldIds.filter(id => id in defaults)));
+      const toSeed = scopedFieldIds.filter(id => id in defaults);
+      if (toSeed.length) {
+        setFilters(prev => {
+          const next = { ...prev };
+          for (const id of toSeed) if (next[id] === undefined) next[id] = defaults[id];
+          return next;
+        });
+      }
+    })();
+  }, [dashboard, fields]);
+
+  // Persists (or clears) this viewer's default for one $current_user/
+  // $team_scope filter field -- "All" is `value: null`, still a real saved
+  // preference (see dashboardFilterDefaults.ts). Optimistic on
+  // viewDefaultFieldIds so the UI flips immediately; the writes themselves
+  // are fire-and-forget best-effort, matching setFilter's own no-error-
+  // handling convention for this purely-cosmetic preference.
+  const setViewDefault = useCallback((fieldId: string, value: string | null) => {
+    if (!dashboard) return;
+    setViewDefaultFieldIds(prev => new Set(prev).add(fieldId));
+    setFilterDefault(dashboard.id, fieldId, value);
+  }, [dashboard]);
+
+  const clearViewDefault = useCallback((fieldId: string) => {
+    if (!dashboard) return;
+    setViewDefaultFieldIds(prev => { const next = new Set(prev); next.delete(fieldId); return next; });
+    clearFilterDefault(dashboard.id, fieldId);
+  }, [dashboard]);
 
   // Persists a single widget's config change (column reorder/resize from
   // DashboardGrid today) back into company_dashboards.widgets. Updates
@@ -358,6 +431,10 @@ export function useDashboardData(dashboardSlug: string) {
     recordsLoading: dashboardLoading || recordsLoading,
     filters,
     setFilter,
+    canSeeMultipleScope,
+    viewDefaultFieldIds,
+    setViewDefault,
+    clearViewDefault,
     quickAddPrefill,
     setQuickAddPrefill,
     summaryTiles,
