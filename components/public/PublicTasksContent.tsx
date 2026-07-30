@@ -235,7 +235,12 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   // marker should land on -- otherwise every recorded load time silently
   // excludes render time, which is exactly backwards when the render is
   // the suspect.
-  const domSettled = useDomSettled(!loading);
+  // 120ms, not the hook's 400ms default -- safe here specifically because
+  // the cache-warm path is now a genuine single-pass render (refresh()'s
+  // setData bails out to the same object reference when a revalidate
+  // confirms nothing changed, so there's no legitimate late second render
+  // to wait out).
+  const domSettled = useDomSettled(!loading, 120);
   useEffect(() => {
     if (domSettled) perfLogPageReady("public", "task page");
   }, [domSettled]);

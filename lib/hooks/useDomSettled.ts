@@ -12,7 +12,7 @@
 // suspect.
 import { useEffect, useState } from "react";
 
-const SETTLE_QUIET_MS = 400;
+const DEFAULT_SETTLE_QUIET_MS = 400;
 const MAX_WAIT_MS = 15000;
 
 // `active` should flip true the moment content that's worth measuring
@@ -20,7 +20,16 @@ const MAX_WAIT_MS = 15000;
 // again each time `active` goes back to false, so a second load cycle
 // (pageId/slug change, re-open) gets its own fresh settle measurement
 // instead of reporting stale-true from the first one.
-export function useDomSettled(active: boolean): boolean {
+//
+// `quietMs` (default 400, same as before) is how long the DOM must stay
+// untouched before "settled" fires -- lower it only for a caller whose
+// warm-cache path is already known to be a single-pass render (no
+// unconditional re-render after the fact -- see PublicClientUpdateContent's/
+// PublicTasksContent's applyStaffJson/refresh bail-if-unchanged comments).
+// For a caller where a late, legitimate second render is still possible,
+// leave this at the default: too short a window there would report "ready"
+// before content that's actually still arriving has appeared.
+export function useDomSettled(active: boolean, quietMs: number = DEFAULT_SETTLE_QUIET_MS): boolean {
   const [settled, setSettled] = useState(false);
 
   useEffect(() => {
@@ -43,7 +52,7 @@ export function useDomSettled(active: boolean): boolean {
 
     const scheduleSettled = () => {
       clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(markSettled, SETTLE_QUIET_MS);
+      debounceTimer = setTimeout(markSettled, quietMs);
     };
 
     const observer = new MutationObserver(scheduleSettled);
@@ -61,7 +70,7 @@ export function useDomSettled(active: boolean): boolean {
       clearTimeout(debounceTimer);
       clearTimeout(maxTimer);
     };
-  }, [active]);
+  }, [active, quietMs]);
 
   return settled;
 }
