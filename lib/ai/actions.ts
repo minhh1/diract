@@ -12,6 +12,7 @@ import { logTaskActivity } from "@/lib/taskActivityLog";
 import { triggerCalendarSync } from "@/lib/triggerCalendarSync";
 import { getGraphAppToken, ensureFolderPath, uploadFile, updateFileContent } from "@/lib/msGraph/onedrive";
 import { createBotFile, updateBotFile } from "@/lib/ai/botFiles";
+import { createProjectGmailLabel } from "@/lib/gmail/createProjectLabel";
 
 export interface ResolvedMatch {
   id: string;
@@ -421,6 +422,18 @@ export async function createProject(admin: any, companyId: string, userId: strin
   if (params.customFieldValues?.length) {
     await insertCustomFieldValues(admin, companyId, project.id, "projects", params.customFieldValues);
   }
+
+  // Best-effort, same as NewProjectModal.tsx's own fire-and-forget call to
+  // this route -- a bot-created project should still count as created even
+  // if Gmail label setup fails (e.g. company hasn't configured Gmail sync).
+  // Without this, a project created through the chat bot never got a Gmail
+  // label at all (confirmed live), unlike every other creation path.
+  try {
+    await createProjectGmailLabel(admin, companyId, project.id, userId);
+  } catch (err) {
+    console.error("[createProject] Gmail label creation failed:", err);
+  }
+
   return project;
 }
 
