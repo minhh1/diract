@@ -336,7 +336,7 @@ async function getProjectFieldsCore(companyId: string): Promise<{ fields: any[] 
       // supabase/migrations/20260730180000_custom_field_auto_numbering.sql)
       // -- the add-on's own create-project card (gmail-addon.gs) uses this
       // to hide/replace this field's input with an "auto-assigned" note.
-      autoNumber: !!f.auto_number_prefix,
+      autoNumber: f.auto_number_prefix != null, // != null, not truthiness: '' is a valid prefix (bare numbers)
     })),
   };
 }
