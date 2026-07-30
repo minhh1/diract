@@ -160,7 +160,14 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     const res = await fetch(`/api/public-tasks/${pageId}`);
     const json = await res.json();
     if (!res.ok) { setError(json.error || "Failed to load page"); return; }
-    setData(json);
+    // Bail out to the same object reference when this confirms the
+    // cache-warm paint in checkAuthAndLoad was already correct -- refresh()
+    // runs unconditionally on every visit regardless of that cache hit, so
+    // without this, a warm cache's instant paint was always immediately
+    // followed by an identical-looking but still fully re-rendered page,
+    // which (via useDomSettled's whole-document MutationObserver) resets
+    // the "page is ready" timer back to whenever this fetch finished.
+    setData(prev => JSON.stringify(prev) === JSON.stringify(json) ? prev : json);
     setActiveTab(prev => prev || json.tabs[0]?.userId || null);
     setError(null);
     writeCache(publicTasksCacheKey(pageId), json);

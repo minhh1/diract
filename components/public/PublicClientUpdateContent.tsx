@@ -120,8 +120,15 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
         const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, logCellChanges: true, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind };
         const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [] };
         setMode("client");
-        setMeta(meta);
-        setBoard(board);
+        // Bail out to the same object reference when this revalidate just
+        // confirms the cached paint above was already correct -- otherwise
+        // every visit forces a second full re-render of a potentially large
+        // MatterBoard even when nothing changed, which (via useDomSettled's
+        // whole-document MutationObserver) resets the "page is ready" timer
+        // right back to the slow live fetch, silently undoing the cached
+        // instant-paint's whole benefit.
+        setMeta(prev => JSON.stringify(prev) === JSON.stringify(meta) ? prev : meta);
+        setBoard(prev => JSON.stringify(prev) === JSON.stringify(board) ? prev : board);
         setLoading(false);
         writePinGatedCache(boardCacheKey(slug), cachedCode, { meta, board });
         return;
@@ -149,8 +156,20 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
   const applyStaffJson = useCallback((json: any) => {
     setMode("staff");
     setStaffPageId(json.page.id);
-    setMeta({ title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind });
-    setBoard({ groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] });
+    const nextMeta: PageMeta = { title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind };
+    const nextBoard: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
+    // Bail out to the same object reference when this call (the cache-warm
+    // paint, the live by-slug revalidate right after it, or a background
+    // reload after a mutation) doesn't actually change anything -- the live
+    // revalidate in load() below runs on EVERY visit regardless of the cache
+    // hit just before it, so without this a warm cache's instant paint was
+    // immediately followed by an identical-looking but still fully re-rendered
+    // board, which (via useDomSettled's whole-document MutationObserver)
+    // resets the "page is ready" timer back to whenever that live fetch
+    // finished -- i.e. the cache never actually shortened anything the user
+    // (or Admin > Performance) could see.
+    setMeta(prev => JSON.stringify(prev) === JSON.stringify(nextMeta) ? prev : nextMeta);
+    setBoard(prev => JSON.stringify(prev) === JSON.stringify(nextBoard) ? prev : nextBoard);
   }, []);
 
   // ── Try staff auth first; anything short of a clean 200 falls back ────
