@@ -7,7 +7,7 @@
 // the same insert_ledger_record()/createRecord() mechanics every other
 // ledger table in this app uses -- nothing here is a new data structure.
 import { useState } from "react";
-import { Plus, ArrowLeftRight, ShieldPlus, Printer, Eye, Loader2 } from "lucide-react";
+import { Plus, ArrowLeftRight, ShieldPlus, Printer, Eye } from "lucide-react";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import DepositFundsModal from "./DepositFundsModal";
 import TransferFundsModal from "./TransferFundsModal";
@@ -87,7 +87,18 @@ export default function TrustTransactionsTab({
           </thead>
           <tbody>
             {sorted.length === 0 ? (
-              <tr><td colSpan={9} className="text-center py-12 text-[11px] text-slate-300 italic">No transactions yet for this account</td></tr>
+              // trustTable.recordsLoading, not a new prop -- this is already
+              // available on the trustTable object every caller passes in.
+              // Confirmed live (screenshot, cold mobile Safari load): without
+              // this check, "No transactions yet" showed for ~1s on a first
+              // visit while trustTable.records was still empty because
+              // recordsLoading hadn't resolved yet -- misleading, since the
+              // account wasn't actually empty. Renders nothing (not a
+              // spinner) while loading -- the page's own progress bar
+              // (useProgressBarWhile) is what signals "still working".
+              trustTable.recordsLoading ? null : (
+                <tr><td colSpan={9} className="text-center py-12 text-[11px] text-slate-300 italic">No transactions yet for this account</td></tr>
+              )
             ) : sorted.map(r => (
               <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                 <td className="px-4 py-2.5 text-slate-600">{formatDate(r.values.date)}</td>

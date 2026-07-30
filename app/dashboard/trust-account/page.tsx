@@ -141,17 +141,24 @@ export default function TrustAccountPage() {
               )}
             </div>
             <div className="flex items-center gap-6">
+              {/* Confirmed live (cold mobile Safari load): these read as a
+                  confidently-wrong $0.00 for ~1s before trustTable/
+                  protectedTable's records actually land, since total/
+                  protectedTotal/available are computed straight from them.
+                  An em dash while still loading is honest without needing a
+                  spinner -- the page's own progress bar already covers
+                  "still working". */}
               <div className="text-right">
                 <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest">Protected</p>
-                <p className="text-[14px] font-bold text-slate-800">{money(protectedTotal)}</p>
+                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading || protectedTable.recordsLoading ? '—' : money(protectedTotal)}</p>
               </div>
               <div className="text-right">
                 <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">Available</p>
-                <p className="text-[14px] font-bold text-slate-800">{money(available)}</p>
+                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading || protectedTable.recordsLoading ? '—' : money(available)}</p>
               </div>
               <div className="text-right">
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</p>
-                <p className="text-[14px] font-bold text-slate-800">{money(total)}</p>
+                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading ? '—' : money(total)}</p>
               </div>
             </div>
           </div>
