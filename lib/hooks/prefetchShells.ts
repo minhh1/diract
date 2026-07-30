@@ -44,6 +44,8 @@ import {
 } from "./useSystemTableAsCustomTable";
 import type { CustomTable } from "./useCustomTables";
 import type { CompanyDashboard } from "./useDashboardData";
+import { publicTasksCacheKey } from "@/components/public/PublicTasksContent";
+import { staffClientUpdateCacheKey } from "@/components/public/PublicClientUpdateContent";
 
 const SYSTEM_TABLES = ['properties', 'entities', 'projects', 'tasks'] as const;
 
@@ -481,6 +483,54 @@ async function warmDashboardSourceSystemTable(tableName: SystemTableName, compan
   } catch {}
 }
 
+// A public_task_page/public_client_update_page widget's actual content
+// (components/public/PublicTasksContent.tsx / PublicClientUpdateContent.tsx)
+// comes from its own API route, not a direct client-side Supabase query --
+// unlike every other widget, nothing above touches it at all, so a
+// dashboard with one of these embedded still paid a fully cold fetch on
+// open even once everything else felt instant. Fetched here under the
+// current viewer's own bootstrap session, so authorization comes out
+// identical to a real open (a widget scoped to someone else -- e.g. a
+// 'self' task page -- just 404s/403s here same as it would for them, and is
+// silently left uncached rather than surfacing an error this early).
+async function warmPublicTaskPage(pageId: string): Promise<void> {
+  if (readCache(publicTasksCacheKey(pageId))) return;
+  try {
+    const res = await fetch(`/api/public-tasks/${pageId}`);
+    if (!res.ok) return;
+    writeCache(publicTasksCacheKey(pageId), await res.json());
+  } catch {}
+}
+async function warmStaffClientUpdatePage(slug: string): Promise<void> {
+  if (readCache(staffClientUpdateCacheKey(slug))) return;
+  try {
+    const res = await fetch(`/api/client-update-pages/by-slug/${slug}`);
+    if (!res.ok) return;
+    writeCache(staffClientUpdateCacheKey(slug), await res.json());
+  } catch {}
+}
+
+// Scans every dashboard's (already-migrated) widgets for these two types --
+// deduped, since the same page/board could in principle be embedded on more
+// than one dashboard -- and warms each exactly once. Widgets that haven't
+// created their page/board yet (config.pageId/slug still null -- see
+// PublicTaskPageWidget/PublicClientUpdatePageWidget's own doc comments)
+// simply contribute nothing here.
+function warmEmbeddedPublicPages(dashboardList: CompanyDashboard[]): Promise<void> {
+  const pageIds = new Set<string>();
+  const slugs = new Set<string>();
+  for (const dash of dashboardList) {
+    for (const w of dash.widgets || []) {
+      if (w.type === 'public_task_page' && w.config.pageId) pageIds.add(w.config.pageId);
+      else if (w.type === 'public_client_update_page' && w.config.slug) slugs.add(w.config.slug);
+    }
+  }
+  return Promise.all([
+    ...[...pageIds].map(id => warmPublicTaskPage(id).catch(() => {})),
+    ...[...slugs].map(slug => warmStaffClientUpdatePage(slug).catch(() => {})),
+  ]).then(() => undefined);
+}
+
 // Parallel across both tables and dashboards -- this is now a blocking
 // bootstrap step (see this file's top doc comment), so the goal is the
 // opposite of the sequential loop this used to be: bound the wait by the
@@ -537,6 +587,13 @@ async function prefetchAllShells(
       .filter(name => dashboardList.some(d => d.source_table_type === name))
       .map(name => warmDashboardSourceSystemTable(name, companyId).catch(() => {})),
   ]);
+
+  // Run after the above (not folded into that same Promise.all) --
+  // dashboardList's widgets are only guaranteed fully migrated once the
+  // dashboard-shell loop's own await finishes; scanning for embedded
+  // public-page widgets any earlier could race a legacy, not-yet-migrated
+  // dashboard and miss whatever only exists post-conversion.
+  await warmEmbeddedPublicPages(dashboardList);
 }
 
 let started = false;

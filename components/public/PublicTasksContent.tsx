@@ -15,9 +15,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { readShellCache } from "@/lib/shellCache";
+import { readCache, writeCache } from "@/lib/queryCache";
 import { tableShellKey } from "@/lib/hooks/prefetchShells";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
+import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign, Calendar as CalendarIcon } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
@@ -73,6 +75,15 @@ interface FormOptions {
 }
 interface PageData { title: string; scopeName: string; scope: string; columns: string[]; companyId: string; tabs: Tab[]; formOptions: FormOptions; }
 
+// Exported so lib/hooks/prefetchShells.ts's bootstrap warmer can pre-fetch
+// this exact endpoint for every public_task_page widget across every
+// dashboard during login (under the current viewer's own session, so
+// authorization is identical to a real open) and seed this same slot --
+// unlike the rest of the app's dashboards/tables, this component's data
+// comes from its own API route, not a direct client-side Supabase query the
+// bootstrap could otherwise warm generically.
+export const publicTasksCacheKey = (pageId: string) => `public_tasks_${pageId}`;
+
 // Columns whose content can run long (project names, people's names) should
 // wrap within their cell instead of forcing the table wider — everything
 // else (dates, status, cost) is short enough to stay on one line.
@@ -101,6 +112,11 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   const [showTemplates, setShowTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
   const [organisedView, setOrganisedView] = useState(false);
+  // Embedded (inside a dashboard widget) has the app's shared top progress
+  // bar available -- drive that instead of the full-panel spinner below,
+  // which only makes sense for the standalone /public/tasks/[pageId] route
+  // (no ProgressBarProvider out there, so this safely no-ops when !embedded).
+  useProgressBarWhile(loading);
   // Time & Fee Entries is a law-firm-only custom table (installed from the Law Firm
   // template, slug 'time-fee-entries') — most companies won't have it at all, in which
   // case timeFeesTable stays null and the per-task "Add to Time & Fees" action is hidden
@@ -138,6 +154,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     setData(json);
     setActiveTab(prev => prev || json.tabs[0]?.userId || null);
     setError(null);
+    writeCache(publicTasksCacheKey(pageId), json);
   }, [pageId]);
 
   const checkAuthAndLoad = useCallback(async () => {
@@ -161,10 +178,23 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     setSignedIn(!!user);
     setAuthChecked(true);
     if (!user) { setLoading(false); return; }
+    // Paint instantly from whatever the login bootstrap (or a previous visit
+    // this session) already cached for this exact page -- see
+    // prefetchShells.ts's warmEmbeddedPublicPages, which pre-fetches this
+    // same endpoint for every public_task_page widget across every
+    // dashboard during login, under this same key. refresh() below still
+    // always runs regardless of this hit -- purely a "show something now"
+    // optimization, not a substitute for the real (re)fetch.
+    const cached = readCache<PageData>(publicTasksCacheKey(pageId));
+    if (cached) {
+      setData(cached);
+      setActiveTab(prev => prev || cached.tabs[0]?.userId || null);
+      setLoading(false);
+    }
     await refresh();
     perfLog("public task page: data resolved");
     setLoading(false);
-  }, [refresh]);
+  }, [pageId, refresh]);
 
   useEffect(() => { checkAuthAndLoad(); }, [checkAuthAndLoad]);
 
@@ -477,7 +507,8 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   }
 
   if (loading) {
-    return <div className={embedded ? "flex items-center justify-center py-12" : "min-h-screen flex items-center justify-center bg-slate-50"}><Loader2 className="animate-spin text-slate-400" /></div>;
+    if (embedded) return null;
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-slate-400" /></div>;
   }
 
   if (error) {
