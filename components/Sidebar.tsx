@@ -821,15 +821,6 @@ export default function Sidebar() {
   }, [ctxUserId, pathname]);
 
   useEffect(() => {
-    // useCustomDashboards() here is a separate hook instance from the one the
-    // builder/view pages use, so creating/deleting a dashboard elsewhere
-    // doesn't update this list on its own — re-fetch on every route change
-    // (the delete/save flows navigate away immediately after) instead of
-    // requiring a full page reload to see the sidebar catch up.
-    refetchDashboards();
-  }, [pathname, refetchDashboards]);
-
-  useEffect(() => {
     if (!showCompanySwitcher) return;
     const handleClick = () => setShowCompanySwitcher(false);
     document.addEventListener('click', handleClick);

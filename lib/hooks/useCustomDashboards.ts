@@ -115,6 +115,26 @@ export function warmCustomDashboards(userId?: string | null): Promise<void> {
   })();
 }
 
+// Every mounted useCustomDashboards() instance registers its own re-check
+// here, so a mutation ANYWHERE in the app (the builder's save/delete, the
+// trash page's restore/permanent-delete, admin's is_default toggle) can tell
+// every currently-mounted instance -- most importantly the Sidebar's, which
+// stays mounted across the whole session in the persistent layout -- to
+// catch up immediately, without each mutation site needing a reference to
+// that specific instance. Replaces a previous approach where the Sidebar
+// force-refetched (bypassing its own cache entirely) on every single route
+// change on the theory that "the create/delete/save flows navigate away
+// right after" -- correct in spirit, but it meant EVERY navigation anywhere
+// paid a live re-fetch, not just the ones that actually followed a mutation.
+const listeners = new Set<() => void>();
+
+export function invalidateCustomDashboards(): void {
+  cachedDashboards = null;
+  cacheExpiresAt = 0;
+  inFlight = null;
+  listeners.forEach(fn => fn());
+}
+
 // Mirrors lib/hooks/useCustomTables.ts's shape/pattern for the sidebar list.
 // userId is optional (falls back to an auth.getUser() call) -- pass it when
 // already resolved via useCompany() to skip that extra round trip.
@@ -130,7 +150,7 @@ export function useCustomDashboards(userId?: string | null): {
 
   useEffect(() => {
     let active = true;
-    (async () => {
+    const load = async () => {
       const uid = await resolveUserId(userId);
       if (!active) return;
       if (isCacheWarm(uid)) {
@@ -142,21 +162,15 @@ export function useCustomDashboards(userId?: string | null): {
       if (!active) return;
       setDashboards(d);
       setLoading(false);
-    })();
-    return () => { active = false; };
+    };
+    load();
+    listeners.add(load);
+    return () => { active = false; listeners.delete(load); };
   }, [userId]);
 
   const refetch = useCallback(() => {
-    cachedDashboards = null;
-    inFlight = null;
-    setLoading(true);
-    (async () => {
-      const uid = await resolveUserId(userId);
-      const d = await fetchDashboards(uid);
-      setDashboards(d);
-      setLoading(false);
-    })();
-  }, [userId]);
+    invalidateCustomDashboards();
+  }, []);
 
   return { dashboards, loading, refetch };
 }

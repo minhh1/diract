@@ -19,6 +19,7 @@ import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useSystemTableAsCustomTable, SYSTEM_TABLE_NAMES, type SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
 import { dashboardShellKey, type DashboardSourceKind } from "@/lib/hooks/useDashboardData";
+import { invalidateCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { ensureDashboardWidgetsMigrated, type RawCompanyDashboardRow } from "@/lib/dashboardWidgets/ensureMigrated";
@@ -254,6 +255,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       if (err) { setError(err.message); return; }
       if (data) {
         logSchemaChange({ companyId, actorId: userId, entityType: 'company_dashboard', entityId: data.id, entityLabel: data.name, action: 'create', after: data });
+        invalidateCustomDashboards();
         router.push(`/dashboard/${data.slug}`);
       }
       return;
@@ -269,6 +271,9 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
       // this, the view page could show this edit's pre-save state for up
       // to 5 minutes if it was visited recently enough to still be warm.
       clearShellCache(dashboardShellKey(companyId, data.slug));
+      // Sidebar's list (name/icon/colour/order) can also change here --
+      // see useCustomDashboards.ts's invalidateCustomDashboards doc comment.
+      invalidateCustomDashboards();
       router.push(`/dashboard/${data.slug}`);
     }
   };
@@ -290,6 +295,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     if (!window.confirm(`Delete "${name}"? This moves it to Trash and can be restored later.`)) return;
     await supabase.from('company_dashboards').update({ deleted_at: new Date().toISOString() }).eq('id', dashboardId);
     logSchemaChange({ companyId, actorId: userId, entityType: 'company_dashboard', entityId: dashboardId, entityLabel: name, action: 'delete', before });
+    invalidateCustomDashboards();
     router.push('/dashboard/properties');
   };
 

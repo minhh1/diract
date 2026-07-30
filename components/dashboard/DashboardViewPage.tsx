@@ -8,6 +8,7 @@ import { Settings, LayoutDashboard, Trash2, Maximize2, Minimize2 } from "lucide-
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { useCompany } from "@/components/CompanyContext";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
+import { invalidateCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 import { supabase } from "@/lib/supabase";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
@@ -81,6 +82,7 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
     if (!window.confirm(`Delete "${dashboard.name}"? This moves it to Trash and can be restored later.`)) return;
     await supabase.from('company_dashboards').update({ deleted_at: new Date().toISOString() }).eq('id', dashboard.id);
     logSchemaChange({ companyId, actorId: userId, entityType: 'company_dashboard', entityId: dashboard.id, entityLabel: dashboard.name, action: 'delete', before: dashboard });
+    invalidateCustomDashboards();
     router.push('/dashboard/properties');
   };
 

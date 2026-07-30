@@ -27,6 +27,7 @@ import { Trash2, RotateCcw, Loader2, Table2, AlertTriangle, Search, Shield } fro
 import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
+import { invalidateCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
@@ -255,6 +256,7 @@ export default function TrashPage() {
           const { data: before } = await supabase.from("company_dashboards").select("*").eq("id", d.id).single();
           const { data: after } = await supabase.from("company_dashboards").update({ deleted_at: null }).eq("id", d.id).select().single();
           if (companyId && before && after) logSchemaChange({ companyId, actorId: userId, entityType: "company_dashboard", entityId: d.id, entityLabel: d.name, action: "update", before, after });
+          invalidateCustomDashboards();
         },
         purge: async () => {
           if (!window.confirm(`Permanently delete "${d.name}"? This cannot be undone.`)) return;
