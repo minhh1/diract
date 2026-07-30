@@ -255,13 +255,25 @@ export async function findExistingCustomFieldValue(
     .eq("company_id", companyId)
     .eq("field_id", fieldId)
     .eq("table_name", tableName)
-    .eq(column, coerced)
+    .eq(column, coerced);
+  if (!data?.length) return null;
+
+  // A value row survives its record's soft-delete (deleting a project doesn't
+  // cascade-clean its company_custom_field_values), so without this a Matter
+  // Number that only exists on a DELETED project would still block creating
+  // a new project with that same number -- confirmed live via the Diract AI
+  // Google Chat bot ("Matter Number is already used" on a matter the user
+  // had already deleted). Re-checks every candidate record_id against the
+  // live (non-deleted) table instead of trusting the first value row found.
+  const { data: record } = await admin
+    .from(tableName)
+    .select("id, name")
+    .in("id", data.map((d: { record_id: string }) => d.record_id))
+    .is("deleted_at", null)
     .limit(1)
     .maybeSingle();
-  if (!data) return null;
-
-  const { data: record } = await admin.from(tableName).select("name").eq("id", data.record_id).maybeSingle();
-  return { recordId: data.record_id, recordName: record?.name ?? "an existing record" };
+  if (!record) return null;
+  return { recordId: record.id, recordName: record.name ?? "an existing record" };
 }
 
 export interface CustomFieldValueInput {
