@@ -514,13 +514,43 @@ async function warmStaffClientUpdatePage(slug: string): Promise<void> {
   } catch {}
 }
 
+// Every client_update_page / public_task_page this viewer can see, straight
+// from the same list routes Settings > Public pages itself calls -- not
+// just the ones a dashboard happens to embed as a widget (see
+// warmEmbeddedPublicPages below, which only covers those). Without this, a
+// page managed purely via Settings (never dropped onto a dashboard) never
+// got warmed at all, so every visit -- including a staff member repeatedly
+// opening their own company's page to check on it -- paid the full cold
+// by-slug/by-id fetch every single time, which is what showed up as
+// "detailed table page"/"task page" being the slowest things in the app in
+// Admin > Performance despite having near-zero actual data to load.
+async function listAllPublicPageIdsAndSlugs(): Promise<{ pageIds: string[]; slugs: string[] }> {
+  const [taskRes, updateRes] = await Promise.all([
+    fetch('/api/public-tasks/list').catch(() => null),
+    fetch('/api/client-update-pages/list').catch(() => null),
+  ]);
+  const [taskJson, updateJson] = await Promise.all([
+    taskRes?.ok ? taskRes.json().catch(() => null) : null,
+    updateRes?.ok ? updateRes.json().catch(() => null) : null,
+  ]);
+  return {
+    pageIds: ((taskJson?.pages || []) as Array<{ id: string }>).map(p => p.id),
+    slugs: ((updateJson?.pages || []) as Array<{ slug: string }>).map(p => p.slug),
+  };
+}
+
 // Scans every dashboard's (already-migrated) widgets for these two types --
 // deduped, since the same page/board could in principle be embedded on more
 // than one dashboard -- and warms each exactly once. Widgets that haven't
 // created their page/board yet (config.pageId/slug still null -- see
 // PublicTaskPageWidget/PublicClientUpdatePageWidget's own doc comments)
-// simply contribute nothing here.
-function warmEmbeddedPublicPages(dashboardList: CompanyDashboard[]): Promise<void> {
+// simply contribute nothing here. Unioned with the full company-wide list
+// above (kicked off in parallel by the caller, not re-fetched here) so
+// standalone, non-embedded pages get exactly the same warm treatment.
+function warmEmbeddedPublicPages(
+  dashboardList: CompanyDashboard[],
+  allPagesPromise: Promise<{ pageIds: string[]; slugs: string[] }>,
+): Promise<void> {
   const pageIds = new Set<string>();
   const slugs = new Set<string>();
   for (const dash of dashboardList) {
@@ -529,10 +559,14 @@ function warmEmbeddedPublicPages(dashboardList: CompanyDashboard[]): Promise<voi
       else if (w.type === 'public_client_update_page' && w.config.slug) slugs.add(w.config.slug);
     }
   }
-  return Promise.all([
-    ...[...pageIds].map(id => warmPublicTaskPage(id).catch(() => {})),
-    ...[...slugs].map(slug => warmStaffClientUpdatePage(slug).catch(() => {})),
-  ]).then(() => undefined);
+  return allPagesPromise.then(({ pageIds: allPageIds, slugs: allSlugs }) => {
+    allPageIds.forEach(id => pageIds.add(id));
+    allSlugs.forEach(slug => slugs.add(slug));
+    return Promise.all([
+      ...[...pageIds].map(id => warmPublicTaskPage(id).catch(() => {})),
+      ...[...slugs].map(slug => warmStaffClientUpdatePage(slug).catch(() => {})),
+    ]).then(() => undefined);
+  });
 }
 
 // Parallel across both tables and dashboards -- this is now a blocking
@@ -553,6 +587,11 @@ async function prefetchAllShells(
   const { data: dashboards } = await supabase
     .from('company_dashboards').select('*').is('deleted_at', null).order('display_order');
   const dashboardList = (dashboards || []) as (CompanyDashboard & { id: string; widgets_migrated_at: string | null })[];
+
+  // Kicked off now (not awaited until warmEmbeddedPublicPages needs it
+  // below) so its round trip overlaps with everything else in this
+  // function instead of adding its own sequential delay to bootstrap.
+  const allPublicPagesPromise = listAllPublicPageIdsAndSlugs();
 
   await Promise.all([
     ...tableList.map(tbl => prefetchTableFields(tbl, companyId).catch(() => {})),
@@ -596,8 +635,10 @@ async function prefetchAllShells(
   // dashboardList's widgets are only guaranteed fully migrated once the
   // dashboard-shell loop's own await finishes; scanning for embedded
   // public-page widgets any earlier could race a legacy, not-yet-migrated
-  // dashboard and miss whatever only exists post-conversion.
-  await warmEmbeddedPublicPages(dashboardList);
+  // dashboard and miss whatever only exists post-conversion. allPublicPagesPromise
+  // itself started well before this point, so by now it's likely already
+  // resolved and this adds no real extra wait.
+  await warmEmbeddedPublicPages(dashboardList, allPublicPagesPromise);
 }
 
 let started = false;
