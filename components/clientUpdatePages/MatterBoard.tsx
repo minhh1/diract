@@ -1562,12 +1562,13 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 history button, a different, per-cell hover). Lets the sticky
                 columns below pick up the SAME hover state as the row itself:
                 without it, an uncolored row's hover is hover-only
-                (hover:bg-slate-50) while its sticky columns had an always-on
-                static bg (sm:bg-white) with no hover variant at all, so
-                hovering such a row visibly showed two different shades where
-                the sticky column met the rest of the row. */}
-            <tr className={`group/row border-b ${expanded ? "border-transparent" : "border-slate-50 last:border-0"} ${rowColorClasses ? rowColorClasses.row : "hover:bg-slate-50"}`}>
-              <td className={`sm:sticky sm:left-0 sm:z-10 ${rowColorClasses?.smRow || "sm:bg-white sm:group-hover/row:bg-slate-50"}`}>
+                (hover:bg-indigo-50/20, matching MasterTable's row hover) while
+                its sticky columns had an always-on static bg (sm:bg-white)
+                with no hover variant at all, so hovering such a row visibly
+                showed two different shades where the sticky column met the
+                rest of the row. */}
+            <tr className={`group/row border-b ${expanded ? "border-transparent" : "border-slate-50 last:border-0"} ${rowColorClasses ? rowColorClasses.row : "hover:bg-indigo-50/20"}`}>
+              <td className={`sm:sticky sm:left-0 sm:z-10 ${rowColorClasses?.smRow || "sm:bg-white sm:group-hover/row:bg-indigo-50/20"}`}>
                 <button onClick={() => setExpandedId(expanded ? null : item.id)} title={expanded ? "Collapse" : "Expand for notes"}
                   className="flex items-center justify-center w-8 h-8 text-slate-300 hover:text-indigo-600 transition-colors">
                   <ChevronRight size={13} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
@@ -1656,7 +1657,7 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
   // color-coding of its own (frozenBg is only passed down for a color-coded
   // row, which already matches the row's own always-on bg with no hover
   // mismatch to fix).
-  const frozenClass = frozen ? `sm:sticky sm:left-8 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white sm:group-hover/row:bg-slate-50"}` : "";
+  const frozenClass = frozen ? `sm:sticky sm:left-8 sm:z-10 sm:border-r sm:border-slate-200 ${frozenBg || "sm:bg-white sm:group-hover/row:bg-indigo-50/20"}` : "";
 
   const historyButton = onShowHistory && (
     <button onClick={e => { e.stopPropagation(); onShowHistory(); }} title="See what changed"

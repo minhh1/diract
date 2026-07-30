@@ -551,8 +551,8 @@
 .dark .group:hover .group-hover\:text-emerald-500 { color: #6ee7b0; }
 .dark .group:hover .group-hover\:text-purple-500 { color: #c6a3f5; }
 .dark .group:hover .group-hover\:text-purple-700 { color: #dcc5f9; }
-.dark .group\/row:hover .group-hover\/row\:bg-slate-50,
-.dark .group\/row:hover .sm\:group-hover\/row\:bg-slate-50 { background-color: #262624; }
+.dark .group\/row:hover .group-hover\/row\:bg-indigo-50\/20,
+.dark .group\/row:hover .sm\:group-hover\/row\:bg-indigo-50\/20 { background-color: #211f3a; }
 .dark .group\/field:hover .group-hover\/field\:text-indigo-400 { color: #938fef; }
 .dark .group\/field:hover .group-hover\/field\:text-indigo-600 { color: #a5a2f5; }
 
@@ -584,6 +584,21 @@
 .dark .focus\:ring-violet-100:focus { --tw-ring-color: #2c2657; }
 .dark .focus\:ring-slate-100:focus { --tw-ring-color: #38362f; }
 .dark .focus-within\:ring-indigo-100:focus-within { --tw-ring-color: #322f72; }
+
+/* ── sm: responsive-prefix coverage ───────────────────────────────────
+   Same gap again -- `sm:bg-X` compiles to its own selector (media-query
+   gated), separate from the plain `.bg-X` rule, so a sticky/pinned table
+   column using `sm:bg-white` (desktop-only) was still rendering bright
+   white in dark mode -- e.g. MatterBoard's/GenericMasterTable's frozen
+   NAME column staying white while the rest of the row went dark. */
+.dark .sm\:bg-white { background-color: #2d2c2a; }
+.dark .sm\:bg-slate-100 { background-color: #34322e; }
+.dark .sm\:border-slate-200 { border-color: #46443b; }
+.dark .sm\:bg-red-50 { background-color: #3f1d1a; }
+.dark .sm\:bg-amber-50 { background-color: #3d2f14; }
+.dark .sm\:bg-emerald-50 { background-color: #123326; }
+.dark .sm\:bg-blue-50 { background-color: #142b47; }
+.dark .sm\:bg-purple-50 { background-color: #2c1d47; }
 
 /* ── One-off icon overrides ──────────────────────────────────────────
    A handful of icons need to diverge from their element's own blanket
