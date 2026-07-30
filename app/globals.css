@@ -438,6 +438,153 @@
 .dark .bg-fuchsia-50 { background-color: #351a3d; }
 .dark .text-fuchsia-600 { color: #eba3f0; }
 
+/* ── Hover-state coverage ──────────────────────────────────────────────
+   Tailwind compiles a `hover:bg-X` utility into its OWN selector
+   (`.hover\:bg-X:hover`), entirely separate from the plain `.bg-X` rule
+   above -- so every hover: variant used anywhere in the app was still
+   falling through to its original LIGHT-mode color on hover, at full
+   opacity for a plain hover:bg-slate-50 or partial opacity for something
+   like hover:bg-indigo-50/20. Confirmed live (screenshot): hovering a
+   table row flashed a jarring near-white patch instead of the intended
+   dark surface. Reuses the exact same values as each class's own base
+   override above -- a hover state should land on the same color that
+   class already resolves to elsewhere, not a new one. */
+.dark .hover\:bg-slate-50:hover { background-color: #262624; }
+.dark .hover\:bg-slate-50\/50:hover { background-color: #2d2c2a; }
+.dark .hover\:bg-slate-50\/60:hover { background-color: #2f2e2b; }
+.dark .hover\:bg-slate-100:hover { background-color: #34322e; }
+.dark .hover\:bg-slate-200:hover { background-color: #3f3d37; }
+.dark .hover\:bg-slate-700:hover { background-color: #2b2925; }
+.dark .hover\:bg-slate-800:hover { background-color: #211f1c; }
+.dark .hover\:bg-slate-900:hover { background-color: #171614; }
+.dark .hover\:border-slate-200:hover { border-color: #46443b; }
+.dark .hover\:border-slate-300:hover { border-color: #55534a; }
+.dark .hover\:border-slate-400:hover { border-color: #6b6960; }
+.dark .hover\:text-slate-300:hover { color: #726f66; }
+.dark .hover\:text-slate-500:hover { color: #a3a196; }
+.dark .hover\:text-slate-600:hover { color: #bebcb0; }
+.dark .hover\:text-slate-700:hover { color: #d6d4c7; }
+.dark .hover\:text-slate-800:hover { color: #e8e6da; }
+.dark .hover\:text-slate-900:hover { color: #f5f3ea; }
+
+.dark .hover\:bg-indigo-50:hover { background-color: #211f3a; }
+.dark .hover\:bg-indigo-50\/20:hover { background-color: #211f3a; }
+.dark .hover\:bg-indigo-50\/30:hover { background-color: #262351; }
+.dark .hover\:bg-indigo-50\/50:hover { background-color: #292759; }
+.dark .hover\:bg-indigo-100:hover { background-color: #292759; }
+.dark .hover\:bg-indigo-400\/20:hover { background-color: #6f6bc7; }
+.dark .hover\:bg-indigo-500:hover { background-color: #7875e0; }
+.dark .hover\:bg-indigo-600:hover { background-color: #6c68f0; }
+.dark .hover\:bg-indigo-700:hover { background-color: #7e7bf5; }
+.dark .hover\:border-indigo-100:hover { border-color: #322f72; }
+.dark .hover\:border-indigo-200:hover { border-color: #3d3a8a; }
+.dark .hover\:border-indigo-300:hover { border-color: #4f4aa8; }
+.dark .hover\:border-indigo-400:hover { border-color: #6f6bc7; }
+.dark .hover\:border-indigo-500:hover { border-color: #7875e0; }
+.dark .hover\:border-indigo-600:hover { border-color: #6c68f0; }
+.dark .hover\:text-indigo-400:hover { color: #938fef; }
+.dark .hover\:text-indigo-500:hover { color: #a09dfa; }
+.dark .hover\:text-indigo-600:hover { color: #a5a2f5; }
+.dark .hover\:text-indigo-700:hover { color: #b7b4f7; }
+.dark .hover\:text-indigo-800:hover { color: #c9c7f9; }
+
+.dark .hover\:bg-red-50:hover { background-color: #3f1d1a; }
+.dark .hover\:bg-red-100:hover { background-color: #4d221d; }
+.dark .hover\:bg-red-600:hover { background-color: #6e2620; }
+.dark .hover\:bg-red-700:hover { background-color: #7a2a22; }
+.dark .hover\:border-red-100:hover { border-color: #5c231e; }
+.dark .hover\:border-red-300:hover { border-color: #7f3128; }
+.dark .hover\:text-red-500:hover { color: #f8767f; }
+.dark .hover\:text-red-600:hover { color: #fa8a8a; }
+
+.dark .hover\:bg-amber-50:hover { background-color: #3d2f14; }
+.dark .hover\:bg-amber-100:hover { background-color: #4a3a17; }
+.dark .hover\:bg-amber-200:hover { background-color: #58441a; }
+.dark .hover\:bg-amber-600:hover { background-color: #b9862f; }
+.dark .hover\:bg-amber-700:hover { background-color: #cf9147; }
+.dark .hover\:border-amber-400:hover { border-color: #8a6a2a; }
+.dark .hover\:text-amber-500:hover { color: #f5d495; }
+.dark .hover\:text-amber-600:hover { color: #f7dcac; }
+.dark .hover\:text-amber-700:hover { color: #f9e4c0; }
+
+.dark .hover\:bg-emerald-50:hover { background-color: #123326; }
+.dark .hover\:bg-emerald-100:hover { background-color: #163d2e; }
+.dark .hover\:border-emerald-200:hover { border-color: #235942; }
+.dark .hover\:border-emerald-500:hover { border-color: #34d399; }
+.dark .hover\:text-emerald-500:hover { color: #6ee7b0; }
+.dark .hover\:text-emerald-600:hover { color: #7feabb; }
+.dark .hover\:text-emerald-700:hover { color: #92eec7; }
+
+.dark .hover\:bg-blue-200:hover { background-color: #1c3e66; }
+
+.dark .hover\:bg-violet-50:hover { background-color: #241f47; }
+.dark .hover\:border-violet-300:hover { border-color: #453c8f; }
+
+.dark .hover\:bg-sky-600:hover { background-color: #17415a; }
+.dark .hover\:bg-sky-700:hover { background-color: #1f4f6d; }
+.dark .hover\:text-sky-600:hover { color: #9cd8f3; }
+
+.dark .hover\:bg-rose-100:hover { background-color: #471a29; }
+.dark .hover\:text-rose-500:hover { color: #f6a8c1; }
+
+.dark .hover\:bg-purple-50:hover { background-color: #2c1d47; }
+.dark .hover\:bg-purple-100:hover { background-color: #352457; }
+.dark .hover\:text-purple-500:hover { color: #c6a3f5; }
+.dark .hover\:text-purple-700:hover { color: #dcc5f9; }
+
+.dark .hover\:bg-cyan-100:hover { background-color: #143d4d; }
+
+/* ── group-hover: coverage ─────────────────────────────────────────────
+   Same gap as hover: above, for group-hover:/group-hover\/name: variants
+   -- e.g. the group\/row:bg-slate-50 fix just added to MatterBoard.tsx's
+   pinned-column-vs-hover mismatch wasn't actually taking effect in dark
+   mode until this was added, for the exact same reason. */
+.dark .group:hover .group-hover\:bg-slate-100 { background-color: #34322e; }
+.dark .group:hover .group-hover\:bg-indigo-500 { background-color: #7875e0; }
+.dark .group:hover .group-hover\:text-indigo-400 { color: #938fef; }
+.dark .group:hover .group-hover\:text-indigo-500 { color: #a09dfa; }
+.dark .group:hover .group-hover\:text-indigo-600 { color: #a5a2f5; }
+.dark .group:hover .group-hover\:text-indigo-700 { color: #b7b4f7; }
+.dark .group:hover .group-hover\:border-indigo-300 { border-color: #4f4aa8; }
+.dark .group:hover .group-hover\:border-indigo-400 { border-color: #6f6bc7; }
+.dark .group:hover .group-hover\:text-amber-600 { color: #f7dcac; }
+.dark .group:hover .group-hover\:text-emerald-500 { color: #6ee7b0; }
+.dark .group:hover .group-hover\:text-purple-500 { color: #c6a3f5; }
+.dark .group:hover .group-hover\:text-purple-700 { color: #dcc5f9; }
+.dark .group\/row:hover .group-hover\/row\:bg-slate-50,
+.dark .group\/row:hover .sm\:group-hover\/row\:bg-slate-50 { background-color: #262624; }
+.dark .group\/field:hover .group-hover\/field\:text-indigo-400 { color: #938fef; }
+.dark .group\/field:hover .group-hover\/field\:text-indigo-600 { color: #a5a2f5; }
+
+/* ── has-[:checked]: coverage ──────────────────────────────────────────
+   Same gap again, for the `has-[:checked]:bg-X`/`has-[:checked]:border-X`
+   variant used on radio/checkbox option cards (e.g. the "Who can view
+   this" picker) -- its own selector, so the selected-option highlight was
+   still rendering at full light-mode brightness against a dark card. */
+.dark .has-\[\:checked\]\:bg-indigo-50:has(:checked) { background-color: #211f3a; }
+.dark .has-\[\:checked\]\:border-indigo-400:has(:checked) { border-color: #6f6bc7; }
+
+/* ── focus:/focus-within: coverage ────────────────────────────────────
+   Same gap again -- `focus:border-X`/`focus:ring-X` are separate
+   selectors from the base `.border-X`/`.ring-X` rules, so every text
+   input's focus ring (used on nearly every form field in the app) was
+   still flashing its original light-mode color on focus. Reuses the
+   same values as each class's existing base/ring override above. */
+.dark .focus\:border-indigo-300:focus { border-color: #4f4aa8; }
+.dark .focus\:border-indigo-400:focus { border-color: #6f6bc7; }
+.dark .focus\:border-indigo-500:focus { border-color: #7875e0; }
+.dark .focus\:border-sky-400:focus { border-color: #4093c4; }
+.dark .focus\:border-emerald-500:focus { border-color: #34d399; }
+.dark .focus\:border-amber-400:focus { border-color: #8a6a2a; }
+.dark .focus\:ring-indigo-100:focus { --tw-ring-color: #322f72; }
+.dark .focus\:ring-red-100:focus { --tw-ring-color: #5c231e; }
+.dark .focus\:ring-teal-100:focus { --tw-ring-color: #1c4a4a; }
+.dark .focus\:ring-purple-100:focus { --tw-ring-color: #352457; }
+.dark .focus\:ring-amber-100:focus { --tw-ring-color: #58441a; }
+.dark .focus\:ring-violet-100:focus { --tw-ring-color: #2c2657; }
+.dark .focus\:ring-slate-100:focus { --tw-ring-color: #38362f; }
+.dark .focus-within\:ring-indigo-100:focus-within { --tw-ring-color: #322f72; }
+
 /* ── One-off icon overrides ──────────────────────────────────────────
    A handful of icons need to diverge from their element's own blanket
    color override above (e.g. still carry text-slate-300 for light mode,
