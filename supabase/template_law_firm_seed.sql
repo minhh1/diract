@@ -39,6 +39,7 @@ DECLARE
   v_timefees_table_id uuid;
   v_disb_table_id uuid;
   v_trust_table_id uuid;
+  v_receipts_table_id uuid;
   v_leads_table_id uuid;
   v_leadact_table_id uuid;
 BEGIN
@@ -167,6 +168,21 @@ BEGIN
   UPDATE template_definition_table_fields SET display_order = 15
     WHERE template_table_id = v_invoices_table_id AND field_key = 'amount_due' AND display_order = 6;
 
+  -- waived_amount: a balance an admin has written off via the Receipts
+  -- ledger's "waive balance" action (see below) -- reduces amount_due
+  -- alongside trust_applied/payments so the invoice PDF and EditInvoiceModal
+  -- reconcile correctly. Added after payments/amount_due already existed, so
+  -- both inserted fresh (guarded) and slotted in via a reorder, matching the
+  -- pattern above.
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, linked_system_table, linked_display_field, display_order)
+  SELECT v_invoices_table_id, 'waived_amount', 'Waived', 'currency', NULL::jsonb, NULL::text, NULL::text, 15
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_invoices_table_id AND field_key = 'waived_amount'
+  );
+  UPDATE template_definition_table_fields SET display_order = 16
+    WHERE template_table_id = v_invoices_table_id AND field_key = 'amount_due' AND display_order = 15;
+
   -- ── Time & Fee Entries ───────────────────────────────────────────────
   -- Billed vs unbilled from the source export = Invoice link present/absent.
   -- disable_record_dashboard=true: this is pure line-item data, meaningfully
@@ -276,6 +292,42 @@ BEGIN
   ) AS v(field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order, auto_number_prefix, help_text)
   WHERE NOT EXISTS (
     SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
+  );
+
+  -- ── Receipts (operating account ledger) ──────────────────────────────
+  -- Like Trust Transactions, but for payments/waivers against the firm's own
+  -- operating/office account rather than client trust money -- one immutable
+  -- row per part-payment or balance waiver against an Invoice, with its own
+  -- consecutive "OA-" receipt number (distinct from Trust's "TR-" numbers).
+  -- Deliberately doesn't use the amount_in/amount_out/running_balance
+  -- field-key convention insert_ledger_record() keys on: this ledger has no
+  -- per-matter overdraw concept, so those columns are simply absent and its
+  -- balance logic no-ops.
+  INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order, is_ledger)
+  SELECT v_template_id, 'receipts', 'Receipts', 'HandCoins', '#b45309', 'receipt_number', 6, true
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'receipts');
+
+  SELECT id INTO v_receipts_table_id FROM template_definition_tables WHERE template_id = v_template_id AND slug = 'receipts';
+
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order, auto_number_prefix, help_text)
+  SELECT v_receipts_table_id, v.field_key, v.label, v.field_type, v.select_options, v.linked_system_table, v.linked_template_table_id, v.linked_display_field, v.display_order, v.auto_number_prefix, v.help_text
+  FROM (VALUES
+    ('receipt_number',   'Receipt No.',       'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 0, 'OA-'::text, 'Assigned automatically in consecutive sequence -- operating account receipt number -- leave blank'::text),
+    ('date',             'Date',              'date',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 1, NULL, NULL),
+    ('invoice',          'Invoice',           'table_relation', NULL::jsonb, NULL::text, v_invoices_table_id, 'invoice_number', 2, NULL, NULL),
+    ('matter',           'Matter',            'project',  NULL::jsonb, 'projects'::text, NULL::uuid,          'name'::text, 3, NULL, NULL),
+    ('payor',            'Received From',     'entity',   NULL::jsonb, 'entities'::text, NULL::uuid,          'name'::text, 4, NULL, NULL),
+    ('amount_received',  'Amount Received',   'currency', NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 5, NULL, NULL),
+    ('payment_method',   'Payment Method',    'select',   to_jsonb(ARRAY['Cash','EFT','Cheque','Card','Other']), NULL::text, NULL::uuid, NULL::text, 6, NULL, NULL),
+    ('bank_reference',   'Reference',         'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 7, NULL, 'Cheque number, EFT reference, or transaction ID'),
+    ('waived_amount',    'Amount Waived',     'currency', NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 8, NULL, NULL),
+    ('waived_reason',    'Waiver Reason',     'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 9, NULL, 'Required if an amount is waived'),
+    ('received_by',      'Received By',       'text',     NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 10, NULL, NULL),
+    ('balance_after',    'Balance Remaining', 'currency', NULL::jsonb, NULL::text,       NULL::uuid,          NULL::text, 11, NULL, 'Invoice balance remaining after this receipt -- computed automatically')
+  ) AS v(field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order, auto_number_prefix, help_text)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_receipts_table_id AND field_key = v.field_key
   );
 
   -- ── Leads ────────────────────────────────────────────────────────────

@@ -166,6 +166,7 @@ export interface GenerateInvoicePdfInput {
     totalIncGst: number;
     trustApplied: number;
     payments: number;
+    waivedAmount: number;
     amountDue: number;
     priorBalance: number;
     // Detailed-template-only fields (generateDetailedInvoicePdf.ts) -- the
@@ -482,6 +483,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     y -= 4;
     if (input.invoice.trustApplied) totalRow('Trust funds applied', -input.invoice.trustApplied);
     if (input.invoice.payments) totalRow('Payments received', -input.invoice.payments);
+    if (input.invoice.waivedAmount) totalRow('Amount waived', -input.invoice.waivedAmount);
     totalRow('Amount due', input.invoice.amountDue, { bold: true });
   }
   y -= 20;

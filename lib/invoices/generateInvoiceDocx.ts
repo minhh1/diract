@@ -171,6 +171,7 @@ export async function generateInvoiceDocx(input: GenerateInvoicePdfInput): Promi
   if (input.display.showPaymentSummary) {
     if (input.invoice.trustApplied) children.push(totalRow('Trust funds applied', -input.invoice.trustApplied));
     if (input.invoice.payments) children.push(totalRow('Payments received', -input.invoice.payments));
+    if (input.invoice.waivedAmount) children.push(totalRow('Amount waived', -input.invoice.waivedAmount));
     children.push(totalRow('Amount due', input.invoice.amountDue, true));
   }
   children.push(p(''));

@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Maximize2, Minimize2, Plus, Eye, Download, FileText, Pencil, Ban, Loader2, X, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
+import { createRecord as createCustomRecord, updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import CreateInvoiceModal from "../CreateInvoiceModal";
 import PdfPreviewModal from "../PdfPreviewModal";
@@ -24,6 +24,7 @@ interface InvoiceRow {
   id: string;
   invoiceNumber: string;
   debtorName: string;
+  debtorIds: string[];
   issueDate: string | null;
   dueDate: string | null;
   status: string;
@@ -31,6 +32,7 @@ interface InvoiceRow {
   amountDue: number;
   payments: number;
   trustApplied: number;
+  waivedAmount: number;
 }
 
 const STATUS_OPTIONS = ['Under Review', 'Sent', 'Paid', 'Overdue', 'Void'];
@@ -61,6 +63,8 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [receiptPreviewId, setReceiptPreviewId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -119,6 +123,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
       id,
       invoiceNumber: row.invoice_number || '',
       debtorName: (debtorIdsByRecord.get(id) || []).map(did => debtorNameById.get(did)).filter(Boolean).join(', ') || '—',
+      debtorIds: debtorIdsByRecord.get(id) || [],
       issueDate: row.issue_date || null,
       dueDate: row.due_date || null,
       status: row.status || 'Under Review',
@@ -126,6 +131,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
       amountDue: Number(row.amount_due) || 0,
       payments: Number(row.payments) || 0,
       trustApplied: Number(row.trust_applied) || 0,
+      waivedAmount: Number(row.waived_amount) || 0,
     }));
     rows.sort((a, b) => String(b.issueDate || '').localeCompare(String(a.issueDate || '')));
     setInvoices(rows);
@@ -133,6 +139,23 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
   }, [linkedTableId, recordId]);
 
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
+
+  // Receipts (operating-account ledger, see supabase/migrations/
+  // 20260730120000_receipts_ledger.sql) -- resolved once per company since
+  // Record Payment needs its table id + fields to call createRecord.
+  const [receiptsTableId, setReceiptsTableId] = useState<string | null>(null);
+  const [receiptsFields, setReceiptsFields] = useState<CustomTableField[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: table } = await supabase.from('company_tables').select('id').eq('company_id', companyId).eq('slug', 'receipts').is('deleted_at', null).maybeSingle();
+      if (cancelled || !table) return;
+      setReceiptsTableId(table.id);
+      const { data: fields } = await supabase.from('company_table_fields').select('*').eq('table_id', table.id).is('deleted_at', null);
+      if (!cancelled) setReceiptsFields((fields || []) as CustomTableField[]);
+    })();
+    return () => { cancelled = true; };
+  }, [companyId]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUserId(user?.id || ''));
@@ -191,6 +214,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
   };
 
   const editingInvoice = invoices.find(i => i.id === editingId) || null;
+  const payingInvoice = invoices.find(i => i.id === payingId) || null;
 
   return (
     <div className={fullscreen ? "fixed inset-0 z-50 bg-slate-50 overflow-y-auto p-8 space-y-4" : "space-y-4"}>
@@ -273,6 +297,14 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
                       <a href={`/api/invoices/${inv.id}/pdf?download=1`} title="Download PDF" className="p-1.5 text-slate-300 hover:text-indigo-600"><Download size={14} /></a>
                       <a href={`/api/invoices/${inv.id}/docx?download=1`} title="Download Word" className="p-1.5 text-slate-300 hover:text-indigo-600"><FileText size={14} /></a>
                       <button onClick={() => setEditingId(inv.id)} title="Edit" className="p-1.5 text-slate-300 hover:text-slate-700"><Pencil size={14} /></button>
+                      {inv.status !== 'Void' && inv.amountDue > 0 && receiptsTableId && (
+                        <button
+                          onClick={() => setPayingId(inv.id)}
+                          className="px-3 py-1 rounded-full text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all whitespace-nowrap"
+                        >
+                          Record payment
+                        </button>
+                      )}
                       {inv.status !== 'Void' && (
                         <button onClick={() => handleVoid(inv.id)} title="Void" disabled={voidingId === inv.id} className="p-1.5 text-slate-300 hover:text-rose-500 disabled:opacity-50">
                           {voidingId === inv.id ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />}
@@ -317,6 +349,29 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
           onSaved={() => { setEditingId(null); loadInvoices(); }}
         />
       )}
+
+      {payingInvoice && receiptsTableId && (
+        <RecordPaymentModal
+          invoice={payingInvoice}
+          matterId={recordId}
+          companyId={companyId}
+          invoiceTableId={linkedTableId}
+          invoiceFields={invoiceFields}
+          receiptsTableId={receiptsTableId}
+          receiptsFields={receiptsFields}
+          onClose={() => setPayingId(null)}
+          onSaved={(receiptId) => { setPayingId(null); setReceiptPreviewId(receiptId); loadInvoices(); }}
+        />
+      )}
+
+      {receiptPreviewId && (
+        <PdfPreviewModal
+          src={`/api/receipts/${receiptPreviewId}/pdf`}
+          downloadSrc={`/api/receipts/${receiptPreviewId}/pdf?download=1`}
+          title="Receipt"
+          onClose={() => setReceiptPreviewId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -335,19 +390,21 @@ function EditInvoiceModal({
   const [dueDate, setDueDate] = useState(invoice.dueDate || '');
   const [payments, setPayments] = useState(String(invoice.payments || ''));
   const [trustApplied, setTrustApplied] = useState(String(invoice.trustApplied || ''));
+  const [waived, setWaived] = useState(String(invoice.waivedAmount || ''));
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     // amount_due isn't a formula field -- recompute it here from the
     // invoice's own (formula-computed, so already-current) total_inc_gst
-    // minus whatever payments/trust applied are being saved.
+    // minus whatever payments/trust applied/waived are being saved.
     const paymentsNum = parseFloat(payments) || 0;
     const trustAppliedNum = parseFloat(trustApplied) || 0;
+    const waivedNum = parseFloat(waived) || 0;
     await updateCustomRecord(invoice.id, invoiceTableId, companyId, {
       status, due_date: dueDate || null,
-      payments: paymentsNum, trust_applied: trustAppliedNum,
-      amount_due: invoice.totalIncGst - trustAppliedNum - paymentsNum,
+      payments: paymentsNum, trust_applied: trustAppliedNum, waived_amount: waivedNum,
+      amount_due: invoice.totalIncGst - trustAppliedNum - paymentsNum - waivedNum,
     }, invoiceFields);
     setSaving(false);
     onSaved();
@@ -378,7 +435,7 @@ function EditInvoiceModal({
           <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Payments</label>
             <input type="number" step="0.01" value={payments} onChange={e => setPayments(e.target.value)}
@@ -389,11 +446,163 @@ function EditInvoiceModal({
             <input type="number" step="0.01" value={trustApplied} onChange={e => setTrustApplied(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
           </div>
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Waived</label>
+            <input type="number" step="0.01" value={waived} onChange={e => setWaived(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+          </div>
         </div>
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-full text-[11px] font-bold disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PAYMENT_METHODS = ['Cash', 'EFT', 'Cheque', 'Card', 'Other'];
+
+// Records a part-payment and/or a balance waiver against one invoice as a
+// single immutable Receipts ledger row (see supabase/migrations/
+// 20260730120000_receipts_ledger.sql) -- that row IS the receipt: creating
+// it is what earns the consecutive operating-account receipt number, and
+// onSaved hands the new row's id back so the caller can open its PDF.
+// Deliberately one combined form rather than three separate actions/buttons
+// -- a single receipt can be part payment, part waiver, or both at once,
+// and every path needs the same invoice-total update afterward anyway.
+function RecordPaymentModal({
+  invoice, matterId, companyId, invoiceTableId, invoiceFields, receiptsTableId, receiptsFields, onClose, onSaved,
+}: {
+  invoice: InvoiceRow; matterId: string; companyId: string;
+  invoiceTableId: string; invoiceFields: CustomTableField[];
+  receiptsTableId: string; receiptsFields: CustomTableField[];
+  onClose: () => void; onSaved: (receiptId: string) => void;
+}) {
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [amountReceived, setAmountReceived] = useState(String(invoice.amountDue.toFixed(2)));
+  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
+  const [bankReference, setBankReference] = useState('');
+  const [waiveRest, setWaiveRest] = useState(false);
+  const [waivedAmount, setWaivedAmount] = useState('0');
+  const [waivedReason, setWaivedReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const receivedNum = parseFloat(amountReceived) || 0;
+  // Waiving "the rest" tracks whatever's left as amountReceived changes,
+  // rather than freezing the waived figure at whatever it was when the
+  // checkbox was first ticked.
+  const waivedNum = waiveRest ? Math.max(0, invoice.amountDue - receivedNum) : (parseFloat(waivedAmount) || 0);
+  const balanceAfter = invoice.amountDue - receivedNum - waivedNum;
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (receivedNum < 0 || waivedNum < 0) { setError('Amounts cannot be negative.'); return; }
+    if (balanceAfter < -0.004) { setError('Amount received + waived cannot exceed the amount due.'); return; }
+    if (waivedNum > 0 && !waivedReason.trim()) { setError('A reason is required when waiving an amount.'); return; }
+    if (receivedNum === 0 && waivedNum === 0) { setError('Enter an amount received or waived.'); return; }
+
+    setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: profile } = user ? await supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle() : { data: null };
+
+    const receiptValues: Record<string, any> = {
+      date,
+      invoice: invoice.id,
+      matter: matterId,
+      amount_received: receivedNum,
+      payment_method: paymentMethod,
+      bank_reference: bankReference.trim() || undefined,
+      waived_amount: waivedNum,
+      waived_reason: waivedNum > 0 ? waivedReason.trim() : undefined,
+      received_by: profile?.full_name || undefined,
+      balance_after: Math.max(0, balanceAfter),
+    };
+    if (invoice.debtorIds[0]) receiptValues.payor = invoice.debtorIds[0];
+
+    const result = await createCustomRecord(receiptsTableId, companyId, user?.id || '', receiptValues, receiptsFields);
+    if (!result || 'error' in result) {
+      setError((result && 'error' in result && result.error) || 'Could not record this receipt — please try again.');
+      setSaving(false);
+      return;
+    }
+
+    await updateCustomRecord(invoice.id, invoiceTableId, companyId, {
+      payments: invoice.payments + receivedNum,
+      waived_amount: invoice.waivedAmount + waivedNum,
+      amount_due: Math.max(0, balanceAfter),
+    }, invoiceFields);
+
+    setSaving(false);
+    onSaved(result.id);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
+      <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-[15px] font-bold text-slate-800">Record payment</h3>
+            <p className="text-[11px] text-slate-400">{invoice.invoiceNumber} · Amount due {money(invoice.amountDue)}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-300 hover:text-black"><X size={16} /></button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+          </div>
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Amount received</label>
+            <input type="number" step="0.01" value={amountReceived} onChange={e => setAmountReceived(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Payment method</label>
+            <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none">
+              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Reference</label>
+            <input value={bankReference} onChange={e => setBankReference(e.target.value)} placeholder="Cheque / EFT ref"
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-[11px] font-medium text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={waiveRest} onChange={e => setWaiveRest(e.target.checked)} className="rounded" />
+          Waive the remaining balance
+        </label>
+
+        {waiveRest && (
+          <div>
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Waiver reason</label>
+            <input value={waivedReason} onChange={e => setWaivedReason(e.target.value)} placeholder="e.g. Goodwill discount"
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
+          </div>
+        )}
+
+        <div className="bg-slate-50 rounded-2xl px-4 py-3 flex items-center justify-between">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balance remaining</span>
+          <span className="text-[14px] font-bold text-slate-800">{money(Math.max(0, balanceAfter))}</span>
+        </div>
+
+        {error && <p className="text-[11px] text-rose-600 font-medium">{error}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all">Cancel</button>
+          <button onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-emerald-600 text-white rounded-full text-[11px] font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving && <Loader2 size={14} className="animate-spin" />} Generate receipt
           </button>
         </div>
       </div>

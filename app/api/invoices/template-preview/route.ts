@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     invoice: {
       invoiceNumber: 'SAMPLE-0001', issueDate: today, dueDate: today,
       matterName: 'Sample Matter', debtorNames: ['Sample Client Pty Ltd', 'Sample Client Two'],
-      subtotal, gst, totalIncGst: subtotal + gst, trustApplied: 0, payments: 0, amountDue: subtotal + gst, priorBalance: 0,
+      subtotal, gst, totalIncGst: subtotal + gst, trustApplied: 0, payments: 0, waivedAmount: 0, amountDue: subtotal + gst, priorBalance: 0,
       responsiblePartnerName: 'Sample Partner', ourReference: 'REF-001', yourReference: 'YOUR-REF-99',
       periodEnd: today, paymentTermsDays: invoiceSettings.paymentTermsDays ?? 14,
       professionalFeesDescription: 'For professional services in connection with the sample matter.',
