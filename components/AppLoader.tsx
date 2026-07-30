@@ -92,6 +92,18 @@ export default function AppLoader({ children }: { children: ReactNode }) {
 
     if (isPublicPath(pathname)) {
       setReady(true);
+      // /public/* pages are still genuinely visited by SIGNED-IN staff
+      // (previewing/managing their own company's client-update or task
+      // page, often via a bookmark or shared link, never touching
+      // /dashboard/* in this tab at all) -- fire the same bootstrap
+      // warming those routes get, just in the background, with nothing
+      // gated on it. resolveCompanyBootstrap() resolves to null and no-ops
+      // for a genuinely anonymous PIN visitor (no session), so this is
+      // silent and free for them. Without this, that whole class of visit
+      // never warmed anything -- every one of this session's public-page
+      // caching fixes (staff board data, gmail connections, task
+      // dependencies, etc.) silently never fired.
+      if (pathname.startsWith("/public/")) resolveCompanyBootstrap().catch(() => {});
       return;
     }
 
