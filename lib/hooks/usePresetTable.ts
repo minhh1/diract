@@ -285,7 +285,13 @@ export function usePresetTable({
   ) => {
     if (!isAdmin || !companyId) return;
     const userId = await resolveUserId();
-    await supabase.from('company_default_views').upsert({
+    // Conflict target must name all 4 columns of uq_company_default_views_scope
+    // (a single NULLS NOT DISTINCT constraint, not the 3 partial indexes the
+    // schema briefly had) -- see supabase/migrations/20260731150100_fix_default_views_conflict_target.sql
+    // for why: a plain 'company_id,table_slug' target against a partial
+    // index fails outright (Postgres 42P10), which silently broke every
+    // save here (the error was never checked) until this fix.
+    const { error } = await supabase.from('company_default_views').upsert({
       company_id: companyId,
       table_slug: tableSlug,
       columns: t,
@@ -295,7 +301,8 @@ export function usePresetTable({
       preset_name: activePreset,
       created_by: userId,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,table_slug' });
+    }, { onConflict: 'company_id,table_slug,team_id,user_id' });
+    if (error) console.error(`usePresetTable(${tableSlug}): saveCompanyColumns failed`, error.message);
   };
 
   const startResizing = (colId: string, e: React.MouseEvent) => {

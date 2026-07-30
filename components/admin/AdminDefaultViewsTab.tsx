@@ -7,20 +7,25 @@ import { Pencil, Check, X, Trash2, Plus, Table2, GitBranch } from "lucide-react"
 import type { DefaultScope } from "@/components/admin/AdminDefaultSettingsTab";
 
 // A row is scoped to exactly one of: nothing (company-wide), a team, or a
-// person -- matches the three partial unique indexes added in
-// 20260729000000_scoped_default_views.sql. Applied to both the `select`
-// filter (picking which row this scope's card should show) and the
-// `upsert`'s onConflict target (which unique index to resolve against).
+// person. Originally enforced via three partial unique indexes (one row per
+// company/team/person per table_slug) added in
+// 20260729000000_scoped_default_views.sql -- but a partial index can't
+// serve as a plain PostgREST upsert onConflict target (Postgres only
+// matches a partial index when its WHERE predicate is repeated in the ON
+// CONFLICT clause itself, which onConflict's simple column-list string has
+// no way to express -- confirmed live via 42P10 "no unique or exclusion
+// constraint matching the ON CONFLICT specification" on every save,
+// regardless of whether the indexes existed). Replaced by
+// 20260731150100_fix_default_views_conflict_target.sql with a single full
+// constraint (NULLS NOT DISTINCT so the company-wide NULL/NULL row still
+// conflicts correctly) covering all three scopes, so every upsert now
+// targets the same 4 columns regardless of scope.
 function scopeEq(query: any, scope: DefaultScope) {
   if (scope.teamId) return query.eq('team_id', scope.teamId).is('user_id', null);
   if (scope.userId) return query.eq('user_id', scope.userId);
   return query.is('team_id', null).is('user_id', null);
 }
-function scopeOnConflict(scope: DefaultScope): string {
-  if (scope.teamId) return 'company_id,table_slug,team_id';
-  if (scope.userId) return 'company_id,table_slug,user_id';
-  return 'company_id,table_slug';
-}
+const DEFAULT_VIEWS_ON_CONFLICT = 'company_id,table_slug,team_id,user_id';
 
 interface DefaultView {
   id: string;
@@ -137,7 +142,7 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
     const draft = editDrafts[slug];
     if (!draft) return;
     setSavingSlug(slug);
-    await supabase.from('company_default_views').upsert({
+    const { error } = await supabase.from('company_default_views').upsert({
       company_id: companyId,
       table_slug: slug,
       team_id: scope.teamId,
@@ -147,7 +152,8 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
       filters: draft.filters || [],
       preset_name: draft.preset_name || 'Default view',
       updated_at: new Date().toISOString(),
-    }, { onConflict: scopeOnConflict(scope) });
+    }, { onConflict: DEFAULT_VIEWS_ON_CONFLICT });
+    if (error) console.error(`AdminDefaultViewsTab: saveEdit(${slug}) failed`, error.message);
     setSavingSlug(null);
     cancelEdit(slug);
     load();

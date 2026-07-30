@@ -177,7 +177,20 @@ export function useTableColumnConfig({
       created_by: user?.id ?? null,
       updated_at: new Date().toISOString(),
     };
-    await supabase.from('company_default_views').upsert(saved, { onConflict: 'company_id,table_slug' });
+    // Conflict target must name all 4 columns of uq_company_default_views_scope
+    // (a single NULLS NOT DISTINCT constraint, not the 3 partial indexes the
+    // schema briefly had) -- see supabase/migrations/20260731150100_fix_default_views_conflict_target.sql
+    // for why: a plain 'company_id,table_slug' target against a partial
+    // index fails outright (Postgres 42P10). That silently broke every save
+    // here (the error was never checked) AND -- since the cache write below
+    // used to run unconditionally regardless of whether the upsert actually
+    // succeeded -- made it look locally like it saved (matching the admin's
+    // edit) until the next background refresh pulled the real, never-
+    // actually-saved server value and overwrote it. Guarding the cache write
+    // on success closes that; the conflict-target fix closes the underlying
+    // save failure itself.
+    const { error } = await supabase.from('company_default_views').upsert(saved, { onConflict: 'company_id,table_slug,team_id,user_id' });
+    if (error) { console.error(`useTableColumnConfig(${tableSlug}): saveCompanyColumns failed`, error.message); return; }
     // Keep the cache in step with what was just saved -- otherwise the next
     // mount would show this admin's own edit, then briefly flash back to the
     // pre-edit layout once the cache's stale copy seeds state, before the
