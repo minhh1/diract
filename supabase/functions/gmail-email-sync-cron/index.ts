@@ -316,14 +316,27 @@ Deno.serve(async (_req) => {
     console.log(`[email-sync-cron] activeLabels=${labels?.length || 0}${labelsErr ? ' error=' + labelsErr.message : ''}`);
     if (!labels?.length) { console.log(`[email-sync-cron] No active labels — skipping`); continue; }
 
-    // Batch: get all project_ids that have emails
-    const { data: projectsWithEmails, error: emailsErr } = await db.from("project_emails")
-      .select("project_id")
-      .eq("company_id", companyId)
-      .in("project_id", labels.map(l => l.project_id));
-
-    const projectIdsWithEmails = new Set((projectsWithEmails || []).map((e: any) => e.project_id));
-    console.log(`[email-sync-cron] projectsWithEmails=${projectIdsWithEmails.size}/${labels.length}${emailsErr ? ' error=' + emailsErr.message : ''}`);
+    // Batch: which of these projects have at least one filed email — checked
+    // per-project (bounded by this company's active label count) rather
+    // than pulling every project_emails row for the company and collecting
+    // distinct project_ids in JS. That used to silently miss projects once
+    // a company's total project_emails count passed PostgREST's default
+    // row cap (no .order()/.range() on the query, so extra rows past the
+    // cap were dropped, not paginated) — confirmed live: Huynh Lawyers had
+    // 4,803 project_emails rows and 17 projects (the most recently active
+    // ones, including newly-added backlogs) never got an email_sync job
+    // queued at all, so nobody but the original filer ever received those
+    // messages. A per-project existence check can't truncate this way — its
+    // cost scales with active label count, not with total email history.
+    const projectIdsWithEmails = new Set<string>();
+    for (let i = 0; i < labels.length; i += BATCH_SIZE) {
+      const batch = labels.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(batch.map(l =>
+        db.from("project_emails").select("id").eq("company_id", companyId).eq("project_id", l.project_id).limit(1)
+      ));
+      results.forEach((r, idx) => { if (r.data?.length) projectIdsWithEmails.add(batch[idx].project_id); });
+    }
+    console.log(`[email-sync-cron] projectsWithEmails=${projectIdsWithEmails.size}/${labels.length}`);
 
     // Batch fetch existing jobs — include completed_users to check progress
     const { data: existingJobs, error: jobsErr } = await db.from("gmail_sync_jobs")

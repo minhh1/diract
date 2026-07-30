@@ -99,7 +99,10 @@ interface DispatchUnit {
   jobId: string; userId: string; companyId: string; projectId: string;
   labelCode: string | null; gmailLabelName: string; totalUsers: number;
   msgIds: string[]; subjectByMsgId: Record<string, string | null>;
-  sourceToken: string | null; sourceUserId: string;
+  // msgId -> the user_id who originally filed that message, and a token
+  // per DISTINCT filer (not one blanket "source user") -- see the dispatch
+  // loop below for why one arbitrary source can't read every message.
+  filerByMsgId: Record<string, string>; sourceTokensByUserId: Record<string, string>;
 }
 
 // See gmail-label-sync-worker for the rationale: the gateway limit is a
@@ -250,32 +253,53 @@ async function runDispatch(t0: number): Promise<Response> {
     if (!pendingUsers.length) continue;
 
     const { data: dbEmails } = await db.from("project_emails")
-      .select("gmail_message_id, subject").eq("project_id", projectId).eq("company_id", companyId);
+      .select("gmail_message_id, subject, user_id").eq("project_id", projectId).eq("company_id", companyId);
     const msgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
     const subjectByMsgId: Record<string, string | null> = {};
-    for (const e of (dbEmails || [])) subjectByMsgId[e.gmail_message_id] = e.subject;
+    const filerByMsgId: Record<string, string> = {};
+    for (const e of (dbEmails || [])) {
+      subjectByMsgId[e.gmail_message_id] = e.subject;
+      filerByMsgId[e.gmail_message_id] = e.user_id;
+    }
     const nullSubjectIds = new Set((dbEmails || []).filter((e: any) => !e.subject).map((e: any) => e.gmail_message_id));
     if (!msgIds.length) {
       await db.from("gmail_sync_jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", jobId);
       continue;
     }
 
-    const sourceUserId = allUserIds.find(id => !quarantinedSet.has(id)) || allUserIds[0];
-    let sourceToken: string | null = null;
-    try {
-      sourceToken = await getAccessToken(sourceUserId);
-    } catch (srcErr: any) {
-      console.error(`[email-sync-worker] Source token fetch failed for ${sourceUserId}:`, srcErr.message);
+    // Resolve a token for every DISTINCT filer of this project's emails, not
+    // one arbitrary connected member picked as a blanket "source" — a
+    // project's backlog is routinely filed by several different team
+    // members (confirmed live: one project's 33 emails split 22/6/5 across
+    // three different filers), and Gmail message IDs are mailbox-scoped, so
+    // reading a message's raw content only ever works via whichever mailbox
+    // actually filed THAT specific message. The previous single-source
+    // design silently imported nothing for any message the one chosen user
+    // didn't personally own, with no error and no log entry — the job still
+    // reported "done" regardless.
+    const distinctFilerIds = [...new Set(Object.values(filerByMsgId))];
+    const sourceTokensByUserId: Record<string, string> = {};
+    for (const filerId of distinctFilerIds) {
+      try {
+        const token = await getAccessToken(filerId);
+        if (token) sourceTokensByUserId[filerId] = token;
+      } catch (srcErr: any) {
+        console.error(`[email-sync-worker] Source token fetch failed for filer ${filerId}:`, srcErr.message);
+      }
     }
 
-    // Backfill metadata for NULL rows once per job, not once per dispatched user
-    if (nullSubjectIds.size > 0 && sourceToken) {
+    // Backfill metadata for NULL rows once per job, not once per dispatched
+    // user — same per-filer token requirement as the import step above,
+    // since a metadata read is just as mailbox-scoped as a raw-content read.
+    if (nullSubjectIds.size > 0) {
       console.log(`[email-sync-worker] Backfilling metadata for ${nullSubjectIds.size} emails`);
       await mapWithConcurrency(Array.from(nullSubjectIds), 4, async (msgId) => {
+        const filerToken = sourceTokensByUserId[filerByMsgId[msgId]];
+        if (!filerToken) return;
         try {
           const res = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
-            { headers: { Authorization: `Bearer ${sourceToken}` }, signal: withTimeout() }
+            { headers: { Authorization: `Bearer ${filerToken}` }, signal: withTimeout() }
           );
           if (!res.ok) return;
           const md = await res.json();
@@ -305,7 +329,8 @@ async function runDispatch(t0: number): Promise<Response> {
     for (const userId of pendingUsers) {
       units.push({
         jobId, userId, companyId, projectId, labelCode, gmailLabelName,
-        totalUsers: total_users || allUserIds.length, msgIds, subjectByMsgId, sourceToken, sourceUserId,
+        totalUsers: total_users || allUserIds.length, msgIds, subjectByMsgId,
+        filerByMsgId, sourceTokensByUserId,
       });
     }
   }

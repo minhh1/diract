@@ -133,6 +133,10 @@ const ACTION_META: Record<string, { label: string; icon: any; style: string }> =
   sync_failed: { label: "Persistent failure", icon: AlertTriangle, style: "bg-red-50 text-red-600" },
   sync_error: { label: "Sync error (quarantined)", icon: AlertTriangle, style: "bg-amber-50 text-amber-600" },
   dispatch_error: { label: "Dispatch error", icon: AlertTriangle, style: "bg-amber-50 text-amber-600" },
+  // Per-message import gap (e.g. the original filer's Gmail account isn't
+  // connected) -- doesn't quarantine the whole job/user the way sync_error
+  // does, so it gets its own label rather than implying "(quarantined)".
+  email_import_failed: { label: "Import failed (one message)", icon: AlertTriangle, style: "bg-amber-50 text-amber-600" },
   bulk_label_sync_deferred: { label: "Bulk label (deferred)", icon: Inbox, style: "bg-indigo-50 text-indigo-600" },
 };
 
@@ -148,6 +152,11 @@ const HEARTBEAT_DEFS: Record<string, { label: string; intervalMs: number }> = {
   // avoids a false "Down" reading during a genuinely quiet night/weekend,
   // while still catching a subscription that's actually stopped delivering.
   "gmail-push": { label: "Pub/Sub webhook (event-driven)", intervalMs: 24 * 60 * 60 * 1000 },
+  // Manually triggered from the "Sync leads" button (app/api/gmail/leads-sync)
+  // — not cron-scheduled either, so a long interval here for the same reason
+  // as gmail-push: it should only read "Down" if it hasn't run in a very
+  // long time, not just because no one happened to click Sync leads today.
+  "gmail-leads-sync": { label: "Leads inbox sync (manual)", intervalMs: 24 * 60 * 60 * 1000 },
 };
 
 const ACTIVITY_PAGE_SIZE = 50;

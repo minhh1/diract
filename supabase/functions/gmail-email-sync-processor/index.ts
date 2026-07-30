@@ -163,6 +163,28 @@ async function logActivity(row: Record<string, unknown>): Promise<void> {
   try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break sync over logging */ }
 }
 
+// Definitive idempotency guard for cross-mailbox imports (see
+// supabase/migrations/20260730170000_gmail_import_claims.sql) -- the
+// per-user Gmail-account lock and re-reading live Gmail label state before
+// importing are both soft signals with real gaps (lock TTL edges, Gmail's
+// own listing lag right after an import, or two different dispatchers --
+// this processor, gmail-sync-recovery-worker, gmail-push -- racing on the
+// same message). Whichever caller's INSERT wins proceeds; every other
+// caller gets a unique-violation and skips, unconditionally.
+async function claimImport(companyId: string, projectId: string, userId: string, msgId: string): Promise<boolean> {
+  const { error } = await db.from("gmail_import_claims").insert({
+    user_id: userId, gmail_message_id: msgId, company_id: companyId, project_id: projectId,
+  });
+  return !error;
+}
+
+// A failed import must not permanently block the message -- release the
+// claim so a later retry (e.g. once the filer reconnects Gmail) can still
+// succeed instead of being locked out forever by a claim from a failed attempt.
+async function releaseImportClaim(userId: string, msgId: string): Promise<void> {
+  try { await db.from("gmail_import_claims").delete().eq("user_id", userId).eq("gmail_message_id", msgId); } catch (_) { /* best-effort */ }
+}
+
 async function quarantineUser(params: {
   companyId: string; jobId: string; jobType: string; projectId: string; userId: string;
   gmailLabelName: string; error: string;
@@ -205,7 +227,7 @@ interface ProcessorRequest {
   jobId: string; userId: string; companyId: string; projectId: string;
   labelCode: string | null; gmailLabelName: string; totalUsers: number;
   msgIds: string[]; subjectByMsgId: Record<string, string | null>;
-  sourceToken: string | null; sourceUserId: string;
+  filerByMsgId: Record<string, string>; sourceTokensByUserId: Record<string, string>;
 }
 
 Deno.serve(async (req) => {
@@ -214,7 +236,7 @@ Deno.serve(async (req) => {
     return respond({ ok: false, error: "Invalid request body" }, 400);
   }
 
-  const { jobId, userId, companyId, projectId, labelCode, totalUsers, msgIds, subjectByMsgId, sourceToken, sourceUserId } = body;
+  const { jobId, userId, companyId, projectId, labelCode, totalUsers, msgIds, subjectByMsgId, filerByMsgId, sourceTokensByUserId } = body;
   const gmailLabelName = sanitiseLabelName(body.gmailLabelName || "");
   console.log(`[email-sync-processor] job=${jobId} user=${userId} messages=${msgIds.length}`);
 
@@ -233,7 +255,7 @@ Deno.serve(async (req) => {
     const labelled = new Set(await getMessagesWithLabel(token, labelId));
     const toProcess = msgIds.filter(id => !labelled.has(id));
 
-    let imported = 0, applied = 0;
+    let imported = 0, applied = 0, failed = 0;
     await mapWithConcurrency(toProcess, MESSAGE_CONCURRENCY, async (msgId) => {
       const result = await applyLabelOrNotFound(token, msgId, labelId!);
       if (result === "applied") {
@@ -243,20 +265,61 @@ Deno.serve(async (req) => {
           project_id: projectId, gmail_message_id: msgId, gmail_label_name: gmailLabelName,
           target_user_id: userId, details: { label_code: labelCode, subject: subjectByMsgId[msgId] || null },
         });
-      } else if (sourceToken && userId !== sourceUserId) {
-        const ok = await importMessage(sourceToken, token, msgId, labelId!);
-        if (ok) {
-          imported++;
-          await logActivity({
-            company_id: companyId, triggered_by: null, action: "sync_to_user",
-            project_id: projectId, gmail_message_id: msgId, gmail_label_name: gmailLabelName,
-            target_user_id: userId, details: { label_code: labelCode, subject: subjectByMsgId[msgId] || null },
-          });
-        }
+        return;
+      }
+
+      // Not found in this user's own mailbox -- import it from whichever
+      // team member actually filed THIS specific message (Gmail message IDs
+      // are mailbox-scoped, so any other token would just 404 on the raw
+      // fetch too). Every outcome gets logged now, success or failure --
+      // previously a missing/failed filer token meant this branch either
+      // never ran or silently no-op'd, so the job reported "done" with zero
+      // trace of what actually happened.
+      const filerId = filerByMsgId[msgId];
+      const filerToken = filerId ? sourceTokensByUserId[filerId] : undefined;
+      if (userId === filerId) return; // shouldn't happen (they'd already have it), but never self-import
+
+      if (!filerToken) {
+        failed++;
+        // Distinct from quarantineUser's "sync_error" (a whole-job quarantine
+        // the recovery worker must own) -- this is a per-message gap that
+        // doesn't block the rest of the job or this user's other messages,
+        // so it gets its own action name rather than implying "(quarantined)".
+        await logActivity({
+          company_id: companyId, triggered_by: null, action: "email_import_failed",
+          project_id: projectId, gmail_message_id: msgId, gmail_label_name: gmailLabelName,
+          target_user_id: userId,
+          details: { job_type: "email_sync", error: "No connected Gmail account for the original filer", filer_id: filerId || null },
+        });
+        return;
+      }
+
+      // Claim BEFORE importing -- this is the actual race-proof guard (a
+      // unique-violation here means another invocation already won this
+      // exact (user, message) pair, so skip entirely rather than risk a
+      // second copy landing in their mailbox).
+      if (!(await claimImport(companyId, projectId, userId, msgId))) return;
+
+      const ok = await importMessage(filerToken, token, msgId, labelId!);
+      if (ok) {
+        imported++;
+        await logActivity({
+          company_id: companyId, triggered_by: null, action: "sync_to_user",
+          project_id: projectId, gmail_message_id: msgId, gmail_label_name: gmailLabelName,
+          target_user_id: userId, details: { label_code: labelCode, subject: subjectByMsgId[msgId] || null },
+        });
+      } else {
+        await releaseImportClaim(userId, msgId);
+        failed++;
+        await logActivity({
+          company_id: companyId, triggered_by: null, action: "email_import_failed",
+          project_id: projectId, gmail_message_id: msgId, gmail_label_name: gmailLabelName,
+          target_user_id: userId, details: { job_type: "email_sync", error: "Import from filer's mailbox failed", filer_id: filerId },
+        });
       }
     });
 
-    console.log(`[email-sync-processor] User ${userId}: applied=${applied} imported=${imported} skipped=${msgIds.length - toProcess.length}`);
+    console.log(`[email-sync-processor] User ${userId}: applied=${applied} imported=${imported} failed=${failed} skipped=${msgIds.length - toProcess.length}`);
 
     if (applied + imported > 0) {
       await db.from("project_emails").update({ gmail_label_applied: true })
@@ -264,7 +327,7 @@ Deno.serve(async (req) => {
     }
 
     await markUserComplete(jobId, userId, totalUsers);
-    return respond({ ok: true, userId, applied, imported });
+    return respond({ ok: true, userId, applied, imported, failed });
 
   } catch (err: any) {
     console.error(`[email-sync-processor] ✗ User ${userId} failed:`, err.message);

@@ -215,6 +215,22 @@ async function logActivity(row: Record<string, unknown>): Promise<void> {
   try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break recovery over logging */ }
 }
 
+// Same idempotency guard as gmail-email-sync-processor (see
+// supabase/migrations/20260730170000_gmail_import_claims.sql) -- this
+// worker and the processor can both attempt to import the same message for
+// the same user (e.g. a job resumes here right as the fast worker also
+// picks it up), so the claim, not just the per-user Gmail lock, is what
+// actually prevents a duplicate copy landing in the target's mailbox.
+async function claimImport(companyId: string, projectId: string, userId: string, msgId: string): Promise<boolean> {
+  const { error } = await db.from("gmail_import_claims").insert({
+    user_id: userId, gmail_message_id: msgId, company_id: companyId, project_id: projectId,
+  });
+  return !error;
+}
+async function releaseImportClaim(userId: string, msgId: string): Promise<void> {
+  try { await db.from("gmail_import_claims").delete().eq("user_id", userId).eq("gmail_message_id", msgId); } catch (_) { /* best-effort */ }
+}
+
 // Thrown when a single failure's own work (e.g. a large mailbox with
 // hundreds of messages) alone exceeds the tick's time budget. This is real
 // incremental progress, not a broken account — Gmail's label state is the
@@ -368,16 +384,22 @@ async function runRecovery(t0: number): Promise<Response> {
         }
       } else if (jobType === "email_sync") {
         const { data: dbEmails } = await db.from("project_emails")
-          .select("gmail_message_id").eq("project_id", projectId).eq("company_id", companyId);
+          .select("gmail_message_id, user_id").eq("project_id", projectId).eq("company_id", companyId);
         const msgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
 
         if (msgIds.length) {
-          const { data: members } = await db.from("company_memberships").select("user_id").eq("company_id", companyId);
-          let sourceToken: string | null = null;
-          for (const m of (members || [])) {
-            if (m.user_id === userId) continue;
-            const t = await getAccessToken(m.user_id);
-            if (t) { sourceToken = t; break; }
+          // Per-filer source token, not one arbitrary "any other connected
+          // member" -- same bug and same fix as gmail-email-sync-worker
+          // (see that file's comment): Gmail message IDs are mailbox-scoped,
+          // so reading a message's raw content only works via whichever
+          // mailbox actually filed THAT specific message.
+          const filerByMsgId: Record<string, string> = {};
+          for (const e of (dbEmails || [])) filerByMsgId[e.gmail_message_id] = e.user_id;
+          const distinctFilerIds = [...new Set(Object.values(filerByMsgId))].filter(id => id !== userId);
+          const sourceTokensByUserId: Record<string, string> = {};
+          for (const filerId of distinctFilerIds) {
+            const t = await getAccessToken(filerId);
+            if (t) sourceTokensByUserId[filerId] = t;
           }
 
           const gmailLabels = await getGmailLabels(token);
@@ -390,8 +412,18 @@ async function runRecovery(t0: number): Promise<Response> {
             if (labelled.has(msgId)) continue;
             if (Date.now() - t0 > TIME_BUDGET_MS) throw new BudgetDeferredError(`Time budget reached mid-mailbox (${msgIds.length} messages, one large mailbox alone can exceed the tick budget) — will resume next tick`);
             const hasMsg = await userHasMessage(token, msgId);
-            if (hasMsg) await applyLabel(token, msgId, labelId);
-            else if (sourceToken) await importMessage(sourceToken, token, msgId, labelId);
+            if (hasMsg) {
+              await applyLabel(token, msgId, labelId);
+              continue;
+            }
+            const filerToken = sourceTokensByUserId[filerByMsgId[msgId]];
+            if (!filerToken) continue;
+            // Claim BEFORE importing -- the actual race-proof guard against
+            // gmail-email-sync-processor (or another recovery tick) also
+            // importing this exact (user, message) pair concurrently.
+            if (!(await claimImport(companyId, projectId, userId, msgId))) continue;
+            const ok = await importMessage(filerToken, token, msgId, labelId);
+            if (!ok) await releaseImportClaim(userId, msgId);
           }
           await db.from("project_emails").update({ gmail_label_applied: true })
             .eq("project_id", projectId).eq("company_id", companyId).eq("user_id", userId);
