@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { Suspense } from "react";
+import { useCompany } from "@/components/CompanyContext";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import CustomTableMasterPage from "@/components/CustomTableMasterPage";
 import DashboardViewPage from "@/components/dashboard/DashboardViewPage";
@@ -15,7 +16,16 @@ import DashboardViewPage from "@/components/dashboard/DashboardViewPage";
 function TableOrDashboardPageInner() {
   const params = useParams();
   const slug = params.tableSlug as string;
-  const { tables, loading } = useCustomTables();
+  // Pass the already-resolved userId (CompanyContext sits above this page
+  // and has it synchronously by the time you're navigating around the app)
+  // instead of leaving useCustomTables() to re-resolve it itself -- omitting
+  // it defeated that hook's own warm-cache lazy state entirely (it only
+  // trusts the cache when it already knows which user it's for), so this
+  // page blank-rendered AND fired a real supabase.auth.getUser() round trip
+  // on literally every single navigation to any table or dashboard, even
+  // though the tables list was already sitting warm in the module cache.
+  const { userId } = useCompany();
+  const { tables, loading } = useCustomTables(userId);
 
   if (loading) return null;
 
