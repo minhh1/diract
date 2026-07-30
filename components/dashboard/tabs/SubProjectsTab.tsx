@@ -35,22 +35,11 @@ export default function SubProjectsTab({ recordId }: { recordId: string }) {
       .eq('id', user?.id)
       .single();
 
-    const { data: parent } = await supabase
-      .from('projects')
-      .select('name')
-      .eq('id', recordId)
-      .single();
-
-    const parentName = parent?.name || '';
-    const baseName = parentName.includes('/')
-      ? parentName.split('/').slice(-1)[0].trim()
-      : parentName;
-
     const { data } = await supabase
       .from('projects')
       .insert({
-        name: `${baseName}/New sub-project`,
-        company_id: prof?.active_company_id,   // ← prof is now defined above
+        name: 'New sub-project',
+        company_id: prof?.active_company_id,
         parent_project_id: recordId,
       })
       .select('id')
