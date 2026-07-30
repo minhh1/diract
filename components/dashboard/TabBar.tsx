@@ -124,19 +124,25 @@ export default function TabBar({
   };
 
   return (
-    <div className="relative flex items-center border-b border-slate-100 bg-white">
+    <div className="flex items-center border-b border-slate-100 bg-white">
+      {/* relative wrapper scoped to just the scrollable strip -- the
+          canScrollLeft/canScrollRight fade+chevron overlays below are
+          positioned against THIS, not the whole tab bar row, so they never
+          bleed over the "Edit tabs" button (a sibling outside this
+          wrapper, further down). */}
+      <div className="relative flex-1 min-w-0 flex items-center">
       {canScrollLeft && (
         <button
           onClick={() => pageScroll(-1)}
-          className="absolute left-0 top-0 bottom-0 z-10 flex items-center pl-2 pr-4 bg-gradient-to-r from-white via-white to-transparent text-slate-400 hover:text-indigo-600"
+          className="absolute left-0 top-0 bottom-0 z-10 flex items-center pl-1 pr-3 bg-gradient-to-r from-white to-transparent text-slate-300 hover:text-indigo-600 transition-colors"
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={13} />
         </button>
       )}
       <div
         ref={scrollRef}
         onScroll={updateScrollState}
-        className="flex-1 min-w-0 flex items-center gap-1 pr-6 overflow-x-auto scroll-smooth"
+        className="tab-strip-scroll flex-1 min-w-0 flex items-center gap-1 pr-6 overflow-x-auto scroll-smooth"
       >
       {tabs.map((tab, idx) => {
         const Icon = (LucideIcons as any)[tab.icon] || TAB_TYPE_ICONS[tab.tab_type] || FileText;
@@ -237,11 +243,13 @@ export default function TabBar({
         );
       })}
 
-      {/* Edit toggle */}
+      {/* Edit toggle -- back inside the scrollable strip (rarely used, so
+          it doesn't need to be permanently pinned/visible like the tabs
+          themselves -- scrolling to it occasionally is fine). */}
       {tabs.length > 0 && (
         <button
           onClick={onToggleEdit}
-          className={`ml-auto px-3 py-2 rounded-full text-[10px] font-bold transition-all shrink-0 ${
+          className={`ml-auto shrink-0 px-3 py-2 rounded-full text-[10px] font-bold transition-all ${
             isEditing
               ? 'bg-indigo-600 text-white'
               : 'text-slate-400 hover:text-slate-700'
@@ -254,11 +262,12 @@ export default function TabBar({
       {canScrollRight && (
         <button
           onClick={() => pageScroll(1)}
-          className="absolute right-0 top-0 bottom-0 z-10 flex items-center pr-2 pl-4 bg-gradient-to-l from-white via-white to-transparent text-slate-400 hover:text-indigo-600"
+          className="absolute right-0 top-0 bottom-0 z-10 flex items-center pr-1 pl-3 bg-gradient-to-l from-white to-transparent text-slate-300 hover:text-indigo-600 transition-colors"
         >
-          <ChevronRight size={16} />
+          <ChevronRight size={13} />
         </button>
       )}
+      </div>
     </div>
   );
 }

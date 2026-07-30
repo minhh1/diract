@@ -406,7 +406,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   };
 
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{field.label}</p>
 
       {isLinked ? (
@@ -416,8 +416,11 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
             <div className="flex flex-wrap gap-1.5">
               {/* For relation (single) — click chip to change */}
               {field.fieldType === 'relation' && !field.relationJunction ? (
-                <div className="flex items-center gap-1.5">
-                  <span className="px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-[12px] font-medium">
+                <div className="flex items-center gap-1.5 min-w-0 max-w-full">
+                  <span
+                    title={linkedItems[0].name}
+                    className="min-w-0 truncate px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-[12px] font-medium"
+                  >
                     {linkedItems[0].name}
                   </span>
                   <button onClick={() => setShowModal(true)} title="Change"
@@ -445,8 +448,8 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
                 /* For multi (entity/property) — chips with actions + add more */
                 <>
                   {linkedItems.map(item => (
-                    <div key={item.id} className="flex items-center gap-0.5 pl-3 pr-1.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-[11px] font-medium group">
-                      <span>{item.name}</span>
+                    <div key={item.id} className="flex items-center gap-0.5 min-w-0 max-w-full pl-3 pr-1.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-[11px] font-medium group">
+                      <span className="min-w-0 truncate" title={item.name}>{item.name}</span>
                       {/* Edit inline -- always visible, not hover-only: opacity-0
                           group-hover:opacity-100 is invisible AND unreachable on
                           touch (no persistent :hover), same fix as the master
@@ -977,7 +980,13 @@ export default function FieldLayoutEditor({
             onDrop={() => handleDrop(field.field_key)}
             onDragEnd={() => { setDraggedKey(null); setDragOverKey(null); }}
             style={{ gridColumn: `span ${field.col_span}` }}
-            className={`relative group/field transition-all ${
+            // max-sm:!col-span-full forces every field to full width below
+            // the sm breakpoint regardless of its col_span (a plain
+            // responsive grid-cols-1 container can't do this -- the inline
+            // gridColumn span above would make the grid implicitly add
+            // columns instead of clamping to 1, since it exceeds the
+            // explicit track count).
+            className={`relative group/field min-w-0 max-sm:!col-span-full transition-all ${
               isEditing
                 ? `border-2 rounded-2xl p-4 ${isDragOver ? 'border-indigo-500 bg-indigo-50/30' : 'border-dashed border-slate-200 hover:border-slate-300'}`
                 : 'py-2'
