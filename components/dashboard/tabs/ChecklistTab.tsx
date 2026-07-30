@@ -1,11 +1,12 @@
 // components/dashboard/tabs/ChecklistTab.tsx
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   Plus, Check, ChevronDown, ChevronRight, Trash2, Calendar,
   User, Users, DollarSign, Pencil, X,
-  Copy, ArrowLeft, CheckSquare, Flag, StickyNote, Mail, GripVertical,
+  Copy, CheckSquare, Flag, StickyNote, Mail,
+  ArrowRight, Lock,
 } from "lucide-react";
 import DateCalculator from "@/components/DateCalculator";
 import FollowUpToggle, { FollowUpEntry } from "@/components/FollowUpToggle";
@@ -37,7 +38,7 @@ interface Team { id: string; team_name: string; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, canLogTimeEntry, onLogTimeEntry, connectedAssigneeIds, onSyncCalendar, syncingTaskId }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, canLogTimeEntry, onLogTimeEntry, connectedAssigneeIds, onSyncCalendar, syncingTaskId, dependenciesByTask, onNextTask }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
@@ -50,15 +51,27 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
     .filter(id => id !== task.assignee_id)
     .map(id => profiles.find((p: any) => p.id === id))
     .filter(Boolean);
+  // "Cannot happen without" — every prerequisite task_dependencies row must be
+  // completed before this task can be marked done (hard-blocked, not just a
+  // warning). Deleted prerequisite tasks fall out of `allTasks` and so no
+  // longer block anything, matching task_dependencies.sql's comment on
+  // soft-deleted rows not being auto-cleaned-up here.
+  const blockedBy = ((dependenciesByTask?.[task.id] || []) as string[])
+    .map(id => allTasks.find((t: any) => t.id === id))
+    .filter((t: any) => t && !t.is_completed);
+  const isBlocked = blockedBy.length > 0;
   return (
     <div className={depth > 0 ? 'ml-6 border-l-2 border-slate-100 pl-4' : ''}>
       <div className={`group flex items-start gap-3 py-2.5 px-3 rounded-2xl transition-all hover:bg-slate-50 ${task.is_completed ? 'opacity-60' : ''}`}>
         <button onClick={() => subtasks.length && setExpanded((p: boolean) => !p)} className="mt-0.5 shrink-0 w-4">
           {subtasks.length > 0 ? (expanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />) : <span className="w-4" />}
         </button>
-        <button onClick={() => onUpdate(task.id, { is_completed: !task.is_completed })}
-          className={`mt-0.5 w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${task.is_completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-indigo-400'}`}>
+        <button onClick={() => { if (!task.is_completed && isBlocked) return; onUpdate(task.id, { is_completed: !task.is_completed }); }}
+          disabled={!task.is_completed && isBlocked}
+          title={!task.is_completed && isBlocked ? `Blocked by: ${blockedBy.map((t: any) => t.name).join(', ')}` : undefined}
+          className={`mt-0.5 w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${task.is_completed ? 'bg-emerald-500 border-emerald-500' : isBlocked ? 'border-slate-200 cursor-not-allowed' : 'border-slate-300 hover:border-indigo-400'}`}>
           {task.is_completed && <Check size={11} className="text-white" />}
+          {!task.is_completed && isBlocked && <Lock size={9} className="text-slate-300" />}
         </button>
         <div className="mt-0.5 shrink-0">
           <FollowUpToggle
@@ -92,6 +105,11 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
                 📅 Follow-up scheduled {getRelativeDateLabel(scheduledFollowUps[0].followedUpAt)}
               </span>
             )}
+            {isBlocked && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium" title={blockedBy.map((t: any) => t.name).join(', ')}>
+                <Lock size={10} /> Blocked by {blockedBy.length} task{blockedBy.length !== 1 ? 's' : ''}
+              </span>
+            )}
             {task.notes && (
               <span className="flex items-center gap-1 text-[10px] text-slate-400 italic">
                 <StickyNote size={10} /> {task.notes}
@@ -114,6 +132,9 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             <button onClick={() => onSyncCalendar(task)} disabled={syncingTaskId === task.id} title="Add to calendar"
               className="p-1.5 text-slate-300 hover:text-sky-600 transition-colors disabled:opacity-40"><Calendar size={12} /></button>
           )}
+          {!task.is_completed && (
+            <button onClick={() => onNextTask(task)} title="Mark done & add next task" className="p-1.5 text-slate-300 hover:text-emerald-600 transition-colors"><ArrowRight size={12} /></button>
+          )}
           <button onClick={() => onAddSubtask(task.id)} title="Add subtask" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors"><Plus size={12} /></button>
           <button onClick={() => onEdit(task)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors"><Pencil size={12} /></button>
           <button onClick={() => onDelete(task.id)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
@@ -127,7 +148,8 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
               onUpdate={onUpdate} onDelete={onDelete} onAddSubtask={onAddSubtask} onEdit={onEdit}
               onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} onMarkFollowUpDone={onMarkFollowUpDone}
               canLogTimeEntry={canLogTimeEntry} onLogTimeEntry={onLogTimeEntry}
-              connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={onSyncCalendar} syncingTaskId={syncingTaskId} />
+              connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={onSyncCalendar} syncingTaskId={syncingTaskId}
+              dependenciesByTask={dependenciesByTask} onNextTask={onNextTask} />
           ))}
         </div>
       )}
@@ -136,14 +158,23 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
 }
 
 // ── TaskEditModal ─────────────────────────────────────────────────
-function TaskEditModal({ task, profiles, teams, followUps, watcherIds: initWatcherIds, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, onSave, onClose }: any) {
+function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, onAddDependency, onRemoveDependency, followUps, watcherIds: initWatcherIds, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, onSave, onClose }: any) {
   const [draft, setDraft] = useState<Partial<Task>>({ ...task });
   const [watcherIds, setWatcherIds] = useState<string[]>(initWatcherIds || []);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<'details' | 'history'>('details');
+  const [addDependencyId, setAddDependencyId] = useState('');
   const set = (patch: Partial<Task>) => setDraft(p => ({ ...p, ...patch }));
   const toggleWatcher = (id: string) => setWatcherIds(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id]);
   const handleSave = async () => { setSaving(true); await onSave(draft, watcherIds); setSaving(false); onClose(); };
+  const dependsOnIds: string[] = task.id ? (dependenciesByTask?.[task.id] || []) : [];
+  const dependsOnTasks = dependsOnIds.map(id => (allTasks || []).find((t: any) => t.id === id)).filter(Boolean);
+  // Only earlier-created, not-already-linked, other tasks in this project are offerable
+  // — deliberately no cycle detection beyond excluding itself (task_dependencies.sql's
+  // CHECK constraint blocks self-reference at the DB level too), matching the scope
+  // called out when this feature was designed: a simple prerequisite set, not a full
+  // DAG editor with cycle prevention.
+  const dependencyOptions = (allTasks || []).filter((t: any) => t.id !== task.id && !dependsOnIds.includes(t.id));
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
@@ -282,6 +313,38 @@ function TaskEditModal({ task, profiles, teams, followUps, watcherIds: initWatch
               </div>
             </div>
           )}
+          {task.id && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                Depends on <span className="text-slate-300 font-normal normal-case">— can't be marked done until these are</span>
+              </p>
+              <div className="space-y-1.5 mb-2">
+                {dependsOnTasks.map((t: any) => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 rounded-full">
+                    <span className={`text-[12px] font-medium truncate ${t.is_completed ? 'text-emerald-600' : 'text-slate-700'}`}>
+                      {t.is_completed && <Check size={11} className="inline mr-1" />}{t.name}
+                    </span>
+                    <button onClick={() => onRemoveDependency(task.id, t.id)} className="p-1 text-slate-300 hover:text-red-500 shrink-0"><X size={12} /></button>
+                  </div>
+                ))}
+                {!dependsOnTasks.length && <p className="text-[11px] text-slate-300 italic">No prerequisites</p>}
+              </div>
+              {!!dependencyOptions.length && (
+                <div className="flex items-center gap-2">
+                  <select value={addDependencyId} onChange={e => setAddDependencyId(e.target.value)}
+                    className="flex-1 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none bg-white">
+                    <option value="">— Select a task —</option>
+                    {dependencyOptions.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <button onClick={() => { if (!addDependencyId) return; onAddDependency(task.id, addDependencyId); setAddDependencyId(''); }}
+                    disabled={!addDependencyId}
+                    className="px-4 py-2 bg-slate-900 text-white text-[11px] font-bold rounded-full disabled:opacity-40 transition-colors">
+                    Add
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Notes</p>
             <textarea value={draft.notes || ''} onChange={e => set({ notes: e.target.value || null })} rows={3} placeholder="Add a note..."
@@ -342,6 +405,10 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   // action shows at all: only when that task's assignee has a calendar to add it to.
   const [connectedAssigneeIds, setConnectedAssigneeIds] = useState<Set<string>>(new Set());
   const [syncingTaskId, setSyncingTaskId] = useState<string | null>(null);
+  // taskId -> ids of tasks it depends on (task_dependencies.task_id = this task,
+  // .depends_on_task_id = the prerequisite) — AND semantics, every one must be
+  // completed before this task can be. See task_dependencies.sql.
+  const [dependenciesByTask, setDependenciesByTask] = useState<Record<string, string[]>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -378,9 +445,10 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
 
     const taskIds = (taskData || []).map((t: any) => t.id);
     if (taskIds.length) {
-      const [{ data: followUpData }, { data: watcherData }] = await Promise.all([
+      const [{ data: followUpData }, { data: watcherData }, { data: dependencyData }] = await Promise.all([
         supabase.from('task_follow_ups').select('id, task_id, followed_up_at, is_done').in('task_id', taskIds),
         supabase.from('task_watchers').select('task_id, profile_id').in('task_id', taskIds),
+        supabase.from('task_dependencies').select('task_id, depends_on_task_id').in('task_id', taskIds),
       ]);
       const grouped: Record<string, FollowUpEntry[]> = {};
       for (const f of followUpData || []) {
@@ -392,9 +460,15 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
         (watcherGroups[w.task_id] ||= []).push(w.profile_id);
       }
       setWatchersByTask(watcherGroups);
+      const dependencyGroups: Record<string, string[]> = {};
+      for (const d of dependencyData || []) {
+        (dependencyGroups[d.task_id] ||= []).push(d.depends_on_task_id);
+      }
+      setDependenciesByTask(dependencyGroups);
     } else {
       setFollowUpsByTask({});
       setWatchersByTask({});
+      setDependenciesByTask({});
     }
 
     setLoading(false);
@@ -475,8 +549,12 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       }
       await saveWatchers(id, watcherIds, watchersByTask[id] || [], user?.id || null);
     } else {
+      // _pendingDependencyOn is set by handleNextTask -- an internal marker, not a
+      // real tasks column, stripped before insert and consumed right after to link
+      // this brand-new task back to the one that was just marked done.
+      const { _pendingDependencyOn, ...insertPayload } = draft as any;
       const { data } = await supabase.from('tasks').insert({
-        ...draft,
+        ...insertPayload,
         created_by: user?.id,
         date_entered: new Date().toISOString().split('T')[0],
       }).select().single();
@@ -484,8 +562,37 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
         setTasks(prev => [...prev, data]);
         logTaskActivity(supabase, { taskId: data.id, companyId, actorId: user?.id || null, action: 'created' });
         await saveWatchers(data.id, watcherIds, [], user?.id || null);
+        if (_pendingDependencyOn) await handleAddDependency(data.id, _pendingDependencyOn);
       }
     }
+  };
+
+  const handleAddDependency = async (taskId: string, dependsOnTaskId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('task_dependencies')
+      .insert({ task_id: taskId, depends_on_task_id: dependsOnTaskId, company_id: companyId, created_by: user?.id || null });
+    if (!error) {
+      setDependenciesByTask(prev => ({ ...prev, [taskId]: [...new Set([...(prev[taskId] || []), dependsOnTaskId])] }));
+    }
+  };
+
+  const handleRemoveDependency = async (taskId: string, dependsOnTaskId: string) => {
+    await supabase.from('task_dependencies').delete().eq('task_id', taskId).eq('depends_on_task_id', dependsOnTaskId);
+    setDependenciesByTask(prev => ({ ...prev, [taskId]: (prev[taskId] || []).filter(id => id !== dependsOnTaskId) }));
+  };
+
+  // "Next task": marks the current task done, then opens the new-task form
+  // prefilled to become a dependent of it once saved (handleSaveTask consumes
+  // _pendingDependencyOn above) -- the one-click "finish this, queue the next
+  // step in the chain" action.
+  const handleNextTask = (task: Task) => {
+    handleUpdate(task.id, { is_completed: true });
+    setEditingTask({
+      project_id: recordId, company_id: companyId, parent_task_id: task.parent_task_id || null,
+      is_completed: false, is_monetary: false, estimated_cost: 0, due_time: '09:00',
+      reminder_settings: { days: 0, time: '09:00' },
+      _pendingDependencyOn: task.id,
+    } as any);
   };
 
   const handleUpdate = async (id: string, patch: Partial<Task>) => {
@@ -683,7 +790,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
               onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
               onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
               canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
-              connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId} />
+              connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId}
+              dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} />
           ))}
         </div>
       )}
@@ -702,7 +810,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
                   canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
-                  connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId} />
+                  connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId}
+                  dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} />
               ))}
             </div>
           )}
@@ -723,7 +832,8 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                   onUpdate={handleUpdate} onDelete={handleDelete} onAddSubtask={handleAddTask} onEdit={(t: Task) => setEditingTask(t)}
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
                   canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
-                  connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId} />
+                  connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId}
+                  dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} />
               ))}
             </div>
           )}
@@ -733,6 +843,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       {/* Modals */}
       {editingTask && (
         <TaskEditModal task={editingTask} profiles={profiles} teams={teams}
+          allTasks={tasks} dependenciesByTask={dependenciesByTask} onAddDependency={handleAddDependency} onRemoveDependency={handleRemoveDependency}
           followUps={editingTask.id ? (followUpsByTask[editingTask.id] || []) : []}
           watcherIds={editingTask.id ? (watchersByTask[editingTask.id] || []) : []}
           onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}

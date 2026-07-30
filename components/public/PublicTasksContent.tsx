@@ -20,7 +20,7 @@ import { tableShellKey } from "@/lib/hooks/prefetchShells";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import { useDomSettled } from "@/lib/hooks/useDomSettled";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
-import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign, Calendar as CalendarIcon } from "lucide-react";
+import { Loader2, Plus, X, ExternalLink, RefreshCw, Pencil, Trash2, Check, FileStack, Flag, StickyNote, Mail, ChevronDown, ChevronRight, DollarSign, Calendar as CalendarIcon, ArrowRight, Lock } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS } from "@/lib/publicTaskColumns";
 import DateCalculator from "@/components/DateCalculator";
 import ProjectPicker, { PickedProject } from "@/components/public/ProjectPicker";
@@ -130,6 +130,15 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   // action shows at all: only when that task's assignee has a calendar to add it to.
   const [connectedAssigneeIds, setConnectedAssigneeIds] = useState<Set<string>>(new Set());
   const [syncingTaskId, setSyncingTaskId] = useState<string | null>(null);
+  // taskId -> ids of tasks it depends on (task_dependencies.task_id = this task,
+  // .depends_on_task_id = the prerequisite) — AND semantics, every one must be
+  // completed before this task can be. See supabase/task_dependencies.sql. Only
+  // covers tasks actually visible on this page (own tabs) — a dependency on a task
+  // outside this page's scope can't be created from here.
+  const [dependenciesByTask, setDependenciesByTask] = useState<Record<string, string[]>>({});
+  // Set by "Next task" (mark this task done, open Add task pre-linked to it) --
+  // consumed once by TaskModal's handleSubmit after a successful create.
+  const [pendingDependencyOn, setPendingDependencyOn] = useState<string | null>(null);
 
   // Persist the organised-view preference per browser (it's a display
   // choice, not something that needs to sync across viewers).
@@ -279,6 +288,50 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
       setConnectedAssigneeIds(new Set((connections || []).map((c: any) => c.user_id)));
     })();
   }, [data?.companyId]);
+
+  // Every task actually visible on this page, across every tab, deduped by id (a
+  // watched task can appear under more than one viewer's tab). Dependencies are
+  // scoped to this set -- only tasks the viewer can already see here are offerable
+  // as a prerequisite.
+  const allVisibleTasks = data
+    ? [...new Map(data.tabs.flatMap(t => t.tasks).map(t => [t.id, t])).values()]
+    : [];
+
+  useEffect(() => {
+    const ids = allVisibleTasks.map(t => t.id);
+    if (!ids.length) { setDependenciesByTask({}); return; }
+    (async () => {
+      const { data: deps } = await supabase.from("task_dependencies").select("task_id, depends_on_task_id").in("task_id", ids);
+      const grouped: Record<string, string[]> = {};
+      for (const d of deps || []) (grouped[d.task_id] ||= []).push(d.depends_on_task_id);
+      setDependenciesByTask(grouped);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const handleAddDependency = async (taskId: string, dependsOnTaskId: string) => {
+    if (!data) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from("task_dependencies")
+      .insert({ task_id: taskId, depends_on_task_id: dependsOnTaskId, company_id: data.companyId, created_by: user?.id || null });
+    if (!error) {
+      setDependenciesByTask(prev => ({ ...prev, [taskId]: [...new Set([...(prev[taskId] || []), dependsOnTaskId])] }));
+    }
+  };
+
+  const handleRemoveDependency = async (taskId: string, dependsOnTaskId: string) => {
+    await supabase.from("task_dependencies").delete().eq("task_id", taskId).eq("depends_on_task_id", dependsOnTaskId);
+    setDependenciesByTask(prev => ({ ...prev, [taskId]: (prev[taskId] || []).filter(id => id !== dependsOnTaskId) }));
+  };
+
+  // Marks the current task done, then opens the new-task form flagged so
+  // TaskModal links the task it creates back to this one -- the one-click
+  // "finish this, queue the next step in the chain" action.
+  const handleNextTask = (task: Task) => {
+    toggleComplete(task);
+    setPendingDependencyOn(task.id);
+    setShowAddForm(true);
+  };
 
   // Fires the same calendar-sync edge function the public tasks page's PATCH route
   // already triggers on save -- this is a one-off manual push for a task that hasn't
@@ -547,13 +600,23 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   const renderRow = (t: Task) => {
     const dl = getDaysLeft(t.dueDate, t.isCompleted);
+    // "Cannot happen without" — every prerequisite must be completed before t can
+    // be (hard-blocked, not just a warning). Direct dependencies only, not
+    // transitive through a chain — see ChecklistTab.tsx's identical comment.
+    const blockedBy = (dependenciesByTask[t.id] || [])
+      .map(id => allVisibleTasks.find(v => v.id === id))
+      .filter((v): v is Task => !!v && !v.isCompleted);
+    const isBlocked = blockedBy.length > 0;
     return (
       <tr key={t.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 group ${t.isWatcher ? "border-l-2 border-l-violet-300" : ""}`}>
         <td className="px-4 py-4">
           <div className="flex items-center gap-2">
-            <button onClick={() => toggleComplete(t)}
-              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${t.isCompleted ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-indigo-400"}`}>
+            <button onClick={() => { if (!t.isCompleted && isBlocked) return; toggleComplete(t); }}
+              disabled={!t.isCompleted && isBlocked}
+              title={!t.isCompleted && isBlocked ? `Blocked by: ${blockedBy.map(v => v.name).join(", ")}` : undefined}
+              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${t.isCompleted ? "bg-emerald-500 border-emerald-500" : isBlocked ? "border-slate-200 cursor-not-allowed" : "border-slate-300 hover:border-indigo-400"}`}>
               {t.isCompleted && <Check size={11} className="text-white" />}
+              {!t.isCompleted && isBlocked && <Lock size={9} className="text-slate-300" />}
             </button>
             <FollowUpToggle
               entries={t.followUps}
@@ -579,6 +642,11 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
             {t.followUps.some(f => !f.isDone) && (
               <span className="flex items-center gap-1 text-[10px] text-sky-600 font-medium">
                 📅 Follow-up scheduled {getRelativeDateLabel(t.followUps.find(f => !f.isDone)!.followedUpAt)}
+              </span>
+            )}
+            {isBlocked && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-400 font-medium" title={blockedBy.map(v => v.name).join(", ")}>
+                <Lock size={9} /> Blocked by {blockedBy.length} task{blockedBy.length !== 1 ? "s" : ""}
               </span>
             )}
             {t.notes && (
@@ -616,6 +684,9 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
               {t.assigneeId && t.dueDate && connectedAssigneeIds.has(t.assigneeId) && (
                 <button onClick={() => syncToCalendar(t)} disabled={syncingTaskId === t.id} title="Add to calendar"
                   className="p-1.5 text-slate-300 hover:text-sky-600 disabled:opacity-40"><CalendarIcon size={13} /></button>
+              )}
+              {!t.isCompleted && (
+                <button onClick={() => handleNextTask(t)} title="Mark done & add next task" className="p-1.5 text-slate-300 hover:text-emerald-600"><ArrowRight size={13} /></button>
               )}
               <button onClick={() => setEditingTask(t)} title="Edit" className="p-1.5 text-slate-300 hover:text-indigo-600"><Pencil size={13} /></button>
               <button onClick={() => deleteTask(t)} title="Delete" className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={13} /></button>
@@ -755,9 +826,11 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
           defaultAssigneeId={activeTab === "unallocated" ? null : activeTab}
           saving={saving}
           setSaving={setSaving}
-          onClose={() => setShowAddForm(false)}
-          onSaved={() => { setShowAddForm(false); refresh(); }}
+          onClose={() => { setShowAddForm(false); setPendingDependencyOn(null); }}
+          onSaved={() => { setShowAddForm(false); setPendingDependencyOn(null); refresh(); }}
           onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp} onMarkFollowUpDone={markFollowUpDone}
+          allTasks={allVisibleTasks} dependenciesByTask={dependenciesByTask} onAddDependency={handleAddDependency} onRemoveDependency={handleRemoveDependency}
+          pendingDependencyOn={pendingDependencyOn}
         />
       )}
 
@@ -773,6 +846,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
           onSaved={() => { setEditingTask(null); refresh(); }}
           onDeleted={() => { setEditingTask(null); refresh(); }}
           onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp} onMarkFollowUpDone={markFollowUpDone}
+          allTasks={allVisibleTasks} dependenciesByTask={dependenciesByTask} onAddDependency={handleAddDependency} onRemoveDependency={handleRemoveDependency}
         />
       )}
 
@@ -817,10 +891,15 @@ function renderCell(key: string, t: Task) {
 }
 
 // ── Add / Edit task modal ───────────────────────────────────────────
-function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSaving, onClose, onSaved, onDeleted, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone }: {
+function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSaving, onClose, onSaved, onDeleted, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, allTasks, dependenciesByTask, onAddDependency, onRemoveDependency, pendingDependencyOn }: {
   pageId: string; formOptions: FormOptions; defaultAssigneeId: string | null; task?: Task;
   saving: boolean; setSaving: (v: boolean) => void; onClose: () => void; onSaved: () => void; onDeleted?: () => void;
   onAddFollowUp: (task: Task, date: string) => void; onRemoveFollowUp: (task: Task, id: string) => void; onMarkFollowUpDone: (task: Task, id: string) => void;
+  allTasks?: Task[]; dependenciesByTask?: Record<string, string[]>;
+  onAddDependency?: (taskId: string, dependsOnTaskId: string) => void; onRemoveDependency?: (taskId: string, dependsOnTaskId: string) => void;
+  // Set only when opened via "Next task" -- once this brand-new task is created,
+  // it's linked back to the task that was just marked done.
+  pendingDependencyOn?: string | null;
 }) {
   const isEdit = !!task;
   const [name, setName] = useState(task?.name || "");
@@ -837,6 +916,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
+  const [addDependencyId, setAddDependencyId] = useState("");
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError("Task name is required"); return; }
@@ -856,8 +936,13 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
     const json = await res.json();
     setSaving(false);
     if (!res.ok) { setError(json.error || "Failed to save task"); return; }
+    if (!isEdit && pendingDependencyOn && json.task?.id) onAddDependency?.(json.task.id, pendingDependencyOn);
     onSaved();
   };
+
+  const dependsOnIds: string[] = (task?.id && dependenciesByTask?.[task.id]) || [];
+  const dependsOnTasks = dependsOnIds.map(id => (allTasks || []).find(t => t.id === id)).filter((t): t is Task => !!t);
+  const dependencyOptions = (allTasks || []).filter(t => t.id !== task?.id && !dependsOnIds.includes(t.id));
 
   const handleDelete = async () => {
     if (!task || !window.confirm(`Delete "${task.name}"?`)) return;
@@ -991,6 +1076,38 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
               <span className="text-[12px] text-slate-700 font-medium">📅 Also add to company calendar</span>
             </label>
           </div>
+          {isEdit && task?.id && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                Depends on <span className="text-slate-300 font-normal normal-case">— can't be marked done until these are</span>
+              </p>
+              <div className="space-y-1.5 mb-2">
+                {dependsOnTasks.map(t => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 rounded-full">
+                    <span className={`text-[12px] font-medium truncate ${t.isCompleted ? "text-emerald-600" : "text-slate-700"}`}>
+                      {t.isCompleted && <Check size={11} className="inline mr-1" />}{t.name}
+                    </span>
+                    <button onClick={() => onRemoveDependency?.(task.id, t.id)} className="p-1 text-slate-300 hover:text-red-500 shrink-0"><X size={12} /></button>
+                  </div>
+                ))}
+                {!dependsOnTasks.length && <p className="text-[11px] text-slate-300 italic">No prerequisites</p>}
+              </div>
+              {!!dependencyOptions.length && (
+                <div className="flex items-center gap-2">
+                  <select value={addDependencyId} onChange={e => setAddDependencyId(e.target.value)}
+                    className="flex-1 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none bg-white">
+                    <option value="">— Select a task —</option>
+                    {dependencyOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <button onClick={() => { if (!addDependencyId) return; onAddDependency?.(task.id, addDependencyId); setAddDependencyId(""); }}
+                    disabled={!addDependencyId}
+                    className="px-4 py-2 bg-slate-900 text-white text-[11px] font-bold rounded-full disabled:opacity-40 transition-colors">
+                    Add
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Notes</p>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Add a note..."
