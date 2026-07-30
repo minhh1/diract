@@ -10,21 +10,21 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Hash, X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import AutoNumberConfig from "@/components/schema/AutoNumberConfig";
-import { parseHighestAssignedNumber, type AutoNumberConfigValue } from "@/lib/schema/autoNumberPresets";
+import { fetchHighestAssignedNumber, type AutoNumberConfigValue, type AutoNumberParentTable } from "@/lib/schema/autoNumberPresets";
 
 interface Props {
   fieldId: string;
-  // Which value table "Continue from latest" reads from -- company_custom_
-  // field_values for a system-table field (projects/entities/properties),
-  // company_table_values for an ordinary custom table.
-  valueTable: 'company_custom_field_values' | 'company_table_values';
+  // Which record table this field's values belong to -- lets "Continue
+  // from latest" exclude actually-deleted records from the max-number scan
+  // (an archived/Closed matter still counts -- its number was genuinely
+  // issued, only a deleted one shouldn't be treated as "the latest").
+  parentTable: AutoNumberParentTable;
   value: AutoNumberConfigValue;
   onSave: (next: AutoNumberConfigValue) => Promise<void>;
 }
 
-export default function FieldAutoNumberPopover({ fieldId, valueTable, value, onSave }: Props) {
+export default function FieldAutoNumberPopover({ fieldId, parentTable, value, onSave }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<AutoNumberConfigValue>(value);
   const [saving, setSaving] = useState(false);
@@ -42,9 +42,8 @@ export default function FieldAutoNumberPopover({ fieldId, valueTable, value, onS
   }, [open]);
 
   const handleContinueFromLatest = async (): Promise<number | null> => {
-    const { data } = await supabase.from(valueTable).select('value_text').eq('field_id', fieldId);
-    const values = (data || []).map(d => d.value_text).filter((v): v is string => !!v);
-    return parseHighestAssignedNumber(values, draft.prefix || '');
+    const valueTable = parentTable.kind === 'system' ? 'company_custom_field_values' : 'company_table_values';
+    return fetchHighestAssignedNumber(fieldId, draft.prefix || '', valueTable, parentTable);
   };
 
   const handleClose = async () => {

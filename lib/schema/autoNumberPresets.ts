@@ -1,4 +1,5 @@
 // lib/schema/autoNumberPresets.ts
+import { supabase } from "@/lib/supabase";
 // Shared preset list + helpers for the "Auto numbering" config UI, used by
 // both components/schema/FieldConfigPanel.tsx (the full schema/custom-
 // fields config panel) and components/dashboard/FieldAutoNumberPopover.tsx
@@ -64,4 +65,45 @@ export function parseHighestAssignedNumber(values: string[], prefix: string): nu
     if (max === null || n > max) max = n;
   }
   return max;
+}
+
+// Which table a field's records actually live in -- a system-table field
+// (e.g. Matter Number on projects) vs. a field on an ordinary custom table,
+// where every record (regardless of which custom table) shares one
+// company_table_records row, disambiguated by table_id.
+export type AutoNumberParentTable =
+  | { kind: 'system'; table: string }
+  | { kind: 'custom'; tableId: string };
+
+// "Continue from latest" needs the highest number ALREADY ASSIGNED to a
+// still-live record -- a deleted/archived one shouldn't count (this app's
+// "Archive this record?" action just sets deleted_at, same as any other
+// soft delete -- see RecordDashboard.tsx -- so there's only one state to
+// exclude here, not two). Two-step query rather than one embedded-resource
+// filter: company_custom_field_values/company_table_values has no declared
+// FK PostgREST can use for dot-notation filtering (deliberately -- it's a
+// generic EAV table reused across every table_name), so the set of live
+// record ids has to be fetched separately and intersected in memory.
+export async function fetchHighestAssignedNumber(
+  fieldId: string,
+  prefix: string,
+  valueTable: 'company_custom_field_values' | 'company_table_values',
+  parent: AutoNumberParentTable
+): Promise<number | null> {
+  const liveIds = new Set<string>();
+  if (parent.kind === 'system') {
+    const { data } = await supabase.from(parent.table).select('id').is('deleted_at', null);
+    (data || []).forEach((r: { id: string }) => liveIds.add(r.id));
+  } else {
+    const { data } = await supabase.from('company_table_records').select('id').eq('table_id', parent.tableId).is('deleted_at', null);
+    (data || []).forEach((r: { id: string }) => liveIds.add(r.id));
+  }
+  if (!liveIds.size) return null;
+
+  const { data: values } = await supabase.from(valueTable).select('record_id, value_text').eq('field_id', fieldId);
+  const liveValues = (values || [])
+    .filter((v: { record_id: string }) => liveIds.has(v.record_id))
+    .map((v: { value_text: string | null }) => v.value_text)
+    .filter((v: string | null): v is string => !!v);
+  return parseHighestAssignedNumber(liveValues, prefix);
 }

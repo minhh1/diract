@@ -8,7 +8,7 @@ import type { CustomField, FieldType } from "./types";
 import { getFieldTypeConfig } from "./types"
 import { RELATION_FIELD_TYPES, NUMERIC_FIELD_TYPES } from "@/lib/schema/fieldCapabilities";
 import { validateFieldCompatibility } from "@/lib/schema/fieldCompatibilityRules";
-import { parseHighestAssignedNumber } from "@/lib/schema/autoNumberPresets";
+import { fetchHighestAssignedNumber, type AutoNumberParentTable } from "@/lib/schema/autoNumberPresets";
 import AutoNumberConfig from "./AutoNumberConfig";
 
 const RELATION_TYPES: FieldType[] = RELATION_FIELD_TYPES;
@@ -153,11 +153,15 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
   // Value table differs by which side of the isCustomTable divide this
   // field is on -- company_table_values (custom tables) vs
   // company_custom_field_values (system tables like projects/entities).
+  // Excludes deleted/archived records (see fetchHighestAssignedNumber's own
+  // doc comment) so a deleted matter's number can never get suggested as
+  // "the latest" to continue from.
   const handleContinueFromLatest = async (): Promise<number | null> => {
     const valueTable = field.isCustomTable ? 'company_table_values' : 'company_custom_field_values';
-    const { data } = await supabase.from(valueTable).select('value_text').eq('field_id', draft.id);
-    const values = (data || []).map(d => d.value_text).filter((v): v is string => !!v);
-    return parseHighestAssignedNumber(values, draft.auto_number_prefix || '');
+    const parent: AutoNumberParentTable = field.isCustomTable
+      ? { kind: 'custom', tableId: field.table_id! }
+      : { kind: 'system', table: field.table_name };
+    return fetchHighestAssignedNumber(draft.id, draft.auto_number_prefix || '', valueTable, parent);
   };
 
   const handleSave = async () => {

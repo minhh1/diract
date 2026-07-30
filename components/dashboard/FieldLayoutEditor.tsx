@@ -9,7 +9,7 @@ import RelationPicker from "./RelationPicker";
 import SmartFieldHint from "@/components/SmartFieldHint";
 import { useNameQualityCheck } from "@/lib/hooks/useNameQualityCheck";
 import FieldAutoNumberPopover from "./FieldAutoNumberPopover";
-import type { AutoNumberConfigValue } from "@/lib/schema/autoNumberPresets";
+import type { AutoNumberConfigValue, AutoNumberParentTable } from "@/lib/schema/autoNumberPresets";
 
 export interface FieldLayout {
   id: string;
@@ -48,14 +48,14 @@ interface Props {
   fieldSections?: Record<string, string>;
   // Present only when the caller wants the inline auto-numbering toggle
   // available at all (e.g. gated to admins) -- every custom text field then
-  // gets a small Hash icon next to it in edit mode. autoNumberValueTable is
+  // gets a small Hash icon next to it in edit mode. autoNumberParentTable is
   // fixed per FieldLayoutEditor instance since every custom field it
   // renders belongs to the same underlying table (either all
   // company_custom_fields, for a system table, or all company_table_fields,
   // for an ordinary custom table -- RecordDashboard never mixes the two in
   // one instance).
   onSaveAutoNumber?: (field: FieldLayout, next: AutoNumberConfigValue) => Promise<void>;
-  autoNumberValueTable?: 'company_custom_field_values' | 'company_table_values';
+  autoNumberParentTable?: AutoNumberParentTable;
 }
 
 // ── LinkedRecordModal — multi-select (one row per linked record) ─
@@ -903,7 +903,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
 export default function FieldLayoutEditor({
   fields, recordValues, linkedItems = {}, isEditing,
   onSave, onAddLinked, onRemoveLinked, onLayoutChange, onAddField, onRemoveField,
-  fieldSections = {}, onSaveAutoNumber, autoNumberValueTable,
+  fieldSections = {}, onSaveAutoNumber, autoNumberParentTable,
 }: Props) {
   const [draggedKey, setDraggedKey]   = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
@@ -1010,10 +1010,10 @@ export default function FieldLayoutEditor({
               <div className="flex items-center justify-between mb-2">
                 <GripVertical size={14} className="text-slate-300 cursor-grab active:cursor-grabbing" />
                 <div className="flex items-center gap-1">
-                  {onSaveAutoNumber && autoNumberValueTable && field.field_source === 'custom' && field.fieldType === 'text' && (
+                  {onSaveAutoNumber && autoNumberParentTable && field.field_source === 'custom' && field.fieldType === 'text' && (
                     <FieldAutoNumberPopover
                       fieldId={field.id}
-                      valueTable={autoNumberValueTable}
+                      parentTable={autoNumberParentTable}
                       value={field.autoNumber ?? { prefix: null, start: null, pad: null }}
                       onSave={next => onSaveAutoNumber(field, next)}
                     />

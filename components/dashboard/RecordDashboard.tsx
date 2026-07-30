@@ -1304,7 +1304,7 @@ export default function RecordDashboard({
             handleRemoveFieldFromTab(activeTab.id, fieldKey)
           }
           onSaveAutoNumber={isAdmin ? handleSaveAutoNumber : undefined}
-          autoNumberValueTable={systemTable ? 'company_custom_field_values' : 'company_table_values'}
+          autoNumberParentTable={systemTable ? { kind: 'system', table: systemTable } : { kind: 'custom', tableId: tableId! }}
         />
       )}
       {activeTab?.tab_type === 'sub_projects' && (
