@@ -248,7 +248,16 @@ export function usePresetTable({
       fetchItemsRef.current([...resolved.tableCols, ...resolved.expandCols])
         .then(fresh => {
           perfLog(`usePresetTable(${tableSlug}): background refresh resolved`, `${fresh?.length ?? 0} rows`);
-          if (fresh?.length) setItems(fresh);
+          if (!fresh?.length) return;
+          // Bail out to the same array reference when this revalidate just
+          // confirms the cached rows were already correct -- same pattern
+          // the column-layout background refresh right above already uses.
+          // Purely about the ROW data (`items`); Properties' specialised
+          // street-number/street-name sort (see GenericMasterTable.tsx's
+          // sortedItems) is a separate, pure client-side computation over
+          // `items` + `sort` state -- untouched by this, and still
+          // recomputes correctly whenever either actually changes.
+          setItems(prev => JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh);
         })
         .catch(() => {});
     } else {
