@@ -63,9 +63,15 @@ interface Props {
   // background/padding (the widget's own card chrome already supplies
   // that) and skips hijacking the browser tab title.
   embedded?: boolean;
+  // Threaded straight through to MatterBoard's own prop of the same name --
+  // see that file's comment. Read from the standalone route's own ?itemId=
+  // query param (app/public/updates/[slug]/page.tsx), not here, since this
+  // component is also used embedded in a dashboard widget where that query
+  // param doesn't apply.
+  initialFixItemId?: string;
 }
 
-export default function PublicClientUpdateContent({ slug, embedded = false }: Props) {
+export default function PublicClientUpdateContent({ slug, embedded = false, initialFixItemId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"staff" | "client" | null>(null);
@@ -667,6 +673,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false }: Pr
           pageId={mode === "staff" ? staffPageId! : undefined}
           baseTable={meta.baseTable}
           pageKind={meta.pageKind}
+          initialFixItemId={initialFixItemId}
           groups={board.groups}
           items={board.items}
           fields={board.fields}

@@ -78,6 +78,14 @@ interface Props {
   // from baseTable -- baseTable picks WHERE an item's data lives, pageKind
   // picks whether staff or the system owns adding/removing items.
   pageKind?: "user_dependent" | "auto_fed";
+  // A client_update_page_items.id to jump straight to that irregularity's
+  // fix panel on load, bypassing whichever group/filter it'd otherwise be
+  // hidden behind -- e.g. a notification bell deep link (see
+  // app/dashboard/notifications/page.tsx). Independent of the card/
+  // spreadsheet view's own per-row fix-modal state (MatterCard's `showFix`,
+  // SpreadsheetView's `fixItemId`), since the target item might not even be
+  // visible in the currently active group tab.
+  initialFixItemId?: string;
   groups: MatterBoardGroup[];
   items: MatterBoardItem[];
   fields: MatterBoardField[];
@@ -196,10 +204,11 @@ const FORMAT_COLORS: Record<string, { swatch: string; row: string; smRow: string
 const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
-  pageId, baseTable = "projects", pageKind = "user_dependent", groups, items, fields, formatRules, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
+  pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
   onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
+  const [deepLinkFixItemId, setDeepLinkFixItemId] = useState<string | null>(initialFixItemId ?? null);
   // Which card is expanded, in Cards mode -- one at a time, same contract as
   // SpreadsheetView's own expandedId. MatterCard used to track this itself
   // (local useState), so opening a second card never collapsed the first --
@@ -865,6 +874,10 @@ export default function MatterBoard({
         <CellHistoryPopover field={historyTarget.field} fieldLabel={historyTarget.fieldLabel} dateFormat={dateFormat}
           onFetch={() => onFetchCellHistory(historyTarget.itemId, historyTarget.fieldId)}
           onClose={() => setHistoryTarget(null)} />
+      )}
+      {deepLinkFixItemId && pageId && (
+        <IrregularityFixModal pageId={pageId} itemId={deepLinkFixItemId} canEdit={canEdit}
+          onClose={() => setDeepLinkFixItemId(null)} onResolved={onDataChanged} />
       )}
     </div>
   );
