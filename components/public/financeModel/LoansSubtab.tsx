@@ -9,7 +9,7 @@
 // component used everywhere else in the app) rather than a bespoke search
 // box.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw } from "lucide-react";
+import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
 import { calculateLoanSchedule, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
@@ -42,7 +42,7 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function LoanDetail({ loan, onChanged }: { loan: Loan; onChanged: () => void }) {
+function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: string; onChanged: () => void }) {
   const [rates, setRates] = useState<(LoanInterestRateEntry & { id: string })[]>([]);
   const [phases, setPhases] = useState<(LoanPhaseInput & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,17 +51,24 @@ function LoanDetail({ loan, onChanged }: { loan: Loan; onChanged: () => void }) 
   const [newRate, setNewRate] = useState({ effectiveDate: "", interestRatePa: "" });
   const [newPhase, setNewPhase] = useState({ repaymentType: "Interest Only" as string, startDate: "", endDate: "", paymentFrequency: "Monthly" });
   const [saving, setSaving] = useState(false);
+  const [linkedLine, setLinkedLine] = useState<{ id: string; budgeted_amount: number | null } | null>(null);
+  const [linking, setLinking] = useState(false);
+
+  const linkedSource = `loan:${loan.id}`;
 
   const load = async () => {
     setLoading(true);
-    const [rRes, pRes] = await Promise.all([
+    const [rRes, pRes, blRes] = await Promise.all([
       fetch(`/api/finance-model/loan-interest-rates?loanId=${loan.id}`),
       fetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
+      fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
     ]);
     const rJson = await rRes.json();
     const pJson = await pRes.json();
+    const blJson = await blRes.json();
     setRates(rJson.rates || []);
     setPhases((pJson.phases || []).map((p: any) => ({ ...p, phase_order: Number(p.phase_order) || 0 })));
+    setLinkedLine((blJson.budgetLines || []).find((l: any) => l.linked_source === linkedSource) || null);
     setLoading(false);
   };
 
@@ -108,6 +115,39 @@ function LoanDetail({ loan, onChanged }: { loan: Loan; onChanged: () => void }) 
     await fetch(`/api/finance-model/loan-phases?id=${id}`, { method: "DELETE" });
     await load();
   };
+
+  const linkToBudget = async (amount: number) => {
+    setLinking(true);
+    if (linkedLine) {
+      await fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: amount }) });
+    } else {
+      await fetch("/api/finance-model/budget-lines", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, category: "Finance Costs", label: `${loan.name || loan.lender_type || "Loan"} interest`, budgetedAmount: amount, linkedSource }),
+      });
+    }
+    await load();
+    setLinking(false);
+  };
+
+  const unlinkFromBudget = async () => {
+    if (!linkedLine) return;
+    setLinking(true);
+    await fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, linkedSource: null }) });
+    await load();
+    setLinking(false);
+  };
+
+  // Auto-resync -- once linked, keep the budget line's amount in step with
+  // the calculated total interest whenever rates/phases change, no manual
+  // re-click needed.
+  useEffect(() => {
+    if (loading || !linkedLine || !schedule) return;
+    if (Math.round(linkedLine.budgeted_amount ?? 0) !== Math.round(schedule.totalInterest)) {
+      fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: schedule.totalInterest }) }).then(load);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, linkedLine?.id, schedule?.totalInterest]);
 
   if (loading) {
     return <div className="flex items-center gap-2 text-[12px] text-slate-400 py-6 justify-center"><Loader2 size={13} className="animate-spin" /> Loading loan detail...</div>;
@@ -185,6 +225,18 @@ function LoanDetail({ loan, onChanged }: { loan: Loan; onChanged: () => void }) 
             <div className="flex items-center gap-6 mb-2 text-[12px]">
               <p className="font-bold text-slate-700">Total interest: <span className="text-indigo-600">{money(schedule.totalInterest)}</span></p>
               <p className="font-bold text-slate-700">Remaining balance: <span className={schedule.finalBalance > 0 ? "text-amber-600" : "text-emerald-600"}>{money(schedule.finalBalance)}</span></p>
+              {linkedLine ? (
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600"><Check size={11} /> Synced to budget (Finance Costs)</span>
+                  <button onClick={unlinkFromBudget} disabled={linking} className="text-slate-300 hover:text-rose-500 disabled:opacity-40" title="Unlink (keeps the line, stops auto-sync)">
+                    {linking ? <Loader2 size={11} className="animate-spin" /> : <Unlink size={11} />}
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => linkToBudget(schedule.totalInterest)} disabled={linking} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-40">
+                  {linking ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Link total interest to budget
+                </button>
+              )}
             </div>
             <div className="max-h-56 overflow-y-auto">
               <table className="w-full text-[11px]">
@@ -375,7 +427,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
               </div>
               {expandedId === loan.id && (
                 <div className="px-6 pb-6 border-t border-slate-100 pt-4">
-                  <LoanDetail loan={loan} onChanged={load} />
+                  <LoanDetail loan={loan} projectId={projectId} onChanged={load} />
                 </div>
               )}
             </div>

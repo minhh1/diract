@@ -67,6 +67,8 @@ export async function POST(req: NextRequest) {
   const timingProfile: string | null = body?.timingProfile || null;
   const timingStartDate: string | null = body?.timingStartDate || null;
   const timingEndDate: string | null = body?.timingEndDate || null;
+  const linkedSource: string | null = body?.linkedSource || null;
+  const linkedTaskIds: string[] = Array.isArray(body?.linkedTaskIds) ? body.linkedTaskIds : [];
 
   const id = await createCustomTableRow(admin, table, user.id, {
     project: projectId,
@@ -79,12 +81,15 @@ export async function POST(req: NextRequest) {
     timing_profile: timingProfile,
     timing_start_date: timingStartDate,
     timing_end_date: timingEndDate,
+    linked_source: linkedSource,
+    linked_task_ids: linkedTaskIds.length ? JSON.stringify(linkedTaskIds) : null,
   });
 
   return NextResponse.json({
     budgetLine: {
       id, category, label: label.trim(), budgeted_amount: budgetedAmount, xero_account_code: xeroAccountCode, display_order: existing.length,
       linked_task_id: linkedTaskId, timing_profile: timingProfile, timing_start_date: timingStartDate, timing_end_date: timingEndDate,
+      linked_source: linkedSource, linked_task_ids: linkedTaskIds.length ? JSON.stringify(linkedTaskIds) : null,
     },
   });
 }
@@ -118,6 +123,11 @@ export async function PATCH(req: NextRequest) {
   if (body.timingProfile !== undefined) updates.timing_profile = body.timingProfile || null;
   if (body.timingStartDate !== undefined) updates.timing_start_date = body.timingStartDate || null;
   if (body.timingEndDate !== undefined) updates.timing_end_date = body.timingEndDate || null;
+  if (body.linkedSource !== undefined) updates.linked_source = body.linkedSource || null;
+  if (body.linkedTaskIds !== undefined) {
+    const ids: string[] = Array.isArray(body.linkedTaskIds) ? body.linkedTaskIds : [];
+    updates.linked_task_ids = ids.length ? JSON.stringify(ids) : null;
+  }
 
   await updateCustomTableRow(admin, table, id, updates);
   return NextResponse.json({ success: true });
