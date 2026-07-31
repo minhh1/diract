@@ -29,7 +29,24 @@ export async function syncFinanceModelTransactions(admin: any, companyId: string
   const xero = await resolveProjectXeroConnection(admin, projectId);
   if (!xero) return { imported: 0, skipped: 0, connected: false, error: "This project isn't linked to a Xero organisation." };
 
-  const res = await xeroApiFetch(xero.connectionId, admin, `/BankTransactions?order=Date DESC&where=${encodeURIComponent('Status=="AUTHORISED"')}`);
+  // xeroApiFetch/refreshAccessToken throw plain Errors on a broken
+  // connection (missing row, or a refresh_token that no longer belongs to
+  // the currently-configured Xero app -- confirmed possible this session,
+  // rotating XERO_CLIENT_ID/SECRET invalidates every previously-issued
+  // refresh_token) -- caught here so this function always resolves to a
+  // SyncResult as its signature promises, never rejects, since an
+  // unhandled rejection surfaces to the API route as a bodyless 500 that
+  // breaks the client's res.json() parse.
+  let res: Response;
+  try {
+    res = await xeroApiFetch(xero.connectionId, admin, `/BankTransactions?order=Date DESC&where=${encodeURIComponent('Status=="AUTHORISED"')}`);
+  } catch (err) {
+    return {
+      imported: 0, skipped: 0, connected: false,
+      error: err instanceof Error ? err.message : "Failed to reach Xero",
+      needsReconnect: true,
+    };
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     return {

@@ -19,7 +19,11 @@ export async function POST(req: NextRequest) {
   const { data: project } = await admin.from("projects").select("id").eq("id", projectId).eq("company_id", companyId).maybeSingle();
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-  const result = await syncFinanceModelTransactions(admin, companyId, projectId);
-  if (result.error) return NextResponse.json(result, { status: 502 });
-  return NextResponse.json(result);
+  try {
+    const result = await syncFinanceModelTransactions(admin, companyId, projectId);
+    if (result.error) return NextResponse.json(result, { status: 502 });
+    return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Sync failed" }, { status: 502 });
+  }
 }

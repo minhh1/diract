@@ -354,7 +354,13 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
         <div className="space-y-2">
           {loans.map(loan => (
             <div key={loan.id} className="bg-white border border-slate-200 rounded-[32px] overflow-hidden">
-              <button onClick={() => setExpandedId(id => (id === loan.id ? null : loan.id))} className="w-full flex items-center justify-between px-6 py-4 text-left">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedId(id => (id === loan.id ? null : loan.id))}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setExpandedId(id => (id === loan.id ? null : loan.id)); }}
+                className="w-full flex items-center justify-between px-6 py-4 text-left cursor-pointer"
+              >
                 <div className="flex items-center gap-3">
                   <ChevronRight size={14} className={`text-slate-300 transition-transform ${expandedId === loan.id ? "rotate-90" : ""}`} />
                   <div>
@@ -366,7 +372,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
                   <p className="text-[13px] font-bold text-slate-700">{loan.principal_amount != null ? money(loan.principal_amount) : "—"}</p>
                   <button onClick={e => { e.stopPropagation(); deleteLoan(loan.id); }} className="text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
                 </div>
-              </button>
+              </div>
               {expandedId === loan.id && (
                 <div className="px-6 pb-6 border-t border-slate-100 pt-4">
                   <LoanDetail loan={loan} onChanged={load} />

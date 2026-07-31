@@ -176,7 +176,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setSyncing(false);
     setSyncMessage(res.ok ? `Imported ${json.imported}, skipped ${json.skipped} already-imported.` : (json.error || "Sync failed"));
     if (res.ok) await load();
@@ -189,7 +189,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setApplyingRules(false);
     setSyncMessage(res.ok ? `Classified ${json.classified} of ${json.checked} unclassified transactions.` : (json.error || "Failed to apply rules"));
     if (res.ok) await load();
