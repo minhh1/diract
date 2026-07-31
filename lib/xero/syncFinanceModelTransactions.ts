@@ -61,7 +61,14 @@ export async function syncFinanceModelTransactions(admin: any, companyId: string
     date: parseXeroDate(t.Date),
     type: t.Type === "RECEIVE" ? "Income" : t.Type === "SPEND" ? "Expense" : null,
     contact: t.Contact?.Name || null,
-    reference: t.Reference || t.LineItems?.[0]?.Description || null,
+    contactId: t.Contact?.ContactID || null,
+    // Reference (the transaction-level note) and Description (the first
+    // line item's own description) are two distinct Xero fields -- kept
+    // separate rather than the old `Reference || Description` fallback,
+    // which silently discarded Description whenever Reference was set even
+    // though Xero sends both.
+    reference: t.Reference || null,
+    description: t.LineItems?.[0]?.Description || null,
     amount: typeof t.Total === "number" ? t.Total : Number(t.Total) || 0,
     accountCode: t.LineItems?.[0]?.AccountCode || null,
   }));
@@ -89,7 +96,9 @@ export async function syncFinanceModelTransactions(admin: any, companyId: string
       date: tx.date,
       type: tx.type,
       contact: tx.contact,
+      contact_id: tx.contactId,
       reference: tx.reference,
+      description: tx.description,
       amount: tx.amount,
       budget_line: tx.accountCode ? budgetLineByAccountCode.get(tx.accountCode) || null : null,
       source: "Xero",
