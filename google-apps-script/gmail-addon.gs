@@ -857,8 +857,17 @@ function buildMainCard(messageId, accessToken, allTasksOffset, unallocatedOffset
         }
         createSection.addWidget(pfSelect);
       } else if (pf.fieldType === 'date') {
-        createSection.addWidget(CardService.newDatePicker().setFieldName(pfName).setTitle(pfLabel)
-          .setValueInMsSinceEpoch(dateStrToUtcMidnight(todayDateStr()).getTime()));
+        // Deliberately no initial value -- CardService.newDatePicker() has no
+        // placeholder-only mode, so whatever value is set here becomes the
+        // literal submitted value for ANY untouched date field (matter
+        // closing date, hearing date, etc.), not just a visual hint. Seeding
+        // today's date here previously meant every date-type custom field on
+        // a new matter silently saved as today even when the user never
+        // touched it. Leaving it unset shows an epoch (1 Jan 1970) look --
+        // cosmetically not great, but parseDatePickerValue's `ms <= 86400000`
+        // guard already treats that as "no value" and returns null, so this
+        // stays functionally correct.
+        createSection.addWidget(CardService.newDatePicker().setFieldName(pfName).setTitle(pfLabel));
       } else {
         createSection.addWidget(CardService.newTextInput().setFieldName(pfName).setTitle(pfLabel));
       }
@@ -1404,8 +1413,11 @@ function buildCreateTableRecordCard(companyId, tableId, tableName, token) {
       }
       section.addWidget(sel);
     } else if (f.fieldType === 'date') {
-      section.addWidget(CardService.newDatePicker().setFieldName(fieldName).setTitle(label)
-        .setValueInMsSinceEpoch(dateStrToUtcMidnight(todayDateStr()).getTime()));
+      // No initial value -- see buildMainCard's matching date-field comment
+      // above for why (an untouched picker's displayed value is what gets
+      // submitted; parseDatePickerValue's epoch guard is what makes "no
+      // value" actually mean null here, not this widget's own defaults).
+      section.addWidget(CardService.newDatePicker().setFieldName(fieldName).setTitle(label));
     } else {
       section.addWidget(CardService.newTextInput()
         .setFieldName(fieldName)
