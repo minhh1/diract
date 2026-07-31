@@ -33,6 +33,10 @@ const FILTER_COLUMNS: Record<string, string[]> = {
   entities: ['entity_type', 'linked_profile_id'],
   projects: [],
 };
+// A "Sum of related" field on a system table needs the child (custom)
+// table's own relation field to be typed for THIS specific system table --
+// unlike a custom-table parent, which uses 'table_relation' generically.
+const SYSTEM_RELATION_FIELD_TYPE: Record<string, FieldType> = { projects: 'project', entities: 'entity', properties: 'property' };
 // Sentinel linked_filter_value for linked_profile_id -- resolved to the
 // actual signed-in user's id at query time in RelationPicker (there's no
 // meaningful static value an admin could type in for "whoever is signed
@@ -106,6 +110,15 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
   // table -- see customFieldOptions above) for the "Also show" second
   // display field, when this field links to another custom table.
   const [linkedTableFieldOptions, setLinkedTableFieldOptions] = useState<{ id: string; label: string }[]>([]);
+  // "Sum of related" (formula_type 'sum_related') 3-level picker state --
+  // which CHILD table to sum from, then (derived from it) which of that
+  // table's own fields link back here and which are numeric. sumChildTableId
+  // isn't itself a stored column -- it's only ever implied by
+  // formula_relation_field_id -- so an existing rollup's child table is
+  // looked up once below rather than carried on the field row.
+  const [sumChildTableId, setSumChildTableId] = useState('');
+  const [sumRelationFieldOptions, setSumRelationFieldOptions] = useState<{ id: string; label: string }[]>([]);
+  const [sumNumericFieldOptions, setSumNumericFieldOptions] = useState<{ id: string; label: string }[]>([]);
 
   const update = (key: keyof CustomField, value: any) =>
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -144,6 +157,41 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
       .then(({ data }) => { if (active) setLinkedTableFieldOptions((data || []).map(f => ({ id: f.field_key, label: f.label }))); });
     return () => { active = false; };
   }, [draft.linked_table_id]);
+
+  // Editing an existing sum_related field: sumChildTableId isn't a stored
+  // column, only implied by formula_relation_field_id -- derive it once so
+  // the "From table" dropdown below opens pre-selected.
+  useEffect(() => {
+    if (draft.formula_type !== 'sum_related' || !draft.formula_relation_field_id || sumChildTableId) return;
+    let active = true;
+    supabase.from('company_table_fields').select('table_id').eq('id', draft.formula_relation_field_id).maybeSingle()
+      .then(({ data }) => { if (active && data?.table_id) setSumChildTableId(data.table_id); });
+    return () => { active = false; };
+  }, [draft.formula_type, draft.formula_relation_field_id]);
+
+  // Candidate relation/numeric fields on the chosen child table, for the
+  // "Sum of related" picker's 2nd/3rd levels -- a relation field qualifies
+  // only if it actually points back at THIS table: table_relation + matching
+  // linked_table_id for a custom-table parent, or the fixed field_type this
+  // system table's own name implies (project/entity/property) for a system-
+  // table parent (see SYSTEM_RELATION_FIELD_TYPE below).
+  useEffect(() => {
+    if (!sumChildTableId) { setSumRelationFieldOptions([]); setSumNumericFieldOptions([]); return; }
+    let active = true;
+    const relationFieldType = draft.isCustomTable ? 'table_relation' : SYSTEM_RELATION_FIELD_TYPE[draft.table_name];
+    supabase.from('company_table_fields').select('id, field_key, label, field_type, linked_table_id')
+      .eq('table_id', sumChildTableId).is('deleted_at', null).order('display_order')
+      .then(({ data }) => {
+        if (!active || !data) return;
+        const relCandidates = data.filter(f =>
+          f.field_type === relationFieldType && (draft.isCustomTable ? f.linked_table_id === draft.table_id : true)
+        );
+        const numCandidates = data.filter(f => (NUMERIC_FIELD_TYPES as string[]).includes(f.field_type));
+        setSumRelationFieldOptions(relCandidates.map(f => ({ id: f.id, label: f.label })));
+        setSumNumericFieldOptions(numCandidates.map(f => ({ id: f.id, label: f.label })));
+      });
+    return () => { active = false; };
+  }, [sumChildTableId, draft.isCustomTable, draft.table_id, draft.table_name]);
 
   const toggleSearchField = (key: string) => {
     const current = draft.linked_search_field_keys || [];
@@ -579,12 +627,20 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           </div>
         )}
 
-        {/* Computed value — custom-table number/currency fields only */}
-        {draft.isCustomTable && (NUMERIC_FIELD_TYPES as FieldType[]).includes(draft.field_type) && (() => {
+        {/* Computed value — number/currency fields. Multiply/% of are
+            custom-table only (they reference a SIBLING field on the same
+            table); "Sum of related" is available on both custom AND system
+            tables (projects/entities/properties) -- it sums a field on a
+            RELATED custom table instead. */}
+        {(NUMERIC_FIELD_TYPES as FieldType[]).includes(draft.field_type) && (() => {
           // Excludes the field itself (direct self-reference) and anything
           // that already transitively depends on it (would close a cycle --
           // e.g. this field can't pick B as a dependency if B already
           // computes off this field, directly or through a longer chain).
+          // Only meaningful for multiply/percentage_of's same-table siblings
+          // -- sum_related's candidates come from a different table entirely
+          // and have no such cycle risk (see the sumNumericFieldOptions
+          // picker below).
           const numericSiblings = siblingFields.filter(
             f => f.id !== draft.id
               && (NUMERIC_FIELD_TYPES as FieldType[]).includes(f.field_type)
@@ -598,8 +654,8 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
               <div className="flex gap-2">
                 {[
                   { v: null, l: 'Typed in' },
-                  { v: 'multiply', l: 'Multiply' },
-                  { v: 'percentage_of', l: '% of' },
+                  ...(draft.isCustomTable ? [{ v: 'multiply', l: 'Multiply' }, { v: 'percentage_of', l: '% of' }] : []),
+                  { v: 'sum_related', l: 'Sum of related' },
                 ].map(opt => (
                   <button
                     key={String(opt.v)}
@@ -607,6 +663,14 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                       update('formula_type', opt.v);
                       if (!opt.v) {
                         update('formula_field_a_id', null);
+                        update('formula_field_b_id', null);
+                        update('formula_percent', null);
+                        update('formula_relation_field_id', null);
+                        setSumChildTableId('');
+                      } else if (opt.v !== 'sum_related') {
+                        update('formula_relation_field_id', null);
+                        setSumChildTableId('');
+                      } else {
                         update('formula_field_b_id', null);
                         update('formula_percent', null);
                       }
@@ -621,6 +685,41 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                   </button>
                 ))}
               </div>
+
+              {draft.formula_type === 'sum_related' && (
+                <div className="space-y-2">
+                  <select
+                    value={sumChildTableId}
+                    onChange={e => {
+                      setSumChildTableId(e.target.value);
+                      update('formula_relation_field_id', null);
+                      update('formula_field_a_id', null);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                  >
+                    <option value="">From table...</option>
+                    {customTables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <select
+                    value={draft.formula_relation_field_id || ''}
+                    onChange={e => update('formula_relation_field_id', e.target.value || null)}
+                    disabled={!sumChildTableId}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none disabled:opacity-50"
+                  >
+                    <option value="">Which field on that table links back here...</option>
+                    {sumRelationFieldOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                  <select
+                    value={draft.formula_field_a_id || ''}
+                    onChange={e => update('formula_field_a_id', e.target.value || null)}
+                    disabled={!sumChildTableId}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none disabled:opacity-50"
+                  >
+                    <option value="">Field to sum...</option>
+                    {sumNumericFieldOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                </div>
+              )}
 
               {draft.formula_type === 'multiply' && (
                 <div className="grid grid-cols-2 gap-2">

@@ -53,12 +53,16 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
     if (!cid) return;
     const { data: cf } = await supabase
       .from('company_custom_fields')
-      .select('id, field_key, label, field_type, is_required, select_options, display_order, auto_number_prefix')
+      .select('id, field_key, label, field_type, is_required, select_options, display_order, auto_number_prefix, formula_type')
       .eq('table_name', 'projects')
       .eq('company_id', cid)
       .is('deleted_at', null)
       .order('display_order');
-    setCustomFields(cf || []);
+    // A sum_related (rollup) field has nothing to roll up yet on a brand-new
+    // matter -- offering it as an editable input here would let a typed-in
+    // value sit there un-overwritten until the first linked child record
+    // changes, silently starting the rollup off wrong.
+    setCustomFields((cf || []).filter(f => !f.formula_type));
   };
 
   const resetForm = () => {

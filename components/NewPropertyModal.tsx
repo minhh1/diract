@@ -72,12 +72,14 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
     if (!cid) return;
     const { data: cf } = await supabase
       .from('company_custom_fields')
-      .select('id, field_key, label, field_type, is_required, select_options, display_order')
+      .select('id, field_key, label, field_type, is_required, select_options, display_order, formula_type')
       .eq('table_name', tableName)
       .eq('company_id', cid)
       .is('deleted_at', null)
       .order('display_order');
-    setCustomFields((cf || []).filter(f => tableName !== 'properties' || !NATIVE_UI_KEYS.includes(f.field_key)));
+    // A sum_related (rollup) field has nothing to roll up yet on a
+    // brand-new record -- see NewProjectModal.tsx's matching fix.
+    setCustomFields((cf || []).filter(f => (tableName !== 'properties' || !NATIVE_UI_KEYS.includes(f.field_key)) && !f.formula_type));
   };
 
   const resetForm = () => {

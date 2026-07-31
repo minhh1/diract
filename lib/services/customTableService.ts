@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
-import { getValueColumn } from "@/lib/schema/fieldCapabilities";
+import { getValueColumn, RELATION_FIELD_TYPES } from "@/lib/schema/fieldCapabilities";
+import { saveRollupValue } from "@/lib/services/systemTableRecordService";
+import type { SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
 
 // Ledger guard violations arrive as raw Postgres exception messages (see
 // supabase/company_table_ledger.sql); translate the coded prefixes into
@@ -198,7 +200,7 @@ export async function updateRecord(
   fields: CustomTableField[]
 ): Promise<{ error: string } | void> {
   const hasFormulas = fields.some(f => f.formula_type);
-  const hasRelations = fields.some(f => f.field_type === 'table_relation');
+  const hasRelations = fields.some(f => (RELATION_FIELD_TYPES as string[]).includes(f.field_type));
   const hasConstraints = fields.some(f => f.is_required || f.is_unique);
 
   // Pull current values up front when needed: formula recomputes must merge
@@ -373,7 +375,7 @@ async function claimAllUniqueValues(
 function relationTouches(fields: CustomTableField[], values: Record<string, any>): { relationFieldId: string; parentId: string }[] {
   const touches: { relationFieldId: string; parentId: string }[] = [];
   for (const f of fields) {
-    if (f.field_type !== 'table_relation') continue;
+    if (!(RELATION_FIELD_TYPES as string[]).includes(f.field_type)) continue;
     const v = values[f.field_key];
     if (Array.isArray(v)) {
       for (const id of v) if (id) touches.push({ relationFieldId: f.id, parentId: String(id) });
@@ -384,10 +386,47 @@ function relationTouches(fields: CustomTableField[], values: Record<string, any>
   return touches;
 }
 
+// Live children of `parentId` linked via `relationFieldId` (checking both
+// company_table_values, a non-multi field's own store, and
+// company_table_value_links, an allow_multiple field's -- a field only
+// ever has rows in one or the other, so querying both instead of checking
+// allow_multiple first is correct either way without an extra lookup),
+// summed on `sumFieldId`. Shared by both the custom-table-parent and
+// system-table-parent branches of recomputeRelatedRollups below.
+async function sumChildValues(relationFieldId: string, parentId: string, sumFieldId: string): Promise<number> {
+  const [{ data: scalarLinks }, { data: multiLinks }] = await Promise.all([
+    supabase.from('company_table_values').select('record_id')
+      .eq('field_id', relationFieldId).eq('value_record_id', parentId),
+    supabase.from('company_table_value_links').select('record_id')
+      .eq('field_id', relationFieldId).eq('value_record_id', parentId),
+  ]);
+  const childIds = [...new Set([...(scalarLinks || []), ...(multiLinks || [])].map(l => l.record_id))];
+  if (!childIds.length) return 0;
+
+  const { data: alive } = await supabase
+    .from('company_table_records')
+    .select('id')
+    .in('id', childIds)
+    .is('deleted_at', null);
+  const aliveIds = (alive || []).map(r => r.id);
+  if (!aliveIds.length) return 0;
+
+  const { data: vals } = await supabase
+    .from('company_table_values')
+    .select('value_number')
+    .eq('field_id', sumFieldId)
+    .in('record_id', aliveIds);
+  return (vals || []).reduce((s, v) => s + (Number(v.value_number) || 0), 0);
+}
+
 // Recomputes sum_related rollup fields (e.g. Invoice Fees = sum of linked
-// Time & Fee Entries' Amount) on every parent record a change touched, then
-// re-evaluates the parent's own downstream formulas (Subtotal -> GST ->
-// Total) against the fresh sums.
+// Time & Fee Entries' Amount, or a Matter's Total Fees = sum of its linked
+// Time & Fee Entries' Amount) on every parent record a change touched.
+// Custom-table parents also get their own downstream formulas (Subtotal ->
+// GST -> Total) re-evaluated against the fresh sums; system-table parents
+// (projects/entities/properties, via company_custom_fields) never have such
+// a chain -- they only ever support sum_related, so their branch just
+// writes the sum directly.
 async function recomputeRelatedRollups(
   companyId: string,
   childFields: CustomTableField[],
@@ -396,79 +435,58 @@ async function recomputeRelatedRollups(
   const relFieldIds = [...new Set(touches.map(t => t.relationFieldId))];
   if (!relFieldIds.length) return;
 
-  const { data: rollupFields } = await supabase
-    .from('company_table_fields')
-    .select('*')
-    .eq('formula_type', 'sum_related')
-    .in('formula_relation_field_id', relFieldIds)
-    .is('deleted_at', null);
-  if (!rollupFields?.length) return;
+  const [{ data: rollupFields }, { data: systemRollupFields }] = await Promise.all([
+    supabase.from('company_table_fields').select('*')
+      .eq('formula_type', 'sum_related').in('formula_relation_field_id', relFieldIds).is('deleted_at', null),
+    supabase.from('company_custom_fields').select('*')
+      .eq('formula_type', 'sum_related').in('formula_relation_field_id', relFieldIds).is('deleted_at', null),
+  ]);
 
-  const parentTableIds = [...new Set(rollupFields.map(rf => rf.table_id))];
-  const parentFieldsByTable = new Map<string, CustomTableField[]>();
-  for (const parentTableId of parentTableIds) {
-    const { data } = await supabase
-      .from('company_table_fields')
-      .select('*')
-      .eq('table_id', parentTableId)
-      .is('deleted_at', null)
-      .order('display_order');
-    parentFieldsByTable.set(parentTableId, (data || []) as CustomTableField[]);
-  }
+  if (rollupFields?.length) {
+    const parentTableIds = [...new Set(rollupFields.map(rf => rf.table_id))];
+    const parentFieldsByTable = new Map<string, CustomTableField[]>();
+    for (const parentTableId of parentTableIds) {
+      const { data } = await supabase
+        .from('company_table_fields')
+        .select('*')
+        .eq('table_id', parentTableId)
+        .is('deleted_at', null)
+        .order('display_order');
+      parentFieldsByTable.set(parentTableId, (data || []) as CustomTableField[]);
+    }
 
-  // parent record -> its recomputed rollup sums
-  const parentUpdates = new Map<string, { tableId: string; sums: Record<string, number> }>();
-  for (const rf of rollupFields) {
-    const parentIds = [...new Set(touches.filter(t => t.relationFieldId === rf.formula_relation_field_id).map(t => t.parentId))];
-    for (const parentId of parentIds) {
-      // Queries both stores rather than checking the relation field's own
-      // allow_multiple first -- a non-multi field never has rows in
-      // company_table_value_links and a multi field never has rows in
-      // company_table_values for it, so this is correct either way without
-      // an extra lookup to find out which.
-      const [{ data: scalarLinks }, { data: multiLinks }] = await Promise.all([
-        supabase.from('company_table_values').select('record_id')
-          .eq('field_id', rf.formula_relation_field_id).eq('value_record_id', parentId),
-        supabase.from('company_table_value_links').select('record_id')
-          .eq('field_id', rf.formula_relation_field_id).eq('value_record_id', parentId),
-      ]);
-      const childIds = [...new Set([...(scalarLinks || []), ...(multiLinks || [])].map(l => l.record_id))];
+    // parent record -> its recomputed rollup sums
+    const parentUpdates = new Map<string, { tableId: string; sums: Record<string, number> }>();
+    for (const rf of rollupFields) {
+      const parentIds = [...new Set(touches.filter(t => t.relationFieldId === rf.formula_relation_field_id).map(t => t.parentId))];
+      for (const parentId of parentIds) {
+        const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id);
+        const entry = parentUpdates.get(parentId) || { tableId: rf.table_id, sums: {} as Record<string, number> };
+        entry.sums[rf.field_key] = sum;
+        parentUpdates.set(parentId, entry);
+      }
+    }
 
-      let sum = 0;
-      if (childIds.length) {
-        const { data: alive } = await supabase
-          .from('company_table_records')
-          .select('id')
-          .in('id', childIds)
-          .is('deleted_at', null);
-        const aliveIds = (alive || []).map(r => r.id);
-        if (aliveIds.length) {
-          const { data: vals } = await supabase
-            .from('company_table_values')
-            .select('value_number')
-            .eq('field_id', rf.formula_field_a_id)
-            .in('record_id', aliveIds);
-          sum = (vals || []).reduce((s, v) => s + (Number(v.value_number) || 0), 0);
+    for (const [parentId, { tableId, sums }] of parentUpdates) {
+      const parentFields = parentFieldsByTable.get(tableId) || [];
+      const current = await getCurrentValues(parentId, parentFields);
+      const computed = computeFormulaFields(parentFields, { ...current, ...sums });
+      const toSave: Record<string, any> = { ...sums };
+      for (const pf of parentFields) {
+        if (pf.formula_type && pf.formula_type !== 'sum_related' && computed[pf.field_key] !== undefined) {
+          toSave[pf.field_key] = computed[pf.field_key];
         }
       }
-
-      const entry = parentUpdates.get(parentId) || { tableId: rf.table_id, sums: {} as Record<string, number> };
-      entry.sums[rf.field_key] = sum;
-      parentUpdates.set(parentId, entry);
+      await saveValues(parentId, tableId, companyId, toSave, parentFields);
     }
   }
 
-  for (const [parentId, { tableId, sums }] of parentUpdates) {
-    const parentFields = parentFieldsByTable.get(tableId) || [];
-    const current = await getCurrentValues(parentId, parentFields);
-    const computed = computeFormulaFields(parentFields, { ...current, ...sums });
-    const toSave: Record<string, any> = { ...sums };
-    for (const pf of parentFields) {
-      if (pf.formula_type && pf.formula_type !== 'sum_related' && computed[pf.field_key] !== undefined) {
-        toSave[pf.field_key] = computed[pf.field_key];
-      }
+  for (const rf of (systemRollupFields || [])) {
+    const parentIds = [...new Set(touches.filter(t => t.relationFieldId === rf.formula_relation_field_id).map(t => t.parentId))];
+    for (const parentId of parentIds) {
+      const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id);
+      await saveRollupValue(rf.table_name as SystemTableName, companyId, parentId, rf.id, sum);
     }
-    await saveValues(parentId, tableId, companyId, toSave, parentFields);
   }
 }
 
@@ -526,7 +544,7 @@ export async function deleteRecord(recordId: string): Promise<{ error: string } 
       .eq('table_id', record.table_id)
       .is('deleted_at', null);
     fields = (data || []) as CustomTableField[];
-    if (fields.some(f => f.field_type === 'table_relation')) {
+    if (fields.some(f => (RELATION_FIELD_TYPES as string[]).includes(f.field_type))) {
       touches = relationTouches(fields, await getCurrentValues(recordId, fields));
     }
   }

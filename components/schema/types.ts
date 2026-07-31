@@ -55,13 +55,22 @@ export interface CustomField {
   auto_number_prefix?: string | null;
   auto_number_start?: number | null;
   auto_number_pad?: number | null;
-  // Computed/formula fields — custom-table fields only (see
-  // supabase/company_table_fields_formula.sql). null means an ordinary,
-  // user-entered field.
-  formula_type?: 'multiply' | 'percentage_of' | null;
+  // Computed/formula fields (see supabase/company_table_fields_formula.sql,
+  // _formula_extend.sql, and supabase/migrations/*_company_custom_fields_
+  // sum_related.sql). null means an ordinary, user-entered field.
+  // multiply/percentage_of/add are custom-table fields only; sum_related is
+  // the one kind system-table fields (projects/entities/properties) support
+  // too -- see FieldConfigPanel.tsx's Computed value section.
+  formula_type?: 'multiply' | 'percentage_of' | 'add' | 'sum_related' | null;
   formula_field_a_id?: string | null;
   formula_field_b_id?: string | null;
   formula_percent?: number | null;
+  // sum_related only -- a field on the RELATED (always custom) table that
+  // points back at this record. Custom-table-parent rollups also allow this
+  // to be a table_relation field on the related table; system-table-parent
+  // rollups require an entity/property/project-type field instead (see
+  // FieldConfigPanel.tsx's SYSTEM_RELATION_FIELD_TYPE).
+  formula_relation_field_id?: string | null;
   // Multi-record relations — relation-type, custom-table fields only (see
   // supabase/company_table_field_allow_multiple.sql). Undefined/false means
   // the normal single-linked-record behavior.

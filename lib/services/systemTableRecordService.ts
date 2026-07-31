@@ -70,6 +70,23 @@ async function saveCustomFieldValues(
   }
 }
 
+// Writes a sum_related rollup's freshly-computed value onto a system-table
+// record (see lib/services/customTableService.ts's recomputeRelatedRollups,
+// which calls this whenever a related custom-table row is created/edited/
+// deleted) -- same upsert shape as saveCustomFieldValues above, just for the
+// one-field case a rollup recompute always is.
+export async function saveRollupValue(
+  tableName: SystemTableName, companyId: string, recordId: string, fieldId: string, value: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('company_custom_field_values')
+    .upsert(
+      { company_id: companyId, table_name: tableName, record_id: recordId, field_id: fieldId, value_number: value },
+      { onConflict: 'field_id,record_id' }
+    );
+  if (error) console.error('systemTableRecordService.saveRollupValue:', error);
+}
+
 export async function createRecord(
   tableName: SystemTableName,
   companyId: string,
