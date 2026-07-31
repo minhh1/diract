@@ -32,12 +32,25 @@ import {
   calculateFeasibility, solveBreakEvenSalePricePerDwelling, solveMaxSupportableLandPrice,
   runScenarios, runSensitivity, simplifiedIRR,
 } from "@/lib/feasibilityCalculator";
+import { buildMonthlyCashFlow, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
+import CashFlowPanel from "./CashFlowPanel";
 
 interface BudgetLine {
   id: string;
   category: string | null;
   label: string | null;
   budgeted_amount: number | null;
+  linked_task_id: string | null;
+  timing_profile: TimingProfile | null;
+  timing_start_date: string | null;
+  timing_end_date: string | null;
+}
+
+interface TimelineTask {
+  id: string;
+  name: string;
+  start_date: string | null;
+  due_date: string | null;
 }
 
 interface Loan {
@@ -110,6 +123,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
+  const [tasks, setTasks] = useState<TimelineTask[]>([]);
   const [totalInterest, setTotalInterest] = useState(0);
   const [totalLoanPrincipal, setTotalLoanPrincipal] = useState(0);
   const [gstMethod, setGstMethod] = useState<GstMethod | "">("");
@@ -136,13 +150,14 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
     setLoading(true);
     setError(null);
     try {
-      const [blRes, loansRes, settingsRes, overviewRes, inputsRes, scenariosRes] = await Promise.all([
+      const [blRes, loansRes, settingsRes, overviewRes, inputsRes, scenariosRes, tasksRes] = await Promise.all([
         fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
         fetch(`/api/finance-model/loans?projectId=${projectId}`),
         fetch(`/api/finance-model/settings?projectId=${projectId}`),
         fetch(`/api/finance-model/overview?projectId=${projectId}`),
         fetch(`/api/finance-model/feasibility-inputs?projectId=${projectId}`),
         fetch(`/api/finance-model/feasibility-scenarios?projectId=${projectId}`),
+        fetch(`/api/finance-model/tasks?projectId=${projectId}`),
       ]);
       const blJson = await blRes.json();
       const loansJson = await loansRes.json();
@@ -150,8 +165,10 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
       const overviewJson = await overviewRes.json();
       const inputsJson = await inputsRes.json();
       const scenariosJson = await scenariosRes.json();
+      const tasksJson = await tasksRes.json();
       if (!blRes.ok) { setError(blJson.error || "Failed to load"); return; }
       setBudgetLines(blJson.budgetLines || []);
+      setTasks((tasksJson.tasks || []).map((t: any) => ({ id: t.id, name: t.name, start_date: t.start_date, due_date: t.due_date })));
       setGstMethod((settingsJson.gstMethod as GstMethod) || "");
       setPropertyState((overviewJson.property?.state as AuState) || null);
       setPurchasePrice(Number(overviewJson.property?.purchase_price) || 0);
@@ -333,6 +350,30 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
     load();
   };
 
+  // -- Cash flow (time-phases every budget line into the months it lands in) --
+  const updateLineTiming = async (lineId: string, updates: { linkedTaskId?: string | null; timingProfile?: TimingProfile | null; timingStartDate?: string | null; timingEndDate?: string | null }) => {
+    setBudgetLines(prev => prev.map(l => l.id === lineId ? {
+      ...l,
+      linked_task_id: updates.linkedTaskId !== undefined ? updates.linkedTaskId : l.linked_task_id,
+      timing_profile: updates.timingProfile !== undefined ? updates.timingProfile : l.timing_profile,
+      timing_start_date: updates.timingStartDate !== undefined ? updates.timingStartDate : l.timing_start_date,
+      timing_end_date: updates.timingEndDate !== undefined ? updates.timingEndDate : l.timing_end_date,
+    } : l));
+    await fetch("/api/finance-model/budget-lines", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: lineId, ...updates }),
+    });
+  };
+
+  const tasksById = new Map<string, TaskDatesRef>(tasks.map(t => [t.id, { start_date: t.start_date, due_date: t.due_date }]));
+  const cashFlowLines = budgetLines.map(l => ({
+    id: l.id, category: l.category, label: l.label, budgetedAmount: l.budgeted_amount || 0,
+    linkedTaskId: l.linked_task_id, timingProfile: l.timing_profile,
+    timingStartDate: l.timing_start_date, timingEndDate: l.timing_end_date,
+  }));
+  const { rows: monthlyCashFlow, unresolvedLines } = buildMonthlyCashFlow(cashFlowLines, tasksById);
+
   // -- Existing itemised P&L (unchanged -- reads Budget Lines directly) ---
   const revenueTotal = budgetLines.filter(l => l.category === "Revenue").reduce((s, l) => s + (l.budgeted_amount || 0), 0);
   const acquisitionTotal = budgetLines.filter(l => l.category === "Acquisition").reduce((s, l) => s + (l.budgeted_amount || 0), 0);
@@ -426,6 +467,15 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
           {syncMessage && <p className="text-[11px] text-emerald-600">{syncMessage}</p>}
         </div>
       </div>
+
+      {/* ── Cash flow (the foundation debt mechanics/returns build on) ── */}
+      <CashFlowPanel
+        budgetLines={cashFlowLines}
+        tasks={tasks}
+        monthlyRows={monthlyCashFlow}
+        unresolvedLines={unresolvedLines}
+        onUpdateLineTiming={updateLineTiming}
+      />
 
       {/* ── Scenario comparison ── */}
       <div className="bg-white border border-slate-200 rounded-[32px] p-6 overflow-x-auto">
