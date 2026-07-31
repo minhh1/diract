@@ -17,6 +17,8 @@ export const LOANS_SLUG = "finance-model-loans";
 export const LOAN_INTEREST_RATES_SLUG = "finance-model-loan-interest-rates";
 export const LOAN_PHASES_SLUG = "finance-model-loan-phases";
 export const SETTINGS_SLUG = "finance-model-settings";
+export const FEASIBILITY_INPUTS_SLUG = "finance-model-feasibility-inputs";
+export const FEASIBILITY_SCENARIOS_SLUG = "finance-model-feasibility-scenarios";
 
 export interface XeroConnectionInfo {
   connectionId: string;

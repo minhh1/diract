@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   let classified = 0;
   for (const tx of transactions) {
     if (tx.budget_line) continue; // already classified -- never override
-    const budgetLineId = classifyTransaction({ project: projectId, contact: tx.contact, reference: tx.reference }, rules);
+    const budgetLineId = classifyTransaction({ project: projectId, contact: tx.contact, reference: tx.reference, description: tx.description ?? null }, rules);
     if (budgetLineId) {
       await updateCustomTableRow(admin, txTable, tx.id, { budget_line: budgetLineId });
       classified++;

@@ -10,7 +10,7 @@
 export interface ClassificationRule {
   id: string;
   project: string | null; // null = applies to every project in the company
-  match_field: "Contact" | "Reference" | null;
+  match_field: "Contact" | "Reference" | "Description" | null;
   match_type: "Equals" | "Contains" | "Starts With" | null;
   match_value: string | null;
   budget_line: string | null;
@@ -22,10 +22,13 @@ export interface ClassifiableTransaction {
   project: string;
   contact: string | null;
   reference: string | null;
+  description: string | null;
 }
 
 function fieldValue(tx: ClassifiableTransaction, field: ClassificationRule["match_field"]): string {
-  return (field === "Contact" ? tx.contact : tx.reference) || "";
+  if (field === "Contact") return tx.contact || "";
+  if (field === "Description") return tx.description || "";
+  return tx.reference || "";
 }
 
 function isMatch(value: string, matchType: ClassificationRule["match_type"], matchValue: string): boolean {

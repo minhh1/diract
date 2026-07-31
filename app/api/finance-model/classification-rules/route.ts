@@ -13,7 +13,7 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getCustomTable, listAllCustomTableRows, createCustomTableRow, updateCustomTableRow, deleteCustomTableRow } from "@/lib/customTableAdmin";
 import { CLASSIFICATION_RULES_SLUG } from "@/lib/financeModel/data";
 
-const MATCH_FIELDS = ["Contact", "Reference"];
+const MATCH_FIELDS = ["Contact", "Reference", "Description"];
 const MATCH_TYPES = ["Equals", "Contains", "Starts With"];
 
 export async function GET(req: NextRequest) {
