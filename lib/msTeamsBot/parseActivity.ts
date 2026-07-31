@@ -36,9 +36,23 @@ function wasBotMentioned(activity: any): boolean {
 // typing indicator, a non-like reaction, conversationUpdate, or (in a
 // non-1:1 conversation) a message that didn't actually @mention the bot.
 export function parseIncomingActivity(activity: any): IncomingMessage | null {
-  // A "like" reaction on the bot's own confirmation message counts as a
-  // "yes" -- lets someone confirm a pending create/update without typing a
-  // word. `replyToId` identifies exactly which message was reacted to (the
+  // Any clearly-affirmative reaction on the bot's own confirmation message
+  // counts as a "yes" -- lets someone confirm a pending create/update
+  // without typing a word. Teams' reaction picker has 6 options (Like,
+  // Heart, Laugh, Surprised, Sad, Angry) with distinct `type` strings
+  // ("like"/"plusOne" is the legacy alias, "heart", "laugh", "surprised",
+  // "sad", "angry"); a report that this "worked with a typed yes but not
+  // with a reaction" turned out to be because only "like"/"plusOne" were
+  // recognized -- if the user tapped Heart, or Teams rendered/sent
+  // something other than a literal thumbs-up for whatever they tapped, it
+  // was silently dropped as an unrecognized reaction. "Like" and "Heart"
+  // are the two that unambiguously mean approval; Laugh/Surprised/Sad/Angry
+  // are deliberately left unmapped -- someone reacting 😠 to object clearly
+  // isn't confirming, and there's no typed "no" equivalent for a reaction
+  // to fall back to (see the reaction-confirm branch in handleMessage.ts,
+  // which only ever treats a matched reaction as a "yes", never a "no").
+  //
+  // `replyToId` identifies exactly which message was reacted to (the
   // Connector API's standard reply property, present on any activity type),
   // verified in handleMessage against the prompt_message_id captured when
   // that confirmation was sent. Deliberately not gated on
@@ -46,13 +60,37 @@ export function parseIncomingActivity(activity: any): IncomingMessage | null {
   // reactions in a Teams channel/group conversation can arrive with
   // type "message" and the reactionsAdded array attached directly instead
   // of the dedicated messageReaction activity type; requiring that exact
-  // type meant every "like" in a group chat was silently dropped as an
+  // type meant every reaction in a group chat was silently dropped as an
   // unrecognized message (empty text, acked and ignored). A plain "message"
   // activity never carries a populated reactionsAdded array on its own, so
   // checking for that array's presence is a safe, type-agnostic signal.
+  const AFFIRMATIVE_REACTION_TYPES = new Set(["like", "plusOne", "heart"]);
   const reactionsAdded = (activity.reactionsAdded ?? []) as Array<{ type?: string }>;
-  const isLikeReaction = reactionsAdded.some((r) => r.type === "like" || r.type === "plusOne");
+  const isLikeReaction = reactionsAdded.some((r) => r.type && AFFIRMATIVE_REACTION_TYPES.has(r.type));
   const reactionTargetId: string | undefined = isLikeReaction ? activity.replyToId : undefined;
+
+  // Diagnostic only, kept narrow (fires only when Teams actually sent a
+  // reaction of some kind) -- the "like = yes" confirm path has been
+  // reported as silently not working for at least one user with no error
+  // anywhere to explain why. Everything downstream of this function
+  // (isLikeReaction detection, then handleMessage's prompt_message_id
+  // match) depends on assumptions about the exact shape of that payload
+  // that were only ever confirmed against one live test (2026-07-27, see
+  // this function's own comment below) -- this logs the actual shape every
+  // time so a repeat report has real data to diagnose against instead of
+  // re-guessing. Safe to remove once the reaction-confirm path is
+  // confirmed reliable across conversation types.
+  if (reactionsAdded.length > 0) {
+    console.log("[teams-bot] reaction activity received", JSON.stringify({
+      activityType: activity.type,
+      reactionsAdded,
+      isLikeReaction,
+      replyToId: activity.replyToId,
+      conversationType: activity.conversation?.conversationType,
+      fromAadObjectId: activity.from?.aadObjectId,
+      tenantId: activity.conversation?.tenantId ?? activity.channelData?.tenant?.id,
+    }));
+  }
 
   // Only real user messages (or a like-reaction confirm) need a reply --
   // conversationUpdate (bot added/removed), typing indicators, other
