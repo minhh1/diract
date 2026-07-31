@@ -21,6 +21,22 @@ export interface TemplateItem {
   is_monetary: boolean; estimated_cost: number; due_offset_days: number | null;
   due_anchor: string; display_order: number;
   due_offset_mode?: 'calendar' | 'business'; due_offset_state?: string | null;
+  // Mirrors due_offset_days/due_anchor exactly -- populates the created
+  // task's start_date (not just due_date) so applying a template produces
+  // real Gantt duration bars, not just due-date markers. A `task_<n>`
+  // start_anchor chains off that OTHER item's DUE date (a phase starts
+  // when the prior phase's due/end date is reached), resolved via
+  // resolveItemDate below, not resolveItemStartDate -- start-to-start
+  // chaining isn't supported, only end-to-start.
+  start_offset_days?: number | null;
+  start_anchor?: string | null;
+  // Free-text guidance carried through to the created task's own notes.
+  notes?: string | null;
+  // Other items' ids (within the SAME template) that must be completed
+  // before this one -- resolved into real task_dependencies rows at apply
+  // time (see handleApply below), same "AND semantics" task_dependencies
+  // already uses elsewhere.
+  depends_on_item_ids?: string[] | null;
 }
 export interface Template { id: string; name: string; items: TemplateItem[]; }
 
@@ -48,13 +64,19 @@ interface TemplateManagerProps {
   projectId?: string;
   projectCreatedAt?: string;
   projectDueDate?: string | null;
-  onApply?: (tasksToCreate: any[]) => Promise<void>;
+  // Returns the created rows (with real ids), in the same order as
+  // tasksToCreate was passed -- handleApply needs these to resolve
+  // depends_on_item_ids into real task_dependencies rows. A caller that
+  // doesn't support returning them (there are none left in this codebase,
+  // but the type stays permissive) can return void; dependency resolution
+  // is just skipped in that case.
+  onApply?: (tasksToCreate: any[]) => Promise<{ id: string }[] | void>;
   /** Presence controls chrome: passed → modal overlay with an X button; omitted → plain in-page panel. */
   onClose?: () => void;
 }
 
 export default function TemplateManager({
-  templates, setTemplates, profiles, teams, projectId, projectCreatedAt, projectDueDate,
+  templates, setTemplates, profiles, teams, companyId, projectId, projectCreatedAt, projectDueDate,
   onApply, onCreateTemplate, onClose,
 }: TemplateManagerProps) {
   const canApply = !!onApply && !!projectId;
@@ -90,14 +112,17 @@ export default function TemplateManager({
     const reordered = [...editItems];
     const [moved] = reordered.splice(from, 1);
     reordered.splice(to, 0, moved);
+    const remapOne = <T extends string | null | undefined>(anchor: T): T | string => {
+      const m = /^task_(\d+)$/.exec(anchor || '');
+      if (!m) return anchor;
+      const newRef = indexMap.get(Number(m[1]));
+      return newRef !== undefined ? `task_${newRef}` : 'record_created';
+    };
     const remapped = reordered.map((item, newIdx) => {
       if (newIdx === to) {
-        return { ...item, due_anchor: to === 0 ? 'record_created' : `task_${to - 1}` };
+        return { ...item, due_anchor: to === 0 ? 'record_created' : `task_${to - 1}`, start_anchor: remapOne(item.start_anchor) };
       }
-      const m = /^task_(\d+)$/.exec(item.due_anchor || '');
-      if (!m) return item;
-      const newRef = indexMap.get(Number(m[1]));
-      return { ...item, due_anchor: newRef !== undefined ? `task_${newRef}` : 'record_created' };
+      return { ...item, due_anchor: remapOne(item.due_anchor), start_anchor: remapOne(item.start_anchor) };
     });
     setEditItems(remapped);
     setDraggedIdx(to);
@@ -170,6 +195,37 @@ export default function TemplateManager({
     return anchor.toISOString().split('T')[0];
   };
 
+  // Same shape as resolveItemDate, but for start_offset_days/start_anchor
+  // -- a `task_<index>` start_anchor still chains off that OTHER item's
+  // DUE date (via resolveItemDate, not this function) since "starts when
+  // the prior phase finishes" is the only chaining relationship Gantt
+  // templates need; start-to-start chaining isn't supported.
+  const resolveItemStartDate = async (
+    item: Partial<TemplateItem>, items: Partial<TemplateItem>[]
+  ): Promise<string | null> => {
+    if (item.start_offset_days === null || item.start_offset_days === undefined) return null;
+    let anchor: Date | null = null;
+    if (item.start_anchor === 'record_created') {
+      anchor = new Date(effectiveCreatedAt);
+    } else if (item.start_anchor === 'record_due') {
+      anchor = projectDueDate ? new Date(projectDueDate) : null;
+    } else {
+      const m = /^task_(\d+)$/.exec(item.start_anchor || '');
+      if (m) {
+        const ref = items[Number(m[1])];
+        if (ref) {
+          const refDate = await resolveItemDate(ref, items);
+          anchor = refDate ? new Date(refDate) : null;
+        }
+      } else {
+        anchor = new Date(effectiveCreatedAt);
+      }
+    }
+    if (!anchor) return null;
+    anchor.setDate(anchor.getDate() + (item.start_offset_days || 0));
+    return anchor.toISOString().split('T')[0];
+  };
+
   // Auto-save: debounce name/item edits and persist in the background.
   // Skips the render that immediately follows opening/creating a template.
   const skipNextSave = useRef(true);
@@ -198,19 +254,35 @@ export default function TemplateManager({
         .map((item, oldIndex) => ({ item, oldIndex }))
         .filter(x => x.item.title?.trim());
       const oldToNewIndex = new Map(withOldIndex.map((x, newIndex) => [x.oldIndex, newIndex]));
-      const validItems = withOldIndex.map(({ item }) => {
-        const m = /^task_(\d+)$/.exec(item.due_anchor || '');
-        if (!m) return item;
+      const remapAnchor = (anchor: string | null | undefined) => {
+        const m = /^task_(\d+)$/.exec(anchor || '');
+        if (!m) return anchor;
         const newRef = oldToNewIndex.get(Number(m[1]));
-        return { ...item, due_anchor: newRef !== undefined ? `task_${newRef}` : 'record_created' };
-      });
+        return newRef !== undefined ? `task_${newRef}` : 'record_created';
+      };
+      const validItems = withOldIndex.map(({ item }) => ({
+        ...item,
+        due_anchor: remapAnchor(item.due_anchor),
+        start_anchor: remapAnchor(item.start_anchor),
+      }));
 
+      // .select() so freshly-created items (which have no `id` yet in local
+      // state) pick up their real DB-generated id -- the "Blocked by" picker
+      // disables items without an id (depends_on_item_ids stores real item
+      // ids, not array indices), so without this a brand new template's
+      // tasks could never reference each other until the editor was closed
+      // and reopened to refetch.
+      let insertedItems: TemplateItem[] = [];
       if (validItems.length) {
-        await supabase.from('checklist_template_items').insert(
+        const { data } = await supabase.from('checklist_template_items').insert(
           validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i }))
-        );
+        ).select();
+        insertedItems = (data || []) as TemplateItem[];
       }
-      const updatedTemplate: Template = { ...selected, name: finalName, items: validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i, id: item.id || '' })) as TemplateItem[] };
+      const updatedTemplate: Template = {
+        ...selected, name: finalName,
+        items: validItems.map((item, i) => ({ ...item, template_id: selected.id, display_order: i, id: insertedItems[i]?.id || item.id || '' })) as TemplateItem[],
+      };
       setTemplates((prev: Template[]) => prev.map(t => t.id === selected.id ? updatedTemplate : t));
       setSelected(updatedTemplate);
       setSaving(false);
@@ -222,14 +294,21 @@ export default function TemplateManager({
 
   // Resolved dates for the "apply" preview — keyed by item id, populated async.
   const [resolvedDates, setResolvedDates] = useState<Record<string, string | null>>({});
+  const [resolvedStartDates, setResolvedStartDates] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
     if (view !== 'apply' || !selected) return;
     let cancelled = false;
     (async () => {
       const items = selected.items.filter(i => !i.parent_item_id);
-      const entries = await Promise.all(items.map(async item => [item.id, await resolveItemDate(item, selected.items)] as const));
-      if (!cancelled) setResolvedDates(Object.fromEntries(entries));
+      const [dueEntries, startEntries] = await Promise.all([
+        Promise.all(items.map(async item => [item.id, await resolveItemDate(item, selected.items)] as const)),
+        Promise.all(items.map(async item => [item.id, await resolveItemStartDate(item, selected.items)] as const)),
+      ]);
+      if (!cancelled) {
+        setResolvedDates(Object.fromEntries(dueEntries));
+        setResolvedStartDates(Object.fromEntries(startEntries));
+      }
     })();
     return () => { cancelled = true; };
   }, [view, selected]);
@@ -255,20 +334,50 @@ export default function TemplateManager({
     const itemsToApply = selected.items
       .filter(i => !i.parent_item_id)
       .sort((a, b) => a.display_order - b.display_order);
-    const tasksToCreate: any[] = await Promise.all(itemsToApply.map(async item => ({
-      project_id: projectId, name: item.title,
-      assignee_id: item.assignee_id || null, assigned_team_id: item.assigned_team_id || null,
-      is_monetary: item.is_monetary || false, estimated_cost: item.estimated_cost || 0,
-      due_date: await resolveItemDate(item, selected.items), is_completed: false,
+
+    // Kept as {item, task} pairs (not two separately-sorted arrays) so the
+    // due-date reorder below can't desync which template item a created
+    // task actually came from -- that correspondence is exactly what
+    // dependency resolution after onApply needs.
+    const pairs = await Promise.all(itemsToApply.map(async item => ({
+      item,
+      task: {
+        project_id: projectId, name: item.title, notes: item.notes || null,
+        assignee_id: item.assignee_id || null, assigned_team_id: item.assigned_team_id || null,
+        is_monetary: item.is_monetary || false, estimated_cost: item.estimated_cost || 0,
+        start_date: await resolveItemStartDate(item, selected.items),
+        due_date: await resolveItemDate(item, selected.items),
+        is_completed: false,
+      },
     })));
     // Create tasks in due-date order (undated tasks last) rather than the template's raw entry order.
-    tasksToCreate.sort((a, b) => {
-      if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-      if (a.due_date && !b.due_date) return -1;
-      if (!a.due_date && b.due_date) return 1;
+    pairs.sort((a, b) => {
+      const ad = a.task.due_date, bd = b.task.due_date;
+      if (ad && bd) return ad.localeCompare(bd);
+      if (ad && !bd) return -1;
+      if (!ad && bd) return 1;
       return 0;
     });
-    await onApply(tasksToCreate);
+
+    const created = await onApply(pairs.map(p => p.task));
+    if (created && created.length === pairs.length) {
+      // Zip template-item ids to the real task ids just created, then
+      // resolve each item's depends_on_item_ids into task_dependencies
+      // rows -- only meaningful within this same apply (a template's own
+      // items refer to each other by their template_item id, not a task
+      // id, since no task exists until this exact moment).
+      const itemIdToTaskId = new Map(pairs.map((p, i) => [p.item.id, created[i].id]));
+      const depRows: { task_id: string; depends_on_task_id: string; company_id: string }[] = [];
+      for (const { item } of pairs) {
+        const taskId = itemIdToTaskId.get(item.id!);
+        if (!taskId || !item.depends_on_item_ids?.length) continue;
+        for (const depItemId of item.depends_on_item_ids) {
+          const dependsOnTaskId = itemIdToTaskId.get(depItemId);
+          if (dependsOnTaskId) depRows.push({ task_id: taskId, depends_on_task_id: dependsOnTaskId, company_id: companyId });
+        }
+      }
+      if (depRows.length) await supabase.from('task_dependencies').insert(depRows);
+    }
     setSaving(false);
     onClose?.();
   };
@@ -369,7 +478,13 @@ export default function TemplateManager({
                 <CheckSquare size={14} className="text-indigo-400 mt-0.5 shrink-0" />
                 <div className="flex-1">
                   <p className="text-[12px] font-medium text-slate-800">{item.title}</p>
+                  {item.notes && <p className="text-[10px] text-slate-400 mt-0.5">{item.notes}</p>}
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    {item.start_offset_days != null && (
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Calendar size={9} /> Start: <span className="font-medium text-indigo-600">{resolvedStartDates[item.id] ?? '—'}</span>
+                      </span>
+                    )}
                     {item.due_offset_days !== null && (
                       <span className="text-[10px] text-slate-400 flex items-center gap-1">
                         <Calendar size={9} />
@@ -396,6 +511,11 @@ export default function TemplateManager({
                     {item.is_monetary && item.estimated_cost > 0 && (
                       <span className="text-[10px] text-slate-400 flex items-center gap-1">
                         <DollarSign size={9} />${Number(item.estimated_cost).toLocaleString()}
+                      </span>
+                    )}
+                    {item.depends_on_item_ids && item.depends_on_item_ids.length > 0 && (
+                      <span className="text-[10px] text-slate-400">
+                        Blocked by: {item.depends_on_item_ids.map(id => selected.items.find(i => i.id === id)?.title).filter(Boolean).join(', ')}
                       </span>
                     )}
                   </div>
@@ -478,6 +598,64 @@ export default function TemplateManager({
                           </select>
                         </div>
                       )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className="text-[9px] text-slate-400 mb-1">Start offset days</p>
+                        <input type="number" value={item.start_offset_days ?? ''} placeholder="None" onChange={e => {
+                          const next = [...editItems];
+                          next[idx] = { ...next[idx], start_offset_days: e.target.value === '' ? null : (parseInt(e.target.value) || 0) };
+                          setEditItems(next);
+                        }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white" />
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-[9px] text-slate-400 mb-1">Start from</p>
+                        <select value={item.start_anchor || 'record_created'} onChange={e => {
+                          const next = [...editItems]; next[idx] = { ...next[idx], start_anchor: e.target.value }; setEditItems(next);
+                        }} disabled={item.start_offset_days === null || item.start_offset_days === undefined}
+                          className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white disabled:opacity-40">
+                          {ANCHORS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                          {editItems.map((i, otherIdx) => (
+                            otherIdx !== idx && i.title?.trim() && (
+                              <option key={`task_${otherIdx}`} value={`task_${otherIdx}`}>After due: {i.title}</option>
+                            )
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[9px] text-slate-400 mb-1">Notes</p>
+                      <textarea value={item.notes || ''} onChange={e => {
+                        const next = [...editItems]; next[idx] = { ...next[idx], notes: e.target.value || null }; setEditItems(next);
+                      }} rows={2} placeholder="Guidance for this task..."
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-2xl text-[11px] outline-none bg-white resize-none" />
+                    </div>
+                    <div>
+                      <p className="text-[9px] text-slate-400 mb-1">Blocked by</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {editItems.map((i, otherIdx) => {
+                          if (otherIdx === idx || !i.title?.trim()) return null;
+                          const blocked = item.depends_on_item_ids?.includes(i.id || '') || false;
+                          return (
+                            <button key={otherIdx} type="button" onClick={() => {
+                              const next = [...editItems];
+                              const curIds = next[idx].depends_on_item_ids || [];
+                              const otherId = i.id || '';
+                              if (!otherId) return;
+                              next[idx] = {
+                                ...next[idx],
+                                depends_on_item_ids: blocked ? curIds.filter(x => x !== otherId) : [...curIds, otherId],
+                              };
+                              setEditItems(next);
+                            }} disabled={!i.id}
+                              className={`px-2.5 py-1 rounded-full text-[10px] border transition-colors disabled:opacity-30 ${
+                                blocked ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-200 text-slate-400 hover:border-indigo-300'
+                              }`}>
+                              {i.title}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
