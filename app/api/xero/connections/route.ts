@@ -12,12 +12,46 @@ export async function GET() {
 
   const { data, error } = await admin
     .from("company_xero_connections")
-    .select("id, tenant_id, tenant_name, last_synced_at, last_sync_error, created_at")
+    .select("id, tenant_id, tenant_name, last_synced_at, last_sync_error, created_at, is_own_organisation")
     .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ connections: data });
+}
+
+// Marks (or unmarks) one connection as representing the company's own
+// accounting, rather than a client entity -- for companies that only use
+// Xero to track their own firm's invoicing (see AdminXeroTab.tsx). At most
+// one per company; the partial unique index backs this up, but we clear
+// any existing one first so a plain update doesn't hit it.
+export async function PATCH(req: NextRequest) {
+  const auth = await authorizeCompanyMember();
+  if (auth.error) return auth.error;
+  const { admin, companyId, isAdmin } = auth;
+  if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+
+  const body = await req.json().catch(() => null);
+  const id = body?.id;
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+  const isOwnOrganisation = !!body?.is_own_organisation;
+
+  if (isOwnOrganisation) {
+    await admin
+      .from("company_xero_connections")
+      .update({ is_own_organisation: false })
+      .eq("company_id", companyId)
+      .eq("is_own_organisation", true);
+  }
+
+  const { error } = await admin
+    .from("company_xero_connections")
+    .update({ is_own_organisation: isOwnOrganisation })
+    .eq("id", id)
+    .eq("company_id", companyId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ success: true });
 }
 
 export async function DELETE(req: NextRequest) {

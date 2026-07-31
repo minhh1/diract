@@ -10,8 +10,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Landmark, Trash2, Loader2, HelpCircle, CheckCircle2 } from "lucide-react";
+import { Landmark, Trash2, Loader2, HelpCircle, CheckCircle2, Search, Building2 } from "lucide-react";
 import CredentialsHelpDrawer from "./CredentialsHelpDrawer";
+import { useCompany } from "@/components/CompanyContext";
 
 // Customer-facing walkthrough of the OAuth consent flow -- unlike
 // WhatsApp/Teams' help steps (which point at credentials the customer has
@@ -44,6 +45,7 @@ interface Connection {
   last_synced_at: string | null;
   last_sync_error: string | null;
   created_at: string;
+  is_own_organisation: boolean;
 }
 
 interface EntityRow {
@@ -58,12 +60,18 @@ export default function AdminXeroTab() {
   const result = searchParams.get("xero");
   const message = searchParams.get("message");
 
+  const { companyName } = useCompany();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [entities, setEntities] = useState<EntityRow[]>([]);
   const [entitiesLoading, setEntitiesLoading] = useState(true);
   const [linking, setLinking] = useState<string | null>(null);
+  const [settingOwnOrg, setSettingOwnOrg] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [entitySearch, setEntitySearch] = useState('');
+  const filteredEntities = entitySearch.trim()
+    ? entities.filter(e => e.name.toLowerCase().includes(entitySearch.trim().toLowerCase()))
+    : entities;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,6 +107,22 @@ export default function AdminXeroTab() {
     });
     await loadEntities();
     setLinking(null);
+  };
+
+  // For companies that only track their own firm's invoicing in Xero, not
+  // individual client entities -- marks (or unmarks) one connection as
+  // representing the company itself. `id` is the currently own-organisation
+  // connection's id when unlinking (selecting "Not linked"), or the newly
+  // chosen connection's id when linking.
+  const setOwnOrganisation = async (id: string, isOwnOrganisation: boolean) => {
+    setSettingOwnOrg(true);
+    await fetch("/api/xero/connections", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, is_own_organisation: isOwnOrganisation }),
+    });
+    await load();
+    setSettingOwnOrg(false);
   };
 
   return (
@@ -160,6 +184,33 @@ export default function AdminXeroTab() {
         <div className="bg-white border border-slate-200 rounded-[32px] p-6">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4">Link entities to a Xero organisation</p>
 
+          {/* For a company that only tracks its own firm's invoicing in
+              Xero (not individual clients) -- pinned above the client
+              entity list rather than requiring a matching `entities` row
+              to exist just so it has something to link. */}
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 rounded-2xl mb-3">
+            <Building2 size={13} className="text-indigo-400 shrink-0" />
+            <p className="text-[12px] font-bold text-indigo-700 flex-1">
+              {companyName || 'Your firm'} <span className="font-normal text-indigo-400">— your own accounting, not a client</span>
+            </p>
+            <select
+              value={connections.find((c) => c.is_own_organisation)?.id ?? ""}
+              disabled={settingOwnOrg}
+              onChange={(ev) => {
+                const newId = ev.target.value;
+                const current = connections.find((c) => c.is_own_organisation);
+                if (!newId && current) setOwnOrganisation(current.id, false);
+                else if (newId) setOwnOrganisation(newId, true);
+              }}
+              className="text-[12px] border border-indigo-200 rounded-xl px-2 py-1 bg-white text-indigo-700"
+            >
+              <option value="">Not linked</option>
+              {connections.map((c) => (
+                <option key={c.id} value={c.id}>{c.tenant_name || c.tenant_id}</option>
+              ))}
+            </select>
+          </div>
+
           {entitiesLoading && (
             <p className="text-[12px] text-slate-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading entities...</p>
           )}
@@ -169,24 +220,40 @@ export default function AdminXeroTab() {
           )}
 
           {!entitiesLoading && entities.length > 0 && (
-            <div className="space-y-1.5">
-              {entities.map((e) => (
-                <div key={e.id} className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl">
-                  <p className="text-[12px] font-medium text-slate-700 flex-1">{e.name}</p>
-                  <select
-                    value={e.xero_connection_id ?? ""}
-                    disabled={linking === e.id}
-                    onChange={(ev) => linkEntity(e.id, ev.target.value || null)}
-                    className="text-[12px] border border-slate-200 rounded-xl px-2 py-1 bg-white text-slate-600"
-                  >
-                    <option value="">Not linked</option>
-                    {connections.map((c) => (
-                      <option key={c.id} value={c.id}>{c.tenant_name || c.tenant_id}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="relative mb-3">
+                <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input
+                  value={entitySearch}
+                  onChange={(e) => setEntitySearch(e.target.value)}
+                  placeholder="Search entities..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 pl-9 pr-4 text-[12px] font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {filteredEntities.length === 0 && (
+                <p className="text-[12px] text-slate-400">No entities match "{entitySearch}".</p>
+              )}
+
+              <div className="space-y-1.5">
+                {filteredEntities.map((e) => (
+                  <div key={e.id} className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl">
+                    <p className="text-[12px] font-medium text-slate-700 flex-1">{e.name}</p>
+                    <select
+                      value={e.xero_connection_id ?? ""}
+                      disabled={linking === e.id}
+                      onChange={(ev) => linkEntity(e.id, ev.target.value || null)}
+                      className="text-[12px] border border-slate-200 rounded-xl px-2 py-1 bg-white text-slate-600"
+                    >
+                      <option value="">Not linked</option>
+                      {connections.map((c) => (
+                        <option key={c.id} value={c.id}>{c.tenant_name || c.tenant_id}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
