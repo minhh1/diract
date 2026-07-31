@@ -1,7 +1,7 @@
 // app/api/finance-model-pages/route.ts
 // Admin-side (auth required). Create/list public, shareable Finance Model
-// links for an entity (finance_model_pages -- see supabase/migrations/
-// 20260731230000_finance_model_pages.sql). Mirrors
+// links for a project (finance_model_pages -- see supabase/migrations/
+// 20260731320000_finance_model_pages_project_scoped.sql). Mirrors
 // app/api/document-templates/create-page/route.ts + list/route.ts.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
@@ -11,14 +11,14 @@ export async function GET(req: NextRequest) {
   if (auth.error) return auth.error;
   const { admin, companyId } = auth;
 
-  const entityId = req.nextUrl.searchParams.get("entityId");
-  if (!entityId) return NextResponse.json({ error: "entityId is required" }, { status: 400 });
+  const projectId = req.nextUrl.searchParams.get("projectId");
+  if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
 
   const { data, error } = await admin
     .from("finance_model_pages")
     .select("id, title, access_code, is_active, created_at")
     .eq("company_id", companyId)
-    .eq("entity_id", entityId)
+    .eq("project_id", projectId)
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -31,19 +31,19 @@ export async function POST(req: NextRequest) {
   const { admin, user, companyId } = auth;
 
   const body = await req.json().catch(() => null);
-  const entityId: string | undefined = body?.entityId;
+  const projectId: string | undefined = body?.projectId;
   const title: string | undefined = body?.title;
   const accessCode: string | undefined = body?.accessCode;
-  if (!entityId || !title?.trim()) return NextResponse.json({ error: "entityId and title are required" }, { status: 400 });
+  if (!projectId || !title?.trim()) return NextResponse.json({ error: "projectId and title are required" }, { status: 400 });
 
-  const { data: entity } = await admin.from("entities").select("id").eq("id", entityId).eq("company_id", companyId).maybeSingle();
-  if (!entity) return NextResponse.json({ error: "Entity not found" }, { status: 404 });
+  const { data: project } = await admin.from("projects").select("id").eq("id", projectId).eq("company_id", companyId).maybeSingle();
+  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
   const { data: page, error } = await admin
     .from("finance_model_pages")
     .insert({
       company_id: companyId,
-      entity_id: entityId,
+      project_id: projectId,
       title: title.trim(),
       access_code: accessCode?.trim() || null,
       created_by: user.id,

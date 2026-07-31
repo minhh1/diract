@@ -13,7 +13,7 @@ export { codeMatches } from "@/lib/documentFillPageGate";
 export async function loadActiveFinanceModelPage(admin: any, pageId: string) {
   const { data: page } = await admin
     .from("finance_model_pages")
-    .select("id, company_id, entity_id, title, is_active, access_code")
+    .select("id, company_id, project_id, title, is_active, access_code")
     .eq("id", pageId).maybeSingle();
 
   const notFound = { error: NextResponse.json({ error: "This page is not available" }, { status: 404 }), page: null };

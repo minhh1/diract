@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { loadActiveFinanceModelPage, codeMatches } from "@/lib/financeModelPageGate";
-import { loadFinanceModelData } from "@/lib/xero/financeModelData";
+import { loadOverview } from "@/lib/financeModel/data";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ pageId: string }> }) {
   const { pageId } = await params;
@@ -32,9 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   }
 
   try {
-    const data = await loadFinanceModelData(admin, page.entity_id);
-    if (!data) return NextResponse.json({ error: "This page is not available" }, { status: 404 });
-    if (data.error) return NextResponse.json(data, { status: 502 });
+    const data = await loadOverview(admin, page.company_id, page.project_id);
     return NextResponse.json({ title: page.title, requiresCode: false, ...data });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load" }, { status: 502 });
