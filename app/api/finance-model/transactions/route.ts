@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     reference: body?.reference?.trim() || null,
     amount: Number.isFinite(Number(body?.amount)) ? Number(body.amount) : null,
     budget_line: body?.budgetLineId || null,
+    loan_id: body?.loanId || null,
     source: "Manual",
   });
 
@@ -83,6 +84,7 @@ export async function PATCH(req: NextRequest) {
     updates.amount = n;
   }
   if (body.budgetLineId !== undefined) updates.budget_line = body.budgetLineId || null;
+  if (body.loanId !== undefined) updates.loan_id = body.loanId || null;
 
   await updateCustomTableRow(admin, table, id, updates);
   return NextResponse.json({ success: true });

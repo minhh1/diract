@@ -18,6 +18,12 @@ interface BudgetLine {
   label: string | null;
 }
 
+interface LoanRef {
+  id: string;
+  name: string | null;
+  lender_type: string | null;
+}
+
 interface Transaction {
   id: string;
   date: string | null;
@@ -27,6 +33,7 @@ interface Transaction {
   description: string | null;
   amount: number | null;
   budget_line: string | null;
+  loan_id: string | null;
   source: "Manual" | "Xero" | null;
 }
 
@@ -63,6 +70,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
+  const [loans, setLoans] = useState<LoanRef[]>([]);
   const [projectCreatedAt, setProjectCreatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,19 +98,22 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
     setLoading(true);
     setError(null);
     try {
-      const [txRes, blRes, rulesRes] = await Promise.all([
+      const [txRes, blRes, rulesRes, loansRes] = await Promise.all([
         fetch(`/api/finance-model/transactions?projectId=${projectId}`),
         fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
         fetch(`/api/finance-model/classification-rules?projectId=${projectId}`),
+        fetch(`/api/finance-model/loans?projectId=${projectId}`),
       ]);
       const txJson = await txRes.json();
       const blJson = await blRes.json();
       const rulesJson = await rulesRes.json();
+      const loansJson = await loansRes.json();
       if (!txRes.ok) { setError(txJson.error || "Failed to load"); return; }
       setTransactions(txJson.transactions || []);
       setProjectCreatedAt(txJson.projectCreatedAt || null);
       setBudgetLines(blJson.budgetLines || []);
       setRules(rulesJson.rules || []);
+      setLoans(loansJson.loans || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -179,6 +190,15 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, budgetLineId: budgetLineId || null }),
+    });
+    await load();
+  };
+
+  const classifyLoan = async (id: string, loanId: string) => {
+    await fetch("/api/finance-model/transactions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, loanId: loanId || null }),
     });
     await load();
   };
@@ -406,6 +426,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                 <th className="px-2 py-2 font-bold">Reference</th>
                 <th className="px-2 py-2 font-bold">Description</th>
                 <th className="px-2 py-2 font-bold">Budget line</th>
+                {loans.length > 0 && <th className="px-2 py-2 font-bold">Loan</th>}
                 <th className="px-2 py-2 font-bold">Source</th>
                 <th className="px-6 py-2 font-bold text-right cursor-pointer" onClick={() => toggleSort("amount")}>Amount {sortKey === "amount" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
                 <th className="px-2 py-2 font-bold"></th>
@@ -424,6 +445,14 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                       {budgetLines.map(l => <option key={l.id} value={l.id}>{l.category} — {l.label}</option>)}
                     </select>
                   </td>
+                  {loans.length > 0 && (
+                    <td className="px-2 py-2">
+                      <select value={t.loan_id || ""} onChange={e => classifyLoan(t.id, e.target.value)} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600">
+                        <option value="">—</option>
+                        {loans.map(l => <option key={l.id} value={l.id}>{l.name || l.lender_type || "Loan"}</option>)}
+                      </select>
+                    </td>
+                  )}
                   <td className="px-2 py-2 text-slate-400">{t.source || "—"}</td>
                   <td className={`px-6 py-2 text-right font-medium whitespace-nowrap ${t.type === "Expense" ? "text-rose-600" : "text-emerald-600"}`}>
                     {t.type === "Expense" ? "−" : "+"}{money(Math.abs(t.amount ?? 0))}

@@ -53,22 +53,35 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const [saving, setSaving] = useState(false);
   const [linkedLine, setLinkedLine] = useState<{ id: string; budgeted_amount: number | null } | null>(null);
   const [linking, setLinking] = useState(false);
+  const [actualRepaid, setActualRepaid] = useState<number | null>(null);
+  const [matchedTxCount, setMatchedTxCount] = useState(0);
 
   const linkedSource = `loan:${loan.id}`;
 
   const load = async () => {
     setLoading(true);
-    const [rRes, pRes, blRes] = await Promise.all([
+    const [rRes, pRes, blRes, txRes] = await Promise.all([
       fetch(`/api/finance-model/loan-interest-rates?loanId=${loan.id}`),
       fetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
       fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
+      fetch(`/api/finance-model/transactions?projectId=${projectId}`),
     ]);
     const rJson = await rRes.json();
     const pJson = await pRes.json();
     const blJson = await blRes.json();
+    const txJson = await txRes.json();
     setRates(rJson.rates || []);
     setPhases((pJson.phases || []).map((p: any) => ({ ...p, phase_order: Number(p.phase_order) || 0 })));
     setLinkedLine((blJson.budgetLines || []).find((l: any) => l.linked_source === linkedSource) || null);
+    // Actual repayments -- Expense-type transactions matched to this loan
+    // (money paid TO the lender, principal+interest combined, since bank
+    // transactions aren't broken into interest/principal components).
+    // Drawdowns (Income-type, money FROM the lender) aren't counted here --
+    // this is specifically "what's been repaid," compared against the
+    // calculated schedule's total (interest + principal) below.
+    const matched = ((txJson.transactions || []) as { loan_id: string | null; type: string | null; amount: number | null }[]).filter(t => t.loan_id === loan.id && t.type === "Expense");
+    setMatchedTxCount(matched.length);
+    setActualRepaid(matched.length ? matched.reduce((s, t) => s + Math.abs(t.amount ?? 0), 0) : null);
     setLoading(false);
   };
 
@@ -263,6 +276,29 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Calculated vs Actual</p>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Calculated (P+I)</p>
+                  <p className="text-[16px] font-bold text-slate-800">{money(schedule.periods.reduce((s, p) => s + p.payment, 0))}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Actual Repaid ({matchedTxCount} tx)</p>
+                  <p className="text-[16px] font-bold text-slate-800">{actualRepaid != null ? money(actualRepaid) : "— (no transactions matched to this loan yet)"}</p>
+                </div>
+                {actualRepaid != null && (
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Variance</p>
+                    <p className={`text-[16px] font-bold ${actualRepaid - schedule.periods.reduce((s, p) => s + p.payment, 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                      {money(actualRepaid - schedule.periods.reduce((s, p) => s + p.payment, 0))}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2">Actual sums Expense-type Transactions matched to this loan (Transactions tab) -- combined principal+interest, since bank transactions aren't broken into components. Match transactions to this loan there to populate this.</p>
             </div>
           </>
         )}
