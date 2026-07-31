@@ -114,6 +114,17 @@ async function proposeForProject(companyId: string, projectId: string, projectNa
   const { error } = await db.from("property_auto_link_requests").insert({
     company_id: companyId, project_id: projectId, project_name: projectName, proposed,
   });
+  if (!error) {
+    // Best-effort -- same pattern as gmail-addon's resolveOrCreateRelation
+    // notifying admins about a needs-review row it just created.
+    await db.rpc("notify_company_admins", {
+      p_company_id: companyId,
+      p_event_type: "property_link_request_submitted",
+      p_title: `Property link request: ${projectName}`,
+      p_link_url: "/dashboard/admin?tab=propertyAutoLink",
+      p_entity_table: "property_auto_link_requests",
+    }).catch(() => {});
+  }
   return !error;
 }
 

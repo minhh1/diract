@@ -74,4 +74,9 @@ export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
     label: "Lead email needs review",
     description: "A new email in the shared Leads inbox is proposed for assignment to a Lead and needs approval. (Admins only.)",
   },
+  {
+    key: "property_link_request_submitted",
+    label: "Property link request",
+    description: "A matter's name looks like a property address and needs approval to link (or create) the matching Property. (Admins only.)",
+  },
 ];
