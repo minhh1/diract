@@ -4,10 +4,11 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, ArrowUpDown, Clock, AlertTriangle, RotateCw, Search,
+  Loader2, Tag, Users2, ListOrdered, Activity, Radio, Mail, Trash2, PlusCircle, MinusCircle, Inbox, Archive, ArrowUpDown, Clock, AlertTriangle, RotateCw, Search, Wand2,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import HeartbeatStatusList from "@/components/admin/HeartbeatStatusList";
+import GmailLegacyLabelCleanupPanel from "@/components/admin/GmailLegacyLabelCleanupPanel";
 
 interface AdminGmailSyncTabProps {
   companyId: string;
@@ -164,7 +165,7 @@ const HEARTBEAT_DEFS: Record<string, { label: string; intervalMs: number }> = {
 const ACTIVITY_PAGE_SIZE = 50;
 
 export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps) {
-  const [section, setSection] = useState<"labels" | "queue" | "activity" | "health" | "archived" | "failures">("labels");
+  const [section, setSection] = useState<"labels" | "queue" | "activity" | "health" | "archived" | "failures" | "cleanup">("labels");
   const [loading, setLoading] = useState(true);
 
   const [sharedLabels, setSharedLabels] = useState<SharedLabel[]>([]);
@@ -480,6 +481,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
     { id: "failures" as const, label: `Failures${syncFailures.length ? ` (${syncFailures.length})` : ""}`, icon: AlertTriangle },
     { id: "activity" as const, label: "Activity log", icon: Activity },
     { id: "health" as const, label: "System health", icon: Radio },
+    { id: "cleanup" as const, label: "Legacy label cleanup", icon: Wand2 },
   ];
 
   const queueSearchLower = queueSearch.trim().toLowerCase();
@@ -914,6 +916,10 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
       {section === "health" && (
         <HeartbeatStatusList defs={HEARTBEAT_DEFS} heartbeats={heartbeats} />
+      )}
+
+      {section === "cleanup" && (
+        <GmailLegacyLabelCleanupPanel companyId={companyId} />
       )}
     </div>
   );

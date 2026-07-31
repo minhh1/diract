@@ -603,6 +603,7 @@ Deno.serve(async (req) => {
         if (!normSubject || normSubject.length < 3) continue;
 
         const threadIdForMatch = msgData.threadId || msgId;
+        const senderAddress = extractEmailMeta(msgData).from_address?.toLowerCase() || null;
 
         // Prefer thread continuity over subject text — Gmail's own threading
         // (References/In-Reply-To) is a far more reliable signal than a
@@ -623,6 +624,38 @@ Deno.serve(async (req) => {
         if (distinctThreadProjects.size === 1) {
           subjectMatch = threadMatches![0];
           console.log(`[push] Auto-label by thread continuity: "${normSubject}" → project ${subjectMatch.project_id}`);
+        }
+
+        if (!subjectMatch && senderAddress) {
+          // A real correspondent reusing the exact same subject text on a
+          // brand-new (unthreaded) conversation is rare -- but automated
+          // vendor/system senders (PEXA, banks, etc.) routinely blast an
+          // identical templated subject ("Action Required: Invitation to
+          // Participate in a PEXA Workspace") across every unrelated matter.
+          // Once the first one lands, it becomes the sole recorded match in
+          // project_email_subjects and silently absorbs every later matter's
+          // notification too, since the ">1 distinct project" ambiguity
+          // check below never fires without a second recorded project. Catch
+          // it earlier: if this exact sender has already sent this exact
+          // normalised subject into a *different* thread, treat the subject
+          // as templated/non-matter-specific and refuse to auto-label from
+          // it at all, regardless of how many (or few) projects it's matched
+          // to so far.
+          const { data: senderSubjectRows } = await db.from("project_emails")
+            .select("gmail_thread_id, subject")
+            .in("company_id", allCompanyIds)
+            .eq("from_address", senderAddress)
+            .neq("gmail_thread_id", threadIdForMatch)
+            .limit(20);
+          const otherThreadsWithSameSubject = new Set(
+            (senderSubjectRows || [])
+              .filter(r => normaliseSubject(r.subject || "") === normSubject)
+              .map(r => r.gmail_thread_id)
+          );
+          if (otherThreadsWithSameSubject.size > 0) {
+            console.log(`[push] Skipping auto-label — sender ${senderAddress} already sent "${normSubject}" to ${otherThreadsWithSameSubject.size} other thread(s); treating as a templated subject`);
+            continue;
+          }
         }
 
         if (!subjectMatch) {

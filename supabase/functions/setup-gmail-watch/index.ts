@@ -1,6 +1,10 @@
 // supabase/functions/setup-gmail-watch/index.ts
-// One-time / manual function to set up Gmail push notifications for all connected users.
-// Call this via: supabase functions invoke setup-gmail-watch
+// Sets up Gmail push notifications for connected users -- all of them by
+// default (manual/cron use: supabase functions invoke setup-gmail-watch),
+// or just one if the request body has { userId } (called from
+// app/api/gmail/callback/route.ts right after a (re)connect, so a fresh
+// connection isn't silently push-notification-dead until the next
+// gmail-watch-renewal cron tick picks up its null watch_expiry).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -14,16 +18,21 @@ const db = createClient(supabaseUrl, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
   console.log('[setup-watch] Starting Gmail watch setup');
 
   if (!PUBSUB_TOPIC) {
     return new Response(JSON.stringify({ error: 'GMAIL_PUBSUB_TOPIC not set' }), { status: 400 });
   }
 
-  const { data: tokens, error } = await db
+  let userId: string | undefined;
+  try { userId = (await req.json())?.userId; } catch { /* no body / all-users run */ }
+
+  let query = db
     .from('user_gmail_tokens')
     .select('user_id, email, access_token, refresh_token, token_expires_at');
+  if (userId) query = query.eq('user_id', userId);
+  const { data: tokens, error } = await query;
 
   if (error) {
     console.error('[setup-watch] Failed to fetch tokens:', error.message);

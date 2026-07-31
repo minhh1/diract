@@ -189,7 +189,7 @@ async function importMessage(
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/import", {
     method: "POST",
     headers: { Authorization: `Bearer ${targetToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ raw, labelIds: [labelId, "INBOX"] }),
+    body: JSON.stringify({ raw, labelIds: [labelId] }),
   });
   return res.ok;
 }

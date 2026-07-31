@@ -112,6 +112,17 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Register (or renew) this user's Gmail push subscription right away --
+  // otherwise a fresh connection has no watch_expiry at all and silently
+  // gets zero near-real-time sync until gmail-watch-renewal's next daily
+  // tick happens to pick up the null value, which can be most of a day.
+  // Best-effort: a failure here shouldn't block the connect flow itself.
+  fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/setup-gmail-watch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: user.id }),
+  }).catch(err => console.error('Failed to set up Gmail watch after connect:', err));
+
   return NextResponse.redirect(
     `${APP_URL}/dashboard/gmail?connected=true`
   );
