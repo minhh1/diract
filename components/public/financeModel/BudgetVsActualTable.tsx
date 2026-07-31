@@ -4,7 +4,8 @@
 // (internal, editable) and PublicFinanceModelContent's public-mode render
 // (read-only), so the two never drift visually.
 import { useState } from "react";
-import { X, ListTodo, Plus } from "lucide-react";
+import { X, ListTodo, Plus, Paperclip } from "lucide-react";
+import AttachmentsList from "./AttachmentsList";
 
 export interface BudgetLine {
   id: string;
@@ -57,6 +58,22 @@ function TasksCell({ line, tasks, onUpdate }: { line: BudgetLine; tasks: TaskRef
   );
 }
 
+function AttachmentsCell({ projectId, lineId }: { projectId: string; lineId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(v => !v)} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-indigo-600">
+        <Paperclip size={11} />
+      </button>
+      {open && (
+        <div className="absolute z-10 top-6 right-0 bg-white border border-slate-200 rounded-xl shadow-lg p-3 w-64">
+          <AttachmentsList projectId={projectId} attachableTable="budget_line" attachableId={lineId} compact />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function money(n: number): string {
   return n.toLocaleString("en-AU", { style: "currency", currency: "AUD" });
 }
@@ -77,12 +94,14 @@ interface Props {
   onDelete?: (id: string) => void;
   tasks?: TaskRef[];
   onUpdateTasks?: (lineId: string, taskIds: string[]) => void;
+  projectId?: string;
 }
 
-export default function BudgetVsActualTable({ budgetLines, editable, onDelete, tasks, onUpdateTasks }: Props) {
+export default function BudgetVsActualTable({ budgetLines, editable, onDelete, tasks, onUpdateTasks, projectId }: Props) {
   const budgetedTotal = budgetLines.reduce((sum, l) => sum + signed(l.category, l.budgeted_amount ?? 0), 0);
   const actualTotal = budgetLines.reduce((sum, l) => sum + signed(l.category, l.actual ?? 0), 0);
   const showTasks = editable && !!tasks && !!onUpdateTasks;
+  const showAttachments = editable && !!projectId;
 
   if (budgetLines.length === 0) {
     return <p className="text-[12px] text-slate-400 px-6 py-4">No budget lines yet.</p>;
@@ -98,6 +117,7 @@ export default function BudgetVsActualTable({ budgetLines, editable, onDelete, t
           <th className="px-2 py-2 font-bold text-right">Actual</th>
           <th className="px-2 py-2 font-bold text-right">Variance</th>
           {showTasks && <th className="px-2 py-2 font-bold">Tasks</th>}
+          {showAttachments && <th className="px-2 py-2 font-bold"></th>}
           {editable && <th className="px-6 py-2 font-bold"></th>}
         </tr>
       </thead>
@@ -120,6 +140,11 @@ export default function BudgetVsActualTable({ budgetLines, editable, onDelete, t
                   <TasksCell line={line} tasks={tasks!} onUpdate={ids => onUpdateTasks!(line.id, ids)} />
                 </td>
               )}
+              {showAttachments && (
+                <td className="px-2 py-2">
+                  <AttachmentsCell projectId={projectId!} lineId={line.id} />
+                </td>
+              )}
               {editable && (
                 <td className="px-6 py-2 text-right">
                   <button onClick={() => onDelete?.(line.id)} className="text-slate-300 hover:text-rose-500">
@@ -140,6 +165,7 @@ export default function BudgetVsActualTable({ budgetLines, editable, onDelete, t
             {actualTotal - budgetedTotal > 0 ? "+" : ""}{money(actualTotal - budgetedTotal)}
           </td>
           {showTasks && <td />}
+          {showAttachments && <td />}
           {editable && <td />}
         </tr>
       </tfoot>

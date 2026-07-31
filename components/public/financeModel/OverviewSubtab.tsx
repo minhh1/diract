@@ -387,7 +387,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
           </div>
         )}
 
-        <BudgetVsActualTable budgetLines={budgetLines} editable onDelete={deleteBudgetLine} tasks={tasks} onUpdateTasks={updateLineTasks} />
+        <BudgetVsActualTable budgetLines={budgetLines} editable onDelete={deleteBudgetLine} tasks={tasks} onUpdateTasks={updateLineTasks} projectId={projectId} />
       </div>
     </div>
   );
