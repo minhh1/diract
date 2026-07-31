@@ -6,6 +6,16 @@
 // Read-only: unlike SubProjectsTab, there's no sensible "create" action here
 // -- a matter gets linked to an entity by editing that field on the matter
 // itself, not from the entity's own page.
+//
+// Also pulls in matters linked via a trust <-> trustee relationship
+// (entity_relationships, relationship_type 'Trustee') -- a matter's entity
+// field is conventionally set to the TRUSTEE (see
+// lib/clientUpdatePageDetail.ts's matching entity_relationships query,
+// which looks up the trust FROM a matter-linked trustee id the same
+// direction), so viewing the TRUST's own page previously found nothing even
+// when its trustee plainly had matters. Checked both directions (this
+// entity's trustee(s), and the trust it's a trustee of) since either side
+// could in principle be the one a matter is directly linked to.
 "use client";
 
 import { useState, useEffect } from "react";
@@ -41,11 +51,27 @@ export default function RelatedMattersTab({ recordId }: { recordId: string }) {
       const fieldIds = (linkFields || []).map(f => f.id);
       if (!fieldIds.length) { if (!cancelled) { setMatters([]); setLoading(false); } return; }
 
+      // This entity's trustee(s) (viewing a trust) and/or the trust it's a
+      // trustee of (viewing a trustee) -- see this file's header comment.
+      const [{ data: asTrust }, { data: asTrustee }] = await Promise.all([
+        supabase.from('entity_relationships').select('child_entity_id')
+          .eq('parent_entity_id', recordId).eq('relationship_type', 'Trustee')
+          .or('is_current.is.null,is_current.eq.true'),
+        supabase.from('entity_relationships').select('parent_entity_id')
+          .eq('child_entity_id', recordId).eq('relationship_type', 'Trustee')
+          .or('is_current.is.null,is_current.eq.true'),
+      ]);
+      const relatedEntityIds = new Set<string>([
+        ...(asTrust || []).map(r => r.child_entity_id),
+        ...(asTrustee || []).map(r => r.parent_entity_id),
+      ]);
+      const searchIds = [recordId, ...relatedEntityIds];
+
       const { data: values } = await supabase
         .from('company_custom_field_values')
-        .select('record_id, field_id')
+        .select('record_id, field_id, value_record_id')
         .in('field_id', fieldIds)
-        .eq('value_record_id', recordId);
+        .in('value_record_id', searchIds);
       const projectIds = [...new Set((values || []).map(v => v.record_id))];
       if (!projectIds.length) { if (!cancelled) { setMatters([]); setLoading(false); } return; }
 
@@ -54,8 +80,12 @@ export default function RelatedMattersTab({ recordId }: { recordId: string }) {
       for (const v of values || []) {
         const label = labelByFieldId.get(v.field_id);
         if (!label) continue;
+        // Flag a match found via the trust/trustee relationship rather than
+        // a direct link to this exact entity, so it's clear why this
+        // matter shows up even though it isn't literally naming this record.
+        const roleLabel = v.value_record_id === recordId ? label : `${label} (via trustee)`;
         if (!rolesByProject.has(v.record_id)) rolesByProject.set(v.record_id, []);
-        rolesByProject.get(v.record_id)!.push(label);
+        rolesByProject.get(v.record_id)!.push(roleLabel);
       }
 
       const { data: projects } = await supabase
