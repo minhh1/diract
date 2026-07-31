@@ -200,6 +200,12 @@ export default function MatterBoard({
   onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
+  // Which card is expanded, in Cards mode -- one at a time, same contract as
+  // SpreadsheetView's own expandedId. MatterCard used to track this itself
+  // (local useState), so opening a second card never collapsed the first --
+  // every card a staff member checked in a session stayed open, stacking up
+  // and making the board harder to scroll through the more you'd looked at.
+  const [expandedCardKey, setExpandedCardKey] = useState<string | null>(null);
   const [activeTop, setActiveTop] = useState<string>(UNGROUPED);
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<{ fieldId: string; values: Set<string> }[]>([]);
@@ -799,6 +805,7 @@ export default function MatterBoard({
             <div className="space-y-3">
               {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
+                  expanded={expandedCardKey === key} onToggleExpand={() => setExpandedCardKey(expandedCardKey === key ? null : key)}
                   onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged} />
               ))}
               {visibleItems.length === 0 && (
@@ -1071,9 +1078,10 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged }: {
+function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
+  expanded: boolean; onToggleExpand: () => void;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string, capacity?: string | null) => void;
   onShowHistory?: (itemId: string, fieldId: string, fieldLabel: string) => void;
   onMoveItem?: (itemId: string, groupId: string | null) => void;
@@ -1085,7 +1093,6 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   onRenameMatter?: (itemId: string, name: string) => void;
   onDataChanged?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(item.matterName);
@@ -1107,7 +1114,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
 
   return (
     <div className={`border rounded-2xl ${colorClasses ? `border-l-4 ${colorClasses.border} ${colorClasses.cardBg} border-y-slate-200 border-r-slate-200` : "bg-white border-slate-200"}`}>
-      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={onToggleExpand}>
         <div className="flex-1 min-w-0">
           {editingTitle ? (
             <input value={titleDraft} onChange={e => setTitleDraft(e.target.value)} autoFocus onClick={e => e.stopPropagation()}
