@@ -43,6 +43,7 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [merged, setMerged] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [creatingTrust, setCreatingTrust] = useState(false);
   const [newTrustName, setNewTrustName] = useState("");
   const [creatingTrustSaving, setCreatingTrustSaving] = useState(false);
@@ -71,11 +72,13 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
   const save = async (overrideValue?: any) => {
     const value = overrideValue !== undefined ? overrideValue : draft;
     setSaving(true);
+    setSaveError(null);
     const res = await fetch(`/api/client-update-pages/${pageId}/items/${itemId}/fix`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
     });
     setSaving(false);
     if (res.ok) { setSaved(true); load(); }
+    else { const json = await res.json().catch(() => ({})); setSaveError(json.error || "Couldn't save that fix."); }
   };
 
   const createTrustInline = async () => {
@@ -200,6 +203,7 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
             </>
           )}
           {saved && <span className="flex items-center gap-1 text-[10px] text-emerald-600"><Check size={11} /> Saved</span>}
+          {saveError && <p className="text-[10px] text-rose-600">{saveError}</p>}
         </div>
       )}
     </div>

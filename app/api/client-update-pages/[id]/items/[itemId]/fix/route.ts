@@ -179,7 +179,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id, itemId } = await params;
   const auth = await authorizeCompanyMember();
   if ("error" in auth) return auth.error;
-  const { admin, companyId } = auth;
+  const { admin, companyId, isAdmin } = auth;
 
   const gate = await loadPageForCompany(admin, id, companyId);
   if (gate.error) return gate.error;
@@ -205,6 +205,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (NATIVE_FIELD_META[sourceTable]?.[targetFieldKey]) {
+    // entities.name has a UNIQUE (company_id, name) constraint -- fixing an
+    // "Incomplete Name" irregularity (e.g. a truncated entity like "Toan")
+    // by typing/accepting the full correct name can collide with an
+    // entity that ALREADY exists under that exact name (e.g. "Dinh Manh
+    // Toan Doan", already a real, populated record). Renaming straight
+    // into that would just 500 on the constraint -- what the user actually
+    // wants here is the same outcome as the Duplicate Name rule's own fix:
+    // merge the incomplete-name record into the one that's already correct,
+    // rather than silently failing.
+    if (sourceTable === "entities" && targetFieldKey === "name" && value) {
+      const { data: collision } = await admin.from("entities")
+        .select("id").eq("company_id", companyId).eq("name", value).neq("id", recordId).is("deleted_at", null).maybeSingle();
+      if (collision) {
+        // Same reasoning as the POST merge handler below: this admin client
+        // runs as service_role, which trg_prevent_non_admin_delete
+        // explicitly no-ops for -- so this check is the only thing standing
+        // between a non-admin's simple "fix a name" click and a real merge.
+        if (!isAdmin) return NextResponse.json({ error: "This name already belongs to another entity -- merging them requires a company admin." }, { status: 403 });
+        const { data, error } = await admin.rpc("merge_duplicate_records", {
+          p_company_id: companyId, p_table_kind: "system", p_table: "entities", p_table_id: null,
+          p_keep_id: collision.id, p_merge_id: recordId,
+        });
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ ok: true, merged: true, keptId: collision.id, ...(data || {}) });
+      }
+    }
     const { error } = await admin.from(sourceTable).update({ [targetFieldKey]: value || null }).eq("id", recordId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
