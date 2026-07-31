@@ -67,16 +67,19 @@ export async function loadFinanceModelData(admin: any, entityId: string): Promis
   );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    // 403/insufficient_scope means this connection was authorized before
-    // XERO_SCOPES was widened to include accounting.banktransactions.read
-    // -- the fix is reconnecting (Admin -> Xero -> disconnect, then
-    // Connect an organisation again), not a bug here.
+    // A connection authorized before XERO_SCOPES was widened to include
+    // accounting.banktransactions.read fails here -- confirmed live against
+    // a real pre-widen connection: Xero returns 401 with
+    // Detail:"AuthorizationUnsuccessful" for this (not 403, despite that
+    // being the more typical insufficient-scope status elsewhere). The fix
+    // is reconnecting (Admin -> Xero -> disconnect, then Connect an
+    // organisation again), not a bug here.
     return {
       connected: false,
       budgetLines: [],
       properties,
       error: `Xero API error (${res.status}): ${text || res.statusText}`,
-      needsReconnect: res.status === 403,
+      needsReconnect: res.status === 403 || res.status === 401,
     };
   }
   const json = await res.json();
