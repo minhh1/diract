@@ -26,11 +26,17 @@ interface FixTarget {
   entityId: string; entityName: string; fieldKey: string; fieldLabel: string; fieldType: string;
   selectOptions?: string[] | null; currentValue: any; currentLabel?: string | null;
   duplicateEntityId?: string | null; duplicateEntityName?: string | null;
+  linkedSystemTable?: string | null; linkedTableId?: string | null;
 }
 
 // Same trust-entity_type list NewEntityModal's own createTrustInline() uses
 // -- duplicated rather than shared since neither file exports it.
 const TRUST_TYPES = ["Discretionary Family Trust", "Fixed Unit Trust", "Unit Trust", "Discretionary Trust"];
+// Any of these means the flagged field's real value is a record id (in
+// value_record_id), not typed text/number/date/boolean -- the fix needs a
+// RelationPicker (searching whichever table linkedSystemTable/linkedTableId
+// names), not a plain input. Mirrors fix/route.ts's identical constant.
+const RELATION_FIELD_TYPES = ["entity", "property", "project", "table_relation"];
 
 export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered = true, onResolved }: { pageId: string; itemId: string; canEdit: boolean; bordered?: boolean; onResolved?: () => void }) {
   const { companyId } = useCompany();
@@ -61,7 +67,7 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
       onResolved?.();
     } else if (json.fieldKey) {
       setTarget(json);
-      setDraft(json.fieldType === "entity" ? json.currentValue : (json.currentValue ?? ""));
+      setDraft(RELATION_FIELD_TYPES.includes(json.fieldType) ? json.currentValue : (json.currentValue ?? ""));
       setResolved(false);
     }
     setLoading(false);
@@ -155,10 +161,10 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
         <p className="text-[11px] text-slate-500">{target.currentLabel ?? target.currentValue ?? <span className="text-slate-300 italic">Not set</span>}</p>
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
-          {target.fieldType === "entity" ? (
+          {RELATION_FIELD_TYPES.includes(target.fieldType) ? (
             <div className="min-w-[200px] space-y-1.5">
-              <RelationPicker linkedSystemTable="entities" value={draft} initialLabel={target.currentLabel ?? undefined}
-                onSelect={(id) => { setDraft(id); save(id); }} placeholder="Search entities..." size="sm" />
+              <RelationPicker linkedSystemTable={target.linkedSystemTable} linkedTableId={target.linkedTableId} value={draft} initialLabel={target.currentLabel ?? undefined}
+                onSelect={(id) => { setDraft(id); save(id); }} placeholder={`Search ${target.linkedSystemTable || "records"}...`} size="sm" />
               {target.fieldKey === "trust_link" && (
                 creatingTrust ? (
                   <div className="flex items-center gap-1.5">

@@ -24,6 +24,19 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { loadPageForCompany } from "@/lib/clientUpdatePagesAdmin";
 import { isSystemTable, resolveDisplayNamesBatch } from "@/lib/clientUpdatePageTableResolver";
 
+// A target_field_key can itself be a relation-type field (e.g. a company
+// custom field on entities typed 'entity', or a custom-table field typed
+// 'table_relation') -- its real value lives in value_record_id, not any of
+// the typed columns (value_text/number/date/boolean) the generic branches
+// below otherwise assume. Mirrors values/route.ts's identical constant.
+const RELATION_FIELD_TYPES = ["entity", "property", "project", "table_relation"];
+function relationSystemTable(fieldType: string): string | null {
+  if (fieldType === "entity") return "entities";
+  if (fieldType === "property") return "properties";
+  if (fieldType === "project") return "projects";
+  return null; // 'table_relation' resolves via linked_table_id instead, see call sites
+}
+
 // Labels/types for the native-column target_field_key values a rule can
 // name, keyed by which system table they live on -- mirrors the columns
 // the auto_fed_rules config actually checks (see
@@ -140,6 +153,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({
       entityId: recordId, entityName: recordName, fieldKey: "trust_link", fieldLabel: "Trust", fieldType: "entity",
       currentValue: rel?.parent_entity_id ?? null, currentLabel: (rel as any)?.trust?.name ?? null,
+      linkedSystemTable: "entities",
     });
   }
 
@@ -156,8 +170,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!isSystemTable(sourceTable)) {
     // Custom-table source (e.g. Contacts) -- targetFieldKey is a literal
     // field_key on THAT table (e.g. 'name'), not a company_custom_fields.id.
-    const { data: ctf } = await admin.from("company_table_fields").select("id, label, field_type, select_options").eq("table_id", sourceTable).eq("field_key", targetFieldKey).is("deleted_at", null).maybeSingle();
+    const { data: ctf } = await admin.from("company_table_fields").select("id, label, field_type, select_options, linked_system_table, linked_table_id").eq("table_id", sourceTable).eq("field_key", targetFieldKey).is("deleted_at", null).maybeSingle();
     if (!ctf) return NextResponse.json({ error: "Target field definition not found" }, { status: 404 });
+    if (RELATION_FIELD_TYPES.includes(ctf.field_type)) {
+      const { data: val } = await admin.from("company_table_values").select("value_record_id").eq("field_id", ctf.id).eq("record_id", recordId).maybeSingle();
+      const linkedSystemTable = ctf.field_type === "table_relation" ? null : ctf.linked_system_table || relationSystemTable(ctf.field_type);
+      const linkedTableId = ctf.field_type === "table_relation" ? ctf.linked_table_id : null;
+      const targetTable = linkedSystemTable || linkedTableId;
+      const currentLabel = val?.value_record_id && targetTable ? (await resolveDisplayNamesBatch(admin, targetTable, [val.value_record_id])).get(val.value_record_id) ?? null : null;
+      return NextResponse.json({
+        entityId: recordId, entityName: recordName, fieldKey: ctf.id, fieldLabel: ctf.label, fieldType: ctf.field_type,
+        currentValue: val?.value_record_id ?? null, currentLabel, linkedSystemTable, linkedTableId,
+      });
+    }
     const { data: val } = await admin.from("company_table_values").select("value_text, value_number, value_date, value_boolean").eq("field_id", ctf.id).eq("record_id", recordId).maybeSingle();
     return NextResponse.json({
       entityId: recordId, entityName: recordName, fieldKey: ctf.id, fieldLabel: ctf.label, fieldType: ctf.field_type, selectOptions: ctf.select_options,
@@ -168,6 +193,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Otherwise targetFieldKey is a company_custom_fields.id (a system-table custom field).
   const { data: cf } = await admin.from("company_custom_fields").select("id, label, field_type, select_options").eq("id", targetFieldKey).maybeSingle();
   if (!cf) return NextResponse.json({ error: "Target field definition not found" }, { status: 404 });
+  if (RELATION_FIELD_TYPES.includes(cf.field_type)) {
+    const { data: val } = await admin.from("company_custom_field_values").select("value_record_id").eq("field_id", cf.id).eq("record_id", recordId).maybeSingle();
+    const linkedSystemTable = relationSystemTable(cf.field_type);
+    const currentLabel = val?.value_record_id && linkedSystemTable ? (await resolveDisplayNamesBatch(admin, linkedSystemTable, [val.value_record_id])).get(val.value_record_id) ?? null : null;
+    return NextResponse.json({
+      entityId: recordId, entityName: recordName, fieldKey: cf.id, fieldLabel: cf.label, fieldType: cf.field_type,
+      currentValue: val?.value_record_id ?? null, currentLabel, linkedSystemTable,
+    });
+  }
   const { data: val } = await admin.from("company_custom_field_values").select("value_text, value_number, value_date, value_boolean").eq("field_id", cf.id).eq("record_id", recordId).maybeSingle();
   return NextResponse.json({
     entityId: recordId, entityName: recordName, fieldKey: cf.id, fieldLabel: cf.label, fieldType: cf.field_type, selectOptions: cf.select_options,
@@ -241,9 +275,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!ctf) return NextResponse.json({ error: "Target field definition not found" }, { status: 404 });
     const row: Record<string, any> = {
       field_id: ctf.id, record_id: recordId, company_id: companyId, table_id: sourceTable,
-      value_text: null, value_number: null, value_date: null, value_boolean: null,
+      value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
     };
-    if (["number", "currency"].includes(ctf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
+    if (RELATION_FIELD_TYPES.includes(ctf.field_type)) row.value_record_id = value || null;
+    else if (["number", "currency"].includes(ctf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
     else if (ctf.field_type === "date") row.value_date = value || null;
     else if (ctf.field_type === "boolean") row.value_boolean = !!value;
     else row.value_text = value ?? null;
@@ -256,9 +291,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!cf) return NextResponse.json({ error: "Target field definition not found" }, { status: 404 });
   const row: Record<string, any> = {
     field_id: targetFieldKey, record_id: recordId, company_id: companyId, table_name: sourceTable,
-    value_text: null, value_number: null, value_date: null, value_boolean: null,
+    value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
   };
-  if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
+  if (RELATION_FIELD_TYPES.includes(cf.field_type)) row.value_record_id = value || null;
+  else if (["number", "currency"].includes(cf.field_type)) row.value_number = value === "" || value == null ? null : Number(value);
   else if (cf.field_type === "date") row.value_date = value || null;
   else if (cf.field_type === "boolean") row.value_boolean = !!value;
   else row.value_text = value ?? null;
