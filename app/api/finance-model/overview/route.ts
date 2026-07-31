@@ -17,12 +17,12 @@ export async function GET(req: NextRequest) {
   const projectId = req.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
 
-  const { data: project } = await admin.from("projects").select("id").eq("id", projectId).eq("company_id", companyId).maybeSingle();
+  const { data: project } = await admin.from("projects").select("id, name").eq("id", projectId).eq("company_id", companyId).maybeSingle();
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
   try {
     const data = await loadOverview(admin, companyId, projectId);
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, projectName: project.name });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load" }, { status: 502 });
   }

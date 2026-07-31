@@ -41,6 +41,7 @@ import DebtSchedulePanel from "./DebtSchedulePanel";
 import ReturnsPanel from "./ReturnsPanel";
 import TornadoChart from "./TornadoChart";
 import EquityWaterfallPanel from "./EquityWaterfallPanel";
+import ICMemoView from "./ICMemoView";
 
 interface BudgetLine {
   id: string;
@@ -156,6 +157,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
   const [propertyState, setPropertyState] = useState<AuState | null>(null);
   const [purchasePrice, setPurchasePrice] = useState(0);
+  const [projectName, setProjectName] = useState("");
 
   const [inputs, setInputs] = useState<FeasibilityInputs>(EMPTY_INPUTS);
   const [inputsSaving, setInputsSaving] = useState(false);
@@ -168,6 +170,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const [showAddLine, setShowAddLine] = useState(false);
+  const [showIcMemo, setShowIcMemo] = useState(false);
   const [newLine, setNewLine] = useState({ category: "Acquisition", label: "", budgetedAmount: "" });
   const [addingLine, setAddingLine] = useState(false);
 
@@ -197,6 +200,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
       setGstMethod((settingsJson.gstMethod as GstMethod) || "");
       setPropertyState((overviewJson.property?.state as AuState) || null);
       setPurchasePrice(Number(overviewJson.property?.purchase_price) || 0);
+      setProjectName(overviewJson.projectName || "");
       setInputs({ ...EMPTY_INPUTS, ...(inputsJson.inputs || {}) });
       setScenarios(scenariosJson.scenarios || []);
 
@@ -434,6 +438,9 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Feasibility Calculator</p>
           <div className="flex items-center gap-2">
             {inputsSaving && <Loader2 size={12} className="animate-spin text-slate-300" />}
+            <button onClick={() => setShowIcMemo(true)} className="px-3 py-1.5 bg-slate-800 text-white text-[11px] font-bold rounded-full hover:bg-slate-700">
+              IC Memo
+            </button>
             <label className="text-[10px] text-slate-400">GST method</label>
             <select value={gstMethod} onChange={e => changeGstMethod(e.target.value as GstMethod)} disabled={savingMethod} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700">
               <option value="">Select...</option>
@@ -682,6 +689,18 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
           The itemised P&L below reads Budget Lines directly (GST Input Tax Credits assume Construction/Professional Fees/Contingency/Other lines are GST-inclusive; Acquisition and Finance Costs are excluded) -- use &quot;Sync to Budget Lines&quot; above, or &quot;Add budget line&quot; here, to keep the two in step.
         </span>
       </div>
+
+      {showIcMemo && (
+        <ICMemoView
+          projectName={projectName}
+          onClose={() => setShowIcMemo(false)}
+          result={result}
+          inputs={inputs}
+          monthlyCashFlow={monthlyCashFlow}
+          facilitySimulation={facilitySimulation}
+          tornado={tornado}
+        />
+      )}
     </div>
   );
 }
