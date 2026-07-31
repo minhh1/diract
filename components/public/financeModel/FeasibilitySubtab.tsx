@@ -33,9 +33,11 @@ import {
   runScenarios, runSensitivity, simplifiedIRR,
 } from "@/lib/feasibilityCalculator";
 import { buildMonthlyCashFlow, simulateFacility, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
+import { runTornadoSensitivity } from "@/lib/sensitivityEngine";
 import CashFlowPanel from "./CashFlowPanel";
 import DebtSchedulePanel from "./DebtSchedulePanel";
 import ReturnsPanel from "./ReturnsPanel";
+import TornadoChart from "./TornadoChart";
 
 interface BudgetLine {
   id: string;
@@ -385,11 +387,9 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   const { rows: monthlyCashFlow, unresolvedLines } = buildMonthlyCashFlow(cashFlowLines, tasksById);
 
   const hasFacilityConfig = inputs.facilityLimit != null && inputs.facilityInterestRatePct != null;
-  const facilitySimulation = simulateFacility(
-    monthlyCashFlow,
-    { limit: inputs.facilityLimit ?? 0, interestRatePct: inputs.facilityInterestRatePct ?? 0, maxLvrPct: inputs.maxLvrPct },
-    result.revenue > 0 ? result.revenue : null,
-  );
+  const facilityConfig = { limit: inputs.facilityLimit ?? 0, interestRatePct: inputs.facilityInterestRatePct ?? 0, maxLvrPct: inputs.maxLvrPct };
+  const facilitySimulation = simulateFacility(monthlyCashFlow, facilityConfig, result.revenue > 0 ? result.revenue : null);
+  const tornado = runTornadoSensitivity({ lines: cashFlowLines, tasksById, facility: facilityConfig });
 
   // -- Existing itemised P&L (unchanged -- reads Budget Lines directly) ---
   const revenueTotal = budgetLines.filter(l => l.category === "Revenue").reduce((s, l) => s + (l.budgeted_amount || 0), 0);
@@ -503,7 +503,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         debtRows={facilitySimulation.rows}
         lines={cashFlowLines}
         tasksById={tasksById}
-        facility={{ limit: inputs.facilityLimit ?? 0, interestRatePct: inputs.facilityInterestRatePct ?? 0, maxLvrPct: inputs.maxLvrPct }}
+        facility={facilityConfig}
         gdv={result.revenue > 0 ? result.revenue : null}
         hasCashFlow={monthlyCashFlow.length > 0}
       />
@@ -550,6 +550,13 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Tornado sensitivity (dated leveraged IRR swings) ── */}
+      <div className="bg-white border border-slate-200 rounded-[32px] p-6">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Sensitivity -- Leveraged IRR</p>
+        <p className="text-[10px] text-slate-400 mb-3">How much leveraged IRR swings when each factor moves independently, holding everything else at base case.</p>
+        <TornadoChart result={tornado} />
       </div>
 
       {/* ── Saved scenarios ── */}
