@@ -10,7 +10,15 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getCustomTable, listCustomTableRows, createCustomTableRow, updateCustomTableRow, deleteCustomTableRow } from "@/lib/customTableAdmin";
 import { BUDGET_LINES_SLUG } from "@/lib/financeModel/data";
 
-const CATEGORIES = ["Acquisition", "Construction", "Professional Fees", "Finance Costs", "Contingency", "Revenue", "Other"];
+// Category names are now company-managed (see
+// app/api/finance-model/budget-categories/route.ts) rather than a
+// hardcoded list -- fetched fresh per request since it's a small, rarely-
+// changing table and this keeps validation always in sync with whatever
+// the company has configured.
+async function loadValidCategories(admin: any, companyId: string): Promise<string[]> {
+  const { data } = await admin.from("finance_model_budget_categories").select("name").eq("company_id", companyId);
+  return (data || []).map((c: { name: string }) => c.name);
+}
 
 export async function GET(req: NextRequest) {
   const auth = await authorizeCompanyMember();
@@ -42,8 +50,9 @@ export async function POST(req: NextRequest) {
   if (!projectId || !category || !label?.trim() || !Number.isFinite(budgetedAmount)) {
     return NextResponse.json({ error: "projectId, category, label, and budgetedAmount are required" }, { status: 400 });
   }
-  if (!CATEGORIES.includes(category)) {
-    return NextResponse.json({ error: `category must be one of: ${CATEGORIES.join(", ")}` }, { status: 400 });
+  const validCategories = await loadValidCategories(admin, companyId);
+  if (!validCategories.includes(category)) {
+    return NextResponse.json({ error: `category must be one of: ${validCategories.join(", ")}` }, { status: 400 });
   }
 
   const { data: project } = await admin.from("projects").select("id").eq("id", projectId).eq("company_id", companyId).maybeSingle();
@@ -94,7 +103,8 @@ export async function PATCH(req: NextRequest) {
 
   const updates: Record<string, any> = {};
   if (body.category !== undefined) {
-    if (!CATEGORIES.includes(body.category)) return NextResponse.json({ error: `category must be one of: ${CATEGORIES.join(", ")}` }, { status: 400 });
+    const validCategories = await loadValidCategories(admin, companyId);
+    if (!validCategories.includes(body.category)) return NextResponse.json({ error: `category must be one of: ${validCategories.join(", ")}` }, { status: 400 });
     updates.category = body.category;
   }
   if (body.label !== undefined) updates.label = String(body.label).trim();

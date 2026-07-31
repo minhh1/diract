@@ -78,8 +78,12 @@ interface SavedScenario {
   notes: string | null;
 }
 
-const COST_CATEGORIES = ["Acquisition", "Construction", "Professional Fees", "Contingency", "Other"];
-const CREDITABLE_CATEGORIES = ["Construction", "Professional Fees", "Contingency", "Other"];
+interface BudgetCategory {
+  id: string;
+  name: string;
+  kind: "Revenue" | "Cost";
+  is_creditable: boolean;
+}
 
 const EMPTY_INPUTS: FeasibilityInputs = {
   dwellingsCount: null, avgDwellingSizeSqm: null, siteAreaSqm: null, expectedSalePricePerDwelling: null,
@@ -171,14 +175,15 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
   const [showAddLine, setShowAddLine] = useState(false);
   const [showIcMemo, setShowIcMemo] = useState(false);
-  const [newLine, setNewLine] = useState({ category: "Acquisition", label: "", budgetedAmount: "" });
+  const [newLine, setNewLine] = useState({ category: "", label: "", budgetedAmount: "" });
+  const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [addingLine, setAddingLine] = useState(false);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [blRes, loansRes, settingsRes, overviewRes, inputsRes, scenariosRes, tasksRes] = await Promise.all([
+      const [blRes, loansRes, settingsRes, overviewRes, inputsRes, scenariosRes, tasksRes, categoriesRes] = await Promise.all([
         fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
         fetch(`/api/finance-model/loans?projectId=${projectId}`),
         fetch(`/api/finance-model/settings?projectId=${projectId}`),
@@ -186,6 +191,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         fetch(`/api/finance-model/feasibility-inputs?projectId=${projectId}`),
         fetch(`/api/finance-model/feasibility-scenarios?projectId=${projectId}`),
         fetch(`/api/finance-model/tasks?projectId=${projectId}`),
+        fetch(`/api/finance-model/budget-categories`),
       ]);
       const blJson = await blRes.json();
       const loansJson = await loansRes.json();
@@ -194,8 +200,12 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
       const inputsJson = await inputsRes.json();
       const scenariosJson = await scenariosRes.json();
       const tasksJson = await tasksRes.json();
+      const categoriesJson = await categoriesRes.json();
       if (!blRes.ok) { setError(blJson.error || "Failed to load"); return; }
       setBudgetLines(blJson.budgetLines || []);
+      const fetchedCategories: BudgetCategory[] = categoriesJson.categories || [];
+      setCategories(fetchedCategories);
+      setNewLine(p => (p.category ? p : { ...p, category: fetchedCategories.find(c => c.kind === "Cost")?.name || "" }));
       setTasks((tasksJson.tasks || []).map((t: any) => ({ id: t.id, name: t.name, start_date: t.start_date, due_date: t.due_date })));
       setGstMethod((settingsJson.gstMethod as GstMethod) || "");
       setPropertyState((overviewJson.property?.state as AuState) || null);
@@ -374,7 +384,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId, category: newLine.category, label: newLine.label.trim(), budgetedAmount: amount }),
     });
-    setNewLine({ category: "Acquisition", label: "", budgetedAmount: "" });
+    setNewLine({ category: categories.find(c => c.kind === "Cost")?.name || "", label: "", budgetedAmount: "" });
     setShowAddLine(false);
     setAddingLine(false);
     load();
@@ -410,10 +420,16 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   const tornado = runTornadoSensitivity({ lines: cashFlowLines, tasksById, facility: facilityConfig });
 
   // -- Existing itemised P&L (unchanged -- reads Budget Lines directly) ---
+  const creditableCategoryNames = categories.filter(c => c.kind === "Cost" && c.is_creditable).map(c => c.name);
+  // "Finance Costs" is deliberately excluded here -- interest is added
+  // separately below via totalInterest (computed from the Loans
+  // schedules), not from a manually-entered budget line, to avoid double
+  // counting.
+  const grossCostCategoryNames = categories.filter(c => c.kind === "Cost" && c.name !== "Finance Costs").map(c => c.name);
   const revenueTotal = budgetLines.filter(l => l.category === "Revenue").reduce((s, l) => s + (l.budgeted_amount || 0), 0);
   const acquisitionTotal = budgetLines.filter(l => l.category === "Acquisition").reduce((s, l) => s + (l.budgeted_amount || 0), 0);
-  const creditableCostTotal = budgetLines.filter(l => l.category && CREDITABLE_CATEGORIES.includes(l.category)).reduce((s, l) => s + (l.budgeted_amount || 0), 0);
-  const grossCostTotal = budgetLines.filter(l => l.category && COST_CATEGORIES.includes(l.category)).reduce((s, l) => s + (l.budgeted_amount || 0), 0);
+  const creditableCostTotal = budgetLines.filter(l => l.category && creditableCategoryNames.includes(l.category)).reduce((s, l) => s + (l.budgeted_amount || 0), 0);
+  const grossCostTotal = budgetLines.filter(l => l.category && grossCostCategoryNames.includes(l.category)).reduce((s, l) => s + (l.budgeted_amount || 0), 0);
 
   const pnlGstCollected = !gstMethod ? 0
     : gstMethod === "Margin Scheme" ? Math.max(0, revenueTotal - acquisitionTotal) / 11
@@ -634,7 +650,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         {showAddLine && (
           <div className="flex flex-wrap items-end gap-2 pb-3 mb-2 border-b border-slate-100">
             <select value={newLine.category} onChange={e => setNewLine(p => ({ ...p, category: e.target.value }))} className="text-[12px] border border-slate-200 rounded-xl px-2 py-1.5 bg-white">
-              {["Acquisition", "Construction", "Professional Fees", "Finance Costs", "Contingency", "Revenue", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
             <input placeholder="Label" value={newLine.label} onChange={e => setNewLine(p => ({ ...p, label: e.target.value }))} className="text-[12px] border border-slate-200 rounded-xl px-3 py-1.5 bg-white w-40" />
             <input placeholder="Amount" type="number" value={newLine.budgetedAmount} onChange={e => setNewLine(p => ({ ...p, budgetedAmount: e.target.value }))} className="text-[12px] border border-slate-200 rounded-xl px-3 py-1.5 bg-white w-32" />
@@ -648,7 +664,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         <Row label="Net Income" value={pnlNetIncome} bold />
 
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-3">Development Costs</p>
-        {COST_CATEGORIES.map(cat => {
+        {grossCostCategoryNames.map(cat => {
           const total = budgetLines.filter(l => l.category === cat).reduce((s, l) => s + (l.budgeted_amount || 0), 0);
           return total > 0 ? <Row key={cat} label={cat} value={total} indent /> : null;
         })}

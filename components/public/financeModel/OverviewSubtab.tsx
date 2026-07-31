@@ -9,10 +9,103 @@
 // see that file's header comment for why sharing doesn't extend to the
 // Transactions/Timeline/Loans/Duty & Fees subtabs).
 import { useEffect, useState } from "react";
-import { Loader2, ExternalLink, RefreshCw, Plus, X, Calculator, Share2, Copy, Check, Trash2 } from "lucide-react";
+import { Loader2, ExternalLink, RefreshCw, Plus, X, Calculator, Share2, Copy, Check, Trash2, Settings } from "lucide-react";
 import BudgetVsActualTable, { type BudgetLine } from "./BudgetVsActualTable";
 
-const CATEGORIES = ["Acquisition", "Construction", "Professional Fees", "Finance Costs", "Contingency", "Revenue", "Other"] as const;
+interface BudgetCategory {
+  id: string;
+  name: string;
+  kind: "Revenue" | "Cost";
+  is_creditable: boolean;
+  display_order: number;
+}
+
+function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
+  const [categories, setCategories] = useState<BudgetCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const res = await fetch("/api/finance-model/budget-categories");
+    const json = await res.json();
+    setCategories(json.categories || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    await fetch("/api/finance-model/budget-categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName.trim() }),
+    });
+    setNewName("");
+    await load();
+    onChanged();
+    setSaving(false);
+  };
+
+  const toggleCreditable = async (cat: BudgetCategory) => {
+    setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, is_creditable: !c.is_creditable } : c));
+    await fetch("/api/finance-model/budget-categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: cat.id, isCreditable: !cat.is_creditable }),
+    });
+  };
+
+  const remove = async (cat: BudgetCategory) => {
+    if (!confirm(`Delete category "${cat.name}"? Existing budget lines keep their category text, but it won't appear in the picklist anymore.`)) return;
+    setCategories(prev => prev.filter(c => c.id !== cat.id));
+    await fetch(`/api/finance-model/budget-categories?id=${cat.id}`, { method: "DELETE" });
+    onChanged();
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-[32px] p-6 space-y-3">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Budget categories</p>
+
+      {loading ? (
+        <p className="text-[12px] text-slate-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading...</p>
+      ) : (
+        <div className="space-y-1.5">
+          {categories.map(cat => (
+            <div key={cat.id} className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl">
+              <p className="text-[12px] font-medium text-slate-700 flex-1">{cat.name}</p>
+              <span className="text-[10px] text-slate-400">{cat.kind}</span>
+              {cat.kind === "Cost" && (
+                <label className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                  <input type="checkbox" checked={cat.is_creditable} onChange={() => toggleCreditable(cat)} />
+                  GST creditable
+                </label>
+              )}
+              {cat.kind === "Cost" && (
+                <button onClick={() => remove(cat)} className="p-1 text-slate-300 hover:text-rose-500" title="Delete">
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-end gap-3 pt-2 border-t border-slate-100">
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">New cost category</label>
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Landscaping" className="text-[12px] border border-slate-200 rounded-xl px-3 py-1.5 bg-white w-48" />
+        </div>
+        <button onClick={add} disabled={saving || !newName.trim()} className="text-[11px] font-bold bg-indigo-600 text-white rounded-xl px-4 py-1.5 disabled:opacity-40">
+          {saving ? <Loader2 size={11} className="animate-spin" /> : "Add"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 interface PropertyInfo {
   id: string;
@@ -126,14 +219,24 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
   const [error, setError] = useState<string | null>(null);
   const [addingLine, setAddingLine] = useState(false);
   const [savingLine, setSavingLine] = useState(false);
-  const [newLine, setNewLine] = useState({ category: "Acquisition" as string, label: "", budgetedAmount: "", xeroAccountCode: "" });
+  const [newLine, setNewLine] = useState({ category: "", label: "", budgetedAmount: "", xeroAccountCode: "" });
   const [showShare, setShowShare] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+
+  const loadCategories = async () => {
+    const res = await fetch("/api/finance-model/budget-categories");
+    const json = await res.json();
+    const cats = json.categories || [];
+    setCategories(cats);
+    setNewLine(p => (p.category ? p : { ...p, category: cats[0]?.name || "" }));
+  };
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/finance-model/overview?projectId=${projectId}`);
+      const [res] = await Promise.all([fetch(`/api/finance-model/overview?projectId=${projectId}`), loadCategories()]);
       const json = await res.json();
       if (!res.ok) { setError(json.error || "Failed to load"); return; }
       setConnected(!!json.connected);
@@ -174,7 +277,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
       budgetedAmount: amount,
       xeroAccountCode: newLine.xeroAccountCode.trim() || null,
     });
-    setNewLine({ category: "Acquisition", label: "", budgetedAmount: "", xeroAccountCode: "" });
+    setNewLine({ category: categories[0]?.name || "", label: "", budgetedAmount: "", xeroAccountCode: "" });
     setAddingLine(false);
   };
 
@@ -211,11 +314,17 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
 
       <div className="flex items-center justify-between px-1">
         <p className="text-[11px] text-slate-400">{property?.street_address || "Finance Model"}</p>
-        <button onClick={() => setShowShare(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
-          <Share2 size={11} /> Share
-        </button>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setShowCategories(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
+            <Settings size={11} /> Categories
+          </button>
+          <button onClick={() => setShowShare(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
+            <Share2 size={11} /> Share
+          </button>
+        </div>
       </div>
 
+      {showCategories && <CategoriesPanel onChanged={loadCategories} />}
       {showShare && <SharePanel projectId={projectId} />}
 
       <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden">
@@ -238,7 +347,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
             <div>
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Category</label>
               <select value={newLine.category} onChange={e => setNewLine(p => ({ ...p, category: e.target.value }))} className="text-[12px] border border-slate-200 rounded-xl px-2 py-1.5 bg-white text-slate-700">
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>
             <div>
