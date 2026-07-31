@@ -10,7 +10,7 @@
 // Transactions/Timeline/Loans/Duty & Fees subtabs).
 import { useEffect, useState } from "react";
 import { Loader2, ExternalLink, RefreshCw, Plus, X, Calculator, Share2, Copy, Check, Trash2, Settings } from "lucide-react";
-import BudgetVsActualTable, { type BudgetLine } from "./BudgetVsActualTable";
+import BudgetVsActualTable, { type BudgetLine, type TaskRef } from "./BudgetVsActualTable";
 
 interface BudgetCategory {
   id: string;
@@ -223,6 +223,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
   const [showShare, setShowShare] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [tasks, setTasks] = useState<TaskRef[]>([]);
 
   const loadCategories = async () => {
     const res = await fetch("/api/finance-model/budget-categories");
@@ -236,12 +237,18 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
     setLoading(true);
     setError(null);
     try {
-      const [res] = await Promise.all([fetch(`/api/finance-model/overview?projectId=${projectId}`), loadCategories()]);
+      const [res, tasksRes] = await Promise.all([
+        fetch(`/api/finance-model/overview?projectId=${projectId}`),
+        fetch(`/api/finance-model/tasks?projectId=${projectId}`),
+        loadCategories(),
+      ]);
       const json = await res.json();
+      const tasksJson = await tasksRes.json();
       if (!res.ok) { setError(json.error || "Failed to load"); return; }
       setConnected(!!json.connected);
       setBudgetLines(json.budgetLines || []);
       setProperty(json.property || null);
+      setTasks((tasksJson.tasks || []).map((t: any) => ({ id: t.id, name: t.name })));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -266,6 +273,15 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
     if (!confirm("Remove this budget line?")) return;
     await fetch(`/api/finance-model/budget-lines?id=${id}`, { method: "DELETE" });
     await load();
+  };
+
+  const updateLineTasks = async (lineId: string, taskIds: string[]) => {
+    setBudgetLines(prev => prev.map(l => l.id === lineId ? { ...l, linked_task_ids: taskIds.length ? JSON.stringify(taskIds) : null } : l));
+    await fetch("/api/finance-model/budget-lines", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: lineId, linkedTaskIds: taskIds }),
+    });
   };
 
   const handleAddLine = async () => {
@@ -371,7 +387,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
           </div>
         )}
 
-        <BudgetVsActualTable budgetLines={budgetLines} editable onDelete={deleteBudgetLine} />
+        <BudgetVsActualTable budgetLines={budgetLines} editable onDelete={deleteBudgetLine} tasks={tasks} onUpdateTasks={updateLineTasks} />
       </div>
     </div>
   );
