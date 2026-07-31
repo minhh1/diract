@@ -34,10 +34,13 @@ import {
 } from "@/lib/feasibilityCalculator";
 import { buildMonthlyCashFlow, simulateFacility, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
 import { runTornadoSensitivity } from "@/lib/sensitivityEngine";
+import { leveragedCashFlow } from "@/lib/returnsEngine";
+import type { MoneyPartnerLoan } from "@/lib/equityWaterfall";
 import CashFlowPanel from "./CashFlowPanel";
 import DebtSchedulePanel from "./DebtSchedulePanel";
 import ReturnsPanel from "./ReturnsPanel";
 import TornadoChart from "./TornadoChart";
+import EquityWaterfallPanel from "./EquityWaterfallPanel";
 
 interface BudgetLine {
   id: string;
@@ -61,6 +64,8 @@ interface Loan {
   id: string;
   name: string | null;
   principal_amount: number | null;
+  lender_type: string | null;
+  start_date: string | null;
 }
 
 interface SavedScenario {
@@ -80,6 +85,7 @@ const EMPTY_INPUTS: FeasibilityInputs = {
   constructionRatePerSqm: null, professionalFeesPct: null, contingencyPct: null, marketingSellingPct: null,
   otherAcquisitionCosts: null, holdingCostsAnnual: null, projectDurationMonths: null, interestRatePct: null,
   loanToCostPct: null, targetMarginPct: null, facilityLimit: null, facilityInterestRatePct: null, maxLvrPct: null,
+  preferredReturnPct: null, promotePct: null,
 };
 
 const INPUT_FIELDS: { key: keyof FeasibilityInputs; label: string; suffix?: string }[][] = [
@@ -111,6 +117,12 @@ const INPUT_FIELDS: { key: keyof FeasibilityInputs; label: string; suffix?: stri
     { key: "facilityInterestRatePct", label: "Facility interest rate", suffix: "% p.a." },
     { key: "maxLvrPct", label: "Max LVR covenant", suffix: "% (flagged if breached, not enforced)" },
   ],
+  // Equity waterfall -- only shown/used if the project has a Money
+  // Partner loan (see the Equity Waterfall panel below).
+  [
+    { key: "preferredReturnPct", label: "Preferred return", suffix: "% p.a., compounding" },
+    { key: "promotePct", label: "Developer promote on residual", suffix: "%" },
+  ],
 ];
 
 function Row({ label, value, bold, indent }: { label: string; value: number; bold?: boolean; indent?: boolean }) {
@@ -138,6 +150,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   const [tasks, setTasks] = useState<TimelineTask[]>([]);
   const [totalInterest, setTotalInterest] = useState(0);
   const [totalLoanPrincipal, setTotalLoanPrincipal] = useState(0);
+  const [moneyPartnerLoans, setMoneyPartnerLoans] = useState<Loan[]>([]);
   const [gstMethod, setGstMethod] = useState<GstMethod | "">("");
   const [savingMethod, setSavingMethod] = useState(false);
 
@@ -189,6 +202,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
       const loans: Loan[] = loansJson.loans || [];
       setTotalLoanPrincipal(loans.reduce((s, l) => s + (l.principal_amount || 0), 0));
+      setMoneyPartnerLoans(loans.filter(l => l.lender_type === "Money Partner" && l.principal_amount && l.start_date));
 
       const schedules = await Promise.all(loans.map(async loan => {
         const [phasesRes, ratesRes] = await Promise.all([
@@ -506,6 +520,15 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         facility={facilityConfig}
         gdv={result.revenue > 0 ? result.revenue : null}
         hasCashFlow={monthlyCashFlow.length > 0}
+      />
+
+      {/* ── Equity waterfall (only rendered if a Money Partner loan exists) ── */}
+      <EquityWaterfallPanel
+        loans={moneyPartnerLoans.map((l): MoneyPartnerLoan => ({ id: l.id, name: l.name, principalAmount: l.principal_amount!, contributionDate: l.start_date! }))}
+        exitDate={monthlyCashFlow.length > 0 ? `${monthlyCashFlow[monthlyCashFlow.length - 1].month}-28` : null}
+        totalDistributableProfit={leveragedCashFlow(facilitySimulation.rows).filter(f => f.amount > 0).reduce((s, f) => s + f.amount, 0)}
+        preferredReturnPct={inputs.preferredReturnPct}
+        promotePct={inputs.promotePct}
       />
 
       {/* ── Scenario comparison ── */}

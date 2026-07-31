@@ -37,6 +37,10 @@ export interface FeasibilityInputs {
   facilityLimit: number | null;
   facilityInterestRatePct: number | null;
   maxLvrPct: number | null;
+  // Equity waterfall parameters (lib/equityWaterfall.ts) -- unused by
+  // calculateFeasibility itself, same as the facility fields above.
+  preferredReturnPct: number | null;
+  promotePct: number | null;
 }
 
 export interface FeasibilityContext {

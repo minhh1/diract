@@ -30,6 +30,8 @@ const FIELDS: Record<string, string> = {
   facilityLimit: "facility_limit",
   facilityInterestRatePct: "facility_interest_rate_pct",
   maxLvrPct: "max_lvr_pct",
+  preferredReturnPct: "preferred_return_pct",
+  promotePct: "promote_pct",
 };
 
 export async function GET(req: NextRequest) {
