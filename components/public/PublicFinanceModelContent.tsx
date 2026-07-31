@@ -13,7 +13,7 @@
 //      task timeline) that nobody asked to expose over an unauthenticated
 //      link, so those subtabs simply don't exist in public mode.
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Lock, TrendingUp, Receipt, GanttChartSquare, Landmark, Calculator } from "lucide-react";
+import { Loader2, RefreshCw, Lock, TrendingUp, Receipt, GanttChartSquare, Landmark, Calculator, FileBarChart } from "lucide-react";
 import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib/publicPageCache";
 import BudgetVsActualTable, { type BudgetLine } from "./financeModel/BudgetVsActualTable";
 import OverviewSubtab from "./financeModel/OverviewSubtab";
@@ -21,6 +21,7 @@ import TransactionsSubtab from "./financeModel/TransactionsSubtab";
 import TimelineSubtab from "./financeModel/TimelineSubtab";
 import LoansSubtab from "./financeModel/LoansSubtab";
 import DutyFeesSubtab from "./financeModel/DutyFeesSubtab";
+import FeasibilitySubtab from "./financeModel/FeasibilitySubtab";
 
 interface Props {
   // Internal mode identifies the record directly (the viewer is already
@@ -52,6 +53,7 @@ const SUBTABS = [
   { id: "timeline", label: "Timeline", icon: GanttChartSquare },
   { id: "loans", label: "Loans", icon: Landmark },
   { id: "duty_fees", label: "Duty & Fees", icon: Calculator },
+  { id: "feasibility", label: "Feasibility", icon: FileBarChart },
 ] as const;
 type SubtabId = (typeof SUBTABS)[number]["id"];
 
@@ -216,6 +218,7 @@ export default function PublicFinanceModelContent({ projectId, pageId, mode = "i
       {subtab === "timeline" && <TimelineSubtab projectId={projectId} />}
       {subtab === "loans" && <LoansSubtab projectId={projectId} />}
       {subtab === "duty_fees" && <DutyFeesSubtab projectId={projectId} />}
+      {subtab === "feasibility" && <FeasibilitySubtab projectId={projectId} />}
     </div>
   );
 }
