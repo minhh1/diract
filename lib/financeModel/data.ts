@@ -16,6 +16,7 @@ export const CLASSIFICATION_RULES_SLUG = "finance-model-classification-rules";
 export const LOANS_SLUG = "finance-model-loans";
 export const LOAN_INTEREST_RATES_SLUG = "finance-model-loan-interest-rates";
 export const LOAN_PHASES_SLUG = "finance-model-loan-phases";
+export const SETTINGS_SLUG = "finance-model-settings";
 
 export interface XeroConnectionInfo {
   connectionId: string;
