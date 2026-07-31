@@ -197,7 +197,14 @@ export default function PublicFinanceModelContent({ projectId, pageId, mode = "i
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-1 border-b border-slate-100">
+      {/* overflow-x-auto (not visible/default) so a narrow viewport scrolls
+          just this strip -- otherwise the browser promotes the nearest
+          overflow-y-auto ancestor's overflow-x from visible to auto per the
+          CSS overflow spec, and the WHOLE page ends up horizontally
+          scrollable instead of just the tab row. shrink-0 + whitespace-nowrap
+          on each button stops flex from compressing/wrapping labels instead
+          of overflowing, which would silently truncate them. */}
+      <div className="flex items-center gap-1 border-b border-slate-100 overflow-x-auto">
         {SUBTABS.map(t => {
           const Icon = t.icon;
           const active = subtab === t.id;
@@ -205,7 +212,7 @@ export default function PublicFinanceModelContent({ projectId, pageId, mode = "i
             <button
               key={t.id}
               onClick={() => setSubtab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold border-b-2 -mb-px transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold border-b-2 -mb-px transition-colors shrink-0 whitespace-nowrap ${
                 active ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-400 hover:text-slate-600"
               }`}
             >
