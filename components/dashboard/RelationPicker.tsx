@@ -718,6 +718,21 @@ export default function RelationPicker({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
+  // The "as trustee" popover (showTrustPopover) is shown in the CLOSED
+  // state (`showTrustPopover && !open` below) -- the outside-click handler
+  // above only ever attaches while `open` is true, so it never ran while
+  // this popover was showing and clicking elsewhere on the page did
+  // nothing. Separate effect, keyed on showTrustPopover itself instead of
+  // open, so it closes regardless of the main dropdown's state.
+  useEffect(() => {
+    if (!showTrustPopover) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setShowTrustPopover(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showTrustPopover]);
+
   if (disabled) {
     const label = multiple
       ? (values || []).map(id => multiLabels[id] ?? options.find(o => o.id === id)?.label).filter(Boolean).join(', ')

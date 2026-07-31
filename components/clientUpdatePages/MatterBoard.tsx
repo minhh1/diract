@@ -617,7 +617,7 @@ export default function MatterBoard({
               </button>
               {onLogCellChangesChanged && (
                 <button onClick={() => onLogCellChangesChanged(!logCellChanges)}
-                  title={logCellChanges ? "Cell change logging is on -- click to turn off (skips the reason prompt and stops recording history)" : "Cell change logging is off -- click to turn on"}
+                  title={logCellChanges ? "Cell change logging is on -- click to turn off (skips the reason prompt and pauses recording new history; past history is kept)" : "Cell change logging is off -- click to turn back on"}
                   className={`p-2 border rounded-full transition-colors ${logCellChanges ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
                   <FileText size={14} />
                 </button>
