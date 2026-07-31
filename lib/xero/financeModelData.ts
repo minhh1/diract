@@ -76,7 +76,11 @@ export async function loadFinanceModelData(admin: any, entityId: string): Promis
     // organisation again), not a bug here.
     return {
       connected: false,
-      budgetLines: [],
+      // Budget lines don't depend on Xero at all (they're often entered
+      // before a Xero connection exists) -- still return them, just with no
+      // actuals, rather than hiding the whole budget because the actuals
+      // side failed.
+      budgetLines: (budgetLineRows || []).map((line: any) => ({ ...line, actual: null })),
       properties,
       error: `Xero API error (${res.status}): ${text || res.statusText}`,
       needsReconnect: res.status === 403 || res.status === 401,
