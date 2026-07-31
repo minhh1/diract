@@ -322,11 +322,27 @@ export interface MyTasksButtonWidget extends BaseWidget {
   };
 }
 
+// A search box for any Project the signed-in viewer has access to (see
+// lib/projectAccess.ts's getAccessibleProjectIds, enforced server-side by
+// app/api/projects/search/route.ts), rendering that project's Finance
+// Model (components/public/PublicFinanceModelContent.tsx) below once
+// picked. No config -- unlike PublicTaskPageWidget/PublicClientUpdatePageWidget's
+// "create or pick one specific resource" shape, this is a session-local
+// lookup tool (same ephemeral-select precedent as
+// components/dashboard/TrustLedgerStatementWidget.tsx's matter picker):
+// whoever's viewing the dashboard searches whatever project they want to
+// look at right now, not a single project pinned to this widget instance.
+export interface FinanceModelWidget extends BaseWidget {
+  type: 'finance_model_search';
+  config: Record<string, never>;
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
   | TrustReconciliationWidget | LedesExportWidget
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
-  | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget;
+  | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget
+  | FinanceModelWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];

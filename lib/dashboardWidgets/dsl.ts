@@ -25,6 +25,7 @@
 //   public_document_page
 //   public_client_update_page
 //   my_tasks_button [label="<text>"] [description=<key>] [matter=<key>]
+//   finance_model_search
 //
 // One or more `series` lines directly after a `chart` line add measures to
 // it (a multi-series chart) instead of starting new widgets -- e.g.
@@ -87,6 +88,7 @@ const KEYWORD_TO_TYPE: Record<string, DashboardWidgetType> = {
   public_document_page: 'public_document_page',
   public_client_update_page: 'public_client_update_page',
   my_tasks_button: 'my_tasks_button',
+  finance_model_search: 'finance_model_search',
 };
 
 function buildFieldLookup(fields: CustomTableField[]) {
@@ -361,6 +363,9 @@ export function parseDSL(source: string, fields: CustomTableField[]): DslParseRe
         widgets.push({ id, type, layout, config: { label: kv.label, descriptionFieldId, matterFieldId } });
         break;
       }
+      case 'finance_model_search':
+        widgets.push({ id, type, layout, config: {} });
+        break;
     }
 
     y += h;
@@ -464,6 +469,8 @@ export function serializeToDSL(widgets: DashboardWidget[], fields: CustomTableFi
           const matter = w.config.matterFieldId ? ` matter=${fieldKey(w.config.matterFieldId)}` : '';
           return `my_tasks_button${label}${description}${matter}${widthSuffix(w.layout.w)}`;
         }
+        case 'finance_model_search':
+          return `finance_model_search${widthSuffix(w.layout.w)}`;
       }
     })
     .join('\n');

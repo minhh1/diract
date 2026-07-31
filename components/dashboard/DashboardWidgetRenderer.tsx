@@ -30,6 +30,7 @@ const PublicTaskPageWidget = dynamic(() => import("./PublicTaskPageWidget"));
 const DocumentPublicPageWidget = dynamic(() => import("./DocumentPublicPageWidget"));
 const ClientUpdatePageWidget = dynamic(() => import("./ClientUpdatePageWidget"));
 const MyTasksButtonWidget = dynamic(() => import("./MyTasksButtonWidget"));
+const FinanceModelSearchWidget = dynamic(() => import("./FinanceModelSearchWidget"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -292,6 +293,9 @@ export default function DashboardWidgetRenderer({
         />
       );
     }
+
+    case 'finance_model_search':
+      return <FinanceModelSearchWidget />;
 
     default:
       return null;
