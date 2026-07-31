@@ -1,14 +1,15 @@
 "use client";
 
-// The Finance Model's Overview subtab -- Budget vs Actual, the stamp duty
-// calculator, and public-link sharing. Internal/authenticated only (the
-// public share link renders a read-only version of this same data
-// directly from PublicFinanceModelContent's public-mode branch, not this
-// component -- see that file's header comment for why sharing doesn't
-// extend to the Transactions/Timeline/Loans subtabs).
+// The Finance Model's Overview subtab -- Budget vs Actual and public-link
+// sharing. The stamp duty / title fee calculator lives in its own Duty &
+// Fees subtab (components/public/financeModel/DutyFeesSubtab.tsx) -- this
+// tab just links there. Internal/authenticated only (the public share
+// link renders a read-only version of this same data directly from
+// PublicFinanceModelContent's public-mode branch, not this component --
+// see that file's header comment for why sharing doesn't extend to the
+// Transactions/Timeline/Loans/Duty & Fees subtabs).
 import { useEffect, useState } from "react";
-import { Loader2, ExternalLink, RefreshCw, Plus, X, Landmark, Share2, Copy, Check, Trash2 } from "lucide-react";
-import { calculateStampDuty, AU_STATES, type AuState } from "@/lib/stampDuty";
+import { Loader2, ExternalLink, RefreshCw, Plus, X, Calculator, Share2, Copy, Check, Trash2 } from "lucide-react";
 import BudgetVsActualTable, { type BudgetLine } from "./BudgetVsActualTable";
 
 const CATEGORIES = ["Acquisition", "Construction", "Professional Fees", "Finance Costs", "Contingency", "Revenue", "Other"] as const;
@@ -117,7 +118,7 @@ function SharePanel({ projectId }: { projectId: string }) {
   );
 }
 
-export default function OverviewSubtab({ projectId }: { projectId: string }) {
+export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectId: string; onOpenDutyFees?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -125,11 +126,7 @@ export default function OverviewSubtab({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [addingLine, setAddingLine] = useState(false);
   const [savingLine, setSavingLine] = useState(false);
-  const [showStampDuty, setShowStampDuty] = useState(false);
   const [newLine, setNewLine] = useState({ category: "Acquisition" as string, label: "", budgetedAmount: "", xeroAccountCode: "" });
-  const [stampDutyPrice, setStampDutyPrice] = useState("");
-  const [stampDutyState, setStampDutyState] = useState<AuState | "">("");
-  const [stampDutyError, setStampDutyError] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
 
   const load = async () => {
@@ -142,8 +139,6 @@ export default function OverviewSubtab({ projectId }: { projectId: string }) {
       setConnected(!!json.connected);
       setBudgetLines(json.budgetLines || []);
       setProperty(json.property || null);
-      if (json.property?.state) setStampDutyState(json.property.state as AuState);
-      if (json.property?.purchase_price) setStampDutyPrice(String(json.property.purchase_price));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -181,22 +176,6 @@ export default function OverviewSubtab({ projectId }: { projectId: string }) {
     });
     setNewLine({ category: "Acquisition", label: "", budgetedAmount: "", xeroAccountCode: "" });
     setAddingLine(false);
-  };
-
-  const handleAddStampDuty = async () => {
-    setStampDutyError(null);
-    const price = parseFloat(stampDutyPrice);
-    if (!stampDutyState || !Number.isFinite(price) || price <= 0) {
-      setStampDutyError("Enter a state and a purchase price.");
-      return;
-    }
-    try {
-      const duty = calculateStampDuty(stampDutyState, price);
-      await addBudgetLine({ category: "Acquisition", label: `Stamp duty (${stampDutyState})`, budgetedAmount: duty });
-      setShowStampDuty(false);
-    } catch (err) {
-      setStampDutyError(err instanceof Error ? err.message : "Failed to calculate stamp duty");
-    }
   };
 
   if (loading) {
@@ -243,37 +222,16 @@ export default function OverviewSubtab({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Budget vs Actual</p>
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowStampDuty(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
-              <Landmark size={11} /> Add stamp duty
-            </button>
+            {onOpenDutyFees && (
+              <button onClick={onOpenDutyFees} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
+                <Calculator size={11} /> Stamp duty & fees
+              </button>
+            )}
             <button onClick={() => setAddingLine(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
               <Plus size={11} /> Add budget line
             </button>
           </div>
         </div>
-
-        {showStampDuty && (
-          <div className="px-6 py-4 bg-slate-50/60 border-b border-slate-100 flex flex-wrap items-end gap-3">
-            <div>
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">State</label>
-              <select value={stampDutyState} onChange={e => setStampDutyState(e.target.value as AuState)} className="text-[12px] border border-slate-200 rounded-xl px-2 py-1.5 bg-white text-slate-700">
-                <option value="">Select...</option>
-                {property?.state ? <option value={property.state}>{property.state}</option> : AU_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Purchase price</label>
-              <input type="number" value={stampDutyPrice} onChange={e => setStampDutyPrice(e.target.value)} placeholder="0.00" className="text-[12px] border border-slate-200 rounded-xl px-3 py-1.5 bg-white w-36" />
-            </div>
-            <button onClick={handleAddStampDuty} disabled={savingLine} className="text-[11px] font-bold bg-indigo-600 text-white rounded-xl px-4 py-1.5 disabled:opacity-40">
-              {savingLine ? <Loader2 size={11} className="animate-spin" /> : "Calculate & add"}
-            </button>
-            <button onClick={() => { setShowStampDuty(false); setStampDutyError(null); }} className="text-slate-300 hover:text-slate-600">
-              <X size={14} />
-            </button>
-            {stampDutyError && <p className="w-full text-[11px] text-rose-500">{stampDutyError}</p>}
-          </div>
-        )}
 
         {addingLine && (
           <div className="px-6 py-4 bg-slate-50/60 border-b border-slate-100 flex flex-wrap items-end gap-3">
