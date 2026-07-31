@@ -8,7 +8,11 @@
 // gets used going forward) render as a single-day marker at their due
 // date instead.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, List, GanttChartSquare, CheckCircle2, Circle } from "lucide-react";
+import { Loader2, RefreshCw, List, GanttChartSquare, CheckCircle2, Circle, ClipboardList } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useCompany } from "@/components/CompanyContext";
+import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
+import TemplateManager, { type Template } from "@/components/dashboard/TemplateManager";
 
 interface TaskRow {
   id: string;
@@ -30,10 +34,66 @@ function daysBetween(a: Date, b: Date): number {
 }
 
 export default function TimelineSubtab({ projectId }: { projectId: string }) {
+  const { companyId } = useCompany();
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "diagram">("diagram");
+
+  // "Apply template" -- reuses the same checklist_templates/TemplateManager
+  // machinery as the Checklist tab (components/dashboard/tabs/
+  // ChecklistTab.tsx), company-wide templates seeded with a start/due-date
+  // schedule and dependencies so applying one produces a real Gantt
+  // structure, not just a flat task list. Loaded lazily on first open
+  // rather than alongside the task list -- most visits to this subtab
+  // never open it.
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [profiles, setProfiles] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
+  const [teams, setTeams] = useState<{ id: string; team_name: string }[]>([]);
+  const [project, setProject] = useState<{ created_at: string; estimated_completion_date: string | null } | null>(null);
+
+  const openTemplates = async () => {
+    setShowTemplates(true);
+    if (templates.length || templatesLoading) return;
+    setTemplatesLoading(true);
+    const [{ data: templateData }, { data: profileData }, { data: teamData }, { data: projectData }] = await Promise.all([
+      supabase.from('checklist_templates').select('*, items:checklist_template_items(*)').eq('company_id', companyId).order('created_at'),
+      supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
+      supabase.from('teams').select('id, team_name').eq('is_active', true),
+      supabase.from('projects').select('created_at, estimated_completion_date').eq('id', projectId).single(),
+    ]);
+    setTemplates((templateData || []).map((t: any) => ({
+      ...t, items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
+    })));
+    setProfiles(profileData || []);
+    setTeams(teamData || []);
+    setProject(projectData || null);
+    setTemplatesLoading(false);
+  };
+
+  const handleCreateTemplate = async (name: string): Promise<Template | null> => {
+    const { data: tpl } = await supabase.from('checklist_templates').insert({ company_id: companyId, name, record_table: 'projects' }).select().single();
+    if (!tpl) return null;
+    const newTemplate: Template = { id: tpl.id, name: tpl.name, items: [] };
+    setTemplates(prev => [...prev, newTemplate]);
+    return newTemplate;
+  };
+
+  const handleApplyTemplate = async (tasksToCreate: any[]): Promise<{ id: string }[]> => {
+    if (!tasksToCreate.length) return [];
+    const { data: { user } } = await supabase.auth.getUser();
+    let created: { id: string }[];
+    try {
+      created = await applyChecklistTemplate(supabase, tasksToCreate.map(t => ({ ...t, company_id: companyId })), user?.id || null);
+    } catch (err) {
+      alert(`Failed to apply template: ${err instanceof Error ? err.message : 'unknown error'}`);
+      return [];
+    }
+    await load();
+    return created;
+  };
 
   const load = async () => {
     setLoading(true);
@@ -94,13 +154,18 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between px-1">
         <p className="text-[11px] text-slate-400">{tasks.length} task{tasks.length === 1 ? "" : "s"}</p>
-        <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
-          <button onClick={() => setView("diagram")} className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold ${view === "diagram" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
-            <GanttChartSquare size={12} /> Diagram
+        <div className="flex items-center gap-2">
+          <button onClick={openTemplates} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+            <ClipboardList size={12} /> Apply template
           </button>
-          <button onClick={() => setView("list")} className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold ${view === "list" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
-            <List size={12} /> List
-          </button>
+          <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
+            <button onClick={() => setView("diagram")} className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold ${view === "diagram" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+              <GanttChartSquare size={12} /> Diagram
+            </button>
+            <button onClick={() => setView("list")} className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold ${view === "list" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+              <List size={12} /> List
+            </button>
+          </div>
         </div>
       </div>
 
@@ -172,6 +237,24 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
             })}
           </div>
         </div>
+      )}
+
+      {showTemplates && companyId && (
+        templatesLoading ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+            <Loader2 size={20} className="animate-spin text-white" />
+          </div>
+        ) : (
+          <TemplateManager
+            templates={templates}
+            setTemplates={setTemplates}
+            profiles={profiles} teams={teams} companyId={companyId} projectId={projectId}
+            projectCreatedAt={project?.created_at || new Date().toISOString()}
+            projectDueDate={project?.estimated_completion_date || null}
+            onApply={handleApplyTemplate} onCreateTemplate={handleCreateTemplate}
+            onClose={() => setShowTemplates(false)}
+          />
+        )
       )}
     </div>
   );

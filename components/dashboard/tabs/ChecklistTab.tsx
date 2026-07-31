@@ -13,6 +13,7 @@ import FollowUpToggle, { FollowUpEntry } from "@/components/FollowUpToggle";
 import { getDaysLeft } from "@/lib/daysLeft";
 import { getRelativeDateLabel } from "@/lib/relativeDate";
 import { describeTaskChanges, logTaskActivity } from "@/lib/taskActivityLog";
+import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
 import { splitCompletedByRecency } from "@/lib/completedBucket";
 import TaskHistoryTab from "@/components/TaskHistoryTab";
 import TemplateManager, { type Template } from "@/components/dashboard/TemplateManager";
@@ -699,29 +700,22 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     logTaskActivity(supabase, { taskId: id, companyId, actorId: user?.id || null, action: 'deleted' });
   };
 
-  const handleApplyTemplate = async (tasksToCreate: Partial<Task>[]) => {
-    if (!tasksToCreate.length) return;
+  const handleApplyTemplate = async (tasksToCreate: Partial<Task>[]): Promise<{ id: string }[]> => {
+    if (!tasksToCreate.length) return [];
     const { data: { user } } = await supabase.auth.getUser();
-    const rows = tasksToCreate.map((t) => {
-      const { display_order, ...rest } = t as any;
-      return {
-        ...rest,
-        created_by: user?.id,
-        date_entered: new Date().toISOString().split('T')[0],
-      };
-    });
-    const { data, error } = await supabase.from('tasks').insert(rows).select();
-    if (error) {
-      console.error('[apply] Insert error:', error);
-      alert(`Failed to apply template: ${error.message}`);
-      return;
+    let created: { id: string }[];
+    try {
+      created = await applyChecklistTemplate(supabase, tasksToCreate, user?.id || null);
+    } catch (err) {
+      console.error('[apply] Insert error:', err);
+      alert(`Failed to apply template: ${err instanceof Error ? err.message : 'unknown error'}`);
+      return [];
     }
-    if (data) {
-      setTasks(prev => [...prev, ...data]);
-      for (const t of data) {
-        logTaskActivity(supabase, { taskId: t.id, companyId, actorId: user?.id || null, action: 'created', detail: 'via template' });
-      }
+    setTasks(prev => [...prev, ...(created as Task[])]);
+    for (const t of created) {
+      logTaskActivity(supabase, { taskId: t.id, companyId, actorId: user?.id || null, action: 'created', detail: 'via template' });
     }
+    return created;
   };
 
   const handleCreateTemplate = async (name: string): Promise<Template | null> => {
