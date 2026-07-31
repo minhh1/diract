@@ -22,6 +22,7 @@ import {
   findExistingCustomFieldValue,
   type CustomFieldValueInput,
 } from "./actions";
+import { parseRelativeDate } from "./parseRelativeDate";
 
 export interface CollectingResult {
   status: "collecting";
@@ -154,6 +155,17 @@ export async function advanceAction(
       }
       collected[field.key] = matchedOption;
     } else if (field.kind === "date") {
+      // Tried before Date.parse -- resolves the relative phrases
+      // (today/tomorrow/yesterday/weekday names/"in N days") the model is
+      // supposed to have already converted to YYYY-MM-DD itself but
+      // sometimes doesn't (compound phrasing like "today 3pm", non-
+      // compliance, ...), which Date.parse alone just rejects outright.
+      // See parseRelativeDate's own comment.
+      const relative = parseRelativeDate(raw);
+      if (relative) {
+        collected[field.key] = relative;
+        continue;
+      }
       const parsed = Date.parse(raw);
       if (Number.isNaN(parsed)) {
         delete collected[field.key];

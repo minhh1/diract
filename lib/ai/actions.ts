@@ -167,6 +167,29 @@ export async function resolveTaskByName(admin: any, companyId: string, name: str
   return pickBestMatch(name, (data ?? []) as ResolvedMatch[]);
 }
 
+function tokenize(text: string): string[] {
+  return text.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+// Prefers a whole-word match over a same-substring-anywhere match -- e.g.
+// searching "Huy" should confidently resolve to "Huy Pham" (an exact word)
+// rather than getting stuck asking to disambiguate against "Minh Huynh"
+// (which only contains "huy" as the first three letters of "Huynh", not as
+// its own word). Only narrows the candidate set when at least one candidate
+// actually qualifies as a whole-word match -- if none do, every substring
+// match stays in play so pickBestMatch's own ambiguous/not_found handling
+// is unchanged (e.g. a genuinely partial/misspelled name still falls
+// through to asking for clarification).
+function preferWholeWordMatches(name: string, candidates: ResolvedMatch[]): ResolvedMatch[] {
+  const searchTokens = tokenize(name);
+  if (!searchTokens.length) return candidates;
+  const wholeWordMatches = candidates.filter((c) => {
+    const candidateTokens = tokenize(c.name);
+    return searchTokens.every((t) => candidateTokens.includes(t));
+  });
+  return wholeWordMatches.length ? wholeWordMatches : candidates;
+}
+
 // Scoped to this company's members (not every profile in the system) --
 // same company_memberships join app/api/public-tasks/.../route.ts uses to
 // build its assignee picker.
@@ -175,7 +198,19 @@ export async function resolveProfileByName(admin: any, companyId: string, name: 
   const memberIds = (memberships ?? []).map((m: { user_id: string }) => m.user_id);
   if (!memberIds.length) return { status: "not_found" };
 
-  const { data: profiles } = await admin.from("profiles").select("id, full_name, email").in("id", memberIds);
+  // Excludes the company's nominated Gmail archive mailbox account(s) --
+  // see lib/gmail/archiveProject.ts, the actual source of truth for which
+  // connected account(s) exist purely to receive archived matter emails,
+  // never to do legal work or be assigned a task. Without this, a name
+  // like "Huynh Lawyers Archive" shows up as a real candidate for "Huy"
+  // right alongside actual staff.
+  const { data: company } = await admin.from("companies").select("gmail_archive_emails").eq("id", companyId).maybeSingle();
+  const archiveEmails: string[] = company?.gmail_archive_emails ?? [];
+
+  // is_active excludes deactivated staff -- same filter every UI assignee
+  // picker already applies (ChecklistTab.tsx, AddTaskModal.tsx,
+  // templates/page.tsx), just missing here until now.
+  const { data: profiles } = await admin.from("profiles").select("id, full_name, email").in("id", memberIds).eq("is_active", true);
   const lower = name.toLowerCase();
   // Matches on full_name only -- matching against email too used to cause
   // false-positive "duplicates": every profile at a company shares the same
@@ -185,9 +220,11 @@ export async function resolveProfileByName(admin: any, companyId: string, name: 
   // Assignees are referred to by name in chat, never by raw email, so
   // dropping the email fallback has no real downside here.
   const candidates: ResolvedMatch[] = (profiles ?? [])
-    .filter((p: { full_name: string | null }) => (p.full_name ?? "").toLowerCase().includes(lower))
+    .filter((p: { full_name: string | null; email: string | null }) =>
+      (p.full_name ?? "").toLowerCase().includes(lower) && !(p.email && archiveEmails.includes(p.email))
+    )
     .map((p: { id: string; full_name: string | null; email: string | null }) => ({ id: p.id, name: p.full_name || p.email || "Unknown" }));
-  return pickBestMatch(name, candidates);
+  return pickBestMatch(name, preferWholeWordMatches(name, candidates));
 }
 
 // task_statuses is a global lookup table (no company_id column) -- verified

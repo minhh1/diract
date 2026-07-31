@@ -8,6 +8,8 @@
 // ask about, and no free/busy conflict check (matches how task due-date
 // calendar sync already works: create the event, don't gatekeep on
 // availability).
+import { parseRelativeDate } from "./parseRelativeDate";
+
 export interface AppointmentCollectingResult {
   status: "collecting";
   collected: Record<string, string>;
@@ -78,12 +80,17 @@ export async function advanceAppointmentAction(collectedIn: Record<string, strin
   // "time" field kinds -- an invalid value is treated the same as a
   // missing one, re-asked together with anything else outstanding.
   if (collected.date?.trim()) {
-    const parsed = Date.parse(collected.date.trim());
-    if (Number.isNaN(parsed)) {
-      conflictNotes.push(`I couldn't understand the date "${collected.date}" -- please use YYYY-MM-DD.`);
-      delete collected.date;
+    const relative = parseRelativeDate(collected.date.trim());
+    if (relative) {
+      collected.date = relative;
     } else {
-      collected.date = new Date(parsed).toISOString().slice(0, 10);
+      const parsed = Date.parse(collected.date.trim());
+      if (Number.isNaN(parsed)) {
+        conflictNotes.push(`I couldn't understand the date "${collected.date}" -- please use YYYY-MM-DD.`);
+        delete collected.date;
+      } else {
+        collected.date = new Date(parsed).toISOString().slice(0, 10);
+      }
     }
   }
   if (collected.start_time?.trim()) {
