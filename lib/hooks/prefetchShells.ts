@@ -222,11 +222,14 @@ async function warmSystemTableRows(tableName: string, companyId: string): Promis
   } catch {}
 }
 
-// Fire-and-forget, called right after warmSystemTableShells -- unlike that
-// blocking step, row data is large enough per table (and inherently
-// per-table-shaped, see above) that awaiting it here would meaningfully
-// lengthen the loading screen for a coarser payload the real fetchItems
-// call replaces within moments of landing anyway.
+// Now awaited by lib/companyBootstrap.ts (alongside warmCustomTableShells)
+// rather than fire-and-forget -- it used to run detached on the reasoning
+// that row data is large enough per table to meaningfully lengthen the
+// loading screen, but that left system tables the one thing NOT guaranteed
+// warm by the time the splash dismissed once custom-table rows got the same
+// "awaited" treatment (see companyBootstrap.ts's own comment on this: a
+// bounded set of exactly 4 tables, same as warmSystemTableShells above,
+// not the open-ended "could be dozens" case custom tables are).
 export function startSystemTableRowPrefetch(companyId: string | null): Promise<void> {
   if (!companyId) return Promise.resolve();
   return Promise.all(SYSTEM_TABLES.map(t => warmSystemTableRows(t, companyId))).then(() => {});

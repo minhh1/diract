@@ -148,18 +148,28 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   notifyStep("tableShells");
   // Now also warms every custom table's rows + column/sort config + default
   // filters alongside its schema/fields -- see prefetchShells.ts's own
-  // updated doc comment.
-  await warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {});
-  // System-table row data prefetch stays fire-and-forget -- see
-  // startSystemTableRowPrefetch's own doc comment for why (unlike shell/
-  // metadata, it's cheap per table but not bounded, so it isn't part of
-  // what the splash gates on). Custom-table rows are different: they're
-  // now awaited as part of warmCustomTableShells above instead, since a
-  // company can have a custom table with a genuinely large dashboard-driven
-  // dataset behind it (rollups, invoices) that's worth the same "fully
-  // ready by the time the splash dismisses" guarantee the rest of this
-  // step already makes for schema/fields.
-  startSystemTableRowPrefetch(cid).catch(() => {});
+  // updated doc comment. Run alongside startSystemTableRowPrefetch, not
+  // after it -- both warm independent per-table row data, so there's no
+  // reason for one to block the other starting.
+  //
+  // System-table row prefetch used to be fire-and-forget here (kicked off,
+  // never awaited) on the reasoning that it's "not bounded" the way a
+  // large custom table's dataset could be -- but that reasoning predates
+  // custom-table rows being made a blocking step just above. Once custom
+  // tables got the "guaranteed warm by the time the splash dismisses"
+  // treatment and system tables didn't, landing on Properties/Entities/
+  // Projects/Tasks right after the splash could still hit usePresetTable's
+  // cold, blocking fetch path (row cache not written yet) while every
+  // custom table was already instant -- confirmed live, this is what
+  // showed up as "system tables slower, custom tables faster, situation
+  // has reversed." There are exactly 4 system tables (a bounded, known
+  // set, unlike custom tables' open-ended "could be dozens"), so the same
+  // argument that justified awaiting custom-table rows applies at least as
+  // strongly here.
+  await Promise.all([
+    warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {}),
+    startSystemTableRowPrefetch(cid).catch(() => {}),
+  ]);
   notifyStep("shells");
 
   perfLog("companyBootstrap: done");
