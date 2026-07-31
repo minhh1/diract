@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import {
   getSchemaMetadata, getCompanyId, deriveLabel,
   getCachedSchemaMetadata, getCachedCompanyIdSync,
@@ -84,8 +85,36 @@ export function useTableSchema(tableName: string, externalCompanyId?: string | n
   });
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Layout effect, not a plain effect -- the lazy initializers above already
+  // do this exact synchronous cache check, but only at the EXACT moment
+  // this hook's state is first initialized; if externalCompanyId (or the
+  // cached company id) wasn't synchronously available on that specific
+  // render, `loading` started true and previously stayed true until this
+  // effect's async block resolved -- in a plain useEffect, that's always
+  // post-paint. Confirmed live: this is why GenericMasterTable's skeleton
+  // (gated on schema.loading, see components/GenericMasterTable.tsx) showed
+  // for a roughly-constant duration on every system-table load, cache or
+  // not -- same root cause already fixed for useCustomTable.ts/
+  // usePresetTable.ts/useCompanyCustomFields.ts. Re-running the same
+  // synchronous cache check here, before the async block, lets a correction
+  // land before paint instead of after when the initializer missed it.
+  useIsomorphicLayoutEffect(() => {
     if (usingExternalCompanyId && !externalCompanyId) return; // wait for the shared context to resolve
+
+    let cid: string | null;
+    if (usingExternalCompanyId) {
+      cid = externalCompanyId!;
+    } else {
+      const { resolved, companyId: syncCid } = getCachedCompanyIdSync();
+      cid = resolved ? syncCid : null;
+    }
+    const cachedCols = cid ? getCachedSchemaMetadata(tableName, cid) : null;
+    if (cachedCols) {
+      setCompanyId(cid);
+      setAll(cachedCols);
+      setLoading(false);
+    }
+
     let active = true;
 
     (async () => {

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { useCompany } from "@/components/CompanyContext";
+import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 
 export interface CompanyCustomField {
   id: string;
@@ -107,13 +108,31 @@ export function useCompanyCustomFields(tableName: string, enabled: boolean = tru
     () => !companyId || (!cache.has(cacheKey(companyId, tableName)) && !readShellCache(shellCacheKey(companyId, tableName)))
   );
 
-  useEffect(() => {
+  // Layout effect, not a plain effect -- this hook's lazy initializers above
+  // check BOTH the in-memory cache and the persisted shellCache, but this
+  // correction used to only check the in-memory `cache` Map (which is empty
+  // on every fresh page load, since it's a plain module-level variable, not
+  // itself persisted) before falling through to fetchCompanyCustomFields's
+  // OWN async .then() chain -- meaning a page freshly loaded with valid
+  // persisted data still resolved this via a real Promise turn in a plain
+  // useEffect (post-paint), so `loading` stayed true (from the lazy
+  // initializer's own companyId-not-ready-yet race) through at least one
+  // paint. Confirmed live: this is why GenericMasterTable's skeleton
+  // (gated on customFieldsLoading, see components/GenericMasterTable.tsx)
+  // visibly appeared for a roughly-constant duration on every system-table
+  // load, warm cache or not -- same root cause already fixed for
+  // useCustomTable.ts/usePresetTable.ts. Checking the persisted cache here
+  // too, synchronously, lets that correction land before paint instead.
+  useIsomorphicLayoutEffect(() => {
     if (!companyId) return;
     const key = cacheKey(companyId, tableName);
-    if (cache.has(key)) {
-      setFields(cache.get(key)!);
+    const persisted = cache.get(key) ?? readShellCache<CompanyCustomField[]>(shellCacheKey(companyId, tableName));
+    if (persisted) {
+      cache.set(key, persisted);
+      setFields(persisted);
       setLoading(false);
-      return;
+    } else {
+      setLoading(true);
     }
     if (!enabled) return;
     let active = true;
