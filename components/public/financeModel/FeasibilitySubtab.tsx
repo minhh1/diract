@@ -35,6 +35,7 @@ import {
 import { buildMonthlyCashFlow, simulateFacility, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
 import CashFlowPanel from "./CashFlowPanel";
 import DebtSchedulePanel from "./DebtSchedulePanel";
+import ReturnsPanel from "./ReturnsPanel";
 
 interface BudgetLine {
   id: string;
@@ -495,6 +496,17 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
       {/* ── Debt schedule (real drawdown/capitalized-interest simulation) ── */}
       <DebtSchedulePanel simulation={facilitySimulation} hasFacilityConfig={hasFacilityConfig} />
+
+      {/* ── Returns (dated XIRR/NPV/equity multiple/payback + residual land value) ── */}
+      <ReturnsPanel
+        cashFlowRows={monthlyCashFlow}
+        debtRows={facilitySimulation.rows}
+        lines={cashFlowLines}
+        tasksById={tasksById}
+        facility={{ limit: inputs.facilityLimit ?? 0, interestRatePct: inputs.facilityInterestRatePct ?? 0, maxLvrPct: inputs.maxLvrPct }}
+        gdv={result.revenue > 0 ? result.revenue : null}
+        hasCashFlow={monthlyCashFlow.length > 0}
+      />
 
       {/* ── Scenario comparison ── */}
       <div className="bg-white border border-slate-200 rounded-[32px] p-6 overflow-x-auto">
