@@ -9,7 +9,7 @@
 // tradeoff components/dashboard/tabs/InvoicesTab.tsx already makes for its
 // own custom-table-backed list.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, X, RefreshCw, Wand2, Trash2 } from "lucide-react";
+import { Loader2, Plus, X, RefreshCw, Wand2, Trash2, Settings2 } from "lucide-react";
 import { money } from "./BudgetVsActualTable";
 
 interface BudgetLine {
@@ -24,10 +24,23 @@ interface Transaction {
   type: "Income" | "Expense" | null;
   contact: string | null;
   reference: string | null;
+  description: string | null;
   amount: number | null;
   budget_line: string | null;
   source: "Manual" | "Xero" | null;
 }
+
+interface ClassificationRule {
+  id: string;
+  match_field: "Contact" | "Reference" | "Description" | null;
+  match_type: "Equals" | "Contains" | "Starts With" | null;
+  match_value: string | null;
+  budget_line: string | null;
+  is_active: boolean | null;
+}
+
+const MATCH_FIELDS = ["Contact", "Reference", "Description"] as const;
+const MATCH_TYPES = ["Equals", "Contains", "Starts With"] as const;
 
 type DateRange = "week" | "month" | "since_start" | "total";
 type SortKey = "date" | "amount";
@@ -68,20 +81,28 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [applyingRules, setApplyingRules] = useState(false);
 
+  const [rules, setRules] = useState<ClassificationRule[]>([]);
+  const [showRules, setShowRules] = useState(false);
+  const [newRule, setNewRule] = useState({ matchField: "Contact" as string, matchType: "Contains" as string, matchValue: "", budgetLineId: "" });
+  const [savingRule, setSavingRule] = useState(false);
+
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [txRes, blRes] = await Promise.all([
+      const [txRes, blRes, rulesRes] = await Promise.all([
         fetch(`/api/finance-model/transactions?projectId=${projectId}`),
         fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
+        fetch(`/api/finance-model/classification-rules?projectId=${projectId}`),
       ]);
       const txJson = await txRes.json();
       const blJson = await blRes.json();
+      const rulesJson = await rulesRes.json();
       if (!txRes.ok) { setError(txJson.error || "Failed to load"); return; }
       setTransactions(txJson.transactions || []);
       setProjectCreatedAt(txJson.projectCreatedAt || null);
       setBudgetLines(blJson.budgetLines || []);
+      setRules(rulesJson.rules || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -183,6 +204,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
   };
 
   const applyRules = async () => {
+    if (!rules.length) { setSyncMessage("No classification rules yet -- add one below, then Apply rules."); setShowRules(true); return; }
     setApplyingRules(true);
     const res = await fetch("/api/finance-model/classify", {
       method: "POST",
@@ -193,6 +215,34 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
     setApplyingRules(false);
     setSyncMessage(res.ok ? `Classified ${json.classified} of ${json.checked} unclassified transactions.` : (json.error || "Failed to apply rules"));
     if (res.ok) await load();
+  };
+
+  const addRule = async () => {
+    if (!newRule.matchValue.trim() || !newRule.budgetLineId) return;
+    setSavingRule(true);
+    const res = await fetch("/api/finance-model/classification-rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId, matchField: newRule.matchField, matchType: newRule.matchType,
+        matchValue: newRule.matchValue.trim(), budgetLineId: newRule.budgetLineId,
+      }),
+    });
+    const json = await res.json();
+    if (res.ok) {
+      setRules(prev => [...prev, {
+        id: json.id, match_field: newRule.matchField as ClassificationRule["match_field"],
+        match_type: newRule.matchType as ClassificationRule["match_type"],
+        match_value: newRule.matchValue.trim(), budget_line: newRule.budgetLineId, is_active: true,
+      }]);
+      setNewRule({ matchField: "Contact", matchType: "Contains", matchValue: "", budgetLineId: "" });
+    }
+    setSavingRule(false);
+  };
+
+  const deleteRule = async (id: string) => {
+    setRules(prev => prev.filter(r => r.id !== id));
+    await fetch(`/api/finance-model/classification-rules?id=${id}`, { method: "DELETE" });
   };
 
   if (loading) {
@@ -227,6 +277,9 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
           <button onClick={applyRules} disabled={applyingRules} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-40">
             {applyingRules ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} Apply rules
           </button>
+          <button onClick={() => setShowRules(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
+            <Settings2 size={11} /> Manage rules {rules.length > 0 && `(${rules.length})`}
+          </button>
           <button onClick={syncFromXero} disabled={syncing} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-40">
             {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Sync from Xero
           </button>
@@ -235,6 +288,38 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
           </button>
         </div>
       </div>
+
+      {showRules && (
+        <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 space-y-2">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Classification Rules</p>
+          {rules.length === 0 && <p className="text-[11px] text-slate-400">No rules yet -- add one below so &quot;Apply rules&quot; has something to match against.</p>}
+          {rules.map(r => (
+            <div key={r.id} className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-xl text-[11px]">
+              <span className="text-slate-600">
+                If <span className="font-bold">{r.match_field}</span> {r.match_type?.toLowerCase()} <span className="font-bold">&quot;{r.match_value}&quot;</span> → {budgetLineLabel(r.budget_line)}
+              </span>
+              <button onClick={() => deleteRule(r.id)} className="text-slate-300 hover:text-rose-500"><X size={13} /></button>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-end gap-2 pt-2 border-t border-slate-100">
+            <select value={newRule.matchField} onChange={e => setNewRule(p => ({ ...p, matchField: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+              {MATCH_FIELDS.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <select value={newRule.matchType} onChange={e => setNewRule(p => ({ ...p, matchType: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+              {MATCH_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input placeholder="Match value" value={newRule.matchValue} onChange={e => setNewRule(p => ({ ...p, matchValue: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white w-36" />
+            <span className="text-slate-400 text-[11px]">→</span>
+            <select value={newRule.budgetLineId} onChange={e => setNewRule(p => ({ ...p, budgetLineId: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+              <option value="">Budget line...</option>
+              {budgetLines.map(l => <option key={l.id} value={l.id}>{l.category} — {l.label}</option>)}
+            </select>
+            <button onClick={addRule} disabled={savingRule || !newRule.matchValue.trim() || !newRule.budgetLineId} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40">
+              <Plus size={11} /> Add rule
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 flex flex-wrap items-center gap-4 text-[11px]">
@@ -319,6 +404,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                 <th className="px-6 py-2 font-bold cursor-pointer" onClick={() => toggleSort("date")}>Date {sortKey === "date" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
                 <th className="px-2 py-2 font-bold">Contact</th>
                 <th className="px-2 py-2 font-bold">Reference</th>
+                <th className="px-2 py-2 font-bold">Description</th>
                 <th className="px-2 py-2 font-bold">Budget line</th>
                 <th className="px-2 py-2 font-bold">Source</th>
                 <th className="px-6 py-2 font-bold text-right cursor-pointer" onClick={() => toggleSort("amount")}>Amount {sortKey === "amount" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
@@ -331,6 +417,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                   <td className="px-6 py-2 text-slate-500 whitespace-nowrap">{formatDate(t.date)}</td>
                   <td className="px-2 py-2 text-slate-700 font-medium">{t.contact || "—"}</td>
                   <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.reference || "—"}</td>
+                  <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.description || "—"}</td>
                   <td className="px-2 py-2">
                     <select value={t.budget_line || ""} onChange={e => classify(t.id, e.target.value)} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600">
                       <option value="">Unclassified</option>
