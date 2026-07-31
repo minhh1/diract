@@ -135,3 +135,82 @@ export function buildMonthlyCashFlow(lines: TimedBudgetLine[], tasksById: Map<st
 
   return { rows, unresolvedLines };
 }
+
+// ── Real debt mechanics: a construction facility that draws down against
+// each month's cash deficit, capitalizes interest monthly on the running
+// balance, and is capped by a facility limit -- distinct from
+// lib/loanCalculator.ts, which schedules a loan with a KNOWN fixed
+// principal drawn at settlement (the Loans subtab's use case: "what does
+// this already-agreed loan cost"). This answers a different question:
+// "how much debt does the project actually need, and when" -- Peak Debt
+// falls out of the simulation rather than being estimated.
+
+export interface FacilityConfig {
+  limit: number; // hard cap on drawn balance
+  interestRatePct: number; // annual, capitalized monthly
+  maxLvrPct: number | null; // informational covenant threshold -- flagged, not enforced (the facility limit is what mechanically constrains drawdown)
+}
+
+export interface MonthlyDebtRow extends MonthlyCashFlow {
+  interestCapitalized: number;
+  drawdown: number;
+  repayment: number; // surplus cash (e.g. a settlement month) pays the facility down
+  debtBalance: number; // end of month, after interest + drawdown/repayment
+  equityInjected: number; // shortfall the facility limit couldn't cover
+  lvrPct: number | null; // debtBalance / gdv, when a GDV figure is supplied
+}
+
+export interface FacilitySimulationResult {
+  rows: MonthlyDebtRow[];
+  peakDebt: number;
+  totalInterestCapitalized: number;
+  totalEquityInjected: number;
+  lvrBreached: boolean;
+}
+
+export function simulateFacility(cashFlowRows: MonthlyCashFlow[], facility: FacilityConfig, gdv: number | null): FacilitySimulationResult {
+  const monthlyRate = facility.interestRatePct / 100 / 12;
+  let balance = 0;
+  let totalInterest = 0;
+  let totalEquity = 0;
+  let lvrBreached = false;
+  const rows: MonthlyDebtRow[] = [];
+
+  for (const cf of cashFlowRows) {
+    // Interest capitalizes on the balance carried into this month, before
+    // that month's drawdown/repayment -- standard practice for a
+    // construction facility (this month's interest is on what was owed
+    // coming in, not on funds drawn partway through the month).
+    const interest = balance * monthlyRate;
+    let newBalance = balance + interest;
+    totalInterest += interest;
+
+    let drawdown = 0;
+    let repayment = 0;
+    let equityInjected = 0;
+
+    if (cf.net < 0) {
+      const shortfall = -cf.net;
+      const availableFacility = Math.max(0, facility.limit - newBalance);
+      drawdown = Math.min(shortfall, availableFacility);
+      newBalance += drawdown;
+      // Facility limit reached -- the remaining shortfall has to be
+      // funded by equity, not silently ignored or allowed to overdraw
+      // the facility.
+      equityInjected = shortfall - drawdown;
+      totalEquity += equityInjected;
+    } else if (cf.net > 0) {
+      repayment = Math.min(cf.net, newBalance);
+      newBalance -= repayment;
+    }
+
+    const lvrPct = gdv && gdv > 0 ? (newBalance / gdv) * 100 : null;
+    if (facility.maxLvrPct != null && lvrPct != null && lvrPct > facility.maxLvrPct) lvrBreached = true;
+
+    rows.push({ ...cf, interestCapitalized: interest, drawdown, repayment, debtBalance: newBalance, equityInjected, lvrPct });
+    balance = newBalance;
+  }
+
+  const peakDebt = rows.reduce((max, r) => Math.max(max, r.debtBalance), 0);
+  return { rows, peakDebt, totalInterestCapitalized: totalInterest, totalEquityInjected: totalEquity, lvrBreached };
+}

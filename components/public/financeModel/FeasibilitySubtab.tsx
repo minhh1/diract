@@ -32,8 +32,9 @@ import {
   calculateFeasibility, solveBreakEvenSalePricePerDwelling, solveMaxSupportableLandPrice,
   runScenarios, runSensitivity, simplifiedIRR,
 } from "@/lib/feasibilityCalculator";
-import { buildMonthlyCashFlow, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
+import { buildMonthlyCashFlow, simulateFacility, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
 import CashFlowPanel from "./CashFlowPanel";
+import DebtSchedulePanel from "./DebtSchedulePanel";
 
 interface BudgetLine {
   id: string;
@@ -75,7 +76,7 @@ const EMPTY_INPUTS: FeasibilityInputs = {
   dwellingsCount: null, avgDwellingSizeSqm: null, siteAreaSqm: null, expectedSalePricePerDwelling: null,
   constructionRatePerSqm: null, professionalFeesPct: null, contingencyPct: null, marketingSellingPct: null,
   otherAcquisitionCosts: null, holdingCostsAnnual: null, projectDurationMonths: null, interestRatePct: null,
-  loanToCostPct: null, targetMarginPct: null,
+  loanToCostPct: null, targetMarginPct: null, facilityLimit: null, facilityInterestRatePct: null, maxLvrPct: null,
 };
 
 const INPUT_FIELDS: { key: keyof FeasibilityInputs; label: string; suffix?: string }[][] = [
@@ -98,6 +99,14 @@ const INPUT_FIELDS: { key: keyof FeasibilityInputs; label: string; suffix?: stri
     { key: "interestRatePct", label: "Interest rate", suffix: "% p.a." },
     { key: "loanToCostPct", label: "Loan to cost", suffix: "% (developers typically target ~80%)" },
     { key: "targetMarginPct", label: "Target margin on cost", suffix: "%" },
+  ],
+  // Construction facility -- drives the dated debt-drawdown simulation
+  // (Debt Schedule panel below), separate from the "Loan to cost"
+  // parametric estimate above.
+  [
+    { key: "facilityLimit", label: "Facility limit", suffix: "$" },
+    { key: "facilityInterestRatePct", label: "Facility interest rate", suffix: "% p.a." },
+    { key: "maxLvrPct", label: "Max LVR covenant", suffix: "% (flagged if breached, not enforced)" },
   ],
 ];
 
@@ -374,6 +383,13 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   }));
   const { rows: monthlyCashFlow, unresolvedLines } = buildMonthlyCashFlow(cashFlowLines, tasksById);
 
+  const hasFacilityConfig = inputs.facilityLimit != null && inputs.facilityInterestRatePct != null;
+  const facilitySimulation = simulateFacility(
+    monthlyCashFlow,
+    { limit: inputs.facilityLimit ?? 0, interestRatePct: inputs.facilityInterestRatePct ?? 0, maxLvrPct: inputs.maxLvrPct },
+    result.revenue > 0 ? result.revenue : null,
+  );
+
   // -- Existing itemised P&L (unchanged -- reads Budget Lines directly) ---
   const revenueTotal = budgetLines.filter(l => l.category === "Revenue").reduce((s, l) => s + (l.budgeted_amount || 0), 0);
   const acquisitionTotal = budgetLines.filter(l => l.category === "Acquisition").reduce((s, l) => s + (l.budgeted_amount || 0), 0);
@@ -476,6 +492,9 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         unresolvedLines={unresolvedLines}
         onUpdateLineTiming={updateLineTiming}
       />
+
+      {/* ── Debt schedule (real drawdown/capitalized-interest simulation) ── */}
+      <DebtSchedulePanel simulation={facilitySimulation} hasFacilityConfig={hasFacilityConfig} />
 
       {/* ── Scenario comparison ── */}
       <div className="bg-white border border-slate-200 rounded-[32px] p-6 overflow-x-auto">

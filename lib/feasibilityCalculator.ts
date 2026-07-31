@@ -31,6 +31,12 @@ export interface FeasibilityInputs {
   interestRatePct: number | null;
   loanToCostPct: number | null;
   targetMarginPct: number | null;
+  // Construction facility parameters -- drive the dated debt-drawdown
+  // simulation (lib/cashFlowEngine.ts's simulateFacility) rather than
+  // this file's own parametric (instant, non-dated) Peak Debt estimate.
+  facilityLimit: number | null;
+  facilityInterestRatePct: number | null;
+  maxLvrPct: number | null;
 }
 
 export interface FeasibilityContext {

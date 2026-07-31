@@ -27,6 +27,9 @@ const FIELDS: Record<string, string> = {
   interestRatePct: "interest_rate_pct",
   loanToCostPct: "loan_to_cost_pct",
   targetMarginPct: "target_margin_pct",
+  facilityLimit: "facility_limit",
+  facilityInterestRatePct: "facility_interest_rate_pct",
+  maxLvrPct: "max_lvr_pct",
 };
 
 export async function GET(req: NextRequest) {
