@@ -567,6 +567,13 @@ export default function RecordDashboard({
           display_order: finalTabs.length + missingCoreTabs.length,
         });
       }
+      if (systemTable === 'projects' && !uniqueTabs.some(t => t.tab_type === 'finance_model')) {
+        missingCoreTabs.push({
+          company_id: cid, record_id: recordId, record_table: recordTable,
+          title: 'Finance Model', icon: 'TrendingUp', tab_type: 'finance_model',
+          display_order: finalTabs.length + missingCoreTabs.length,
+        });
+      }
       if (systemTable === 'entities' && !uniqueTabs.some(t => t.tab_type === 'related_matters')) {
         missingCoreTabs.push({
           company_id: cid, record_id: recordId, record_table: recordTable,
@@ -661,6 +668,14 @@ export default function RecordDashboard({
           icon: 'CheckSquare',
           tab_type: 'checklist',
           display_order: 1,
+        }, {
+          company_id: cid,
+          record_id: recordId,
+          record_table: recordTable,
+          title: 'Finance Model',
+          icon: 'TrendingUp',
+          tab_type: 'finance_model',
+          display_order: 2,
         }] : []),
         ...(systemTable === 'entities' ? [{
           company_id: cid,
@@ -1418,6 +1433,7 @@ export default function RecordDashboard({
       {showAddTab && (
         <AddTabModal
           customTables={customTables}
+          systemTable={systemTable}
           onAdd={handleAddTab}
           onClose={() => setShowAddTab(false)}
         />

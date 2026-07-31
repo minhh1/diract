@@ -53,7 +53,7 @@ const TEMPLATES: TabTemplate[] = [
     type: 'finance_model',
     title: 'Finance Model',
     icon: 'TrendingUp',
-    description: 'Actual income/expenses from this entity\'s linked Xero organisation',
+    description: 'Budget vs actual, transactions, timeline, and loans for this project',
     color: 'bg-emerald-50 text-emerald-600',
     iconComponent: TrendingUp,
   },
@@ -93,17 +93,22 @@ const TEMPLATES: TabTemplate[] = [
 
 interface Props {
   customTables: CustomTable[];
+  systemTable?: string;
   onAdd: (type: string, title: string, icon: string, linkedTableId?: string) => Promise<void>;
   onClose: () => void;
 }
 
-export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
+export default function AddTabModal({ customTables, systemTable, onAdd, onClose }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const [linkedTableId, setLinkedTableId] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const selectedTemplate = TEMPLATES.find(t => t.type === selected);
+  // Finance Model is project-scoped (a single entity/SPV company can hold
+  // several projects, each needing its own budget) -- only offer it when
+  // adding a tab to a Project record.
+  const templates = TEMPLATES.filter(t => t.type !== 'finance_model' || systemTable === 'projects');
+  const selectedTemplate = templates.find(t => t.type === selected);
 
   const handleAdd = async () => {
     if (!selected) return;
@@ -144,7 +149,7 @@ export default function AddTabModal({ customTables, onAdd, onClose }: Props) {
           Templates
         </p>
         <div className="grid grid-cols-2 gap-3 mb-4">
-          {TEMPLATES.map(template => {
+          {templates.map(template => {
             const Icon = template.iconComponent;
             const isSelected = selected === template.type;
             return (
