@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   X, FileText, ListChecks, Calendar, Mail,
-  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard, PenSquare, Briefcase
+  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard, PenSquare, Briefcase, TrendingUp
 } from "lucide-react";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
@@ -48,6 +48,14 @@ const TEMPLATES: TabTemplate[] = [
     description: 'Every matter this entity is linked to (as Client, Debtor, etc.)',
     color: 'bg-indigo-50 text-indigo-600',
     iconComponent: Briefcase,
+  },
+  {
+    type: 'finance_model',
+    title: 'Finance Model',
+    icon: 'TrendingUp',
+    description: 'Actual income/expenses from this entity\'s linked Xero organisation',
+    color: 'bg-emerald-50 text-emerald-600',
+    iconComponent: TrendingUp,
   },
   {
     type: 'calendar',

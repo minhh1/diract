@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Plus, Pencil, Trash2, GripVertical, Check, X, ChevronLeft, ChevronRight,
-  FileText, ListChecks, Calendar, Mail, FolderKanban, Table2, ShieldCheck, FileSignature, PenSquare
+  FileText, ListChecks, Calendar, Mail, FolderKanban, Table2, ShieldCheck, FileSignature, PenSquare, TrendingUp
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 
@@ -25,6 +25,7 @@ const TAB_TYPE_ICONS: Record<string, React.ElementType> = {
   custom_table: Table2,
   document_templates: FileSignature,
   precedents: PenSquare,
+  finance_model: TrendingUp,
 };
 
 interface ExtraTab {

@@ -24,6 +24,7 @@ import DocumentTemplatesTab from "./tabs/DocumentTemplatesTab";
 import PrecedentsTab from "./tabs/PrecedentsTab";
 import RecordDashboardTab from "./tabs/RecordDashboardTab";
 import InvoicesTab from "./tabs/InvoicesTab";
+import FinanceModelTab from "./tabs/FinanceModelTab";
 import SendSmsCard from "./SendSmsCard";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { fetchCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
@@ -1368,6 +1369,9 @@ export default function RecordDashboard({
           recordId={recordId}
           companyId={companyId}
         />
+      )}
+      {activeTab?.tab_type === 'finance_model' && (
+        <FinanceModelTab recordId={recordId} />
       )}
       {activeTabId === '__access__' && systemTable === 'projects' && (
         <ProjectAccessPanel
