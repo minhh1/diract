@@ -54,6 +54,11 @@ export async function POST(req: NextRequest) {
 
   const existing = await listCustomTableRows(admin, table, "project", projectId);
 
+  const linkedTaskId: string | null = body?.linkedTaskId || null;
+  const timingProfile: string | null = body?.timingProfile || null;
+  const timingStartDate: string | null = body?.timingStartDate || null;
+  const timingEndDate: string | null = body?.timingEndDate || null;
+
   const id = await createCustomTableRow(admin, table, user.id, {
     project: projectId,
     category,
@@ -61,9 +66,18 @@ export async function POST(req: NextRequest) {
     budgeted_amount: budgetedAmount,
     xero_account_code: xeroAccountCode,
     display_order: existing.length,
+    linked_task_id: linkedTaskId,
+    timing_profile: timingProfile,
+    timing_start_date: timingStartDate,
+    timing_end_date: timingEndDate,
   });
 
-  return NextResponse.json({ budgetLine: { id, category, label: label.trim(), budgeted_amount: budgetedAmount, xero_account_code: xeroAccountCode, display_order: existing.length } });
+  return NextResponse.json({
+    budgetLine: {
+      id, category, label: label.trim(), budgeted_amount: budgetedAmount, xero_account_code: xeroAccountCode, display_order: existing.length,
+      linked_task_id: linkedTaskId, timing_profile: timingProfile, timing_start_date: timingStartDate, timing_end_date: timingEndDate,
+    },
+  });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -90,6 +104,10 @@ export async function PATCH(req: NextRequest) {
     updates.budgeted_amount = n;
   }
   if (body.xeroAccountCode !== undefined) updates.xero_account_code = body.xeroAccountCode?.trim() || null;
+  if (body.linkedTaskId !== undefined) updates.linked_task_id = body.linkedTaskId || null;
+  if (body.timingProfile !== undefined) updates.timing_profile = body.timingProfile || null;
+  if (body.timingStartDate !== undefined) updates.timing_start_date = body.timingStartDate || null;
+  if (body.timingEndDate !== undefined) updates.timing_end_date = body.timingEndDate || null;
 
   await updateCustomTableRow(admin, table, id, updates);
   return NextResponse.json({ success: true });
