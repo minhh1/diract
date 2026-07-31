@@ -71,6 +71,13 @@ export interface CustomField {
   // rollups require an entity/property/project-type field instead (see
   // FieldConfigPanel.tsx's SYSTEM_RELATION_FIELD_TYPE).
   formula_relation_field_id?: string | null;
+  // sum_related only -- restricts which related rows count toward the sum
+  // to ones whose own formula_condition_field_id value (a field on the same
+  // related table formula_relation_field_id is on) equals
+  // formula_condition_value (text; 'true'/'false' for a boolean field).
+  // Both null means no filter, sum every linked row.
+  formula_condition_field_id?: string | null;
+  formula_condition_value?: string | null;
   // Multi-record relations — relation-type, custom-table fields only (see
   // supabase/company_table_field_allow_multiple.sql). Undefined/false means
   // the normal single-linked-record behavior.

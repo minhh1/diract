@@ -68,6 +68,13 @@ export interface CustomTableField {
   formula_field_b_id: string | null;
   formula_percent: number | null;
   formula_relation_field_id: string | null;
+  // sum_related only -- restricts which related rows count toward the sum
+  // to ones whose own formula_condition_field_id value equals
+  // formula_condition_value (text; 'true'/'false' for a boolean field).
+  // Both null means no filter, sum every linked row (the original
+  // behaviour) -- see supabase/migrations/*_sum_related_condition_filter.sql.
+  formula_condition_field_id?: string | null;
+  formula_condition_value?: string | null;
   // Server-assigned consecutive numbering (see
   // supabase/company_table_field_sequences.sql), e.g. 'TR-' -> TR-000001.
   auto_number_prefix: string | null;

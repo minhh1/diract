@@ -154,6 +154,8 @@ export default function SchemaVisualisation() {
         formula_field_b_id: f.formula_field_b_id,
         formula_percent: f.formula_percent,
         formula_relation_field_id: f.formula_relation_field_id,
+        formula_condition_field_id: f.formula_condition_field_id,
+        formula_condition_value: f.formula_condition_value,
         allow_multiple: f.allow_multiple ?? false,
       })));
     } else {
@@ -305,6 +307,8 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
         formula_field_b_id: updates.formula_field_b_id ?? null,
         formula_percent: updates.formula_percent ?? null,
         formula_relation_field_id: updates.formula_relation_field_id ?? null,
+        formula_condition_field_id: updates.formula_condition_field_id ?? null,
+        formula_condition_value: updates.formula_condition_value ?? null,
         auto_number_prefix: updates.auto_number_prefix ?? null,
         auto_number_start: updates.auto_number_start ?? null,
         auto_number_pad: updates.auto_number_pad ?? null,
@@ -340,6 +344,8 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
         formula_type: updates.formula_type ?? null,
         formula_field_a_id: updates.formula_field_a_id ?? null,
         formula_relation_field_id: updates.formula_relation_field_id ?? null,
+        formula_condition_field_id: updates.formula_condition_field_id ?? null,
+        formula_condition_value: updates.formula_condition_value ?? null,
       })
       .eq('id', selectedFieldId);
   }

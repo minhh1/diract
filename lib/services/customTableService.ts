@@ -391,9 +391,17 @@ function relationTouches(fields: CustomTableField[], values: Record<string, any>
 // company_table_value_links, an allow_multiple field's -- a field only
 // ever has rows in one or the other, so querying both instead of checking
 // allow_multiple first is correct either way without an extra lookup),
-// summed on `sumFieldId`. Shared by both the custom-table-parent and
-// system-table-parent branches of recomputeRelatedRollups below.
-async function sumChildValues(relationFieldId: string, parentId: string, sumFieldId: string): Promise<number> {
+// summed on `sumFieldId`. `condition`, when present, restricts the sum to
+// children whose own condition.fieldId value equals condition.value (e.g.
+// a Matter's "Billable Fees" only sums Time & Fee Entries where Billable =
+// true) -- same field/value shape company_custom_fields.formula_condition_*
+// and company_table_fields.formula_condition_* store. Shared by both the
+// custom-table-parent and system-table-parent branches of
+// recomputeRelatedRollups below.
+async function sumChildValues(
+  relationFieldId: string, parentId: string, sumFieldId: string,
+  condition?: { fieldId: string; fieldType: string; value: string } | null
+): Promise<number> {
   const [{ data: scalarLinks }, { data: multiLinks }] = await Promise.all([
     supabase.from('company_table_values').select('record_id')
       .eq('field_id', relationFieldId).eq('value_record_id', parentId),
@@ -408,8 +416,20 @@ async function sumChildValues(relationFieldId: string, parentId: string, sumFiel
     .select('id')
     .in('id', childIds)
     .is('deleted_at', null);
-  const aliveIds = (alive || []).map(r => r.id);
+  let aliveIds = (alive || []).map(r => r.id);
   if (!aliveIds.length) return 0;
+
+  if (condition) {
+    const valueCol = getValueColumn(condition.fieldType);
+    const compareValue = condition.fieldType === 'boolean' ? condition.value === 'true' : condition.value;
+    const { data: condVals } = await supabase
+      .from('company_table_values')
+      .select(`record_id, ${valueCol}`)
+      .eq('field_id', condition.fieldId)
+      .in('record_id', aliveIds);
+    aliveIds = (condVals || []).filter((v: any) => v[valueCol] === compareValue).map((v: any) => v.record_id);
+    if (!aliveIds.length) return 0;
+  }
 
   const { data: vals } = await supabase
     .from('company_table_values')
@@ -417,6 +437,25 @@ async function sumChildValues(relationFieldId: string, parentId: string, sumFiel
     .eq('field_id', sumFieldId)
     .in('record_id', aliveIds);
   return (vals || []).reduce((s, v) => s + (Number(v.value_number) || 0), 0);
+}
+
+// A rollup field's optional formula_condition_field_id needs its field_type
+// looked up (to know which value column/comparison to use) -- shared by
+// both branches of recomputeRelatedRollups below.
+async function loadConditionFieldTypes(fieldIds: string[]): Promise<Map<string, string>> {
+  if (!fieldIds.length) return new Map();
+  const { data } = await supabase.from('company_table_fields').select('id, field_type').in('id', fieldIds);
+  return new Map((data || []).map(f => [f.id, f.field_type]));
+}
+
+function conditionFor(
+  rf: { formula_condition_field_id?: string | null; formula_condition_value?: string | null },
+  conditionFieldTypes: Map<string, string>
+): { fieldId: string; fieldType: string; value: string } | null {
+  if (!rf.formula_condition_field_id || rf.formula_condition_value == null) return null;
+  const fieldType = conditionFieldTypes.get(rf.formula_condition_field_id);
+  if (!fieldType) return null;
+  return { fieldId: rf.formula_condition_field_id, fieldType, value: rf.formula_condition_value };
 }
 
 // Recomputes sum_related rollup fields (e.g. Invoice Fees = sum of linked
@@ -442,6 +481,10 @@ async function recomputeRelatedRollups(
       .eq('formula_type', 'sum_related').in('formula_relation_field_id', relFieldIds).is('deleted_at', null),
   ]);
 
+  const conditionFieldIds = [...new Set([...(rollupFields || []), ...(systemRollupFields || [])]
+    .map(rf => rf.formula_condition_field_id).filter((id): id is string => !!id))];
+  const conditionFieldTypes = await loadConditionFieldTypes(conditionFieldIds);
+
   if (rollupFields?.length) {
     const parentTableIds = [...new Set(rollupFields.map(rf => rf.table_id))];
     const parentFieldsByTable = new Map<string, CustomTableField[]>();
@@ -460,7 +503,7 @@ async function recomputeRelatedRollups(
     for (const rf of rollupFields) {
       const parentIds = [...new Set(touches.filter(t => t.relationFieldId === rf.formula_relation_field_id).map(t => t.parentId))];
       for (const parentId of parentIds) {
-        const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id);
+        const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id, conditionFor(rf, conditionFieldTypes));
         const entry = parentUpdates.get(parentId) || { tableId: rf.table_id, sums: {} as Record<string, number> };
         entry.sums[rf.field_key] = sum;
         parentUpdates.set(parentId, entry);
@@ -484,7 +527,7 @@ async function recomputeRelatedRollups(
   for (const rf of (systemRollupFields || [])) {
     const parentIds = [...new Set(touches.filter(t => t.relationFieldId === rf.formula_relation_field_id).map(t => t.parentId))];
     for (const parentId of parentIds) {
-      const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id);
+      const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id, conditionFor(rf, conditionFieldTypes));
       await saveRollupValue(rf.table_name as SystemTableName, companyId, parentId, rf.id, sum);
     }
   }

@@ -119,6 +119,12 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
   const [sumChildTableId, setSumChildTableId] = useState('');
   const [sumRelationFieldOptions, setSumRelationFieldOptions] = useState<{ id: string; label: string }[]>([]);
   const [sumNumericFieldOptions, setSumNumericFieldOptions] = useState<{ id: string; label: string }[]>([]);
+  // Optional "Only where" filter -- every field on the child table is a
+  // candidate (not just numeric/relation ones), since the filter can be
+  // against a boolean (e.g. Billable), select, or any other field type.
+  // field_type/select_options are kept alongside id/label so the value
+  // input below can adapt (Yes/No toggle, dropdown, or plain text).
+  const [sumConditionFieldOptions, setSumConditionFieldOptions] = useState<{ id: string; label: string; field_type: string; select_options: string[] | null }[]>([]);
 
   const update = (key: keyof CustomField, value: any) =>
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -176,10 +182,10 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
   // system table's own name implies (project/entity/property) for a system-
   // table parent (see SYSTEM_RELATION_FIELD_TYPE below).
   useEffect(() => {
-    if (!sumChildTableId) { setSumRelationFieldOptions([]); setSumNumericFieldOptions([]); return; }
+    if (!sumChildTableId) { setSumRelationFieldOptions([]); setSumNumericFieldOptions([]); setSumConditionFieldOptions([]); return; }
     let active = true;
     const relationFieldType = draft.isCustomTable ? 'table_relation' : SYSTEM_RELATION_FIELD_TYPE[draft.table_name];
-    supabase.from('company_table_fields').select('id, field_key, label, field_type, linked_table_id')
+    supabase.from('company_table_fields').select('id, field_key, label, field_type, linked_table_id, select_options')
       .eq('table_id', sumChildTableId).is('deleted_at', null).order('display_order')
       .then(({ data }) => {
         if (!active || !data) return;
@@ -189,6 +195,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
         const numCandidates = data.filter(f => (NUMERIC_FIELD_TYPES as string[]).includes(f.field_type));
         setSumRelationFieldOptions(relCandidates.map(f => ({ id: f.id, label: f.label })));
         setSumNumericFieldOptions(numCandidates.map(f => ({ id: f.id, label: f.label })));
+        setSumConditionFieldOptions(data.map(f => ({ id: f.id, label: f.label, field_type: f.field_type, select_options: f.select_options })));
       });
     return () => { active = false; };
   }, [sumChildTableId, draft.isCustomTable, draft.table_id, draft.table_name]);
@@ -666,9 +673,13 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                         update('formula_field_b_id', null);
                         update('formula_percent', null);
                         update('formula_relation_field_id', null);
+                        update('formula_condition_field_id', null);
+                        update('formula_condition_value', null);
                         setSumChildTableId('');
                       } else if (opt.v !== 'sum_related') {
                         update('formula_relation_field_id', null);
+                        update('formula_condition_field_id', null);
+                        update('formula_condition_value', null);
                         setSumChildTableId('');
                       } else {
                         update('formula_field_b_id', null);
@@ -694,6 +705,8 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                       setSumChildTableId(e.target.value);
                       update('formula_relation_field_id', null);
                       update('formula_field_a_id', null);
+                      update('formula_condition_field_id', null);
+                      update('formula_condition_value', null);
                     }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
                   >
@@ -718,6 +731,65 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                     <option value="">Field to sum...</option>
                     {sumNumericFieldOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                   </select>
+
+                  {/* Optional "Only where" filter -- e.g. a Matter's
+                      "Billable Fees" should only sum Time & Fee Entries
+                      where Billable = Yes, not every entry. Clearing the
+                      field back to "(no filter)" also clears the value so
+                      a stale value can never linger unpaired. */}
+                  <select
+                    value={draft.formula_condition_field_id || ''}
+                    onChange={e => {
+                      update('formula_condition_field_id', e.target.value || null);
+                      update('formula_condition_value', null);
+                    }}
+                    disabled={!sumChildTableId}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none disabled:opacity-50"
+                  >
+                    <option value="">Only where (optional)...</option>
+                    {sumConditionFieldOptions.filter(f => f.id !== draft.formula_field_a_id).map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                  {draft.formula_condition_field_id && (() => {
+                    const conditionField = sumConditionFieldOptions.find(f => f.id === draft.formula_condition_field_id);
+                    if (!conditionField) return null;
+                    if (conditionField.field_type === 'boolean') {
+                      return (
+                        <div className="flex gap-2">
+                          {['true', 'false'].map(v => (
+                            <button
+                              key={v}
+                              onClick={() => update('formula_condition_value', v)}
+                              className={`flex-1 py-2 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all ${
+                                draft.formula_condition_value === v ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                              }`}
+                            >
+                              {v === 'true' ? 'Yes' : 'No'}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    }
+                    if (conditionField.field_type === 'select' && conditionField.select_options?.length) {
+                      return (
+                        <select
+                          value={draft.formula_condition_value || ''}
+                          onChange={e => update('formula_condition_value', e.target.value || null)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                        >
+                          <option value="">Equal to...</option>
+                          {conditionField.select_options.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      );
+                    }
+                    return (
+                      <input
+                        value={draft.formula_condition_value || ''}
+                        onChange={e => update('formula_condition_value', e.target.value || null)}
+                        placeholder="Equal to..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                      />
+                    );
+                  })()}
                 </div>
               )}
 
