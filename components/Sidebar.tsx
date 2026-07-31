@@ -353,7 +353,7 @@ function TreeConfigPanel({
           <>
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-                Show fields (up to 2 — numbered in order)
+                Show fields (up to 2, numbered in order)
               </p>
               <div className="space-y-1">
                 {allFields.map(f => {
@@ -502,7 +502,7 @@ function TreeConfigPanel({
           <>
             {draft.filters.length === 0 && (
               <p className="text-[11px] text-slate-400 italic">
-                No filters — all records shown
+                No filters, all records shown
               </p>
             )}
 
@@ -532,7 +532,7 @@ function TreeConfigPanel({
 
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-                Add filter — press Enter to apply
+                Add filter, press Enter to apply
               </p>
               {allFields.map(f => (
                 <div key={f.key} className="flex items-center gap-2 mb-2">
@@ -1480,7 +1480,7 @@ export default function Sidebar() {
                     onClick={() => setShowTableSettings(true)}
                     className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
                   >
-                    No tables visible — click eye to configure
+                    No tables visible, click eye to configure
                   </button>
                 )}
               </div>
@@ -1558,7 +1558,7 @@ export default function Sidebar() {
                         onClick={() => { startNavigation(); router.push('/dashboard/new/builder'); }}
                         className="w-full px-3 py-2.5 text-[11px] text-slate-300 italic text-left"
                       >
-                        No dashboards yet — click + to build one
+                        No dashboards yet, click + to build one
                       </button>
                     )}
                   </>
@@ -1740,7 +1740,7 @@ export default function Sidebar() {
                 {!itemsLoading && items.length === 0 && (
                   <p className="px-3 py-2 text-[11px] text-slate-300 italic">
                     No records
-                    {hasActiveFilters && ' — filters active'}
+                    {hasActiveFilters && ' (filters active)'}
                   </p>
                 )}
                   </>

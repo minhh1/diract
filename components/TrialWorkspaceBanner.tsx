@@ -79,7 +79,7 @@ export default function TrialWorkspaceBanner() {
     <div className="flex items-center gap-3 px-5 py-2.5 bg-amber-50 border-b border-amber-100 shrink-0">
       <FlaskConical size={14} className="text-amber-600 shrink-0" />
       <p className="text-[12px] font-medium text-amber-800 flex-1">
-        Trial workspace — try out the template, then decide.
+        Trial workspace: try out the template, then decide.
         {error && <span className="text-red-600 font-bold"> {error}</span>}
       </p>
       <button

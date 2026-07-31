@@ -199,10 +199,10 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
       {accessMode === 'specific_teams' && (
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-            Teams — tick to assign
+            Teams, tick to assign
           </p>
           {allTeams.length === 0 ? (
-            <p className="text-[11px] text-slate-400 italic">No teams found — create teams in Admin → Teams</p>
+            <p className="text-[11px] text-slate-400 italic">No teams found. Create teams in Admin → Teams</p>
           ) : (
             <div className="space-y-2">
               {allTeams.map(team => {
@@ -261,7 +261,7 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
       {accessMode === 'specific_members' && (
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-            Members — tick to assign
+            Members, tick to assign
           </p>
           {allMembers.length === 0 ? (
             <p className="text-[11px] text-slate-400 italic">No company members found</p>

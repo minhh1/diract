@@ -227,7 +227,7 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
       await admin.from("precedent_signoff_request_signers")
         .update({ status: confirmed ? "confirmed" : "declined", responded_at: new Date().toISOString() })
         .eq("id", pendingSignoff.id);
-      await reply(confirmed ? "Thanks — I've noted you'll sign this document." : "No problem, I won't include your signature.");
+      await reply(confirmed ? "Thanks, I've noted you'll sign this document." : "No problem, I won't include your signature.");
       await maybeFinalizeSignoffRequest(admin, adapter, pendingSignoff.request_id);
       return;
     }
@@ -1072,7 +1072,7 @@ async function beginOrSkipSignoffRound(
 ): Promise<string> {
   const issueDirectly = async (signerIds?: string[]) => {
     const result = await issuePrecedentDocument(admin, { ...issueParams, companyId, userId: linked.user_id, signerIds });
-    return result.ok ? `Done — issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
+    return result.ok ? `Done, issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
   };
 
   const [{ data: projectSettings }, { data: companySettings }] = await Promise.all([
@@ -1097,7 +1097,7 @@ async function beginOrSkipSignoffRound(
     const name = nameByUserId.get(signerId) || "there";
     const messageId = await adapter.sendProactive(
       account,
-      `Hi ${name} — I'm issuing "${precedentName}" for a matter you're a configured signer on. Would you like your signature included? Reply yes/no.`
+      `Hi ${name}, I'm issuing "${precedentName}" for a matter you're a configured signer on. Would you like your signature included? Reply yes/no.`
     );
     if (!messageId) { baseSignerIds.push(signerId); continue; }
     sentTo.push({ userId: signerId, name, account, messageId });
@@ -1138,7 +1138,7 @@ async function maybeFinalizeSignoffRequest(admin: any, adapter: ChannelAdapter, 
   let resultText: string;
   try {
     const result = await issuePrecedentDocument(admin, { ...issueParams, companyId: request.company_id, userId: request.requested_by, signerIds: finalSignerIds });
-    resultText = result.ok ? `Done — issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
+    resultText = result.ok ? `Done, issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
   } catch (err) {
     resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
   }
@@ -1155,38 +1155,38 @@ async function maybeFinalizeSignoffRequest(admin: any, adapter: ChannelAdapter, 
 async function executeAction(admin: any, companyId: string, userId: string, actionType: string, params: any): Promise<string> {
   if (actionType === "create_task") {
     const task = await createTask(admin, companyId, userId, params);
-    return `Done — created task "${task.name}".`;
+    return `Done, created task "${task.name}".`;
   }
   if (actionType === "update_task") {
     await updateTask(admin, companyId, userId, params);
-    return "Done — updated the task.";
+    return "Done, updated the task.";
   }
   if (actionType === "create_project") {
     const project = await createProject(admin, companyId, userId, params);
     const autoNumbers = project.autoAssigned?.map((a: { label: string; value: string }) => `${a.label}: ${a.value}`).join(", ");
-    return `Done — created project "${project.name}".${autoNumbers ? ` ${autoNumbers}.` : ""}`;
+    return `Done, created project "${project.name}".${autoNumbers ? ` ${autoNumbers}.` : ""}`;
   }
   if (actionType === "update_project") {
     await updateProject(admin, companyId, params);
-    return "Done — updated the project.";
+    return "Done, updated the project.";
   }
   if (actionType === "add_project_label") {
     const result = await addProjectLabel(admin, companyId, userId, params.projectId);
     return result.existed
       ? `That project already has a Gmail label: ${result.labelName}`
-      : `Done — created Gmail label "${result.labelName}". It'll sync to everyone's mailbox shortly.`;
+      : `Done, created Gmail label "${result.labelName}". It'll sync to everyone's mailbox shortly.`;
   }
   if (actionType === "create_file") {
     const file = await createOnedriveFile(admin, companyId, userId, params);
-    return `Done — created "${file.name}": ${file.webUrl}`;
+    return `Done, created "${file.name}": ${file.webUrl}`;
   }
   if (actionType === "update_file") {
     const file = await updateOnedriveFile(admin, companyId, params.itemId, params.content);
-    return `Done — updated the file: ${file.webUrl}`;
+    return `Done, updated the file: ${file.webUrl}`;
   }
   if (actionType === "create_appointment") {
     const booked = await bookAppointment(admin, companyId, params);
-    return `Done — booked "${params.name}" on ${params.date} at ${params.startTime}.${booked.htmlLink ? ` ${booked.htmlLink}` : ""}`;
+    return `Done, booked "${params.name}" on ${params.date} at ${params.startTime}.${booked.htmlLink ? ` ${booked.htmlLink}` : ""}`;
   }
   // issue_precedent is never routed here -- finalizeConfirmedAction handles
   // it directly via beginOrSkipSignoffRound, since it needs the channel

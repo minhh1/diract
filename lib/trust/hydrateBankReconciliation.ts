@@ -22,9 +22,9 @@ function describe(row: Record<string, any>): string {
   const type = row.type || '';
   const who = row.payor_payee || '';
   const matter = row.matterName || '';
-  if (type === 'Deposit') return who ? `${type} — ${who}` : type;
+  if (type === 'Deposit') return who ? `Deposit from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}${matter ? ` for ${matter}` : ''}` : type;
-  if (type === 'Journal Transfer') return matter ? `Transfer — ${matter}` : type;
+  if (type === 'Journal Transfer') return matter ? `Transfer (${matter})` : type;
   return type || '—';
 }
 

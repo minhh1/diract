@@ -509,7 +509,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
                     >
-                      <option value="">No restriction — show all</option>
+                      <option value="">No restriction, show all</option>
                       {FILTER_COLUMNS[draft.linked_table].map(col => (
                         <option key={col} value={col}>{col === 'linked_profile_id' ? 'Signed-in user only' : prettifyColumn(col)}</option>
                       ))}
@@ -531,12 +531,12 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                           className="w-full mt-2 bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
                         >
                           <option value={CURRENT_USER_SENTINEL}>Signed-in user only</option>
-                          <option value={TEAM_SCOPE_SENTINEL}>Company members — admin sees all, others see only themselves</option>
+                          <option value={TEAM_SCOPE_SENTINEL}>Company members (admin sees all, others see only themselves)</option>
                         </select>
                         <p className="mt-2 bg-indigo-50 border border-indigo-100 rounded-2xl py-2 px-3 text-[11px] font-medium text-indigo-700">
                           {draft.linked_filter_value === TEAM_SCOPE_SENTINEL
                             ? 'Restricted to entity_type = Staff. A company admin can pick anyone (bill as someone else); everyone else can only pick themselves.'
-                            : 'Only shows (and auto-fills) the entity linked to whoever is signed in — each person only sees their own, via the entity’s “Link to a team member” on its detail page.'}
+                            : 'Only shows (and auto-fills) the entity linked to whoever is signed in. Each person only sees their own, via the entity’s “Link to a team member” on its detail page.'}
                         </p>
                       </>
                     ) : draft.linked_filter_column ? (
@@ -839,7 +839,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
 
               {draft.formula_type && (
                 <p className="text-[10px] text-slate-400 px-1">
-                  Auto-calculated — not editable by hand once saved.
+                  Auto-calculated, not editable by hand once saved.
                 </p>
               )}
             </div>
@@ -909,8 +909,8 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
             Constraints
           </label>
           {[
-            { key: 'is_required',   label: 'Required — must have a value' },
-            { key: 'is_unique',     label: 'Unique — no two records can share this value' },
+            { key: 'is_required',   label: 'Required (must have a value)' },
+            { key: 'is_unique',     label: 'Unique (no two records can share this value)' },
             { key: 'show_in_table', label: 'Show in master table columns' },
           ].map(constraint => (
             <label key={constraint.key} className="flex items-center gap-3 cursor-pointer group">

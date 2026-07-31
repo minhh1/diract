@@ -65,7 +65,7 @@ export default function SourceEmailManager({ sourceEmails, connectedEmails, onCh
       <div className="space-y-2">
         {sourceEmails.length === 0 && (
           <p className="text-[11px] text-slate-400 italic px-1">
-            No source email nominated — sync will use the first connected user found.
+            No source email nominated. Sync will use the first connected user found.
           </p>
         )}
         {sourceEmails.map(email => (

@@ -205,7 +205,7 @@ export default function FilterPanel({ fields, filters, onChange }: Props) {
     <div className="space-y-2">
       {filters.length === 0 && (
         <p className="text-[11px] text-slate-400 italic px-1">
-          No filters active — all records shown
+          No filters active, all records shown
         </p>
       )}
 

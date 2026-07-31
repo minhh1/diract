@@ -1,7 +1,7 @@
 // app/terms/page.tsx
 import Link from "next/link";
 
-export const metadata = { title: "Terms of Service — Diract" };
+export const metadata = { title: "Terms of Service | Diract" };
 
 export default function TermsPage() {
   return (
@@ -12,7 +12,7 @@ export default function TermsPage() {
         </Link>
 
         <h1 className="text-3xl font-light tracking-tight text-slate-900 mb-2">Terms of Service</h1>
-        <p className="text-sm text-slate-400 mb-10">Diract — Management Central · Last updated: July 2026</p>
+        <p className="text-sm text-slate-400 mb-10">Diract: Management Central · Last updated: July 2026</p>
 
         <div className="space-y-8 text-slate-600 text-sm leading-relaxed">
 

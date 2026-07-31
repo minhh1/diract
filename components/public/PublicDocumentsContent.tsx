@@ -449,12 +449,12 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
                 </div>
                 {isNa ? (
                   <div className="w-full px-4 py-2.5 border border-dashed border-slate-200 rounded-full text-[13px] text-slate-400 italic">
-                    Not applicable — will be left blank
+                    Not applicable, will be left blank
                   </div>
                 ) : f.fieldType === "select" && Array.isArray(f.selectOptions) ? (
                   <select value={values[f.tagKey] || ""} onChange={e => setValue(f.tagKey, e.target.value)}
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white focus:border-indigo-400">
-                    <option value="">— Select —</option>
+                    <option value="">Select...</option>
                     {f.selectOptions.map((opt, i) => <option key={i} value={opt}>{opt}</option>)}
                   </select>
                 ) : f.fieldType === "multiselect" && Array.isArray(f.selectOptions) ? (
@@ -516,7 +516,7 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
               <div key={ri} className="bg-white rounded-[24px] border border-emerald-200 p-6 space-y-3">
                 <div className="flex items-center gap-2">
                   <Check size={16} className="text-emerald-500 shrink-0" />
-                  <p className="text-[12px] font-bold text-slate-800">{r.label} — ready</p>
+                  <p className="text-[12px] font-bold text-slate-800">{r.label} is ready</p>
                 </div>
                 <div className="space-y-2">
                   {r.files.map((f, i) => (

@@ -192,7 +192,7 @@ export default function DashboardFilterBar({
                         onClick={() => onClearViewDefault?.(field.id)}
                         className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 px-1"
                       >
-                        ✓ Default view — click to remove
+                        ✓ Default view, click to remove
                       </button>
                     ) : (
                       <button

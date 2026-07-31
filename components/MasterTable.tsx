@@ -72,7 +72,7 @@ export interface MasterTableProps {
 
 function errorMessage(code: string): string {
   switch (code) {
-    case '23505': return "A record with this value already exists — this field must be unique.";
+    case '23505': return "A record with this value already exists. This field must be unique.";
     case '23503': return "This value references a record that doesn't exist.";
     case '23514': return "This value isn't valid for this field (check format or allowed values).";
     case '42501': return "You don't have permission to edit this field.";
@@ -298,7 +298,7 @@ function MasterTableRow({
                       className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full shrink-0 transition-all ${
                         childrenExpanded ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                       }`}
-                      title={childrenExpanded ? 'Collapse sub-projects' : `${childCount} sub-project${childCount === 1 ? '' : 's'} — click to expand`}
+                      title={childrenExpanded ? 'Collapse sub-projects' : `${childCount} sub-project${childCount === 1 ? '' : 's'}, click to expand`}
                     >
                       <Baby size={13} />
                       <span className="text-[9px] font-bold">{childCount}</span>
@@ -550,7 +550,7 @@ export default function MasterTable({
       if (!window.confirm(`Request archiving ${label}? A company admin will need to approve it.`)) return;
       const result = await createArchiveRequest(baseTable as ArchiveEntityTable, item.id, label, companyId!);
       if (!result.ok) { alert(result.error); return; }
-      alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Archive requested — a company admin will review it.");
+      alert(result.alreadyPending ? "Already requested, waiting on admin review." : "Archive requested, a company admin will review it.");
       refreshPendingArchiveRequests();
       onRowMutated?.();
       return;

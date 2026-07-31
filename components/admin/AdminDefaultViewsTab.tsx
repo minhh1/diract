@@ -244,7 +244,7 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
         {/* Content */}
         {!view && !isEditing && (
           <div className="px-5 py-4 text-center">
-            <p className="text-[11px] text-slate-300 italic mb-2">No default set — system defaults apply</p>
+            <p className="text-[11px] text-slate-300 italic mb-2">No default set, system defaults apply</p>
             <button onClick={() => startEdit({ id: '', table_slug: slug, columns: [], expansion_columns: [], filters: [], preset_name: 'Default view', updated_at: '' })}
               className="text-[11px] text-indigo-500 font-medium hover:text-indigo-700">
               + Set default
@@ -313,7 +313,7 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
                 </button>
               </div>
               {(editDraft.filters || []).length === 0 && (
-                <p className="text-[11px] text-slate-300 italic">No filters — click Add filter above</p>
+                <p className="text-[11px] text-slate-300 italic">No filters yet. Click Add filter above</p>
               )}
               <div className="space-y-2">
                 {(editDraft.filters || []).map((f: any, idx: number) => {
@@ -380,7 +380,7 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
             </div>
 
             <p className="text-[10px] text-slate-400 italic">
-              Note: Column order is set by admins using the column config drawer in the master table — this panel manages filters and preset name only.
+              Note: Column order is set by admins using the column config drawer in the master table; this panel manages filters and preset name only.
             </p>
           </div>
         )}

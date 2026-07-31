@@ -50,7 +50,7 @@ export default function ArchiveSettingsManager({
           <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-100 rounded-2xl">
             <AlertTriangle size={13} className="text-amber-500 shrink-0 mt-0.5" />
             <p className="text-[11px] text-amber-700">
-              No archive account nominated yet — archiving is disabled until you add at least one.
+              No archive account nominated yet. Archiving is disabled until you add at least one.
             </p>
           </div>
         )}

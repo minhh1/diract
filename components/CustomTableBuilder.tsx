@@ -130,7 +130,7 @@ export default function CustomTableBuilder() {
 
     if (!window.confirm(
       fieldIds.length > 0
-        ? `Delete "${label}"? It has ${fieldIds.length} field${fieldIds.length === 1 ? '' : 's'} added to it. This hides it and moves those fields to Trash — nothing is deleted permanently, and you can restore it from there.`
+        ? `Delete "${label}"? It has ${fieldIds.length} field${fieldIds.length === 1 ? '' : 's'} added to it. This hides it and moves those fields to Trash; nothing is deleted permanently, and you can restore it from there.`
         : `Delete "${label}"? This hides it and can be restored later from Trash.`
     )) return;
 
@@ -209,7 +209,7 @@ export default function CustomTableBuilder() {
       if (!companyId) return;
       const result = await createArchiveRequest("company_tables", tableId, `Table: ${tableName}`, companyId);
       if (!result.ok) { window.alert(result.error); return; }
-      window.alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Deletion requested — a company admin will review it.");
+      window.alert(result.alreadyPending ? "Already requested. Waiting on admin review." : "Deletion requested. A company admin will review it.");
       refreshPendingArchiveRequests();
       return;
     }
@@ -222,7 +222,7 @@ export default function CustomTableBuilder() {
     const recordCount = count ?? 0;
 
     const warning = recordCount > 0
-      ? `Delete "${tableName}"? It has ${recordCount} record${recordCount === 1 ? '' : 's'}. This moves it to Trash — nothing is deleted permanently, and you can restore it (with its records) from there.`
+      ? `Delete "${tableName}"? It has ${recordCount} record${recordCount === 1 ? '' : 's'}. This moves it to Trash; nothing is deleted permanently, and you can restore it (with its records) from there.`
       : `Delete "${tableName}"? This moves it to Trash and can be restored later.`;
     if (!window.confirm(warning)) return;
 

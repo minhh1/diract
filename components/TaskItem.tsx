@@ -48,7 +48,7 @@ export default function TaskItem({ task, onRefresh }: { task: any; onRefresh: ()
       const result = await createArchiveRequest("tasks", task.id, task.name, companyId);
       if (!result.ok) { alert(result.error); return; }
       setHasPendingArchiveRequest(true);
-      alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Archive requested — a company admin will review it.");
+      alert(result.alreadyPending ? "Already requested, waiting on admin review." : "Archive requested. A company admin will review it.");
       return;
     }
 

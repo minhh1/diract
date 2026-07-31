@@ -124,7 +124,7 @@ export default function AdminDefaultTabsTab({ companyId, scope }: Props) {
     if (rpcError) { setError(rpcError.message); return; }
     setAdding(false);
     await load();
-    window.alert(`Added — this tab now shows on ${count ?? 0} existing Matter${count === 1 ? '' : 's'}, and every new one going forward.`);
+    window.alert(`Added. This tab now shows on ${count ?? 0} existing Matter${count === 1 ? '' : 's'}, and every new one going forward.`);
   };
 
   const startRemove = async (row: DefaultTabRow) => {
@@ -158,14 +158,14 @@ export default function AdminDefaultTabsTab({ companyId, scope }: Props) {
         <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3">
           <Info size={14} className="text-amber-500 shrink-0 mt-0.5" />
           <p className="text-[11px] text-amber-700">
-            Default tabs are company-wide only — the team/person scope you picked above doesn&apos;t apply here.
+            Default tabs are company-wide only; the team/person scope you picked above doesn&apos;t apply here.
           </p>
         </div>
       )}
       <div>
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">What every Matter gets</p>
         <p className="text-[11px] text-slate-400 mb-4">
-          These tabs are added automatically to every Matter — existing and new. Built-in ones always apply once
+          These tabs are added automatically to every Matter, existing and new. Built-in ones always apply once
           their table exists; additional ones are yours to configure below.
         </p>
 
@@ -174,7 +174,7 @@ export default function AdminDefaultTabsTab({ companyId, scope }: Props) {
             {builtInPresent.map(b => (
               <div key={b.slug} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3">
                 <p className="text-[12px] font-bold text-slate-700">{b.title}</p>
-                <span className="text-[10px] text-slate-400">Always included — not editable here</span>
+                <span className="text-[10px] text-slate-400">Always included, not editable here</span>
               </div>
             ))}
           </div>
@@ -272,7 +272,7 @@ export default function AdminDefaultTabsTab({ companyId, scope }: Props) {
               )}
               {linkCandidates.length === 0 && (
                 <p className="text-[11px] text-amber-600">
-                  This table has no field linking back to Matters — add a Matter relation field to it first.
+                  This table has no field linking back to Matters; add a Matter relation field to it first.
                 </p>
               )}
             </>

@@ -1240,7 +1240,7 @@ export default function RecordDashboard({
       const result = await createArchiveRequest(entityTable as ArchiveEntityTable, recordId, label, companyId);
       if (!result.ok) { alert(result.error); return; }
       setHasPendingArchiveRequest(true);
-      alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Archive requested — a company admin will review it.");
+      alert(result.alreadyPending ? "Already requested, waiting on admin review." : "Archive requested, a company admin will review it.");
       return;
     }
 

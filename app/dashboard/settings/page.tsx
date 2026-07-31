@@ -329,7 +329,7 @@ function SettingsPageInner() {
     if (view === 'schema') return 'Schema configuration';
     if (view === 'history') return 'Import history';
     if (view === 'duplicates_menu') return 'Duplicates';
-    if (view === 'duplicates_view') return `Duplicates — ${dupTypeLabel(activeDupType)}`;
+    if (view === 'duplicates_view') return `Duplicates: ${dupTypeLabel(activeDupType)}`;
     if (view === 'public_pages') return 'Public pages';
     if (view === 'precedents') return 'Precedents';
     if (view === 'invoice_template') return 'Invoice template';

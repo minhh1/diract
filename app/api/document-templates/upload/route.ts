@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     const zip = new PizZip(bytes);
     const docFile = zip.file("word/document.xml");
     if (!docFile) {
-      return NextResponse.json({ error: "This .docx file looks corrupted — word/document.xml is missing" }, { status: 400 });
+      return NextResponse.json({ error: "This .docx file looks corrupted: word/document.xml is missing" }, { status: 400 });
     }
     tags = extractTags(docFile.asText());
   } catch {

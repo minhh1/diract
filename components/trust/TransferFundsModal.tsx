@@ -42,7 +42,7 @@ export default function TransferFundsModal({
       matter: fromMatterId, amount_out: amt, payor_payee: toMatterLabel, purpose: reason.trim() || `Transfer to ${toMatterLabel}`,
     }, trustTable.fields);
     if (!out || 'error' in out) {
-      setError((out && 'error' in out && out.error) || 'Could not record the transfer — please try again.');
+      setError((out && 'error' in out && out.error) || 'Could not record the transfer, please try again.');
       setSaving(false);
       return;
     }
@@ -52,7 +52,7 @@ export default function TransferFundsModal({
     }, trustTable.fields);
     setSaving(false);
     if (!inRes || 'error' in inRes) {
-      setError((inRes && 'error' in inRes && inRes.error) || 'Withdrawal recorded, but the matching deposit failed — please check the ledger.');
+      setError((inRes && 'error' in inRes && inRes.error) || 'Withdrawal recorded, but the matching deposit failed. Please check the ledger.');
       return;
     }
     onTransferred();

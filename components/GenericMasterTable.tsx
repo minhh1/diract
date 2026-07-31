@@ -1159,7 +1159,7 @@ function GenericMasterTableInner({
               <div className="flex items-center gap-2 mb-3">
                 <AlertTriangle size={14} className="text-amber-500" />
                 <span className="text-[11px] font-bold text-amber-700">
-                  {needsReviewItems.length} {pageTitle.toLowerCase()} record{needsReviewItems.length === 1 ? '' : 's'} need review — created from Gmail without a picker
+                  {needsReviewItems.length} {pageTitle.toLowerCase()} record{needsReviewItems.length === 1 ? '' : 's'} need review, created from Gmail without a picker
                 </span>
               </div>
               <div className="space-y-2">

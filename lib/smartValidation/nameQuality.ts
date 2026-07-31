@@ -124,7 +124,7 @@ export function checkEntityTrustStructure(name: string): NameSuggestion | null {
   if (!trusteeName || !trustName) return null;
   return {
     id: "atf-trust-split",
-    message: `I'll add "${trustName}" as a linked trust for you — pick its trust type below to finish.`,
+    message: `I'll add "${trustName}" as a linked trust for you. Pick its trust type below to finish.`,
     actionLabel: "Split into trustee + trust",
     apply: () => ({ trusteeName, trustName }),
   };

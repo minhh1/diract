@@ -107,9 +107,9 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     const result = detectSectionFromHeaders(firstLine, sections);
     if (result && result.section.key !== sectionKey) {
       setSectionKey(result.section.key);
-      setDetectedNotice(`Detected "${result.section.title}" from this file's columns — switched automatically.`);
+      setDetectedNotice(`Detected "${result.section.title}" from this file's columns, switched automatically.`);
     } else if (!result) {
-      setDetectedNotice(`Couldn't automatically detect section — please confirm above.`);
+      setDetectedNotice(`Couldn't automatically detect section, please confirm above.`);
     }
   };
 
@@ -312,7 +312,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
         if (!existingProperty) {
           warnings.set(
             row.rowIndex,
-            `Property "${refAddress}" not found — a new minimal property record will be created.`
+            `Property "${refAddress}" not found, a new minimal property record will be created.`
           );
         }
         actions.set(row.rowIndex, 'include');
@@ -440,11 +440,11 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
               Data synchronization
             </h2>
             <p className="text-[11px] text-slate-400 mt-1 font-medium">
-              {stage === 'upload' && 'Step 1 of 3 — choose a section and file'}
+              {stage === 'upload' && 'Step 1 of 3: choose a section and file'}
               {stage === 'checking' && 'Checking for duplicates and parent records...'}
-              {stage === 'review' && 'Step 2 of 3 — review before committing'}
+              {stage === 'review' && 'Step 2 of 3: review before committing'}
               {stage === 'committing' && 'Writing records...'}
-              {stage === 'results' && 'Step 3 of 3 — import complete'}
+              {stage === 'results' && 'Step 3 of 3: import complete'}
             </p>
           </div>
           <button
@@ -516,7 +516,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
                   <div className="flex items-center gap-2 mb-3">
                     <FileText size={14} className="text-slate-400" />
                     <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                      File preview — {csvPreviewHeaders.length} columns detected
+                      File preview ({csvPreviewHeaders.length} columns detected)
                     </p>
                   </div>
                   <div className="overflow-x-auto rounded-2xl border border-slate-200">

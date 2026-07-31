@@ -155,7 +155,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ rec
     invoiceTotal: money(invoice.total_inc_gst ?? invoice.subtotal),
     start: ledesDate(invoice.period_start) || ledesDate(invoice.issue_date),
     end: ledesDate(invoice.period_end) || ledesDate(invoice.issue_date),
-    description: ledesText(`Professional fees and disbursements${matter?.name ? ` — ${matter.name}` : ''}`),
+    description: ledesText(`Professional fees and disbursements${matter?.name ? ` for ${matter.name}` : ''}`),
     firmId: ledesText(company?.name),
     clientMatterId: ledesText(matter?.name),
   };

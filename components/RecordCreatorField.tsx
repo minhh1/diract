@@ -133,7 +133,7 @@ export default function RecordCreatorField({
         <Icon size={14} className="text-slate-400 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-            {label} — {primaryLabel}
+            {label} ({primaryLabel})
           </p>
           <input
             value={primaryValue}

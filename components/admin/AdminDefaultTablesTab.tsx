@@ -81,7 +81,7 @@ export default function AdminDefaultTablesTab({ companyId, scope }: Props) {
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Default tables</p>
       <p className="text-[11px] text-slate-400 mb-4">
         {isCompanyScope
-          ? "A default table is mandatory in every member's sidebar — they can't hide or remove it, only an admin can."
+          ? "A default table is mandatory in every member's sidebar; they can't hide or remove it, only an admin can."
           : "Adding a table here adds it to this scope's sidebar in addition to whatever's already a company-wide default."}
       </p>
       <div className="space-y-2">

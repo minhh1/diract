@@ -702,7 +702,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                       className="text-slate-300 hover:text-indigo-600 disabled:opacity-20 transition-colors"><ChevronDown size={12} /></button>
                   </div>
                   {f.is_branch_only ? (
-                    <span title="Not in the document — used only to decide what to show next"
+                    <span title="Not in the document, used only to decide what to show next"
                       className="shrink-0 px-2 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-bold uppercase tracking-widest">
                       Branching only
                     </span>
@@ -769,7 +769,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                   <div className="relative shrink-0">
                     <button onClick={() => { setTriggerFieldId(triggerFieldId === f.id ? null : f.id); setTriggerQuery(""); }}
                       title={f.trigger_field_id
-                        ? `Combined with {{${triggerField?.tag_key ?? "?"}}}${f.trigger_value ? ` — only shown when that's ${f.trigger_value.split("||").map(v => `"${v}"`).join(" or ")}` : " — only shown once that's answered"}. Click to change.`
+                        ? `Combined with {{${triggerField?.tag_key ?? "?"}}}${f.trigger_value ? ` (only shown when that's ${f.trigger_value.split("||").map(v => `"${v}"`).join(" or ")})` : " (only shown once that's answered)"}. Click to change.`
                         : "Combine with another field in this document, so this one only appears once the other is answered"}
                       className={`p-1.5 rounded-lg transition-colors ${f.trigger_field_id || triggerFieldId === f.id ? "bg-indigo-100 text-indigo-600" : "text-slate-400 hover:text-indigo-600 hover:bg-slate-50"}`}>
                       <Combine size={13} />
@@ -825,7 +825,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                                   placeholder="Options (comma-separated)"
                                   className="w-full px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />
                               )}
-                              <p className="text-[9px] text-slate-300 px-1">Not in the document — used only to decide what to show next.</p>
+                              <p className="text-[9px] text-slate-300 px-1">Not in the document, used only to decide what to show next.</p>
                               <div className="flex gap-1.5 pt-1">
                                 <button onClick={() => { setNewQuestionOpen(false); setTriggerFieldId(null); }}
                                   className="flex-1 py-2 text-[11px] text-slate-500 hover:bg-slate-50 rounded-full">Cancel</button>
@@ -1101,7 +1101,7 @@ function CreateLinkModal({ projectId, templates, onClose, onCreated }: {
               </div>
             )}
             <p className="text-[10px] text-slate-400 mt-1.5">
-              The client must enter this code before they can view or submit the form — share it separately from the link itself.
+              The client must enter this code before they can view or submit the form. Share it separately from the link itself.
             </p>
           </div>
 

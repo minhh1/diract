@@ -421,7 +421,7 @@ function EditInvoiceModal({
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Status</label>
           {status === 'Void' ? (
             <p className="text-[12px] text-slate-400 bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4">
-              Void — use the Ban icon to void an invoice (releases its fees/disbursements back to unbilled)
+              Void. Use the Ban icon to void an invoice (releases its fees/disbursements back to unbilled)
             </p>
           ) : (
             <select value={status} onChange={e => setStatus(e.target.value)}
@@ -525,7 +525,7 @@ function RecordPaymentModal({
 
     const result = await createCustomRecord(receiptsTableId, companyId, user?.id || '', receiptValues, receiptsFields);
     if (!result || 'error' in result) {
-      setError((result && 'error' in result && result.error) || 'Could not record this receipt — please try again.');
+      setError((result && 'error' in result && result.error) || 'Could not record this receipt. Please try again.');
       setSaving(false);
       return;
     }

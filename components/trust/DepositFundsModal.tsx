@@ -70,7 +70,7 @@ export default function DepositFundsModal({
     // r47: trust receipts must record the payor's identifying details --
     // an address is required, filled in on the entity itself if missing.
     const address = entityAddress || addressInput.trim();
-    if (!address) { setError("This contact has no address on file — enter one to record the deposit."); return; }
+    if (!address) { setError("This contact has no address on file. Enter one to record the deposit."); return; }
     const validRows = rows.filter(r => r.matterId && (parseFloat(r.amount) || 0) > 0);
     if (!validRows.length) { setError('Allocate the deposit to at least one matter.'); return; }
 
@@ -90,7 +90,7 @@ export default function DepositFundsModal({
       if (sharedReceiptNumber) values.receipt_number = sharedReceiptNumber;
       const result = await createCustomRecord(trustTable.tableDef!.id, companyId, userId, values, trustTable.fields);
       if (!result || 'error' in result) {
-        setError((result && 'error' in result && result.error) || 'Could not record this deposit — please try again.');
+        setError((result && 'error' in result && result.error) || 'Could not record this deposit, please try again.');
         setSaving(false);
         return;
       }

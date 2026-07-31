@@ -104,7 +104,7 @@ export default function PublicTaskPagesTab() {
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                {SCOPE_LABELS[p.scope]}{p.teamName ? ` — ${p.teamName}` : ""} · by {p.createdBy}
+                {SCOPE_LABELS[p.scope]}{p.teamName ? ` (${p.teamName})` : ""} · by {p.createdBy}
                 {p.expiresAt ? ` · expires ${new Date(p.expiresAt).toLocaleDateString()}` : " · no expiry"}
               </p>
             </div>
@@ -239,7 +239,7 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Team</p>
               <select value={teamId} onChange={e => setTeamId(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-                <option value="">— Select team —</option>
+                <option value="">Select team...</option>
                 {teamOptions.map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
               </select>
             </div>
@@ -268,7 +268,7 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none disabled:opacity-40" />
             <label className="flex items-center gap-2 mt-2 cursor-pointer">
               <input type="checkbox" checked={noExpiry} onChange={e => setNoExpiry(e.target.checked)} />
-              <span className="text-[11px] text-slate-500">No expiry (not recommended — leaves this link open indefinitely)</span>
+              <span className="text-[11px] text-slate-500">No expiry (not recommended, leaves this link open indefinitely)</span>
             </label>
           </div>
 
@@ -350,7 +350,7 @@ function EditPageModal({ page, onClose, onSaved }: { page: Page; onClose: () => 
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none disabled:opacity-40" />
             <label className="flex items-center gap-2 mt-2 cursor-pointer">
               <input type="checkbox" checked={noExpiry} onChange={e => setNoExpiry(e.target.checked)} />
-              <span className="text-[11px] text-slate-500">No expiry (not recommended — leaves this link open indefinitely)</span>
+              <span className="text-[11px] text-slate-500">No expiry (not recommended, leaves this link open indefinitely)</span>
             </label>
           </div>
 

@@ -71,7 +71,7 @@ export default function CanvasEditor({ widgets, onChange, fields, fieldById, rec
 
       {widgets.length === 0 ? (
         <p className="text-center text-[11px] text-slate-300 italic py-16 border border-dashed border-slate-200 rounded-2xl">
-          No widgets yet — click "Add widget" to start building
+          No widgets yet. Click "Add widget" to start building
         </p>
       ) : (
         <div ref={containerRef}>

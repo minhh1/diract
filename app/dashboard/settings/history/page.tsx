@@ -68,7 +68,7 @@ export default function SchemaHistoryPage() {
   }, [loading]);
 
   const handleRevert = async (entry: LogEntry) => {
-    if (!window.confirm(`Revert to right after "${entry.entity_label || entry.entity_type}" (${entry.action})? This undoes every schema change made since then — table/field shape only, not data.`)) return;
+    if (!window.confirm(`Revert to right after "${entry.entity_label || entry.entity_type}" (${entry.action})? This undoes every schema change made since then: table/field shape only, not data.`)) return;
     setRevertingSeq(entry.seq);
     const res = await fetch('/api/schema/revert', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -86,7 +86,7 @@ export default function SchemaHistoryPage() {
         <Clock size={22} className="text-indigo-600" />
         <div>
           <h1 className="text-xl font-light uppercase tracking-tight text-slate-900">Schema history</h1>
-          <p className="text-[11px] text-slate-400">Every table/field created, renamed, or deleted — revert back to any point.</p>
+          <p className="text-[11px] text-slate-400">Every table/field created, renamed, or deleted. Revert back to any point.</p>
         </div>
       </div>
 

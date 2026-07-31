@@ -45,7 +45,7 @@ export default function CustomTableMasterView({
 
   const openCreate = () => {
     if (!createFields.length) {
-      window.alert('Add a field to this table first — records can\'t be created empty.');
+      window.alert('Add a field to this table first. Records can\'t be created empty.');
       return;
     }
     setIsCreating(true);
@@ -77,7 +77,7 @@ export default function CustomTableMasterView({
       if (!companyId) return;
       const result = await createArchiveRequest("company_table_records", record.id, String(label), companyId);
       if (!result.ok) { window.alert(result.error); return; }
-      window.alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Archive requested — a company admin will review it.");
+      window.alert(result.alreadyPending ? "Already requested. Waiting on admin review." : "Archive requested. A company admin will review it.");
       refreshPendingArchiveRequests();
       return;
     }

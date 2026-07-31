@@ -359,7 +359,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               {teams.map(t => <option key={t.id} value={t.id}>{t.team_name}&apos;s leader only</option>)}
             </select>
             {restrictedToTeamId && (
-              <p className="text-[10px] text-slate-400 mt-1 px-1">Only that team&apos;s leader and company admins can see this dashboard — not the whole team. Change the leader in Admin → Teams.</p>
+              <p className="text-[10px] text-slate-400 mt-1 px-1">Only that team&apos;s leader and company admins can see this dashboard, not the whole team. Change the leader in Admin → Teams.</p>
             )}
           </div>
         )}
@@ -418,7 +418,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               <Share2 size={13} /> Public pages
             </button>
           </div>
-          {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation — delete and recreate to switch.</p>}
+          {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation. Delete and recreate to switch.</p>}
         </div>
 
         {dashboardKind === 'data' ? (
@@ -436,10 +436,10 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
               ))}
               {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation — delete and recreate to switch tables.</p>}
+            {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation. Delete and recreate to switch tables.</p>}
           </div>
         ) : (
-          <p className="text-[10px] text-slate-400 px-1">No table needed — add Public task page / Public document page widgets below to link to pages you've already created.</p>
+          <p className="text-[10px] text-slate-400 px-1">No table needed. Add Public task page / Public document page widgets below to link to pages you've already created.</p>
         )}
       </div>
 

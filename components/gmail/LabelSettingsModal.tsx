@@ -277,7 +277,7 @@ export default function LabelSettingsModal({
                 {' / '}
                 <span className="text-slate-600">{sublabel}</span>
                 {' '}
-                <span className="text-slate-400">[AB12C] — unique code auto-generated per project</span>
+                <span className="text-slate-400">[AB12C]: unique code auto-generated per project</span>
               </p>
             </div>
           </div>
@@ -286,7 +286,7 @@ export default function LabelSettingsModal({
           <div className="flex gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
             <Info size={13} className="text-amber-500 shrink-0 mt-0.5" />
             <p className="text-[11px] text-amber-700 leading-relaxed">
-              Changing these settings only affects <strong>new</strong> labels. Existing labels keep their original format — the unique code ensures the system can still track them.
+              Changing these settings only affects <strong>new</strong> labels. Existing labels keep their original format, since the unique code ensures the system can still track them.
             </p>
           </div>
 

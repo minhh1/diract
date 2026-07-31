@@ -199,7 +199,7 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
                 className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
               >
                 <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}</p>
-                <p className="text-[10px] text-slate-400 truncate">{SCOPE_LABELS[p.scope] || p.scope}{p.teamName ? ` — ${p.teamName}` : ''}</p>
+                <p className="text-[10px] text-slate-400 truncate">{SCOPE_LABELS[p.scope] || p.scope}{p.teamName ? ` (${p.teamName})` : ''}</p>
               </button>
             ))}
           </div>
@@ -218,7 +218,7 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
     return (
       <div className="space-y-3">
         <p className="text-[11px] text-slate-400">
-          Shows tasks assigned to whoever opens this page, plus unallocated ones — anyone with the link can also assign a new task to any company member, not just themself. Only visible/actionable within projects the viewer has access to.
+          Shows tasks assigned to whoever opens this page, plus unallocated ones. Anyone with the link can also assign a new task to any company member, not just themself. Only visible/actionable within projects the viewer has access to.
         </p>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Title</label>
@@ -253,7 +253,7 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
     const otherPages = (pages || []).filter(p => p.isActive && p.id !== pageId);
     return (
       <div className="space-y-3">
-        <p className="text-[11px] text-slate-400">Point this widget at a different existing page — the widget itself is unaffected, revoke and copy still apply to whichever page you pick.</p>
+        <p className="text-[11px] text-slate-400">Point this widget at a different existing page. The widget itself is unaffected; revoke and copy still apply to whichever page you pick.</p>
         {pages === null ? (
           <p className="text-[11px] text-slate-300 italic py-2">Loading...</p>
         ) : otherPages.length === 0 ? (
@@ -267,7 +267,7 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
                 className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
               >
                 <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}</p>
-                <p className="text-[10px] text-slate-400 truncate">{SCOPE_LABELS[p.scope] || p.scope}{p.teamName ? ` — ${p.teamName}` : ''}</p>
+                <p className="text-[10px] text-slate-400 truncate">{SCOPE_LABELS[p.scope] || p.scope}{p.teamName ? ` (${p.teamName})` : ''}</p>
               </button>
             ))}
           </div>
@@ -348,7 +348,7 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
   return (
     <div className="space-y-3">
       {revoked ? (
-        <p className="text-[11px] text-red-500 font-medium">Revoked — the link no longer works.</p>
+        <p className="text-[11px] text-red-500 font-medium">Revoked. The link no longer works.</p>
       ) : (
         <>
           <div className="px-4 py-3 bg-slate-50 rounded-2xl">
@@ -416,7 +416,7 @@ function PublicDocumentPageConfig({ pageId, onPageIdChange }: { pageId: string |
         {pages === null ? (
           <p className="text-[11px] text-slate-300 italic py-2">Loading...</p>
         ) : pages.length === 0 ? (
-          <p className="text-[11px] text-slate-300 italic py-2">No active document links yet — generate one from a matter's Documents tab first.</p>
+          <p className="text-[11px] text-slate-300 italic py-2">No active document links yet. Generate one from a matter's Documents tab first.</p>
         ) : (
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {pages.map(p => (
@@ -425,7 +425,7 @@ function PublicDocumentPageConfig({ pageId, onPageIdChange }: { pageId: string |
                 onClick={() => onPageIdChange(p.id)}
                 className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
               >
-                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.clientName ? ` — ${p.clientName}` : ''}</p>
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.clientName ? ` (${p.clientName})` : ''}</p>
                 {p.projectName && <p className="text-[10px] text-slate-400 truncate">{p.projectName}</p>}
               </button>
             ))}
@@ -439,7 +439,7 @@ function PublicDocumentPageConfig({ pageId, onPageIdChange }: { pageId: string |
   const url = typeof window !== 'undefined' ? `${window.location.origin}/public/documents/${pageId}` : `/public/documents/${pageId}`;
   return (
     <div className="space-y-3">
-      {selected && <p className="text-[12px] font-bold text-slate-800">{selected.title}{selected.clientName ? ` — ${selected.clientName}` : ''}</p>}
+      {selected && <p className="text-[12px] font-bold text-slate-800">{selected.title}{selected.clientName ? ` (${selected.clientName})` : ''}</p>}
       <div className="px-4 py-3 bg-slate-50 rounded-2xl">
         <code className="text-[11px] text-slate-600 break-all">{url}</code>
       </div>
@@ -541,7 +541,7 @@ function PublicClientUpdatePageConfig({ slug, onSlugChange }: { slug: string | n
                 onClick={() => { onSlugChange(p.slug); setMode('view'); }}
                 className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
               >
-                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.client_label ? ` — ${p.client_label}` : ''}</p>
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.client_label ? ` (${p.client_label})` : ''}</p>
                 <p className="text-[10px] text-slate-400 truncate">{p.matterCount} matter{p.matterCount !== 1 ? 's' : ''}</p>
               </button>
             ))}
@@ -561,7 +561,7 @@ function PublicClientUpdatePageConfig({ slug, onSlugChange }: { slug: string | n
     return (
       <div className="space-y-3">
         <p className="text-[11px] text-slate-400">
-          A matter-status board you share with a client — add matters, columns and groups directly on the board itself after creating it (same as the fully editable view you'll get right here, signed in). Anyone with the link enters a PIN to view and add notes.
+          A matter-status board you share with a client. Add matters, columns and groups directly on the board itself after creating it (same as the fully editable view you'll get right here, signed in). Anyone with the link enters a PIN to view and add notes.
         </p>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Title</label>
@@ -609,7 +609,7 @@ function PublicClientUpdatePageConfig({ slug, onSlugChange }: { slug: string | n
                 onClick={() => { onSlugChange(p.slug); setMode('view'); }}
                 className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 rounded-2xl transition-colors"
               >
-                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.client_label ? ` — ${p.client_label}` : ''}</p>
+                <p className="text-[12px] font-bold text-slate-800 truncate">{p.title}{p.client_label ? ` (${p.client_label})` : ''}</p>
                 <p className="text-[10px] text-slate-400 truncate">{p.matterCount} matter{p.matterCount !== 1 ? 's' : ''}</p>
               </button>
             ))}
@@ -629,7 +629,7 @@ function PublicClientUpdatePageConfig({ slug, onSlugChange }: { slug: string | n
   return (
     <div className="space-y-3">
       {revoked ? (
-        <p className="text-[11px] text-red-500 font-medium">Revoked — the link no longer works.</p>
+        <p className="text-[11px] text-red-500 font-medium">Revoked. The link no longer works.</p>
       ) : (
         <>
           <div className="px-4 py-3 bg-slate-50 rounded-2xl space-y-1">
@@ -1069,7 +1069,7 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
                 />
               ))}
               {(!draft.config.conditions || draft.config.conditions.length === 0) && (
-                <p className="text-[11px] text-slate-300 italic py-1">No conditions — shows every record (still narrowed by the filter bar, if any)</p>
+                <p className="text-[11px] text-slate-300 italic py-1">No conditions. Shows every record (still narrowed by the filter bar, if any)</p>
               )}
             </div>
 
@@ -1203,7 +1203,7 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
                 />
               ))}
               {(!draft.config.conditions || draft.config.conditions.length === 0) && (
-                <p className="text-[11px] text-slate-300 italic py-1">No conditions — counts/sums every record</p>
+                <p className="text-[11px] text-slate-300 italic py-1">No conditions. Counts/sums every record</p>
               )}
             </div>
           </div>
@@ -1358,7 +1358,7 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
                 </div>
               ))}
               {(!draft.config.series || draft.config.series.length === 0) && (
-                <p className="text-[11px] text-slate-300 italic py-1">No series yet — add one to plot a measure</p>
+                <p className="text-[11px] text-slate-300 italic py-1">No series yet. Add one to plot a measure</p>
               )}
             </div>
 
@@ -1370,7 +1370,7 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
 
         {(draft.type === 'trust_reconciliation' || draft.type === 'ledes_export'
           || draft.type === 'trust_ledger_statement' || draft.type === 'trust_cash_book') && (
-          <p className="text-[11px] text-slate-400 italic">No settings — it always reads this dashboard's own table.</p>
+          <p className="text-[11px] text-slate-400 italic">No settings. It always reads this dashboard's own table.</p>
         )}
 
         {draft.type === 'public_task_page' && (

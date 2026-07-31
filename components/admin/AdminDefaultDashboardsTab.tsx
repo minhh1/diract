@@ -78,7 +78,7 @@ export default function AdminDefaultDashboardsTab({ companyId, scope }: Props) {
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Default dashboards</p>
       <p className="text-[11px] text-slate-400 mb-4">
         {isCompanyScope
-          ? "A default dashboard is mandatory in every member's sidebar — only an admin can remove it."
+          ? "A default dashboard is mandatory in every member's sidebar, only an admin can remove it."
           : "Adding a dashboard here adds it to this scope's sidebar in addition to whatever's already a company-wide default."}
       </p>
       <div className="space-y-2">

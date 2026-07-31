@@ -34,7 +34,7 @@ export default function AutoNumberConfig({ value, onChange, onContinueFromLatest
     setChecking(false);
     if (max === null) { setCheckMsg('No existing numbers found to continue from.'); return; }
     onChange({ ...value, start: max + 1 });
-    setCheckMsg(`Continuing from ${max} — next assigned will be ${max + 1}.`);
+    setCheckMsg(`Continuing from ${max}, next assigned will be ${max + 1}.`);
   };
 
   return (
@@ -48,7 +48,7 @@ export default function AutoNumberConfig({ value, onChange, onContinueFromLatest
           onChange={e => onChange(applyAutoNumberPreset(value, e.target.value))}
           className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
         >
-          <option value="off">Off — typed by hand</option>
+          <option value="off">Off (typed by hand)</option>
           {AUTO_NUMBER_PRESETS.map(p => (
             <option key={p.v} value={p.v}>{p.label}</option>
           ))}
@@ -112,7 +112,7 @@ export default function AutoNumberConfig({ value, onChange, onContinueFromLatest
           <p className="text-[10px] text-slate-400 px-1">
             Next number will look like{' '}
             <span className="font-bold text-slate-600">{autoNumberExample(value)}</span>.
-            Assigned when a record is created with this field left blank — an
+            Assigned when a record is created with this field left blank. An
             assigned number can still be edited (tick Unique below to block
             duplicates). The prefix understands {'{YY}'}, {'{YYYY}'} and {'{MM}'}{' '}
             date tokens; raising the starting number jumps future numbers

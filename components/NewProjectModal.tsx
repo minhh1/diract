@@ -88,7 +88,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
     const matterTypeField = customFields.find(f => f.field_key === 'matter_type' || f.label.toLowerCase() === 'matter type');
     const isConveyancing = matterTypeField && customValues[matterTypeField.id]?.toLowerCase() === 'conveyancing';
     if (isConveyancing && !street.trim()) {
-      alert('Please fill in the property address — required for Conveyancing matters.');
+      alert('Please fill in the property address, required for Conveyancing matters.');
       return;
     }
 

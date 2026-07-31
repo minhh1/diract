@@ -47,10 +47,10 @@ export default function GroupConditionModal({ groupName, fields, currentFieldId,
           <h3 className="text-[13px] font-bold text-slate-800">Condition for "{groupName}"</h3>
           <button onClick={onClose} title="Close" className="p-1 text-slate-300 hover:text-slate-700"><X size={16} /></button>
         </div>
-        <p className="text-[11px] text-slate-400">Show a matter here automatically when a column equals a value — instead of dragging it in manually.</p>
+        <p className="text-[11px] text-slate-400">Show a matter here automatically when a column equals a value, instead of dragging it in manually.</p>
 
         {selectFields.length === 0 ? (
-          <p className="text-[11px] text-slate-400 italic">No dropdown columns yet — add one (e.g. "Status") via Manage columns first.</p>
+          <p className="text-[11px] text-slate-400 italic">No dropdown columns yet. Add one (e.g. "Status") via Manage columns first.</p>
         ) : (
           <>
             <div>

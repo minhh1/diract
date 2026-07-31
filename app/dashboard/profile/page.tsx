@@ -144,7 +144,7 @@ function ProfileForm({ initialFullName, initialAvatarUrl, email }: {
     const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
     setSavingEmail(false);
     if (error) { setEmailMessage({ type: "error", text: error.message }); return; }
-    setEmailMessage({ type: "ok", text: "Confirmation links sent to your old and new email — click both to finish the change." });
+    setEmailMessage({ type: "ok", text: "Confirmation links sent to your old and new email. Click both to finish the change." });
     setNewEmail("");
   };
 
@@ -423,7 +423,7 @@ function NotificationPreferencesSection({ userId }: { userId: string }) {
                     <button
                       key={channel}
                       onClick={() => toggle(eventType.key, channel)}
-                      title={`${eventType.label} — ${channel.replace("_", "-")}: ${isOn ? "on" : "off"}`}
+                      title={`${eventType.label}, ${channel.replace("_", "-")}: ${isOn ? "on" : "off"}`}
                       className={`w-11 h-6 rounded-full transition-colors shrink-0 mx-auto ${isOn ? "bg-slate-900" : "bg-slate-200"}`}
                     >
                       <span className={`block h-5 w-5 rounded-full bg-white shadow transition-transform ${isOn ? "translate-x-[22px]" : "translate-x-0.5"}`} />

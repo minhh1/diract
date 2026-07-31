@@ -45,7 +45,7 @@ export default function ActivityLogModal({ pageId, onClose }: { pageId: string; 
                   <span className="text-slate-300 shrink-0 w-14 text-right">{timeAgo(l.created_at)}</span>
                   <div className="flex-1 min-w-0">
                     <span className="text-slate-700">{l.detail}</span>
-                    {l.actor_name && <span className="text-slate-400"> — {l.actor_name}</span>}
+                    {l.actor_name && <span className="text-slate-400"> ({l.actor_name})</span>}
                   </div>
                 </div>
               ))}

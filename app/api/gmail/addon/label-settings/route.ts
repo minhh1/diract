@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!email) {
-    return NextResponse.json({ error: 'Invalid token — could not resolve user email' }, { status: 401 });
+    return NextResponse.json({ error: 'Invalid token: could not resolve user email' }, { status: 401 });
   }
 
   // Find user by email

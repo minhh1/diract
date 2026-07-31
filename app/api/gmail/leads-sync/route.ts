@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     const leadsLabel: string | null = company?.gmail_leads_label || null;
     if (!leadsLabel) {
-      const result = { proposed: 0, scanned: 0, message: "No Leads label configured — set one in Gmail Label Settings first." };
+      const result = { proposed: 0, scanned: 0, message: "No Leads label configured. Set one in Gmail Label Settings first." };
       await writeHeartbeat(admin, Date.now() - t0, result);
       return NextResponse.json(result);
     }

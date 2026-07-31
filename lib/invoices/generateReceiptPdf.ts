@@ -116,7 +116,7 @@ export async function generateReceiptPdf(input: GenerateReceiptPdfInput): Promis
   row('Invoice total (inc. GST)', money(input.invoice.totalIncGst));
   if (input.invoice.priorPaid > 0.004) row('Previously paid', money(input.invoice.priorPaid));
 
-  const methodSuffix = [input.receipt.paymentMethod, input.receipt.bankReference].filter(Boolean).join(' — ref ');
+  const methodSuffix = [input.receipt.paymentMethod, input.receipt.bankReference].filter(Boolean).join(', ref ');
   row(
     `Amount received this receipt${methodSuffix ? ` (${methodSuffix})` : ''}`,
     money(input.receipt.amountReceived),
@@ -140,7 +140,7 @@ export async function generateReceiptPdf(input: GenerateReceiptPdfInput): Promis
     text(`Received by: ${input.receipt.receivedBy}`, MARGIN, 10, { color: [0.4, 0.4, 0.45] });
     y -= 16;
   }
-  text('Computer-generated receipt — no signature required.', MARGIN, 9, { color: [0.6, 0.6, 0.64] });
+  text('Computer-generated receipt. No signature required.', MARGIN, 9, { color: [0.6, 0.6, 0.64] });
 
   return pdfDoc.save();
 }

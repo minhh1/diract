@@ -244,7 +244,7 @@ export default function MatterBoard({
       const result = await onSummarizeOpenMatters();
       const parts = [`Generated ${result.generated} summar${result.generated === 1 ? "y" : "ies"}`];
       if (result.failed.length) parts.push(`${result.failed.length} failed: ${result.failed.join(", ")}`);
-      window.alert(parts.join(" — "));
+      window.alert(parts.join("; "));
     } finally {
       setSummarizingAll(false);
     }
@@ -1350,7 +1350,7 @@ function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoa
           <div key={n.id} className="text-[11px] flex gap-2">
             <span className="text-slate-400 w-32 shrink-0">{formatNoteTimestamp(n, dateFormat)}</span>
             <span className={n.source === "client" ? "text-indigo-700" : "text-slate-600"}>
-              {n.body}{n.author_name ? ` — ${n.author_name}` : ""}
+              {n.body}{n.author_name ? ` (${n.author_name})` : ""}
             </span>
           </div>
         ))}
@@ -1406,7 +1406,7 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
             <span className="text-slate-400 w-24 shrink-0">{formatDate(e.email_date, dateFormat)}</span>
             <span className="flex-1 min-w-0 text-slate-600">
               {e.subject && <span className="font-medium">{e.subject}</span>}
-              {e.from_name ? ` — ${e.from_name}` : ""}
+              {e.from_name ? ` (${e.from_name})` : ""}
               {e.snippet ? <span className="block text-slate-400 truncate">{e.snippet}</span> : null}
             </span>
             {canEdit && onRemove && (

@@ -98,7 +98,7 @@ export default function GmailLegacyLabelCleanupPanel({ companyId }: Props) {
         <p className="text-[11px] text-amber-700 mt-1.5 leading-relaxed">
           Merges old &quot;Filed Emails/&lt;matter number&gt; - ...&quot; labels (from before this company
           switched to the current labelling scheme) into the matching current label, then deletes the old
-          one. Only touches a matter that has BOTH an old and a current label present in a given mailbox —
+          one. Only touches a matter that has BOTH an old and a current label present in a given mailbox;
           nothing else is affected. Scan first to see the scope before cleaning anything up.
         </p>
       </div>
@@ -119,7 +119,7 @@ export default function GmailLegacyLabelCleanupPanel({ companyId }: Props) {
             className="flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-all"
           >
             {cleaning ? <Loader2 size={13} className="animate-spin" /> : null}
-            {cleaning ? `Cleaning up${progress ? ` — ${progress.userName} (${progress.processed}/${totalPairs})` : "..."}` : `Clean up ${totalPairs} label${totalPairs === 1 ? "" : "s"}`}
+            {cleaning ? `Cleaning up${progress ? `, ${progress.userName} (${progress.processed}/${totalPairs})` : "..."}` : `Clean up ${totalPairs} label${totalPairs === 1 ? "" : "s"}`}
           </button>
         )}
       </div>
@@ -128,13 +128,13 @@ export default function GmailLegacyLabelCleanupPanel({ companyId }: Props) {
         <div>
           {totalPairs === 0 ? (
             <p className="text-[11px] text-emerald-600 font-bold">
-              {done ? "All clear — nothing left to clean up." : "No legacy labels found."}
+              {done ? "All clear. Nothing left to clean up." : "No legacy labels found."}
             </p>
           ) : (
             <>
               <p className="text-[11px] text-slate-500 font-bold mb-3">
                 {totalPairs} legacy label{totalPairs === 1 ? "" : "s"} across {users.length} mailbox{users.length === 1 ? "" : "es"}
-                {totalMessages > 0 ? ` — ~${totalMessages} messages affected` : ""}
+                {totalMessages > 0 ? `, ~${totalMessages} messages affected` : ""}
               </p>
               <div className="space-y-2">
                 {users.map(user => {

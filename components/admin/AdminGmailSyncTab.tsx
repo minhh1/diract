@@ -69,21 +69,21 @@ function describeActivity(row: ActivityRow): string {
     case "sync_to_user": return `Synced to ${row.user_name}`;
     case "label_applied": return `Label applied for ${row.user_name}`;
     case "label_removed": return row.reapplied
-      ? `${row.user_name} removed the label — auto re-applied`
-      : `${row.user_name} removed this (admin) — staying removed`;
+      ? `${row.user_name} removed the label, auto re-applied`
+      : `${row.user_name} removed this (admin), staying removed`;
     case "label_deleted": return `Label deleted for ${row.user_name}`;
-    case "label_recreated": return `${row.user_name} deleted the whole label — recreating it`;
+    case "label_recreated": return `${row.user_name} deleted the whole label, recreating it`;
     case "label_renamed": return `Label renamed for ${row.user_name} to match current matter details`;
     case "message_deleted": return row.restored
-      ? `${row.user_name} deleted this — not an admin, so it was restored automatically`
+      ? `${row.user_name} deleted this; not an admin, so it was restored automatically`
       : `Message deleted by ${row.user_name} (admin)`;
     case "archived": return `Archived to ${row.user_name}`;
     case "email_trashed": return `Deleted from ${row.user_name}'s mailbox (archived)`;
-    case "sync_recovered": return `Recovered — ${row.user_name} is back on track`;
-    case "sync_failed": return `Persistent failure for ${row.user_name} — needs attention`;
-    case "sync_error": return `Sync failed for ${row.user_name} — quarantined, will retry automatically`;
-    case "dispatch_error": return `Couldn't reach the processor for ${row.user_name} — will retry next cycle`;
-    case "bulk_label_sync_deferred": return `${row.count ?? "Several"} emails bulk-labelled by ${row.user_name} — queued for the workers to sync details`;
+    case "sync_recovered": return `Recovered, ${row.user_name} is back on track`;
+    case "sync_failed": return `Persistent failure for ${row.user_name}, needs attention`;
+    case "sync_error": return `Sync failed for ${row.user_name}, quarantined, will retry automatically`;
+    case "dispatch_error": return `Couldn't reach the processor for ${row.user_name}, will retry next cycle`;
+    case "bulk_label_sync_deferred": return `${row.count ?? "Several"} emails bulk-labelled by ${row.user_name}, queued for the workers to sync details`;
     default: return row.user_name;
   }
 }
@@ -527,7 +527,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
       {section === "labels" && (
         <div className="space-y-3">
           <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-3 text-[11px] text-indigo-700">
-            Sharing is company-wide — every label below is synced into every connected member's own Gmail.
+            Sharing is company-wide: every label below is synced into every connected member's own Gmail.
             {sharedWithNames.length > 0 && (
               <> Currently shared with: <span className="font-bold">{sharedWithNames.join(", ")}</span>.</>
             )}
@@ -590,7 +590,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                   <p className="text-[11px] text-slate-400 truncate mt-0.5">{p.gmail_label_name}</p>
                   <p className="text-[10px] text-slate-300 mt-1">
                     Archived {new Date(p.archived_at).toLocaleString()}
-                    {archiveEmails.length > 0 && <> — copies held by {archiveEmails.join(", ")}</>}
+                    {archiveEmails.length > 0 && <>; copies held by {archiveEmails.join(", ")}</>}
                   </p>
                 </div>
                 {p.job_status && p.job_status !== "done" && (
@@ -618,7 +618,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
           </div>
           {queue.length === 0 ? (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
-              Queue is empty — nothing in process
+              Queue is empty, nothing in process
             </p>
           ) : filteredQueue.length === 0 ? (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
@@ -684,7 +684,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           {job.pendingNames.length === 0
-                            ? <span className="text-[11px] text-slate-300 italic">None — all done</span>
+                            ? <span className="text-[11px] text-slate-300 italic">None, all done</span>
                             : job.pendingNames.map((name, i) => (
                                 <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700">
                                   {name}
@@ -721,7 +721,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
           </div>
           {syncFailures.length === 0 ? (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
-              No failures — everything syncing cleanly
+              No failures, everything syncing cleanly
             </p>
           ) : filteredFailures.length === 0 ? (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-16">
@@ -756,8 +756,8 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                   )}
                   <p className="text-[10px] text-slate-300 mt-1.5">
                     First failed {new Date(f.first_failed_at).toLocaleString()}
-                    {f.last_attempted_at && <> — last retried {new Date(f.last_attempted_at).toLocaleString()}</>}
-                    {" "}— {f.attempts} recovery attempt{f.attempts !== 1 ? "s" : ""}
+                    {f.last_attempted_at && <>; last retried {new Date(f.last_attempted_at).toLocaleString()}</>}
+                    {"; "}{f.attempts} recovery attempt{f.attempts !== 1 ? "s" : ""}
                   </p>
                 </div>
                 <button

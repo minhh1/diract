@@ -114,7 +114,7 @@ export default function ClientUpdatePagesTab() {
       if (json.status === "already_installed") {
         window.alert("This company already has an Irregularity table.");
       } else {
-        window.alert(`Irregularity table created — PIN ${json.accessCode}`);
+        window.alert(`Irregularity table created. PIN ${json.accessCode}`);
       }
       refetch();
     } finally {
@@ -304,8 +304,8 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
           </div>
           <p className="text-[11px] text-slate-400">
             {visibility === "public"
-              ? "Add more records, groups, and columns directly on the page — open it above, sign in, and you'll see full editing controls."
-              : "Only members of the selected team(s) — and company admins — can open this page."}
+              ? "Add more records, groups, and columns directly on the page. Open it above, sign in, and you'll see full editing controls."
+              : "Only members of the selected team(s), and company admins, can open this page."}
           </p>
           <button onClick={() => { navigator.clipboard.writeText(createdUrl); }}
             className="w-full py-3 bg-slate-900 text-white text-[12px] font-bold rounded-full hover:bg-slate-700 flex items-center justify-center gap-2">
@@ -329,7 +329,7 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Title</p>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Niksen — Matter Update"
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Niksen: Matter Update"
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
           </div>
 
@@ -428,13 +428,13 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none disabled:opacity-40" />
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input type="checkbox" checked={noExpiry} onChange={e => setNoExpiry(e.target.checked)} />
-                <span className="text-[11px] text-slate-500">No expiry (not recommended — leaves this link open indefinitely)</span>
+                <span className="text-[11px] text-slate-500">No expiry (not recommended, leaves this link open indefinitely)</span>
               </label>
             </div>
           )}
 
           {visibility === "public" && (
-            <p className="text-[11px] text-slate-400">A 6-digit PIN is generated automatically — clients enter it once and won't be asked again. Signed-in staff never need it.</p>
+            <p className="text-[11px] text-slate-400">A 6-digit PIN is generated automatically. Clients enter it once and won't be asked again. Signed-in staff never need it.</p>
           )}
           {error && <p className="text-[11px] text-red-500">{error}</p>}
         </div>
@@ -523,8 +523,8 @@ function EditPageModal({ page, teamOptions, onClose, onSaved }: {
             {visibility !== page.visibility && (
               <p className="text-[10px] text-amber-600 mt-1.5">
                 {visibility === "public"
-                  ? "Switching to public removes the team restriction — anyone with the link (and PIN) will be able to open it."
-                  : "Switching to team-only immediately revokes the public link — the PIN and expiry stop applying."}
+                  ? "Switching to public removes the team restriction. Anyone with the link (and PIN) will be able to open it."
+                  : "Switching to team-only immediately revokes the public link. The PIN and expiry stop applying."}
               </p>
             )}
           </div>
@@ -559,7 +559,7 @@ function EditPageModal({ page, teamOptions, onClose, onSaved }: {
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none disabled:opacity-40" />
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input type="checkbox" checked={noExpiry} onChange={e => setNoExpiry(e.target.checked)} />
-                <span className="text-[11px] text-slate-500">No expiry (not recommended — leaves this link open indefinitely)</span>
+                <span className="text-[11px] text-slate-500">No expiry (not recommended, leaves this link open indefinitely)</span>
               </label>
             </div>
           )}

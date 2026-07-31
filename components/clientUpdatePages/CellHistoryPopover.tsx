@@ -80,7 +80,7 @@ export default function CellHistoryPopover({ field, fieldLabel, dateFormat, onFe
                   </div>
                   <p className="text-slate-400 mt-1">
                     {l.actor_name || "Someone"}
-                    {l.reason && <span> — &ldquo;{l.reason}&rdquo;</span>}
+                    {l.reason && <span> (&ldquo;{l.reason}&rdquo;)</span>}
                   </p>
                 </div>
               ))}

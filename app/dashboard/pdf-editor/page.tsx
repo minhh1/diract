@@ -110,7 +110,7 @@ export default function PdfEditorPage() {
 
       {loading ? null : documents.length === 0 ? (
         <div className="text-center mt-16 text-slate-400 text-[13px]">
-          No saved PDFs yet — drag a PDF anywhere on this page, or click "Open PDF" to get started.
+          No saved PDFs yet. Drag a PDF anywhere on this page, or click "Open PDF" to get started.
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-100 divide-y divide-slate-50">

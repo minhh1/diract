@@ -390,7 +390,7 @@ export default function AdminPlatformHealthTab() {
                     <p className="text-[12px] font-bold text-slate-800 truncate">{c.name}</p>
                     <p className="text-[10px] text-slate-400">
                       {c.ok ? `${c.latencyMs}ms` : c.detail || "unreachable"}
-                      {c.ok && c.detail ? ` — ${c.detail}` : ""}
+                      {c.ok && c.detail ? `, ${c.detail}` : ""}
                       <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">{c.group}</span>
                     </p>
                   </div>
@@ -416,12 +416,12 @@ export default function AdminPlatformHealthTab() {
           <div className="space-y-3">
             {staleGoogleTokenCount > 0 && (
               <div className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-2xl text-[12px] text-amber-800">
-                {staleGoogleTokenCount} Gmail OAuth token{staleGoogleTokenCount !== 1 ? "s" : ""} currently expired — should self-heal on next refresh, worth checking if this persists.
+                {staleGoogleTokenCount} Gmail OAuth token{staleGoogleTokenCount !== 1 ? "s" : ""} currently expired. Should self-heal on next refresh, worth checking if this persists.
               </div>
             )}
             {azureExpiring.map((a, i) => (
               <div key={i} className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-2xl text-[12px] text-amber-800">
-                {a.companyName} — {a.kind} client secret expires {new Date(a.expires_at).toLocaleDateString()}
+                {a.companyName}: {a.kind} client secret expires {new Date(a.expires_at).toLocaleDateString()}
               </div>
             ))}
 
@@ -449,8 +449,8 @@ export default function AdminPlatformHealthTab() {
                           {s.expires_at
                             ? `Expires ${new Date(s.expires_at).toLocaleDateString()}`
                             : s.last_rotated_at
-                              ? `Last rotated ${new Date(s.last_rotated_at).toLocaleDateString()}${s.rotation_interval_days ? ` — every ${s.rotation_interval_days}d` : ""} (no expiry set)`
-                              : "No expiry set — click to add"}
+                              ? `Last rotated ${new Date(s.last_rotated_at).toLocaleDateString()}${s.rotation_interval_days ? `, every ${s.rotation_interval_days}d` : ""} (no expiry set)`
+                              : "No expiry set. Click to add"}
                         </button>
                       )}
                       {s.notes && <p className="text-[10px] text-slate-300 mt-1">{s.notes}</p>}
@@ -538,7 +538,7 @@ export default function AdminPlatformHealthTab() {
             {addingCost ? (
               <div className="bg-white border border-slate-200 rounded-[28px] p-5 space-y-2">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Manual entry — Fly.io, Supabase, and Together AI have no public billing API, so track them by hand.
+                  Manual entry: Fly.io, Supabase, and Together AI have no public billing API, so track them by hand.
                 </p>
                 <select value={newCost.service} onChange={e => setNewCost(p => ({ ...p, service: e.target.value }))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 bg-white">

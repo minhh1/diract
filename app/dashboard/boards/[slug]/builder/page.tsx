@@ -247,7 +247,7 @@ export default function DashboardBuilderPage() {
             ))}
             {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can't be changed after creation — delete and recreate to switch tables.</p>}
+          {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can't be changed after creation. Delete and recreate to switch tables.</p>}
         </div>
       </div>
 

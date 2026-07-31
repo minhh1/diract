@@ -107,7 +107,7 @@ export async function generateBankReconciliationPdf(input: GenerateBankReconcili
   const balanced = Math.abs(input.reconciliationBalance - input.cashBookBalance) < 0.005;
   ensureRoom(24);
   text(
-    balanced ? 'Balanced — Reconciliation Balance agrees with the Cash Book Balance.' : `Out of balance by ${money(input.reconciliationBalance - input.cashBookBalance)}.`,
+    balanced ? 'Balanced: Reconciliation Balance agrees with the Cash Book Balance.' : `Out of balance by ${money(input.reconciliationBalance - input.cashBookBalance)}.`,
     MARGIN, 10, { bold: true, color: balanced ? [0.05, 0.5, 0.35] : [0.75, 0.15, 0.15] }
   );
   y -= 30;

@@ -291,7 +291,7 @@ export default function PdfPageView({
         <button title="Italic" style={{ ...btnStyle(italic), fontStyle: "italic" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("italic")}>I</button>
         <button title="Underline" style={{ ...btnStyle(underline), textDecoration: "underline" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyFormat("underline")}>U</button>
         <button
-          title={textSelectId === o.id ? "Done selecting text — box is draggable again" : "Select part of the text to format"}
+          title={textSelectId === o.id ? "Done selecting text, box is draggable again" : "Select part of the text to format"}
           style={btnStyle(textSelectId === o.id)}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => setTextSelectId((prev) => (prev === o.id ? null : o.id))}
@@ -762,7 +762,7 @@ export default function PdfPageView({
               onPointerMove={onDragMove}
               onPointerUp={onDragEnd}
               onClick={(e) => { e.stopPropagation(); if (activeTool === "select") setSelectedOpId(o.id); }}
-              title={activeTool === "select" && !textSelecting ? "Drag to move — use the toolbar's cursor button to select text for formatting" : undefined}
+              title={activeTool === "select" && !textSelecting ? "Drag to move, or use the toolbar's cursor button to select text for formatting" : undefined}
               style={{
                 position: "absolute", left: sx, top: sy - fontSizePx,
                 fontSize: fontSizePx, color: rgbCss(o.color), fontFamily: "Helvetica, Arial, sans-serif", whiteSpace: "pre",

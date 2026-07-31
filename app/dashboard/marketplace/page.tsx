@@ -109,7 +109,7 @@ function fieldTooltip(f: Partial<TemplateTableField>): string | undefined {
   const parts = [];
   if (f.helpText) parts.push(f.helpText);
   if (f.selectOptions?.length) parts.push(`Options: ${f.selectOptions.slice(0, 12).join(', ')}${f.selectOptions.length > 12 ? '…' : ''}`);
-  return parts.length ? parts.join(' — ') : undefined;
+  return parts.length ? parts.join(' · ') : undefined;
 }
 
 const WIREFRAME_STYLES: Record<string, string> = {
@@ -166,7 +166,7 @@ function DashboardWireframe({ widgets, labelFor }: { widgets: PreviewWidget[]; l
           return (
             <div
               key={w.id}
-              title={detail ? `${title} — ${detail}` : title}
+              title={detail ? `${title}: ${detail}` : title}
               className={`absolute rounded-md flex flex-col justify-center px-2 overflow-hidden leading-tight ${cls}`}
               style={{
                 left: `calc(${(l.x / 12) * 100}% + 2px)`,
@@ -519,7 +519,7 @@ export default function MarketplacePage() {
                 {preview.alreadyInstalled && (
                   <p className="text-[12px] font-medium text-emerald-600">
                     {preview.hasUpgrade
-                      ? "Already installed — here's what's been added to the template since."
+                      ? "Already installed. Here's what's been added to the template since."
                       : "Already installed, and you're fully up to date."}
                   </p>
                 )}
@@ -546,7 +546,7 @@ export default function MarketplacePage() {
                     actually pending. */}
                 <div className="space-y-3">
                   <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">
-                    {preview.alreadyInstalled ? 'Template contents — live status' : 'This template will add'}
+                    {preview.alreadyInstalled ? 'Template contents: live status' : 'This template will add'}
                   </p>
 
                   {preview.tables.map(t => (
@@ -555,8 +555,8 @@ export default function MarketplacePage() {
                         <p className="text-[12px] font-bold text-slate-800">
                           {t.name} <span className="font-normal text-slate-400">
                             {t.owned
-                              ? (t.newFields!.length ? `— ${t.newFields!.length} new field${t.newFields!.length === 1 ? '' : 's'}` : '— installed')
-                              : '— new table'}
+                              ? (t.newFields!.length ? `(${t.newFields!.length} new field${t.newFields!.length === 1 ? '' : 's'})` : '(installed)')
+                              : '(new table)'}
                           </span>
                         </p>
                         <span className="flex items-center gap-2">
@@ -629,7 +629,7 @@ export default function MarketplacePage() {
                               <>
                                 <p className="text-[10px] text-amber-700 mt-1">
                                   {f.conflict.matchType === "label"
-                                    ? `You already have a field called "${f.conflict.existingLabel}" — looks like the same thing, just built by hand under a different internal key`
+                                    ? `You already have a field called "${f.conflict.existingLabel}" that looks like the same thing, just built by hand under a different internal key`
                                     : `You already have "${f.conflict.existingLabel}"`}
                                 </p>
                                 <div className="flex gap-2 mt-1">
@@ -650,7 +650,7 @@ export default function MarketplacePage() {
 
                   {preview.dashboards.length > 0 && (
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">
-                      Ready-made dashboards <span className="font-normal normal-case">— new ones created only if ticked below</span>
+                      Ready-made dashboards <span className="font-normal normal-case">(new ones created only if ticked below)</span>
                     </p>
                   )}
                   {preview.dashboards.map(d => {
@@ -667,7 +667,7 @@ export default function MarketplacePage() {
                             <DashIcon size={14} style={{ color: d.color }} />
                           </div>
                           <p className="text-[12px] font-bold text-slate-800 flex-1">
-                            {d.name} <span className="font-normal text-slate-400">— dashboard · {(d.widgets || []).length} widgets</span>
+                            {d.name} <span className="font-normal text-slate-400">(dashboard · {(d.widgets || []).length} widgets)</span>
                           </p>
                           {d.owned
                             ? <span className="text-[9px] font-bold text-slate-400 uppercase">Installed</span>
@@ -680,7 +680,7 @@ export default function MarketplacePage() {
 
                   {(preview.recordTabs || []).length > 0 && (
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">
-                      Record dashboards <span className="font-normal normal-case">— tabs shown on each record's page</span>
+                      Record dashboards <span className="font-normal normal-case">(tabs shown on each record's page)</span>
                     </p>
                   )}
                   {(preview.recordTabs || []).map((rt, i) => {
@@ -695,7 +695,7 @@ export default function MarketplacePage() {
                           </div>
                           <p className="text-[12px] font-bold text-slate-800 flex-1">
                             {rt.title} <span className="font-normal text-slate-400">
-                              — tab on every {rt.appearsOn} record{rt.linkedTable ? `, showing its ${rt.linkedTable}` : ''}
+                              (tab on every {rt.appearsOn} record{rt.linkedTable ? `, showing its ${rt.linkedTable}` : ''})
                             </span>
                           </p>
                           {rt.owned
@@ -708,7 +708,7 @@ export default function MarketplacePage() {
                   })}
 
                   {preview.alreadyInstalled && !preview.hasUpgrade && (
-                    <p className="text-center text-[11px] text-slate-300 italic py-4">Nothing pending — you have everything this template currently offers.</p>
+                    <p className="text-center text-[11px] text-slate-300 italic py-4">Nothing pending. You have everything this template currently offers.</p>
                   )}
                 </div>
 

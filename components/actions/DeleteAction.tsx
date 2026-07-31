@@ -24,7 +24,7 @@ export default function DeleteAction({ table, id, identifier, onRefresh, variant
       if (!confirmed || !companyId) return;
       const result = await createArchiveRequest(table, id, identifier, companyId);
       if (!result.ok) { alert(result.error); return; }
-      alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Archive requested — a company admin will review it.");
+      alert(result.alreadyPending ? "Already requested, waiting on admin review." : "Archive requested. A company admin will review it.");
       return;
     }
 

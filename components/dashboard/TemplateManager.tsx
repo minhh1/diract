@@ -515,7 +515,7 @@ export default function TemplateManager({
         {view === 'apply' && canApply && (
           <button onClick={handleApply} disabled={saving}
             className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-            {saving ? 'Creating tasks...' : `Apply template — ${selected?.items.filter(i => !i.parent_item_id).length} tasks`}
+            {saving ? 'Creating tasks...' : `Apply template (${selected?.items.filter(i => !i.parent_item_id).length} tasks)`}
           </button>
         )}
         {view === 'edit' && (

@@ -16,11 +16,11 @@ export interface AutoNumberConfigValue {
 }
 
 export const AUTO_NUMBER_PRESETS = [
-  { v: 'plain',    label: 'Sequential — 1, 2, 3…',              prefix: '',        pad: 1 },
-  { v: 'padded',   label: 'Padded number — 000001',             prefix: '',        pad: 6 },
-  { v: 'year',     label: 'Year code — 260001 (yy + counter)',  prefix: '{YY}',    pad: 4 },
-  { v: 'fullyear', label: 'Full year — 2026-0001',              prefix: '{YYYY}-', pad: 4 },
-  { v: 'prefixed', label: 'Prefix — LD-0001',                   prefix: 'LD-',     pad: 4 },
+  { v: 'plain',    label: 'Sequential (1, 2, 3…)',               prefix: '',        pad: 1 },
+  { v: 'padded',   label: 'Padded number (000001)',              prefix: '',        pad: 6 },
+  { v: 'year',     label: 'Year code (260001, yy + counter)',    prefix: '{YY}',    pad: 4 },
+  { v: 'fullyear', label: 'Full year (2026-0001)',                prefix: '{YYYY}-', pad: 4 },
+  { v: 'prefixed', label: 'Prefix (LD-0001)',                     prefix: 'LD-',     pad: 4 },
 ];
 
 export function detectAutoNumberPreset(v: AutoNumberConfigValue): string {

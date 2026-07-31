@@ -33,7 +33,7 @@ export default function ProtectFundsModal({
     if (amt <= 0) { setError('Enter an amount to protect.'); return; }
     if (!reason.trim()) { setError('A reason is required.'); return; }
     if (amt > availableBalance) { setError(`Cannot protect more than the available balance (${availableBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}).`); return; }
-    if (!protectedTable.tableDef) { setError('Still loading — try again in a moment.'); return; }
+    if (!protectedTable.tableDef) { setError('Still loading, try again in a moment.'); return; }
 
     setSaving(true);
     const result = await createCustomRecord(protectedTable.tableDef.id, companyId, userId, {
@@ -41,7 +41,7 @@ export default function ProtectFundsModal({
     }, protectedTable.fields);
     setSaving(false);
     if (!result || 'error' in result) {
-      setError((result && 'error' in result && result.error) || 'Could not protect these funds — please try again.');
+      setError((result && 'error' in result && result.error) || 'Could not protect these funds, please try again.');
       return;
     }
     onProtected();

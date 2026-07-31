@@ -107,8 +107,8 @@ export default function FollowUpToggle({ entries, onAdd, onRemove, onMarkDone }:
         ref={btnRef}
         onClick={() => setOpen(v => !v)}
         title={
-          hasScheduled ? `${scheduledEntries.length} follow-up${scheduledEntries.length !== 1 ? "s" : ""} scheduled — click to manage`
-          : count > 0 ? `Followed up ${count} time${count !== 1 ? "s" : ""} — click to manage`
+          hasScheduled ? `${scheduledEntries.length} follow-up${scheduledEntries.length !== 1 ? "s" : ""} scheduled, click to manage`
+          : count > 0 ? `Followed up ${count} time${count !== 1 ? "s" : ""}, click to manage`
           : "Log a follow-up"
         }
         className={`h-5 min-w-[20px] px-1 rounded-full border-2 shrink-0 flex items-center justify-center gap-0.5 transition-all ${
@@ -169,7 +169,7 @@ export default function FollowUpToggle({ entries, onAdd, onRemove, onMarkDone }:
               className={`w-full px-3 py-2 border rounded-full text-[12px] outline-none ${isFutureDate ? "border-sky-200 focus:border-sky-400" : "border-slate-200 focus:border-amber-400"}`}
             />
             {isFutureDate && (
-              <p className="text-[10px] text-sky-600 leading-snug">Future date — this also moves the task's due date here.</p>
+              <p className="text-[10px] text-sky-600 leading-snug">Future date: this also moves the task's due date here.</p>
             )}
             <button onClick={handleAdd}
               className={`w-full py-2 text-white text-[11px] font-bold rounded-full transition-colors ${isFutureDate ? "bg-sky-500 hover:bg-sky-600" : "bg-amber-500 hover:bg-amber-600"}`}>

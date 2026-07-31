@@ -186,7 +186,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
         )}
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
           <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">On this page — drag to reorder</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">On this page, drag to reorder</p>
             <div className="space-y-1">
               {order.map((f, i) => (
                 <div key={f.id}>
@@ -338,7 +338,7 @@ export default function ColumnManagerModal({ pageId, groupId, currentFields, gro
 
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Add a report-only column</p>
-            <p className="text-[11px] text-slate-400 mb-2">Doesn't exist on the matter record — just a field for this report. Can be a dropdown, e.g. a Status column subgroups can filter on.</p>
+            <p className="text-[11px] text-slate-400 mb-2">Doesn't exist on the matter record, just a field for this report. Can be a dropdown, e.g. a Status column subgroups can filter on.</p>
             <div className="space-y-2">
               <input value={adhocLabel} onChange={e => setAdhocLabel(e.target.value)} placeholder="e.g. Status"
                 className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400" />

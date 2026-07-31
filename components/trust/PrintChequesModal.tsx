@@ -38,7 +38,7 @@ export default function PrintChequesModal({
     if (!payTo.trim()) { setError('Enter who this cheque is payable to.'); return; }
     if (amt <= 0) { setError('Enter an amount.'); return; }
     const chequeField = trustTable.fields.find(f => f.field_key === 'cheque_number');
-    if (!chequeField || !trustTable.tableDef) { setError('Still loading — try again in a moment.'); return; }
+    if (!chequeField || !trustTable.tableDef) { setError('Still loading, try again in a moment.'); return; }
 
     setSaving(true);
     const { data: chequeNumber } = await supabase.rpc('next_field_sequence', { p_field_id: chequeField.id });
@@ -49,7 +49,7 @@ export default function PrintChequesModal({
     }, trustTable.fields);
     setSaving(false);
     if (!result || 'error' in result) {
-      setError((result && 'error' in result && result.error) || 'Could not record this cheque — please try again.');
+      setError((result && 'error' in result && result.error) || 'Could not record this cheque, please try again.');
       return;
     }
     setPrintedRecordId(result.id);

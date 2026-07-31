@@ -384,11 +384,11 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
       return;
     }
     if (hasNegativeBilled) {
-      setError('One or more fees would be billed at a negative amount — adjust the discount or target.');
+      setError('One or more fees would be billed at a negative amount. Adjust the discount or target.');
       return;
     }
     if (professionalFeesDescriptionRequired && !professionalFeesDescription.trim()) {
-      setError('This template excludes the itemised Professional Fees table — describe the fees for the client.');
+      setError('This template excludes the itemised Professional Fees table. Describe the fees for the client.');
       return;
     }
     setSaving(true);

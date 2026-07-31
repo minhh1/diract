@@ -60,7 +60,7 @@ export default function TemplatesToolPage() {
         <div>
           <h1 className="text-3xl font-light text-slate-900 tracking-tight">Checklist templates</h1>
           <p className="text-[11px] font-medium text-slate-400 uppercase tracking-widest mt-1">
-            Reusable task lists — open a project&apos;s Checklist tab to apply one
+            Reusable task lists. Open a project&apos;s Checklist tab to apply one
           </p>
         </div>
       </header>

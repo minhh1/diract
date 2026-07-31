@@ -169,7 +169,7 @@ export default function AdminXeroTab() {
                 <Landmark size={13} className="text-emerald-500 shrink-0" />
                 <p className="text-[12px] font-medium text-slate-700 flex-1">
                   {c.tenant_name || c.tenant_id}
-                  {c.last_synced_at && ` — last synced ${new Date(c.last_synced_at).toLocaleString()}`}
+                  {c.last_synced_at && `, last synced ${new Date(c.last_synced_at).toLocaleString()}`}
                 </p>
                 <button onClick={() => disconnect(c.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors">
                   <Trash2 size={12} />
@@ -191,7 +191,7 @@ export default function AdminXeroTab() {
           <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 rounded-2xl mb-3">
             <Building2 size={13} className="text-indigo-400 shrink-0" />
             <p className="text-[12px] font-bold text-indigo-700 flex-1">
-              {companyName || 'Your firm'} <span className="font-normal text-indigo-400">— your own accounting, not a client</span>
+              {companyName || 'Your firm'} <span className="font-normal text-indigo-400">(your own accounting, not a client)</span>
             </p>
             <select
               value={connections.find((c) => c.is_own_organisation)?.id ?? ""}

@@ -31,9 +31,9 @@ function describe(r: CustomTableRecord): string {
   const type = r.values.type || '';
   const who = r.values.payor_payee || '';
   const matter = r.displayValues?.matter || '';
-  if (type === 'Deposit') return who ? `${type} — ${who}` : type;
+  if (type === 'Deposit') return who ? `${type} from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}${matter ? ` for ${matter}` : ''}` : type;
-  if (type === 'Journal Transfer') return matter ? `Transfer — ${matter}` : type;
+  if (type === 'Journal Transfer') return matter ? `Transfer for ${matter}` : type;
   return type || '—';
 }
 
@@ -190,7 +190,7 @@ export default function BankReconciliationTab({
   const handleReconcile = async () => {
     if (!periodStart || !periodEnd) { setError('Set the period start and end dates first.'); return; }
     if (!preparedBy.trim()) { setError('Enter who prepared this reconciliation.'); return; }
-    if (!balanced) { setError('This reconciliation is out of balance — tick off items until the Reconciliation Balance matches the Cash Book Balance.'); return; }
+    if (!balanced) { setError('This reconciliation is out of balance. Tick off items until the Reconciliation Balance matches the Cash Book Balance.'); return; }
 
     setSaving(true); setError(null);
     const values = { ...draftValues(), status: 'Reconciled', prepared_at: todayStr() };
@@ -241,7 +241,7 @@ export default function BankReconciliationTab({
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Reconciliations — {trustAccount?.values.account_name || 'Trust Account'}</p>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Reconciliations ({trustAccount?.values.account_name || 'Trust Account'})</p>
           <button onClick={startNew} className="flex items-center gap-1.5 px-4 py-2 bg-teal-700 text-white rounded-full text-[11px] font-bold hover:bg-teal-800 transition-all">
             <Plus size={13} /> New Reconciliation
           </button>

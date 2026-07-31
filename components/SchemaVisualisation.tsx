@@ -379,7 +379,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
       const entityTable = isCustomTable ? "company_table_fields" : "company_custom_fields";
       const result = await createArchiveRequest(entityTable, selectedFieldId, `Field: ${before.label}`, companyId);
       if (!result.ok) { window.alert(result.error); return; }
-      window.alert(result.alreadyPending ? "Already requested — waiting on admin review." : "Deletion requested — a company admin will review it.");
+      window.alert(result.alreadyPending ? "Already requested, waiting on admin review." : "Deletion requested. A company admin will review it.");
       return;
     }
 
@@ -391,7 +391,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
     const valueCount = count ?? 0;
 
     const warning = valueCount > 0
-      ? `Delete "${before.label}"? It has data stored against ${valueCount} record${valueCount === 1 ? '' : 's'}. This moves it to Trash — nothing is deleted permanently, and you can restore it (with its data) from there.`
+      ? `Delete "${before.label}"? It has data stored against ${valueCount} record${valueCount === 1 ? '' : 's'}. This moves it to Trash; nothing is deleted permanently, and you can restore it (with its data) from there.`
       : `Delete "${before.label}"? This moves it to Trash and can be restored later.`;
     if (!window.confirm(warning)) return;
 
@@ -526,7 +526,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
                 {isCustomTable
                   ? customTables.find(t => t.id === customTableId)?.name || 'Table'
                   : activeTable.charAt(0).toUpperCase() + activeTable.slice(1)
-                } — fields
+                } fields
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5">
                 {fields.length} field{fields.length !== 1 ? 's' : ''} · drag to reorder

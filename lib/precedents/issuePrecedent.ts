@@ -156,7 +156,7 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
     .select("storage_path, address_tag_key, content_tag_key, signoff_tag_key, detected_fields")
     .eq("company_id", companyId).maybeSingle();
   if (!letterhead) {
-    return { ok: false, error: "This company hasn't set up a letterhead yet — an admin can upload one in Settings → Precedents.", status: 400 };
+    return { ok: false, error: "This company hasn't set up a letterhead yet. An admin can upload one in Settings → Precedents.", status: 400 };
   }
 
   // Fields lib/precedents/letterheadClassify.ts found beyond the always-

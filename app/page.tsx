@@ -15,7 +15,7 @@ const features = [
   {
     icon: "⟳",
     title: "Automatic sync",
-    body: "Labels applied by one team member appear in everyone's Gmail within minutes — no manual sharing.",
+    body: "Labels applied by one team member appear in everyone's Gmail within minutes, no manual sharing.",
   },
   {
     icon: "⬡",
@@ -30,7 +30,7 @@ const features = [
   {
     icon: "↗",
     title: "Gmail Add-on",
-    body: "Create projects, assign emails, and remove labels directly from the Gmail sidebar — no browser tab needed.",
+    body: "Create projects, assign emails, and remove labels directly from the Gmail sidebar, no browser tab needed.",
   },
 ];
 

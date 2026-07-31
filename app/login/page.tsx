@@ -440,7 +440,7 @@ function LoginPageInner() {
               : tokenValid
               ? isJoinInvite
                 ? `You've been invited to join ${tokenData?.company_name || 'a company'}`
-                : 'Valid invitation — complete registration below'
+                : 'Valid invitation, complete registration below'
               : 'This invitation link is invalid or has already been used'
             }
           </div>

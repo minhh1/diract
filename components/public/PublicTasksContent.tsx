@@ -587,7 +587,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
               </button>
               <button onClick={checkAuthAndLoad}
                 className="w-full py-3 border border-slate-200 text-slate-600 text-[12px] font-bold rounded-full hover:bg-slate-50 flex items-center justify-center gap-2">
-                <RefreshCw size={13} /> I've signed in — reload
+                <RefreshCw size={13} /> I've signed in, reload
               </button>
             </>
           )}
@@ -1028,7 +1028,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
           {isEdit && task?.projectName && (
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Project</p>
-              <p className="text-[12px] text-slate-500 px-4 py-2.5 bg-slate-50 rounded-full">{task.projectName}{task.matterNumber ? ` — ${task.matterNumber}` : ""}</p>
+              <p className="text-[12px] text-slate-500 px-4 py-2.5 bg-slate-50 rounded-full">{task.projectName}{task.matterNumber ? ` (${task.matterNumber})` : ""}</p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
@@ -1051,7 +1051,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Assignee</p>
               <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-                <option value="">— Unassigned —</option>
+                <option value="">Unassigned</option>
                 {formOptions.assignees.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
@@ -1061,14 +1061,14 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Assigned team</p>
               <select value={teamId} onChange={e => setTeamId(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-                <option value="">— No team —</option>
+                <option value="">No team</option>
                 {formOptions.teams.map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
               </select>
             </div>
           )}
           {formOptions.assignees.length > 0 && (
             <div>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Watchers <span className="text-slate-300 font-normal normal-case">— also notified, shown on their task list</span></p>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Watchers <span className="text-slate-300 font-normal normal-case">(also notified, shown on their task list)</span></p>
               <div className="flex flex-wrap gap-1.5">
                 {formOptions.assignees.map(a => {
                   const active = watcherIds.includes(a.id);
@@ -1116,7 +1116,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
           {isEdit && task?.id && (
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                Depends on <span className="text-slate-300 font-normal normal-case">— can't be marked done until these are</span>
+                Depends on <span className="text-slate-300 font-normal normal-case">(can't be marked done until these are)</span>
               </p>
               <div className="space-y-1.5 mb-2">
                 {dependsOnTasks.map(t => (
@@ -1133,7 +1133,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
                 <div className="flex items-center gap-2">
                   <select value={addDependencyId} onChange={e => setAddDependencyId(e.target.value)}
                     className="flex-1 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none bg-white">
-                    <option value="">— Select a task —</option>
+                    <option value="">Select a task...</option>
                     {dependencyOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                   <button onClick={() => { if (!addDependencyId) return; onAddDependency?.(task.id, addDependencyId); setAddDependencyId(""); }}
@@ -1250,7 +1250,7 @@ function TemplatesModal({ pageId, projects, onClose, onApplied }: { pageId: stri
             ) : (
               <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-                <option value="">— Select template —</option>
+                <option value="">Select template...</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name} ({t.itemCount} tasks)</option>)}
               </select>
             )}

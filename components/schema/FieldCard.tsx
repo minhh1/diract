@@ -104,7 +104,7 @@ export default function FieldCard({
           title={`${sameTableDuplicateCount} fields on this table are all called "${field.label}" -- likely an accidental duplicate (e.g. from a template install), not intentional`}
         >
           <Link2 size={10} className="shrink-0" />
-          Duplicate — {sameTableDuplicateCount} fields share this label here
+          Duplicate: {sameTableDuplicateCount} fields share this label here
         </p>
       )}
     </div>

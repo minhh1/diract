@@ -25,7 +25,7 @@ async function convert(bytes: Buffer, filename: string, targetFormat: "docx" | "
   } catch {
     throw new Error(
       `Could not reach the document conversion service at ${GOTENBERG_URL}. ` +
-      `Is it running? (docker run -d --name doc-converter -p 3033:3000 doc-converter — see docservice/Dockerfile)`
+      `Is it running? (docker run -d --name doc-converter -p 3033:3000 doc-converter; see docservice/Dockerfile)`
     );
   }
   if (!res.ok) {

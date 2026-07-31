@@ -47,7 +47,7 @@ export default function ProjectPicker({ projects, value, onChange, label = "Proj
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p>
         <div className="flex items-center gap-2 px-4 py-2.5 border border-indigo-200 bg-indigo-50 rounded-full">
           <span className="flex-1 text-[13px] text-slate-800 font-medium truncate">
-            {value.name}{value.matterNumber ? ` — ${value.matterNumber}` : ""}
+            {value.name}{value.matterNumber ? ` (${value.matterNumber})` : ""}
           </span>
           <button onClick={() => onChange(null)} className="text-indigo-400 hover:text-red-500 shrink-0"><X size={14} /></button>
         </div>

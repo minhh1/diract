@@ -124,7 +124,7 @@ function PageLoadHistory({ stat }: { stat: PageStat }) {
     <div>
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
         {all.length} load{all.length !== 1 ? "s" : ""} recorded
-        {all.length > HISTORY_DISPLAY_LIMIT ? ` — showing most recent ${HISTORY_DISPLAY_LIMIT}` : ""}
+        {all.length > HISTORY_DISPLAY_LIMIT ? `, showing most recent ${HISTORY_DISPLAY_LIMIT}` : ""}
       </p>
       <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
         {shown.map((sample, i) => (
@@ -215,7 +215,7 @@ export default function AdminPerfTab() {
             {entries.length} logged events across {groups.length} page load{groups.length !== 1 ? "s" : ""}
           </p>
           <p className="text-[11px] text-slate-400 mt-1">
-            Local to this browser only — captured from every dashboard page load, newest first.
+            Local to this browser only, captured from every dashboard page load, newest first.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -241,7 +241,7 @@ export default function AdminPerfTab() {
       {groups.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-slate-300">
           <Activity size={28} />
-          <p className="text-[11px] font-bold uppercase tracking-widest">No events yet — load a dashboard page</p>
+          <p className="text-[11px] font-bold uppercase tracking-widest">No events yet. Load a dashboard page</p>
         </div>
       )}
 

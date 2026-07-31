@@ -35,7 +35,7 @@ export async function updateRecord({
 
   await logActivity({
     parentType, parentId, companyId,
-    action: `updated ${recordLabel ? recordLabel + ' — ' : ''}${fieldNames.join(', ').replace(/_/g, ' ')}`,
+    action: `updated ${recordLabel ? recordLabel + ': ' : ''}${fieldNames.join(', ').replace(/_/g, ' ')}`,
     details: { table, recordId: id, changes: changeSummary },
   });
 

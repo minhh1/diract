@@ -74,12 +74,12 @@ const TEAMS_HELP_STEPS = [
   {
     title: "Generate a client secret",
     description:
-      "On the same app, go to Certificates & secrets → Client secrets → New client secret. Copy the Value column immediately after creating it — Azure only displays it once, and the field named \"Secret ID\" next to it is not the value you need.",
+      "On the same app, go to Certificates & secrets → Client secrets → New client secret. Copy the Value column immediately after creating it, since Azure only displays it once, and the field named \"Secret ID\" next to it is not the value you need.",
   },
   {
     title: "Add API permissions and grant admin consent",
     description:
-      "Go to API permissions → Add a permission → Microsoft Graph → Application permissions, and add ChannelMessage.Read.All, Chat.Read.All, and Team.ReadBasic.All. After saving the credentials below, use the \"Grant admin consent\" link this app shows you — it needs to be clicked by someone with Microsoft 365 admin rights for your organization. Once they approve, Azure redirects back here and this connects automatically -- the button below is just a manual fallback in case that redirect doesn't land back in this browser.",
+      "Go to API permissions → Add a permission → Microsoft Graph → Application permissions, and add ChannelMessage.Read.All, Chat.Read.All, and Team.ReadBasic.All. After saving the credentials below, use the \"Grant admin consent\" link this app shows you. It needs to be clicked by someone with Microsoft 365 admin rights for your organization. Once they approve, Azure redirects back here and this connects automatically -- the button below is just a manual fallback in case that redirect doesn't land back in this browser.",
   },
 ];
 
@@ -447,7 +447,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
               <Users2 size={13} className={connection.admin_consent_granted ? "text-emerald-500 shrink-0" : "text-amber-500 shrink-0"} />
               <p className="text-[12px] font-medium text-slate-700 flex-1">
                 Tenant {connection.tenant_id}
-                {connection.last_synced_at && ` — last synced ${new Date(connection.last_synced_at).toLocaleString()}`}
+                {connection.last_synced_at && `, last synced ${new Date(connection.last_synced_at).toLocaleString()}`}
               </p>
               <button onClick={disconnect} className="p-1 text-slate-300 hover:text-red-500 transition-colors">
                 <Trash2 size={12} />
@@ -577,7 +577,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
                 <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">
                   <Bot size={13} className={botConnection.enabled ? "text-emerald-500 shrink-0" : "text-slate-400 shrink-0"} />
                   <p className="text-[12px] font-medium text-slate-700 flex-1">
-                    Bot App ID {botConnection.bot_app_id} — tenant {botConnection.bot_tenant_id}
+                    Bot App ID {botConnection.bot_app_id}, tenant {botConnection.bot_tenant_id}
                   </p>
                   <button
                     onClick={() => toggleBotEnabled(!botConnection.enabled)}
@@ -607,7 +607,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
                 <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">
                   <Bot size={13} className={botConnection.enabled ? "text-emerald-500 shrink-0" : "text-slate-400 shrink-0"} />
                   <p className="text-[12px] font-medium text-slate-700 flex-1">
-                    Using Diract&apos;s shared bot — tenant {botConnection.teams_tenant_id}
+                    Using Diract&apos;s shared bot, tenant {botConnection.teams_tenant_id}
                   </p>
                   <button
                     onClick={() => toggleBotEnabled(!botConnection.enabled)}
@@ -644,7 +644,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
               <div className="space-y-3 pt-3">
                 <div className="px-4 py-3 bg-slate-50 rounded-2xl">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
-                    Messaging endpoint — paste into the Azure Bot resource&apos;s Configuration page
+                    Messaging endpoint: paste into the Azure Bot resource&apos;s Configuration page
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 text-[11px] text-slate-600 truncate">{messagingEndpointUrl}</code>
@@ -874,7 +874,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
         isOpen={helpOpen}
         onClose={() => setHelpOpen(false)}
         title="Finding your Azure AD credentials"
-        intro="All three values below come from an Azure AD app registration in the Azure Portal — your company's Microsoft 365 admin will need to complete the last step."
+        intro="All three values below come from an Azure AD app registration in the Azure Portal. Your company's Microsoft 365 admin will need to complete the last step."
         steps={TEAMS_HELP_STEPS}
       />
       <CredentialsHelpDrawer

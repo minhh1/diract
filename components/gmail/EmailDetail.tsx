@@ -230,7 +230,7 @@ export default function EmailDetail({
           <div className="p-8">
             <p className="text-[13px] text-slate-600 leading-relaxed">{message.snippet}</p>
             <p className="text-[10px] text-slate-300 mt-4 italic">
-              Full email body could not be loaded — showing preview
+              Full email body could not be loaded, showing preview
             </p>
           </div>
         )}

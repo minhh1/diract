@@ -243,7 +243,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
             </select>
           </div>
           <div>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Watchers <span className="text-slate-300 font-normal normal-case">— also notified, shown on their task list</span></p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Watchers <span className="text-slate-300 font-normal normal-case">(also notified, shown on their task list)</span></p>
             <div className="flex flex-wrap gap-1.5">
               {profiles.map((p: any) => {
                 const active = watcherIds.includes(p.id);
@@ -316,7 +316,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
           {task.id && (
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                Depends on <span className="text-slate-300 font-normal normal-case">— can't be marked done until these are</span>
+                Depends on <span className="text-slate-300 font-normal normal-case">(can't be marked done until these are)</span>
               </p>
               <div className="space-y-1.5 mb-2">
                 {dependsOnTasks.map((t: any) => (

@@ -13,9 +13,9 @@ type ValueRow = { record_id: string; field_id: string; value_text: string | null
 function describe(row: Record<string, any>, matterName: string): string {
   const type = row.type || '';
   const who = row.payor_payee || '';
-  if (type === 'Deposit') return who ? `${type} — ${who}` : type;
+  if (type === 'Deposit') return who ? `Deposit from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}` : type;
-  if (type === 'Journal Transfer') return who ? `Transfer — ${who}` : type;
+  if (type === 'Journal Transfer') return who ? `Transfer (${who})` : type;
   return type || '—';
 }
 

@@ -67,7 +67,7 @@ export default function PrecedentsTab({ recordId }: Props) {
         <div className="space-y-3">
           {precedents.length === 0 && (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">
-              No precedents set up yet — an admin can add some in Settings → Precedents
+              No precedents set up yet. An admin can add some in Settings → Precedents
             </p>
           )}
           {precedents.map(p => (
@@ -316,7 +316,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
           )}
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-              Salutation <span className="text-slate-300 normal-case font-normal">(optional — leave blank to use the default)</span>
+              Salutation <span className="text-slate-300 normal-case font-normal">(optional, leave blank to use the default)</span>
             </p>
             <input value={salutation} onChange={e => setSalutation(e.target.value)}
               placeholder="e.g. Dear Mr Smith,"
@@ -349,7 +349,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
                 <Sparkles size={11} /> Draft with AI
               </p>
               <p className="text-[10px] text-indigo-400">
-                Describe what this document should say — the subject and body above will be pre-filled for you to review and edit before issuing.
+                Describe what this document should say. The subject and body above will be pre-filled for you to review and edit before issuing.
               </p>
               <textarea value={brief} onChange={e => setBrief(e.target.value)} rows={3}
                 placeholder="e.g. Confirm the order has shipped and is expected to arrive within 5 business days..."
@@ -394,7 +394,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
               Sign off <span className="text-slate-300 normal-case font-normal">(up to 4, defaults to this matter's usual signers)</span>
             </p>
             {staff.length === 0 ? (
-              <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet — add one in your profile</p>
+              <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet. Add one in your profile</p>
             ) : (
               <div className="space-y-1.5">
                 {staff.map(s => {
@@ -561,7 +561,7 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
                 </Link>
               </div>
               {staff.length === 0 ? (
-                <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet — add one in your profile</p>
+                <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet. Add one in your profile</p>
               ) : (
                 <div className="space-y-1.5">
                   {staff.map(s => {

@@ -80,7 +80,7 @@ function BrandingSection({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const saveAddress = async () => {
-    if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
+    if (!companyId) { setError('Still loading your company, try again in a moment.'); return; }
     setSavingAddress(true);
     setError(null);
     // merge_company_invoice_settings does a server-side jsonb `||` merge of
@@ -207,7 +207,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
   }, [companyId]);
 
   const save = async () => {
-    if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
+    if (!companyId) { setError('Still loading your company, try again in a moment.'); return; }
     setSaving(true);
     setSaved(false);
     setError(null);
@@ -274,10 +274,10 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
             onChange={e => onField(setOurReferenceFieldKey)(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-full py-2.5 px-4 text-[12px] font-medium outline-none appearance-none"
           >
-            <option value="">None — leave blank, fill in manually per invoice</option>
+            <option value="">None, leave blank, fill in manually per invoice</option>
             {projectFieldOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <p className="text-[10px] text-slate-400 mt-1">Still editable on each invoice — this just sets the starting value from the matter.</p>
+          <p className="text-[10px] text-slate-400 mt-1">Still editable on each invoice, this just sets the starting value from the matter.</p>
         </div>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">"Debtor" auto-fills from</label>
@@ -286,11 +286,11 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
             onChange={e => onField(setDebtorFieldKey)(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-full py-2.5 px-4 text-[12px] font-medium outline-none appearance-none"
           >
-            <option value="">None — leave blank, select manually per invoice</option>
+            <option value="">None, leave blank, select manually per invoice</option>
             {entityFieldOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <p className="text-[10px] text-slate-400 mt-1">
-            Whichever matter field holds "who's the client" (e.g. a "Client Name" field) — Debtor defaults to it, still editable per invoice.
+            Whichever matter field holds "who's the client" (e.g. a "Client Name" field), Debtor defaults to it, still editable per invoice.
             {entityFieldOptions.length === 0 && ' No entity-relation fields found on Matters yet.'}
           </p>
         </div>
@@ -334,7 +334,7 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
   const [layoutEditorId, setLayoutEditorId] = useState<string | null>(null);
 
   const saveTemplates = async (templates: InvoiceTemplateConfig[]) => {
-    if (!companyId) { setError('Still loading your company — try again in a moment.'); return; }
+    if (!companyId) { setError('Still loading your company, try again in a moment.'); return; }
     setSaving(true);
     setError(null);
     // Server-side partial merge -- see BrandingSection.saveAddress for why
@@ -385,7 +385,7 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">What to include on each invoice</p>
-          <p className="text-[11px] text-slate-400 mt-1">Sensible defaults are already selected — only change these if you want to trim what's shown.</p>
+          <p className="text-[11px] text-slate-400 mt-1">Sensible defaults are already selected; only change these if you want to trim what's shown.</p>
         </div>
         {isAdmin && (
           <div className="flex items-center gap-2 shrink-0">
@@ -471,7 +471,7 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
                   </label>
                   {t.display.showProfessionalFeesTable === false && (
                     <p className="text-[10px] text-amber-600 pl-6">
-                      When this is off, whoever creates an invoice on this template must type a description of the fees for page 1 — there's no itemised breakdown left for the client to read.
+                      When this is off, whoever creates an invoice on this template must type a description of the fees for page 1; there's no itemised breakdown left for the client to read.
                     </p>
                   )}
                 </fieldset>

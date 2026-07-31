@@ -140,13 +140,13 @@ function useElapsedSeconds(active: boolean): number {
 function uploadStatusText(seconds: number): string {
   if (seconds < 4) return "Uploading your letterhead…";
   if (seconds < 15) return "Reading the document and classifying its fields with AI…";
-  return "Still working — this takes longer right after the document conversion service has been idle. Feel free to check other pages; this will keep going.";
+  return "Still working. This takes longer right after the document conversion service has been idle. Feel free to check other pages; this will keep going.";
 }
 
 function previewStatusText(seconds: number): string {
   if (seconds < 3) return "Rendering preview…";
   if (seconds < 12) return "Converting your letterhead to PDF…";
-  return "Still working — the conversion service can take longer if it's been idle for a while.";
+  return "Still working. The conversion service can take longer if it's been idle for a while.";
 }
 
 // So leaving this page mid-upload (the fetch itself isn't cancelled by
@@ -311,8 +311,8 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
           <p className="text-[12px] text-slate-400 mb-3">
             {isAdmin
               ? <>Upload your company&apos;s Word letterhead (logo/header/footer already laid out). The recipient&apos;s
-                  address and the document itself are placed automatically — no manual tagging needed.</>
-              : "No letterhead has been uploaded yet — ask a company admin to set one up before issuing documents."}
+                  address and the document itself are placed automatically, no manual tagging needed.</>
+              : "No letterhead has been uploaded yet. Ask a company admin to set one up before issuing documents."}
           </p>
           {isAdmin && (
             <label className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors cursor-pointer">
@@ -380,10 +380,10 @@ function DetectedFieldsSection({ isAdmin, letterhead, onChanged }: {
     <div className="mt-5 pt-5 border-t border-slate-100">
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Fields identified in this template</p>
       <p className="text-[11px] text-slate-400 mb-3">
-        When this letterhead was uploaded, these fields were automatically recognised from its layout (not written by AI — just identified). Remove one if it was picked up incorrectly; the rest of the letter keeps working either way.
+        When this letterhead was uploaded, these fields were automatically recognised from its layout (not written by AI, just identified). Remove one if it was picked up incorrectly; the rest of the letter keeps working either way.
       </p>
       {fields.length === 0 ? (
-        <p className="text-[11px] text-slate-300 italic">No extra fields identified — this letterhead just uses the standard address/content/signoff areas.</p>
+        <p className="text-[11px] text-slate-300 italic">No extra fields identified, this letterhead just uses the standard address/content/signoff areas.</p>
       ) : (
         <div className="space-y-2">
           {fields.map(f => (
@@ -521,7 +521,7 @@ function SettingsSection({ isAdmin, staff, staffLoading }: { isAdmin: boolean; s
 
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-            Signers <span className="text-slate-300 normal-case font-normal">(up to 4 — pick from the staff signoffs below)</span>
+            Signers <span className="text-slate-300 normal-case font-normal">(up to 4, pick from the staff signoffs below)</span>
           </p>
           {staffLoading ? (
             <Loader2 size={14} className="animate-spin text-slate-300" />
@@ -536,7 +536,7 @@ function SettingsSection({ isAdmin, staff, staffLoading }: { isAdmin: boolean; s
                     <input type="checkbox" checked={checked} disabled={!isAdmin || (!checked && settings.signers.length >= 4)}
                       onChange={() => toggleSigner(s.userId)} />
                     <span className="text-[12px] font-medium text-slate-700">{s.name || s.accountName}</span>
-                    {s.position && <span className="text-[11px] text-slate-400">— {s.position}</span>}
+                    {s.position && <span className="text-[11px] text-slate-400">({s.position})</span>}
                     {!s.hasSignoff && <span className="ml-auto text-[10px] text-amber-500">No signoff details yet</span>}
                   </label>
                 );
@@ -822,7 +822,7 @@ function BodyTemplateSection({ precedentId, canEdit }: { precedentId: string; ca
         )}
       </div>
       <p className="text-[11px] text-slate-400">
-        Upload one or more real past documents of this type — the app compares them (and the company's letterhead) to build a reusable body with fill-in fields for what changes each time, e.g. a project reference or due date.
+        Upload one or more real past documents of this type. The app compares them (and the company's letterhead) to build a reusable body with fill-in fields for what changes each time, e.g. a project reference or due date.
       </p>
 
       {uploading && (
@@ -937,7 +937,7 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
         placeholder="Description shown to staff on the Precedent tab (optional)"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
       <textarea value={aiInstructions} onChange={e => setAiInstructions(e.target.value)} rows={3}
-        placeholder="Instructions for the optional AI drafting assist — e.g. 'This confirms an order has been placed. State the order details and expected delivery date.'"
+        placeholder="Instructions for the optional AI drafting assist, e.g. 'This confirms an order has been placed. State the order details and expected delivery date.'"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
       {!isNew && <BodyTemplateSection precedentId={precedent.id} canEdit={canEdit} />}
       {error && <p className="text-[11px] text-red-500">{error}</p>}

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   console.log('[join-company] token lookup:', { found: !!tokenData, error: tokenError?.message });
 
   if (!tokenData) {
-    return NextResponse.json({ error: 'Invalid token — not found' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid token: not found' }, { status: 400 });
   }
   if (tokenData.used_at) {
     return NextResponse.json({ error: 'This invitation link has already been used' }, { status: 400 });

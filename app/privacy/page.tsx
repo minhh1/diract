@@ -1,7 +1,7 @@
 // app/privacy/page.tsx
 import Link from "next/link";
 
-export const metadata = { title: "Privacy Policy — Diract" };
+export const metadata = { title: "Privacy Policy | Diract" };
 
 export default function PrivacyPage() {
   return (
@@ -12,7 +12,7 @@ export default function PrivacyPage() {
         </Link>
 
         <h1 className="text-3xl font-light tracking-tight text-slate-900 mb-2">Privacy Policy</h1>
-        <p className="text-sm text-slate-400 mb-10">Diract — Management Central · Last updated: July 2026</p>
+        <p className="text-sm text-slate-400 mb-10">Diract: Management Central · Last updated: July 2026</p>
 
         <div className="prose prose-slate prose-sm max-w-none space-y-8">
 
@@ -24,7 +24,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-base font-semibold text-slate-800 mb-2">Information We Collect</h2>
             <h3 className="text-sm font-medium text-slate-700 mt-3 mb-1">Gmail Data</h3>
-            <p className="text-slate-600 leading-relaxed">When you connect your Gmail account to Diract, we access email metadata (subject lines, sender addresses, dates, message IDs), Gmail labels, and email content — but only for emails you explicitly assign to a project. We do not read, store, or process any other emails.</p>
+            <p className="text-slate-600 leading-relaxed">When you connect your Gmail account to Diract, we access email metadata (subject lines, sender addresses, dates, message IDs), Gmail labels, and email content, but only for emails you explicitly assign to a project. We do not read, store, or process any other emails.</p>
             <h3 className="text-sm font-medium text-slate-700 mt-3 mb-1">Account Information</h3>
             <p className="text-slate-600 leading-relaxed">Your Google account email address and your company membership role within Diract.</p>
           </section>

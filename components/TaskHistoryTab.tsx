@@ -72,7 +72,7 @@ export default function TaskHistoryTab({ taskId, profiles }: { taskId: string; p
           <div className="flex-1 min-w-0">
             <p className="text-[12px] text-slate-700">
               <span className="font-bold">{actorName(e.actor_id)}</span> {ACTION_LABELS[e.action] || e.action}
-              {e.detail ? <span className="text-slate-500"> — {e.detail}</span> : null}
+              {e.detail ? <span className="text-slate-500"> ({e.detail})</span> : null}
             </p>
             <p className="text-[10px] text-slate-400 mt-0.5">
               {new Date(e.created_at).toLocaleString("en-AU", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })}

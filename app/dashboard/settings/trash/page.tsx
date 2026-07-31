@@ -150,7 +150,7 @@ export default function TrashPage() {
         },
         purge: async () => {
           const warning = dc > 0 ? ` This will also permanently delete ${dc} dashboard${dc === 1 ? "" : "s"} built on this table.` : "";
-          if (!window.confirm(`Permanently delete "${t.name}"? This cannot be undone — it will delete the table, its fields, and all ${rc} record(s) forever.${warning}`)) return;
+          if (!window.confirm(`Permanently delete "${t.name}"? This cannot be undone: it will delete the table, its fields, and all ${rc} record(s) forever.${warning}`)) return;
           await supabase.from("company_tables").delete().eq("id", t.id);
         },
       });
@@ -178,7 +178,7 @@ export default function TrashPage() {
           await refreshDisabledSystemTables();
         },
         purge: async () => {
-          if (!window.confirm(`Permanently delete "${label}"? This cannot be undone — it will delete its ${fieldIds.length} field(s) and all data stored in them forever. The table itself stays available, ready for new fields.`)) return;
+          if (!window.confirm(`Permanently delete "${label}"? This cannot be undone: it will delete its ${fieldIds.length} field(s) and all data stored in them forever. The table itself stays available, ready for new fields.`)) return;
           if (fieldIds.length > 0) {
             await supabase.from("company_custom_fields").delete().in("id", fieldIds);
           }
@@ -211,7 +211,7 @@ export default function TrashPage() {
           if (companyId && before && after) logSchemaChange({ companyId, actorId: userId, entityType: "company_table_field", entityId: f.id, entityLabel: f.label, action: "update", before, after });
         },
         purge: async () => {
-          if (!window.confirm(`Permanently delete "${f.label}"? This cannot be undone — it will delete the field and all data stored in it for ${vc} record(s) forever.`)) return;
+          if (!window.confirm(`Permanently delete "${f.label}"? This cannot be undone: it will delete the field and all data stored in it for ${vc} record(s) forever.`)) return;
           await supabase.from("company_table_fields").delete().eq("id", f.id);
         },
       });
@@ -235,7 +235,7 @@ export default function TrashPage() {
           if (companyId && before && after) logSchemaChange({ companyId, actorId: userId, entityType: "company_custom_field", entityId: f.id, entityLabel: f.label, action: "update", before, after });
         },
         purge: async () => {
-          if (!window.confirm(`Permanently delete "${f.label}"? This cannot be undone — it will delete the field and all data stored in it for ${vc} record(s) forever.`)) return;
+          if (!window.confirm(`Permanently delete "${f.label}"? This cannot be undone: it will delete the field and all data stored in it for ${vc} record(s) forever.`)) return;
           await supabase.from("company_custom_fields").delete().eq("id", f.id);
         },
       });
@@ -433,7 +433,7 @@ export default function TrashPage() {
         <Trash2 size={22} className="text-indigo-600" />
         <div>
           <h1 className="text-xl font-light uppercase tracking-tight text-slate-900">Trash</h1>
-          <p className="text-[11px] text-slate-400">Deleted tables, fields, dashboards, and records — nothing here is gone for good until you permanently delete it.</p>
+          <p className="text-[11px] text-slate-400">Deleted tables, fields, dashboards, and records. Nothing here is gone for good until you permanently delete it.</p>
         </div>
       </div>
 
@@ -509,7 +509,7 @@ export default function TrashPage() {
 
           <div className="flex items-start gap-2 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
             <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-amber-700">&ldquo;Delete permanently&rdquo; cannot be undone — it removes the item and all data stored against it for good. Everything else here is just hidden and can be restored.</p>
+            <p className="text-[11px] text-amber-700">&ldquo;Delete permanently&rdquo; cannot be undone: it removes the item and all data stored against it for good. Everything else here is just hidden and can be restored.</p>
           </div>
         </>
       )}

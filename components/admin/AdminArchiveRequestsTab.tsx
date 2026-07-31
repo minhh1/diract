@@ -174,7 +174,7 @@ export default function AdminArchiveRequestsTab({ companyId }: Props) {
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-bold text-slate-800 truncate">{r.entity_label}</p>
                 <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                  {ENTITY_TABLE_LABELS[r.entity_table] || r.entity_table} — requested by {r.requester_name} — {new Date(r.created_at).toLocaleString()}
+                  {ENTITY_TABLE_LABELS[r.entity_table] || r.entity_table} · requested by {r.requester_name} · {new Date(r.created_at).toLocaleString()}
                 </p>
                 {r.error && (
                   <p className="text-[10px] text-red-500 mt-1">Last attempt failed: {r.error}</p>

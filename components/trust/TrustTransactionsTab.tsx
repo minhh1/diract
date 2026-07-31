@@ -31,9 +31,9 @@ function describe(r: CustomTableRecord): string {
   const type = r.values.type || '';
   const who = r.values.payor_payee || '';
   const matter = r.displayValues?.matter || '';
-  if (type === 'Deposit') return who ? `${type} — ${who}` : type;
+  if (type === 'Deposit') return who ? `${type} from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}${matter ? ` for ${matter}` : ''}` : type;
-  if (type === 'Journal Transfer') return matter ? `Transfer — ${matter}` : type;
+  if (type === 'Journal Transfer') return matter ? `Transfer for ${matter}` : type;
   return type || '—';
 }
 

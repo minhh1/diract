@@ -236,7 +236,7 @@ export default function DashboardActivityChart({ series, granularity, chartType 
 
       {visibleIndexes.length === 0 ? (
         <div className="h-32 flex items-center justify-center text-[11px] text-slate-300 italic">
-          {hasAxes ? 'No series matches this combination' : 'Every series is hidden — click a legend item to show it'}
+          {hasAxes ? 'No series matches this combination' : 'Every series is hidden. Click a legend item to show it'}
         </div>
       ) : (
       <div className="relative h-32">

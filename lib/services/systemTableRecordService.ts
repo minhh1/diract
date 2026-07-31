@@ -66,7 +66,7 @@ async function saveCustomFieldValues(
     .upsert(rows, { onConflict: 'field_id,record_id' });
   if (error) {
     console.error('systemTableRecordService: custom field values:', error);
-    return { error: 'Saved the record, but a custom field failed to save — please check its value.' };
+    return { error: 'Saved the record, but a custom field failed to save. Please check its value.' };
   }
 }
 

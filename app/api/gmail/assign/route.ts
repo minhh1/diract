@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     if (!tokenRow) {
       return NextResponse.json(
-        { error: `Gmail not connected — no token row for user ${user.id}` },
+        { error: `Gmail not connected: no token row for user ${user.id}` },
         { status: 400 }
       );
     }

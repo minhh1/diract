@@ -250,7 +250,7 @@ export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props
       <div className="bg-white w-full max-w-6xl h-[90vh] rounded-[32px] shadow-2xl flex flex-col overflow-hidden">
         <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
-            <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Edit layout — {template.name}</h3>
+            <h3 className="text-lg font-light uppercase tracking-wide text-slate-900">Edit layout: {template.name}</h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
               {isDetailed
                 ? 'Drag the logo to reposition it, or drag its corner to resize.'

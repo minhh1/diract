@@ -9,13 +9,13 @@ import type { SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
 // something the grid/quick-add UI can show the user directly.
 function ledgerErrorMessage(raw: string): string | null {
   if (raw.includes('LEDGER_OVERDRAW')) {
-    return "This withdrawal would overdraw the matter's trust ledger — a trust ledger can never go into deficit. Check the matter's balance and the amount.";
+    return "This withdrawal would overdraw the matter's trust ledger. A trust ledger can never go into deficit. Check the matter's balance and the amount.";
   }
   if (raw.includes('LEDGER_APPEND_ONLY') || raw.includes('LEDGER_RPC_ONLY')) {
-    return "Trust ledger entries are append-only and can't be edited or deleted — enter a reversing journal entry instead.";
+    return "Trust ledger entries are append-only and can't be edited or deleted. Enter a reversing journal entry instead.";
   }
   if (raw.includes('LEDGER_NEGATIVE_AMOUNT')) {
-    return "Ledger amounts must be entered as positive values — use Amount In for money received and Amount Out for money paid.";
+    return "Ledger amounts must be entered as positive values. Use Amount In for money received and Amount Out for money paid.";
   }
   return null;
 }
@@ -81,7 +81,7 @@ async function validateFieldConstraints(
     const value = finalValues[field.field_key];
     if (isEmptyValue(value)) continue;
     const hasConflict = await findConflictingUniqueValue(field.id, getValueColumn(field.field_type), value, excludeRecordId);
-    if (hasConflict) return `"${field.label}" must be unique — this value is already used on another record.`;
+    if (hasConflict) return `"${field.label}" must be unique. This value is already used on another record.`;
   }
   return null;
 }
@@ -104,7 +104,7 @@ export async function createRecord(
       if (v !== undefined && v !== null && v !== '') payload[field.field_key] = v;
     }
     if (!Object.keys(payload).length) {
-      return { error: 'Ledger entries cannot be created empty — fill in the entry details and add it in one step.' };
+      return { error: 'Ledger entries cannot be created empty. Fill in the entry details and add it in one step.' };
     }
     const { data, error } = await supabase.rpc('insert_ledger_record', { p_table_id: tableId, p_values: payload });
     if (error) {
@@ -185,7 +185,7 @@ export async function createRecord(
     // back. Confirmed in testing: this was previously discarded entirely,
     // producing a record with no data and no indication anything went wrong.
     await supabase.from('company_table_records').delete().eq('id', record.id);
-    return { error: ledgerErrorMessage(valueError.message) || 'Could not save this entry — please try again.' };
+    return { error: ledgerErrorMessage(valueError.message) || 'Could not save this entry. Please try again.' };
   }
 
   await recomputeRelatedRollups(companyId, fields, relationTouches(fields, toSave));
@@ -361,7 +361,7 @@ async function claimAllUniqueValues(
     const ok = await claimUniqueValue(field.id, recordId, value);
     if (!ok) {
       await Promise.all(claimed.map(c => releaseUniqueValue(c.fieldId, recordId, c.value)));
-      return `"${field.label}" must be unique — this value is already used on another record.`;
+      return `"${field.label}" must be unique. This value is already used on another record.`;
     }
     claimed.push({ fieldId: field.id, value });
   }

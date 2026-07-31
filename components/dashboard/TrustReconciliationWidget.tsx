@@ -103,7 +103,7 @@ export default function TrustReconciliationWidget({ records }: { records: Custom
       <div className="text-[11px] text-slate-500 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-start gap-2">
         <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
         <span>
-          This statement must be prepared within 15 working days of month end — by{' '}
+          This statement must be prepared within 15 working days of month end, by{' '}
           <strong>{deadline.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</strong> at the latest.
           The trust year ends 31 March {trustYearEndYear}; the external examiner's report is due to the Law Society by 31 May {trustYearEndYear}.
         </span>
@@ -111,7 +111,7 @@ export default function TrustReconciliationWidget({ records }: { records: Custom
 
       {/* 1. Cash book */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
-        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">1 · Trust cash book — {month}</p>
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">1 · Trust cash book ({month})</p>
         <div className="grid grid-cols-3 gap-4">
           <div>
             <p className="text-[10px] text-slate-400">Receipts this month</p>
@@ -193,7 +193,7 @@ export default function TrustReconciliationWidget({ records }: { records: Custom
               <p className="flex items-center gap-1.5 text-[12px] font-bold text-emerald-600 pb-2"><CheckCircle2 size={14} /> Reconciles with the cash book</p>
             ) : (
               <p className="flex items-center gap-1.5 text-[12px] font-bold text-rose-600 pb-2">
-                <AlertTriangle size={14} /> Variance of {aud.format(bankVariance)} vs cash book — identify unpresented cheques / outstanding deposits, or investigate
+                <AlertTriangle size={14} /> Variance of {aud.format(bankVariance)} vs cash book. Identify unpresented cheques / outstanding deposits, or investigate
               </p>
             )
           )}

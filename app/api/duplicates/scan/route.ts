@@ -245,7 +245,7 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
 
   if (records.length > MAX_RECORDS) {
     return NextResponse.json(
-      { error: `${records.length} records — too many to scan at once.` },
+      { error: `${records.length} records is too many to scan at once.` },
       { status: 413 }
     );
   }

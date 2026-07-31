@@ -40,12 +40,12 @@ const WHATSAPP_HELP_STEPS = [
   {
     title: "Make up a webhook verify token",
     description:
-      "This one isn't from Meta — pick any random string yourself, paste it into the field below, and paste the same value into your Meta App → WhatsApp → Configuration → Webhooks \"Verify token\" field alongside the webhook URL shown here.",
+      "This one isn't from Meta. Pick any random string yourself, paste it into the field below, and paste the same value into your Meta App → WhatsApp → Configuration → Webhooks \"Verify token\" field alongside the webhook URL shown here.",
   },
   {
     title: "Find your App Secret",
     description:
-      "In the Meta App Dashboard, go to App settings → Basic. \"App secret\" is shown there (click Show and re-enter your password) — this is used to verify that webhook calls really come from Meta, and is different from the System User token above.",
+      "In the Meta App Dashboard, go to App settings → Basic. \"App secret\" is shown there (click Show and re-enter your password). This is used to verify that webhook calls really come from Meta, and is different from the System User token above.",
   },
 ];
 
@@ -207,7 +207,7 @@ export default function AdminWhatsAppTab({ companyId }: Props) {
           <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl mb-2">
             <MessageCircle size={13} className="text-emerald-500 shrink-0" />
             <p className="text-[12px] font-medium text-slate-700 flex-1">
-              Connected — phone number ID {connection.phone_number_id}
+              Connected, phone number ID {connection.phone_number_id}
             </p>
             <button onClick={disconnect} className="p-1 text-slate-300 hover:text-red-500 transition-colors">
               <Trash2 size={12} />
@@ -218,7 +218,7 @@ export default function AdminWhatsAppTab({ companyId }: Props) {
         {!connection && !showForm && (
           <p className="text-[12px] text-slate-400">
             Not connected. Requires a Meta Business Platform app with a WhatsApp Business phone number
-            and a System User access token — only messages sent to/from that business number are visible here,
+            and a System User access token. Only messages sent to/from that business number are visible here,
             not anyone&apos;s personal WhatsApp history.
           </p>
         )}
@@ -227,7 +227,7 @@ export default function AdminWhatsAppTab({ companyId }: Props) {
           <div className="space-y-3 pt-3 border-t border-slate-100">
             <div className="px-4 py-3 bg-slate-50 rounded-2xl">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
-                Webhook URL — paste into Meta App → WhatsApp → Configuration
+                Webhook URL: paste into Meta App → WhatsApp → Configuration
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-[11px] text-slate-600 truncate">{webhookUrl}</code>
@@ -321,7 +321,7 @@ export default function AdminWhatsAppTab({ companyId }: Props) {
         <div className="bg-white border border-slate-200 rounded-[32px] p-6">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">WhatsApp groups</p>
           <p className="text-[12px] text-slate-400 mb-4">
-            The business number can&apos;t be added to a group you already have — WhatsApp&apos;s official platform doesn&apos;t
+            The business number can&apos;t be added to a group you already have. WhatsApp&apos;s official platform doesn&apos;t
             allow that for any integration. It can create its own new group instead; your team joins via the invite link.
             Requires your WhatsApp Business Account to be an Official Business Account.
           </p>
