@@ -157,6 +157,16 @@ async function deleteGmailLabel(token: string, labelId: string): Promise<void> {
   });
 }
 
+async function renameGmailLabel(token: string, labelId: string, newName: string): Promise<boolean> {
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/labels/${labelId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: newName }),
+    signal: withTimeout(),
+  });
+  return res.ok;
+}
+
 // ── Job / logging helpers ──────────────────────────────────────────
 
 async function markUserComplete(jobId: string, userId: string, totalUsers: number): Promise<void> {
@@ -273,6 +283,31 @@ Deno.serve(async (req) => {
 
     const gmailLabels = await getGmailLabels(token);
     const existingLabelId = findLabelId(gmailLabels, labelCode, gmailLabelName);
+
+    // findLabelId matches primarily by the [labelCode] suffix (see its own
+    // doc comment), so it still finds this user's copy of the label even
+    // though its Gmail-side name has drifted from the current expected
+    // name -- e.g. gmail-label-sync-cron corrected project_gmail_labels
+    // after a matter number was fixed directly in the database. Checked
+    // for every job that touches an existing label (not gated to a
+    // dedicated job type), so every user's copy self-heals the next time
+    // any sync activity reaches this project, not just a special rename
+    // job somebody has to remember to queue.
+    if (!isRemoved && existingLabelId) {
+      const current = gmailLabels.find(l => l.id === existingLabelId);
+      const safeName = sanitiseLabelName(gmailLabelName);
+      if (current && current.name !== safeName) {
+        const renamed = await renameGmailLabel(token, existingLabelId, safeName);
+        if (renamed) {
+          await logActivity({
+            company_id: companyId, triggered_by: null, action: "label_renamed",
+            project_id: projectId, gmail_label_name: gmailLabelName,
+            target_user_id: userId, details: { label_code: labelCode, old_name: current.name, new_name: safeName },
+          });
+          console.log(`[label-sync-processor] ✓ Renamed label for ${userId}: "${current.name}" -> "${safeName}"`);
+        }
+      }
+    }
 
     if (isRemoved) {
       if (existingLabelId) {

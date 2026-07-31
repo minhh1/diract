@@ -259,6 +259,71 @@ function respond(data: any, status = 200): Response {
   });
 }
 
+// ── Label rename detection ──────────────────────────────────────────
+// Recomputes what each active label's name SHOULD currently be from live
+// source data (project name + matter number custom field value), the exact
+// same formula lib/gmail/createProjectLabel.ts uses at creation time --
+// reusing the label's EXISTING label_code, never regenerating it (that's
+// the stable identifier the processor matches on, see
+// gmail-label-sync-processor's findLabelId). A label whose stored
+// gmail_label_name no longer matches this needs both the DB row and every
+// connected user's actual Gmail label renamed -- e.g. a matter number
+// correction made directly in the database (as opposed to through a normal
+// edit) never had anything else to trigger a resync.
+async function computeExpectedLabelNames(
+  companyId: string,
+  company: { gmail_parent_label: string | null; gmail_parent_code: string | null; gmail_label_tokens: string[] | null; gmail_sublabel_separator: string | null },
+  projectIds: string[]
+): Promise<Map<string, { fullLabelName: string; sublabel: string }>> {
+  const result = new Map<string, { fullLabelName: string; sublabel: string }>();
+  if (!projectIds.length) return result;
+
+  const parentLabel = company.gmail_parent_label || "Shared Emails";
+  const parentCode = company.gmail_parent_code || "";
+  const parentFull = parentCode ? `${parentLabel} #${parentCode}` : parentLabel;
+  const tokens: string[] = company.gmail_label_tokens || ["project_name"];
+  const separator: string = company.gmail_sublabel_separator || " — ";
+
+  const { data: projects } = await db.from("projects").select("id, name").in("id", projectIds);
+  const projectById = new Map((projects || []).map((p: any) => [p.id, p]));
+
+  const matterByProject = new Map<string, string>();
+  if (tokens.includes("matter_number")) {
+    const { data: matterField } = await db
+      .from("company_custom_fields").select("id")
+      .eq("company_id", companyId).eq("table_name", "projects")
+      .ilike("label", "%matter%number%").is("deleted_at", null).maybeSingle();
+    if (matterField) {
+      const { data: matterVals } = await db
+        .from("company_custom_field_values").select("record_id, value_text")
+        .eq("field_id", matterField.id).in("record_id", projectIds);
+      (matterVals || []).forEach((v: any) => { if (v.value_text) matterByProject.set(v.record_id, v.value_text); });
+    }
+  }
+
+  const labelCodeByProject = new Map<string, string>();
+  const { data: labelRows } = await db.from("project_gmail_labels")
+    .select("project_id, label_code").in("project_id", projectIds).is("removed_at", null);
+  (labelRows || []).forEach((l: any) => { if (l.label_code) labelCodeByProject.set(l.project_id, l.label_code); });
+
+  for (const projectId of projectIds) {
+    const project = projectById.get(projectId);
+    const labelCode = labelCodeByProject.get(projectId);
+    if (!project || !labelCode) continue; // no label_code to anchor on -- can't safely recompute
+
+    const parts = tokens.map((t: string) => {
+      if (t === "project_name") return project.name;
+      if (t === "matter_number") return matterByProject.get(projectId) || "";
+      if (t === "year") return new Date().getFullYear().toString();
+      return t;
+    }).filter(Boolean);
+    const cleanParts = parts.map((p: string) => p.replace(/\//g, ","));
+    const sublabel = cleanParts.join(separator) + ` [${labelCode}]`;
+    result.set(projectId, { fullLabelName: `${parentFull}/${sublabel}`, sublabel });
+  }
+  return result;
+}
+
 async function heartbeat(name: string, durationMs: number, result: unknown): Promise<void> {
   try {
     await db.from("cron_heartbeats").upsert(
@@ -282,7 +347,7 @@ Deno.serve(async (_req) => {
 
   const { data: companies } = await db
     .from("companies")
-    .select("id, gmail_parent_label")
+    .select("id, gmail_parent_label, gmail_parent_code, gmail_label_tokens, gmail_sublabel_separator")
     .not("gmail_parent_label", "is", null);
 
   for (const company of (companies || [])) {
@@ -327,6 +392,29 @@ Deno.serve(async (_req) => {
 
     if (!allLabels.length) continue;
 
+    // Detect labels whose stored name has drifted from what the source data
+    // (project name / matter number) currently says it should be -- e.g. a
+    // matter number corrected directly in the database, or a project
+    // rename, neither of which has any other trigger to resync from. Only
+    // checked against active labels; a removed label is about to be
+    // deleted outright, its name doesn't matter.
+    const expectedNames = await computeExpectedLabelNames(companyId, company, (activeLabels || []).map((l: any) => l.project_id));
+    const renamedProjectIds = new Set<string>();
+    for (const label of (activeLabels || []) as any[]) {
+      const expected = expectedNames.get(label.project_id);
+      if (!expected || expected.fullLabelName === label.gmail_label_name) continue;
+      renamedProjectIds.add(label.project_id);
+      await db.from("project_gmail_labels")
+        .update({ gmail_label_name: expected.fullLabelName, label_sub: expected.sublabel })
+        .eq("project_id", label.project_id).eq("company_id", companyId).is("removed_at", null);
+      // Keep working against the corrected name for the rest of this tick
+      // (job payloads below), not the stale value already in `label`.
+      label.gmail_label_name = expected.fullLabelName;
+    }
+    if (renamedProjectIds.size) {
+      console.log(`[label-sync-cron] Company ${companyId}: ${renamedProjectIds.size} label(s) renamed to match current source data`);
+    }
+
     // Batch fetch ALL existing jobs for this company in one query
     const { data: existingJobs } = await db.from("gmail_sync_jobs")
       .select("id, status, project_id, completed_users, total_users, updated_at")
@@ -338,6 +426,12 @@ Deno.serve(async (_req) => {
     // Build updates and inserts in bulk
     const toUpdate: string[] = [];
     const toInsert: any[] = [];
+    // Separate, typically-tiny list -- a rename never touches more than a
+    // handful of projects per tick, so these get their own individual
+    // updates (they need a per-row gmail_label_name, which the uniform
+    // bulk update below can't express) without giving up that bulk path's
+    // single-query update for the common (no rename) case.
+    const toRename: { id: string; gmail_label_name: string }[] = [];
     let skippedInProgress = 0, skippedAlreadyDone = 0;
 
     for (const label of allLabels) {
@@ -365,6 +459,12 @@ Deno.serve(async (_req) => {
       const removalMissed = !!(label as any).removed_at && existing?.status === "done"
         && new Date((label as any).removed_at).getTime() > new Date(existing.updated_at).getTime();
 
+      // Same idea as removalMissed, but for a name that drifted from
+      // current source data (see computeExpectedLabelNames above) --
+      // otherwise an already-"done" job for this project would never get
+      // requeued at all, since total_users alone wouldn't have changed.
+      const renameMissed = renamedProjectIds.has(label.project_id);
+
       // A job that's already "done" and reflects the label's current state
       // only needs redoing if the company's connected-member count changed
       // since (someone joined/connected Gmail and needs the label too) —
@@ -374,13 +474,14 @@ Deno.serve(async (_req) => {
       // user's mailbox forever — the real cause of most of the
       // load/starvation issues chased down on 2026-07-21/22, not just a
       // symptom of them.
-      if (existing?.status === "done" && existing.total_users === totalUsers && !removalMissed) {
+      if (existing?.status === "done" && existing.total_users === totalUsers && !removalMissed && !renameMissed) {
         skippedAlreadyDone++;
         continue;
       }
 
       if (existing) {
         toUpdate.push(existing.id);
+        if (renameMissed) toRename.push({ id: existing.id, gmail_label_name: label.gmail_label_name });
       } else {
         toInsert.push({
           job_type: "label_sync",
@@ -403,6 +504,14 @@ Deno.serve(async (_req) => {
         completed_users: [], total_users: totalUsers,
         updated_at: new Date().toISOString(),
       }).in("id", toUpdate);
+    }
+
+    // Correct the (rare) renamed jobs' own gmail_label_name -- separate
+    // from the bulk reset above since each one's value differs.
+    if (toRename.length) {
+      await Promise.all(toRename.map(r =>
+        db.from("gmail_sync_jobs").update({ gmail_label_name: r.gmail_label_name }).eq("id", r.id)
+      ));
     }
 
     // Bulk insert new jobs
