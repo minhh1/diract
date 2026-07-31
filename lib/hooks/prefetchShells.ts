@@ -1,26 +1,29 @@
 "use client";
 
-// Two warm-up jobs, both BLOCKING bootstrap steps -- called and awaited
-// directly from lib/companyBootstrap.ts as part of the sequence AppLoader
-// gates the splash on, so neither system nor custom tables/dashboards are
-// still cold the moment it dismisses:
+// Warm-up jobs exported here are all called and awaited together, in a
+// single Promise.all, from lib/companyBootstrap.ts's merged "shells" step --
+// see that file's own BootstrapStep doc comment for why this used to be
+// two separate steps (one per function below) and isn't anymore. So neither
+// system nor custom tables/dashboards are still cold the moment the splash
+// dismisses:
 //
-// - warmSystemTableShells() -- schema/customFields/relatedFields for the
-//   four system tables (properties/entities/projects/tasks). Exactly 4
-//   known tables.
+// - warmSystemTableShells() / warmSystemTableViewConfig() /
+//   startSystemTableRowPrefetch() -- schema/customFields/relatedFields,
+//   saved column layout/sort, and row data for the four system tables
+//   (properties/entities/projects/tasks). Exactly 4 known tables.
 //
-// - warmCustomTableShells() -- schema/fields for every custom table
-//   (company_tables) and every custom dashboard's source table
-//   (source_table_type === 'custom'), an open-ended, per-company list that
-//   could be dozens of tables. Used to be fire-and-forget background work
-//   (a user's first visit to a custom table/dashboard just paid a cold
-//   load whenever it happened) -- now awaited up front instead, so a
-//   custom table isn't the one thing still loading after everything else
-//   already feels instant. Parallel across tables/dashboards (not the
-//   sequential loop this used to be as idle-time-only work) so the wait is
-//   bounded by the slowest single fetch, not their sum; the AppLoader's own
-//   ceiling still protects a company with a large table count from a
-//   truly slow network.
+// - warmCustomTableShells() -- schema/fields/rows/column-sort-config/
+//   default-filters for every custom table (company_tables) and every
+//   custom dashboard's source table (source_table_type === 'custom'), an
+//   open-ended, per-company list that could be dozens of tables. Used to be
+//   fire-and-forget background work (a user's first visit to a custom
+//   table/dashboard just paid a cold load whenever it happened) -- now
+//   awaited up front instead, so a custom table isn't the one thing still
+//   loading after everything else already feels instant. Parallel across
+//   tables/dashboards (not the sequential loop this used to be as
+//   idle-time-only work) so the wait is bounded by the slowest single
+//   fetch, not their sum; the AppLoader's own ceiling still protects a
+//   company with a large table count from a truly slow network.
 
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";

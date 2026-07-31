@@ -42,23 +42,28 @@ export interface CompanyBootstrapResult {
   logoUrl: string | null;
 }
 
-// Seven discrete, real milestones -- not a fake timer -- for AppLoader's
+// Six discrete, real milestones -- not a fake timer -- for AppLoader's
 // progress bar. Every step is awaited for real completion, so the bar only
 // reaches a step once that data is genuinely cached, not just requested.
-// "tableShells" is schema/customFields/relatedFields for the four system
-// tables; "shells" is the same idea for every custom table/dashboard
-// (company-specific, could be dozens) -- together they're what makes EVERY
-// table, system or custom, feel instant the moment the loading screen
-// dismisses, not just whichever one the user happened to land on first.
-// "shells" used to be reported as soon as that prefetch was *kicked off*
-// rather than once it finished, deliberately left running in the
-// background -- which meant a session's first visit to any custom table
-// still paid a full cold load whenever it happened, just silently, after
-// the splash was already gone. Now genuinely awaited like every other step;
-// the AppLoader's own ceiling still protects a company with a very large
-// table count from a truly dead network.
-export type BootstrapStep = "session" | "identity" | "tables" | "dashboards" | "relations" | "tableShells" | "shells";
-export const BOOTSTRAP_STEPS: BootstrapStep[] = ["session", "identity", "tables", "dashboards", "relations", "tableShells", "shells"];
+// "shells" is schema/customFields/relatedFields/saved-view-config/rows for
+// the four system tables AND schema/fields/rows/column-sort-config/default-
+// filters for every custom table/dashboard (company-specific, could be
+// dozens) -- together they're what makes EVERY table, system or custom,
+// feel instant the moment the loading screen dismisses, not just whichever
+// one the user happened to land on first.
+//
+// This used to be two separate steps ("tableShells" for system tables,
+// "shells" for custom tables), each independently deciding which of its own
+// jobs were worth awaiting vs. leaving fire-and-forget -- which is exactly
+// how system-table row prefetch quietly ended up NOT awaited while
+// custom-table row prefetch was, on two different code-review passes. One
+// merged step with one Promise.all over every job for both means there's
+// no separate place left for that kind of split-brain drift to hide: every
+// "is this table ready" job either blocks the splash together, or none of
+// them do. The AppLoader's own ceiling still protects a company with a
+// very large table count from a truly dead network.
+export type BootstrapStep = "session" | "identity" | "tables" | "dashboards" | "relations" | "shells";
+export const BOOTSTRAP_STEPS: BootstrapStep[] = ["session", "identity", "tables", "dashboards", "relations", "shells"];
 
 interface BootstrapOptions {
   onStep?: (step: BootstrapStep) => void;
@@ -135,40 +140,19 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
   notifyStep("dashboards");
   await warmRelationOptionsCache().catch(() => {});
   notifyStep("relations");
-  // Run alongside warmSystemTableShells rather than after it -- the two warm
-  // independent data (schema/customFields/relatedFields vs. saved column
-  // layout/filters) for the same 4 tables, so there's no reason for one to
-  // wait on the other; the step still only reports done once BOTH finish, so
-  // the splash keeps gating on "the main table screen has nothing left to
-  // fetch," not just its schema.
+  // Every remaining "is this table ready to render" job, system and custom
+  // alike, in one Promise.all -- schema/customFields/relatedFields/saved-
+  // view-config/rows for the 4 system tables, schema/fields/rows/column-
+  // sort-config/default-filters for every custom table/dashboard. All four
+  // jobs warm independent data for independent tables, so there's no
+  // ordering dependency between them; the step only reports done once ALL
+  // of them finish, so the splash keeps gating on "nothing left to fetch
+  // anywhere," not just whichever table happens to run first.
   await Promise.all([
     warmSystemTableShells(cid).catch(() => {}),
     warmSystemTableViewConfig(cid, user.id, result.myTeamIds).catch(() => {}),
-  ]);
-  notifyStep("tableShells");
-  // Now also warms every custom table's rows + column/sort config + default
-  // filters alongside its schema/fields -- see prefetchShells.ts's own
-  // updated doc comment. Run alongside startSystemTableRowPrefetch, not
-  // after it -- both warm independent per-table row data, so there's no
-  // reason for one to block the other starting.
-  //
-  // System-table row prefetch used to be fire-and-forget here (kicked off,
-  // never awaited) on the reasoning that it's "not bounded" the way a
-  // large custom table's dataset could be -- but that reasoning predates
-  // custom-table rows being made a blocking step just above. Once custom
-  // tables got the "guaranteed warm by the time the splash dismisses"
-  // treatment and system tables didn't, landing on Properties/Entities/
-  // Projects/Tasks right after the splash could still hit usePresetTable's
-  // cold, blocking fetch path (row cache not written yet) while every
-  // custom table was already instant -- confirmed live, this is what
-  // showed up as "system tables slower, custom tables faster, situation
-  // has reversed." There are exactly 4 system tables (a bounded, known
-  // set, unlike custom tables' open-ended "could be dozens"), so the same
-  // argument that justified awaiting custom-table rows applies at least as
-  // strongly here.
-  await Promise.all([
-    warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {}),
     startSystemTableRowPrefetch(cid).catch(() => {}),
+    warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {}),
   ]);
   notifyStep("shells");
 
