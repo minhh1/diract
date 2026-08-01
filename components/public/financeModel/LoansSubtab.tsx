@@ -24,6 +24,7 @@ interface Loan {
   name: string | null;
   lender_type: string | null;
   lender: string | null;
+  broker: string | null;
   borrower: string | null;
   guarantors: string[] | null;
   principal_amount: number | null;
@@ -513,7 +514,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
   const [addingLoan, setAddingLoan] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newLoan, setNewLoan] = useState({
-    name: "", lenderType: "Senior", lender: "", borrowerId: "", guarantorIds: [] as string[],
+    name: "", lenderType: "Senior", lenderId: "", brokerId: "", borrowerId: "", guarantorIds: [] as string[],
     principalAmount: "", startDate: "", repaymentDate: "", repaymentPeriod: "At End of Term",
     extensionRight: false, extensionTerms: "", earlyRepaymentAllowed: false, earlyRepaymentTerms: "",
     security: "", notes: "",
@@ -543,7 +544,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        projectId, name: newLoan.name.trim() || null, lenderType: newLoan.lenderType, lender: newLoan.lender.trim() || null,
+        projectId, name: newLoan.name.trim() || null, lenderType: newLoan.lenderType, lenderId: newLoan.lenderId || null, brokerId: newLoan.brokerId || null,
         borrowerId: newLoan.borrowerId, guarantorIds: newLoan.guarantorIds,
         principalAmount: parseFloat(newLoan.principalAmount) || null,
         startDate: newLoan.startDate || null, repaymentDate: newLoan.repaymentDate || null,
@@ -553,7 +554,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
         notes: newLoan.notes.trim() || null,
       }),
     });
-    setNewLoan({ name: "", lenderType: "Senior", lender: "", borrowerId: "", guarantorIds: [], principalAmount: "", startDate: "", repaymentDate: "", repaymentPeriod: "At End of Term", extensionRight: false, extensionTerms: "", earlyRepaymentAllowed: false, earlyRepaymentTerms: "", security: "", notes: "" });
+    setNewLoan({ name: "", lenderType: "Senior", lenderId: "", brokerId: "", borrowerId: "", guarantorIds: [], principalAmount: "", startDate: "", repaymentDate: "", repaymentPeriod: "At End of Term", extensionRight: false, extensionTerms: "", earlyRepaymentAllowed: false, earlyRepaymentTerms: "", security: "", notes: "" });
     setAddingLoan(false);
     setSaving(false);
     await load();
@@ -603,7 +604,9 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
               {LENDER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select></div>
           <div><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Lender</label>
-            <input value={newLoan.lender} onChange={e => setNewLoan(p => ({ ...p, lender: e.target.value }))} placeholder="e.g. NAB, GAP" className="text-[12px] border border-slate-200 rounded-xl px-3 py-1.5 bg-white w-full" /></div>
+            <RelationPicker linkedSystemTable="entities" value={newLoan.lenderId || null} allowCreateEntity onSelect={id => setNewLoan(p => ({ ...p, lenderId: id || "" }))} placeholder="Search or add an entity..." /></div>
+          <div><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Broker</label>
+            <RelationPicker linkedSystemTable="entities" value={newLoan.brokerId || null} allowCreateEntity onSelect={id => setNewLoan(p => ({ ...p, brokerId: id || "" }))} placeholder="Search or add an entity..." /></div>
           <div><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Borrower</label>
             <RelationPicker linkedSystemTable="entities" value={newLoan.borrowerId || null} onSelect={id => setNewLoan(p => ({ ...p, borrowerId: id || "" }))} placeholder="Select entity..." /></div>
           <div><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Guarantors</label>
@@ -667,7 +670,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-400">Discharged</span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-400">{loan.lender_type}{loan.lender ? ` (${loan.lender})` : ""} · Repayment {formatDate(loan.repayment_date)}{loan.security ? ` · ${loan.security}` : ""}</p>
+                    <p className="text-[11px] text-slate-400">{loan.lender_type} · Repayment {formatDate(loan.repayment_date)}{loan.security ? ` · ${loan.security}` : ""}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
