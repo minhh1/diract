@@ -187,6 +187,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     case "feasibility-scenarios":
       return NextResponse.json({ scenarios: redactRows(await rowsOf(FEASIBILITY_SCENARIOS_SLUG)) });
 
+    case "templates": {
+      // The Timeline's "Apply template" library. Loaded via the browser's
+      // own Supabase client internally, which returns nothing anonymously
+      // under RLS -- so a public viewer saw an empty template list and no
+      // way to see how the Gantt is actually built. Company-wide
+      // templates carry no project figures, just task names and offsets.
+      const [{ data: templates }, { data: project }] = await Promise.all([
+        admin.from("checklist_templates")
+          .select("*, items:checklist_template_items(*)")
+          .eq("company_id", companyId).order("created_at"),
+        admin.from("projects").select("created_at, estimated_completion_date").eq("id", projectId).maybeSingle(),
+      ]);
+      return NextResponse.json({
+        templates: (templates || []).map((t: any) => ({
+          ...t,
+          items: (t.items || []).sort((a: any, b: any) => a.display_order - b.display_order),
+        })),
+        project: project || null,
+      });
+    }
+
     case "attachments": {
       const { data } = await admin
         .from("finance_model_attachments").select("*").eq("project_id", projectId).order("created_at", { ascending: false });

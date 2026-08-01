@@ -693,7 +693,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   // On a public page there is no CompanyContext -- fall back to the id the
   // public shell resolved from the share page, or this subtab's load()
   // returns early and it spins on "Loading..." forever.
-  const { companyId: publicCompanyId } = useFinanceModelApi();
+  const { companyId: publicCompanyId, readOnly } = useFinanceModelApi();
   const companyId = sessionCompanyId || publicCompanyId || "";
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -726,6 +726,17 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     setShowTemplates(true);
     if (templates.length || templatesLoading) return;
     setTemplatesLoading(true);
+    // A public viewer has no Supabase session, so the direct client reads
+    // below return nothing under RLS -- go through the read-only public
+    // route instead, which serves the same template library.
+    if (readOnly) {
+      const res = await apiFetch(`/api/finance-model/templates?projectId=${projectId}`);
+      const json = await res.json().catch(() => ({}));
+      setTemplates(json.templates || []);
+      setProject(json.project || null);
+      setTemplatesLoading(false);
+      return;
+    }
     const [{ data: templateData }, { data: projectData }] = await Promise.all([
       supabase.from('checklist_templates').select('*, items:checklist_template_items(*)').eq('company_id', companyId).order('created_at'),
       supabase.from('projects').select('created_at, estimated_completion_date').eq('id', projectId).single(),
