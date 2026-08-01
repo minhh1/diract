@@ -1390,7 +1390,7 @@ export default function RecordDashboard({
         <FinanceModelTab recordId={recordId} />
       )}
       {activeTab?.tab_type === 'residual_land_solver' && (
-        <ResidualLandSolverTab recordId={recordId} />
+        <ResidualLandSolverTab recordId={recordId} isProject={systemTable === 'projects'} />
       )}
       {activeTabId === '__access__' && systemTable === 'projects' && (
         <ProjectAccessPanel

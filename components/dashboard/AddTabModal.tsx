@@ -112,13 +112,13 @@ export default function AddTabModal({ customTables, systemTable, onAdd, onClose 
   const [linkedTableId, setLinkedTableId] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Finance Model and the Residual Land Solver are project-scoped (a
-  // single entity/SPV company can hold several projects, each needing its
-  // own budget/assumptions) -- only offer them when adding a tab to a
-  // Project record.
-  const templates = TEMPLATES.filter(t =>
-    (t.type !== 'finance_model' && t.type !== 'residual_land_solver') || systemTable === 'projects'
-  );
+  // Finance Model is project-scoped (a single entity/SPV company can hold
+  // several projects, each needing its own budget) -- only offer it when
+  // adding a tab to a Project record. The Residual Land Solver is offered
+  // everywhere: on a Project it persists its assumptions into the shared
+  // feasibility-inputs row, on any other record it's the same calculator
+  // in standalone (non-persisting) mode -- see ResidualLandSolverTab.tsx.
+  const templates = TEMPLATES.filter(t => t.type !== 'finance_model' || systemTable === 'projects');
   const selectedTemplate = templates.find(t => t.type === selected);
 
   const handleAdd = async () => {
