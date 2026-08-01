@@ -35,7 +35,11 @@ interface TaskRow {
   assignee: { id: string; full_name: string | null } | null;
   task_statuses: { label: string; color_hex: string | null } | null;
   teams: Team[];
+  category: string | null;
+  source_template_item_id: string | null;
 }
+
+const UNCATEGORIZED = "uncategorized";
 
 const UNASSIGNED = "unassigned";
 
@@ -57,6 +61,35 @@ function formatDate(iso: string | null): string {
 
 function daysBetween(a: Date, b: Date): number {
   return (b.getTime() - a.getTime()) / 86400000;
+}
+
+function shiftDate(iso: string, deltaDays: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+// Every task that (directly or transitively) depends on `taskId` -- the
+// "Also reschedule dependents" checkbox shifts these by the same delta as
+// the edited task's own due date, so a chain of downstream tasks moves
+// together instead of silently becoming inconsistent with the task that
+// now blocks them.
+function transitiveDependents(taskId: string, dependenciesByTask: Record<string, string[]>, allTasks: TaskRow[]): TaskRow[] {
+  const result = new Set<string>();
+  let frontier = [taskId];
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const t of allTasks) {
+      if (result.has(t.id)) continue;
+      const deps = dependenciesByTask[t.id] || [];
+      if (frontier.some(f => deps.includes(f))) {
+        result.add(t.id);
+        next.push(t.id);
+      }
+    }
+    frontier = next;
+  }
+  return allTasks.filter(t => result.has(t.id));
 }
 
 function startOfWeek(d: Date): Date {
@@ -118,19 +151,53 @@ function blockedBy(taskId: string, dependenciesByTask: Record<string, string[]>,
 // timing -- see lib/cashFlowEngine.ts) -- opened from a List row, a Card,
 // or a Diagram bar, all three views share this one.
 function TaskEditModal({
-  task, allTasks, teams, profiles, dependenciesByTask, companyId, userId, projectId, onClose, onSaved,
+  task, allTasks, teams, profiles, dependenciesByTask, companyId, userId, projectId, projectCreatedAt, onClose, onSaved,
 }: {
   task: TaskRow; allTasks: TaskRow[]; teams: Team[]; profiles: Profile[];
   dependenciesByTask: Record<string, string[]>; companyId: string; userId: string | null; projectId: string;
+  projectCreatedAt: string | null;
   onClose: () => void; onSaved: () => void;
 }) {
   const [assigneeId, setAssigneeId] = useState(task.assignee_id || "");
   const [teamIds, setTeamIds] = useState<Set<string>>(new Set(task.teams.map(t => t.id)));
   const [startDate, setStartDate] = useState(task.start_date || "");
   const [dueDate, setDueDate] = useState(task.due_date ? task.due_date.slice(0, 10) : "");
+  const [taskCategory, setTaskCategory] = useState(task.category || "");
   const [dependsOn, setDependsOn] = useState<Set<string>>(new Set(dependenciesByTask[task.id] || []));
   const [dependsOnSearch, setDependsOnSearch] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const originalDueDate = task.due_date ? task.due_date.slice(0, 10) : "";
+  const dependents = useMemo(() => transitiveDependents(task.id, dependenciesByTask, allTasks), [task.id, dependenciesByTask, allTasks]);
+  const [rescheduleDependents, setRescheduleDependents] = useState(false);
+
+  const bumpDuration = (delta: number) => {
+    if (!startDate || !dueDate) return;
+    const startMs = new Date(startDate.slice(0, 10)).getTime();
+    const d = new Date(dueDate);
+    d.setDate(d.getDate() + delta);
+    if (d.getTime() < startMs) return;
+    setDueDate(d.toISOString().slice(0, 10));
+  };
+  const durationDays = startDate && dueDate ? Math.max(0, Math.round(daysBetween(new Date(startDate.slice(0, 10)), new Date(dueDate)))) : null;
+
+  const taskCategoryOptions = useMemo(() => [...new Set(allTasks.map(t => t.category).filter((c): c is string => !!c))].sort(), [allTasks]);
+
+  const [updatingTemplate, setUpdatingTemplate] = useState(false);
+  const [templateUpdated, setTemplateUpdated] = useState(false);
+  const updateSourceTemplateItem = async () => {
+    if (!task.source_template_item_id || !projectCreatedAt) return;
+    setUpdatingTemplate(true);
+    const createdAt = new Date(projectCreatedAt);
+    const due_offset_days = dueDate ? Math.round(daysBetween(createdAt, new Date(dueDate))) : null;
+    const start_offset_days = startDate ? Math.round(daysBetween(createdAt, new Date(startDate.slice(0, 10)))) : null;
+    await supabase.from("checklist_template_items").update({
+      due_offset_days, due_anchor: "record_created", due_offset_mode: "calendar",
+      start_offset_days, start_anchor: start_offset_days != null ? "record_created" : null,
+    }).eq("id", task.source_template_item_id);
+    setUpdatingTemplate(false);
+    setTemplateUpdated(true);
+  };
 
   const [showConvert, setShowConvert] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
@@ -183,6 +250,7 @@ function TaskEditModal({
       assignee_id: assigneeId || null,
       start_date: startDate || null,
       due_date: dueDate || null,
+      category: taskCategory.trim() || null,
     }).eq("id", task.id);
 
     await supabase.from("task_teams").delete().eq("task_id", task.id);
@@ -197,6 +265,18 @@ function TaskEditModal({
       await supabase.from("task_dependencies").insert(
         [...dependsOn].map(depends_on_task_id => ({ task_id: task.id, depends_on_task_id, company_id: companyId, created_by: userId }))
       );
+    }
+
+    if (rescheduleDependents && dueDate && originalDueDate) {
+      const deltaDays = Math.round(daysBetween(new Date(originalDueDate), new Date(dueDate)));
+      if (deltaDays !== 0 && dependents.length) {
+        await Promise.all(dependents.map(dep => {
+          const patch: Record<string, string> = {};
+          if (dep.start_date) patch.start_date = shiftDate(dep.start_date, deltaDays);
+          if (dep.due_date) patch.due_date = shiftDate(dep.due_date, deltaDays);
+          return supabase.from("tasks").update(patch).eq("id", dep.id);
+        }));
+      }
     }
 
     setSaving(false);
@@ -229,7 +309,14 @@ function TaskEditModal({
                 {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name || p.email}</option>)}
               </select>
             </div>
-            <div />
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Category (phase)</p>
+              <input value={taskCategory} onChange={e => setTaskCategory(e.target.value)} list="task-categories" placeholder="e.g. Construction..."
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
+              <datalist id="task-categories">
+                {taskCategoryOptions.map(c => <option key={c} value={c} />)}
+              </datalist>
+            </div>
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Start date</p>
               <input type="date" value={startDate ? startDate.slice(0, 10) : ""} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
@@ -238,7 +325,35 @@ function TaskEditModal({
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Due date</p>
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
             </div>
+            {durationDays !== null && (
+              <div className="col-span-2 flex items-center gap-2">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Duration</p>
+                <button type="button" onClick={() => bumpDuration(-1)} className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 text-[11px] font-bold leading-none">−</button>
+                <span className="text-[12px] font-bold text-slate-700 w-14 text-center">{durationDays}d</span>
+                <button type="button" onClick={() => bumpDuration(1)} className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 text-[11px] font-bold leading-none">+</button>
+              </div>
+            )}
           </div>
+
+          {dueDate !== originalDueDate && dependents.length > 0 && (
+            <label className="flex items-center gap-2 text-[11px] text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={rescheduleDependents} onChange={e => setRescheduleDependents(e.target.checked)} />
+              Also reschedule {dependents.length} dependent task{dependents.length === 1 ? "" : "s"}
+            </label>
+          )}
+
+          {task.source_template_item_id && (
+            <div className="border-t border-slate-100 pt-3">
+              {templateUpdated ? (
+                <p className="text-[11px] font-medium text-emerald-600">Template updated to match this task's current dates.</p>
+              ) : (
+                <button type="button" onClick={updateSourceTemplateItem} disabled={updatingTemplate}
+                  className="text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-40">
+                  {updatingTemplate ? "Updating template..." : "Update template with this task's dates"}
+                </button>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Teams</p>
@@ -328,10 +443,12 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"card" | "diagram" | "list">("diagram");
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set());
-  const [groupByTeam, setGroupByTeam] = useState(false);
+  const [groupBy, setGroupBy] = useState<"none" | "team" | "category">("none");
   const [zoom, setZoom] = useState<Zoom>("week");
   const [periodOffset, setPeriodOffset] = useState(0);
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
+  const [projectCreatedAt, setProjectCreatedAt] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   // "Apply template" -- reuses the same checklist_templates/TemplateManager
   // machinery as the Checklist tab, company-wide templates seeded with a
@@ -386,7 +503,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [taskRes, teamsRes, profilesRes] = await Promise.all([
+      const [taskRes, teamsRes, profilesRes, projectRes] = await Promise.all([
         fetch(`/api/finance-model/tasks?projectId=${projectId}`),
         // teams_select RLS scopes to "any company this user is a member of,"
         // not "their currently active one" -- a user who belongs to more
@@ -396,6 +513,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
         // query, not introduced here, but worth not repeating.
         supabase.from('teams').select('id, team_name').eq('company_id', companyId).eq('is_active', true).order('team_name'),
         supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
+        supabase.from('projects').select('created_at').eq('id', projectId).single(),
       ]);
       const json = await taskRes.json();
       if (!taskRes.ok) { setError(json.error || "Failed to load"); return; }
@@ -405,6 +523,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
       setDependenciesByTask(depMap);
       setTeams(teamsRes.data || []);
       setProfiles(profilesRes.data || []);
+      setProjectCreatedAt(projectRes.data?.created_at || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -442,6 +561,94 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     const showUnassigned = teamFilter.size === 0 || teamFilter.has(UNASSIGNED);
     return showUnassigned ? [...cols, { id: UNASSIGNED, team_name: "Unassigned" }] : cols;
   }, [teams, teamFilter]);
+
+  // Distinct category values actually in use, for the Diagram view's
+  // "Group by: Category" swimlanes -- free-typed labels, not a managed
+  // list, so this is derived from the tasks themselves rather than a
+  // lookup table.
+  const visibleCategories = useMemo(
+    () => [...new Set(tasks.map(t => t.category).filter((c): c is string => !!c))].sort(),
+    [tasks]
+  );
+
+  // Pushes the current (possibly hand-edited-in-the-Diagram-view) dates of
+  // every task that traces back to a template item onto that item's
+  // stored offsets -- the project-level counterpart to TaskEditModal's
+  // per-task "Update template" action. Asks once whether to update the
+  // source template(s) directly or fork new ones, since this can touch
+  // more than one template if more than one was ever applied to this
+  // project.
+  const syncScheduleToTemplate = async () => {
+    const withSource = tasks.filter(t => t.source_template_item_id);
+    if (!withSource.length) return;
+    setSyncing(true);
+    try {
+      const ids = withSource.map(t => t.source_template_item_id as string);
+      const { data: items } = await supabase.from('checklist_template_items').select('id, template_id').in('id', ids);
+      const templateIdByItemId = new Map((items || []).map((i: any) => [i.id, i.template_id]));
+      const templateIds = [...new Set((items || []).map((i: any) => i.template_id))];
+      const { data: templatesData } = await supabase.from('checklist_templates').select('id, name').in('id', templateIds);
+      const templateNameById = new Map((templatesData || []).map((t: any) => [t.id, t.name]));
+
+      const groups = new Map<string, TaskRow[]>();
+      for (const t of withSource) {
+        const templateId = templateIdByItemId.get(t.source_template_item_id as string);
+        if (!templateId) continue;
+        if (!groups.has(templateId)) groups.set(templateId, []);
+        groups.get(templateId)!.push(t);
+      }
+      if (!groups.size) { alert('Could not find the source template(s) for these tasks.'); return; }
+
+      const computeOffsets = (t: TaskRow) => {
+        const createdAt = new Date(projectCreatedAt || new Date().toISOString());
+        return {
+          due_offset_days: t.due_date ? Math.round(daysBetween(createdAt, new Date(t.due_date))) : null,
+          due_anchor: 'record_created', due_offset_mode: 'calendar',
+          start_offset_days: t.start_date ? Math.round(daysBetween(createdAt, new Date(t.start_date))) : null,
+          start_anchor: t.start_date ? 'record_created' : null,
+        };
+      };
+
+      const groupNames = [...groups.keys()].map(id => templateNameById.get(id) || 'Untitled').join(', ');
+      const asNew = !window.confirm(
+        `Update ${groupNames} directly with these tasks' current dates?\n\nOK = update the existing template(s)\nCancel = save as new template(s) instead`
+      );
+
+      for (const [templateId, groupTasks] of groups) {
+        const templateName = templateNameById.get(templateId) || 'Untitled';
+        if (!asNew) {
+          await Promise.all(groupTasks.map(t =>
+            supabase.from('checklist_template_items').update(computeOffsets(t)).eq('id', t.source_template_item_id as string)
+          ));
+          continue;
+        }
+        const newName = window.prompt(`New template name for "${templateName}":`, `${templateName} (adjusted)`);
+        if (!newName) continue;
+        const { data: newTemplateRow } = await supabase.from('checklist_templates')
+          .insert({ company_id: companyId, name: newName, record_table: 'projects' }).select().single();
+        if (!newTemplateRow) continue;
+        const { data: allItems } = await supabase.from('checklist_template_items').select('*').eq('template_id', templateId).order('display_order');
+        const editByItemId = new Map(groupTasks.map(t => [t.source_template_item_id, computeOffsets(t)]));
+        const inserted: any[] = [];
+        for (const item of allItems || []) {
+          const { id, template_id, depends_on_item_ids, ...rest } = item;
+          const edit = editByItemId.get(id) || {};
+          const { data } = await supabase.from('checklist_template_items').insert({ ...rest, ...edit, template_id: newTemplateRow.id }).select().single();
+          if (data) inserted.push(data);
+        }
+        const oldToNew = new Map((allItems || []).map((item: any, i: number) => [item.id, inserted[i]?.id]));
+        await Promise.all((allItems || []).map((item: any, i: number) => {
+          if (!item.depends_on_item_ids?.length || !inserted[i]) return null;
+          const newDeps = item.depends_on_item_ids.map((oid: string) => oldToNew.get(oid)).filter(Boolean);
+          if (!newDeps.length) return null;
+          return supabase.from('checklist_template_items').update({ depends_on_item_ids: newDeps }).eq('id', inserted[i].id);
+        }));
+      }
+      alert('Sync complete.');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Today is always folded into the date range (not just the tasks' own
   // start/due spread) so the today-marker below always has somewhere valid
@@ -603,10 +810,19 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
           <button onClick={openTemplates} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
             <ClipboardList size={12} /> Apply template
           </button>
+          {tasks.some(t => t.source_template_item_id) && (
+            <button onClick={syncScheduleToTemplate} disabled={syncing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40">
+              <RefreshCw size={12} /> {syncing ? "Syncing..." : "Sync schedule to template"}
+            </button>
+          )}
           {view !== "card" && (
-            <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
-              <input type="checkbox" checked={groupByTeam} onChange={e => setGroupByTeam(e.target.checked)} /> Group by team
-            </label>
+            <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
+              {(["none", "team", "category"] as const).map(g => (
+                <button key={g} onClick={() => setGroupBy(g)} className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${groupBy === g ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+                  {g === "none" ? "No grouping" : g === "team" ? "By team" : "By category"}
+                </button>
+              ))}
+            </div>
           )}
           <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
             <button onClick={() => setView("card")} className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold ${view === "card" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
@@ -766,7 +982,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
               )}
               {periodTasks.length === 0 ? (
                 <p className="text-[11px] text-slate-300 py-6 text-center">No tasks due this {zoom === "month" ? "month" : "week"}.</p>
-              ) : groupByTeam ? (
+              ) : groupBy === "team" ? (
                 <div className="space-y-4">
                   {visibleColumns.map(col => {
                     const colTasks = periodTasks.filter(t => col.id === UNASSIGNED ? !t.teams.length : t.teams.some(tm => tm.id === col.id));
@@ -774,6 +990,19 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
                     return (
                       <div key={col.id} className="space-y-2">
                         <p className={`text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 ${pxPerDay ? "sticky left-0 z-10 bg-white w-fit" : ""}`}>{col.team_name}</p>
+                        {colTasks.map(t => <GanttBar key={t.id} t={t} />)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : groupBy === "category" ? (
+                <div className="space-y-4">
+                  {[...visibleCategories, null].map(cat => {
+                    const colTasks = periodTasks.filter(t => cat === null ? !t.category : t.category === cat);
+                    if (!colTasks.length) return null;
+                    return (
+                      <div key={cat ?? UNCATEGORIZED} className="space-y-2">
+                        <p className={`text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 ${pxPerDay ? "sticky left-0 z-10 bg-white w-fit" : ""}`}>{cat ?? "Uncategorized"}</p>
                         {colTasks.map(t => <GanttBar key={t.id} t={t} />)}
                       </div>
                     );
@@ -793,6 +1022,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
         <TaskEditModal
           task={editingTask} allTasks={tasks} teams={teams} profiles={profiles}
           dependenciesByTask={dependenciesByTask} companyId={companyId || ""} userId={userId} projectId={projectId}
+          projectCreatedAt={projectCreatedAt}
           onClose={() => setEditingTask(null)} onSaved={load}
         />
       )}

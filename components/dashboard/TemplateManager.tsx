@@ -4,9 +4,9 @@
 // `onApply`/`projectId`), or as a plain in-page panel when it isn't (the standalone "Templates"
 // tool in the sidebar rail — company-wide management only, no project to apply against).
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Plus, Trash2, Calendar, Pencil, X, Copy, ArrowLeft, CheckSquare, DollarSign, GripVertical,
+  Plus, Trash2, Calendar, Pencil, X, Copy, ArrowLeft, CheckSquare, DollarSign, GripVertical, Search,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -24,10 +24,12 @@ export interface TemplateItem {
   // Mirrors due_offset_days/due_anchor exactly -- populates the created
   // task's start_date (not just due_date) so applying a template produces
   // real Gantt duration bars, not just due-date markers. A `task_<n>`
-  // start_anchor chains off that OTHER item's DUE date (a phase starts
-  // when the prior phase's due/end date is reached), resolved via
-  // resolveItemDate below, not resolveItemStartDate -- start-to-start
-  // chaining isn't supported, only end-to-start.
+  // anchor chains off that OTHER item's DUE date (end-to-start: a phase
+  // starts when the prior phase's due/end date is reached); a
+  // `start_task_<n>` anchor instead chains off that item's START date
+  // (start-to-start: for a phase that runs in parallel with, or begins
+  // partway through, another). Both due_anchor and start_anchor accept
+  // either form -- see resolveAnchorDate below.
   start_offset_days?: number | null;
   start_anchor?: string | null;
   // Free-text guidance carried through to the created task's own notes.
@@ -37,8 +39,16 @@ export interface TemplateItem {
   // time (see handleApply below), same "AND semantics" task_dependencies
   // already uses elsewhere.
   depends_on_item_ids?: string[] | null;
+  // Free-typed phase/swimlane label (e.g. "Acquisition", "Construction") --
+  // purely a display grouping, not a scheduling concept; timing is still
+  // just the anchor chain above.
+  category?: string | null;
 }
 export interface Template { id: string; name: string; items: TemplateItem[]; }
+
+function daysBetween(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
 
 // "Untitled", "Untitled 1", "Untitled 2"... — picks the lowest unused number given existing names.
 export function nextUntitledName(existingNames: string[]): string {
@@ -152,33 +162,85 @@ export default function TemplateManager({
     { value: 'record_due', label: 'Project due date' },
   ];
 
-  // Resolves an item's due date, following "After: <earlier task>" chains (due_anchor = `task_<index>`)
-  // back to a real anchor (project created / project due date). `items` is the full ordered array the
-  // index refers to — pass the same array the item's `task_<index>` values were assigned against.
-  // Business-day items call date-calc for AU state-aware holiday skipping; calendar-day items resolve
-  // synchronously via simple date math, still wrapped in a promise so both paths share one code path.
+  // Anchor <option>s for a "From"/"Start from" select on item `idx`: the two
+  // fixed anchors, then every other titled item twice -- once as an
+  // end-to-start reference (`task_<n>`, "After: X") and once as a
+  // start-to-start reference (`start_task_<n>`, "Same time as start: X").
+  // `dueLabel` lets the due_anchor and start_anchor selects keep their own
+  // historical wording for the end-to-start option.
+  const anchorOptions = (idx: number, dueLabel = 'After') => (
+    <>
+      {ANCHORS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+      {editItems.map((i, otherIdx) => (
+        otherIdx !== idx && i.title?.trim() && (
+          <option key={`task_${otherIdx}`} value={`task_${otherIdx}`}>{dueLabel}: {i.title}</option>
+        )
+      ))}
+      {editItems.map((i, otherIdx) => (
+        otherIdx !== idx && i.title?.trim() && (
+          <option key={`start_task_${otherIdx}`} value={`start_task_${otherIdx}`}>Same time as start: {i.title}</option>
+        )
+      ))}
+    </>
+  );
+
+  const templateCategoryOptions = [...new Set(
+    editItems.map(i => i.category?.trim()).filter((c): c is string => !!c)
+  )];
+
+  // Shared anchor resolution for due_anchor and start_anchor alike:
+  // 'record_created'/'record_due' resolve directly; `task_<n>` anchors off
+  // item n's DUE date (end-to-start, recursing through resolveItemDate);
+  // `start_task_<n>` anchors off item n's START date instead (start-to-
+  // start -- lets a phase run in parallel with, or start partway through,
+  // another), recursing through resolveItemStartDate. `seenDue`/`seenStart`
+  // guard against cycles across BOTH kinds of reference, since a due-chain
+  // can bounce into a start-chain and back. `items` is the full ordered
+  // array the index refers to — pass the same array the item's `task_<n>`/
+  // `start_task_<n>` values were assigned against. `fallback` reproduces
+  // each caller's own historical "anchor string didn't match anything
+  // known" behaviour (resolveItemDate defaulted to "now", resolveItemStartDate
+  // to the project's created-at).
+  const resolveAnchorDate = async (
+    anchorStr: string | null | undefined,
+    items: Partial<TemplateItem>[],
+    seenDue: Set<number>,
+    seenStart: Set<number>,
+    fallback: Date,
+  ): Promise<Date | null> => {
+    if (anchorStr === 'record_created') return new Date(effectiveCreatedAt);
+    if (anchorStr === 'record_due') return projectDueDate ? new Date(projectDueDate) : null;
+    const dueMatch = /^task_(\d+)$/.exec(anchorStr || '');
+    if (dueMatch) {
+      const idx = Number(dueMatch[1]);
+      const ref = items[idx];
+      if (!ref || seenDue.has(idx)) return null;
+      const refDate = await resolveItemDate(ref, items, new Set(seenDue).add(idx), seenStart);
+      return refDate ? new Date(refDate) : null;
+    }
+    const startMatch = /^start_task_(\d+)$/.exec(anchorStr || '');
+    if (startMatch) {
+      const idx = Number(startMatch[1]);
+      const ref = items[idx];
+      if (!ref || seenStart.has(idx)) return null;
+      const refDate = await resolveItemStartDate(ref, items, seenDue, new Set(seenStart).add(idx));
+      return refDate ? new Date(refDate) : null;
+    }
+    return fallback;
+  };
+
+  // Resolves an item's due date, following "After: <earlier task>" chains
+  // back to a real anchor (project created / project due date / another
+  // task's start date). Business-day items call date-calc for AU
+  // state-aware holiday skipping; calendar-day items resolve synchronously
+  // via simple date math, still wrapped in a promise so both paths share
+  // one code path.
   const resolveItemDate = async (
-    item: Partial<TemplateItem>, items: Partial<TemplateItem>[], seen: Set<number> = new Set()
+    item: Partial<TemplateItem>, items: Partial<TemplateItem>[],
+    seenDue: Set<number> = new Set(), seenStart: Set<number> = new Set()
   ): Promise<string | null> => {
     if (item.due_offset_days === null || item.due_offset_days === undefined) return null;
-    let anchor: Date | null = null;
-    if (item.due_anchor === 'record_created') {
-      anchor = new Date(effectiveCreatedAt);
-    } else if (item.due_anchor === 'record_due') {
-      anchor = projectDueDate ? new Date(projectDueDate) : null;
-    } else {
-      const m = /^task_(\d+)$/.exec(item.due_anchor || '');
-      if (m) {
-        const idx = Number(m[1]);
-        const ref = items[idx];
-        if (ref && !seen.has(idx)) {
-          const refDate = await resolveItemDate(ref, items, new Set(seen).add(idx));
-          anchor = refDate ? new Date(refDate) : null;
-        }
-      } else {
-        anchor = new Date();
-      }
-    }
+    const anchor = await resolveAnchorDate(item.due_anchor, items, seenDue, seenStart, new Date());
     if (!anchor) return null;
     if (item.due_offset_mode === 'business' && item.due_offset_state) {
       try {
@@ -195,32 +257,13 @@ export default function TemplateManager({
     return anchor.toISOString().split('T')[0];
   };
 
-  // Same shape as resolveItemDate, but for start_offset_days/start_anchor
-  // -- a `task_<index>` start_anchor still chains off that OTHER item's
-  // DUE date (via resolveItemDate, not this function) since "starts when
-  // the prior phase finishes" is the only chaining relationship Gantt
-  // templates need; start-to-start chaining isn't supported.
+  // Same shape as resolveItemDate, but for start_offset_days/start_anchor.
   const resolveItemStartDate = async (
-    item: Partial<TemplateItem>, items: Partial<TemplateItem>[]
+    item: Partial<TemplateItem>, items: Partial<TemplateItem>[],
+    seenDue: Set<number> = new Set(), seenStart: Set<number> = new Set()
   ): Promise<string | null> => {
     if (item.start_offset_days === null || item.start_offset_days === undefined) return null;
-    let anchor: Date | null = null;
-    if (item.start_anchor === 'record_created') {
-      anchor = new Date(effectiveCreatedAt);
-    } else if (item.start_anchor === 'record_due') {
-      anchor = projectDueDate ? new Date(projectDueDate) : null;
-    } else {
-      const m = /^task_(\d+)$/.exec(item.start_anchor || '');
-      if (m) {
-        const ref = items[Number(m[1])];
-        if (ref) {
-          const refDate = await resolveItemDate(ref, items);
-          anchor = refDate ? new Date(refDate) : null;
-        }
-      } else {
-        anchor = new Date(effectiveCreatedAt);
-      }
-    }
+    const anchor = await resolveAnchorDate(item.start_anchor, items, seenDue, seenStart, new Date(effectiveCreatedAt));
     if (!anchor) return null;
     anchor.setDate(anchor.getDate() + (item.start_offset_days || 0));
     return anchor.toISOString().split('T')[0];
@@ -296,14 +339,63 @@ export default function TemplateManager({
   const [resolvedDates, setResolvedDates] = useState<Record<string, string | null>>({});
   const [resolvedStartDates, setResolvedStartDates] = useState<Record<string, string | null>>({});
 
+  // Apply-time-only duration adjustments -- local overrides of due_offset_days/
+  // start_offset_days, keyed by item id, seeded from nothing (falls back to the
+  // template's stored value until touched) and reset whenever a fresh template
+  // is opened for apply. Not persisted unless the user opts into "Also update
+  // this template" / "Save as a new template" below.
+  const [applyEdits, setApplyEdits] = useState<Record<string, { due_offset_days?: number; start_offset_days?: number }>>({});
+  const [deadline, setDeadline] = useState('');
+  const [chooseMode, setChooseMode] = useState(false);
+  const [chooseSearch, setChooseSearch] = useState('');
+  const [saveMode, setSaveMode] = useState<'apply_only' | 'update_template' | 'save_new'>('apply_only');
+
+  useEffect(() => {
+    if (view === 'apply') {
+      setApplyEdits({});
+      setDeadline('');
+      setChooseMode(false);
+      setChooseSearch('');
+      setSaveMode('apply_only');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, selected?.id]);
+
+  // selected.items with any apply-time duration edits baked in, in the SAME
+  // order/indices as selected.items -- task_<n>/start_task_<n> anchors refer
+  // to positions in that original array, so this must stay index-for-index
+  // identical, just with edited items' offsets overridden.
+  const effectiveApplyItems = useMemo(() => {
+    if (!selected) return [];
+    return selected.items.map(item => {
+      const edit = applyEdits[item.id];
+      if (!edit) return item;
+      return {
+        ...item,
+        due_offset_days: edit.due_offset_days !== undefined ? edit.due_offset_days : item.due_offset_days,
+        start_offset_days: edit.start_offset_days !== undefined ? edit.start_offset_days : item.start_offset_days,
+      };
+    });
+  }, [selected, applyEdits]);
+
+  const effectiveDueOffset = (item: TemplateItem) => applyEdits[item.id]?.due_offset_days ?? item.due_offset_days;
+
+  const bumpDueOffset = (item: TemplateItem, delta: number) => {
+    setApplyEdits(prev => {
+      const cur = prev[item.id]?.due_offset_days ?? item.due_offset_days ?? 0;
+      return { ...prev, [item.id]: { ...prev[item.id], due_offset_days: cur + delta } };
+    });
+  };
+
   useEffect(() => {
     if (view !== 'apply' || !selected) return;
     let cancelled = false;
     (async () => {
-      const items = selected.items.filter(i => !i.parent_item_id);
+      const refItems = effectiveApplyItems;
+      const items = refItems.filter(i => !i.parent_item_id);
       const [dueEntries, startEntries] = await Promise.all([
-        Promise.all(items.map(async item => [item.id, await resolveItemDate(item, selected.items)] as const)),
-        Promise.all(items.map(async item => [item.id, await resolveItemStartDate(item, selected.items)] as const)),
+        Promise.all(items.map(async item => [item.id, await resolveItemDate(item, refItems)] as const)),
+        Promise.all(items.map(async item => [item.id, await resolveItemStartDate(item, refItems)] as const)),
       ]);
       if (!cancelled) {
         setResolvedDates(Object.fromEntries(dueEntries));
@@ -311,7 +403,173 @@ export default function TemplateManager({
       }
     })();
     return () => { cancelled = true; };
-  }, [view, selected]);
+  }, [view, selected, effectiveApplyItems]);
+
+  // Latest computed finish date across all apply-view tasks, and the gap to
+  // the user's optional deadline (positive = over, negative = under) --
+  // both live off resolvedDates, so they update automatically as the
+  // duration steppers/Shrink to fit change the resolved schedule.
+  const computedEndDate = useMemo(() => {
+    const dates = Object.values(resolvedDates).filter((d): d is string => !!d);
+    return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+  }, [resolvedDates]);
+
+  const deadlineGapDays = useMemo(() => {
+    if (!deadline || !computedEndDate) return null;
+    return daysBetween(new Date(deadline), new Date(computedEndDate));
+  }, [deadline, computedEndDate]);
+
+  // "Shrinkable" = a real span task (both a start and due offset set), not
+  // a milestone -- sorted longest-first so "Choose tasks to adjust" always
+  // surfaces the biggest lever without the user needing to hunt for it.
+  const shrinkableItems = useMemo(() => {
+    if (!selected) return [];
+    return selected.items
+      .filter(i => !i.parent_item_id && i.start_offset_days != null && i.due_offset_days != null)
+      .map(item => {
+        const s = resolvedStartDates[item.id], d = resolvedDates[item.id];
+        const duration = s && d ? Math.max(1, daysBetween(new Date(s), new Date(d))) : 1;
+        return { item, duration };
+      })
+      .sort((a, b) => b.duration - a.duration);
+  }, [selected, resolvedStartDates, resolvedDates]);
+
+  const filteredShrinkables = shrinkableItems.filter(({ item }) =>
+    item.title?.toLowerCase().includes(chooseSearch.trim().toLowerCase())
+  );
+
+  // Walks an item's due_anchor chain back to a root anchor (record_created/
+  // record_due/an unrecognised anchor) -- in this anchor-based model, that
+  // traced chain IS the exact set of tasks determining the end date, so
+  // it's what "Shrink to fit" targets rather than a separate float/slack
+  // calculation.
+  const traceCriticalChain = (endItem: TemplateItem, items: TemplateItem[]): TemplateItem[] => {
+    const chain: TemplateItem[] = [];
+    let cur: TemplateItem | undefined = endItem;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      chain.push(cur);
+      const m = /^task_(\d+)$/.exec(cur.due_anchor || '');
+      if (!m) break;
+      cur = items[Number(m[1])];
+    }
+    return chain;
+  };
+
+  // Proportionally reduces every shrinkable task in the critical chain
+  // (capped at a 1-day floor each) until the computed finish meets the
+  // deadline, or reports how far short it fell if every task is already at
+  // its floor. Reducing a task's due_offset_days pulls its own due date
+  // earlier, which cascades to every downstream task automatically (they
+  // anchor off it), so distributing the shrink across just the chain's
+  // shrinkable tasks is sufficient -- no separate propagation step needed.
+  const shrinkToFit = () => {
+    if (!selected || !deadline) return;
+    const flatItems = selected.items.filter(i => !i.parent_item_id);
+    const endItem = flatItems.reduce<TemplateItem | null>((best, cur) => {
+      const cd = resolvedDates[cur.id];
+      if (!cd) return best;
+      if (!best || cd > (resolvedDates[best.id] || '')) return cur;
+      return best;
+    }, null);
+    if (!endItem) return;
+    const endDateStr = resolvedDates[endItem.id];
+    if (!endDateStr) return;
+    const overshootDays = daysBetween(new Date(deadline), new Date(endDateStr));
+    if (overshootDays <= 0) return;
+
+    const chain = traceCriticalChain(endItem, effectiveApplyItems as TemplateItem[]);
+    const shrinkables = chain.filter(i => i.start_offset_days != null && i.due_offset_days != null);
+    if (!shrinkables.length) {
+      alert('No shrinkable tasks (with both a start and due offset) in the critical chain -- cannot compress further.');
+      return;
+    }
+
+    const durations = shrinkables.map(item => {
+      const s = resolvedStartDates[item.id], d = resolvedDates[item.id];
+      return s && d ? Math.max(1, daysBetween(new Date(s), new Date(d))) : 1;
+    });
+    const slacks = durations.map(d => Math.max(0, d - 1));
+    const totalSlack = slacks.reduce((a, b) => a + b, 0);
+    if (totalSlack <= 0) {
+      alert('Every task in the critical chain is already at its 1-day minimum -- cannot compress further.');
+      return;
+    }
+
+    const actualShrink = Math.min(overshootDays, totalSlack);
+    const raw = slacks.map(s => (actualShrink * s) / totalSlack);
+    const floors = raw.map(Math.floor);
+    const remainder = actualShrink - floors.reduce((a, b) => a + b, 0);
+    const order = raw.map((r, i) => ({ i, frac: r - floors[i] })).sort((a, b) => b.frac - a.frac);
+    const alloc = [...floors];
+    for (let k = 0; k < remainder; k++) alloc[order[k].i] += 1;
+
+    setApplyEdits(prev => {
+      const next = { ...prev };
+      shrinkables.forEach((item, idx) => {
+        if (alloc[idx] <= 0) return;
+        const curDue = next[item.id]?.due_offset_days ?? item.due_offset_days ?? 0;
+        next[item.id] = { ...next[item.id], due_offset_days: curDue - alloc[idx] };
+      });
+      return next;
+    });
+
+    if (actualShrink < overshootDays) {
+      const adjustedCount = alloc.filter(a => a > 0).length;
+      alert(`Shrank ${adjustedCount} task(s) by ${actualShrink} day(s), the most possible -- still ${overshootDays - actualShrink} day(s) over the deadline (every shrinkable task in the chain is now at its 1-day minimum).`);
+    }
+  };
+
+  // Persists the current apply-time duration edits onto the EXISTING
+  // template's items (so future applies start from the adjusted values).
+  const updateTemplateWithEdits = async () => {
+    if (!selected) return;
+    const editedIds = Object.keys(applyEdits);
+    if (!editedIds.length) return;
+    await Promise.all(editedIds.map(itemId => {
+      const edit = applyEdits[itemId];
+      const patch: Record<string, number> = {};
+      if (edit.due_offset_days !== undefined) patch.due_offset_days = edit.due_offset_days;
+      if (edit.start_offset_days !== undefined) patch.start_offset_days = edit.start_offset_days;
+      return supabase.from('checklist_template_items').update(patch).eq('id', itemId);
+    }));
+    const updatedTemplate: Template = { ...selected, items: effectiveApplyItems as TemplateItem[] };
+    setTemplates(prev => prev.map(t => t.id === selected.id ? updatedTemplate : t));
+    setSelected(updatedTemplate);
+  };
+
+  // Forks the current apply-time duration edits into a brand new template,
+  // leaving the original untouched. Inserted one row at a time (not a
+  // single batch insert) so the returned rows correspond 1:1 with
+  // sourceItems -- needed to remap depends_on_item_ids, which reference the
+  // OLD template's item ids, onto the new template's item ids.
+  const saveEditsAsNewTemplate = async () => {
+    if (!selected) return;
+    const name = window.prompt('New template name:', `${selected.name} (adjusted)`);
+    if (!name) return;
+    const created = await onCreateTemplate(name);
+    if (!created) return;
+    const sourceItems = effectiveApplyItems as TemplateItem[];
+    const inserted: TemplateItem[] = [];
+    for (const item of sourceItems) {
+      const { id, template_id, depends_on_item_ids, ...rest } = item;
+      const { data } = await supabase.from('checklist_template_items')
+        .insert({ ...rest, template_id: created.id })
+        .select().single();
+      if (data) inserted.push(data as TemplateItem);
+    }
+    const oldToNewId = new Map(sourceItems.map((item, i) => [item.id, inserted[i]?.id]));
+    await Promise.all(sourceItems.map(async (item, i) => {
+      if (!item.depends_on_item_ids?.length || !inserted[i]) return;
+      const newDeps = item.depends_on_item_ids.map(oldId => oldToNewId.get(oldId)).filter((x): x is string => !!x);
+      if (!newDeps.length) return;
+      await supabase.from('checklist_template_items').update({ depends_on_item_ids: newDeps }).eq('id', inserted[i].id);
+      inserted[i] = { ...inserted[i], depends_on_item_ids: newDeps };
+    }));
+    const newTemplate: Template = { ...created, items: inserted };
+    setTemplates(prev => prev.map(t => t.id === created.id ? newTemplate : t));
+  };
 
   // Resolved dates for the edit view — keyed by index into editItems (new items have no id yet).
   // Shown as a per-task badge; actual reordering into date order happens on save (see auto-save effect
@@ -331,7 +589,15 @@ export default function TemplateManager({
   const handleApply = async () => {
     if (!selected || !onApply) return;
     setSaving(true);
-    const itemsToApply = selected.items
+
+    if (saveMode === 'update_template') await updateTemplateWithEdits();
+    else if (saveMode === 'save_new') await saveEditsAsNewTemplate();
+
+    // Uses the edited (offsets-overridden) items, not selected.items raw --
+    // whatever the steppers/Shrink to fit currently show is what gets
+    // applied, independent of whether that also got saved back above.
+    const sourceItems = effectiveApplyItems as TemplateItem[];
+    const itemsToApply = sourceItems
       .filter(i => !i.parent_item_id)
       .sort((a, b) => a.display_order - b.display_order);
 
@@ -345,8 +611,10 @@ export default function TemplateManager({
         project_id: projectId, name: item.title, notes: item.notes || null,
         assignee_id: item.assignee_id || null, assigned_team_id: item.assigned_team_id || null,
         is_monetary: item.is_monetary || false, estimated_cost: item.estimated_cost || 0,
-        start_date: await resolveItemStartDate(item, selected.items),
-        due_date: await resolveItemDate(item, selected.items),
+        category: item.category || null,
+        source_template_item_id: item.id || null,
+        start_date: await resolveItemStartDate(item, sourceItems),
+        due_date: await resolveItemDate(item, sourceItems),
         is_completed: false,
       },
     })));
@@ -459,9 +727,70 @@ export default function TemplateManager({
         {/* ── Apply view ── */}
         {view === 'apply' && selected && canApply && (
           <div className="space-y-3">
-            <p className="text-[11px] text-slate-500 mb-4">
-              The following {selected.items.filter(i => !i.parent_item_id).length} tasks will be created with dates calculated from the project.
+            <p className="text-[11px] text-slate-500 mb-1">
+              The following {selected.items.filter(i => !i.parent_item_id).length} tasks will be created with dates calculated from the project. Adjust any task's duration below before applying.
             </p>
+
+            {/* Deadline + compression tools */}
+            <div className="bg-indigo-50/50 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="min-w-[160px]">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project deadline (optional)</p>
+                  <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
+                    className="px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
+                </div>
+                {computedEndDate && (
+                  <p className="text-[11px] text-slate-500">Computed finish: <span className="font-bold text-slate-700">{computedEndDate}</span></p>
+                )}
+                {deadlineGapDays !== null && (
+                  <p className={`text-[11px] font-bold ${deadlineGapDays > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {deadlineGapDays > 0
+                      ? `${deadlineGapDays} day${deadlineGapDays === 1 ? '' : 's'} over deadline`
+                      : `${-deadlineGapDays} day${deadlineGapDays === -1 ? '' : 's'} to spare`}
+                  </p>
+                )}
+              </div>
+              {deadline && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button type="button" onClick={shrinkToFit} disabled={!deadlineGapDays || deadlineGapDays <= 0}
+                    className="px-4 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                    Shrink to fit
+                  </button>
+                  <button type="button" onClick={() => setChooseMode(m => !m)}
+                    className="px-4 py-1.5 border border-indigo-300 text-indigo-600 text-[11px] font-bold rounded-full hover:bg-indigo-100 transition-colors">
+                    {chooseMode ? 'Hide task picker' : 'Choose tasks to adjust'}
+                  </button>
+                  {Object.keys(applyEdits).length > 0 && (
+                    <button type="button" onClick={() => setApplyEdits({})} className="text-[11px] text-slate-400 hover:text-slate-600">
+                      Reset adjustments
+                    </button>
+                  )}
+                </div>
+              )}
+              {chooseMode && (
+                <div className="space-y-2 pt-2 border-t border-indigo-100">
+                  <div className="relative">
+                    <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input value={chooseSearch} onChange={e => setChooseSearch(e.target.value)} placeholder="Search tasks..."
+                      className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400 bg-white" />
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {filteredShrinkables.length === 0 && <p className="text-[10px] text-slate-300 py-2">No adjustable (span) tasks match.</p>}
+                    {filteredShrinkables.map(({ item, duration }) => (
+                      <div key={item.id} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-white rounded-full border border-slate-100">
+                        <p className="text-[11px] text-slate-600 truncate flex-1">{item.title}</p>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button type="button" onClick={() => bumpDueOffset(item, -1)} className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 text-[11px] font-bold leading-none">−</button>
+                          <span className="text-[11px] font-bold text-slate-700 w-10 text-center">{duration}d</span>
+                          <button type="button" onClick={() => bumpDueOffset(item, 1)} className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 text-[11px] font-bold leading-none">+</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {selected.items
               .filter(i => !i.parent_item_id)
               .slice()
@@ -477,7 +806,7 @@ export default function TemplateManager({
               <div key={item.id} className="flex items-start gap-3 px-4 py-3 bg-slate-50 rounded-2xl">
                 <CheckSquare size={14} className="text-indigo-400 mt-0.5 shrink-0" />
                 <div className="flex-1">
-                  <p className="text-[12px] font-medium text-slate-800">{item.title}</p>
+                  <p className="text-[12px] font-medium text-slate-800">{item.title}{item.category && <span className="ml-2 text-[9px] font-bold text-indigo-400 uppercase tracking-widest align-middle">{item.category}</span>}</p>
                   {item.notes && <p className="text-[10px] text-slate-400 mt-0.5">{item.notes}</p>}
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     {item.start_offset_days != null && (
@@ -486,9 +815,12 @@ export default function TemplateManager({
                       </span>
                     )}
                     {item.due_offset_days !== null && (
-                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
                         <Calendar size={9} />
-                        {item.due_offset_days === 0 ? 'On ' : item.due_offset_days > 0 ? `+${item.due_offset_days}d from ` : `${item.due_offset_days}d from `}
+                        <button type="button" onClick={() => bumpDueOffset(item, -1)} className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 text-[10px] font-bold leading-none">−</button>
+                        <span className="font-medium text-slate-600">{effectiveDueOffset(item)}d</span>
+                        <button type="button" onClick={() => bumpDueOffset(item, 1)} className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 text-[10px] font-bold leading-none">+</button>
+                        from{' '}
                         {ANCHORS.find(a => a.value === item.due_anchor)?.label
                           || (/^task_(\d+)$/.exec(item.due_anchor || '') ? `After: ${selected.items[Number(/^task_(\d+)$/.exec(item.due_anchor || '')![1])]?.title || 'task'}` : item.due_anchor)}
                         {' → '}
@@ -522,6 +854,24 @@ export default function TemplateManager({
                 </div>
               </div>
             ))}
+
+            {Object.keys(applyEdits).length > 0 && (
+              <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Save these duration changes?</p>
+                <div className="flex flex-col gap-1.5">
+                  {([
+                    ['apply_only', "Apply only -- don't change the template"],
+                    ['update_template', 'Also update this template'],
+                    ['save_new', 'Save as a new template'],
+                  ] as const).map(([value, label]) => (
+                    <label key={value} className="flex items-center gap-2 text-[11px] text-slate-600 cursor-pointer">
+                      <input type="radio" name="saveMode" checked={saveMode === value} onChange={() => setSaveMode(value)} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -535,6 +885,9 @@ export default function TemplateManager({
             </div>
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">Tasks</p>
+              <datalist id="template-categories">
+                {templateCategoryOptions.map(c => <option key={c} value={c} />)}
+              </datalist>
               <div className="space-y-3">
                 {editItems.map((item, idx) => (
                   <div key={idx} draggable
@@ -557,6 +910,13 @@ export default function TemplateManager({
                         <Calendar size={9} /> {editDates[idx] ? `Due ${editDates[idx]}` : 'No auto date'}
                       </p>
                     )}
+                    <div>
+                      <p className="text-[9px] text-slate-400 mb-1">Category (phase)</p>
+                      <input value={item.category || ''} list="template-categories" onChange={e => {
+                        const next = [...editItems]; next[idx] = { ...next[idx], category: e.target.value || null }; setEditItems(next);
+                      }} placeholder="e.g. Acquisition, Construction..."
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white" />
+                    </div>
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <p className="text-[9px] text-slate-400 mb-1">Offset days</p>
@@ -569,12 +929,7 @@ export default function TemplateManager({
                         <select value={item.due_anchor || 'record_created'} onChange={e => {
                           const next = [...editItems]; next[idx] = { ...next[idx], due_anchor: e.target.value }; setEditItems(next);
                         }} className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-                          {ANCHORS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                          {editItems.map((i, otherIdx) => (
-                            otherIdx !== idx && i.title?.trim() && (
-                              <option key={`task_${otherIdx}`} value={`task_${otherIdx}`}>After: {i.title}</option>
-                            )
-                          ))}
+                          {anchorOptions(idx)}
                         </select>
                       </div>
                     </div>
@@ -614,12 +969,7 @@ export default function TemplateManager({
                           const next = [...editItems]; next[idx] = { ...next[idx], start_anchor: e.target.value }; setEditItems(next);
                         }} disabled={item.start_offset_days === null || item.start_offset_days === undefined}
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white disabled:opacity-40">
-                          {ANCHORS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                          {editItems.map((i, otherIdx) => (
-                            otherIdx !== idx && i.title?.trim() && (
-                              <option key={`task_${otherIdx}`} value={`task_${otherIdx}`}>After due: {i.title}</option>
-                            )
-                          ))}
+                          {anchorOptions(idx, 'After due')}
                         </select>
                       </div>
                     </div>

@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await admin
     .from("tasks")
     .select(`
-      id, name, notes, start_date, due_date, is_completed, assignee_id,
+      id, name, notes, start_date, due_date, is_completed, assignee_id, category, source_template_item_id,
       assignee:assignee_id(id, full_name), task_statuses:status_id(label, color_hex),
       task_teams(team_id, teams:team_id(id, team_name))
     `)
