@@ -9,7 +9,7 @@
 // component used everywhere else in the app) rather than a bespoke search
 // box.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink, Split, Search, Archive, RotateCcw } from "lucide-react";
+import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink, Split, Search, Archive, RotateCcw, Pencil } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
 import { calculateLoanSchedule, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
@@ -198,6 +198,8 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const [addingPhase, setAddingPhase] = useState(false);
   const [newRate, setNewRate] = useState({ effectiveDate: "", interestRatePa: "" });
   const [newPhase, setNewPhase] = useState({ repaymentType: "Interest Only" as string, startDate: "", endDate: "", paymentFrequency: "Monthly" });
+  const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
+  const [editPhase, setEditPhase] = useState({ repaymentType: "Interest Only" as string, startDate: "", endDate: "", paymentFrequency: "Monthly" });
   const [saving, setSaving] = useState(false);
   const [linkedLine, setLinkedLine] = useState<{ id: string; budgeted_amount: number | null } | null>(null);
   const [linking, setLinking] = useState(false);
@@ -280,6 +282,23 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
 
   const deletePhase = async (id: string) => {
     await fetch(`/api/finance-model/loan-phases?id=${id}`, { method: "DELETE" });
+    await load();
+  };
+
+  const startEditPhase = (p: LoanPhaseInput & { id: string }) => {
+    setEditingPhaseId(p.id);
+    setEditPhase({ repaymentType: p.repayment_type, startDate: p.start_date, endDate: p.end_date || "", paymentFrequency: p.payment_frequency });
+  };
+
+  const savePhaseEdit = async () => {
+    if (!editingPhaseId || !editPhase.startDate || !editPhase.endDate) return;
+    setSaving(true);
+    await fetch("/api/finance-model/loan-phases", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editingPhaseId, ...editPhase }),
+    });
+    setEditingPhaseId(null);
+    setSaving(false);
     await load();
   };
 
@@ -372,12 +391,32 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
         ) : (
           <div className="space-y-1">
             {[...phases].sort((a, b) => a.phase_order - b.phase_order).map(p => (
-              <div key={p.id} className="flex items-center justify-between text-[11px] px-2 py-1 bg-slate-50 rounded-lg">
-                <span className="font-bold text-slate-700">{p.repayment_type}</span>
-                <span className="text-slate-500">{formatDate(p.start_date)} → {formatDate(p.end_date)}</span>
-                <span className="text-slate-400">{p.payment_frequency}</span>
-                <button onClick={() => deletePhase(p.id)} className="text-slate-300 hover:text-rose-500"><X size={11} /></button>
-              </div>
+              editingPhaseId === p.id ? (
+                <div key={p.id} className="flex flex-wrap items-end gap-2 bg-slate-50/60 rounded-xl p-2">
+                  <select value={editPhase.repaymentType} onChange={e => setEditPhase(prev => ({ ...prev, repaymentType: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white">
+                    {REPAYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input type="date" value={editPhase.startDate} onChange={e => setEditPhase(prev => ({ ...prev, startDate: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white" />
+                  <input type="date" value={editPhase.endDate} onChange={e => setEditPhase(prev => ({ ...prev, endDate: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white" />
+                  <select value={editPhase.paymentFrequency} onChange={e => setEditPhase(prev => ({ ...prev, paymentFrequency: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white">
+                    {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                  <button onClick={savePhaseEdit} disabled={saving} className="text-[11px] font-bold bg-indigo-600 text-white rounded-lg px-2 py-1 disabled:opacity-40">
+                    {saving ? <Loader2 size={11} className="animate-spin" /> : "Save"}
+                  </button>
+                  <button onClick={() => setEditingPhaseId(null)} className="text-[11px] text-slate-400 px-1">Cancel</button>
+                </div>
+              ) : (
+                <div key={p.id} className="flex items-center justify-between text-[11px] px-2 py-1 bg-slate-50 rounded-lg">
+                  <span className="font-bold text-slate-700">{p.repayment_type}</span>
+                  <span className="text-slate-500">{formatDate(p.start_date)} → {formatDate(p.end_date)}</span>
+                  <span className="text-slate-400">{p.payment_frequency}</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => startEditPhase(p)} className="text-slate-300 hover:text-indigo-600"><Pencil size={11} /></button>
+                    <button onClick={() => deletePhase(p.id)} className="text-slate-300 hover:text-rose-500"><X size={11} /></button>
+                  </div>
+                </div>
+              )
             ))}
           </div>
         )}
