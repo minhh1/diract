@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Plus, Store } from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
+import { invalidateCompanyCustomFieldsCache } from "@/lib/hooks/useCompanyCustomFields";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import FieldConfigPanel from "./schema/FieldConfigPanel";
 import FieldCard from "./schema/FieldCard";
@@ -266,6 +267,7 @@ export default function SchemaVisualisation() {
       if (data) {
         setFields(prev => [...prev, data]);
         setSelectedFieldId(data.id);
+        invalidateCompanyCustomFieldsCache(companyId, activeTable);
         logSchemaChange({
           companyId, actorId: user?.id ?? null, entityType: 'company_custom_field',
           entityId: data.id, entityLabel: label, action: 'create', after: data,
@@ -358,6 +360,15 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
     f.id === selectedFieldId ? { ...f, ...updates } : f
   ));
 
+  // useCompanyCustomFields (GenericMasterTable's column picker, Sidebar's
+  // tree) caches company_custom_fields forever with no revalidation --
+  // without this, an edited field (e.g. show_in_table, or the formula_*
+  // columns that make a field a rollup) silently kept showing its
+  // pre-edit shape anywhere reading through that hook until a hard
+  // reload. company_table_fields (isCustomTable) has its own separate
+  // cache (useCustomTable.ts), not this one.
+  if (companyId && !isCustomTable) invalidateCompanyCustomFieldsCache(companyId, activeTable);
+
   if (companyId && before) {
     logSchemaChange({
       companyId, actorId: user?.id ?? null,
@@ -407,6 +418,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
 
     setFields(prev => prev.filter(f => f.id !== selectedFieldId));
     setSelectedFieldId(null);
+    if (companyId && !isCustomTable) invalidateCompanyCustomFieldsCache(companyId, activeTable);
 
     if (companyId && before) {
       logSchemaChange({
@@ -431,6 +443,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
         supabase.from(table).update({ display_order: i }).eq('id', f.id)
       )
     );
+    if (companyId && !isCustomTable) invalidateCompanyCustomFieldsCache(companyId, activeTable);
   };
 
   // Snapshots every custom field on the active system table (entities/

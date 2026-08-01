@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
-import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { readShellCache, writeShellCache, clearShellCache } from "@/lib/shellCache";
 import { useCompany } from "@/components/CompanyContext";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 
@@ -94,6 +94,26 @@ export function fetchCompanyCustomFields(
   const promise = fetchRemote(companyId, tableName);
   inFlight.set(key, promise);
   return promise;
+}
+
+// Drops both the in-memory and persisted cache for one table (or, with no
+// tableName, every table for the company) -- fetchCompanyCustomFields
+// above returns a cache hit unconditionally with no TTL/revalidation, so a
+// field created/edited/reordered via SchemaVisualisation.tsx never showed
+// up anywhere reading through this hook (e.g. GenericMasterTable's column
+// picker) until a hard page reload reset the module-level `cache` Map.
+// Called from SchemaVisualisation.tsx after every field create/update/
+// delete/reorder that touches company_custom_fields.
+export function invalidateCompanyCustomFieldsCache(companyId: string, tableName?: string): void {
+  if (tableName) {
+    const key = cacheKey(companyId, tableName);
+    cache.delete(key);
+    inFlight.delete(key);
+    clearShellCache(shellCacheKey(companyId, tableName));
+    return;
+  }
+  for (const key of cache.keys()) if (key.startsWith(`${companyId}:`)) cache.delete(key);
+  for (const key of inFlight.keys()) if (key.startsWith(`${companyId}:`)) inFlight.delete(key);
 }
 
 export function useCompanyCustomFields(tableName: string, enabled: boolean = true): {
