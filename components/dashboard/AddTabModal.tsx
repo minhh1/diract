@@ -114,11 +114,16 @@ export default function AddTabModal({ customTables, systemTable, onAdd, onClose 
 
   // Finance Model is project-scoped (a single entity/SPV company can hold
   // several projects, each needing its own budget) -- only offer it when
-  // adding a tab to a Project record. The Residual Land Solver is offered
+  // adding a tab to a Project record. It's also Niksen-specific (backed by
+  // its own company_tables), so also require the company to actually have
+  // it provisioned -- otherwise any tenant's admin could add a tab with no
+  // data behind it at all (this is what let it leak onto a law firm's
+  // Matters as an auto-seeded default; same guard now applies here for the
+  // manual "Add tab" path). The Residual Land Solver is offered
   // everywhere: on a Project it persists its assumptions into the shared
   // feasibility-inputs row, on any other record it's the same calculator
   // in standalone (non-persisting) mode -- see ResidualLandSolverTab.tsx.
-  const templates = TEMPLATES.filter(t => t.type !== 'finance_model' || systemTable === 'projects');
+  const templates = TEMPLATES.filter(t => t.type !== 'finance_model' || (systemTable === 'projects' && customTables.some(ct => ct.slug === 'finance-model-budget-lines')));
   const selectedTemplate = templates.find(t => t.type === selected);
 
   const handleAdd = async () => {

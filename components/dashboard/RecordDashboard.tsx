@@ -568,7 +568,16 @@ export default function RecordDashboard({
           display_order: finalTabs.length + missingCoreTabs.length,
         });
       }
-      if (systemTable === 'projects' && !uniqueTabs.some(t => t.tab_type === 'finance_model')) {
+      // Finance Model is a Niksen-specific feature backed by its own
+      // company_tables (finance-model-budget-lines etc.) -- unlike
+      // Checklist above (generic, empty until a company adds its own
+      // templates), it must NOT auto-seed onto every tenant's projects
+      // just because systemTable === 'projects'. Gated the same way Time &
+      // Fees/Disbursements already are (buildMissingDefaultProjectDashboardTabs
+      // below): only if the company actually has the underlying table.
+      // Cross-tenant leak fixed here previously showed this tab on a law
+      // firm's Matters with no Finance Model data behind it at all.
+      if (systemTable === 'projects' && customTables.some(t => t.slug === 'finance-model-budget-lines') && !uniqueTabs.some(t => t.tab_type === 'finance_model')) {
         missingCoreTabs.push({
           company_id: cid, record_id: recordId, record_table: recordTable,
           title: 'Finance Model', icon: 'TrendingUp', tab_type: 'finance_model',
@@ -669,7 +678,11 @@ export default function RecordDashboard({
           icon: 'CheckSquare',
           tab_type: 'checklist',
           display_order: 1,
-        }, {
+        }] : []),
+        // Finance Model is Niksen-specific -- gated on the company actually
+        // having the underlying custom tables, unlike Checklist above. See
+        // the matching comment on the top-up path further up this file.
+        ...(systemTable === 'projects' && customTables.some(t => t.slug === 'finance-model-budget-lines') ? [{
           company_id: cid,
           record_id: recordId,
           record_table: recordTable,
