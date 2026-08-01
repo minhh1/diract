@@ -83,9 +83,11 @@ interface Props {
   // request path, so the viewer still gets the ordinary read-only
   // anonymous board.
   accessCode?: string;
+  // See MatterBoard's prop of the same name.
+  maskCurrency?: boolean;
 }
 
-export default function PublicClientUpdateContent({ slug, embedded = false, initialFixItemId, accessCode }: Props) {
+export default function PublicClientUpdateContent({ slug, embedded = false, initialFixItemId, accessCode, maskCurrency }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"staff" | "client" | null>(null);
@@ -712,6 +714,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
           fields={board.fields}
           formatRules={board.formatRules}
           viewDefaults={board.viewDefaults}
+          maskCurrency={maskCurrency}
           onSaveViewDefault={mode === "staff" ? saveViewDefault : undefined}
           dateFormat={meta.dateFormat}
           freezeFirstColumn={meta.freezeFirstColumn}

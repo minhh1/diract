@@ -106,6 +106,11 @@ interface Props {
   // Persists the CURRENT sort/filter as that shared default. Staff only
   // (undefined for a client/public viewer, which hides the control).
   onSaveViewDefault?: (groupId: string, filters: { fieldId: string; values: string[] }[], sort: { fieldId: string; dir: "asc" | "desc" }[]) => Promise<void> | void;
+  // Replaces every currency figure with a placeholder and hides the
+  // Total Principal tile. For showing the board to a prospect: the
+  // columns, filters, sorting and formatting all still work, they just
+  // can't read the company's real dollar amounts.
+  maskCurrency?: boolean;
   dateFormat: string;
   freezeFirstColumn?: boolean;
   // Defaults true (matches client_update_pages.log_cell_changes' DB
@@ -176,12 +181,30 @@ function loanDueSoonColor(item: MatterBoardItem, fields: MatterBoardField[]): st
   return null;
 }
 
-function formatValue(v: any, field: MatterBoardField, dateFormat: string): string {
+// Stand-in for a real dollar figure when the board is being shown with
+// figures masked (a sales demo -- the prospect should see that the column
+// exists and is populated, without reading the actual amount). Deliberately
+// NOT an empty string: a blank cell reads as missing data, which
+// undersells the product.
+const MASKED_CURRENCY = "$ ••••••";
+
+// Masking the currency-TYPED columns isn't enough: free-text fields carry
+// real amounts too (this board's "Notes (loan)" / "Notes (interest)"
+// columns hold things like "surplus fund $65,278.91" and "336 repayments
+// of $4,849.24 each"), and those leak straight through a column-type
+// check. Anything that reads as a dollar amount gets replaced, wherever
+// it appears.
+function maskDollarsInText(s: string): string {
+  return s.replace(/\$\s?\d[\d,]*(\.\d+)?/g, MASKED_CURRENCY);
+}
+
+function formatValue(v: any, field: MatterBoardField, dateFormat: string, maskCurrency = false): string {
   if (v == null || v === "") return "";
   if (isDateField(field) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))) return formatDate(String(v), dateFormat);
+  if (isCurrencyField(field) && maskCurrency) return MASKED_CURRENCY;
   if (isCurrencyField(field) && !isNaN(Number(v))) return `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   if (typeof v === "number") return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  return String(v);
+  return maskCurrency ? maskDollarsInText(String(v)) : String(v);
 }
 
 const UNGROUPED = "__ungrouped__";
@@ -256,7 +279,7 @@ const FORMAT_COLORS: Record<string, { swatch: string; row: string; smRow: string
 const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
-  pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
+  pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, maskCurrency = false, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
   onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
@@ -701,7 +724,7 @@ export default function MatterBoard({
     const headers = [baseTable === "entities" ? "Entity" : "Matter", ...visibleFields.map(f => f.label)];
     const rows = visibleItems.map(item => [
       item.matterName,
-      ...visibleFields.map(f => formatValue(item.values[f.id], f, dateFormat)),
+      ...visibleFields.map(f => formatValue(item.values[f.id], f, dateFormat, maskCurrency)),
     ]);
     const csv = [headers, ...rows].map(row => row.map(csvEscape).join(",")).join("\r\n");
     const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
@@ -1008,8 +1031,12 @@ export default function MatterBoard({
 
           {totalPrincipal !== null && (
             <SidebarSection title="Total Principal">
+              {/* The COUNT stays visible even when figures are masked --
+                  it's what shows the filters are actually doing something
+                  ("across 114 loans in view", not 168), which is most of
+                  the point of demoing the board. Only the amount goes. */}
               <p className="text-[22px] font-extrabold text-indigo-700 leading-tight">
-                ${totalPrincipal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {maskCurrency ? MASKED_CURRENCY : `$${totalPrincipal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5">across {visibleItems.length} loan{visibleItems.length === 1 ? "" : "s"} in view</p>
             </SidebarSection>
@@ -1020,7 +1047,7 @@ export default function MatterBoard({
           {mode === "cards" ? (
             <div className="space-y-3">
               {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
-                <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
+                <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
                   expanded={expandedCardKey === key} onToggleExpand={() => setExpandedCardKey(expandedCardKey === key ? null : key)}
                   onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged} />
               ))}
@@ -1029,7 +1056,7 @@ export default function MatterBoard({
               )}
             </div>
           ) : (
-            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
+            <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
               onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged} />
           )}
         </div>
@@ -1298,8 +1325,8 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged }: {
-  item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[];
+function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged }: {
+  item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   expanded: boolean; onToggleExpand: () => void;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string, capacity?: string | null) => void;
@@ -1391,7 +1418,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
         <div className="border-t border-slate-100 px-4 py-4 space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {fields.map(f => (
-              <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} dateFormat={dateFormat} editable={canEdit && !!onSaveValue}
+              <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue}
                 onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
@@ -1415,7 +1442,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
   );
 }
 
-function ValueCell({ field, value, relationId, relationCapacity, dateFormat, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; dateFormat: string; editable: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
+function ValueCell({ field, value, relationId, relationCapacity, dateFormat, maskCurrency = false, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; dateFormat: string; maskCurrency?: boolean; editable: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1472,7 +1499,7 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, edi
       ) : (
         <p onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
           className={`text-[12px] text-slate-700 rounded px-1 -mx-1 min-h-[18px] ${editable ? "cursor-text hover:bg-slate-50" : ""}`}>
-          {value == null || value === "" ? <span className="text-slate-300">—</span> : formatValue(value, field, dateFormat)}
+          {value == null || value === "" ? <span className="text-slate-300">—</span> : formatValue(value, field, dateFormat, maskCurrency)}
         </p>
       )}
     </div>
@@ -1681,8 +1708,8 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onDataChanged }: {
-  items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
+function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onDataChanged }: {
+  items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
   onSaveValue?: (itemId: string, fieldId: string, value: any, propertyId?: string, capacity?: string | null) => void;
@@ -1735,7 +1762,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
     fields.filter(f => rows.some(({ item }) => {
       const v = item.values[f.id];
       if (v == null || v === "") return false;
-      const text = isRelationField(f) || (f.field_type === "select" && f.select_options?.length) ? String(v) : formatValue(v, f, dateFormat);
+      const text = isRelationField(f) || (f.field_type === "select" && f.select_options?.length) ? String(v) : formatValue(v, f, dateFormat, maskCurrency);
       return text.length > 28;
     })).map(f => f.id)
   );
@@ -1815,7 +1842,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 </td>
               )}
               {fields.map((f, i) => (
-                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
+                <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
                   onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
               ))}
@@ -1871,7 +1898,7 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
   );
 }
 
-function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded, dateFormat, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; expanded?: boolean; dateFormat: string; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
+function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded, dateFormat, maskCurrency = false, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; expanded?: boolean; dateFormat: string; maskCurrency?: boolean; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1953,7 +1980,7 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
       className={`group px-4 py-4 text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
       <span className="inline-flex items-center gap-1.5">
         <span className={`inline-block align-bottom ${expanded ? "whitespace-nowrap" : truncateClass}`}>
-          {value == null || value === "" ? "—" : formatValue(value, field, dateFormat)}
+          {value == null || value === "" ? "—" : formatValue(value, field, dateFormat, maskCurrency)}
         </span>
         {historyButton}
       </span>

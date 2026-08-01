@@ -35,6 +35,8 @@ interface Props {
   mode?: "internal" | "public";
   accessCode?: string;
   embedded?: boolean;
+  // See BudgetVsActualTable's prop of the same name.
+  maskCurrency?: boolean;
 }
 
 const codeCacheKey = (pageId: string) => `finance_model_code_${pageId}`;
@@ -59,7 +61,7 @@ const SUBTABS = [
 ] as const;
 type SubtabId = (typeof SUBTABS)[number]["id"];
 
-function PublicOverview({ pageId, accessCode, embedded }: { pageId: string; accessCode?: string; embedded?: boolean }) {
+function PublicOverview({ pageId, accessCode, embedded, maskCurrency }: { pageId: string; accessCode?: string; embedded?: boolean; maskCurrency?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -180,13 +182,13 @@ function PublicOverview({ pageId, accessCode, embedded }: { pageId: string; acce
         <div className="px-6 py-4 border-b border-slate-100">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Budget vs Actual</p>
         </div>
-        <BudgetVsActualTable budgetLines={budgetLines} editable={false} />
+        <BudgetVsActualTable budgetLines={budgetLines} editable={false} maskCurrency={maskCurrency} />
       </div>
     </div>
   );
 }
 
-export default function PublicFinanceModelContent({ projectId, pageId, mode = "internal", accessCode, embedded }: Props) {
+export default function PublicFinanceModelContent({ projectId, pageId, mode = "internal", accessCode, embedded, maskCurrency }: Props) {
   const [subtab, setSubtab] = useState<SubtabId>("overview");
 
   // Left/right paging arrows replace the native scrollbar -- same pattern
@@ -228,7 +230,7 @@ export default function PublicFinanceModelContent({ projectId, pageId, mode = "i
   };
 
   if (mode === "public" && pageId) {
-    return <PublicOverview pageId={pageId} accessCode={accessCode} embedded={embedded} />;
+    return <PublicOverview pageId={pageId} accessCode={accessCode} embedded={embedded} maskCurrency={maskCurrency} />;
   }
 
   if (!projectId) return null;

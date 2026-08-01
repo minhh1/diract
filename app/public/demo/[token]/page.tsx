@@ -37,6 +37,7 @@ export default function PublicDemoHubPage() {
   const [title, setTitle] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
+  const [maskFigures, setMaskFigures] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export default function PublicDemoHubPage() {
         setTitle(json.title ?? null);
         setExpiresAt(json.expiresAt ?? null);
         setSections(json.sections || []);
+        setMaskFigures(json.maskFigures !== false);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
@@ -87,7 +89,7 @@ export default function PublicDemoHubPage() {
           <h1 className="text-[15px] font-bold text-slate-800">{title || "Demo"}</h1>
           {expiresAt && (
             <p className="text-[10px] text-slate-400">
-              Read-only preview · access expires {new Date(expiresAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+              Read-only preview · figures hidden · access expires {new Date(expiresAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
             </p>
           )}
         </div>
@@ -121,10 +123,10 @@ export default function PublicDemoHubPage() {
             {active && (
               <div key={`${active.kind}:${active.key}`}>
                 {active.kind === "board" && (
-                  <PublicClientUpdateContent slug={active.key} accessCode={active.accessCode ?? undefined} embedded />
+                  <PublicClientUpdateContent slug={active.key} accessCode={active.accessCode ?? undefined} embedded maskCurrency={maskFigures} />
                 )}
                 {active.kind === "finance_model" && (
-                  <PublicFinanceModelContent pageId={active.key} mode="public" accessCode={active.accessCode ?? undefined} embedded />
+                  <PublicFinanceModelContent pageId={active.key} mode="public" accessCode={active.accessCode ?? undefined} embedded maskCurrency={maskFigures} />
                 )}
                 {active.kind === "solver" && (
                   <ResidualLandSolverContent pageId={active.key} />

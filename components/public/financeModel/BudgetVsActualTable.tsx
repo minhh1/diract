@@ -93,6 +93,9 @@ function signed(category: string | null, amount: number): number {
 }
 
 interface Props {
+  // Sales-demo mode: keep every row, category and label so the shape of
+  // the budget is visible, but replace the dollar figures.
+  maskCurrency?: boolean;
   budgetLines: BudgetLine[];
   editable: boolean;
   onDelete?: (id: string) => void;
@@ -101,7 +104,10 @@ interface Props {
   projectId?: string;
 }
 
-export default function BudgetVsActualTable({ budgetLines, editable, onDelete, tasks, onUpdateTasks, projectId }: Props) {
+export default function BudgetVsActualTable({ budgetLines, editable, onDelete, tasks, onUpdateTasks, projectId, maskCurrency = false }: Props) {
+  // Sales-demo mode: keep every row, category and label visible so the
+  // structure of the budget is obvious, but replace the dollar figures.
+  const fmt = maskCurrency ? () => "$ \u2022\u2022\u2022\u2022\u2022\u2022" : money;
   const budgetedTotal = budgetLines.reduce((sum, l) => sum + signed(l.category, l.budgeted_amount ?? 0), 0);
   const actualTotal = budgetLines.reduce((sum, l) => sum + signed(l.category, l.actual ?? 0), 0);
   const showTasks = editable && !!tasks && !!onUpdateTasks;
@@ -134,10 +140,10 @@ export default function BudgetVsActualTable({ budgetLines, editable, onDelete, t
             <tr key={line.id} className="border-t border-slate-50 hover:bg-slate-50/60">
               <td className="px-6 py-2 text-slate-500">{line.category}</td>
               <td className="px-2 py-2 text-slate-700 font-medium">{line.label}</td>
-              <td className="px-2 py-2 text-right text-slate-700">{money(budgeted)}</td>
-              <td className="px-2 py-2 text-right text-slate-700">{actual == null ? "—" : money(actual)}</td>
+              <td className="px-2 py-2 text-right text-slate-700">{fmt(budgeted)}</td>
+              <td className="px-2 py-2 text-right text-slate-700">{actual == null ? "—" : fmt(actual)}</td>
               <td className={`px-2 py-2 text-right font-medium ${variance == null ? "text-slate-300" : variance > 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                {variance == null ? "—" : `${variance > 0 ? "+" : ""}${money(variance)}`}
+                {variance == null ? "—" : `${variance > 0 ? "+" : ""}${fmt(variance)}`}
               </td>
               {showTasks && (
                 <td className="px-2 py-2">
@@ -163,10 +169,10 @@ export default function BudgetVsActualTable({ budgetLines, editable, onDelete, t
       <tfoot>
         <tr className="border-t border-slate-200 font-bold">
           <td className="px-6 py-2 text-slate-700" colSpan={2}>Total</td>
-          <td className="px-2 py-2 text-right text-slate-700">{money(budgetedTotal)}</td>
-          <td className="px-2 py-2 text-right text-slate-700">{money(actualTotal)}</td>
+          <td className="px-2 py-2 text-right text-slate-700">{fmt(budgetedTotal)}</td>
+          <td className="px-2 py-2 text-right text-slate-700">{fmt(actualTotal)}</td>
           <td className={`px-2 py-2 text-right ${actualTotal - budgetedTotal > 0 ? "text-emerald-600" : "text-rose-600"}`}>
-            {actualTotal - budgetedTotal > 0 ? "+" : ""}{money(actualTotal - budgetedTotal)}
+            {actualTotal - budgetedTotal > 0 ? "+" : ""}{fmt(actualTotal - budgetedTotal)}
           </td>
           {showTasks && <td />}
           {showAttachments && <td />}

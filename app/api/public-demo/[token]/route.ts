@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   // leak whether a given id exists.
   const { data: hub } = await admin
     .from("public_demo_hubs")
-    .select("id, company_id, title, is_active, expires_at, excluded_keys")
+    .select("id, company_id, title, is_active, expires_at, excluded_keys, mask_figures")
     .eq("id", token)
     .maybeSingle()
     .then(r => r, () => ({ data: null }));
@@ -59,5 +59,5 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     ...(solverRes.data || []).map(s => ({ kind: "solver" as const, key: s.id, title: s.title, accessCode: s.access_code })),
   ].filter(s => !excluded.has(s.key));
 
-  return NextResponse.json({ title: hub.title, expiresAt: hub.expires_at, sections });
+  return NextResponse.json({ title: hub.title, expiresAt: hub.expires_at, maskFigures: hub.mask_figures !== false, sections });
 }
