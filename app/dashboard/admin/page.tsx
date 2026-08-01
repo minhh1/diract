@@ -23,6 +23,7 @@ import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
 // Members tab. next/dynamic defers each tab's own chunk until its
 // `activeTab === ...` condition below actually renders it.
 const AdminTeamsTab = dynamic(() => import("@/components/admin/AdminTeamsTab"));
+const AdminPermissionsTab = dynamic(() => import("@/components/admin/AdminPermissionsTab"));
 const AdminDefaultSettingsTab = dynamic(() => import("@/components/admin/AdminDefaultSettingsTab"));
 const AdminVirtualComputersTab = dynamic(() => import("@/components/admin/AdminVirtualComputersTab"));
 const AdminGmailSyncTab = dynamic(() => import("@/components/admin/AdminGmailSyncTab"));
@@ -264,10 +265,10 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink'];
+type AdminTab = 'members' | 'teams' | 'permissions' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'permissions', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
-  members: 'Members', teams: 'Teams', defaults: 'Default Settings', invites: 'Invite links',
+  members: 'Members', teams: 'Teams', permissions: 'Permissions', defaults: 'Default Settings', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
   oneDrive: 'OneDrive', xero: 'Xero', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
@@ -990,6 +991,13 @@ function AdminPageInner() {
             <AdminTeamsTab companyId={companyId} />
           )}
 
+          {/* ── Permissions: every company-wide access-control setting in
+              one place -- default project access, default table/dashboard
+              access, and team permissions. ── */}
+          {activeTab === 'permissions' && companyId && (
+            <AdminPermissionsTab companyId={companyId} />
+          )}
+
           {/* ── Default Settings: views/tabs/tables/dashboards, switched
               via pill tabs inside the component itself (same pattern as
               AdminGmailSyncTab's own sub-sections) rather than 4 separate
@@ -1090,106 +1098,6 @@ function AdminPageInner() {
           {/* ── Company tab: skeleton while this page's own company fetch is pending ── */}
           {activeTab === 'company' && loading && (
             <SkeletonRows count={2} heightClass="h-56" />
-          )}
-
-          {/* ── Team access defaults ── */}
-          {activeTab === 'company' && !loading && (
-            <div className="bg-white border border-slate-200 rounded-[40px] p-8 mb-4">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4">
-                Default project access
-              </p>
-              <p className="text-[11px] text-slate-500 mb-4">
-                When a new project is created, who can see it by default?
-              </p>
-              <div className="space-y-2">
-                {([
-                  { value: 'all_members',      label: 'All company members' },
-                  { value: 'specific_teams',   label: 'Specific teams only' },
-                  { value: 'specific_members', label: 'Specific members only' },
-                ] as { value: string; label: string }[]).map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={async () => {
-                      if (!company) return;
-                      await supabase.from('companies')
-                        .update({ project_default_access: opt.value })
-                        .eq('id', company.id);
-                      queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && old.company && ({
-                        ...old,
-                        company: { ...old.company, project_default_access: opt.value as Company["project_default_access"] },
-                      }));
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${
-                      company?.project_default_access === opt.value
-                        ? 'bg-indigo-50 border-indigo-200'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                      company?.project_default_access === opt.value ? 'border-indigo-500' : 'border-slate-300'
-                    }`}>
-                      {company?.project_default_access === opt.value && (
-                        <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                      )}
-                    </div>
-                    <span className={`text-[12px] font-bold ${
-                      company?.project_default_access === opt.value ? 'text-indigo-800' : 'text-slate-700'
-                    }`}>{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Default access for custom tables & dashboards ── */}
-          {activeTab === 'company' && !loading && (
-            <div className="bg-white border border-slate-200 rounded-[40px] p-8 mb-4">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4">
-                Default access for new tables &amp; dashboards
-              </p>
-              <p className="text-[11px] text-slate-500 mb-4">
-                Applies only until someone explicitly assigns roles on a specific table or dashboard (via its own &quot;Manage access&quot;) &mdash; that always takes over regardless of this setting.
-              </p>
-              <div className="space-y-2">
-                {([
-                  { value: false, label: 'Open to the whole company', description: 'Today\'s behaviour -- every custom table/dashboard is visible to all members by default.' },
-                  { value: true,  label: 'Restricted until roles are assigned', description: 'Hidden from everyone except company admins until an admin explicitly grants people access.' },
-                ] as { value: boolean; label: string; description: string }[]).map(opt => (
-                  <button
-                    key={String(opt.value)}
-                    onClick={async () => {
-                      if (!company) return;
-                      await supabase.from('companies')
-                        .update({ restrict_new_tables_dashboards_by_default: opt.value })
-                        .eq('id', company.id);
-                      queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && old.company && ({
-                        ...old,
-                        company: { ...old.company, restrict_new_tables_dashboards_by_default: opt.value },
-                      }));
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${
-                      company?.restrict_new_tables_dashboards_by_default === opt.value
-                        ? 'bg-indigo-50 border-indigo-200'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                      company?.restrict_new_tables_dashboards_by_default === opt.value ? 'border-indigo-500' : 'border-slate-300'
-                    }`}>
-                      {company?.restrict_new_tables_dashboards_by_default === opt.value && (
-                        <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                      )}
-                    </div>
-                    <div>
-                      <p className={`text-[12px] font-bold ${
-                        company?.restrict_new_tables_dashboards_by_default === opt.value ? 'text-indigo-800' : 'text-slate-700'
-                      }`}>{opt.label}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{opt.description}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
           )}
 
           {/* ── Company settings ── */}

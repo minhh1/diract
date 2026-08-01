@@ -120,6 +120,7 @@ const SETTINGS_LINKS = [
 const ADMIN_LINKS = [
   { tab: 'members', icon: Users, label: 'Members' },
   { tab: 'teams', icon: Users, label: 'Teams' },
+  { tab: 'permissions', icon: Shield, label: 'Permissions' },
   { tab: 'defaults', icon: Settings, label: 'Default Settings' },
   { tab: 'invites', icon: LinkIcon, label: 'Invite links' },
   { tab: 'gmail', icon: Mail, label: 'Gmail' },
