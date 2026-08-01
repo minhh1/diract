@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput } from "lucide-react";
+import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput, Search, ChevronDown, AlertTriangle } from "lucide-react";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 
 interface Props {
@@ -21,7 +21,19 @@ interface Precedent {
   id: string;
   name: string;
   description: string | null;
+  // Library taxonomy (null for anything a firm typed in by hand before the
+  // library existed) -- see lib/precedents/library/ and
+  // supabase/migrations/20260802180000_precedent_library.sql.
+  category: string | null;
+  subcategory: string | null;
+  jurisdictions: string[] | null;
+  matter_types: string[] | null;
+  document_type: string | null;
+  requires_review: boolean | null;
+  review_note: string | null;
 }
+
+const UNCATEGORISED = "Other";
 
 interface Issuance {
   id: string;
@@ -37,20 +49,63 @@ export default function PrecedentsTab({ recordId }: Props) {
   const [loading, setLoading] = useState(true);
   const [issuing, setIssuing] = useState<Precedent | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [matterType, setMatterType] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  // The library ships hundreds of precedents but a given matter only ever
+  // needs a handful, so the default view is scoped to this matter's own
+  // matter_type. "Show all" is the escape hatch for the times it isn't.
+  const [showAll, setShowAll] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     const [precRes, issRes] = await Promise.all([
-      fetch("/api/precedents?recordTable=projects"),
+      fetch(`/api/precedents?recordTable=projects&projectId=${recordId}`),
       fetch(`/api/precedents/issuances?projectId=${recordId}`),
     ]);
     const precJson = await precRes.json();
     const issJson = await issRes.json();
     setPrecedents(precJson.precedents || []);
+    setMatterType(precJson.matterType ?? null);
     setIssuances(issJson.issuances || []);
     setLoading(false);
   }, [recordId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const toggleSection = (name: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  // A precedent with no matter_types applies to any matter (client care,
+  // debt recovery and so on), so it always shows -- only an explicitly
+  // scoped one gets filtered out.
+  const matchesMatter = (p: Precedent) =>
+    showAll || !matterType || !p.matter_types?.length || p.matter_types.includes(matterType);
+
+  const q = search.trim().toLowerCase();
+  const matchesSearch = (p: Precedent) =>
+    !q ||
+    p.name.toLowerCase().includes(q) ||
+    (p.description || "").toLowerCase().includes(q) ||
+    (p.category || "").toLowerCase().includes(q) ||
+    (p.subcategory || "").toLowerCase().includes(q);
+
+  // Searching should look across the whole library, not just what the
+  // matter-type filter happens to leave visible -- otherwise a staff member
+  // searching for a document they know exists gets nothing back.
+  const visible = precedents.filter(p => (q ? matchesSearch(p) : matchesMatter(p)));
+  const hiddenByScope = precedents.length - visible.length;
+
+  const grouped = new Map<string, Precedent[]>();
+  for (const p of visible) {
+    const key = p.category || UNCATEGORISED;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(p);
+  }
 
   if (loading) return null;
 
@@ -64,25 +119,101 @@ export default function PrecedentsTab({ recordId }: Props) {
             <Settings2 size={13} /> Customize for this matter
           </button>
         </div>
+        {precedents.length > 0 && (
+          <div className="flex items-center gap-2 mb-3">
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search precedents..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-full pl-9 pr-4 py-2 text-[12px] outline-none focus:ring-4 focus:ring-indigo-100"
+              />
+            </div>
+            {matterType && !q && (
+              <button
+                onClick={() => setShowAll(p => !p)}
+                className={`px-3.5 py-2 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors ${
+                  showAll ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {showAll ? `All (${precedents.length})` : `${matterType} only`}
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="space-y-3">
           {precedents.length === 0 && (
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">
               No precedents set up yet. An admin can add some in Settings → Precedents
             </p>
           )}
-          {precedents.map(p => (
-            <div key={p.id} className="flex items-center gap-4 p-5 bg-white border border-slate-200 rounded-[24px]">
-              <PenSquare size={16} className="text-amber-600 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-bold text-slate-800">{p.name}</p>
-                {p.description && <p className="text-[11px] text-slate-400 mt-0.5">{p.description}</p>}
+          {precedents.length > 0 && visible.length === 0 && (
+            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">
+              {q ? "No precedents match your search" : "Nothing scoped to this matter type"}
+            </p>
+          )}
+
+          {[...grouped.entries()].map(([categoryName, items]) => {
+            const isCollapsed = collapsed.has(categoryName);
+            return (
+              <div key={categoryName} className="bg-white border border-slate-200 rounded-[24px] overflow-hidden">
+                <button
+                  onClick={() => toggleSection(categoryName)}
+                  className="w-full flex items-center gap-2 px-5 py-3.5 hover:bg-slate-50/60 transition-colors"
+                >
+                  <ChevronDown size={13} className={`text-slate-400 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">{categoryName}</span>
+                  <span className="text-[10px] text-slate-400 ml-auto">{items.length}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="px-3 pb-3 space-y-1.5">
+                    {items.map(p => (
+                      <div key={p.id} className="flex items-center gap-3 p-3.5 bg-slate-50/60 rounded-[18px]">
+                        <PenSquare size={15} className="text-amber-600 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-[12.5px] font-bold text-slate-800">{p.name}</p>
+                            {p.jurisdictions?.length && (
+                              <span className="px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded-full text-[9px] font-bold">
+                                {p.jurisdictions.join(" / ")}
+                              </span>
+                            )}
+                            {/* Court filings are scaffolds, not known-current
+                                prescribed forms -- surfaced here rather than
+                                left as an undocumented assumption. */}
+                            {p.requires_review && (
+                              <span
+                                title={p.review_note || "Verify against the current prescribed form before use"}
+                                className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[9px] font-bold"
+                              >
+                                <AlertTriangle size={9} /> Check before use
+                              </span>
+                            )}
+                          </div>
+                          {p.description && <p className="text-[11px] text-slate-400 mt-0.5">{p.description}</p>}
+                        </div>
+                        <button onClick={() => setIssuing(p)}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors shrink-0">
+                          <FileOutput size={13} /> Issue
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <button onClick={() => setIssuing(p)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors shrink-0">
-                <FileOutput size={13} /> Issue
-              </button>
-            </div>
-          ))}
+            );
+          })}
+
+          {!q && !showAll && hiddenByScope > 0 && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-indigo-600 transition-colors"
+            >
+              Show {hiddenByScope} more precedent{hiddenByScope === 1 ? "" : "s"} from the full library
+            </button>
+          )}
         </div>
       </div>
 

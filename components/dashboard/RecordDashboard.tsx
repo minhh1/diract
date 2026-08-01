@@ -598,6 +598,29 @@ export default function RecordDashboard({
           display_order: finalTabs.length + missingCoreTabs.length,
         });
       }
+      // Precedents -- seeded directly below Trust Account. Gated on the
+      // company actually having a precedent library so a non-law-firm tenant
+      // doesn't get an empty tab (same reasoning as Finance Model and Trust
+      // Account above, but the signal is precedent rows rather than a table).
+      // The count query is deliberately inside the "tab is missing" check:
+      // once seeded, uniqueTabs short-circuits it and this never queries
+      // again on subsequent record loads.
+      if (systemTable === 'projects' && !uniqueTabs.some(t => t.tab_type === 'precedents')) {
+        const { count: precedentCount } = await supabase
+          .from('precedents')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', cid)
+          .eq('record_table', 'projects')
+          .eq('is_system', false)
+          .is('deleted_at', null);
+        if (precedentCount) {
+          missingCoreTabs.push({
+            company_id: cid, record_id: recordId, record_table: recordTable,
+            title: 'Precedents', icon: 'PenSquare', tab_type: 'precedents',
+            display_order: finalTabs.length + missingCoreTabs.length,
+          });
+        }
+      }
       if (systemTable === 'entities' && !uniqueTabs.some(t => t.tab_type === 'related_matters')) {
         missingCoreTabs.push({
           company_id: cid, record_id: recordId, record_table: recordTable,

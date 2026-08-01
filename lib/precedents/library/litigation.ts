@@ -1,0 +1,258 @@
+// lib/precedents/library/litigation.ts
+// General civil litigation correspondence and the court-document scaffolds
+// that are structurally common across Australian jurisdictions.
+//
+// Correspondence here is jurisdiction-neutral. The court documents are NOT
+// claimed to be current prescribed forms: heading conventions, jurat wording
+// and annexure certificates differ between the Supreme, District/County and
+// Magistrates/Local courts of each state, and the forms are amended from
+// time to time. Every court_document below therefore carries requiresReview
+// and a note naming what to check. They are drafting scaffolds that get the
+// structure and content right, not filing-ready forms.
+//
+// Court-structure notes that matter when choosing a precedent:
+//  - The intermediate court is the District Court in NSW, QLD, SA and WA,
+//    and the County Court in VIC.
+//  - Tasmania has NO intermediate court -- matters run Magistrates Court to
+//    Supreme Court directly.
+import { text, field, type PrecedentSeed } from "./types";
+
+export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
+  {
+    key: "lit.letter_before_action",
+    name: "Letter Before Action",
+    description: "Pre-litigation letter setting out the claim and inviting resolution before proceedings.",
+    category: "Litigation",
+    subcategory: "Pre-litigation",
+    documentType: "letter",
+    aiInstructions:
+      "Draft a letter before action. Set out the factual background concisely, the legal basis of the claim, the loss suffered and how it is calculated, what the client requires to resolve the matter, and a deadline. Invite the recipient to respond or propose an alternative. This letter may later be shown to the Court on costs, so it must be measured, accurate and proportionate -- overstatement is a liability.",
+    segments: [
+      text("LETTER BEFORE ACTION\n\nWe act for "),
+      field("client_name", "Our client", "ABC Supplies Pty Ltd"),
+      text(".\n\nBACKGROUND\n\n"),
+      field("background", "Factual background", "On 1 March 2026 our client and your client entered into a written agreement for the supply of building materials."),
+      text("\n\nTHE CLAIM\n\n"),
+      field("legal_basis", "Legal basis of the claim", "Your client has breached clause 4 of that agreement by failing to pay for materials delivered and accepted."),
+      text("\n\nLOSS\n\nOur client has suffered loss of "),
+      field("loss_amount", "Loss claimed", "$18,450.00"),
+      text(", calculated as "),
+      field("loss_calculation", "How the loss is calculated", "the invoiced value of materials delivered and accepted but unpaid"),
+      text(".\n\nWHAT OUR CLIENT REQUIRES\n\n"),
+      field("relief_sought", "What is required to resolve", "Payment of $18,450.00 within 21 days."),
+      text("\n\nIf this matter is not resolved by "),
+      field("deadline", "Deadline", "30 August 2026"),
+      text(", our client intends to commence proceedings. Our client will rely on this letter on the question of costs.\n\nWe invite your client to respond, or to put forward a proposal for resolution, before that date."),
+    ],
+  },
+  {
+    key: "lit.notice_of_acting",
+    name: "Notice of Acting",
+    description: "Notifies the court and other parties that the firm acts for a party in the proceedings.",
+    category: "Litigation",
+    subcategory: "Court Documents",
+    documentType: "court_document",
+    aiInstructions:
+      "Draft a notice of acting for filing. Include the court and registry, the proceedings number, the parties, a statement that the firm acts for the named party, and the firm's address for service including email. Keep it to the minimum content the rules require.",
+    segments: [
+      text("NOTICE OF ACTING\n\nCourt: "),
+      field("court", "Court and registry", "District Court of New South Wales, Sydney Registry"),
+      text("\nProceedings No: "),
+      field("proceedings_number", "Proceedings number", "2026/00123456"),
+      text("\n\nBETWEEN:\n\n"),
+      field("plaintiff", "Plaintiff / Applicant", "ABC Supplies Pty Ltd (ACN 000 000 000)"),
+      text("\n  Plaintiff\n\nAND:\n\n"),
+      field("defendant", "Defendant / Respondent", "XYZ Builders Pty Ltd (ACN 111 111 111)"),
+      text("\n  Defendant\n\nTAKE NOTICE that "),
+      field("firm_name", "Firm name", "Huynh Lawyers"),
+      text(" acts for the "),
+      field("party_acting_for", "Party we act for", "Plaintiff"),
+      text(" in these proceedings.\n\nAddress for service:\n\n"),
+      field("address_for_service", "Address for service", "Huynh Lawyers\nLevel 1, 123 Example Street\nSydney NSW 2000\nEmail: service@example.com.au"),
+      text("\n\nDated: "),
+      field("date", "Date", "20 August 2026"),
+    ],
+    requiresReview: true,
+    reviewNote:
+      "Notice of acting is a prescribed form in most courts. Verify the correct current form, heading format and filing method for the court seised of the proceedings.",
+  },
+  {
+    key: "lit.affidavit_general",
+    name: "Affidavit (general scaffold)",
+    description: "General-purpose affidavit structure with jurat. Adapt to the specific court's prescribed form.",
+    category: "Litigation",
+    subcategory: "Court Documents",
+    documentType: "court_document",
+    aiInstructions:
+      "Draft an affidavit. Rules that must be followed: number every paragraph; one topic per paragraph; state facts within the deponent's own knowledge, and where a matter is on information and belief say so and identify the source; never argue, submit or characterise -- an affidavit gives evidence, it does not make the case; refer to documents as annexures or exhibits and describe them precisely; keep language plain and in the deponent's own voice. Do not include legal submissions.",
+    segments: [
+      text("AFFIDAVIT\n\nCourt: "),
+      field("court", "Court and registry", "District Court of New South Wales, Sydney Registry"),
+      text("\nProceedings No: "),
+      field("proceedings_number", "Proceedings number", "2026/00123456"),
+      text("\n\nBETWEEN: "),
+      field("plaintiff", "Plaintiff / Applicant", "ABC Supplies Pty Ltd"),
+      text(" (Plaintiff)\nAND: "),
+      field("defendant", "Defendant / Respondent", "XYZ Builders Pty Ltd"),
+      text(" (Defendant)\n\nAffidavit of: "),
+      field("deponent_name", "Deponent full name", "Jane Elizabeth Citizen"),
+      text("\nOccupation: "),
+      field("deponent_occupation", "Occupation", "Company Director"),
+      text("\nAddress: "),
+      field("deponent_address", "Address", "5 Sample Road, Parramatta NSW 2150"),
+      text("\nDate: "),
+      field("date", "Date sworn/affirmed", "20 August 2026"),
+      text("\n\nI, the deponent, say on oath/affirmation:\n\n1. I am "),
+      field("capacity", "Deponent's capacity", "a director of the Plaintiff and am authorised to make this affidavit on its behalf"),
+      text(".\n\n2. I make this affidavit from my own knowledge, save where I state otherwise. Where I depose to a matter on information and belief, I identify the source of that information and believe it to be true.\n\n"),
+      field("body_paragraphs", "Numbered body paragraphs", "3. On 1 March 2026 the Plaintiff and the Defendant entered into a written agreement for the supply of building materials. Annexed and marked 'A' is a copy of that agreement.\n\n4. Between 1 March 2026 and 30 April 2026 the Plaintiff delivered materials to the Defendant's site at 12 Example Street, Sydney. Annexed and marked 'B' are copies of the signed delivery dockets.\n\n5. The Plaintiff issued invoices totalling $18,450.00 for those materials. Annexed and marked 'C' are copies of those invoices.\n\n6. As at the date of this affidavit no part of that sum has been paid."),
+      text("\n\nSWORN/AFFIRMED at "),
+      field("sworn_place", "Place sworn", "Sydney"),
+      text("\n\nDeponent: ____________________________\n\nBefore me: ____________________________\n"),
+      field("witness_capacity", "Witness capacity", "Justice of the Peace / Australian Legal Practitioner"),
+    ],
+    requiresReview: true,
+    reviewNote:
+      "Jurat wording, annexure certificates and who may witness differ by state and court, and remote-witnessing rules vary. Verify against the current prescribed affidavit form for the relevant court before swearing.",
+  },
+  {
+    key: "lit.request_for_particulars",
+    name: "Request for Further and Better Particulars",
+    description: "Requests particulars of matters inadequately pleaded by the other side.",
+    category: "Litigation",
+    subcategory: "Interlocutory",
+    documentType: "letter",
+    aiInstructions:
+      "Draft a request for further and better particulars. Identify the pleading and the specific paragraphs, and for each set out precisely what particular is sought and why the pleading as it stands does not enable the client to know the case they must meet. Number the requests. Give a deadline and note that an application may be made if particulars are not provided.",
+    segments: [
+      text("REQUEST FOR FURTHER AND BETTER PARTICULARS\n\nWe refer to the "),
+      field("pleading", "Pleading", "Statement of Claim filed 1 August 2026"),
+      text(".\n\nOur client is unable to properly plead to that document in its current form. We request the following particulars:\n\n"),
+      field("requests", "Numbered requests", "1. Of paragraph 6, where it is alleged that the goods were 'accepted': state the date, place and manner of the alleged acceptance, and identify each person by whom it is alleged acceptance occurred.\n\n2. Of paragraph 9, where loss is alleged: state how the sum of $18,450.00 is calculated, identifying each component."),
+      text("\n\nPlease provide these particulars by "),
+      field("deadline", "Deadline", "3 September 2026"),
+      text(".\n\nIf they are not provided, our client will apply to the Court for an order that they be given, and will seek the costs of that application."),
+    ],
+  },
+  {
+    key: "lit.subpoena_cover_letter",
+    name: "Subpoena (covering letter with conduct money)",
+    description: "Covers service of a subpoena and the required conduct money.",
+    category: "Litigation",
+    subcategory: "Interlocutory",
+    documentType: "letter",
+    aiInstructions:
+      "Draft a covering letter serving a subpoena. Identify the proceedings, state what the subpoena requires (attendance, production, or both), the date and place for compliance, enclose conduct money and state the amount, and note the recipient may apply to set the subpoena aside or seek their reasonable costs of compliance. Be courteous -- the recipient is usually a third party with no interest in the dispute.",
+    segments: [
+      text("We act for "),
+      field("client_name", "Our client", "ABC Supplies Pty Ltd"),
+      text(" in the proceedings described in the enclosed subpoena.\n\nWe enclose by way of service a Subpoena "),
+      field("subpoena_type", "Type of subpoena", "to Produce Documents"),
+      text(".\n\nCOMPLIANCE\n\nThe subpoena requires "),
+      field("what_is_required", "What is required", "production of the documents described in the Schedule to the subpoena"),
+      text(" by "),
+      field("compliance_date", "Compliance date", "10 September 2026"),
+      text(" at "),
+      field("compliance_place", "Place for compliance", "the Registry of the District Court of New South Wales, Sydney"),
+      text(".\n\nCONDUCT MONEY\n\nWe enclose conduct money of "),
+      field("conduct_money", "Conduct money", "$50.00"),
+      text(".\n\nIf your reasonable costs of complying exceed that amount, please contact us and we will consider a further payment.\n\nYOUR RIGHTS\n\nYou may apply to the Court to have the subpoena set aside, in whole or in part. If you consider any of the documents sought are privileged or confidential, please contact us before the compliance date.\n\nIf you have any difficulty complying by the date above, please contact us promptly."),
+    ],
+    requiresReview: true,
+    reviewNote:
+      "Conduct money amounts, service periods and setting-aside procedures are set by each court's rules. Verify the minimum conduct money and the required period between service and compliance for the relevant court.",
+  },
+  {
+    key: "lit.brief_to_counsel",
+    name: "Brief to Counsel",
+    description: "Backsheet and instructions briefing counsel to advise or appear.",
+    category: "Litigation",
+    subcategory: "Counsel",
+    documentType: "letter",
+    aiInstructions:
+      "Draft a brief to counsel. Include: the parties and proceedings details, what counsel is briefed to do (advise, settle pleadings, appear), a concise summary of the facts, the issues on which counsel's advice is sought, the procedural history and any imminent dates, an index of the documents in the brief, and the instructing solicitor's contact details. Be precise about what is asked of counsel and by when.",
+    segments: [
+      text("BRIEF TO COUNSEL\n\nCounsel: "),
+      field("counsel_name", "Counsel briefed", "Mr A Barrister of Counsel, Example Chambers"),
+      text("\nBriefed to: "),
+      field("briefed_to", "Briefed to", "advise on prospects and settle the Statement of Claim"),
+      text("\n\nProceedings: "),
+      field("proceedings", "Proceedings", "District Court of New South Wales, Sydney Registry, No 2026/00123456"),
+      text("\nParties: "),
+      field("parties", "Parties", "ABC Supplies Pty Ltd (Plaintiff) v XYZ Builders Pty Ltd (Defendant)"),
+      text("\n\nSUMMARY OF FACTS\n\n"),
+      field("facts", "Summary of facts", "Our client supplied building materials under a written agreement. The Defendant took delivery, signed delivery dockets, and has not paid invoices totalling $18,450.00. The Defendant now alleges the goods were defective and rejected, which our client disputes."),
+      text("\n\nISSUES FOR ADVICE\n\n"),
+      field("issues", "Issues for counsel", "1. Prospects of success on the claim.\n2. Whether the alleged rejection is sustainable on the documents.\n3. Appropriate forum given the amount in issue."),
+      text("\n\nPROCEDURAL POSITION AND KEY DATES\n\n"),
+      field("procedural", "Procedural position and dates", "Statement of Claim filed 1 August 2026. Defence due 30 August 2026. First directions hearing listed 12 September 2026."),
+      text("\n\nINDEX TO BRIEF\n\n"),
+      field("index", "Index of documents", "1. Statement of Claim\n2. Supply agreement dated 1 March 2026\n3. Delivery dockets\n4. Invoices\n5. Correspondence between the parties"),
+      text("\n\nWe should be grateful for counsel's advice by "),
+      field("advice_due", "Advice required by", "5 September 2026"),
+      text(".\n\nInstructing solicitor: "),
+      field("instructing_solicitor", "Instructing solicitor", "Jane Smith, Huynh Lawyers, (02) 0000 0000"),
+    ],
+  },
+  {
+    key: "lit.consent_orders_cover",
+    name: "Consent Orders (covering letter)",
+    description: "Sends draft consent orders to the other side for signature and filing.",
+    category: "Litigation",
+    subcategory: "Settlement Offers",
+    documentType: "letter",
+    aiInstructions:
+      "Draft a covering letter enclosing draft consent orders. Set out the orders proposed in numbered form, confirm they reflect the agreement reached, ask for signature and return by a date, and state who will file them. Note if the orders are to be made in chambers or require a listing.",
+    segments: [
+      text("We refer to the agreement reached between our respective clients.\n\nWe enclose draft Short Minutes of Order reflecting that agreement:\n\n"),
+      field("orders", "Proposed orders", "1. The Defendant pay the Plaintiff the sum of $12,000 within 14 days.\n2. Upon payment, the proceedings be dismissed.\n3. Each party bear its own costs."),
+      text("\n\nIf these accord with your client's understanding, please arrange for them to be signed and returned to us by "),
+      field("return_by", "Return by", "3 September 2026"),
+      text(".\n\nWe will then "),
+      field("filing_arrangements", "Filing arrangements", "file the orders with the Court and seek that they be made in chambers"),
+      text(".\n\nIf you consider any amendment is required, please let us know promptly."),
+    ],
+  },
+  {
+    key: "lit.advice_on_prospects",
+    name: "Advice on Prospects and Costs Risk",
+    description: "Written advice to the client on merits, likely outcomes and costs exposure.",
+    category: "Litigation",
+    subcategory: "Advice",
+    documentType: "advice",
+    aiInstructions:
+      "Draft written advice to the client on the prospects of the matter. Cover: the issues, the strengths and weaknesses of the client's position (be candid about weaknesses -- advice that only tells the client what they want to hear is negligent), the realistic range of outcomes, an estimate of costs to hearing, the client's exposure to the other side's costs if unsuccessful, and a recommendation. Explain that litigation outcomes are inherently uncertain and no result can be guaranteed.",
+    segments: [
+      text("ADVICE ON PROSPECTS\n\nYou have asked for our advice on the prospects of this matter.\n\nTHE ISSUES\n\n"),
+      field("issues", "The issues", "Whether the goods supplied conformed to the agreement, and whether the Defendant validly rejected them."),
+      text("\n\nSTRENGTHS OF YOUR POSITION\n\n"),
+      field("strengths", "Strengths", "The delivery dockets are signed on behalf of the Defendant and record no defect. The alleged rejection was not communicated in writing until six weeks after delivery."),
+      text("\n\nWEAKNESSES\n\n"),
+      field("weaknesses", "Weaknesses (be candid)", "There is a contemporaneous site photograph which the Defendant says shows damaged stock. Our witness to the delivery has since left your employment and may be difficult to locate."),
+      text("\n\nLIKELY OUTCOMES\n\n"),
+      field("outcomes", "Realistic range of outcomes", "In our view you have reasonable prospects of recovering the majority of the claim. A realistic range at hearing is $12,000 to $18,450, with a real possibility of a reduced award if the Court accepts part of the rejection case."),
+      text("\n\nCOSTS\n\nOur estimate of costs to hearing is "),
+      field("costs_estimate", "Costs estimate to hearing", "$25,000 to $35,000 plus GST"),
+      text(".\n\nIf you are unsuccessful, you would ordinarily be ordered to pay a substantial proportion of the other side's costs in addition to your own.\n\nRECOMMENDATION\n\n"),
+      field("recommendation", "Recommendation", "Given the costs exposure relative to the amount in dispute, we recommend a Calderbank offer be made early to protect your costs position."),
+      text("\n\nPlease note that litigation is inherently uncertain. No solicitor can guarantee an outcome, and this advice is based on the material currently available to us."),
+    ],
+  },
+  {
+    key: "lit.mediation_agreement_to_mediate",
+    name: "Agreement to Mediate (covering letter)",
+    description: "Proposes mediation, a mediator and the practical arrangements.",
+    category: "Litigation",
+    subcategory: "ADR",
+    documentType: "letter",
+    aiInstructions:
+      "Draft a letter proposing mediation. Suggest one or more mediators, propose timing and venue (including whether remote), address how the mediator's fees are to be shared, confirm the mediation will be without prejudice and confidential, and note who must attend with authority to settle. Frame it as a constructive, cost-saving step.",
+    segments: [
+      text("We consider this matter is suitable for mediation, and that an early mediation is likely to save both parties substantial cost.\n\nPROPOSED MEDIATOR\n\nWe propose "),
+      field("mediator", "Proposed mediator(s)", "Ms M Mediator of Example ADR, or alternatively Mr N Neutral"),
+      text(".\n\nTIMING AND VENUE\n\nWe propose "),
+      field("timing_venue", "Timing and venue", "a half-day mediation in the week commencing 15 September 2026, conducted remotely"),
+      text(".\n\nCOSTS\n\nWe propose the mediator's fees be shared equally between the parties, with each party bearing its own costs of attending.\n\nCONFIDENTIALITY\n\nThe mediation would be conducted on a without prejudice and confidential basis, and nothing said in it would be admissible in the proceedings.\n\nATTENDANCE\n\nEach party should be represented by a person with full authority to settle.\n\nPlease let us know whether your client agrees, and if not, which aspects require discussion."),
+    ],
+  },
+];
