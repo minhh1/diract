@@ -14,7 +14,7 @@
 // 20260731300000_tasks_start_date.sql) render as a full start->due
 // duration bar in Diagram view; tasks without one render as a single-day
 // marker at their due date instead.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
@@ -39,6 +39,17 @@ interface TaskRow {
 
 const UNASSIGNED = "unassigned";
 
+// A stable colour per team (by its position in the company's team list,
+// not a random hash) -- the List view's Teams column shows these as
+// small bars instead of full name chips, since team filtering above the
+// table already tells you which team is which; hovering a bar still
+// shows the name via its title attribute.
+const TEAM_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#0ea5e9", "#8b5cf6", "#ef4444", "#14b8a6"];
+function teamColor(teamId: string, teams: Team[]): string {
+  const idx = teams.findIndex(t => t.id === teamId);
+  return TEAM_COLORS[(idx < 0 ? 0 : idx) % TEAM_COLORS.length];
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
@@ -48,11 +59,28 @@ function daysBetween(a: Date, b: Date): number {
   return (b.getTime() - a.getTime()) / 86400000;
 }
 
-// Diagram-view zoom -- "all" keeps the original behaviour (every bar
-// scaled as a % of the whole task-date span, no horizontal scroll);
-// "week"/"month" switch to a fixed pixels-per-day scale (so day/month
-// gridlines stay evenly spaced regardless of how much date range the
-// tasks span) inside a horizontally-scrollable track.
+function startOfWeek(d: Date): Date {
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1) - day; // Monday-start week -- same convention TransactionsSubtab.tsx already uses
+  const s = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diff);
+  return s;
+}
+
+function formatPeriodLabel(zoom: Exclude<Zoom, "all">, start: Date, end: Date): string {
+  if (zoom === "month") return start.toLocaleDateString("en-AU", { month: "long", year: "numeric" });
+  const sameMonth = start.getMonth() === end.getMonth();
+  const startLabel = start.toLocaleDateString("en-AU", sameMonth ? { day: "numeric" } : { day: "numeric", month: "short" });
+  const endLabel = end.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  return `${startLabel} – ${endLabel}`;
+}
+
+// Diagram-view zoom -- "all" keeps the original behaviour (every task
+// bar scaled as a % of the whole task-date span, every task shown);
+// "week"/"month" switch to a fixed pixels-per-day scale AND filter rows
+// down to just the tasks overlapping the currently-paged period (see
+// periodStart/periodEnd below) -- otherwise every one of a project's
+// tasks would still get a row even though only a handful actually fall
+// within the visible week/month.
 type Zoom = "week" | "month" | "all";
 const PX_PER_DAY: Record<Exclude<Zoom, "all">, number> = { week: 72, month: 22 };
 
@@ -224,7 +252,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set());
   const [groupByTeam, setGroupByTeam] = useState(false);
   const [zoom, setZoom] = useState<Zoom>("week");
-  const ganttScrollRef = useRef<HTMLDivElement>(null);
+  const [periodOffset, setPeriodOffset] = useState(0);
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
 
   // "Apply template" -- reuses the same checklist_templates/TemplateManager
@@ -354,34 +382,60 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   }, [filteredTasks]);
 
   const pxPerDay = zoom === "all" ? null : PX_PER_DAY[zoom];
+
+  // periodOffset counts whole weeks/months away from "now" -- 0 is the
+  // week/month containing today, -1 is the previous one, etc. Reset
+  // whenever zoom changes so switching from week to month (or back)
+  // never carries over an offset in the wrong unit.
+  useEffect(() => { setPeriodOffset(0); }, [zoom]);
+
+  const { periodStart, periodEnd, periodSpanDays } = useMemo(() => {
+    if (zoom === "all") return { periodStart: null, periodEnd: null, periodSpanDays: null };
+    const now = new Date();
+    if (zoom === "week") {
+      const start = startOfWeek(now);
+      start.setDate(start.getDate() + periodOffset * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      return { periodStart: start, periodEnd: end, periodSpanDays: 7 };
+    }
+    const start = new Date(now.getFullYear(), now.getMonth() + periodOffset, 1);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { periodStart: start, periodEnd: end, periodSpanDays: daysBetween(start, end) + 1 };
+  }, [zoom, periodOffset]);
+
+  // effectiveStart/effectiveSpan unify "all" zoom (the full, data-driven
+  // axisStart/span, unchanged) with week/month zoom (the current paged
+  // period) into the single pair GanttBar positions every bar against.
+  const effectiveStart = periodStart ?? axisStart;
+  const effectiveSpan = periodSpanDays ?? span;
   const today = new Date();
-  const todayOffsetDays = daysBetween(axisStart, today);
-  const showTodayLine = todayOffsetDays >= 0 && todayOffsetDays <= span;
-  const ticks = useMemo(() => (zoom === "all" ? [] : getTicks(zoom, axisStart, axisEnd)), [zoom, axisStart, axisEnd]);
+  const todayOffsetDays = daysBetween(effectiveStart, today);
+  const showTodayLine = todayOffsetDays >= 0 && todayOffsetDays <= effectiveSpan;
+  const ticks = useMemo(
+    () => (zoom === "all" || !periodStart || !periodEnd ? [] : getTicks(zoom, periodStart, periodEnd)),
+    [zoom, periodStart, periodEnd],
+  );
 
-  // On entering week/month zoom, land the scroll position with "today" a
-  // little in from the left edge (context for what's just passed, room to
-  // see what's coming) rather than at the very start of the whole range.
-  // Depends on axisStart's *value* (not zoom alone) because axisStart
-  // itself shifts once real task dates load in after the initial render
-  // (before that, filteredTasks is empty and axisStart briefly defaults
-  // to a narrow today-only range) -- without this, the very first
-  // landing used that pre-load range and never corrected itself once the
-  // real, usually much wider, task date span arrived.
-  useEffect(() => {
-    if (zoom === "all" || !ganttScrollRef.current || !pxPerDay) return;
-    const target = Math.max(0, todayOffsetDays * pxPerDay - 120);
-    ganttScrollRef.current.scrollLeft = target;
-  }, [zoom, axisStart.getTime(), pxPerDay]);
+  // Row filtering -- only tasks that actually overlap the visible period
+  // in week/month zoom (a task with no date at all never appears once
+  // zoomed, same as it never appeared as a dated bar before). "All" zoom
+  // is unfiltered, same as before -- it's meant to show the whole picture.
+  const periodTasks = useMemo(() => {
+    if (zoom === "all" || !periodStart || !periodEnd) return filteredTasks;
+    return filteredTasks.filter(t => {
+      const due = t.due_date ? new Date(t.due_date) : null;
+      const start = t.start_date ? new Date(t.start_date) : due;
+      if (!due && !start) return false;
+      const s = start || due!;
+      const e = due || start!;
+      return s <= periodEnd && e >= periodStart;
+    });
+  }, [filteredTasks, zoom, periodStart, periodEnd]);
 
-  // Prev/next paging -- a full week (7 days) or one calendar month's worth
-  // of days at a time, so repeated clicks move in predictable, human-sized
-  // steps instead of an arbitrary scroll amount.
-  const pageTime = (direction: 1 | -1) => {
-    if (!ganttScrollRef.current || !pxPerDay) return;
-    const stepDays = zoom === "week" ? 7 : 30;
-    ganttScrollRef.current.scrollBy({ left: direction * stepDays * pxPerDay, behavior: "smooth" });
-  };
+  // Prev/next paging -- a full week or calendar month at a time.
+  const pageTime = (direction: 1 | -1) => setPeriodOffset(o => o + direction);
 
   if (loading) {
     return (
@@ -409,11 +463,11 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     if (!start && !due) return null;
     const barStart = start || due!;
     const barEnd = due || start!;
-    const offsetDays = daysBetween(axisStart, barStart);
+    const offsetDays = daysBetween(effectiveStart, barStart);
     const durationDays = Math.max(daysBetween(barStart, barEnd), 0);
-    const barLeft = pxPerDay ? `${offsetDays * pxPerDay}px` : `${(offsetDays / span) * 100}%`;
-    const barWidth = pxPerDay ? `${Math.max(durationDays * pxPerDay, 10)}px` : `${Math.max((durationDays / span) * 100, 0.8)}%`;
-    const todayLeft = pxPerDay ? `${todayOffsetDays * pxPerDay}px` : `${(todayOffsetDays / span) * 100}%`;
+    const barLeft = pxPerDay ? `${offsetDays * pxPerDay}px` : `${(offsetDays / effectiveSpan) * 100}%`;
+    const barWidth = pxPerDay ? `${Math.max(durationDays * pxPerDay, 10)}px` : `${Math.max((durationDays / effectiveSpan) * 100, 0.8)}%`;
+    const todayLeft = pxPerDay ? `${todayOffsetDays * pxPerDay}px` : `${(todayOffsetDays / effectiveSpan) * 100}%`;
     const color = t.task_statuses?.color_hex || (t.is_completed ? "#10b981" : "#6366f1");
     const blocked = blockedBy(t.id, dependenciesByTask, tasks);
     return (
@@ -426,8 +480,8 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
           {t.name}
         </p>
         <div
-          className={`relative bg-slate-50 rounded-full ${pxPerDay ? "h-7" : "h-5"}`}
-          style={pxPerDay ? { width: `${span * pxPerDay}px`, flex: "0 0 auto" } : { flex: "1 1 0%" }}
+          className={`relative bg-slate-50 rounded-full overflow-hidden ${pxPerDay ? "h-7" : "h-5"}`}
+          style={pxPerDay ? { width: `${effectiveSpan * pxPerDay}px`, flex: "0 0 auto" } : { flex: "1 1 0%" }}
         >
           <div
             className={`absolute rounded-full ${pxPerDay ? "top-1 h-5" : "top-0.5 h-4"}`}
@@ -549,8 +603,8 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
                     </td>
                     <td className="px-2 py-2 text-slate-700 font-medium cursor-pointer hover:text-indigo-600" onClick={() => setEditingTask(t)}>{t.name}</td>
                     <td className="px-2 py-2">
-                      <div className="flex flex-wrap gap-1 cursor-pointer" onClick={() => setEditingTask(t)}>
-                        {t.teams.map(tm => <span key={tm.id} className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold">{tm.team_name}</span>)}
+                      <div className="flex items-center gap-1 cursor-pointer" onClick={() => setEditingTask(t)}>
+                        {t.teams.map(tm => <span key={tm.id} title={tm.team_name} className="w-4 h-1.5 rounded-full" style={{ backgroundColor: teamColor(tm.id, teams) }} />)}
                         {!t.teams.length && <span className="text-slate-300 text-[10px]">—</span>}
                       </div>
                     </td>
@@ -585,20 +639,31 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
                 </div>
               )}
             </div>
-            {zoom === "all" && (
+            {zoom === "all" ? (
               <div className="flex items-center gap-4 text-[10px] text-slate-400">
                 <span>{formatDate(axisStart.toISOString())}</span>
                 <span>{formatDate(axisEnd.toISOString())}</span>
               </div>
+            ) : (
+              periodStart && periodEnd && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-slate-600">{formatPeriodLabel(zoom, periodStart, periodEnd)}</span>
+                  {periodOffset !== 0 && (
+                    <button onClick={() => setPeriodOffset(0)} className="text-[10px] font-bold text-indigo-600 hover:underline">
+                      Today
+                    </button>
+                  )}
+                </div>
+              )
             )}
           </div>
 
-          <div ref={ganttScrollRef} className="overflow-x-auto">
-            <div style={pxPerDay ? { width: `${160 + 12 + span * pxPerDay}px` } : undefined} className="space-y-2">
+          <div className="overflow-x-auto">
+            <div style={pxPerDay ? { width: `${160 + 12 + effectiveSpan * pxPerDay}px` } : undefined} className="space-y-2">
               {pxPerDay && (
                 <div className="flex items-center gap-3">
                   <div className="w-40 shrink-0 sticky left-0 z-10 bg-white" />
-                  <div className="relative h-5" style={{ width: `${span * pxPerDay}px` }}>
+                  <div className="relative h-5" style={{ width: `${effectiveSpan * pxPerDay}px` }}>
                     {ticks.map(tick => {
                       // Skip a tick label that would collide with the
                       // "Today" label below (~46px of clearance either side).
@@ -617,10 +682,12 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
                   </div>
                 </div>
               )}
-              {groupByTeam ? (
+              {periodTasks.length === 0 ? (
+                <p className="text-[11px] text-slate-300 py-6 text-center">No tasks due this {zoom === "month" ? "month" : "week"}.</p>
+              ) : groupByTeam ? (
                 <div className="space-y-4">
                   {visibleColumns.map(col => {
-                    const colTasks = filteredTasks.filter(t => col.id === UNASSIGNED ? !t.teams.length : t.teams.some(tm => tm.id === col.id));
+                    const colTasks = periodTasks.filter(t => col.id === UNASSIGNED ? !t.teams.length : t.teams.some(tm => tm.id === col.id));
                     if (!colTasks.length) return null;
                     return (
                       <div key={col.id} className="space-y-2">
@@ -632,7 +699,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredTasks.map(t => <GanttBar key={t.id} t={t} />)}
+                  {periodTasks.map(t => <GanttBar key={t.id} t={t} />)}
                 </div>
               )}
             </div>
