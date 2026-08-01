@@ -21,7 +21,7 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getCustomTable, listCustomTableRows, getCustomTableRowsByIds, createCustomTableRow, updateCustomTableRow, deleteCustomTableRow } from "@/lib/customTableAdmin";
 import { LOANS_SLUG } from "@/lib/financeModel/data";
 
-const LENDER_TYPES = ["Senior", "Mezzanine", "Private Lender", "Money Partner", "Other"];
+const LENDER_TYPES = ["Senior", "Mezzanine", "Private Lender", "Money Partner", "Internal", "Other"];
 const REPAYMENT_PERIODS = ["Monthly", "Six-Monthly", "At End of Term"];
 
 export async function GET(req: NextRequest) {
