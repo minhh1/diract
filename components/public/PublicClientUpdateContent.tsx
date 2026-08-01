@@ -69,9 +69,17 @@ interface Props {
   // component is also used embedded in a dashboard widget where that query
   // param doesn't apply.
   initialFixItemId?: string;
+  // Supplied by a caller that already holds this board's access code and
+  // whose viewer has no way to type one -- specifically the public demo
+  // hub (app/public/demo/[token]), where the hub link itself IS the
+  // credential and a PIN prompt would be a dead end. Takes precedence
+  // over the localStorage-remembered code; changes nothing about the
+  // request path, so the viewer still gets the ordinary read-only
+  // anonymous board.
+  accessCode?: string;
 }
 
-export default function PublicClientUpdateContent({ slug, embedded = false, initialFixItemId }: Props) {
+export default function PublicClientUpdateContent({ slug, embedded = false, initialFixItemId, accessCode }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"staff" | "client" | null>(null);
@@ -103,7 +111,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
   }, [slug]);
 
   const loadAsClient = useCallback(async () => {
-    const cachedCode = getCachedCode(slug);
+    const cachedCode = accessCode || getCachedCode(slug);
 
     // Paint instantly from a previous visit's cache -- but only ever a
     // payload cached under the EXACT PIN currently remembered (see
