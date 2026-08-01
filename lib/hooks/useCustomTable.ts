@@ -26,6 +26,30 @@ const tableShellKey = (companyId: string, slug: string) => `table:${companyId}:$
 // slot for every custom table with the exact key a real mount later reads.
 const rowsCacheKey = (companyId: string, slug: string) => `rows_${companyId}_${slug}`;
 
+// PostgREST caps a response at 1000 rows and reports no error when it
+// truncates, so an unbounded select silently loses data once a query
+// crosses that line. Preventive here rather than a live fix: the biggest
+// single table today holds 580 records, so the record query below hasn't
+// truncated yet -- but it would, silently, at 1000. The server-side
+// equivalent WAS already truncating when this was written (a flat select
+// over company_table_values returns one row per FIELD VALUE, so 138
+// records x ~8 fields blew the cap) -- see lib/customTableAdmin.ts's
+// selectAllPages, which this mirrors. Embedded resources are NOT subject
+// to the cap, only top-level rows (verified: 354 records returned 2791
+// embedded values intact), so the `values:` join below needs no paging.
+const PAGE_SIZE = 1000;
+
+async function selectAllPages<T = any>(query: () => any): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await query().range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const page = data || [];
+    all.push(...page);
+    if (page.length < PAGE_SIZE) return all;
+  }
+}
+
 export interface CustomTableField {
   id: string;
   table_id: string;
@@ -161,16 +185,20 @@ function fetchTableRecordsHydrated(
   const promise = (async () => {
     // Fires immediately, in parallel with fields -- same "don't wait on the
     // slower query before starting the other" reasoning load() always used.
-    const recordsPromise = supabase
+    // created_at alone isn't a unique sort key, and .range() paging over a
+    // non-deterministic order can drop or duplicate rows at page seams --
+    // id breaks the ties.
+    const recordsPromise = selectAllPages(() => supabase
       .from('company_table_records')
       .select('*, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)')
       .eq('table_id', tableId)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false }));
 
     const fieldList = await fieldListPromise;
     const fieldMap = new Map(fieldList.map(f => [f.id, f]));
-    const { data: recs } = await recordsPromise;
+    const recs = await recordsPromise;
 
     const hydratedRecords: CustomTableRecord[] = (recs || []).map(rec => {
       const values: Record<string, any> = {};
@@ -189,10 +217,12 @@ function fetchTableRecordsHydrated(
 
     const multiFields = fieldList.filter(f => f.allow_multiple);
     if (multiFields.length) {
-      const { data: links } = await supabase
+      const links = await selectAllPages(() => supabase
         .from('company_table_value_links')
         .select('record_id, field_id, value_record_id')
-        .in('field_id', multiFields.map(f => f.id));
+        .in('field_id', multiFields.map(f => f.id))
+        .order('record_id', { ascending: true })
+        .order('field_id', { ascending: true }));
       const byRecord = new Map<string, Record<string, string[]>>();
       (links || []).forEach(l => {
         const field = fieldMap.get(l.field_id);
@@ -248,11 +278,12 @@ export async function resolveRelationLabels(fieldList: CustomTableField[], recor
         displayField = (targetFields || []).find(f => f.field_key === targetTable?.primary_field_key) || (targetFields || [])[0];
       }
       if (displayField) {
-        const { data: values } = await supabase
+        const values = await selectAllPages(() => supabase
           .from('company_table_values')
           .select('record_id, value_text, value_number, value_date, value_boolean')
-          .eq('field_id', displayField.id)
-          .in('record_id', targetIds);
+          .eq('field_id', displayField!.id)
+          .in('record_id', targetIds)
+          .order('record_id', { ascending: true }));
         (values || []).forEach(v => {
           const label = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? String(v.value_boolean) : null);
           if (label !== null && label !== undefined) labelById.set(v.record_id, String(label));
