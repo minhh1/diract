@@ -218,6 +218,21 @@ function saveFilters(groupId: string, filters: { fieldId: string; values: Set<st
   try { localStorage.setItem(filtersPrefKey(groupId), JSON.stringify(filters.map(f => ({ fieldId: f.fieldId, values: [...f.values] })))); } catch { /* ignore */ }
 }
 
+// Sort criteria -- same "only place this choice lives, previously nowhere"
+// gap as filters above (confirmed: this was the ONE thing on this panel
+// that reset on every reload/reopen while filters/status both already
+// persisted). Same URL-path + group-id keying convention.
+const sortPrefKey = (groupId: string) => `client_update_sort_pref_${typeof window !== "undefined" ? window.location.pathname : ""}_${groupId}`;
+function getSavedSort(groupId: string): { fieldId: string; dir: "asc" | "desc" }[] | null {
+  try {
+    const raw = localStorage.getItem(sortPrefKey(groupId));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function saveSort(groupId: string, sorts: { fieldId: string; dir: "asc" | "desc" }[]) {
+  try { localStorage.setItem(sortPrefKey(groupId), JSON.stringify(sorts)); } catch { /* ignore */ }
+}
+
 // Fixed swatch -> full, statically-written Tailwind class strings (never
 // built dynamically, e.g. `bg-${color}-50` -- the JIT compiler only picks
 // up classes it can see written out literally in source).
@@ -531,10 +546,20 @@ export default function MatterBoard({
 
   const addFormatRule = () => {
     if (!onAddFormatRule) return;
-    const field = visibleFields[0];
+    // Previously defaulted to visibleFields[0] and bailed out with ZERO
+    // feedback whenever that specific column had no real value anywhere in
+    // the data yet (distinctValuesFor(...)[0] came back "" or undefined,
+    // both falsy) -- from the user's side, clicking "+ Add rule" just did
+    // nothing. Now scans every visible field for one that actually has a
+    // real value to default to; if truly nothing on the board has any value
+    // anywhere, still creates the rule (against the first field, blank
+    // value) rather than silently doing nothing -- the rule's own field/
+    // value dropdowns (see the formatRules.map block below) let the user
+    // pick a real one immediately after either way.
+    const fieldWithValue = visibleFields.find(f => distinctValuesFor(f.id)[0]);
+    const field = fieldWithValue || visibleFields[0];
     if (!field) return;
-    const value = distinctValuesFor(field.id)[0];
-    if (!value) return;
+    const value = distinctValuesFor(field.id)[0] || "";
     onAddFormatRule(field.id, value, FORMAT_COLOR_KEYS[formatRules.length % FORMAT_COLOR_KEYS.length]);
   };
 
@@ -547,19 +572,38 @@ export default function MatterBoard({
     : filterFilteredItems;
 
   const sortOptions = [{ id: MATTER_NAME_SORT, label: "Matter" }, ...visibleFields.map(f => ({ id: f.id, label: f.label }))];
-  // Defaults to a single Settlement Date criterion on first load of a group
-  // that has one; once the user touches sorting that choice is left alone.
-  // Re-runs per active group since each one's fields (and so its natural
-  // default) can differ.
+  // Restores whatever sort was last saved for THIS group (see sortPrefKey)
+  // -- falling back to a single Settlement Date criterion on first-ever
+  // load of a group that has one and nothing saved yet, same as before.
+  // Once the user touches sorting that choice is left alone (and now
+  // persisted, so it survives a reload/reopen instead of resetting). Re-runs
+  // per active group since each one's fields (and so its natural default)
+  // can differ.
   const [sortInitialisedFor, setSortInitialisedFor] = useState<string | null>(null);
   useEffect(() => {
     const groupKey = activeTopGroup?.id ?? UNGROUPED;
     if (sortInitialisedFor === groupKey || !visibleFields.length) return;
-    const settlementField = visibleFields.find(f => f.label.toLowerCase().includes("settlement date"));
-    setSorts(settlementField ? [{ fieldId: settlementField.id, dir: "asc" }] : []);
+    const saved = getSavedSort(groupKey);
+    if (saved) {
+      setSorts(saved);
+    } else {
+      const settlementField = visibleFields.find(f => f.label.toLowerCase().includes("settlement date"));
+      setSorts(settlementField ? [{ fieldId: settlementField.id, dir: "asc" }] : []);
+    }
     setSortInitialisedFor(groupKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTopGroup?.id, visibleFields.length]);
+
+  // Saves on every change, but only once the group's saved sort has actually
+  // been loaded (sortInitialisedFor set) -- otherwise this would fire on
+  // mount with the blank initial useState([]) and overwrite a real saved
+  // sort with nothing before the load effect above even runs. Same guard
+  // shape as the filters save-effect below.
+  useEffect(() => {
+    const groupKey = activeTopGroup?.id ?? UNGROUPED;
+    if (sortInitialisedFor !== groupKey) return;
+    saveSort(groupKey, sorts);
+  }, [sorts, activeTopGroup?.id, sortInitialisedFor]);
 
   const compareOne = (a: MatterBoardItem, b: MatterBoardItem, fieldId: string): number => {
     if (fieldId === MATTER_NAME_SORT) return a.matterName.localeCompare(b.matterName);
@@ -718,7 +762,7 @@ export default function MatterBoard({
           )}
           {mode === "spreadsheet" && onFreezeFirstColumnChanged && (
             <button onClick={() => onFreezeFirstColumnChanged(!freezeFirstColumn)} title="Freeze the first column"
-              className={`p-2 border rounded-full transition-colors ${freezeFirstColumn ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
+              className={`p-2 transition-colors ${freezeFirstColumn ? "text-indigo-600" : "text-slate-400 hover:text-indigo-600"}`}>
               <Pin size={14} />
             </button>
           )}
@@ -734,7 +778,7 @@ export default function MatterBoard({
           </div>
           <div className="relative">
             <button onClick={() => setShowMoreMenu(v => !v)} title="More"
-              className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+              className="p-2 text-slate-400 hover:text-indigo-600 transition-colors">
               <MoreHorizontal size={14} />
             </button>
             {showMoreMenu && (
