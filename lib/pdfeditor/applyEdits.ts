@@ -59,38 +59,38 @@ export async function applyEdits(originalBytes: Uint8Array, ops: PdfEditOp[]): P
       });
       page.drawText(op.text, { x: op.x, y: op.y, size: op.fontSize, font, color: rgb(...op.color) });
     } else if (op.type === "checkbox") {
-      // Whiteout the original glyph (same vertical convention as text-edit above),
-      // then draw a hollow square + centered "X" — not a substituted text glyph,
-      // since Unicode box characters (☐/☑/☒) aren't in the Standard-14/WinAnsi
-      // encoding pdf-lib embeds, and this gives exact control over centering.
+      // x/y/width/height ARE the box itself (computed once at creation time —
+      // either from a source glyph's own bounding box, for one pdf.js found in
+      // the text layer, or a fixed default for one placed via the "Checkbox"
+      // tool onto a vector-drawn or scanned checkbox pdf.js can't see at all —
+      // see CheckboxOp's doc comment and PdfPageView.tsx's toggleCheckbox/
+      // handlePointerUp). No further derivation here, unlike the old version
+      // of this branch, so this always matches the live preview exactly.
+      // Whiteout first — covers a glyph-derived box's original glyph (a
+      // placed one just paints over blank/already-erased space, harmless).
       page.drawRectangle({
-        x: op.x - 1,
-        y: op.y - op.height * 0.25,
-        width: op.width + 2,
-        height: op.height * 1.3,
+        x: op.x - 1, y: op.y - 1, width: op.width + 2, height: op.height + 2,
         color: rgb(1, 1, 1),
       });
-      const boxSize = Math.min(op.width, op.height * 1.1);
-      const boxX = op.x + (op.width - boxSize) / 2;
-      const boxY = op.y - op.height * 0.2;
       page.drawRectangle({
-        x: boxX, y: boxY, width: boxSize, height: boxSize,
-        borderColor: rgb(0, 0, 0), borderWidth: Math.max(0.75, boxSize * 0.06),
+        x: op.x, y: op.y, width: op.width, height: op.height,
+        borderColor: rgb(0, 0, 0), borderWidth: Math.max(0.75, op.width * 0.08),
       });
       if (op.checked) {
         // Drawn as two literal diagonal lines rather than an "X" glyph, so the
         // mark's size is precisely controllable via the inset below (a glyph's
-        // side-bearing makes that unreliable at any font size).
-        const inset = boxSize * 0.28;
-        const thickness = Math.max(1, boxSize * 0.08);
+        // side-bearing makes that unreliable at any font size) — small inset
+        // so the mark fills nearly the whole box, not just its middle third.
+        const inset = op.width * 0.12;
+        const thickness = Math.max(1, op.width * 0.14);
         page.drawLine({
-          start: { x: boxX + inset, y: boxY + inset },
-          end: { x: boxX + boxSize - inset, y: boxY + boxSize - inset },
+          start: { x: op.x + inset, y: op.y + inset },
+          end: { x: op.x + op.width - inset, y: op.y + op.height - inset },
           thickness, color: rgb(0, 0, 0),
         });
         page.drawLine({
-          start: { x: boxX + inset, y: boxY + boxSize - inset },
-          end: { x: boxX + boxSize - inset, y: boxY + inset },
+          start: { x: op.x + inset, y: op.y + op.height - inset },
+          end: { x: op.x + op.width - inset, y: op.y + inset },
           thickness, color: rgb(0, 0, 0),
         });
       }

@@ -17,7 +17,7 @@ import "pdfjs-dist/web/pdf_viewer.css";
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import {
-  ArrowLeft, MousePointer2, Type, Highlighter, Pencil, PenTool,
+  ArrowLeft, MousePointer2, Type, Highlighter, Pencil, PenTool, SquareCheck,
   Undo2, Redo2, Save, ZoomIn, ZoomOut, Loader2, Trash2, Download, Files,
 } from "lucide-react";
 import PdfPageView from "./PdfPageView";
@@ -41,6 +41,7 @@ const PAGE_RENDER_WINDOW = 2;
 const TOOLS: { id: ToolId; label: string; icon: any }[] = [
   { id: "select", label: "Select / edit text", icon: MousePointer2 },
   { id: "textbox", label: "Add text box", icon: Type },
+  { id: "checkbox", label: "Add checkbox", icon: SquareCheck },
   { id: "highlight", label: "Highlight", icon: Highlighter },
   { id: "draw", label: "Draw", icon: Pencil },
   { id: "signature", label: "Signature", icon: PenTool },

@@ -2,16 +2,34 @@ import type { StandardFontKey } from "./types";
 
 // Best-effort match from a pdf.js text run's font info to one of pdf-lib's
 // Standard-14 fonts. pdf.js can't give us the document's real embedded font
-// program in the browser, so we fall back to substring heuristics on the
-// resolved CSS font-family string (e.g. "Arial-BoldMT,Arial,sans-serif",
-// or just a generic "serif"/"sans-serif"/"monospace" for subset-embedded
-// fonts pdf.js can't identify). Visually close, not pixel-identical — see
-// the "Known limitations" note in the PDF editor plan.
-export function matchStandardFont(fontFamily: string | undefined, transform?: number[]): StandardFontKey {
+// program in the browser, so family SELECTION (Times vs Helvetica vs Courier)
+// still falls back to substring heuristics on the resolved CSS font-family
+// string (e.g. "Arial-BoldMT,Arial,sans-serif", or just a generic
+// "serif"/"sans-serif"/"monospace" for subset-embedded fonts pdf.js can't
+// identify) — visually close, not pixel-identical, see the "Known
+// limitations" note in the PDF editor plan.
+//
+// Bold/italic is a different story: pdf.js DOES parse these correctly off the
+// font's real FontDescriptor (weight/ItalicAngle) into FontFaceObject's own
+// `.bold`/`.italic` getters (see getRealFontFlags in PdfPageView.tsx, which
+// reads pdfPage.commonObjs.get(item.fontName)) — far more reliable than a
+// name heuristic, since many real-world generated PDFs (subset-embedded
+// fonts especially) resolve to a family string with no "Bold"/"Italic" in it
+// at all, which is exactly what silently stripped formatting on edit before
+// this existed. `realFlags` wins whenever a given flag is defined; the name
+// heuristic below only fills in whichever flag(s) it doesn't have (e.g. the
+// font object resolved but pdf.js still leaves italic undecided for a given
+// glyph, or realFlags is entirely unavailable yet -- see the try/catch around
+// commonObjs.get, which can throw if the font hasn't finished loading).
+export function matchStandardFont(
+  fontFamily: string | undefined,
+  transform?: number[],
+  realFlags?: { bold?: boolean; italic?: boolean },
+): StandardFontKey {
   const f = (fontFamily || "").toLowerCase();
-  const bold = /bold|black|heavy|semibold|demibold|extrabold/.test(f);
-  let italic = /italic|oblique/.test(f);
-  if (!italic && transform && transform.length >= 4 && transform[0] !== 0) {
+  const bold = realFlags?.bold ?? /bold|black|heavy|semibold|demibold|extrabold/.test(f);
+  let italic = realFlags?.italic ?? /italic|oblique/.test(f);
+  if (realFlags?.italic === undefined && !italic && transform && transform.length >= 4 && transform[0] !== 0) {
     // Some PDFs render "faux" italics as a skewed transform on a non-italic-named
     // font rather than switching fonts — a shear component here (without pdf.js
     // having already folded it into the family name above) is that signal.

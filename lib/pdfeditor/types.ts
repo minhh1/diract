@@ -26,20 +26,30 @@ export interface TextEditOp {
   color: RGB;
 }
 
-// A detected checkbox-glyph run, toggled by click. Drawn as a hollow square
-// (not a substituted text glyph) so it's independent of font/encoding — the
-// Standard-14/WinAnsi fonts pdf-lib embeds can't render Unicode box glyphs
-// (☐/☑/☒) at all — and so the "X" can be centered exactly within the box
-// regardless of how the original glyph measured.
+// A checkbox mark: a hollow square + optional "X", drawn directly rather than
+// a substituted text glyph — both because the Standard-14/WinAnsi fonts
+// pdf-lib embeds can't render Unicode box glyphs (☐/☑/☒) at all, and because
+// most real-world generated PDFs (this app's own contracts included) draw
+// their checkboxes as vector line-art in the page content stream, not as text
+// glyphs in the first place — pdf.js's text layer never sees those at all, so
+// there's nothing to click. x/y/width/height are the box's own bottom-left
+// corner and side length in PDF space (not derived from any source glyph),
+// so the exact same shape works whether this box was:
+//   - toggled from a real checkbox glyph pdf.js DID find in the text layer
+//     (itemIndex set, geometry computed once from that glyph's own bounding
+//     box at creation time — see toggleCheckbox in PdfPageView.tsx), or
+//   - placed freehand via the "Checkbox" tool onto a vector-drawn or
+//     scanned-image checkbox pdf.js can't see at all (itemIndex omitted,
+//     geometry is just wherever the user clicked, sized to a fixed default).
 export interface CheckboxOp {
   id: string;
   type: "checkbox";
   page: number;
-  itemIndex: number; // index into that page's getTextContent() text items, for re-matching on re-render
+  itemIndex?: number; // set only for a glyph-derived checkbox, for re-matching that glyph on re-render
   x: number;
-  y: number; // baseline, PDF space — same convention as TextEditOp
-  width: number; // original glyph's width, used to size the drawn box
-  height: number; // approx cap height, used to size the drawn box
+  y: number;
+  width: number;
+  height: number;
   checked: boolean;
 }
 
@@ -100,4 +110,4 @@ export interface ImageOp {
 
 export type PdfEditOp = TextEditOp | HighlightOp | TextBoxOp | DrawOp | ImageOp | CheckboxOp;
 
-export type ToolId = "select" | "edit-text" | "textbox" | "highlight" | "draw" | "signature";
+export type ToolId = "select" | "edit-text" | "textbox" | "highlight" | "draw" | "signature" | "checkbox";

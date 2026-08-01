@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PDFPageProxy } from "pdfjs-dist";
 import { TextCursor } from "lucide-react";
-import type { DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, TextRun, ToolId } from "@/lib/pdfeditor/types";
+import type { CheckboxOp, DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, TextRun, ToolId } from "@/lib/pdfeditor/types";
 import { matchStandardFont, standardFontCss } from "@/lib/pdfeditor/fontMatch";
 
 // Shared offscreen canvas for text-width measurement — used to auto-grow the
@@ -33,6 +33,13 @@ function isCheckedGlyph(str: string): boolean {
   const t = str.trim();
   return CHECKBOX_CHECKED_GLYPH.test(t) || /^\[[xX]\]$/.test(t);
 }
+
+// Side length (PDF points) for a checkbox freehand-placed via the "Checkbox"
+// tool, where there's no source glyph to size it from — matches the typical
+// visual size of a checkbox in a generated business form (see the contracts
+// this was verified against), close enough that most placements need no
+// further resizing.
+const DEFAULT_CHECKBOX_SIZE_PDF = 10;
 
 function measureTextWidth(text: string, fontSizePx: number, fontFamily: string): number {
   if (!measureCanvas) measureCanvas = document.createElement("canvas");
@@ -201,6 +208,14 @@ export default function PdfPageView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedOpId, onDeleteOp]);
 
+  // Set for one tick after a real drag (moved past the 2px threshold) ends,
+  // then cleared the moment it's read — lets a click handler that ALSO wants
+  // to run on a plain click (checkbox toggle below) tell "this was a click"
+  // apart from "this was the tail end of a drag". dragStateRef itself can't
+  // answer that: onDragEnd already nulls it out before the browser's own
+  // click event (which always fires after pointerup) gets a chance to see it.
+  const justDraggedRef = useRef(false);
+
   const beginDrag = (id: string, startX: number, startY: number, e: React.PointerEvent) => {
     if (activeTool !== "select" || textSelectId === id) return; // in text-select mode, let native selection happen instead
     e.stopPropagation();
@@ -222,6 +237,7 @@ export default function PdfPageView({
     dragStateRef.current = null;
     setDragOffset(null);
     if (!ds.moved) return;
+    justDraggedRef.current = true;
     const dx = e.clientX - ds.startClientX;
     const dy = e.clientY - ds.startClientY;
     const [origSx, origSy] = viewport.convertToViewportPoint(ds.startX, ds.startY);
@@ -343,6 +359,12 @@ export default function PdfPageView({
   // used instead.
   const [editingRun, setEditingRun] = useState<{
     index: number; value: string; left: number; top: number; fontSizePx: number; fontFamily: string; minWidth: number;
+    // So the live input previews bold/italic the same way the committed
+    // overlay renders it (see matchStandardFont's real-font-flags support) --
+    // without these the input rendered plain the entire time you were
+    // typing, only the text you'd already committed once before showed
+    // formatting at all.
+    fontWeight: number; fontStyle: "italic" | "normal";
   } | null>(null);
   const editingRunRef = useRef(editingRun);
   useEffect(() => { editingRunRef.current = editingRun; }, [editingRun]);
@@ -361,6 +383,44 @@ export default function PdfPageView({
 
   const viewport = useMemo(() => pdfPage.getViewport({ scale }), [pdfPage, scale]);
   const pageOps = useMemo(() => ops.filter((o) => o.page === pageIndex), [ops, pageIndex]);
+
+  // pdf.js parses a font's REAL weight/italic-angle off its FontDescriptor
+  // (see FontFaceObject's own .bold/.italic getters in pdfjs-dist) and
+  // registers the resolved font object on the page's commonObjs once
+  // rendering/text-content has resolved it -- far more reliable than
+  // matchStandardFont's own name-substring fallback below, which silently
+  // mismatches on plenty of real-world subset-embedded fonts whose resolved
+  // CSS family string never says "Bold"/"Italic" at all. `.get` throws if the
+  // font hasn't been registered yet (shouldn't happen here, since this is
+  // only ever called after this page's own render+getTextContent resolved),
+  // hence the guard rather than trusting `.has` alone across a race.
+  function getRealFontFlags(fontName: string): { bold?: boolean; italic?: boolean } | undefined {
+    try {
+      if (!pdfPage.commonObjs.has(fontName)) return undefined;
+      const fontObj = pdfPage.commonObjs.get(fontName) as { bold?: boolean; italic?: boolean; name?: string; fallbackName?: string };
+      // pdf.js's own .bold/.italic getters come off the font's real
+      // FontDescriptor (explicit weight/flags) -- confirmed live that plenty
+      // of real-world generated PDFs embed the correct bold/italic font FILE
+      // without also bothering to set that descriptor metadata, leaving
+      // these undefined even for unmistakably bold text (e.g. an embedded
+      // subset literally named "AAAAAJ+Arial-BoldMT" still had .bold ===
+      // undefined here). `.name`/`.fallbackName` carry the font's real
+      // resolved PostScript name, which is far more reliable for this than
+      // the coarse family string pdf.js exposes via TextContent.styles (used
+      // for family SELECTION elsewhere) -- for a subset-embedded font that's
+      // frequently just a generic fallback like "sans-serif" with no
+      // style information in it at all, which is exactly what silently
+      // defeated matchStandardFont's own name heuristic before this existed.
+      // Union both signals -- either saying yes is enough.
+      const realName = (fontObj.name || fontObj.fallbackName || "").toLowerCase();
+      return {
+        bold: !!fontObj.bold || /bold|black|heavy|semibold|demibold|extrabold/.test(realName),
+        italic: !!fontObj.italic || /italic|oblique/.test(realName),
+      };
+    } catch {
+      return undefined;
+    }
+  }
 
   // ── Render canvas bitmap + pdf.js TextLayer ──────────────────────────
   useEffect(() => {
@@ -446,7 +506,11 @@ export default function PdfPageView({
   useEffect(() => {
     if (!ready) return;
     const editedIndices = new Set<number>();
-    for (const op of pageOps) if (op.type === "text-edit" || op.type === "checkbox") editedIndices.add(op.itemIndex);
+    for (const op of pageOps) {
+      // A checkbox placed via the tool (no source glyph) has no itemIndex --
+      // nothing to hide, since there was never a pdf.js span for it.
+      if (op.type === "text-edit" || (op.type === "checkbox" && op.itemIndex !== undefined)) editedIndices.add(op.itemIndex!);
+    }
 
     textDivsRef.current.forEach((span, i) => {
       if (editingRun?.index === i || editedIndices.has(i)) {
@@ -492,7 +556,7 @@ export default function PdfPageView({
       width: item.width,
       height: item.height,
       fontSize,
-      font: matchStandardFont(fontFamily, item.transform),
+      font: matchStandardFont(fontFamily, item.transform, getRealFontFlags(item.fontName)),
       text: er.value,
       color: [0, 0, 0],
     });
@@ -504,31 +568,37 @@ export default function PdfPageView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
-  // Checkbox glyphs toggle directly (no floating input). The first click on a
+  // Checkbox GLYPHS (pdf.js found an actual ☐/☑/[x] character in the text
+  // layer) toggle directly on click, no floating input. The first click on a
   // fresh glyph flips from whatever the ORIGINAL glyph showed (empty → checked,
-  // already-checked → unchecked); every click after that just flips the
-  // existing CheckboxOp. Drawn as a hollow square + optional "X" rather than a
-  // substituted text glyph — see CheckboxOp's doc comment for why.
+  // already-checked → unchecked) and bakes the box's geometry, derived once
+  // from that glyph's own bounding box, directly into the new CheckboxOp —
+  // every click after that just flips the existing op's `checked` (handled by
+  // the checkbox render block below now that an op exists, not this
+  // function again — see its own onClick). Most real-world contracts don't
+  // have a glyph here at all (checkboxes drawn as vector line-art instead,
+  // invisible to pdf.js's text layer) — see the "Checkbox" tool's placement
+  // handler in handlePointerUp for that case.
   function toggleCheckbox(i: number) {
     const item = textItemsRef.current[i];
     const span = textDivsRef.current[i];
     if (!item || !span) return;
+    if (opsRef.current.some((o) => o.type === "checkbox" && o.page === pageIndex && o.itemIndex === i)) return;
 
-    const existing = opsRef.current.find((o) => o.type === "checkbox" && o.page === pageIndex && o.itemIndex === i);
-    if (existing) {
-      onUpdateOpRef.current(existing.id, { checked: !(existing as PdfEditOp & { type: "checkbox" }).checked });
-      return;
-    }
     const wasChecked = isCheckedGlyph(span.dataset.originalText || item.str);
+    // Same derivation as the old inline render/save-time geometry used to
+    // recompute on every frame — now computed once, here, and stored directly
+    // as the op's own box so render/save just draw x/y/width/height as-is.
+    const boxSize = Math.min(item.width, item.height * 1.1);
     onAddOpRef.current({
       id: crypto.randomUUID(),
       type: "checkbox",
       page: pageIndex,
       itemIndex: i,
-      x: item.transform[4],
-      y: item.transform[5],
-      width: item.width,
-      height: item.height,
+      x: item.transform[4] + (item.width - boxSize) / 2,
+      y: item.transform[5] - item.height * 0.2,
+      width: boxSize,
+      height: boxSize,
       checked: !wasChecked,
     });
   }
@@ -548,10 +618,13 @@ export default function PdfPageView({
     // Use the same Standard-14 CSS approximation the committed overlay renders with
     // (rather than the raw pdf.js font-family string) so nothing visually jumps on commit.
     const rawFamily = contentRef.current?.styles?.[item.fontName]?.fontFamily;
-    const fontFamily = standardFontCss(matchStandardFont(rawFamily, item.transform)).fontFamily;
+    const css = standardFontCss(matchStandardFont(rawFamily, item.transform, getRealFontFlags(item.fontName)));
     const minWidth = Math.max(item.width * scale, 40);
 
-    setEditingRun({ index: i, value: currentText, left: sx, top: sy - fontSizePx, fontSizePx, fontFamily, minWidth });
+    setEditingRun({
+      index: i, value: currentText, left: sx, top: sy - fontSizePx, fontSizePx, minWidth,
+      fontFamily: css.fontFamily, fontWeight: css.fontWeight, fontStyle: css.fontStyle,
+    });
   }
 
   // ── Interaction layer: highlight drag / freehand draw / textbox & signature placement ──
@@ -622,6 +695,24 @@ export default function PdfPageView({
       const [pdfX, pdfY] = viewport.convertToPdfPoint(pos.x, pos.y);
       setTextBoxDraft({ screenX: pos.x, screenY: pos.y, pdfX, pdfY });
       setTextBoxValue("");
+    } else if (activeTool === "checkbox") {
+      // Places a checked box centered on the click point -- sidesteps
+      // detecting the source document's own checkbox entirely (most real
+      // contracts draw theirs as vector line-art or a scanned image, neither
+      // of which pdf.js's text layer can see -- see CheckboxOp's doc comment),
+      // so this works on every document instead of only ones using a
+      // recognized text glyph. Defaults to checked since placing one is
+      // almost always "check this box", not "add an empty box" -- toggle it
+      // off via the render block's own click handler below if that's wrong.
+      const pos = overlayPos(e);
+      const [pdfX, pdfY] = viewport.convertToPdfPoint(pos.x, pos.y);
+      const size = DEFAULT_CHECKBOX_SIZE_PDF;
+      const op: CheckboxOp = {
+        id: crypto.randomUUID(), type: "checkbox", page: pageIndex,
+        x: pdfX - size / 2, y: pdfY - size / 2, width: size, height: size, checked: true,
+      };
+      onAddOp(op);
+      onPlacementComplete();
     } else if (activeTool === "signature" && pendingSignature) {
       const pos = overlayPos(e);
       const [pdfX, pdfY] = viewport.convertToPdfPoint(pos.x, pos.y);
@@ -710,37 +801,59 @@ export default function PdfPageView({
           );
         })}
 
-        {/* Committed checkbox toggles — a drawn box (not a substituted glyph, since
-            Unicode box characters aren't in the Standard-14/WinAnsi encoding) with
-            the "X" precisely centered, matching applyEdits.ts's save-time geometry. */}
+        {/* Committed checkboxes — a drawn box (not a substituted glyph, since Unicode
+            box characters aren't in the Standard-14/WinAnsi encoding pdf-lib embeds)
+            with the "X" filling nearly the whole box, matching applyEdits.ts's
+            save-time geometry exactly (x/y/width/height ARE the box now, computed
+            once at creation time — see CheckboxOp's doc comment — not re-derived
+            from a source glyph on every render the way this used to work). Click
+            toggles checked; drag repositions; select-then-Delete or the badge
+            removes it — same interaction set as every other placed annotation. */}
         {pageOps.filter((o): o is PdfEditOp & { type: "checkbox" } => o.type === "checkbox").map((o) => {
-          // Same box geometry as applyEdits.ts's checkbox branch, so the live
-          // preview lines up exactly with what gets saved.
-          const boxSizePdf = Math.min(o.width, o.height * 1.1);
-          const boxXPdf = o.x + (o.width - boxSizePdf) / 2;
-          const boxYPdf = o.y - o.height * 0.2;
-          const r = pdfRectToScreen(viewport, boxXPdf, boxYPdf, boxSizePdf, boxSizePdf);
+          const r = pdfRectToScreen(viewport, o.x, o.y, o.width, o.height);
+          const offset = dragOffset?.id === o.id ? dragOffset : null;
+          const selected = selectedOpId === o.id;
           return (
-            <div key={o.id} style={{
-              position: "absolute", left: r.left - 1, top: r.top - 1, width: r.width + 2, height: r.height + 2, background: "white",
-            }}>
+            <div
+              key={o.id}
+              onPointerDown={(e) => beginDrag(o.id, o.x, o.y, e)}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (justDraggedRef.current) { justDraggedRef.current = false; return; }
+                if (activeTool !== "select") return;
+                onUpdateOp(o.id, { checked: !o.checked });
+              }}
+              title={activeTool === "select" ? "Click to toggle, drag to move" : undefined}
+              style={{
+                position: "absolute", left: r.left - 1, top: r.top - 1, width: r.width + 2, height: r.height + 2, background: "white",
+                pointerEvents: activeTool === "select" ? "auto" : "none",
+                cursor: activeTool === "select" ? "pointer" : undefined,
+                transform: offset ? `translate(${offset.dx}px, ${offset.dy}px)` : undefined,
+                outline: selected ? "1.5px dashed #3b82f6" : undefined, outlineOffset: 2,
+              }}
+            >
               <div style={{
                 position: "absolute", left: 1, top: 1, width: r.width, height: r.height,
-                border: `${Math.max(1, r.width * 0.06)}px solid #0f172a`, boxSizing: "border-box",
+                border: `${Math.max(1, r.width * 0.08)}px solid #0f172a`, boxSizing: "border-box",
               }}>
                 {o.checked && (() => {
                   // Two diagonal lines, not an "X" glyph — precisely sizable via
-                  // the inset below (a glyph's side-bearing makes that unreliable).
-                  const inset = r.width * 0.28;
-                  const thickness = Math.max(1, r.width * 0.08);
+                  // the inset below (a glyph's side-bearing makes that unreliable) —
+                  // small inset so the mark fills nearly the whole box, not just its
+                  // middle third the way this used to render.
+                  const inset = r.width * 0.12;
+                  const thickness = Math.max(1, r.width * 0.14);
                   return (
-                    <svg width={r.width} height={r.height} style={{ position: "absolute", inset: 0 }}>
+                    <svg width={r.width} height={r.height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
                       <line x1={inset} y1={inset} x2={r.width - inset} y2={r.height - inset} stroke="#0f172a" strokeWidth={thickness} strokeLinecap="round" />
                       <line x1={inset} y1={r.height - inset} x2={r.width - inset} y2={inset} stroke="#0f172a" strokeWidth={thickness} strokeLinecap="round" />
                     </svg>
                   );
                 })()}
               </div>
+              <DeleteBadge id={o.id} />
             </div>
           );
         })}
@@ -876,7 +989,8 @@ export default function PdfPageView({
             // width — otherwise typed text scrolls out of view inside a cramped box.
             position: "absolute", left: editingRun.left, top: editingRun.top,
             width: Math.max(editingRun.minWidth, measureTextWidth(editingRun.value, editingRun.fontSizePx, editingRun.fontFamily) + 10),
-            fontSize: editingRun.fontSizePx, fontFamily: editingRun.fontFamily, color: "#0f172a",
+            fontSize: editingRun.fontSizePx, fontFamily: editingRun.fontFamily,
+            fontWeight: editingRun.fontWeight, fontStyle: editingRun.fontStyle, color: "#0f172a",
             border: "1.5px solid #3b82f6", background: "white", padding: "0 2px", outline: "none", zIndex: 6,
           }}
         />
