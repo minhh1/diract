@@ -14,6 +14,10 @@ import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
 import { calculateLoanSchedule, resolveInterestCutoff, timelineCompletionDate, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
 
+// Shared across projects on purpose -- "I don't want to look at paid-off
+// loans" is a habit, not a per-project decision.
+const HIDE_DISCHARGED_KEY = "finance_model_hide_discharged_loans";
+
 const LENDER_TYPES = ["Senior", "Mezzanine", "Private Lender", "Money Partner", "Internal", "Other"];
 const REPAYMENT_PERIODS = ["Monthly", "Six-Monthly", "At End of Term"];
 const REPAYMENT_TYPES = ["Interest Only", "Amortizing"] as const;
@@ -590,6 +594,23 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addingLoan, setAddingLoan] = useState(false);
   const [saving, setSaving] = useState(false);
+  // A view preference, not project data -- kept in localStorage so it
+  // survives a reload (a settled project can accumulate a lot of paid-off
+  // facilities, and re-hiding them every visit is the annoyance this is
+  // meant to remove) but never written to the shared record, where it
+  // would silently change what other people see.
+  const [hideDischarged, setHideDischarged] = useState(false);
+
+  useEffect(() => {
+    try { setHideDischarged(localStorage.getItem(HIDE_DISCHARGED_KEY) === "1"); } catch { /* ignore */ }
+  }, []);
+
+  const toggleHideDischarged = (next: boolean) => {
+    setHideDischarged(next);
+    try { localStorage.setItem(HIDE_DISCHARGED_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+    // A hidden loan shouldn't stay expanded underneath the filter.
+    if (next) setExpandedId(null);
+  };
   const [newLoan, setNewLoan] = useState({
     name: "", lenderType: "Senior", lenderId: "", brokerId: "", borrowerId: "", guarantorIds: [] as string[],
     principalAmount: "", startDate: "", repaymentDate: "", repaymentPeriod: "At End of Term",
@@ -652,6 +673,9 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
     await load();
   };
 
+  const dischargedCount = loans.filter(l => l.is_discharged).length;
+  const visibleLoans = hideDischarged ? loans.filter(l => !l.is_discharged) : loans;
+
   if (loading) {
     return <div className="flex items-center gap-2 text-[12px] text-slate-400 py-10 justify-center"><Loader2 size={14} className="animate-spin" /> Loading loans...</div>;
   }
@@ -668,7 +692,13 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end px-1">
+      <div className="flex items-center justify-between px-1">
+        {dischargedCount > 0 ? (
+          <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
+            <input type="checkbox" checked={hideDischarged} onChange={e => toggleHideDischarged(e.target.checked)} />
+            Hide discharged ({dischargedCount})
+          </label>
+        ) : <span />}
         <button onClick={() => setAddingLoan(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline"><Plus size={11} /> Add loan</button>
       </div>
 
@@ -727,9 +757,17 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
         <div className="bg-white border border-slate-200 rounded-[32px] p-8 text-center">
           <p className="text-[12px] text-slate-400">No loans recorded for this project yet.</p>
         </div>
+      ) : visibleLoans.length === 0 ? (
+        // Every loan on the project is discharged and currently filtered
+        // out -- say so, rather than showing the "no loans recorded" empty
+        // state, which would read as data loss.
+        <div className="bg-white border border-slate-200 rounded-[32px] p-8 text-center">
+          <p className="text-[12px] text-slate-400 mb-2">All {dischargedCount} loan{dischargedCount === 1 ? " is" : "s are"} discharged and hidden.</p>
+          <button onClick={() => toggleHideDischarged(false)} className="text-[12px] font-bold text-indigo-600 hover:underline">Show discharged loans</button>
+        </div>
       ) : (
         <div className="space-y-2">
-          {loans.map(loan => (
+          {visibleLoans.map(loan => (
             <div key={loan.id} className={`bg-white border rounded-[32px] overflow-hidden ${loan.is_discharged ? "border-slate-100" : "border-slate-200"}`}>
               <div
                 role="button"
