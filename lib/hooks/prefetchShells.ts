@@ -33,7 +33,7 @@ import { getSchemaMetadata } from "@/lib/services/schemaService";
 import { fetchCompanyCustomFields, type CompanyCustomField } from "./useCompanyCustomFields";
 import { warmRelatedFields } from "./useRelatedFields";
 import { fetchScopedDefaultView } from "./scopedDefaultView";
-import { writeCachedScopedView } from "./usePresetTable";
+import { readCachedScopedView, writeCachedScopedView } from "./usePresetTable";
 import { savedViewsService, writeCachedDefaultFilters } from "@/lib/services/savedViewsService";
 import {
   resolveRelationLabels, type CustomTableField, type CustomTableRecord,
@@ -373,6 +373,74 @@ async function warmCustomTableViewConfig(
   ]);
 }
 
+// Drilled-in "related:" column labels/values -- CustomTableMasterPage.tsx's
+// own relatedColsCacheKey/effect (e.g. a "Matter Number" column drilled into
+// a Time & Fee Entry's Matter relation field, or "Matter Description" on a
+// Trust Account entry). Previously never warmed at all, so even the FIRST
+// visit to a table with one of these configured showed the column's
+// "Related field"/blank fallback before visibly jumping to the real
+// label+values a moment later -- self-contained (own view-config/fields/
+// relation-value reads, not chained off warmCustomTableRows/
+// warmCustomTableViewConfig below) specifically so it has no ordering
+// dependency on which of the parallel warmers in prefetchAllShells happens
+// to finish first; a little query overlap with those is an acceptable
+// trade-off for that. No-ops (cheaply) for a table with no "related:"
+// columns configured, which is most of them.
+async function warmRelatedColumns(
+  tbl: CustomTable, companyId: string, userId: string | null, myTeamIds: string[] | undefined,
+): Promise<void> {
+  const cacheKey = `related_cols_${companyId}_${tbl.slug}`;
+  if (readCache(cacheKey)) return;
+  try {
+    const cachedView = readCachedScopedView(companyId, tbl.slug);
+    const view = cachedView ? cachedView.view : await fetchScopedDefaultView(companyId, tbl.slug, userId, myTeamIds).catch(() => null);
+    const relatedColIds = [...new Set([...(view?.columns || []), ...(view?.expansion_columns || [])])]
+      .filter(id => id.startsWith('related:'));
+    if (!relatedColIds.length) return;
+
+    const { data: fields } = await supabase.from('company_table_fields').select('id, field_key, field_type')
+      .eq('table_id', tbl.id).is('deleted_at', null);
+    const fieldById = new Map((fields || []).map(f => [f.id, f]));
+
+    const nextMeta: Record<string, { headerLabel: string }> = {};
+    const nextValues: Record<string, Record<string, string>> = {};
+
+    await Promise.all(relatedColIds.map(async colId => {
+      // Mirrors CustomTableMasterPage.tsx's own parseRelatedColId --
+      // duplicated rather than imported (component internals), same
+      // standalone-module reasoning as RELATION_TARGET_TABLES above.
+      const parts = colId.split(':');
+      if (parts.length !== 4) return;
+      const [, relationFieldId, targetKind, targetFieldId] = parts;
+      if (!fieldById.has(relationFieldId)) return;
+
+      const [{ data: scalarVals }, { data: linkVals }] = await Promise.all([
+        supabase.from('company_table_values').select('value_record_id').eq('field_id', relationFieldId).not('value_record_id', 'is', null),
+        supabase.from('company_table_value_links').select('value_record_id').eq('field_id', relationFieldId),
+      ]);
+      const targetIds = [...new Set([...(scalarVals || []), ...(linkVals || [])].map((v: any) => v.value_record_id))];
+
+      const valuesTable = targetKind === 'custom' ? 'company_table_values' : 'company_custom_field_values';
+      const metaTable = targetKind === 'custom' ? 'company_table_fields' : 'company_custom_fields';
+      const [{ data: targetField }, { data: values }] = await Promise.all([
+        supabase.from(metaTable).select('label').eq('id', targetFieldId).maybeSingle(),
+        targetIds.length
+          ? supabase.from(valuesTable).select('record_id, value_text, value_number, value_date, value_boolean').eq('field_id', targetFieldId).in('record_id', targetIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+      nextMeta[colId] = { headerLabel: (targetField as any)?.label ?? 'Field' };
+      const byTarget: Record<string, string> = {};
+      (values || []).forEach((v: any) => {
+        const val = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? String(v.value_boolean) : null);
+        if (val !== null && val !== undefined) byTarget[v.record_id] = String(val);
+      });
+      nextValues[colId] = byTarget;
+    }));
+
+    writeCache(cacheKey, { meta: nextMeta, values: nextValues });
+  } catch {}
+}
+
 // lib/hooks/useSystemTableAsCustomTable.ts's dashboard-widget adapter for a
 // dashboard sourced directly from Properties/Entities/Projects (not a
 // company_tables row) -- unlike every OTHER source kind, it has its own,
@@ -622,6 +690,7 @@ async function prefetchAllShells(
     // to every custom table too.
     ...tableList.map(tbl => warmCustomTableRows(tbl, companyId).catch(() => {})),
     ...tableList.map(tbl => warmCustomTableViewConfig(tbl, companyId, userId, myTeamIds).catch(() => {})),
+    ...tableList.map(tbl => warmRelatedColumns(tbl, companyId, userId, myTeamIds).catch(() => {})),
     ...dashboardList.map(async (dash) => {
       if (readShellCache<CachedDashboardShell>(dashboardShellKey(companyId, dash.slug))) return;
       try {
