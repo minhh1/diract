@@ -9,7 +9,7 @@
 // component used everywhere else in the app) rather than a bespoke search
 // box.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink, Split, Search } from "lucide-react";
+import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink, Split, Search, Archive, RotateCcw } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
 import { calculateLoanSchedule, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
@@ -35,6 +35,7 @@ interface Loan {
   early_repayment_terms: string | null;
   security: string | null;
   notes: string | null;
+  is_discharged: boolean | null;
   // Attached by the GET route for the requesting project specifically --
   // see app/api/finance-model/loans/route.ts's header comment.
   allocation_percent: number;
@@ -524,6 +525,15 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
     await load();
   };
 
+  const toggleDischarged = async (loan: Loan) => {
+    setLoans(prev => prev.map(l => (l.id === loan.id ? { ...l, is_discharged: !l.is_discharged } : l)));
+    await fetch("/api/finance-model/loans", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: loan.id, isDischarged: !loan.is_discharged }),
+    });
+    await load();
+  };
+
   if (loading) {
     return <div className="flex items-center gap-2 text-[12px] text-slate-400 py-10 justify-center"><Loader2 size={14} className="animate-spin" /> Loading loans...</div>;
   }
@@ -598,7 +608,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
       ) : (
         <div className="space-y-2">
           {loans.map(loan => (
-            <div key={loan.id} className="bg-white border border-slate-200 rounded-[32px] overflow-hidden">
+            <div key={loan.id} className={`bg-white border rounded-[32px] overflow-hidden ${loan.is_discharged ? "border-slate-100" : "border-slate-200"}`}>
               <div
                 role="button"
                 tabIndex={0}
@@ -609,19 +619,31 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
                 <div className="flex items-center gap-3">
                   <ChevronRight size={14} className={`text-slate-300 transition-transform ${expandedId === loan.id ? "rotate-90" : ""}`} />
                   <div>
-                    <p className="text-[13px] font-bold text-slate-700">{loan.name || loan.lender_type || "Loan"}</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`text-[13px] font-bold ${loan.is_discharged ? "text-slate-400" : "text-slate-700"}`}>{loan.name || loan.lender_type || "Loan"}</p>
+                      {loan.is_discharged && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-400">Discharged</span>
+                      )}
+                    </div>
                     <p className="text-[11px] text-slate-400">{loan.lender_type} · Repayment {formatDate(loan.repayment_date)}{loan.security ? ` · ${loan.security}` : ""}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className="text-[13px] font-bold text-slate-700">{loan.principal_amount != null ? money(loan.allocated_principal_amount) : "—"}</p>
+                    <p className={`text-[13px] font-bold ${loan.is_discharged ? "text-slate-400" : "text-slate-700"}`}>{loan.principal_amount != null ? money(loan.allocated_principal_amount) : "—"}</p>
                     {loan.is_split && (
                       <p className="text-[10px] font-bold text-indigo-500 flex items-center gap-1 justify-end">
                         <Split size={9} /> {loan.allocation_percent.toFixed(0)}% of {money(loan.principal_amount || 0)}
                       </p>
                     )}
                   </div>
+                  <button
+                    onClick={e => { e.stopPropagation(); toggleDischarged(loan); }}
+                    className="text-slate-300 hover:text-indigo-500"
+                    title={loan.is_discharged ? "Mark as active" : "Mark as discharged (paid off)"}
+                  >
+                    {loan.is_discharged ? <RotateCcw size={13} /> : <Archive size={13} />}
+                  </button>
                   <button onClick={e => { e.stopPropagation(); deleteLoan(loan.id); }} className="text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
                 </div>
               </div>

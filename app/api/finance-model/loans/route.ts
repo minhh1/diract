@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
     early_repayment_terms: body?.earlyRepaymentTerms?.trim() || null,
     security: body?.security?.trim() || null,
     notes: body?.notes?.trim() || null,
+    is_discharged: !!body?.isDischarged,
   });
 
   return NextResponse.json({ id });
@@ -129,7 +130,7 @@ export async function PATCH(req: NextRequest) {
     principalAmount: "principal_amount", startDate: "start_date", repaymentDate: "repayment_date",
     repaymentPeriod: "repayment_period", extensionRight: "extension_right", extensionTerms: "extension_terms",
     earlyRepaymentAllowed: "early_repayment_allowed", earlyRepaymentTerms: "early_repayment_terms",
-    security: "security", notes: "notes",
+    security: "security", notes: "notes", isDischarged: "is_discharged",
   };
   const updates: Record<string, any> = {};
   for (const [bodyKey, fieldKey] of Object.entries(fieldMap)) {
