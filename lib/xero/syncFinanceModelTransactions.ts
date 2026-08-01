@@ -62,15 +62,22 @@ export async function syncFinanceModelTransactions(admin: any, companyId: string
     type: t.Type === "RECEIVE" ? "Income" : t.Type === "SPEND" ? "Expense" : null,
     contact: t.Contact?.Name || null,
     contactId: t.Contact?.ContactID || null,
-    // Reference (the transaction-level note) and Description (the first
-    // line item's own description) are two distinct Xero fields -- kept
-    // separate rather than the old `Reference || Description` fallback,
-    // which silently discarded Description whenever Reference was set even
-    // though Xero sends both.
+    // Reference is a genuine top-level Xero field (present here if the
+    // bank transaction ever had one) -- Description/AccountCode below are
+    // NOT, despite living on this same object: Xero's list BankTransactions
+    // endpoint always returns LineItems as an empty array regardless of
+    // what's actually on the transaction (confirmed by fetching the same
+    // transaction via GET /BankTransactions/{id}, which returns the real
+    // LineItems). Every transaction synced before this comment was written
+    // got imported with description/budget_line silently blank because of
+    // this -- enriched below via a per-transaction detail fetch, but only
+    // for transactions we're actually about to import for the first time
+    // (a routine re-sync, where almost everything is already imported,
+    // stays cheap).
     reference: t.Reference || null,
-    description: t.LineItems?.[0]?.Description || null,
+    description: null as string | null,
     amount: typeof t.Total === "number" ? t.Total : Number(t.Total) || 0,
-    accountCode: t.LineItems?.[0]?.AccountCode || null,
+    accountCode: null as string | null,
   }));
 
   const [budgetTable, txTable] = await Promise.all([
@@ -87,10 +94,27 @@ export async function syncFinanceModelTransactions(admin: any, companyId: string
   for (const line of budgetRows) if (line.xero_account_code) budgetLineByAccountCode.set(line.xero_account_code, line.id);
   const alreadyImported = new Set(existingTx.map((t: any) => t.xero_transaction_id).filter(Boolean));
 
+  const newTransactions = xeroTransactions.filter((tx: any) => !alreadyImported.has(tx.id));
+
+  for (const tx of newTransactions) {
+    try {
+      const detailRes = await xeroApiFetch(xero.connectionId, admin, `/BankTransactions/${tx.id}`);
+      if (detailRes.ok) {
+        const detailJson = await detailRes.json();
+        const lineItem = detailJson.BankTransactions?.[0]?.LineItems?.[0];
+        tx.description = lineItem?.Description || null;
+        tx.accountCode = lineItem?.AccountCode || null;
+      }
+    } catch {
+      // Best effort -- a failed detail fetch just leaves this one
+      // transaction's description/account code blank, same as before this
+      // enrichment step existed, rather than failing the whole sync.
+    }
+  }
+
   let imported = 0;
-  let skipped = 0;
-  for (const tx of xeroTransactions) {
-    if (alreadyImported.has(tx.id)) { skipped++; continue; }
+  const skipped = xeroTransactions.length - newTransactions.length;
+  for (const tx of newTransactions) {
     await createCustomTableRow(admin, txTable, null, {
       project: projectId,
       date: tx.date,
