@@ -15,7 +15,7 @@
 // duration bar in Diagram view; tasks without one render as a single-day
 // marker at their due date instead.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight, DollarSign } from "lucide-react";
+import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight, DollarSign, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
@@ -129,6 +129,7 @@ function TaskEditModal({
   const [startDate, setStartDate] = useState(task.start_date || "");
   const [dueDate, setDueDate] = useState(task.due_date ? task.due_date.slice(0, 10) : "");
   const [dependsOn, setDependsOn] = useState<Set<string>>(new Set(dependenciesByTask[task.id] || []));
+  const [dependsOnSearch, setDependsOnSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [showConvert, setShowConvert] = useState(false);
@@ -253,13 +254,30 @@ function TaskEditModal({
 
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Blocked by</p>
+            <div className="relative mb-1.5">
+              <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+              <input
+                value={dependsOnSearch}
+                onChange={e => setDependsOnSearch(e.target.value)}
+                placeholder="Search tasks..."
+                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400"
+              />
+            </div>
             <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-              {allTasks.filter(t => t.id !== task.id).map(t => (
-                <button key={t.id} type="button" onClick={() => toggleSet(dependsOn, t.id, setDependsOn)}
-                  className={`px-2.5 py-1 rounded-full text-[10px] border transition-colors ${dependsOn.has(t.id) ? "bg-indigo-600 border-indigo-600 text-white" : "border-slate-200 text-slate-400 hover:border-indigo-300"}`}>
-                  {t.name}
-                </button>
-              ))}
+              {allTasks
+                .filter(t => t.id !== task.id)
+                // Selected tasks always stay visible (so a search doesn't
+                // hide something you'd need to un-toggle) union'd with
+                // whatever the search text currently matches -- with 80+
+                // tasks on a real project, an unfiltered flat list was
+                // unusable.
+                .filter(t => dependsOn.has(t.id) || t.name.toLowerCase().includes(dependsOnSearch.trim().toLowerCase()))
+                .map(t => (
+                  <button key={t.id} type="button" onClick={() => toggleSet(dependsOn, t.id, setDependsOn)}
+                    className={`px-2.5 py-1 rounded-full text-[10px] border transition-colors ${dependsOn.has(t.id) ? "bg-indigo-600 border-indigo-600 text-white" : "border-slate-200 text-slate-400 hover:border-indigo-300"}`}>
+                    {t.name}
+                  </button>
+                ))}
             </div>
           </div>
 
