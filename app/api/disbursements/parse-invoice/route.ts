@@ -77,10 +77,84 @@ export async function POST(req: NextRequest) {
     };
   });
 
+  // ── Duplicate detection ── flags a line item that looks like it's already
+  // been recorded against this matter (the same invoice re-uploaded, or an
+  // earlier invoice that billed the same search) -- checked against that
+  // SAME matter's existing disbursement rows only, not company-wide, since
+  // the same search TYPE genuinely recurs across different matters and
+  // isn't itself suspicious. Primary signal is the dealing number (a land
+  // registry search/dealing is inherently a one-off event for a given
+  // matter, so it showing up twice is a strong signal) -- falls back to an
+  // exact date+description+amount match for line items with no dealing
+  // number (e.g. VOI/AML charges). Staff still decide on the review screen;
+  // this only flags, never silently drops anything.
+  const resolvedProjectIds = [...new Set(matters.map(m => m.projectId).filter((id): id is string => !!id))];
+  const existingByProject = new Map<string, { description: string; date: string | null; rate: number | null }[]>();
+  if (resolvedProjectIds.length) {
+    const { data: disbTable } = await admin
+      .from("company_tables").select("id").eq("company_id", companyId).eq("slug", "disbursements").is("deleted_at", null).maybeSingle();
+    if (disbTable) {
+      const { data: disbFields } = await admin
+        .from("company_table_fields").select("id, field_key").eq("table_id", disbTable.id).is("deleted_at", null);
+      const fieldIdByKey = new Map((disbFields || []).map(f => [f.field_key, f.id]));
+      const matterFieldId = fieldIdByKey.get("matter");
+      const descFieldId = fieldIdByKey.get("description");
+      const dateFieldId = fieldIdByKey.get("date");
+      const rateFieldId = fieldIdByKey.get("rate");
+      if (matterFieldId && descFieldId) {
+        const { data: matterLinks } = await admin
+          .from("company_table_values").select("record_id, value_record_id")
+          .eq("field_id", matterFieldId).in("value_record_id", resolvedProjectIds);
+        const projectByRecord = new Map((matterLinks || []).map(l => [l.record_id, l.value_record_id as string]));
+        const recordIds = [...projectByRecord.keys()];
+        if (recordIds.length) {
+          const { data: existingVals } = await admin
+            .from("company_table_values").select("record_id, field_id, value_text, value_number, value_date")
+            .in("record_id", recordIds).in("field_id", [descFieldId, dateFieldId, rateFieldId].filter((id): id is string => !!id));
+          const byRecord = new Map<string, { description: string; date: string | null; rate: number | null }>();
+          (existingVals || []).forEach(v => {
+            const entry = byRecord.get(v.record_id) || { description: "", date: null, rate: null };
+            if (v.field_id === descFieldId) entry.description = v.value_text || "";
+            if (v.field_id === dateFieldId) entry.date = v.value_date;
+            if (v.field_id === rateFieldId) entry.rate = v.value_number;
+            byRecord.set(v.record_id, entry);
+          });
+          for (const [recordId, projectId] of projectByRecord) {
+            const entry = byRecord.get(recordId);
+            if (!entry) continue;
+            if (!existingByProject.has(projectId)) existingByProject.set(projectId, []);
+            existingByProject.get(projectId)!.push(entry);
+          }
+        }
+      }
+    }
+  }
+
+  const mattersWithDuplicateFlags = matters.map(m => {
+    if (!m.projectId) return { ...m, lineItems: m.lineItems.map(li => ({ ...li, isDuplicate: false })) };
+    const existing = existingByProject.get(m.projectId) || [];
+    return {
+      ...m,
+      lineItems: m.lineItems.map(li => {
+        const isDuplicate = existing.some(e => {
+          if (li.dealingNumber && e.description.toLowerCase().includes(li.dealingNumber.toLowerCase())) return true;
+          if (!li.dealingNumber) {
+            const sameDesc = e.description.trim().toLowerCase() === li.description.trim().toLowerCase();
+            const sameAmount = e.rate != null && Math.abs(e.rate - li.exGstAmount) < 0.01;
+            const sameDate = !li.orderDate || e.date === li.orderDate;
+            return sameDesc && sameAmount && sameDate;
+          }
+          return false;
+        });
+        return { ...li, isDuplicate };
+      }),
+    };
+  });
+
   return NextResponse.json({
     supplierName: parsed.supplierName,
     invoiceNumber: parsed.invoiceNumber,
     invoiceDate: parsed.invoiceDate,
-    matters,
+    matters: mattersWithDuplicateFlags,
   });
 }

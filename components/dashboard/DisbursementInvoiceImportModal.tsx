@@ -12,9 +12,18 @@
 "use client";
 
 import { useState } from "react";
-import { X, Loader2, Upload, AlertTriangle, CheckCircle2, Trash2 } from "lucide-react";
+import { X, Loader2, Upload, AlertTriangle, CheckCircle2, Trash2, CopyX } from "lucide-react";
 
-interface LineItem { description: string; exGstAmount: number; gstAmount: number; totalAmount: number; }
+interface LineItem {
+  description: string; exGstAmount: number; gstAmount: number; totalAmount: number;
+  dealingNumber: string | null; orderDate: string | null;
+  // Server-computed (app/api/disbursements/parse-invoice/route.ts) -- looks
+  // like it's already been recorded against this matter (same dealing
+  // number, or same date+description+amount for a line with no dealing
+  // number). Defaulted to excluded below rather than hidden -- staff can
+  // still re-include it if it's a genuine coincidence, not silently drop it.
+  isDuplicate: boolean;
+}
 interface MatterGroup { matterNumber: string; projectId: string | null; projectName: string | null; lineItems: LineItem[]; }
 interface ParsedInvoice { supplierName: string; invoiceNumber: string; invoiceDate: string; matters: MatterGroup[]; }
 
@@ -42,7 +51,18 @@ interface ReviewGroup extends Omit<MatterGroup, "lineItems"> {
   lineItems: ReviewLineItem[];
 }
 
-export default function DisbursementInvoiceImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+interface Props {
+  onClose: () => void;
+  onImported: () => void;
+  // Set when opened from a matter's own Disbursements tab (as opposed to
+  // the standalone Disbursements table's toolbar) -- an uploaded invoice
+  // can still bill several OTHER matters at once, but only this one is
+  // relevant here, so every other matched group is filtered out entirely
+  // rather than shown alongside it.
+  restrictToProjectId?: string;
+}
+
+export default function DisbursementInvoiceImportModal({ onClose, onImported, restrictToProjectId }: Props) {
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,9 +85,16 @@ export default function DisbursementInvoiceImportModal({ onClose, onImported }: 
       setInvoice(parsed);
       setSupplierName(parsed.supplierName);
       setDate(parsed.invoiceDate);
-      setGroups(parsed.matters.map((m: MatterGroup) => ({
+      const matters = restrictToProjectId
+        ? parsed.matters.filter(m => m.projectId === restrictToProjectId)
+        : parsed.matters;
+      setGroups(matters.map((m: MatterGroup) => ({
         ...m,
-        lineItems: m.lineItems.map(li => ({ ...li, included: !!m.projectId, expenseCode: guessExpenseCode(li.description) })),
+        // A likely-duplicate line starts unchecked -- staff opted OUT of a
+        // genuine charge is a quick click to fix; a double-billed search
+        // silently re-added because it defaulted to checked is a real
+        // accounting error that's much easier to miss on this review screen.
+        lineItems: m.lineItems.map(li => ({ ...li, included: !!m.projectId && !li.isDuplicate, expenseCode: guessExpenseCode(li.description) })),
       })));
     } catch (e: any) {
       setError(e?.message || "Couldn't read this invoice");
@@ -188,9 +215,15 @@ export default function DisbursementInvoiceImportModal({ onClose, onImported }: 
                     </div>
                     <div className="divide-y divide-slate-50">
                       {g.lineItems.map((li, i) => (
-                        <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+                        <div key={i} className={`flex items-center gap-3 px-4 py-2.5 ${li.isDuplicate ? "bg-amber-50/60" : ""}`}>
                           <input type="checkbox" checked={li.included} disabled={!g.projectId}
                             onChange={e => toggleLine(g.matterNumber, i, e.target.checked)} className="shrink-0 disabled:opacity-30" />
+                          {li.isDuplicate && (
+                            <span title={li.dealingNumber ? `Dealing No. ${li.dealingNumber} already recorded on this matter` : "Same date, description, and amount already recorded on this matter"}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold uppercase tracking-wide shrink-0">
+                              <CopyX size={10} /> Possible duplicate
+                            </span>
+                          )}
                           <input value={li.description} disabled={!g.projectId} onChange={e => updateLine(g.matterNumber, i, { description: e.target.value })}
                             className="flex-1 min-w-0 px-2 py-1 text-[11px] text-slate-700 border border-transparent hover:border-slate-200 focus:border-indigo-400 rounded-lg outline-none disabled:opacity-40 disabled:hover:border-transparent" />
                           <select value={li.expenseCode} disabled={!g.projectId} onChange={e => updateLine(g.matterNumber, i, { expenseCode: e.target.value })}

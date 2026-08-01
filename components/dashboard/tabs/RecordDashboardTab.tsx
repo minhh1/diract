@@ -6,12 +6,17 @@
 // bound to a linked custom table's rows that point back at THIS record via
 // linked_table_id/link_field_id on the record_tabs row.
 import { useState, useEffect, useCallback } from "react";
-import { Maximize2, Minimize2, Plus } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Maximize2, Minimize2, Plus, Upload } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import CanvasEditor from "../builder/CanvasEditor";
 import StaticWidgetGrid from "../builder/StaticWidgetGrid";
 import DashboardWidgetRenderer from "../DashboardWidgetRenderer";
 import CreateInvoiceModal from "../CreateInvoiceModal";
+// Deferred -- same reasoning as CustomTableMasterPage.tsx's own dynamic
+// import of this component: not needed for this tab's initial render, only
+// once a Disbursements tab's own "Import from PDF" button is clicked.
+const DisbursementInvoiceImportModal = dynamic(() => import("../DisbursementInvoiceImportModal"));
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { relationCandidates as computeRelationCandidates, parentKindLabel, type ParentSystemTable } from "@/lib/dashboardWidgets/linkField";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -43,6 +48,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
   const [isFeeSource, setIsFeeSource] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [showCreateInvoice, setShowCreateInvoice] = useState(false);
+  const [showImportInvoice, setShowImportInvoice] = useState(false);
 
   const fieldById = new Map(fields.map(f => [f.id, f]));
 
@@ -246,6 +252,14 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
           >
             {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
+          {tableSlug === 'disbursements' && (
+            <button
+              onClick={() => setShowImportInvoice(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+            >
+              <Upload size={14} /> Import from PDF
+            </button>
+          )}
           <button
             onClick={() => setShowCreateInvoice(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all"
@@ -295,6 +309,13 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
           userId={userId}
           onClose={() => setShowCreateInvoice(false)}
           onCreated={() => { setShowCreateInvoice(false); loadRecords(); }}
+        />
+      )}
+      {showImportInvoice && (
+        <DisbursementInvoiceImportModal
+          restrictToProjectId={recordId}
+          onClose={() => setShowImportInvoice(false)}
+          onImported={() => { setShowImportInvoice(false); loadRecords(); }}
         />
       )}
     </div>
