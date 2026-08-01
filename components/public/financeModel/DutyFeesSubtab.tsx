@@ -13,6 +13,7 @@ import { Loader2, RefreshCw, Landmark, Plus, Info, Check, Unlink } from "lucide-
 import { calculateStampDuty, explainStampDuty, AU_STATES, STAMP_DUTY_RATES_UPDATED_AT, type AuState } from "@/lib/stampDuty";
 import { calculateTitleFees, TITLE_FEES_UPDATED_AT } from "@/lib/titleFees";
 import { money } from "./BudgetVsActualTable";
+import { useFinanceModelApi } from "./FinanceModelApiContext";
 
 interface PropertyInfo {
   street_address: string;
@@ -52,6 +53,7 @@ function LinkControl({ linked, busy, onLink, onUnlink }: { linked: boolean; busy
 }
 
 export default function DutyFeesSubtab({ projectId }: { projectId: string }) {
+  const { apiFetch } = useFinanceModelApi();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [property, setProperty] = useState<PropertyInfo | null>(null);
@@ -67,9 +69,9 @@ export default function DutyFeesSubtab({ projectId }: { projectId: string }) {
     setError(null);
     try {
       const [overviewRes, loansRes, budgetLinesRes] = await Promise.all([
-        fetch(`/api/finance-model/overview?projectId=${projectId}`),
-        fetch(`/api/finance-model/loans?projectId=${projectId}`),
-        fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/overview?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/loans?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
       ]);
       const overviewJson = await overviewRes.json();
       const loansJson = await loansRes.json();
@@ -114,13 +116,13 @@ export default function DutyFeesSubtab({ projectId }: { projectId: string }) {
     setLinking(source);
     const existing = findLinked(source);
     if (existing) {
-      await fetch("/api/finance-model/budget-lines", {
+      await apiFetch("/api/finance-model/budget-lines", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: existing.id, budgetedAmount: amount }),
       });
     } else {
-      await fetch("/api/finance-model/budget-lines", {
+      await apiFetch("/api/finance-model/budget-lines", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, category: "Acquisition", label, budgetedAmount: amount, linkedSource: source }),
@@ -134,7 +136,7 @@ export default function DutyFeesSubtab({ projectId }: { projectId: string }) {
     const existing = findLinked(source);
     if (!existing) return;
     setLinking(source);
-    await fetch("/api/finance-model/budget-lines", {
+    await apiFetch("/api/finance-model/budget-lines", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: existing.id, linkedSource: null }),
@@ -152,15 +154,15 @@ export default function DutyFeesSubtab({ projectId }: { projectId: string }) {
     const jobs: Promise<any>[] = [];
     const dutyLine = findLinked(SOURCES.duty);
     if (dutyLine && dutyResult && Math.round(dutyLine.budgeted_amount ?? 0) !== Math.round(dutyResult.duty)) {
-      jobs.push(fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: dutyLine.id, budgetedAmount: dutyResult.duty }) }));
+      jobs.push(apiFetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: dutyLine.id, budgetedAmount: dutyResult.duty }) }));
     }
     const transferLine = findLinked(SOURCES.transfer);
     if (transferLine && feesResult && Math.round(transferLine.budgeted_amount ?? 0) !== Math.round(feesResult.transferFee)) {
-      jobs.push(fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: transferLine.id, budgetedAmount: feesResult.transferFee }) }));
+      jobs.push(apiFetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: transferLine.id, budgetedAmount: feesResult.transferFee }) }));
     }
     const mortgageLine = findLinked(SOURCES.mortgage);
     if (mortgageLine && feesResult?.mortgageFee != null && Math.round(mortgageLine.budgeted_amount ?? 0) !== Math.round(feesResult.mortgageFee)) {
-      jobs.push(fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: mortgageLine.id, budgetedAmount: feesResult.mortgageFee }) }));
+      jobs.push(apiFetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: mortgageLine.id, budgetedAmount: feesResult.mortgageFee }) }));
     }
     if (jobs.length) Promise.all(jobs).then(load);
     // eslint-disable-next-line react-hooks/exhaustive-deps

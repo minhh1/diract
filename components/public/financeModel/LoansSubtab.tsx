@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink, Split, Search, Archive, RotateCcw, Pencil } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
+import { useFinanceModelApi } from "./FinanceModelApiContext";
 import { calculateLoanSchedule, resolveInterestCutoff, timelineCompletionDate, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
 
 // Shared across projects on purpose -- "I don't want to look at paid-off
@@ -67,6 +68,7 @@ interface AllocationRow { id: string | null; projectId: string; projectName: str
 // re-equalizes if the CURRENT set already looks equal, so a deliberate
 // custom split is never silently overwritten by an add.
 function LoanSplitEditor({ loan, projectId, onChanged }: { loan: Loan; projectId: string; onChanged: () => void }) {
+  const { apiFetch } = useFinanceModelApi();
   const [rows, setRows] = useState<AllocationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -77,7 +79,7 @@ function LoanSplitEditor({ loan, projectId, onChanged }: { loan: Loan; projectId
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch(`/api/finance-model/loan-allocations?loanId=${loan.id}`);
+    const res = await apiFetch(`/api/finance-model/loan-allocations?loanId=${loan.id}`);
     const json = await res.json();
     setRows((json.allocations || []).map((a: any) => ({ id: a.id, projectId: a.projectId, projectName: a.projectName, splitPercent: a.splitPercent })));
     setLoading(false);
@@ -117,7 +119,7 @@ function LoanSplitEditor({ loan, projectId, onChanged }: { loan: Loan; projectId
 
   const save = async () => {
     setSaving(true);
-    await fetch("/api/finance-model/loan-allocations", {
+    await apiFetch("/api/finance-model/loan-allocations", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ loanId: loan.id, allocations: rows.map(r => ({ projectId: r.projectId, splitPercent: r.splitPercent })) }),
     });
@@ -201,6 +203,7 @@ function LoanSplitEditor({ loan, projectId, onChanged }: { loan: Loan; projectId
 }
 
 function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: string; onChanged: () => void }) {
+  const { apiFetch } = useFinanceModelApi();
   const [rates, setRates] = useState<(LoanInterestRateEntry & { id: string })[]>([]);
   const [phases, setPhases] = useState<(LoanPhaseInput & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -227,11 +230,11 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const load = async () => {
     setLoading(true);
     const [rRes, pRes, blRes, txRes, tasksRes] = await Promise.all([
-      fetch(`/api/finance-model/loan-interest-rates?loanId=${loan.id}`),
-      fetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
-      fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
-      fetch(`/api/finance-model/transactions?projectId=${projectId}`),
-      fetch(`/api/finance-model/tasks?projectId=${projectId}`),
+      apiFetch(`/api/finance-model/loan-interest-rates?loanId=${loan.id}`),
+      apiFetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
+      apiFetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
+      apiFetch(`/api/finance-model/transactions?projectId=${projectId}`),
+      apiFetch(`/api/finance-model/tasks?projectId=${projectId}`),
     ]);
     const rJson = await rRes.json();
     const pJson = await pRes.json();
@@ -285,7 +288,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const saveCutoff = async (value: string | null) => {
     setInterestToDate(value);
     setSavingCutoff(true);
-    await fetch("/api/finance-model/loans", {
+    await apiFetch("/api/finance-model/loans", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: loan.id, interestToDate: value }),
     });
@@ -297,7 +300,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
     const rate = parseFloat(newRate.interestRatePa);
     if (!newRate.effectiveDate || !Number.isFinite(rate)) return;
     setSaving(true);
-    await fetch("/api/finance-model/loan-interest-rates", {
+    await apiFetch("/api/finance-model/loan-interest-rates", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ loanId: loan.id, effectiveDate: newRate.effectiveDate, interestRatePa: rate }),
     });
@@ -308,14 +311,14 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   };
 
   const deleteRate = async (id: string) => {
-    await fetch(`/api/finance-model/loan-interest-rates?id=${id}`, { method: "DELETE" });
+    await apiFetch(`/api/finance-model/loan-interest-rates?id=${id}`, { method: "DELETE" });
     await load();
   };
 
   const addPhase = async () => {
     if (!newPhase.startDate || !newPhase.endDate) return;
     setSaving(true);
-    await fetch("/api/finance-model/loan-phases", {
+    await apiFetch("/api/finance-model/loan-phases", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ loanId: loan.id, ...newPhase }),
     });
@@ -326,7 +329,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   };
 
   const deletePhase = async (id: string) => {
-    await fetch(`/api/finance-model/loan-phases?id=${id}`, { method: "DELETE" });
+    await apiFetch(`/api/finance-model/loan-phases?id=${id}`, { method: "DELETE" });
     await load();
   };
 
@@ -338,7 +341,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const savePhaseEdit = async () => {
     if (!editingPhaseId || !editPhase.startDate || !editPhase.endDate) return;
     setSaving(true);
-    await fetch("/api/finance-model/loan-phases", {
+    await apiFetch("/api/finance-model/loan-phases", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: editingPhaseId, ...editPhase }),
     });
@@ -350,9 +353,9 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const linkToBudget = async (amount: number) => {
     setLinking(true);
     if (linkedLine) {
-      await fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: amount, label: budgetLabel }) });
+      await apiFetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: amount, label: budgetLabel }) });
     } else {
-      await fetch("/api/finance-model/budget-lines", {
+      await apiFetch("/api/finance-model/budget-lines", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, category: "Finance Costs", label: budgetLabel, budgetedAmount: amount, linkedSource }),
       });
@@ -364,7 +367,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const unlinkFromBudget = async () => {
     if (!linkedLine) return;
     setLinking(true);
-    await fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, linkedSource: null }) });
+    await apiFetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, linkedSource: null }) });
     await load();
     setLinking(false);
   };
@@ -378,7 +381,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
     const amountChanged = Math.round(linkedLine.budgeted_amount ?? 0) !== Math.round(costedInterest);
     const labelChanged = linkedLine.label !== budgetLabel;
     if (amountChanged || labelChanged) {
-      fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: costedInterest, label: budgetLabel }) }).then(load);
+      apiFetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: costedInterest, label: budgetLabel }) }).then(load);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, linkedLine?.id, costedInterest, budgetLabel]);
@@ -588,6 +591,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
 }
 
 export default function LoansSubtab({ projectId }: { projectId: string }) {
+  const { apiFetch } = useFinanceModelApi();
   const [loading, setLoading] = useState(true);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -622,7 +626,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/finance-model/loans?projectId=${projectId}`);
+      const res = await apiFetch(`/api/finance-model/loans?projectId=${projectId}`);
       const json = await res.json();
       if (!res.ok) { setError(json.error || "Failed to load"); return; }
       setLoans(json.loans || []);
@@ -638,7 +642,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
   const addLoan = async () => {
     if (!newLoan.borrowerId) return;
     setSaving(true);
-    await fetch("/api/finance-model/loans", {
+    await apiFetch("/api/finance-model/loans", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -660,13 +664,13 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
 
   const deleteLoan = async (id: string) => {
     if (!confirm("Remove this loan and all its rate/phase history?")) return;
-    await fetch(`/api/finance-model/loans?id=${id}`, { method: "DELETE" });
+    await apiFetch(`/api/finance-model/loans?id=${id}`, { method: "DELETE" });
     await load();
   };
 
   const toggleDischarged = async (loan: Loan) => {
     setLoans(prev => prev.map(l => (l.id === loan.id ? { ...l, is_discharged: !l.is_discharged } : l)));
-    await fetch("/api/finance-model/loans", {
+    await apiFetch("/api/finance-model/loans", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: loan.id, isDischarged: !loan.is_discharged }),
     });

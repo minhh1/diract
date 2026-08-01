@@ -1,0 +1,171 @@
+// app/api/finance-model-pages/public/[pageId]/fm/route.ts
+// GENUINELY UNAUTHENTICATED read-only data for the FULL Finance Model on a
+// public share page -- the subtab set (Timeline, Loans, Duty & Fees,
+// Feasibility, Attachments) needs the same data the authenticated
+// /api/finance-model/* routes serve, but a public viewer has no session.
+//
+// ONE route rather than an unauthenticated twin of each internal route, so
+// there is a single place to audit what a link-holder can reach. Three
+// invariants, all enforced here:
+//   1. GET only. There is no POST/PATCH/DELETE export in this file, so the
+//      public Finance Model is structurally read-only -- not merely
+//      read-only because the UI hides its buttons.
+//   2. Every resource is scoped to the page's OWN project. `projectId` is
+//      resolved from the page row, never taken from the query string, so a
+//      link to one project can't be pointed at another.
+//   3. Child resources keyed by something other than project (loan phases,
+//      interest rates) are verified to belong to this project's loans
+//      before anything is returned, closing the same enumeration hole.
+//
+// Deliberately NOT served here: transactions. The raw Xero ledger is the
+// one thing that stays internal-only on a public link.
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { loadActiveFinanceModelPage, codeMatches } from "@/lib/financeModelPageGate";
+import { getCustomTable, listCustomTableRows, getCustomTableRowsByIds } from "@/lib/customTableAdmin";
+import {
+  BUDGET_LINES_SLUG, LOANS_SLUG, LOAN_INTEREST_RATES_SLUG, LOAN_PHASES_SLUG,
+  SETTINGS_SLUG, FEASIBILITY_INPUTS_SLUG, FEASIBILITY_SCENARIOS_SLUG,
+  loadProjectProperty,
+} from "@/lib/financeModel/data";
+
+// Mirrors app/api/finance-model/feasibility-inputs/route.ts's map -- the
+// client expects camelCase keys.
+const FEASIBILITY_FIELDS: Record<string, string> = {
+  dwellingsCount: "dwellings_count", avgDwellingSizeSqm: "avg_dwelling_size_sqm", siteAreaSqm: "site_area_sqm",
+  expectedSalePricePerDwelling: "expected_sale_price_per_dwelling", constructionRatePerSqm: "construction_rate_per_sqm",
+  professionalFeesPct: "professional_fees_pct", contingencyPct: "contingency_pct", marketingSellingPct: "marketing_selling_pct",
+  otherAcquisitionCosts: "other_acquisition_costs", holdingCostsAnnual: "holding_costs_annual",
+  projectDurationMonths: "project_duration_months", interestRatePct: "interest_rate_pct", loanToCostPct: "loan_to_cost_pct",
+  targetMarginPct: "target_margin_pct", facilityLimit: "facility_limit", facilityInterestRatePct: "facility_interest_rate_pct",
+  maxLvrPct: "max_lvr_pct", preferredReturnPct: "preferred_return_pct", promotePct: "promote_pct",
+};
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ pageId: string }> }) {
+  const { pageId } = await params;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+
+  const gate = await loadActiveFinanceModelPage(admin, pageId);
+  if (gate.error) return gate.error;
+  const { page } = gate;
+
+  if (page.access_code) {
+    const code = req.nextUrl.searchParams.get("code");
+    if (!codeMatches(page, code)) return NextResponse.json({ error: "Incorrect access code" }, { status: 401 });
+  }
+
+  const companyId = page.company_id;
+  const projectId = page.project_id; // never from the query string -- see invariant 2
+  const resource = req.nextUrl.searchParams.get("resource");
+
+  // Rows of a project-scoped custom table, by slug.
+  const rowsOf = async (slug: string) => {
+    const table = await getCustomTable(admin, companyId, slug);
+    return table ? await listCustomTableRows(admin, table, "project", projectId) : [];
+  };
+
+  // Ids of every loan reachable from this project -- both loans homed here
+  // and loans split-allocated here. Used to authorise loanId-keyed child
+  // lookups (invariant 3).
+  const loanIdsForProject = async (): Promise<Set<string>> => {
+    const home = await rowsOf(LOANS_SLUG);
+    const { data: allocs } = await admin
+      .from("finance_model_loan_allocations")
+      .select("loan_id").eq("company_id", companyId).eq("project_id", projectId);
+    return new Set([...home.map(l => l.id), ...(allocs || []).map((a: any) => a.loan_id)]);
+  };
+
+  switch (resource) {
+    case "budget-lines":
+      return NextResponse.json({ budgetLines: await rowsOf(BUDGET_LINES_SLUG) });
+
+    case "budget-categories": {
+      const { data } = await admin
+        .from("finance_model_budget_categories").select("*").eq("company_id", companyId).order("display_order");
+      return NextResponse.json({ categories: data || [] });
+    }
+
+    case "settings": {
+      const rows = await rowsOf(SETTINGS_SLUG);
+      return NextResponse.json({ gstMethod: rows[0]?.gst_method ?? null });
+    }
+
+    case "tasks": {
+      const { data } = await admin
+        .from("tasks")
+        .select("id, name, start_date, due_date, status, display_order, parent_task_id, blocked_by_task_id")
+        .eq("project_id", projectId).is("deleted_at", null).order("display_order");
+      return NextResponse.json({ tasks: data || [] });
+    }
+
+    case "loans": {
+      const home = await rowsOf(LOANS_SLUG);
+      const homeIds = new Set(home.map(l => l.id));
+      const { data: allocRows } = await admin
+        .from("finance_model_loan_allocations").select("loan_id, project_id, split_percent").eq("company_id", companyId);
+      const percentHere = new Map<string, number>();
+      const anySplit = new Set<string>();
+      for (const r of allocRows || []) {
+        anySplit.add(r.loan_id);
+        if (r.project_id === projectId) percentHere.set(r.loan_id, Number(r.split_percent));
+      }
+      const foreignIds = [...percentHere.keys()].filter(id => !homeIds.has(id));
+      const table = await getCustomTable(admin, companyId, LOANS_SLUG);
+      const foreign = table ? await getCustomTableRowsByIds(admin, table, foreignIds) : [];
+      const loans = [...home, ...foreign].map(l => {
+        const principal = Number(l.principal_amount) || 0;
+        const isSplit = anySplit.has(l.id);
+        const percent = percentHere.has(l.id) ? percentHere.get(l.id)! : isSplit ? 0 : (homeIds.has(l.id) ? 100 : 0);
+        return { ...l, allocation_percent: percent, allocated_principal_amount: principal * (percent / 100), is_split: isSplit };
+      });
+      return NextResponse.json({ loans });
+    }
+
+    case "loan-phases":
+    case "loan-interest-rates": {
+      const loanId = req.nextUrl.searchParams.get("loanId");
+      if (!loanId) return NextResponse.json({ error: "loanId is required" }, { status: 400 });
+      // Invariant 3 -- a loan from another project is simply not visible.
+      if (!(await loanIdsForProject()).has(loanId)) {
+        return NextResponse.json(resource === "loan-phases" ? { phases: [] } : { rates: [] });
+      }
+      const slug = resource === "loan-phases" ? LOAN_PHASES_SLUG : LOAN_INTEREST_RATES_SLUG;
+      const table = await getCustomTable(admin, companyId, slug);
+      const rows = table ? await listCustomTableRows(admin, table, "loan", loanId) : [];
+      return NextResponse.json(resource === "loan-phases" ? { phases: rows } : { rates: rows });
+    }
+
+    case "feasibility-inputs": {
+      const rows = await rowsOf(FEASIBILITY_INPUTS_SLUG);
+      const row = rows[0];
+      const inputs: Record<string, number | null> = {};
+      for (const [jsKey, dbKey] of Object.entries(FEASIBILITY_FIELDS)) {
+        inputs[jsKey] = row?.[dbKey] != null ? Number(row[dbKey]) : null;
+      }
+      return NextResponse.json({ inputs });
+    }
+
+    case "feasibility-scenarios":
+      return NextResponse.json({ scenarios: await rowsOf(FEASIBILITY_SCENARIOS_SLUG) });
+
+    case "attachments": {
+      const { data } = await admin
+        .from("finance_model_attachments").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+      return NextResponse.json({ attachments: data || [] });
+    }
+
+    case "overview": {
+      const { data: project } = await admin.from("projects").select("name").eq("id", projectId).maybeSingle();
+      return NextResponse.json({
+        projectName: project?.name ?? null,
+        property: await loadProjectProperty(admin, projectId),
+      });
+    }
+
+    default:
+      return NextResponse.json({ error: "Unknown resource" }, { status: 400 });
+  }
+}

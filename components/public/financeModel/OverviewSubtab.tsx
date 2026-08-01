@@ -13,6 +13,7 @@ import { Loader2, ExternalLink, RefreshCw, Plus, X, Calculator, Share2, Copy, Ch
 import BudgetVsActualTable, { type BudgetLine, type TaskRef } from "./BudgetVsActualTable";
 import CashFlowPanel from "./CashFlowPanel";
 import { buildMonthlyCashFlow, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
+import { useFinanceModelApi } from "./FinanceModelApiContext";
 
 interface BudgetCategory {
   id: string;
@@ -23,6 +24,7 @@ interface BudgetCategory {
 }
 
 function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
+  const { apiFetch } = useFinanceModelApi();
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -30,7 +32,7 @@ function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch("/api/finance-model/budget-categories");
+    const res = await apiFetch("/api/finance-model/budget-categories");
     const json = await res.json();
     setCategories(json.categories || []);
     setLoading(false);
@@ -41,7 +43,7 @@ function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
   const add = async () => {
     if (!newName.trim()) return;
     setSaving(true);
-    await fetch("/api/finance-model/budget-categories", {
+    await apiFetch("/api/finance-model/budget-categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newName.trim() }),
@@ -54,7 +56,7 @@ function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
 
   const toggleCreditable = async (cat: BudgetCategory) => {
     setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, is_creditable: !c.is_creditable } : c));
-    await fetch("/api/finance-model/budget-categories", {
+    await apiFetch("/api/finance-model/budget-categories", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: cat.id, isCreditable: !cat.is_creditable }),
@@ -64,7 +66,7 @@ function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
   const remove = async (cat: BudgetCategory) => {
     if (!confirm(`Delete category "${cat.name}"? Existing budget lines keep their category text, but it won't appear in the picklist anymore.`)) return;
     setCategories(prev => prev.filter(c => c.id !== cat.id));
-    await fetch(`/api/finance-model/budget-categories?id=${cat.id}`, { method: "DELETE" });
+    await apiFetch(`/api/finance-model/budget-categories?id=${cat.id}`, { method: "DELETE" });
     onChanged();
   };
 
@@ -125,6 +127,7 @@ interface SharePage {
 }
 
 function SharePanel({ projectId }: { projectId: string }) {
+  const { apiFetch } = useFinanceModelApi();
   const [pages, setPages] = useState<SharePage[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -134,7 +137,7 @@ function SharePanel({ projectId }: { projectId: string }) {
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch(`/api/finance-model-pages?projectId=${projectId}`);
+    const res = await apiFetch(`/api/finance-model-pages?projectId=${projectId}`);
     const json = await res.json();
     setPages((json.pages || []).filter((p: SharePage) => p.is_active));
     setLoading(false);
@@ -145,7 +148,7 @@ function SharePanel({ projectId }: { projectId: string }) {
   const create = async () => {
     if (!title.trim()) return;
     setCreating(true);
-    await fetch("/api/finance-model-pages", {
+    await apiFetch("/api/finance-model-pages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId, title: title.trim(), accessCode: accessCode.trim() || undefined }),
@@ -157,7 +160,7 @@ function SharePanel({ projectId }: { projectId: string }) {
 
   const revoke = async (id: string) => {
     if (!confirm("Revoke this link? It will stop working immediately.")) return;
-    await fetch(`/api/finance-model-pages/${id}/revoke`, { method: "PATCH" });
+    await apiFetch(`/api/finance-model-pages/${id}/revoke`, { method: "PATCH" });
     await load();
   };
 
@@ -214,6 +217,7 @@ function SharePanel({ projectId }: { projectId: string }) {
 }
 
 export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectId: string; onOpenDutyFees?: () => void }) {
+  const { apiFetch } = useFinanceModelApi();
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -228,7 +232,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
   const [tasks, setTasks] = useState<(TaskRef & { start_date: string | null; due_date: string | null })[]>([]);
 
   const loadCategories = async () => {
-    const res = await fetch("/api/finance-model/budget-categories");
+    const res = await apiFetch("/api/finance-model/budget-categories");
     const json = await res.json();
     const cats = json.categories || [];
     setCategories(cats);
@@ -240,8 +244,8 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
     setError(null);
     try {
       const [res, tasksRes] = await Promise.all([
-        fetch(`/api/finance-model/overview?projectId=${projectId}`),
-        fetch(`/api/finance-model/tasks?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/overview?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/tasks?projectId=${projectId}`),
         loadCategories(),
       ]);
       const json = await res.json();
@@ -262,7 +266,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
 
   const addBudgetLine = async (line: { category: string; label: string; budgetedAmount: number; xeroAccountCode?: string | null }) => {
     setSavingLine(true);
-    await fetch("/api/finance-model/budget-lines", {
+    await apiFetch("/api/finance-model/budget-lines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId, ...line }),
@@ -273,13 +277,13 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
 
   const deleteBudgetLine = async (id: string) => {
     if (!confirm("Remove this budget line?")) return;
-    await fetch(`/api/finance-model/budget-lines?id=${id}`, { method: "DELETE" });
+    await apiFetch(`/api/finance-model/budget-lines?id=${id}`, { method: "DELETE" });
     await load();
   };
 
   const updateLineTasks = async (lineId: string, taskIds: string[]) => {
     setBudgetLines(prev => prev.map(l => l.id === lineId ? { ...l, linked_task_ids: taskIds.length ? JSON.stringify(taskIds) : null } : l));
-    await fetch("/api/finance-model/budget-lines", {
+    await apiFetch("/api/finance-model/budget-lines", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: lineId, linkedTaskIds: taskIds }),
@@ -298,7 +302,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
       timing_start_date: updates.timingStartDate !== undefined ? updates.timingStartDate : l.timing_start_date,
       timing_end_date: updates.timingEndDate !== undefined ? updates.timingEndDate : l.timing_end_date,
     } : l));
-    await fetch("/api/finance-model/budget-lines", {
+    await apiFetch("/api/finance-model/budget-lines", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: lineId, ...updates }),

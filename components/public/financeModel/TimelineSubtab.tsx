@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
 import TemplateManager, { type Template } from "@/components/dashboard/TemplateManager";
+import { useFinanceModelApi } from "./FinanceModelApiContext";
 
 interface Team { id: string; team_name: string; category_tags?: string[] | null; }
 interface Profile { id: string; full_name: string | null; email: string | null; }
@@ -158,6 +159,7 @@ function TaskEditModal({
   projectCreatedAt: string | null;
   onClose: () => void; onSaved: () => void;
 }) {
+  const { apiFetch } = useFinanceModelApi();
   const [assigneeId, setAssigneeId] = useState(task.assignee_id || "");
   const [teamIds, setTeamIds] = useState<Set<string>>(new Set(task.teams.map(t => t.id)));
   const [startDate, setStartDate] = useState(task.start_date || "");
@@ -226,7 +228,7 @@ function TaskEditModal({
   const openConvert = async () => {
     setShowConvert(true);
     if (categories.length) return;
-    const res = await fetch("/api/finance-model/budget-categories");
+    const res = await apiFetch("/api/finance-model/budget-categories");
     const json = await res.json().catch(() => ({}));
     const cats = json.categories || [];
     setCategories(cats);
@@ -237,7 +239,7 @@ function TaskEditModal({
     const amount = parseFloat(convertAmount);
     if (!convertCategory || !Number.isFinite(amount)) return;
     setConverting(true);
-    const res = await fetch("/api/finance-model/budget-lines", {
+    const res = await apiFetch("/api/finance-model/budget-lines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId, category: convertCategory, label: task.name, budgetedAmount: amount, linkedTaskId: task.id }),
@@ -686,6 +688,7 @@ function BulkEditModal({
 }
 
 export default function TimelineSubtab({ projectId }: { projectId: string }) {
+  const { apiFetch } = useFinanceModelApi();
   const { companyId, userId } = useCompany();
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -757,7 +760,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     setError(null);
     try {
       const [taskRes, teamsRes, profilesRes, projectRes] = await Promise.all([
-        fetch(`/api/finance-model/tasks?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/tasks?projectId=${projectId}`),
         // teams_select RLS scopes to "any company this user is a member of,"
         // not "their currently active one" -- a user who belongs to more
         // than one company would otherwise see every company's team names

@@ -30,6 +30,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Plus, X, TrendingUp } from "lucide-react";
 import { money } from "./BudgetVsActualTable";
+import { useFinanceModelApi } from "./FinanceModelApiContext";
 import { calculateLoanSchedule, resolveInterestCutoff, timelineCompletionDate, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
 import { calculateStampDuty, type AuState } from "@/lib/stampDuty";
 import { calculateTitleFees } from "@/lib/titleFees";
@@ -160,6 +161,7 @@ function OutputCard({ label, value, big, tone }: { label: string; value: string;
 }
 
 export default function FeasibilitySubtab({ projectId }: { projectId: string }) {
+  const { apiFetch } = useFinanceModelApi();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -195,14 +197,14 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
     setError(null);
     try {
       const [blRes, loansRes, settingsRes, overviewRes, inputsRes, scenariosRes, tasksRes, categoriesRes] = await Promise.all([
-        fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
-        fetch(`/api/finance-model/loans?projectId=${projectId}`),
-        fetch(`/api/finance-model/settings?projectId=${projectId}`),
-        fetch(`/api/finance-model/overview?projectId=${projectId}`),
-        fetch(`/api/finance-model/feasibility-inputs?projectId=${projectId}`),
-        fetch(`/api/finance-model/feasibility-scenarios?projectId=${projectId}`),
-        fetch(`/api/finance-model/tasks?projectId=${projectId}`),
-        fetch(`/api/finance-model/budget-categories`),
+        apiFetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/loans?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/settings?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/overview?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/feasibility-inputs?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/feasibility-scenarios?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/tasks?projectId=${projectId}`),
+        apiFetch(`/api/finance-model/budget-categories`),
       ]);
       const blJson = await blRes.json();
       const loansJson = await loansRes.json();
@@ -240,8 +242,8 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
       const completion = timelineCompletionDate((tasksJson.tasks || []) as { due_date: string | null }[]);
       const schedules = await Promise.all(loans.map(async loan => {
         const [phasesRes, ratesRes] = await Promise.all([
-          fetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
-          fetch(`/api/finance-model/loan-interest-rates?loanId=${loan.id}`),
+          apiFetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
+          apiFetch(`/api/finance-model/loan-interest-rates?loanId=${loan.id}`),
         ]);
         const phasesJson = await phasesRes.json();
         const ratesJson = await ratesRes.json();
@@ -263,7 +265,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   const changeGstMethod = async (value: GstMethod) => {
     setGstMethod(value);
     setSavingMethod(true);
-    await fetch("/api/finance-model/settings", {
+    await apiFetch("/api/finance-model/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId, gstMethod: value }),
@@ -273,7 +275,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
   const saveInputs = async (next: FeasibilityInputs) => {
     setInputsSaving(true);
-    await fetch("/api/finance-model/feasibility-inputs", {
+    await apiFetch("/api/finance-model/feasibility-inputs", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId, ...next }),
@@ -333,7 +335,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
   const addScenario = async () => {
     if (!newScenario.name.trim()) return;
     setSavingScenario(true);
-    const res = await fetch("/api/finance-model/feasibility-scenarios", {
+    const res = await apiFetch("/api/finance-model/feasibility-scenarios", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -359,7 +361,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
   const deleteScenario = async (id: string) => {
     setScenarios(prev => prev.filter(s => s.id !== id));
-    await fetch(`/api/finance-model/feasibility-scenarios?id=${id}`, { method: "DELETE" });
+    await apiFetch(`/api/finance-model/feasibility-scenarios?id=${id}`, { method: "DELETE" });
   };
 
   const syncToBudgetLines = async () => {
@@ -377,13 +379,13 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
     for (const line of lines) {
       const existing = budgetLines.find(b => b.category === line.category && b.label === line.label);
       if (existing) {
-        await fetch("/api/finance-model/budget-lines", {
+        await apiFetch("/api/finance-model/budget-lines", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: existing.id, budgetedAmount: line.amount }),
         });
       } else {
-        await fetch("/api/finance-model/budget-lines", {
+        await apiFetch("/api/finance-model/budget-lines", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, category: line.category, label: line.label, budgetedAmount: line.amount }),
@@ -399,7 +401,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
     const amount = parseFloat(newLine.budgetedAmount);
     if (!newLine.label.trim() || !Number.isFinite(amount)) return;
     setAddingLine(true);
-    await fetch("/api/finance-model/budget-lines", {
+    await apiFetch("/api/finance-model/budget-lines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId, category: newLine.category, label: newLine.label.trim(), budgetedAmount: amount }),
