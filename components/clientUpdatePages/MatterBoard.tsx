@@ -146,6 +146,27 @@ function isCurrencyField(field: MatterBoardField): boolean {
   return field.field_type === "currency";
 }
 
+// Niksen Loans board only: flags a row red once its Repayment Date has
+// passed, amber once it's within 30 days -- a discharged (paid-off) loan
+// is excluded regardless of how close/past its date is, since that date
+// no longer means anything is actually owing.
+function loanDueSoonColor(item: MatterBoardItem, fields: MatterBoardField[]): string | null {
+  const repaymentField = fields.find(f => f.label === "Repayment Date");
+  if (!repaymentField) return null;
+  const dischargedField = fields.find(f => f.label === "Discharged");
+  if (dischargedField && item.values[dischargedField.id] === true) return null;
+  const raw = item.values[repaymentField.id];
+  if (!raw) return null;
+  const repaymentDate = new Date(raw);
+  if (Number.isNaN(repaymentDate.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysUntilDue = Math.round((repaymentDate.getTime() - today.getTime()) / 86400000);
+  if (daysUntilDue < 0) return "red";
+  if (daysUntilDue <= 30) return "amber";
+  return null;
+}
+
 function formatValue(v: any, field: MatterBoardField, dateFormat: string): string {
   if (v == null || v === "") return "";
   if (isDateField(field) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))) return formatDate(String(v), dateFormat);
@@ -499,6 +520,10 @@ export default function MatterBoard({
     for (const rule of formatRules) {
       const fieldId = resolveRuleFieldId(rule, fields, visibleFields);
       if (fieldId && String(item.values[fieldId] ?? "") === rule.value) return rule.color;
+    }
+    if (baseTable === LOANS_BASE_TABLE_ID) {
+      const loanColor = loanDueSoonColor(item, visibleFields);
+      if (loanColor) return loanColor;
     }
     return null;
   };
