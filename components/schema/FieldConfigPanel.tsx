@@ -164,23 +164,29 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
     return () => { active = false; };
   }, [draft.linked_table_id]);
 
-  // Editing an existing sum_related field: sumChildTableId isn't a stored
-  // column, only implied by formula_relation_field_id -- derive it once so
-  // the "From table" dropdown below opens pre-selected.
+  // Editing an existing sum_related/max_related field: sumChildTableId isn't
+  // a stored column, only implied by formula_relation_field_id -- derive it
+  // once so the "From table" dropdown below opens pre-selected.
   useEffect(() => {
-    if (draft.formula_type !== 'sum_related' || !draft.formula_relation_field_id || sumChildTableId) return;
+    if ((draft.formula_type !== 'sum_related' && draft.formula_type !== 'max_related') || !draft.formula_relation_field_id || sumChildTableId) return;
     let active = true;
     supabase.from('company_table_fields').select('table_id').eq('id', draft.formula_relation_field_id).maybeSingle()
       .then(({ data }) => { if (active && data?.table_id) setSumChildTableId(data.table_id); });
     return () => { active = false; };
   }, [draft.formula_type, draft.formula_relation_field_id]);
 
-  // Candidate relation/numeric fields on the chosen child table, for the
-  // "Sum of related" picker's 2nd/3rd levels -- a relation field qualifies
-  // only if it actually points back at THIS table: table_relation + matching
-  // linked_table_id for a custom-table parent, or the fixed field_type this
-  // system table's own name implies (project/entity/property) for a system-
-  // table parent (see SYSTEM_RELATION_FIELD_TYPE below).
+  // Candidate relation/target fields on the chosen child table, for the
+  // "Sum of related"/"Max of related" picker's 2nd/3rd levels -- a relation
+  // field qualifies only if it actually points back at THIS table:
+  // table_relation + matching linked_table_id for a custom-table parent, or
+  // the fixed field_type this system table's own name implies (project/
+  // entity/property) for a system-table parent (see SYSTEM_RELATION_FIELD_TYPE
+  // below). Target-field candidates differ by aggregate: sum_related stays
+  // numeric-only (a sum only makes sense there), while max_related also
+  // offers fields matching THIS field's own type -- e.g. a date field
+  // (max_related's original motivating case: "the latest end date among a
+  // loan's Interest Only phases") can only take its max against another
+  // date field, not a number.
   useEffect(() => {
     if (!sumChildTableId) { setSumRelationFieldOptions([]); setSumNumericFieldOptions([]); setSumConditionFieldOptions([]); return; }
     let active = true;
@@ -192,13 +198,17 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
         const relCandidates = data.filter(f =>
           f.field_type === relationFieldType && (draft.isCustomTable ? f.linked_table_id === draft.table_id : true)
         );
-        const numCandidates = data.filter(f => (NUMERIC_FIELD_TYPES as string[]).includes(f.field_type));
+        const targetCandidates = data.filter(f =>
+          draft.formula_type === 'max_related'
+            ? f.field_type === draft.field_type
+            : (NUMERIC_FIELD_TYPES as string[]).includes(f.field_type)
+        );
         setSumRelationFieldOptions(relCandidates.map(f => ({ id: f.id, label: f.label })));
-        setSumNumericFieldOptions(numCandidates.map(f => ({ id: f.id, label: f.label })));
+        setSumNumericFieldOptions(targetCandidates.map(f => ({ id: f.id, label: f.label })));
         setSumConditionFieldOptions(data.map(f => ({ id: f.id, label: f.label, field_type: f.field_type, select_options: f.select_options })));
       });
     return () => { active = false; };
-  }, [sumChildTableId, draft.isCustomTable, draft.table_id, draft.table_name]);
+  }, [sumChildTableId, draft.isCustomTable, draft.table_id, draft.table_name, draft.formula_type, draft.field_type]);
 
   const toggleSearchField = (key: string) => {
     const current = draft.linked_search_field_keys || [];
@@ -634,20 +644,24 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           </div>
         )}
 
-        {/* Computed value — number/currency fields. Multiply/% of are
-            custom-table only (they reference a SIBLING field on the same
-            table); "Sum of related" is available on both custom AND system
-            tables (projects/entities/properties) -- it sums a field on a
-            RELATED custom table instead. */}
-        {(NUMERIC_FIELD_TYPES as FieldType[]).includes(draft.field_type) && (() => {
+        {/* Computed value — number/currency fields, plus date fields (date
+            only ever offers "Max of related", see below). Multiply/% of are
+            custom-table only and numeric-only (they reference a SIBLING
+            field on the same table); "Sum of related"/"Max of related" are
+            available on both custom AND system tables (projects/entities/
+            properties) -- they aggregate a field on a RELATED custom table
+            instead. Max (unlike sum) also works on dates -- e.g. "the latest
+            end date among a loan's Interest Only phases". */}
+        {((NUMERIC_FIELD_TYPES as FieldType[]).includes(draft.field_type) || draft.field_type === 'date') && (() => {
+          const isNumericType = (NUMERIC_FIELD_TYPES as FieldType[]).includes(draft.field_type);
           // Excludes the field itself (direct self-reference) and anything
           // that already transitively depends on it (would close a cycle --
           // e.g. this field can't pick B as a dependency if B already
           // computes off this field, directly or through a longer chain).
           // Only meaningful for multiply/percentage_of's same-table siblings
-          // -- sum_related's candidates come from a different table entirely
-          // and have no such cycle risk (see the sumNumericFieldOptions
-          // picker below).
+          // -- sum_related/max_related's candidates come from a different
+          // table entirely and have no such cycle risk (see the
+          // sumNumericFieldOptions picker below).
           const numericSiblings = siblingFields.filter(
             f => f.id !== draft.id
               && (NUMERIC_FIELD_TYPES as FieldType[]).includes(f.field_type)
@@ -661,8 +675,9 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
               <div className="flex gap-2">
                 {[
                   { v: null, l: 'Typed in' },
-                  ...(draft.isCustomTable ? [{ v: 'multiply', l: 'Multiply' }, { v: 'percentage_of', l: '% of' }] : []),
-                  { v: 'sum_related', l: 'Sum of related' },
+                  ...(draft.isCustomTable && isNumericType ? [{ v: 'multiply', l: 'Multiply' }, { v: 'percentage_of', l: '% of' }] : []),
+                  ...(isNumericType ? [{ v: 'sum_related', l: 'Sum of related' }] : []),
+                  { v: 'max_related', l: 'Max of related' },
                 ].map(opt => (
                   <button
                     key={String(opt.v)}
@@ -676,7 +691,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                         update('formula_condition_field_id', null);
                         update('formula_condition_value', null);
                         setSumChildTableId('');
-                      } else if (opt.v !== 'sum_related') {
+                      } else if (opt.v !== 'sum_related' && opt.v !== 'max_related') {
                         update('formula_relation_field_id', null);
                         update('formula_condition_field_id', null);
                         update('formula_condition_value', null);
@@ -697,7 +712,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                 ))}
               </div>
 
-              {draft.formula_type === 'sum_related' && (
+              {(draft.formula_type === 'sum_related' || draft.formula_type === 'max_related') && (
                 <div className="space-y-2">
                   <select
                     value={sumChildTableId}
@@ -728,7 +743,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                     disabled={!sumChildTableId}
                     className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none disabled:opacity-50"
                   >
-                    <option value="">Field to sum...</option>
+                    <option value="">{draft.formula_type === 'max_related' ? 'Field to take the max of...' : 'Field to sum...'}</option>
                     {sumNumericFieldOptions.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                   </select>
 

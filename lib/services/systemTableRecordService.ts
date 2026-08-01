@@ -15,6 +15,7 @@
 import { supabase } from "@/lib/supabase";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { SystemTableName } from "@/lib/hooks/useSystemTableAsCustomTable";
+import { getValueColumn } from "@/lib/schema/fieldCapabilities";
 
 // Columns present on `projects` but not `properties`/`entities` -- included
 // in a write only for the table that actually has them, since inserting/
@@ -75,13 +76,18 @@ async function saveCustomFieldValues(
 // which calls this whenever a related custom-table row is created/edited/
 // deleted) -- same upsert shape as saveCustomFieldValues above, just for the
 // one-field case a rollup recompute always is.
+// `fieldType` decides which value column this rollup writes into (a
+// max_related field can target a date/text field, not just numbers, unlike
+// the original sum_related-only, numeric-only version of this function).
 export async function saveRollupValue(
-  tableName: SystemTableName, companyId: string, recordId: string, fieldId: string, value: number
+  tableName: SystemTableName, companyId: string, recordId: string, fieldId: string,
+  fieldType: string, value: number | string | null
 ): Promise<void> {
+  const valueCol = getValueColumn(fieldType);
   const { error } = await supabase
     .from('company_custom_field_values')
     .upsert(
-      { company_id: companyId, table_name: tableName, record_id: recordId, field_id: fieldId, value_number: value },
+      { company_id: companyId, table_name: tableName, record_id: recordId, field_id: fieldId, [valueCol]: value },
       { onConflict: 'field_id,record_id' }
     );
   if (error) console.error('systemTableRecordService.saveRollupValue:', error);

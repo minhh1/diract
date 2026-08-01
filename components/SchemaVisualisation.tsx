@@ -15,6 +15,7 @@ import type { CustomField, FieldType } from "./schema/types";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { useCompany } from "@/components/CompanyContext";
 import { createArchiveRequest } from "@/lib/archiveRequests";
+import { backfillRollupField } from "@/lib/services/customTableService";
 
 export default function SchemaVisualisation() {
   const { tables: customTables } = useCustomTables();
@@ -354,6 +355,8 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
 
   if (updates.formula_type === 'sum_related' && updates.formula_field_a_id && updates.formula_relation_field_id) {
     await supabase.rpc(isCustomTable ? 'backfill_table_rollup' : 'backfill_system_rollup', { p_rollup_field_id: selectedFieldId });
+  } else if (updates.formula_type === 'max_related' && updates.formula_field_a_id && updates.formula_relation_field_id) {
+    await backfillRollupField(selectedFieldId, isCustomTable);
   }
 
   setFields(prev => prev.map(f =>

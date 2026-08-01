@@ -95,12 +95,24 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
 
   // Computed fields are never hand-edited — see supabase/company_table_fields_formula.sql.
   if (field.formula_type) {
+    // Formatted per field_type, same convention as every other read-only
+    // display of a field value in the app (GenericMasterTable.tsx,
+    // CustomTableMasterPage.tsx, ...) -- previously always String(value)
+    // regardless of type, so e.g. a max_related field on a date (the
+    // "latest end date among a loan's Interest Only phases" case) showed as
+    // a raw ISO string ("2027-03-01") instead of a formatted date.
+    let display = '';
+    if (value !== null && value !== undefined && value !== '') {
+      if (field.field_type === 'currency') display = `$${Number(value).toLocaleString()}`;
+      else if (field.field_type === 'date') { try { display = new Date(value).toLocaleDateString('en-AU'); } catch { display = String(value); } }
+      else display = String(value);
+    }
     return (
       <div
         className={plain ? 'w-full text-[12px] font-medium text-slate-500 truncate px-0.5 py-1' : 'w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium text-slate-500 truncate'}
         title="Auto-calculated"
       >
-        {value !== null && value !== undefined && value !== '' ? String(value) : (plain ? '' : '—')}
+        {display || (plain ? '' : '—')}
       </div>
     );
   }

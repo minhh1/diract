@@ -76,8 +76,8 @@ function computeAllPreviews(fields: CustomTableField[], values: Record<string, a
   const byId = new Map(fields.map(f => [f.id, f]));
   const result = { ...values };
   for (const field of fields) {
-    // sum_related aggregates OTHER rows -- nothing to preview from this form.
-    if (!field.formula_type || field.formula_type === 'sum_related' || !field.formula_field_a_id) continue;
+    // sum_related/max_related both aggregate OTHER rows -- nothing to preview from this form.
+    if (!field.formula_type || field.formula_type === 'sum_related' || field.formula_type === 'max_related' || !field.formula_field_a_id) continue;
     const fieldA = byId.get(field.formula_field_a_id);
     const a = fieldA ? Number(result[fieldA.field_key]) : NaN;
     if (Number.isNaN(a)) continue;

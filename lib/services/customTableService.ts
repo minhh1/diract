@@ -62,7 +62,7 @@ async function findConflictingUniqueValue(
 // present in this edit (plus any formula field recomputed alongside it) are
 // re-validated, so editing one field on a record that already has
 // unrelated legacy-incomplete data doesn't retroactively get blocked.
-// Auto-numbered and rollup (sum_related) fields are exempt from the
+// Auto-numbered and rollup (sum_related/max_related) fields are exempt from the
 // required check specifically -- both are populated automatically after
 // this function runs, not by the caller, so they'd otherwise always look
 // incorrectly "empty" here.
@@ -71,7 +71,7 @@ async function validateFieldConstraints(
   excludeRecordId: string | null, touchedKeys: Set<string> | null
 ): Promise<string | null> {
   for (const field of fields) {
-    if (!field.is_required || field.auto_number_prefix != null || field.formula_type === 'sum_related') continue;
+    if (!field.is_required || field.auto_number_prefix != null || field.formula_type === 'sum_related' || field.formula_type === 'max_related') continue;
     if (touchedKeys && !touchedKeys.has(field.field_key)) continue;
     if (isEmptyValue(finalValues[field.field_key])) return `"${field.label}" is required.`;
   }
@@ -224,7 +224,7 @@ export async function updateRecord(
     const computed = computeFormulaFields(fields, merged);
     toSave = { ...values };
     for (const field of fields) {
-      if (field.formula_type && field.formula_type !== 'sum_related') {
+      if (field.formula_type && field.formula_type !== 'sum_related' && field.formula_type !== 'max_related') {
         toSave[field.field_key] = computed[field.field_key];
         touchedKeys.add(field.field_key);
       }
@@ -286,15 +286,16 @@ export async function updateRecord(
 
 // Evaluates every formula-marked field in `fields` against `values` (a
 // field_key -> value map), returning values with computed fields added/
-// overwritten. sum_related is skipped here: it aggregates OTHER rows, so
-// it's recomputed by recomputeRelatedRollups() whenever a related row
-// changes -- see the supported formula_types in
-// supabase/company_table_fields_formula.sql and _formula_extend.sql.
+// overwritten. sum_related/max_related are skipped here: both aggregate
+// OTHER rows, so they're recomputed by recomputeRelatedRollups() whenever a
+// related row changes -- see the supported formula_types in
+// supabase/company_table_fields_formula.sql, _formula_extend.sql, and
+// supabase/migrations/20260801430000_max_related_formula_type.sql.
 function computeFormulaFields(fields: CustomTableField[], values: Record<string, any>): Record<string, any> {
   const byId = new Map(fields.map(f => [f.id, f]));
   const result = { ...values };
   for (const field of fields) {
-    if (!field.formula_type || field.formula_type === 'sum_related') continue;
+    if (!field.formula_type || field.formula_type === 'sum_related' || field.formula_type === 'max_related') continue;
     // Formula fields are always derived, never hand-entered (the UI renders
     // them read-only) -- clear whatever was passed in `values` up front so
     // an incomplete/invalid dependency resolves to null. Previously this
@@ -391,17 +392,23 @@ function relationTouches(fields: CustomTableField[], values: Record<string, any>
 // company_table_value_links, an allow_multiple field's -- a field only
 // ever has rows in one or the other, so querying both instead of checking
 // allow_multiple first is correct either way without an extra lookup),
-// summed on `sumFieldId`. `condition`, when present, restricts the sum to
-// children whose own condition.fieldId value equals condition.value (e.g.
-// a Matter's "Billable Fees" only sums Time & Fee Entries where Billable =
-// true) -- same field/value shape company_custom_fields.formula_condition_*
-// and company_table_fields.formula_condition_* store. Shared by both the
-// custom-table-parent and system-table-parent branches of
-// recomputeRelatedRollups below.
-async function sumChildValues(
-  relationFieldId: string, parentId: string, sumFieldId: string,
+// aggregated on `targetFieldId` per `aggType` -- 'sum' (numeric-only,
+// e.g. a Matter's Total Fees) or 'max' (e.g. the latest end date among a
+// loan's Interest Only phases; also works for numbers, just less commonly
+// used that way). `condition`, when present, restricts which children count
+// to ones whose own condition.fieldId value equals condition.value (e.g. a
+// Matter's "Billable Fees" only sums Time & Fee Entries where Billable =
+// true, or a loan's IO end date only looks at phases where Repayment Type =
+// "Interest Only") -- same field/value shape company_custom_fields.
+// formula_condition_* and company_table_fields.formula_condition_* store.
+// Shared by both the custom-table-parent and system-table-parent branches
+// of recomputeRelatedRollups below.
+async function aggregateChildValues(
+  aggType: 'sum' | 'max',
+  relationFieldId: string, parentId: string, targetFieldId: string, targetFieldType: string,
   condition?: { fieldId: string; fieldType: string; value: string } | null
-): Promise<number> {
+): Promise<number | string | null> {
+  const empty = aggType === 'sum' ? 0 : null;
   const [{ data: scalarLinks }, { data: multiLinks }] = await Promise.all([
     supabase.from('company_table_values').select('record_id')
       .eq('field_id', relationFieldId).eq('value_record_id', parentId),
@@ -409,7 +416,7 @@ async function sumChildValues(
       .eq('field_id', relationFieldId).eq('value_record_id', parentId),
   ]);
   const childIds = [...new Set([...(scalarLinks || []), ...(multiLinks || [])].map(l => l.record_id))];
-  if (!childIds.length) return 0;
+  if (!childIds.length) return empty;
 
   const { data: alive } = await supabase
     .from('company_table_records')
@@ -417,7 +424,7 @@ async function sumChildValues(
     .in('id', childIds)
     .is('deleted_at', null);
   let aliveIds = (alive || []).map(r => r.id);
-  if (!aliveIds.length) return 0;
+  if (!aliveIds.length) return empty;
 
   if (condition) {
     const valueCol = getValueColumn(condition.fieldType);
@@ -428,15 +435,27 @@ async function sumChildValues(
       .eq('field_id', condition.fieldId)
       .in('record_id', aliveIds);
     aliveIds = (condVals || []).filter((v: any) => v[valueCol] === compareValue).map((v: any) => v.record_id);
-    if (!aliveIds.length) return 0;
+    if (!aliveIds.length) return empty;
   }
 
+  const targetCol = getValueColumn(targetFieldType);
   const { data: vals } = await supabase
     .from('company_table_values')
-    .select('value_number')
-    .eq('field_id', sumFieldId)
+    .select(targetCol)
+    .eq('field_id', targetFieldId)
     .in('record_id', aliveIds);
-  return (vals || []).reduce((s, v) => s + (Number(v.value_number) || 0), 0);
+  const raw = (vals || []).map((v: any) => v[targetCol]).filter((v: any) => v !== null && v !== undefined);
+  if (aggType === 'sum') return raw.reduce((s: number, v: any) => s + (Number(v) || 0), 0);
+  // 'max' -- string comparison is correct for both ISO dates (value_date)
+  // and plain text (value_text) since both sort lexicographically the same
+  // as chronologically/alphabetically; numbers still compare correctly via
+  // Number() since a numeric field's max is a legitimate (if less common)
+  // use case too.
+  if (!raw.length) return null;
+  if (targetFieldType === 'number' || targetFieldType === 'currency') {
+    return raw.reduce((m: number, v: any) => Math.max(m, Number(v) || -Infinity), -Infinity);
+  }
+  return raw.reduce((m: string, v: any) => (String(v) > m ? String(v) : m), String(raw[0]));
 }
 
 // A rollup field's optional formula_condition_field_id needs its field_type
@@ -458,14 +477,14 @@ function conditionFor(
   return { fieldId: rf.formula_condition_field_id, fieldType, value: rf.formula_condition_value };
 }
 
-// Recomputes sum_related rollup fields (e.g. Invoice Fees = sum of linked
-// Time & Fee Entries' Amount, or a Matter's Total Fees = sum of its linked
-// Time & Fee Entries' Amount) on every parent record a change touched.
+// Recomputes sum_related/max_related rollup fields (e.g. Invoice Fees = sum
+// of linked Time & Fee Entries' Amount, or a Loan's IO End Date = max of its
+// Interest Only phases' end dates) on every parent record a change touched.
 // Custom-table parents also get their own downstream formulas (Subtotal ->
-// GST -> Total) re-evaluated against the fresh sums; system-table parents
+// GST -> Total) re-evaluated against the fresh values; system-table parents
 // (projects/entities/properties, via company_custom_fields) never have such
-// a chain -- they only ever support sum_related, so their branch just
-// writes the sum directly.
+// a chain -- they only ever support these two rollup types, so their branch
+// just writes the aggregated value directly.
 async function recomputeRelatedRollups(
   companyId: string,
   childFields: CustomTableField[],
@@ -476,9 +495,9 @@ async function recomputeRelatedRollups(
 
   const [{ data: rollupFields }, { data: systemRollupFields }] = await Promise.all([
     supabase.from('company_table_fields').select('*')
-      .eq('formula_type', 'sum_related').in('formula_relation_field_id', relFieldIds).is('deleted_at', null),
+      .in('formula_type', ['sum_related', 'max_related']).in('formula_relation_field_id', relFieldIds).is('deleted_at', null),
     supabase.from('company_custom_fields').select('*')
-      .eq('formula_type', 'sum_related').in('formula_relation_field_id', relFieldIds).is('deleted_at', null),
+      .in('formula_type', ['sum_related', 'max_related']).in('formula_relation_field_id', relFieldIds).is('deleted_at', null),
   ]);
 
   const conditionFieldIds = [...new Set([...(rollupFields || []), ...(systemRollupFields || [])]
@@ -498,25 +517,26 @@ async function recomputeRelatedRollups(
       parentFieldsByTable.set(parentTableId, (data || []) as CustomTableField[]);
     }
 
-    // parent record -> its recomputed rollup sums
-    const parentUpdates = new Map<string, { tableId: string; sums: Record<string, number> }>();
+    // parent record -> its recomputed rollup values
+    const parentUpdates = new Map<string, { tableId: string; values: Record<string, number | string | null> }>();
     for (const rf of rollupFields) {
       const parentIds = [...new Set(touches.filter(t => t.relationFieldId === rf.formula_relation_field_id).map(t => t.parentId))];
       for (const parentId of parentIds) {
-        const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id, conditionFor(rf, conditionFieldTypes));
-        const entry = parentUpdates.get(parentId) || { tableId: rf.table_id, sums: {} as Record<string, number> };
-        entry.sums[rf.field_key] = sum;
+        const aggType = rf.formula_type === 'max_related' ? 'max' : 'sum';
+        const agg = await aggregateChildValues(aggType, rf.formula_relation_field_id, parentId, rf.formula_field_a_id, rf.field_type, conditionFor(rf, conditionFieldTypes));
+        const entry = parentUpdates.get(parentId) || { tableId: rf.table_id, values: {} as Record<string, number | string | null> };
+        entry.values[rf.field_key] = agg;
         parentUpdates.set(parentId, entry);
       }
     }
 
-    for (const [parentId, { tableId, sums }] of parentUpdates) {
+    for (const [parentId, { tableId, values: aggValues }] of parentUpdates) {
       const parentFields = parentFieldsByTable.get(tableId) || [];
       const current = await getCurrentValues(parentId, parentFields);
-      const computed = computeFormulaFields(parentFields, { ...current, ...sums });
-      const toSave: Record<string, any> = { ...sums };
+      const computed = computeFormulaFields(parentFields, { ...current, ...aggValues });
+      const toSave: Record<string, any> = { ...aggValues };
       for (const pf of parentFields) {
-        if (pf.formula_type && pf.formula_type !== 'sum_related' && computed[pf.field_key] !== undefined) {
+        if (pf.formula_type && pf.formula_type !== 'sum_related' && pf.formula_type !== 'max_related' && computed[pf.field_key] !== undefined) {
           toSave[pf.field_key] = computed[pf.field_key];
         }
       }
@@ -527,8 +547,54 @@ async function recomputeRelatedRollups(
   for (const rf of (systemRollupFields || [])) {
     const parentIds = [...new Set(touches.filter(t => t.relationFieldId === rf.formula_relation_field_id).map(t => t.parentId))];
     for (const parentId of parentIds) {
-      const sum = await sumChildValues(rf.formula_relation_field_id, parentId, rf.formula_field_a_id, conditionFor(rf, conditionFieldTypes));
-      await saveRollupValue(rf.table_name as SystemTableName, companyId, parentId, rf.id, sum);
+      const aggType = rf.formula_type === 'max_related' ? 'max' : 'sum';
+      const agg = await aggregateChildValues(aggType, rf.formula_relation_field_id, parentId, rf.formula_field_a_id, rf.field_type, conditionFor(rf, conditionFieldTypes));
+      await saveRollupValue(rf.table_name as SystemTableName, companyId, parentId, rf.id, rf.field_type, agg);
+    }
+  }
+}
+
+// One-off full recompute for a newly-created max_related rollup field --
+// called right after SchemaVisualisation.tsx saves a brand-new complete
+// config, same "populate it immediately instead of waiting for the next
+// incidental edit to a child row" purpose as sum_related's own backfill
+// (supabase/migrations/20260731160000_company_custom_fields_sum_related.sql's
+// backfill_table_rollup/backfill_system_rollup Postgres functions). Done in
+// JS here rather than as a matching pair of new SQL functions -- max_related
+// can target value_number/value_date/value_text depending on the field's
+// own type, and reusing aggregateChildValues (already correct and tested
+// for all three) is far less risky than writing three near-duplicate raw-SQL
+// branches per parent kind. A one-off admin action, not a hot path, so the
+// per-parent round trips here are an acceptable trade-off for that safety.
+export async function backfillRollupField(fieldId: string, isCustomTable: boolean): Promise<void> {
+  const table = isCustomTable ? 'company_table_fields' : 'company_custom_fields';
+  const { data: rf } = await supabase.from(table).select('*').eq('id', fieldId).maybeSingle();
+  if (!rf || rf.formula_type !== 'max_related' || !rf.formula_relation_field_id || !rf.formula_field_a_id) return;
+
+  const [{ data: scalarLinks }, { data: multiLinks }] = await Promise.all([
+    supabase.from('company_table_values').select('value_record_id')
+      .eq('field_id', rf.formula_relation_field_id).not('value_record_id', 'is', null),
+    supabase.from('company_table_value_links').select('value_record_id').eq('field_id', rf.formula_relation_field_id),
+  ]);
+  const parentIds = [...new Set([...(scalarLinks || []), ...(multiLinks || [])].map((l: any) => l.value_record_id))];
+  if (!parentIds.length) return;
+
+  const conditionFieldTypes = rf.formula_condition_field_id ? await loadConditionFieldTypes([rf.formula_condition_field_id]) : new Map<string, string>();
+  const condition = conditionFor(rf, conditionFieldTypes);
+  const valueCol = getValueColumn(rf.field_type);
+
+  for (const parentId of parentIds) {
+    const agg = await aggregateChildValues('max', rf.formula_relation_field_id, parentId, rf.formula_field_a_id, rf.field_type, condition);
+    if (isCustomTable) {
+      await supabase.from('company_table_values').upsert(
+        { company_id: rf.company_id, table_id: rf.table_id, record_id: parentId, field_id: fieldId, [valueCol]: agg },
+        { onConflict: 'record_id,field_id' }
+      );
+    } else {
+      await supabase.from('company_custom_field_values').upsert(
+        { company_id: rf.company_id, table_name: rf.table_name, record_id: parentId, field_id: fieldId, [valueCol]: agg },
+        { onConflict: 'field_id,record_id' }
+      );
     }
   }
 }

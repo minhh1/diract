@@ -61,7 +61,7 @@ export interface CustomField {
   // multiply/percentage_of/add are custom-table fields only; sum_related is
   // the one kind system-table fields (projects/entities/properties) support
   // too -- see FieldConfigPanel.tsx's Computed value section.
-  formula_type?: 'multiply' | 'percentage_of' | 'add' | 'sum_related' | null;
+  formula_type?: 'multiply' | 'percentage_of' | 'add' | 'sum_related' | 'max_related' | null;
   formula_field_a_id?: string | null;
   formula_field_b_id?: string | null;
   formula_percent?: number | null;
