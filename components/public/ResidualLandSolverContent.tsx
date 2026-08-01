@@ -22,7 +22,8 @@
 //      nothing is fetched and nothing is saved, which is exactly why it
 //      needs no gate.
 import { useEffect, useState } from "react";
-import { Loader2, Landmark, Lock, Share2, Copy, Check, Trash2, Save, FolderOpen } from "lucide-react";
+import { Loader2, Landmark, Lock, Share2, Copy, Check, Trash2, Save, FolderOpen, Link2, X } from "lucide-react";
+import ProjectSearchPicker, { type ProjectOption } from "@/components/dashboard/ProjectSearchPicker";
 import { money } from "./financeModel/BudgetVsActualTable";
 import { GST_METHODS, type GstMethod, type FeasibilityInputs } from "@/lib/feasibilityCalculator";
 import { AU_STATES, explainStampDuty, type AuState } from "@/lib/stampDuty";
@@ -194,8 +195,20 @@ interface SavedCalc {
   updated_at: string;
 }
 
-export default function ResidualLandSolverContent({ projectId, pageId }: { projectId?: string; pageId?: string }) {
+export default function ResidualLandSolverContent({ projectId, pageId, allowProjectLink }: { projectId?: string; pageId?: string; allowProjectLink?: boolean }) {
   const [loading, setLoading] = useState(!!projectId || !!pageId);
+  // "Generic calculator first, link later": with allowProjectLink (the
+  // dashboard widget / non-project record tab), the solver starts
+  // standalone and the viewer can attach it to a project on demand --
+  // linking pushes whatever they've already typed into that project's
+  // shared feasibility-inputs row (only the fields they filled in, so it
+  // never nulls out the project's existing assumptions), then continues in
+  // full project mode (persistence + Share panel). Session-local, same
+  // ephemeral-select precedent as FinanceModelSearchWidget.
+  const [linkedProject, setLinkedProject] = useState<ProjectOption | null>(null);
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const activeProjectId = projectId ?? linkedProject?.id;
   const [inputs, setInputs] = useState<FeasibilityInputs>(EMPTY_INPUTS);
   const [state, setState] = useState<AuState | "">("");
   const [gstMethod, setGstMethod] = useState<GstMethod | "">("");
@@ -215,30 +228,62 @@ export default function ResidualLandSolverContent({ projectId, pageId }: { proje
   const [savingCalc, setSavingCalc] = useState(false);
   const [calcMessage, setCalcMessage] = useState<string | null>(null);
 
-  // Internal (project) mode -- prefill shared assumptions.
+  // Internal (project) mode -- prefill shared assumptions. Also fires when
+  // the viewer links a project (activeProjectId appears), AFTER
+  // linkToProject has pushed their typed values, so what comes back is the
+  // merged assumption set. State/GST only overwrite what the user chose
+  // when the project actually has a value, so linking never blanks a
+  // manual selection.
   useEffect(() => {
-    if (!projectId) return;
+    if (!activeProjectId) return;
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
         const [inputsRes, overviewRes, settingsRes] = await Promise.all([
-          fetch(`/api/finance-model/feasibility-inputs?projectId=${projectId}`),
-          fetch(`/api/finance-model/overview?projectId=${projectId}`),
-          fetch(`/api/finance-model/settings?projectId=${projectId}`),
+          fetch(`/api/finance-model/feasibility-inputs?projectId=${activeProjectId}`),
+          fetch(`/api/finance-model/overview?projectId=${activeProjectId}`),
+          fetch(`/api/finance-model/settings?projectId=${activeProjectId}`),
         ]);
         const inputsJson = await inputsRes.json();
         const overviewJson = await overviewRes.json();
         const settingsJson = await settingsRes.json();
         if (cancelled) return;
         setInputs({ ...EMPTY_INPUTS, ...(inputsJson.inputs || {}) });
-        setState((overviewJson.property?.state as AuState) || "");
-        setGstMethod((settingsJson.gstMethod as GstMethod) || "");
+        setState(prev => (overviewJson.property?.state as AuState) || prev);
+        setGstMethod(prev => (settingsJson.gstMethod as GstMethod) || prev);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [activeProjectId]);
+
+  // Attach the generic calculator to a project: push only the fields the
+  // user actually entered (the PATCH route ignores absent keys), then flip
+  // to project mode -- the effect above reloads the merged row.
+  const linkToProject = async (p: ProjectOption) => {
+    setLinking(true);
+    const entered: Record<string, number> = {};
+    for (const [k, v] of Object.entries(inputs)) if (v != null) entered[k] = v;
+    if (Object.keys(entered).length) {
+      await fetch("/api/finance-model/feasibility-inputs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: p.id, ...entered }),
+      });
+    }
+    if (gstMethod) {
+      await fetch("/api/finance-model/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: p.id, gstMethod }),
+      });
+    }
+    setLinking(false);
+    setShowLinkPicker(false);
+    setLinkedProject(p);
+  };
 
   // Shared-page mode -- gate, then load the customer's saved calculations.
   const fetchPage = async (code?: string | null) => {
@@ -321,26 +366,27 @@ export default function ResidualLandSolverContent({ projectId, pageId }: { proje
   };
 
   // Shared-assumptions contract: edits here land in the same
-  // feasibility-inputs row the Feasibility subtab reads. Shared-page and
-  // ungated modes never touch it (no projectId -> no-op).
+  // feasibility-inputs row the Feasibility subtab reads -- whether the
+  // project came in as a prop or was linked at view time. Shared-page and
+  // unlinked modes never touch it (no active project -> no-op).
   const saveInputs = async (next: FeasibilityInputs) => {
-    if (!projectId) return;
+    if (!activeProjectId) return;
     setSaving(true);
     await fetch("/api/finance-model/feasibility-inputs", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, ...next }),
+      body: JSON.stringify({ projectId: activeProjectId, ...next }),
     });
     setSaving(false);
   };
 
   const changeGstMethod = async (value: GstMethod) => {
     setGstMethod(value);
-    if (!projectId) return;
+    if (!activeProjectId) return;
     await fetch("/api/finance-model/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, gstMethod: value }),
+      body: JSON.stringify({ projectId: activeProjectId, gstMethod: value }),
     });
   };
 
@@ -395,7 +441,21 @@ export default function ResidualLandSolverContent({ projectId, pageId }: { proje
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Residual Land Value Solver</p>
           <div className="flex items-center gap-2">
             {saving && <Loader2 size={12} className="animate-spin text-slate-300" />}
-            {projectId && (
+            {allowProjectLink && !projectId && (
+              linkedProject ? (
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 rounded-full px-3 py-1">
+                  <Link2 size={11} /> {linkedProject.name}
+                  <button onClick={() => setLinkedProject(null)} className="text-emerald-400 hover:text-rose-500" title="Unlink (keeps the numbers on screen)">
+                    <X size={11} />
+                  </button>
+                </span>
+              ) : (
+                <button onClick={() => setShowLinkPicker(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
+                  <Link2 size={11} /> Link to a project
+                </button>
+              )
+            )}
+            {activeProjectId && (
               <button onClick={() => setShowShare(v => !v)} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline">
                 <Share2 size={11} /> Share
               </button>
@@ -403,9 +463,22 @@ export default function ResidualLandSolverContent({ projectId, pageId }: { proje
           </div>
         </div>
 
+        {allowProjectLink && !projectId && !linkedProject && showLinkPicker && (
+          <div className="space-y-2">
+            {linking ? (
+              <p className="text-[12px] text-slate-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Linking -- pushing your entered values to the project...</p>
+            ) : (
+              <>
+                <ProjectSearchPicker onSelect={linkToProject} placeholder="Search a project to link..." />
+                <p className="text-[10px] text-slate-400">Linking pushes the values you&apos;ve entered into the project&apos;s shared feasibility assumptions (blank fields are left alone) and turns on saving + customer share links.</p>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
-            <label className="text-[9px] text-slate-400 mb-1 block">State (drives stamp duty & title fees{projectId ? "; prefilled from the linked property" : ""})</label>
+            <label className="text-[9px] text-slate-400 mb-1 block">State (drives stamp duty & title fees{activeProjectId ? "; prefilled from the linked property" : ""})</label>
             <select value={state} onChange={e => setState(e.target.value as AuState | "")} className="w-full text-[12px] border border-slate-200 rounded-xl px-2 py-1.5 bg-white text-slate-700">
               <option value="">Select...</option>
               {AU_STATES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -463,7 +536,7 @@ export default function ResidualLandSolverContent({ projectId, pageId }: { proje
         )}
       </div>
 
-      {projectId && showShare && <SharePanel projectId={projectId} />}
+      {activeProjectId && showShare && <SharePanel projectId={activeProjectId} />}
 
       {/* ── Saved calculations (shared-page mode only -- server-side, per link) ── */}
       {pageId && (
@@ -534,7 +607,7 @@ export default function ResidualLandSolverContent({ projectId, pageId }: { proje
         <Landmark size={13} className="mt-0.5 shrink-0" />
         <span>
           Solved by bisection with stamp duty and title fees re-derived at every candidate price (the land-price → duty → cost → margin circularity is resolved, not approximated). Finance cost still uses the standard feasibility shorthand -- a progressively-drawn loan&apos;s average balance ≈ 50% of peak debt -- not a dated monthly drawdown schedule. Duty rates are general (non-PPR, no concessions or foreign surcharges); treat the result as a bid ceiling to test, not a quote.
-          {projectId ? " Assumptions are shared with the Finance Model's Feasibility subtab -- editing them here updates there, and vice versa." : ""}
+          {activeProjectId ? " Assumptions are shared with the Finance Model's Feasibility subtab -- editing them here updates there, and vice versa." : ""}
         </span>
       </div>
     </div>

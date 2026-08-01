@@ -337,12 +337,13 @@ export interface FinanceModelWidget extends BaseWidget {
   config: Record<string, never>;
 }
 
-// Same search-a-project-then-render shape as FinanceModelWidget above (the
-// two share components/dashboard/FinanceModelSearchWidget.tsx via its
-// `variant` prop), but rendering the picked project's Residual Land Value
-// Solver (components/public/ResidualLandSolverContent.tsx) instead of its
-// full Finance Model. The viewer assigns the project at view time by
-// searching -- session-local, same ephemeral-select precedent, no config.
+// The Residual Land Value Solver as a dashboard widget
+// (components/public/ResidualLandSolverContent.tsx with allowProjectLink).
+// Inverse flow to FinanceModelWidget above: the GENERIC calculator renders
+// immediately (usable with nothing picked), and the viewer can then "Link
+// to a project" via the shared ProjectSearchPicker -- linking pushes their
+// entered values into that project's feasibility-inputs row and enables
+// persistence + customer share links. The link is session-local, no config.
 export interface ResidualLandSolverWidget extends BaseWidget {
   type: 'residual_land_solver';
   config: Record<string, never>;

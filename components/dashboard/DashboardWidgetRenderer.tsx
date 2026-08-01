@@ -31,6 +31,7 @@ const DocumentPublicPageWidget = dynamic(() => import("./DocumentPublicPageWidge
 const ClientUpdatePageWidget = dynamic(() => import("./ClientUpdatePageWidget"));
 const MyTasksButtonWidget = dynamic(() => import("./MyTasksButtonWidget"));
 const FinanceModelSearchWidget = dynamic(() => import("./FinanceModelSearchWidget"));
+const ResidualLandSolverContent = dynamic(() => import("@/components/public/ResidualLandSolverContent"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -298,7 +299,7 @@ export default function DashboardWidgetRenderer({
       return <FinanceModelSearchWidget />;
 
     case 'residual_land_solver':
-      return <FinanceModelSearchWidget variant="residual_land_solver" />;
+      return <ResidualLandSolverContent allowProjectLink />;
 
     default:
       return null;
