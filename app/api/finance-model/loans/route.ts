@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
     project: projectId,
     name: body?.name?.trim() || null,
     lender_type: body?.lenderType || null,
+    lender: body?.lender?.trim() || null,
     borrower: borrowerId,
     guarantors: Array.isArray(body?.guarantorIds) ? body.guarantorIds : [],
     principal_amount: Number.isFinite(Number(body?.principalAmount)) ? Number(body.principalAmount) : null,
@@ -126,7 +127,7 @@ export async function PATCH(req: NextRequest) {
   if (!table) return NextResponse.json({ error: "Finance Model Loans table is not provisioned" }, { status: 500 });
 
   const fieldMap: Record<string, string> = {
-    name: "name", lenderType: "lender_type", borrowerId: "borrower", guarantorIds: "guarantors",
+    name: "name", lenderType: "lender_type", lender: "lender", borrowerId: "borrower", guarantorIds: "guarantors",
     principalAmount: "principal_amount", startDate: "start_date", repaymentDate: "repayment_date",
     repaymentPeriod: "repayment_period", extensionRight: "extension_right", extensionTerms: "extension_terms",
     earlyRepaymentAllowed: "early_repayment_allowed", earlyRepaymentTerms: "early_repayment_terms",
