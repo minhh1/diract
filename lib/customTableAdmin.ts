@@ -53,23 +53,47 @@ function fieldByKey(fields: FieldDef[], key: string): FieldDef | undefined {
 // company_table_value_links (a field only ever has rows in one store or the
 // other, same split lib/services/customTableService.ts's getCurrentValues
 // relies on).
+// PostgREST caps a response at 1000 rows by default, and one row here is a
+// single FIELD VALUE, not a record -- so a table only needs ~1000/fields
+// records before a plain .select() starts silently dropping values, and
+// the rows come back with arbitrary fields missing rather than erroring.
+// (Hit for real: 138 Finance Model transactions × ~8 populated fields =
+// 1064 value rows, so ~64 values vanished on every read -- descriptions
+// showing blank in the UI, and the Xero sync's "already imported" set
+// missing ids.) Paged explicitly until a short page comes back.
+const PAGE_SIZE = 1000;
+
+async function selectAllPages(query: () => any): Promise<any[]> {
+  const all: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await query().range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const page = data || [];
+    all.push(...page);
+    if (page.length < PAGE_SIZE) return all;
+  }
+}
+
 async function hydrateRows(admin: any, recordIds: string[], fields: FieldDef[]): Promise<Record<string, any>[]> {
   if (!recordIds.length) return [];
 
-  const { data: values } = await admin
+  const values = await selectAllPages(() => admin
     .from("company_table_values")
     .select("record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id")
-    .in("record_id", recordIds);
+    .in("record_id", recordIds)
+    .order("record_id", { ascending: true })
+    .order("field_id", { ascending: true }));
 
   const multiFields = fields.filter(f => f.allow_multiple);
   let links: any[] = [];
   if (multiFields.length) {
-    const { data } = await admin
+    links = await selectAllPages(() => admin
       .from("company_table_value_links")
       .select("record_id, field_id, value_record_id")
       .in("record_id", recordIds)
-      .in("field_id", multiFields.map(f => f.id));
-    links = data || [];
+      .in("field_id", multiFields.map(f => f.id))
+      .order("record_id", { ascending: true })
+      .order("field_id", { ascending: true }));
   }
 
   const fieldById = new Map(fields.map(f => [f.id, f]));
@@ -102,30 +126,32 @@ export async function listCustomTableRows(
   const filterField = fieldByKey(table.fields, filterFieldKey);
   if (!filterField) return [];
 
-  const { data: matches } = await admin
+  const matches = await selectAllPages(() => admin
     .from("company_table_values")
     .select("record_id")
     .eq("field_id", filterField.id)
-    .eq("value_record_id", filterValue);
-  const candidateIds = [...new Set((matches || []).map((m: any) => m.record_id))];
+    .eq("value_record_id", filterValue)
+    .order("record_id", { ascending: true }));
+  const candidateIds = [...new Set(matches.map((m: any) => m.record_id))];
   if (!candidateIds.length) return [];
 
-  const { data: alive } = await admin
+  const alive = await selectAllPages(() => admin
     .from("company_table_records")
     .select("id")
     .in("id", candidateIds)
-    .is("deleted_at", null);
-  const aliveIds = (alive || []).map((r: any) => r.id);
-  return hydrateRows(admin, aliveIds, table.fields);
+    .is("deleted_at", null)
+    .order("id", { ascending: true }));
+  return hydrateRows(admin, alive.map((r: any) => r.id), table.fields);
 }
 
 export async function listAllCustomTableRows(admin: any, table: CustomTableRef): Promise<Record<string, any>[]> {
-  const { data: alive } = await admin
+  const alive = await selectAllPages(() => admin
     .from("company_table_records")
     .select("id")
     .eq("table_id", table.tableId)
-    .is("deleted_at", null);
-  return hydrateRows(admin, (alive || []).map((r: any) => r.id), table.fields);
+    .is("deleted_at", null)
+    .order("id", { ascending: true }));
+  return hydrateRows(admin, alive.map((r: any) => r.id), table.fields);
 }
 
 export async function getCustomTableRow(admin: any, table: CustomTableRef, recordId: string): Promise<Record<string, any> | null> {
@@ -140,13 +166,13 @@ export async function getCustomTableRow(admin: any, table: CustomTableRef, recor
 // here.
 export async function getCustomTableRowsByIds(admin: any, table: CustomTableRef, recordIds: string[]): Promise<Record<string, any>[]> {
   if (!recordIds.length) return [];
-  const { data: alive } = await admin
+  const alive = await selectAllPages(() => admin
     .from("company_table_records")
     .select("id")
     .in("id", recordIds)
-    .is("deleted_at", null);
-  const aliveIds = (alive || []).map((r: any) => r.id);
-  return hydrateRows(admin, aliveIds, table.fields);
+    .is("deleted_at", null)
+    .order("id", { ascending: true }));
+  return hydrateRows(admin, alive.map((r: any) => r.id), table.fields);
 }
 
 export async function createCustomTableRow(

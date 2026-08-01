@@ -218,7 +218,18 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
     });
     const json = await res.json().catch(() => ({}));
     setSyncing(false);
-    setSyncMessage(res.ok ? `Imported ${json.imported}, skipped ${json.skipped} already-imported.` : (json.error || "Sync failed"));
+    if (res.ok) {
+      // Descriptions come from a per-transaction Xero fetch that's capped
+      // per run to stay under Xero's rate limit, so a backlog of older
+      // rows drains over several clicks -- say so rather than looking
+      // like it silently did nothing.
+      const parts = [`Imported ${json.imported}, skipped ${json.skipped} already-imported.`];
+      if (json.backfilled) parts.push(`Filled in descriptions for ${json.backfilled} earlier transaction${json.backfilled === 1 ? "" : "s"}.`);
+      if (json.backfillRemaining) parts.push(`${json.backfillRemaining} still to go -- click Sync again to continue.`);
+      setSyncMessage(parts.join(" "));
+    } else {
+      setSyncMessage(json.error || "Sync failed");
+    }
     setSyncNeedsReconnect(!res.ok && !!json.needsReconnect);
     if (res.ok) await load();
   };
