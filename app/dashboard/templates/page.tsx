@@ -13,7 +13,7 @@ import { getCompanyId } from "@/lib/services/schemaService";
 import TemplateManager, { type Template } from "@/components/dashboard/TemplateManager";
 
 interface Profile { id: string; full_name: string | null; email: string | null; }
-interface Team { id: string; team_name: string; }
+interface Team { id: string; team_name: string; category_tags?: string[] | null; }
 
 export default function TemplatesToolPage() {
   const [loading, setLoading] = useState(true);
@@ -29,7 +29,7 @@ export default function TemplatesToolPage() {
     if (!cid) { setLoading(false); return; }
     const [{ data: profileData }, { data: teamData }, { data: templateData }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
-      supabase.from('teams').select('id, team_name').eq('is_active', true),
+      supabase.from('teams').select('id, team_name, category_tags').eq('is_active', true),
       supabase.from('checklist_templates').select('*, items:checklist_template_items(*)').eq('company_id', cid).order('created_at'),
     ]);
     setProfiles(profileData || []);

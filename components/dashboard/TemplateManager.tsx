@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabase";
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'];
 
 interface Profile { id: string; full_name: string | null; email: string | null; }
-interface Team { id: string; team_name: string; }
+interface Team { id: string; team_name: string; category_tags?: string[] | null; }
 
 export interface TemplateItem {
   id: string; template_id: string; parent_item_id: string | null; title: string;
@@ -914,6 +914,16 @@ export default function TemplateManager({
                       <p className="text-[9px] text-slate-400 mb-1">Category (phase)</p>
                       <input value={item.category || ''} list="template-categories" onChange={e => {
                         const next = [...editItems]; next[idx] = { ...next[idx], category: e.target.value || null }; setEditItems(next);
+                      }} onBlur={() => {
+                        // Auto-suggest: if this category has been tagged (AdminTeamsTab.tsx)
+                        // to exactly one team, and this item has no team of its own yet,
+                        // fill it in -- never overwrites a team already picked, and stays
+                        // quiet rather than guessing when more than one team claims it.
+                        const value = (editItems[idx].category || '').trim().toLowerCase();
+                        if (!value || editItems[idx].assigned_team_id) return;
+                        const matching = teams.filter(t => (t.category_tags || []).some(c => c.toLowerCase() === value));
+                        if (matching.length !== 1) return;
+                        const next = [...editItems]; next[idx] = { ...next[idx], assigned_team_id: matching[0].id }; setEditItems(next);
                       }} placeholder="e.g. Acquisition, Construction..."
                         className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white" />
                     </div>

@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, Plus, X, Crown, Pencil, Check, ShieldCheck, ChevronDown } from "lucide-react";
+import { Users, Plus, X, Crown, Pencil, Check, ShieldCheck, ChevronDown, Tag } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -48,6 +48,11 @@ interface Team {
   // Defaults true in the DB; irrelevant once allow_task_view is on for the
   // same team (they already see everything).
   include_team_tasks_in_scope: boolean;
+  // Free-typed task/template `category` values (e.g. "Construction") this
+  // team owns -- lets the Timeline/Templates category input auto-suggest
+  // this team once a matching category is entered. Not a managed list;
+  // just whatever text an admin has tagged here.
+  category_tags: string[] | null;
 }
 
 // Every boolean permission column on `teams` lives here, not as its own
@@ -115,6 +120,8 @@ export default function AdminTeamsTab({ companyId }: Props) {
   const [editName, setEditName]       = useState('');
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [expandedPermissionsTeamId, setExpandedPermissionsTeamId] = useState<string | null>(null);
+  const [expandedCategoriesTeamId, setExpandedCategoriesTeamId] = useState<string | null>(null);
+  const [newCategoryTag, setNewCategoryTag] = useState('');
   // Whether this company has a Time & Fee Entries table at all -- the two
   // checkboxes below (delegation, view-all) only make sense for a company
   // that actually has that concept (currently just the law-firm-seed
@@ -141,7 +148,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     // Load teams
     const { data: ts } = await supabase
       .from('teams')
-      .select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope')
+      .select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope, category_tags')
       .eq('company_id', companyId)
       .order('team_name');
 
@@ -211,7 +218,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     if (!name) return;
     setNewTeamName('');
     const { data: created } = await supabase
-      .from('teams').insert({ team_name: name, is_active: true, company_id: companyId }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope').single();
+      .from('teams').insert({ team_name: name, is_active: true, company_id: companyId }).select('id, team_name, leader_id, is_active, allow_time_entry_delegation, allow_time_entry_view, allow_task_view, include_team_tasks_in_scope, category_tags').single();
     if (created) {
       const newTeam: Team = { ...created, members: [] };
       updateTeams(prev => [...prev, newTeam].sort((a, b) => a.team_name.localeCompare(b.team_name)));
@@ -266,6 +273,26 @@ export default function AdminTeamsTab({ companyId }: Props) {
   const togglePermission = (teamId: string, key: PermissionKey, next: boolean) => {
     updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, [key]: next } : t));
     supabase.from('teams').update({ [key]: next }).eq('id', teamId).then();
+  };
+
+  const addCategoryTag = (teamId: string, tag: string) => {
+    const value = tag.trim();
+    if (!value) return;
+    updateTeams(prev => prev.map(t => {
+      if (t.id !== teamId) return t;
+      if ((t.category_tags || []).some(c => c.toLowerCase() === value.toLowerCase())) return t;
+      return { ...t, category_tags: [...(t.category_tags || []), value] };
+    }));
+    const team = teams.find(t => t.id === teamId);
+    const next = [...(team?.category_tags || []), value];
+    supabase.from('teams').update({ category_tags: next }).eq('id', teamId).then();
+  };
+
+  const removeCategoryTag = (teamId: string, tag: string) => {
+    updateTeams(prev => prev.map(t => t.id === teamId ? { ...t, category_tags: (t.category_tags || []).filter(c => c !== tag) } : t));
+    const team = teams.find(t => t.id === teamId);
+    const next = (team?.category_tags || []).filter(c => c !== tag);
+    supabase.from('teams').update({ category_tags: next }).eq('id', teamId).then();
   };
 
   const setLeader = (teamId: string, profileId: string) => {
@@ -390,6 +417,61 @@ export default function AdminTeamsTab({ companyId }: Props) {
                         <span className="text-[11px] text-slate-600">{p.label}</span>
                       </label>
                     ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Categories -- free-typed task/template `category` tags this team
+              owns, so the Timeline/Templates category input can auto-suggest
+              this team once a matching category is entered. */}
+          {(() => {
+            const isOpen = expandedCategoriesTeamId === team.id;
+            const tags = team.category_tags || [];
+            return (
+              <div className="border-b border-slate-50">
+                <button
+                  onClick={() => setExpandedCategoriesTeamId(isOpen ? null : team.id)}
+                  className="w-full flex items-center justify-between px-6 py-3 hover:bg-slate-50/50 transition-colors"
+                >
+                  <span className="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                    <Tag size={13} className="text-indigo-500" /> Categories
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                    {tags.length} tagged
+                    <ChevronDown size={12} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="px-6 pb-3 space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {tags.map(tag => (
+                        <span key={tag} className="flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-600">
+                          {tag}
+                          <button onClick={() => removeCategoryTag(team.id, tag)} className="text-indigo-300 hover:text-indigo-600">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                      {tags.length === 0 && <p className="text-[10px] text-slate-300 italic py-1">No categories tagged yet</p>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={newCategoryTag}
+                        onChange={e => setNewCategoryTag(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { addCategoryTag(team.id, newCategoryTag); setNewCategoryTag(''); } }}
+                        placeholder="e.g. Construction..."
+                        className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400"
+                      />
+                      <button
+                        onClick={() => { addCategoryTag(team.id, newCategoryTag); setNewCategoryTag(''); }}
+                        disabled={!newCategoryTag.trim()}
+                        className="px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

@@ -21,7 +21,7 @@ import { useCompany } from "@/components/CompanyContext";
 import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
 import TemplateManager, { type Template } from "@/components/dashboard/TemplateManager";
 
-interface Team { id: string; team_name: string; }
+interface Team { id: string; team_name: string; category_tags?: string[] | null; }
 interface Profile { id: string; full_name: string | null; email: string | null; }
 
 interface TaskRow {
@@ -183,6 +183,23 @@ function TaskEditModal({
 
   const taskCategoryOptions = useMemo(() => [...new Set(allTasks.map(t => t.category).filter((c): c is string => !!c))].sort(), [allTasks]);
 
+  // Auto-suggest: once the category field is done being edited (blur, not
+  // every keystroke -- so this doesn't fight a category tag a user just
+  // manually removed mid-typing), merge in any team that's been tagged
+  // (AdminTeamsTab.tsx) as owning that category. Additive only -- never
+  // removes a team the user already picked.
+  const applyCategoryTeamSuggestion = () => {
+    const value = taskCategory.trim().toLowerCase();
+    if (!value) return;
+    const matching = teams.filter(t => (t.category_tags || []).some(c => c.toLowerCase() === value));
+    if (!matching.length) return;
+    setTeamIds(prev => {
+      const next = new Set(prev);
+      matching.forEach(t => next.add(t.id));
+      return next;
+    });
+  };
+
   const [updatingTemplate, setUpdatingTemplate] = useState(false);
   const [templateUpdated, setTemplateUpdated] = useState(false);
   const updateSourceTemplateItem = async () => {
@@ -311,7 +328,7 @@ function TaskEditModal({
             </div>
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Category (phase)</p>
-              <input value={taskCategory} onChange={e => setTaskCategory(e.target.value)} list="task-categories" placeholder="e.g. Construction..."
+              <input value={taskCategory} onChange={e => setTaskCategory(e.target.value)} onBlur={applyCategoryTeamSuggestion} list="task-categories" placeholder="e.g. Construction..."
                 className="w-full px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
               <datalist id="task-categories">
                 {taskCategoryOptions.map(c => <option key={c} value={c} />)}
@@ -747,7 +764,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
         // mixed together here (confirmed live during this session's own
         // testing). Same pre-existing gap in ChecklistTab.tsx's own teams
         // query, not introduced here, but worth not repeating.
-        supabase.from('teams').select('id, team_name').eq('company_id', companyId).eq('is_active', true).order('team_name'),
+        supabase.from('teams').select('id, team_name, category_tags').eq('company_id', companyId).eq('is_active', true).order('team_name'),
         supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
         supabase.from('projects').select('created_at').eq('id', projectId).single(),
       ]);

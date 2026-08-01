@@ -35,7 +35,7 @@ interface Task {
   completed_at: string | null;
 }
 interface Profile { id: string; full_name: string | null; email: string | null; }
-interface Team { id: string; team_name: string; }
+interface Team { id: string; team_name: string; category_tags?: string[] | null; }
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
@@ -420,7 +420,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     ] = await Promise.all([
       supabase.from('tasks').select('*').eq('project_id', recordId).is('deleted_at', null).order('date_entered'),
       supabase.from('profiles').select('id, full_name, email').eq('is_active', true),
-      supabase.from('teams').select('id, team_name').eq('is_active', true),
+      supabase.from('teams').select('id, team_name, category_tags').eq('is_active', true),
       supabase.from('checklist_templates').select('*, items:checklist_template_items(*)').eq('company_id', companyId).order('created_at'),
       supabase.from('projects').select('created_at, estimated_completion_date').eq('id', recordId).single(),
       supabase.from('company_tables').select('*').eq('slug', 'time-fee-entries').is('deleted_at', null).maybeSingle(),
