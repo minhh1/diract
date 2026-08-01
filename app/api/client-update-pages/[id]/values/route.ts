@@ -296,7 +296,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { data: existingVal } = await admin.from("company_table_values").select("value_text, value_number, value_date, value_boolean, value_record_id").eq("field_id", field.field_key).eq("record_id", recordId).maybeSingle();
     const oldValue = existingVal && (isRelation ? existingVal.value_record_id : ["number", "currency"].includes(ctf.field_type) ? existingVal.value_number : ctf.field_type === "date" ? existingVal.value_date : ctf.field_type === "boolean" ? existingVal.value_boolean : existingVal.value_text);
     const row: Record<string, any> = {
-      field_id: field.field_key, record_id: recordId, table_id: baseTable,
+      field_id: field.field_key, record_id: recordId, table_id: baseTable, company_id: companyId,
       value_text: null, value_number: null, value_date: null, value_boolean: null, value_record_id: null,
     };
     if (isRelation) row.value_record_id = value || null;
