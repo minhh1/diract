@@ -34,8 +34,10 @@ const OPERATORS_BY_TYPE: Record<string, { value: FilterOperator; label: string }
     { value: 'is_not_empty', label: 'is not empty' },
   ],
   boolean: [
-    { value: 'is_true',  label: 'is Yes' },
-    { value: 'is_false', label: 'is No' },
+    { value: 'is_true',      label: 'is Yes' },
+    { value: 'is_false',     label: 'is No' },
+    { value: 'is_empty',     label: 'is Blank' },
+    { value: 'is_not_empty', label: 'is not Blank' },
   ],
   date: [
     { value: 'equals', label: 'is on' },

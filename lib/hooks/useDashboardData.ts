@@ -389,6 +389,11 @@ export function useDashboardData(dashboardSlug: string) {
   // relativeDates.ts) -- matched by range instead of equality. Shared by
   // filteredRecords and chartRecords' nonDateFilters loop below.
   const matchesFilterValue = (fieldType: string, rawValue: any, filterValue: any): boolean => {
+    // '__blank__' is a sentinel for "this field was never set" (the boolean
+    // filter's "Blank" option) -- distinct from the empty string, which
+    // means "no filter applied" and never reaches here (see activeFilters'
+    // v !== '' exclusion above).
+    if (filterValue === '__blank__') return rawValue === null || rawValue === undefined || rawValue === '';
     const range = fieldType === 'date' ? relativeDateFromToken(filterValue) : null;
     if (range) return matchesRelativeDate(rawValue, range);
     return String(rawValue ?? '') === String(filterValue);

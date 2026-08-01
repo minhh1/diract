@@ -344,6 +344,8 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
                               <>
                                 <option value="is_true">is true</option>
                                 <option value="is_false">is false</option>
+                                <option value="is_empty">is blank</option>
+                                <option value="is_not_empty">is not blank</option>
                               </>
                             ) : selectedField?.fieldType === 'number' || selectedField?.fieldType === 'currency' ? (
                               <>

@@ -216,6 +216,7 @@ export default function DashboardFilterBar({
               <option value="">All</option>
               <option value="true">Yes</option>
               <option value="false">No</option>
+              <option value="__blank__">Blank</option>
             </select>
           ) : field.field_type === 'select' ? (
             <select
