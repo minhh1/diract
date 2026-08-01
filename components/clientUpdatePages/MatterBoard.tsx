@@ -199,6 +199,10 @@ function maskDollarsInText(s: string): string {
 }
 
 function formatValue(v: any, field: MatterBoardField, dateFormat: string, maskCurrency = false): string {
+  // A currency cell that arrives null on a redacted page is a value the
+  // server withheld, not a blank one -- show the placeholder so it reads
+  // as "hidden", not "not filled in".
+  if (maskCurrency && isCurrencyField(field) && (v == null || v === "")) return MASKED_CURRENCY;
   if (v == null || v === "") return "";
   if (isDateField(field) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))) return formatDate(String(v), dateFormat);
   if (isCurrencyField(field) && maskCurrency) return MASKED_CURRENCY;

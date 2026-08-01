@@ -58,7 +58,7 @@ export const ENTITY_BASE_COLUMNS = [
   "name", "entity_type", "gst_registered", "established_date",
 ];
 
-export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean; baseTable?: string; pageKind?: string } = {}) {
+export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean; baseTable?: string; pageKind?: string; redactFigures?: boolean } = {}) {
   const baseTable = opts.baseTable || "projects";
   const isCustomTable = !isSystemTable(baseTable);
   const [{ data: groups }, { data: items }, { data: allFields }, { data: formatRules }, { data: relationFieldDefs }] = await Promise.all([
@@ -659,11 +659,42 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     .select("group_id, filters, sort")
     .eq("page_id", pageId);
 
+  // Server-side redaction (see
+  // supabase/migrations/20260802140000_public_pages_redact_figures.sql).
+  // Currency values are dropped to null rather than replaced with a
+  // placeholder string, so nothing recoverable leaves the server and no
+  // downstream numeric code has to cope with a non-numeric value; the
+  // client renders nulls as password dots because figuresRedacted tells
+  // it to. Free text is scrubbed too -- this board's Notes columns carry
+  // real amounts inline ("surplus fund $65,278.91"), which a
+  // column-type check alone would sail straight past.
+  const scrub = (v: any) =>
+    typeof v === "string" ? v.replace(/\$\s?\d[\d,]*(\.\d+)?/g, "$\u2022\u2022\u2022\u2022\u2022\u2022") : v;
+
+  const redactedItems = opts.redactFigures
+    ? finalItems.map((item: any) => {
+        const values: Record<string, any> = {};
+        for (const [fieldId, v] of Object.entries(item.values || {})) {
+          const field = fieldsWithRelationMeta.find((f: any) => f.id === fieldId);
+          if (field?.field_type === "currency") { values[fieldId] = null; continue; }
+          values[fieldId] = scrub(v);
+        }
+        // The record's NAME needs scrubbing too, not just its field
+        // values: several loans on this board are literally named
+        // "<address> - <lender> - $960,000", so redacting the Principal
+        // column while leaving the title intact defeats the whole point.
+        // Same for an AI summary, which is generated prose over the
+        // record's own figures.
+        return { ...item, values, matterName: scrub(item.matterName), ai_summary: scrub(item.ai_summary) };
+      })
+    : finalItems;
+
   return {
     groups: groups || [],
-    items: finalItems,
+    items: redactedItems,
     fields: fieldsWithRelationMeta,
     formatRules: formatRules || [],
+    figuresRedacted: !!opts.redactFigures,
     viewDefaults: (viewDefaults || []).map((v: any) => ({ groupId: v.group_id, filters: v.filters || [], sort: v.sort || [] })),
   };
 }

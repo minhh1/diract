@@ -38,6 +38,8 @@ interface Board {
   // comment) -- served by lib/clientUpdatePageDetail.ts to both the staff
   // and public routes, so an anonymous viewer inherits the admin's view.
   viewDefaults?: { groupId: string; filters: { fieldId: string; values: string[] }[]; sort: { fieldId: string; dir: "asc" | "desc" }[] }[];
+  // Set by the server when it stripped currency values before sending.
+  figuresRedacted?: boolean;
 }
 interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; logCellChanges: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed" }
 
@@ -140,7 +142,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
         // logCellChanges is a staff-only editing preference -- a client PIN
         // visitor never edits cells, so it's always true here (unused).
         const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, logCellChanges: true, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind };
-        const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [], viewDefaults: attempt.json.viewDefaults || [] };
+        const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [], viewDefaults: attempt.json.viewDefaults || [], figuresRedacted: !!attempt.json.figuresRedacted };
         setMode("client");
         // Bail out to the same object reference when this revalidate just
         // confirms the cached paint above was already correct -- otherwise
@@ -167,7 +169,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     setMode("client");
     setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, logCellChanges: true, baseTable: json.baseTable, pageKind: json.pageKind });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
-    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [] };
+    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [], figuresRedacted: !!json.figuresRedacted };
     setBoard(board);
     setLoading(false);
   }, [fetchPublic, slug]);
@@ -179,7 +181,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     setMode("staff");
     setStaffPageId(json.page.id);
     const nextMeta: PageMeta = { title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind };
-    const nextBoard: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [] };
+    const nextBoard: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [], figuresRedacted: !!json.figuresRedacted };
     // Bail out to the same object reference when this call (the cache-warm
     // paint, the live by-slug revalidate right after it, or a background
     // reload after a mutation) doesn't actually change anything -- the live
@@ -273,7 +275,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     if (!ok) { setCodeError(json.error || "Incorrect access code"); return; }
     setCachedCode(slug, code);
     setNeedsCode(false);
-    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [] };
+    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [], figuresRedacted: !!json.figuresRedacted };
     setBoard(board);
     // `meta` is already set (loadAsClient sets it before ever showing the
     // PIN gate) -- cache it alongside this newly-validated code so the next
@@ -714,7 +716,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
           fields={board.fields}
           formatRules={board.formatRules}
           viewDefaults={board.viewDefaults}
-          maskCurrency={maskCurrency}
+          maskCurrency={maskCurrency || !!board.figuresRedacted}
           onSaveViewDefault={mode === "staff" ? saveViewDefault : undefined}
           dateFormat={meta.dateFormat}
           freezeFirstColumn={meta.freezeFirstColumn}
