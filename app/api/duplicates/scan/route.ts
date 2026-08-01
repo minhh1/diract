@@ -17,6 +17,13 @@ import {
 } from "@/lib/duplicates/fieldConfig";
 
 const SYSTEM_TABLES: SystemTableName[] = ["properties", "entities", "projects", "tasks"];
+// properties is the one system table with no created_at column at all
+// (confirmed against the live schema -- selecting it throws "column
+// properties.created_at does not exist", which is exactly what broke the
+// Reconciliation tool's Properties scan). Same shape as
+// lib/services/systemTableRecordService.ts's HAS_CREATED_BY/HAS_UPDATED_AT
+// maps for the same kind of per-table column gap.
+const HAS_CREATED_AT: Record<SystemTableName, boolean> = { projects: true, properties: false, entities: true, tasks: true };
 const MATCH_THRESHOLD = 0.5;
 // A record-count safety valve, not a real scaling strategy -- this scans
 // pairwise (O(n^2)) within one company's table. Every table this runs
@@ -106,8 +113,10 @@ async function scan(admin: any, companyId: string, tableKind: string, table: str
     // created_at isn't a comparison field (never scored), just carried
     // through onto each record's fields object so the review UI can default
     // "which one to keep" to the older record when nothing else
-    // distinguishes a pair.
-    const cols = ["id", "created_at", ...baseFields.map(f => f.key)];
+    // distinguishes a pair. Omitted for tables that don't have the column
+    // (see HAS_CREATED_AT) -- the review UI already falls back gracefully
+    // (defaultKeepSide in app/dashboard/settings/page.tsx) when it's absent.
+    const cols = ["id", ...(HAS_CREATED_AT[tableName] ? ["created_at"] : []), ...baseFields.map(f => f.key)];
     const data = await fetchAllRows<any>((from, to) =>
       admin
         .from(tableName)
