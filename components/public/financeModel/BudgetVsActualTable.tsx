@@ -14,6 +14,10 @@ export interface BudgetLine {
   budgeted_amount: number | null;
   actual: number | null;
   linked_task_ids?: string | null;
+  linked_task_id?: string | null;
+  timing_profile?: string | null;
+  timing_start_date?: string | null;
+  timing_end_date?: string | null;
 }
 
 export interface TaskRef {

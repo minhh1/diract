@@ -74,6 +74,11 @@ export interface BudgetLineRow {
   xero_account_code: string | null;
   display_order: number | null;
   actual: number | null;
+  linked_task_ids: string | null;
+  linked_task_id: string | null;
+  timing_profile: string | null;
+  timing_start_date: string | null;
+  timing_end_date: string | null;
 }
 
 export interface OverviewData {
@@ -124,6 +129,11 @@ export async function loadOverview(admin: any, companyId: string, projectId: str
       xero_account_code: r.xero_account_code ?? null,
       display_order: r.display_order != null ? Number(r.display_order) : null,
       actual: actualByLine.has(r.id) ? actualByLine.get(r.id)! : null,
+      linked_task_ids: r.linked_task_ids ?? null,
+      linked_task_id: r.linked_task_id ?? null,
+      timing_profile: r.timing_profile ?? null,
+      timing_start_date: r.timing_start_date ?? null,
+      timing_end_date: r.timing_end_date ?? null,
     }))
     .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 

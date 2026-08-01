@@ -11,6 +11,8 @@
 import { useEffect, useState } from "react";
 import { Loader2, ExternalLink, RefreshCw, Plus, X, Calculator, Share2, Copy, Check, Trash2, Settings } from "lucide-react";
 import BudgetVsActualTable, { type BudgetLine, type TaskRef } from "./BudgetVsActualTable";
+import CashFlowPanel from "./CashFlowPanel";
+import { buildMonthlyCashFlow, type TaskDatesRef, type TimingProfile } from "@/lib/cashFlowEngine";
 
 interface BudgetCategory {
   id: string;
@@ -223,7 +225,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
   const [showShare, setShowShare] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
-  const [tasks, setTasks] = useState<TaskRef[]>([]);
+  const [tasks, setTasks] = useState<(TaskRef & { start_date: string | null; due_date: string | null })[]>([]);
 
   const loadCategories = async () => {
     const res = await fetch("/api/finance-model/budget-categories");
@@ -248,7 +250,7 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
       setConnected(!!json.connected);
       setBudgetLines(json.budgetLines || []);
       setProperty(json.property || null);
-      setTasks((tasksJson.tasks || []).map((t: any) => ({ id: t.id, name: t.name })));
+      setTasks((tasksJson.tasks || []).map((t: any) => ({ id: t.id, name: t.name, start_date: t.start_date, due_date: t.due_date })));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -283,6 +285,33 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
       body: JSON.stringify({ id: lineId, linkedTaskIds: taskIds }),
     });
   };
+
+  // -- Cash flow (time-phases every budget line into the months it lands
+  // in) -- lives here rather than Feasibility since budget-line management
+  // already lives on this tab; Feasibility still computes its own copy
+  // internally for Debt Schedule/Returns/Tornado/IC Memo.
+  const updateLineTiming = async (lineId: string, updates: { linkedTaskId?: string | null; timingProfile?: TimingProfile | null; timingStartDate?: string | null; timingEndDate?: string | null }) => {
+    setBudgetLines(prev => prev.map(l => l.id === lineId ? {
+      ...l,
+      linked_task_id: updates.linkedTaskId !== undefined ? updates.linkedTaskId : l.linked_task_id,
+      timing_profile: updates.timingProfile !== undefined ? updates.timingProfile : l.timing_profile,
+      timing_start_date: updates.timingStartDate !== undefined ? updates.timingStartDate : l.timing_start_date,
+      timing_end_date: updates.timingEndDate !== undefined ? updates.timingEndDate : l.timing_end_date,
+    } : l));
+    await fetch("/api/finance-model/budget-lines", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: lineId, ...updates }),
+    });
+  };
+
+  const tasksById = new Map<string, TaskDatesRef>(tasks.map(t => [t.id, { start_date: t.start_date, due_date: t.due_date }]));
+  const cashFlowLines = budgetLines.map(l => ({
+    id: l.id, category: l.category, label: l.label, budgetedAmount: l.budgeted_amount || 0,
+    linkedTaskId: l.linked_task_id ?? null, timingProfile: (l.timing_profile as TimingProfile | null) ?? null,
+    timingStartDate: l.timing_start_date ?? null, timingEndDate: l.timing_end_date ?? null,
+  }));
+  const { rows: monthlyCashFlow, unresolvedLines } = buildMonthlyCashFlow(cashFlowLines, tasksById);
 
   const handleAddLine = async () => {
     const amount = parseFloat(newLine.budgetedAmount);
@@ -389,6 +418,14 @@ export default function OverviewSubtab({ projectId, onOpenDutyFees }: { projectI
 
         <BudgetVsActualTable budgetLines={budgetLines} editable onDelete={deleteBudgetLine} tasks={tasks} onUpdateTasks={updateLineTasks} projectId={projectId} />
       </div>
+
+      <CashFlowPanel
+        budgetLines={cashFlowLines}
+        tasks={tasks}
+        monthlyRows={monthlyCashFlow}
+        unresolvedLines={unresolvedLines}
+        onUpdateLineTiming={updateLineTiming}
+      />
     </div>
   );
 }

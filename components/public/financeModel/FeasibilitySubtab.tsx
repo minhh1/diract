@@ -16,11 +16,17 @@
 //    further down, both feed this section automatically since it's just
 //    reading the same Budget Lines everything else does.
 //
-// Scope cut, stated plainly: no monthly cash-flow draw schedule/graph, no
-// PDF/CSV/shareable-link export, no trade-by-trade bill of quantities, no
-// "scale recommender" heat map, no jurisdiction compliance alerts (e.g.
-// NSW DBP Act) -- see the info panel at the bottom of the calculator
-// section for the full list.
+// Below the P&L: Debt Schedule, Returns, Equity Waterfall, and IC Memo, all
+// built on a monthly cash-flow series computed internally from Budget
+// Lines' timing (lib/cashFlowEngine.ts). The timing editor + monthly
+// table/chart UI itself lives in the Overview subtab (budget-line
+// management already lives there) -- this tab only computes the same
+// series again for these downstream panels, it doesn't render the editor.
+//
+// Scope cut, stated plainly: no PDF/CSV/shareable-link export, no
+// trade-by-trade bill of quantities, no "scale recommender" heat map, no
+// jurisdiction compliance alerts (e.g. NSW DBP Act) -- see the info panel
+// at the bottom of the calculator section for the full list.
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Plus, X, TrendingUp } from "lucide-react";
 import { money } from "./BudgetVsActualTable";
@@ -36,7 +42,6 @@ import { buildMonthlyCashFlow, simulateFacility, type TaskDatesRef, type TimingP
 import { runTornadoSensitivity } from "@/lib/sensitivityEngine";
 import { leveragedCashFlow } from "@/lib/returnsEngine";
 import type { MoneyPartnerLoan } from "@/lib/equityWaterfall";
-import CashFlowPanel from "./CashFlowPanel";
 import DebtSchedulePanel from "./DebtSchedulePanel";
 import ReturnsPanel from "./ReturnsPanel";
 import TornadoChart from "./TornadoChart";
@@ -390,29 +395,18 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
     load();
   };
 
-  // -- Cash flow (time-phases every budget line into the months it lands in) --
-  const updateLineTiming = async (lineId: string, updates: { linkedTaskId?: string | null; timingProfile?: TimingProfile | null; timingStartDate?: string | null; timingEndDate?: string | null }) => {
-    setBudgetLines(prev => prev.map(l => l.id === lineId ? {
-      ...l,
-      linked_task_id: updates.linkedTaskId !== undefined ? updates.linkedTaskId : l.linked_task_id,
-      timing_profile: updates.timingProfile !== undefined ? updates.timingProfile : l.timing_profile,
-      timing_start_date: updates.timingStartDate !== undefined ? updates.timingStartDate : l.timing_start_date,
-      timing_end_date: updates.timingEndDate !== undefined ? updates.timingEndDate : l.timing_end_date,
-    } : l));
-    await fetch("/api/finance-model/budget-lines", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: lineId, ...updates }),
-    });
-  };
-
+  // -- Cash flow (time-phases every budget line into the months it lands
+  // in) -- the timing editor UI itself now lives in Overview (budget-line
+  // management already lives there); this tab still computes the same
+  // monthly series internally since Debt Schedule/Returns/Tornado/IC Memo
+  // below all build on it.
   const tasksById = new Map<string, TaskDatesRef>(tasks.map(t => [t.id, { start_date: t.start_date, due_date: t.due_date }]));
   const cashFlowLines = budgetLines.map(l => ({
     id: l.id, category: l.category, label: l.label, budgetedAmount: l.budgeted_amount || 0,
     linkedTaskId: l.linked_task_id, timingProfile: l.timing_profile,
     timingStartDate: l.timing_start_date, timingEndDate: l.timing_end_date,
   }));
-  const { rows: monthlyCashFlow, unresolvedLines } = buildMonthlyCashFlow(cashFlowLines, tasksById);
+  const { rows: monthlyCashFlow } = buildMonthlyCashFlow(cashFlowLines, tasksById);
 
   const hasFacilityConfig = inputs.facilityLimit != null && inputs.facilityInterestRatePct != null;
   const facilityConfig = { limit: inputs.facilityLimit ?? 0, interestRatePct: inputs.facilityInterestRatePct ?? 0, maxLvrPct: inputs.maxLvrPct };
@@ -521,15 +515,6 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
           {syncMessage && <p className="text-[11px] text-emerald-600">{syncMessage}</p>}
         </div>
       </div>
-
-      {/* ── Cash flow (the foundation debt mechanics/returns build on) ── */}
-      <CashFlowPanel
-        budgetLines={cashFlowLines}
-        tasks={tasks}
-        monthlyRows={monthlyCashFlow}
-        unresolvedLines={unresolvedLines}
-        onUpdateLineTiming={updateLineTiming}
-      />
 
       {/* ── Debt schedule (real drawdown/capitalized-interest simulation) ── */}
       <DebtSchedulePanel simulation={facilitySimulation} hasFacilityConfig={hasFacilityConfig} />
