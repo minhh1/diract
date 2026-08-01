@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
     start_date: startDate,
     end_date: endDate,
     payment_frequency: body?.paymentFrequency || "Monthly",
+    notes: body?.notes?.trim() || null,
   });
 
   return NextResponse.json({ id });
@@ -77,6 +78,7 @@ export async function PATCH(req: NextRequest) {
   if (body.endDate !== undefined) updates.end_date = body.endDate;
   if (body.paymentFrequency !== undefined) updates.payment_frequency = body.paymentFrequency;
   if (body.phaseOrder !== undefined) updates.phase_order = body.phaseOrder;
+  if (body.notes !== undefined) updates.notes = body.notes?.trim() || null;
 
   await updateCustomTableRow(admin, table, id, updates);
   return NextResponse.json({ success: true });

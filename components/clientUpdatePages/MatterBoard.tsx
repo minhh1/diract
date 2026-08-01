@@ -47,7 +47,14 @@ import CellHistoryPopover, { type CellLogEntry } from "./CellHistoryPopover";
 import EntityOfficeholdersPanel from "./EntityOfficeholdersPanel";
 import IrregularityFixPanel from "./IrregularityFixPanel";
 import IrregularityFixModal from "./IrregularityFixModal";
+import LoanPhasesPanel from "./LoanPhasesPanel";
 import RelationPicker from "@/components/dashboard/RelationPicker";
+
+// Niksen's "Finance Model Loans" custom table id (company_tables.id) --
+// its board (see the niksen-loans migration) is the only custom-table
+// page that needs a loan-phases editor in the expanded row, same as how
+// baseTable === "entities" gates EntityOfficeholdersPanel below.
+const LOANS_BASE_TABLE_ID = "a4ad652c-22ed-4b85-aa0f-5117fec96d7e";
 
 export interface MatterBoardField { id: string; field_source: string; field_key: string; label: string; field_type?: string; select_options?: string[] | null; group_id?: string | null; linkedSystemTable?: string | null; linkedTableId?: string | null; }
 
@@ -58,7 +65,7 @@ function isRelationField(field: MatterBoardField): boolean {
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
 export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
 export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; }
-export interface MatterBoardItem { id: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
+export interface MatterBoardItem { id: string; record_id?: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
@@ -1200,6 +1207,9 @@ function MatterCard({ item, propertyId, fields, dateFormat, moveOptions, canEdit
           {baseTable === "entities" && pageId && (
             <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
           )}
+          {baseTable === LOANS_BASE_TABLE_ID && (
+            <LoanPhasesPanel loanId={item.record_id || item.id} canEdit={canEdit} />
+          )}
           {pageKind === "auto_fed" && pageId && (
             <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} onResolved={onDataChanged} />
           )}
@@ -1636,6 +1646,9 @@ function SpreadsheetView({ items, fields, dateFormat, moveOptions, canEdit, canC
                 <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3">
                   {baseTable === "entities" && pageId && (
                     <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
+                  )}
+                  {baseTable === LOANS_BASE_TABLE_ID && (
+                    <LoanPhasesPanel loanId={item.record_id || item.id} canEdit={canEdit} />
                   )}
                   {pageKind === "auto_fed" && pageId && (
                     <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} onResolved={onDataChanged} />
