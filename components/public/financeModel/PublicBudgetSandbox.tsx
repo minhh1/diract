@@ -20,6 +20,15 @@ import BudgetVsActualTable, { money, type BudgetLine } from "./BudgetVsActualTab
 
 // Costs are negative and revenue positive, matching the sign convention
 // the real Budget vs Actual uses (see BudgetVsActualTable's `signed`).
+//
+// EVERY line carries an actual on purpose. A null actual counts as zero
+// spend in the totals -- which is right for the product, where it means
+// "nothing has hit this line yet" -- but as a demo example it lies: with
+// contingency and marketing blank, the example showed the project
+// $113,150 AHEAD of budget purely because $223,000 of cost was
+// unrecorded, when like-for-like it was $109,850 behind. Fully populated,
+// it now tells the true story: sold slightly under, builder overran,
+// contingency partly saved, $67,750 behind overall.
 const EXAMPLE_LINES: BudgetLine[] = [
   { id: "x1", category: "Revenue", label: "4 townhouse sales @ $1.15m", budgeted_amount: 4_600_000, actual: 4_520_000 },
   { id: "x2", category: "Acquisition", label: "Land purchase", budgeted_amount: 900_000, actual: 900_000 },
@@ -29,9 +38,9 @@ const EXAMPLE_LINES: BudgetLine[] = [
   { id: "x6", category: "Construction", label: "Site works & services", budgeted_amount: 145_000, actual: 138_600 },
   { id: "x7", category: "Professional Fees", label: "Architect & engineering", budgeted_amount: 118_000, actual: 121_500 },
   { id: "x8", category: "Professional Fees", label: "Planning & permits", budgeted_amount: 54_000, actual: 54_000 },
-  { id: "x9", category: "Contingency", label: "Contingency @ 5%", budgeted_amount: 108_000, actual: null },
+  { id: "x9", category: "Contingency", label: "Contingency @ 5%", budgeted_amount: 108_000, actual: 62_000 },
   { id: "x10", category: "Finance Costs", label: "Construction loan interest", budgeted_amount: 186_000, actual: 172_400 },
-  { id: "x11", category: "Other", label: "Marketing & agent commission", budgeted_amount: 115_000, actual: null },
+  { id: "x11", category: "Other", label: "Marketing & agent commission", budgeted_amount: 115_000, actual: 118_900 },
 ];
 
 const CATEGORIES = ["Revenue", "Acquisition", "Construction", "Professional Fees", "Contingency", "Finance Costs", "Other"];
