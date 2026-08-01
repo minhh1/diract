@@ -13,6 +13,7 @@ import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useTableColumnConfig } from "@/lib/hooks/useTableColumnConfig";
 import { createRecord, deleteRecord } from "@/lib/services/customTableService";
 import { useCompany } from "@/components/CompanyContext";
+import ResourcePermissionsPanel from "@/components/ResourcePermissionsPanel";
 import { createArchiveRequest, usePendingArchiveRequests } from "@/lib/archiveRequests";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -703,6 +704,14 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {tableDef && ctxCompanyId && (
+                <ResourcePermissionsPanel
+                  resourceType="table"
+                  resourceId={tableDef.id}
+                  resourceName={tableDef.name}
+                  companyId={ctxCompanyId}
+                />
+              )}
               <button
                 onClick={() => setIsConfigOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"

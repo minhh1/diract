@@ -93,6 +93,12 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
   // hasn't been assigned an owner yet (see handleSave's isNew branch for
   // what it becomes on creation).
   const [existingOwnerUserId, setExistingOwnerUserId] = useState<string | null>(null);
+  // Resource-level role via resource_permissions (see
+  // supabase/migrations/20260801400000_resource_permissions.sql) -- an
+  // explicit editor/admin grant now legitimately has RLS write access to a
+  // shared dashboard even without being its owner or a company admin, so
+  // the owner/admin-only gate below needs to account for it too.
+  const [myDashboardRole, setMyDashboardRole] = useState<'admin' | 'editor' | 'viewer' | null>(null);
   const [isDefault, setIsDefault] = useState(false);
   // null = visible to every company member (the default, same as every
   // dashboard before this existed) -- a team id restricts the sidebar entry
@@ -131,6 +137,19 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     supabase.from('teams').select('id, team_name').eq('company_id', companyId).eq('is_active', true).order('team_name')
       .then(({ data }) => setTeams(data || []));
   }, [isAdmin, companyId]);
+
+  useEffect(() => {
+    if (!dashboardId || !userId || isAdmin) return;
+    let cancelled = false;
+    // Deferred a tick -- see the matching comment in DashboardViewPage.tsx.
+    const timer = setTimeout(() => {
+      supabase.from('resource_permissions')
+        .select('role').eq('resource_type', 'dashboard').eq('resource_id', dashboardId).eq('user_id', userId)
+        .maybeSingle()
+        .then(({ data }) => { if (!cancelled) setMyDashboardRole(data?.role ?? null); });
+    }, 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [dashboardId, userId, isAdmin]);
 
   useEffect(() => {
     if (isNew) return;
@@ -303,13 +322,16 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
     return null;
   }
   // A brand-new dashboard is open to any user (their own ends up private,
-  // see handleSave); an existing one is editable by an admin or whoever
-  // privately owns it -- matches RLS's own update/delete policies exactly
-  // (supabase/migrations/20260727040000_default_and_private_tables_dashboards.sql),
-  // this is just the matching UI gate.
+  // see handleSave); an existing one is editable by an admin, whoever
+  // privately owns it, or someone explicitly granted editor/admin via
+  // resource_permissions -- matches RLS's own update/delete policies
+  // exactly (20260727040000_default_and_private_tables_dashboards.sql +
+  // 20260801400000_resource_permissions.sql), this is just the matching UI
+  // gate.
   const isOwner = !!userId && existingOwnerUserId === userId;
-  if (!isNew && !isAdmin && !isOwner) {
-    return <p className="text-center text-[12px] text-slate-400 py-20">Only the owner or a company admin can edit this dashboard.</p>;
+  const canEditViaRole = myDashboardRole === 'editor' || myDashboardRole === 'admin';
+  if (!isNew && !isAdmin && !isOwner && !canEditViaRole) {
+    return <p className="text-center text-[12px] text-slate-400 py-20">Only the owner, an admin here, or a company admin can edit this dashboard.</p>;
   }
 
   const canSave = !saving && !!name.trim() && (isNoneSource || !!sourceTableKey) && !(builderMode === 'code' && codeErrors.length > 0);
@@ -499,7 +521,10 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
         <button onClick={handleDiscard} disabled={saving} className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-full text-[11px] font-bold uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50">
           Discard changes
         </button>
-        {!isNew && (
+        {/* Deleting the dashboard itself needs resource-admin, not just
+            editor -- matches RLS's company_dashboards_delete policy, which
+            an 'editor' role does not satisfy. */}
+        {!isNew && (isAdmin || isOwner || myDashboardRole === 'admin') && (
           <button onClick={handleDelete} className="p-3.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"><Trash2 size={16} /></button>
         )}
       </div>

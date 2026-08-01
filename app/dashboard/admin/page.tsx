@@ -63,6 +63,11 @@ interface Company {
   status: string;
   created_at: string;
   project_default_access: 'all_members' | 'specific_teams' | 'specific_members';
+  // Only applies to a custom table/dashboard with NO explicit
+  // resource_permissions rows yet -- see
+  // supabase/migrations/20260801400000_resource_permissions.sql. false
+  // (default) preserves today's only behavior: open to the whole company.
+  restrict_new_tables_dashboards_by_default: boolean;
 }
 
 interface Token {
@@ -1130,6 +1135,57 @@ function AdminPageInner() {
                     <span className={`text-[12px] font-bold ${
                       company?.project_default_access === opt.value ? 'text-indigo-800' : 'text-slate-700'
                     }`}>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Default access for custom tables & dashboards ── */}
+          {activeTab === 'company' && !loading && (
+            <div className="bg-white border border-slate-200 rounded-[40px] p-8 mb-4">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                Default access for new tables &amp; dashboards
+              </p>
+              <p className="text-[11px] text-slate-500 mb-4">
+                Applies only until someone explicitly assigns roles on a specific table or dashboard (via its own &quot;Manage access&quot;) &mdash; that always takes over regardless of this setting.
+              </p>
+              <div className="space-y-2">
+                {([
+                  { value: false, label: 'Open to the whole company', description: 'Today\'s behaviour -- every custom table/dashboard is visible to all members by default.' },
+                  { value: true,  label: 'Restricted until roles are assigned', description: 'Hidden from everyone except company admins until an admin explicitly grants people access.' },
+                ] as { value: boolean; label: string; description: string }[]).map(opt => (
+                  <button
+                    key={String(opt.value)}
+                    onClick={async () => {
+                      if (!company) return;
+                      await supabase.from('companies')
+                        .update({ restrict_new_tables_dashboards_by_default: opt.value })
+                        .eq('id', company.id);
+                      queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && old.company && ({
+                        ...old,
+                        company: { ...old.company, restrict_new_tables_dashboards_by_default: opt.value },
+                      }));
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${
+                      company?.restrict_new_tables_dashboards_by_default === opt.value
+                        ? 'bg-indigo-50 border-indigo-200'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
+                      company?.restrict_new_tables_dashboards_by_default === opt.value ? 'border-indigo-500' : 'border-slate-300'
+                    }`}>
+                      {company?.restrict_new_tables_dashboards_by_default === opt.value && (
+                        <div className="w-2 h-2 rounded-full bg-indigo-500" />
+                      )}
+                    </div>
+                    <div>
+                      <p className={`text-[12px] font-bold ${
+                        company?.restrict_new_tables_dashboards_by_default === opt.value ? 'text-indigo-800' : 'text-slate-700'
+                      }`}>{opt.label}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{opt.description}</p>
+                    </div>
                   </button>
                 ))}
               </div>

@@ -14,10 +14,18 @@ import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import StaticWidgetGrid from "@/components/dashboard/builder/StaticWidgetGrid";
 import DashboardWidgetRenderer from "@/components/dashboard/DashboardWidgetRenderer";
+import ResourcePermissionsPanel from "@/components/ResourcePermissionsPanel";
 
 export default function DashboardViewPage({ slug }: { slug: string }) {
   const router = useRouter();
   const { companyId, userId, isAdmin } = useCompany();
+  // Resource-level role from resource_permissions -- see
+  // supabase/migrations/20260801400000_resource_permissions.sql. A
+  // non-admin editor/admin on this specific dashboard now legitimately has
+  // RLS write access to it (previously only owner/company-admin could edit
+  // a shared dashboard at all), so the Edit link below needs to reflect
+  // that instead of staying hard-gated to isAdmin.
+  const [myDashboardRole, setMyDashboardRole] = useState<"admin" | "editor" | "viewer" | null>(null);
   const {
     dashboard, sourceKind, tableDef, fields, fieldById, records, chartRecords, allRecords, loading, recordsLoading, filters, setFilter,
     canSeeMultipleScope, viewDefaultFieldIds, setViewDefault, clearViewDefault,
@@ -68,6 +76,20 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [fullscreen]);
 
+  useEffect(() => {
+    if (!dashboard?.id || !userId || isAdmin) return;
+    let cancelled = false;
+    // Deferred a tick so the null-reset case below doesn't setState
+    // synchronously within the effect body itself.
+    const timer = setTimeout(() => {
+      supabase.from("resource_permissions")
+        .select("role").eq("resource_type", "dashboard").eq("resource_id", dashboard.id).eq("user_id", userId)
+        .maybeSingle()
+        .then(({ data }) => { if (!cancelled) setMyDashboardRole(data?.role ?? null); });
+    }, 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [dashboard?.id, userId, isAdmin]);
+
   useProgressBarWhile(isPageLoading);
 
   if (isPageLoading) {
@@ -106,23 +128,31 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
             >
               {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
-            {isAdmin && (
-              <>
-                <Link
-                  href={`/dashboard/${slug}/builder`}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
-                >
-                  <Settings size={13} /> Edit
-                </Link>
-                <button
-                  onClick={handleDelete}
-                  title="Delete dashboard"
-                  aria-label="Delete dashboard"
-                  className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </>
+            {companyId && (
+              <ResourcePermissionsPanel
+                resourceType="dashboard"
+                resourceId={dashboard.id}
+                resourceName={dashboard.name}
+                companyId={companyId}
+              />
+            )}
+            {(isAdmin || myDashboardRole === "editor" || myDashboardRole === "admin") && (
+              <Link
+                href={`/dashboard/${slug}/builder`}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all"
+              >
+                <Settings size={13} /> Edit
+              </Link>
+            )}
+            {(isAdmin || myDashboardRole === "admin") && (
+              <button
+                onClick={handleDelete}
+                title="Delete dashboard"
+                aria-label="Delete dashboard"
+                className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+              >
+                <Trash2 size={15} />
+              </button>
             )}
           </div>
         </div>
