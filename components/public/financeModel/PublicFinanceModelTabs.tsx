@@ -21,6 +21,7 @@ import OverviewSubtab from "./OverviewSubtab";
 import TimelineSubtab from "./TimelineSubtab";
 import LoansSubtab from "./LoansSubtab";
 import DutyFeesSubtab from "./DutyFeesSubtab";
+import PublicFeasibilitySandbox from "./PublicFeasibilitySandbox";
 
 const SUBTABS = [
   { id: "overview", label: "Overview & Cash Flow", icon: TrendingUp },
@@ -28,7 +29,7 @@ const SUBTABS = [
   { id: "timeline", label: "Timeline", icon: GanttChartSquare },
   { id: "loans", label: "Loans", icon: Landmark },
   { id: "duty_fees", label: "Duty & Fees", icon: Calculator },
-  { id: "feasibility", label: "Feasibility", icon: FileBarChart },
+  { id: "feasibility", label: "Budget & Feasibility", icon: FileBarChart },
 ] as const;
 type SubtabId = (typeof SUBTABS)[number]["id"];
 
@@ -92,23 +93,12 @@ export default function PublicFinanceModelTabs({ pageId, accessCode }: { pageId:
         {subtab === "loans" && <LoansSubtab projectId={projectId} />}
         {subtab === "duty_fees" && <DutyFeesSubtab projectId={projectId} />}
 
-        {/* Feasibility is a NOTICE, not the real subtab. It fires a
-            phases-and-rates request per loan on top of eight more, and
-            those stalled on the public route -- rather than ship a tab
-            that spins forever in front of a prospect, it makes no server
-            call at all and says what it does. */}
-        {subtab === "feasibility" && (
-          <div className="bg-white border border-slate-200 rounded-[32px] p-10 text-center">
-            <FileBarChart size={26} className="text-slate-300 mx-auto mb-3" />
-            <p className="text-[13px] font-bold text-slate-700 mb-1">Feasibility is not shown in this preview</p>
-            <p className="text-[12px] text-slate-400 max-w-lg mx-auto">
-              The feasibility calculator -- GDV, total development cost, margin on cost and on equity, break-even
-              sale price, residual land value, scenario comparison and sensitivity analysis, plus the dated cash
-              flow, debt schedule and IC memo built on top of them -- is available to authorised users in the
-              product.
-            </p>
-          </div>
-        )}
+        {/* An interactive calculator rather than the real subtab: it runs
+            entirely in the browser off pure functions in lib/, seeded with
+            EXAMPLE figures, so a prospect can drive the budget and
+            feasibility model without a login, without any write endpoint,
+            and without touching real project data. */}
+        {subtab === "feasibility" && <PublicFeasibilitySandbox />}
 
         {subtab === "transactions" && (
           <div className="bg-white border border-slate-200 rounded-[32px] p-10 text-center">
