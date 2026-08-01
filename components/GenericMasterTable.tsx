@@ -917,6 +917,19 @@ function GenericMasterTableInner({
       });
     }
 
+    // number/currency fields sort on the raw numeric value, not the
+    // formatted display string -- see CustomTableMasterPage.tsx's matching
+    // comment: a currency field's thousands-separator commas split the
+    // digits into groups that localeCompare's `numeric: true` mode compares
+    // independently rather than as one whole number.
+    const customSortField = sort.colId.startsWith('custom_field:')
+      ? customFieldCols.find(f => f.id === sort.colId.replace('custom_field:', ''))
+      : null;
+    const nativeSortCol = customSortField ? null : schema.all.find(c => c.column_name === sort.colId);
+    const isNumericSort = customSortField
+      ? (customSortField.field_type === 'number' || customSortField.field_type === 'currency')
+      : !!(nativeSortCol && ['numeric', 'integer'].includes(nativeSortCol.data_type));
+
     return result.sort((a, b) => {
       let va: any;
       let vb: any;
@@ -927,6 +940,11 @@ function GenericMasterTableInner({
       if (sort.colId === 'street_address' && sort.mode === 'name') {
         va = extractStreetName(a.street_address || '');
         vb = extractStreetName(b.street_address || '');
+      } else if (isNumericSort) {
+        const rawA = customSortField ? a.__customFields?.[customSortField.id] : a[sort.colId];
+        const rawB = customSortField ? b.__customFields?.[customSortField.id] : b[sort.colId];
+        const cmp = (Number(rawA) || 0) - (Number(rawB) || 0);
+        return sort.direction === 'asc' ? cmp : -cmp;
       } else {
         va = String(resolveValue(a, sort.colId) ?? '');
         vb = String(resolveValue(b, sort.colId) ?? '');
@@ -934,7 +952,7 @@ function GenericMasterTableInner({
       const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
       return sort.direction === 'asc' ? cmp : -cmp;
     });
-  }, [t.items, search, t.tableCols, t.expandCols, resolveValue, tableName, t.sort, filters]);
+  }, [t.items, search, t.tableCols, t.expandCols, resolveValue, tableName, t.sort, filters, customFieldCols, schema.all]);
 
   // ── Sub-project hierarchy (projects table only) ──────────────────────
   // A sub-project is just a `projects` row with parent_project_id set --

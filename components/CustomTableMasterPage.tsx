@@ -13,6 +13,7 @@ import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useTableColumnConfig } from "@/lib/hooks/useTableColumnConfig";
 import { createRecord, deleteRecord } from "@/lib/services/customTableService";
 import { useCompany } from "@/components/CompanyContext";
+import ResourcePermissionsPanel from "@/components/ResourcePermissionsPanel";
 import { createArchiveRequest, usePendingArchiveRequests } from "@/lib/archiveRequests";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -508,7 +509,21 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     }
     const sort = cc.sort;
     if (!sort) return result;
+    // number/currency fields sort on the raw numeric value, not the
+    // formatted display string -- a currency field's thousands-separator
+    // commas (e.g. "$980,000") split the digits into separate groups that
+    // localeCompare's `numeric: true` mode compares independently rather
+    // than as one number, so e.g. "$9,000,000" could sort below "$980,000"
+    // (comparing "9" vs "980" in the first group) despite being far larger.
+    const sortField = fields.find(f => f.id === sort.colId);
+    const isNumericSort = sortField && (sortField.field_type === 'number' || sortField.field_type === 'currency');
     return [...result].sort((a, b) => {
+      if (isNumericSort) {
+        const na = Number(a.values[sortField!.field_key]) || 0;
+        const nb = Number(b.values[sortField!.field_key]) || 0;
+        const cmp = na - nb;
+        return sort.direction === 'asc' ? cmp : -cmp;
+      }
       const va = resolveValue(a, sort.colId);
       const vb = resolveValue(b, sort.colId);
       const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
@@ -703,6 +718,14 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {tableDef && ctxCompanyId && (
+                <ResourcePermissionsPanel
+                  resourceType="table"
+                  resourceId={tableDef.id}
+                  resourceName={tableDef.name}
+                  companyId={ctxCompanyId}
+                />
+              )}
               <button
                 onClick={() => setIsConfigOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
