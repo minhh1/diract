@@ -30,7 +30,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, RefreshCw, Plus, X, TrendingUp } from "lucide-react";
 import { money } from "./BudgetVsActualTable";
-import { calculateLoanSchedule, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
+import { calculateLoanSchedule, resolveInterestCutoff, timelineCompletionDate, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
 import { calculateStampDuty, type AuState } from "@/lib/stampDuty";
 import { calculateTitleFees } from "@/lib/titleFees";
 import {
@@ -75,6 +75,9 @@ interface Loan {
   allocated_principal_amount: number;
   lender_type: string | null;
   start_date: string | null;
+  // User override for how far interest is costed; null falls back to the
+  // Timeline completion baseline (lib/loanCalculator.ts).
+  interest_to_date: string | null;
 }
 
 interface SavedScenario {
@@ -230,6 +233,11 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
       setTotalLoanPrincipal(loans.reduce((s, l) => s + (l.allocated_principal_amount || 0), 0));
       setMoneyPartnerLoans(loans.filter(l => l.lender_type === "Money Partner" && l.allocated_principal_amount && l.start_date));
 
+      // Interest is costed to project completion, not the loans'
+      // contractual maturity -- the same cutoff the Loans subtab links
+      // into the budget (resolveInterestCutoff), so this P&L and the
+      // Finance Costs budget line can't disagree.
+      const completion = timelineCompletionDate((tasksJson.tasks || []) as { due_date: string | null }[]);
       const schedules = await Promise.all(loans.map(async loan => {
         const [phasesRes, ratesRes] = await Promise.all([
           fetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
@@ -240,7 +248,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         const phases = (phasesJson.phases || []) as (LoanPhaseInput & { id: string })[];
         const rates = (ratesJson.rates || []) as LoanInterestRateEntry[];
         if (!loan.allocated_principal_amount || !phases.length) return 0;
-        return calculateLoanSchedule(loan.allocated_principal_amount, phases, rates).totalInterest;
+        return calculateLoanSchedule(loan.allocated_principal_amount, phases, rates, resolveInterestCutoff(loan.interest_to_date, completion)).totalInterest;
       }));
       setTotalInterest(schedules.reduce((s, n) => s + n, 0));
     } catch (err) {

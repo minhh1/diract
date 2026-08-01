@@ -133,6 +133,7 @@ export async function PATCH(req: NextRequest) {
     repaymentPeriod: "repayment_period", extensionRight: "extension_right", extensionTerms: "extension_terms",
     earlyRepaymentAllowed: "early_repayment_allowed", earlyRepaymentTerms: "early_repayment_terms",
     security: "security", notes: "notes", isDischarged: "is_discharged",
+    interestToDate: "interest_to_date",
   };
   const updates: Record<string, any> = {};
   for (const [bodyKey, fieldKey] of Object.entries(fieldMap)) {

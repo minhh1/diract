@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink, Split, Search, Archive, RotateCcw, Pencil } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
-import { calculateLoanSchedule, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
+import { calculateLoanSchedule, resolveInterestCutoff, timelineCompletionDate, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
 
 const LENDER_TYPES = ["Senior", "Mezzanine", "Private Lender", "Money Partner", "Internal", "Other"];
 const REPAYMENT_PERIODS = ["Monthly", "Six-Monthly", "At End of Term"];
@@ -38,6 +38,10 @@ interface Loan {
   security: string | null;
   notes: string | null;
   is_discharged: boolean | null;
+  // User override for how far interest is costed into the budget; null
+  // means "use the Timeline completion baseline" (see
+  // lib/loanCalculator.ts's resolveInterestCutoff).
+  interest_to_date: string | null;
   // Attached by the GET route for the requesting project specifically --
   // see app/api/finance-model/loans/route.ts's header comment.
   allocation_percent: number;
@@ -203,25 +207,34 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
   const [editPhase, setEditPhase] = useState({ repaymentType: "Interest Only" as string, startDate: "", endDate: "", paymentFrequency: "Monthly" });
   const [saving, setSaving] = useState(false);
-  const [linkedLine, setLinkedLine] = useState<{ id: string; budgeted_amount: number | null } | null>(null);
+  const [linkedLine, setLinkedLine] = useState<{ id: string; budgeted_amount: number | null; label: string | null } | null>(null);
   const [linking, setLinking] = useState(false);
   const [actualRepaid, setActualRepaid] = useState<number | null>(null);
   const [matchedTxCount, setMatchedTxCount] = useState(0);
+  // Baseline project-completion date, read from the Timeline rather than
+  // stored -- so it keeps tracking the Timeline as tasks move, and an
+  // override below is always visibly measured against it.
+  const [timelineCompletion, setTimelineCompletion] = useState<string | null>(null);
+  const [interestToDate, setInterestToDate] = useState<string | null>(loan.interest_to_date);
+  const [savingCutoff, setSavingCutoff] = useState(false);
 
   const linkedSource = `loan:${loan.id}`;
 
   const load = async () => {
     setLoading(true);
-    const [rRes, pRes, blRes, txRes] = await Promise.all([
+    const [rRes, pRes, blRes, txRes, tasksRes] = await Promise.all([
       fetch(`/api/finance-model/loan-interest-rates?loanId=${loan.id}`),
       fetch(`/api/finance-model/loan-phases?loanId=${loan.id}`),
       fetch(`/api/finance-model/budget-lines?projectId=${projectId}`),
       fetch(`/api/finance-model/transactions?projectId=${projectId}`),
+      fetch(`/api/finance-model/tasks?projectId=${projectId}`),
     ]);
     const rJson = await rRes.json();
     const pJson = await pRes.json();
     const blJson = await blRes.json();
     const txJson = await txRes.json();
+    const tasksJson = await tasksRes.json().catch(() => ({}));
+    setTimelineCompletion(timelineCompletionDate(tasksJson.tasks || []));
     setRates(rJson.rates || []);
     setPhases((pJson.phases || []).map((p: any) => ({ ...p, phase_order: Number(p.phase_order) || 0 })));
     setLinkedLine((blJson.budgetLines || []).find((l: any) => l.linked_source === linkedSource) || null);
@@ -245,10 +258,36 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   // facility -- an unsplit loan's allocated_principal_amount always
   // equals principal_amount (100%), so this is a no-op for every loan
   // that hasn't been split.
+  // Two schedules: the CONTRACTUAL one (full term, what the loan actually
+  // is) and the COSTED one, cut off at project completion -- the latter is
+  // what belongs in a development budget, since the facility is repaid
+  // from settlement proceeds long before its contractual maturity.
+  const cutoff = resolveInterestCutoff(interestToDate, timelineCompletion);
+
   const schedule = useMemo(() => {
     if (!loan.allocated_principal_amount || !phases.length) return null;
     return calculateLoanSchedule(loan.allocated_principal_amount, phases, rates);
   }, [loan.allocated_principal_amount, phases, rates]);
+
+  const costedSchedule = useMemo(() => {
+    if (!loan.allocated_principal_amount || !phases.length) return null;
+    return calculateLoanSchedule(loan.allocated_principal_amount, phases, rates, cutoff);
+  }, [loan.allocated_principal_amount, phases, rates, cutoff]);
+
+  // What actually goes to the budget, and the label that explains it.
+  const costedInterest = costedSchedule?.totalInterest ?? 0;
+  const budgetLabel = `${loan.name || loan.lender_type || "Loan"} interest${cutoff ? ` (to ${formatDate(cutoff)})` : ""}`;
+
+  const saveCutoff = async (value: string | null) => {
+    setInterestToDate(value);
+    setSavingCutoff(true);
+    await fetch("/api/finance-model/loans", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: loan.id, interestToDate: value }),
+    });
+    setSavingCutoff(false);
+    onChanged();
+  };
 
   const addRate = async () => {
     const rate = parseFloat(newRate.interestRatePa);
@@ -307,11 +346,11 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
   const linkToBudget = async (amount: number) => {
     setLinking(true);
     if (linkedLine) {
-      await fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: amount }) });
+      await fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: amount, label: budgetLabel }) });
     } else {
       await fetch("/api/finance-model/budget-lines", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, category: "Finance Costs", label: `${loan.name || loan.lender_type || "Loan"} interest`, budgetedAmount: amount, linkedSource }),
+        body: JSON.stringify({ projectId, category: "Finance Costs", label: budgetLabel, budgetedAmount: amount, linkedSource }),
       });
     }
     await load();
@@ -326,16 +365,19 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
     setLinking(false);
   };
 
-  // Auto-resync -- once linked, keep the budget line's amount in step with
-  // the calculated total interest whenever rates/phases change, no manual
-  // re-click needed.
+  // Auto-resync -- once linked, keep the budget line's amount AND its
+  // "(to <date>)" label in step with the costed schedule whenever rates,
+  // phases, the cutoff, or the Timeline baseline change. Tracks the
+  // COSTED total, not the contractual one.
   useEffect(() => {
-    if (loading || !linkedLine || !schedule) return;
-    if (Math.round(linkedLine.budgeted_amount ?? 0) !== Math.round(schedule.totalInterest)) {
-      fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: schedule.totalInterest }) }).then(load);
+    if (loading || !linkedLine || !costedSchedule) return;
+    const amountChanged = Math.round(linkedLine.budgeted_amount ?? 0) !== Math.round(costedInterest);
+    const labelChanged = linkedLine.label !== budgetLabel;
+    if (amountChanged || labelChanged) {
+      fetch("/api/finance-model/budget-lines", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: linkedLine.id, budgetedAmount: costedInterest, label: budgetLabel }) }).then(load);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, linkedLine?.id, schedule?.totalInterest]);
+  }, [loading, linkedLine?.id, costedInterest, budgetLabel]);
 
   if (loading) {
     return <div className="flex items-center gap-2 text-[12px] text-slate-400 py-6 justify-center"><Loader2 size={13} className="animate-spin" /> Loading loan detail...</div>;
@@ -434,21 +476,56 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
           <p className="text-[11px] text-slate-400">Add a principal amount and at least one phase to calculate a schedule.</p>
         ) : (
           <>
-            <div className="flex items-center gap-6 mb-2 text-[12px]">
-              <p className="font-bold text-slate-700">Total interest: <span className="text-indigo-600">{money(schedule.totalInterest)}</span></p>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mb-2 text-[12px]">
+              <p className="font-bold text-slate-700">Interest over full term: <span className="text-slate-500">{money(schedule.totalInterest)}</span></p>
               <p className="font-bold text-slate-700">Remaining balance: <span className={schedule.finalBalance > 0 ? "text-amber-600" : "text-emerald-600"}>{money(schedule.finalBalance)}</span></p>
-              {linkedLine ? (
-                <div className="flex items-center gap-2">
-                  <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600"><Check size={11} /> Synced to budget (Finance Costs)</span>
-                  <button onClick={unlinkFromBudget} disabled={linking} className="text-slate-300 hover:text-rose-500 disabled:opacity-40" title="Unlink (keeps the line, stops auto-sync)">
-                    {linking ? <Loader2 size={11} className="animate-spin" /> : <Unlink size={11} />}
+            </div>
+
+            {/* Costed-to-completion interest -- what a development budget
+                should actually carry, since the facility is repaid out of
+                settlement long before its contractual maturity. */}
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 mb-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px]">
+                <p className="font-bold text-slate-700">
+                  Interest to {cutoff ? formatDate(cutoff) : "maturity"}: <span className="text-indigo-600">{money(costedInterest)}</span>
+                </p>
+                {linkedLine ? (
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600"><Check size={11} /> Synced to budget (Finance Costs)</span>
+                    <button onClick={unlinkFromBudget} disabled={linking} className="text-slate-300 hover:text-rose-500 disabled:opacity-40" title="Unlink (keeps the line, stops auto-sync)">
+                      {linking ? <Loader2 size={11} className="animate-spin" /> : <Unlink size={11} />}
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => linkToBudget(costedInterest)} disabled={linking} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-40">
+                    {linking ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Link interest to budget
                   </button>
-                </div>
-              ) : (
-                <button onClick={() => linkToBudget(schedule.totalInterest)} disabled={linking} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-40">
-                  {linking ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Link total interest to budget
-                </button>
-              )}
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <label className="text-slate-400">Costed to</label>
+                <input
+                  type="date"
+                  value={interestToDate || timelineCompletion || ""}
+                  onChange={e => saveCutoff(e.target.value || null)}
+                  className="border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700"
+                />
+                {savingCutoff && <Loader2 size={11} className="animate-spin text-slate-300" />}
+                {timelineCompletion ? (
+                  <span className="text-slate-400">
+                    Timeline completion: <span className="font-bold text-slate-500">{formatDate(timelineCompletion)}</span>
+                    {interestToDate && interestToDate !== timelineCompletion && (
+                      <> · <button onClick={() => saveCutoff(null)} className="font-bold text-indigo-600 hover:underline">reset to Timeline</button></>
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-slate-400">No Timeline due dates yet -- set a date to cap interest.</span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                The budget carries interest only up to this date, since the loan is repaid from settlement proceeds well before its {formatDate(loan.repayment_date)} maturity. The Timeline completion date is the baseline; extend the date here for a settlement or sell-down tail without moving the Timeline.
+              </p>
             </div>
             <div className="max-h-56 overflow-y-auto">
               <table className="w-full text-[11px]">

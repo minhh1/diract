@@ -120,19 +120,32 @@ function accrueInterest(rates: LoanInterestRateEntry[], balance: number, from: D
   return total;
 }
 
+// `until` stops the schedule at a date part-way through the loan term.
+// A development loan is written over a long term (a 30-year facility is
+// normal) but is repaid out of settlement proceeds when the project
+// finishes, so the interest a FEASIBILITY should carry is only what
+// accrues up to completion -- costing the full contractual term instead
+// overstates finance costs by an order of magnitude. Null/omitted keeps
+// the old behaviour (the whole term), which is still what you want when
+// reading the loan as a loan rather than as a project cost.
 export function calculateLoanSchedule(
   principal: number,
   phases: LoanPhaseInput[],
-  rates: LoanInterestRateEntry[]
+  rates: LoanInterestRateEntry[],
+  until?: string | null
 ): LoanScheduleResult {
   const sorted = [...phases].sort((a, b) => a.phase_order - b.phase_order);
   const today = new Date();
+  const cutoff = until ? new Date(until) : null;
   let balance = principal;
   const periods: RepaymentPeriod[] = [];
 
   for (const phase of sorted) {
     const start = new Date(phase.start_date);
-    const end = phase.end_date ? new Date(phase.end_date) : today;
+    const contractualEnd = phase.end_date ? new Date(phase.end_date) : today;
+    // Phases starting after the cutoff never happen for costing purposes.
+    if (cutoff && start >= cutoff) continue;
+    const end = cutoff && contractualEnd > cutoff ? cutoff : contractualEnd;
     if (end <= start || balance <= 0) continue;
 
     if (phase.repayment_type === "Interest Only") {
@@ -150,7 +163,11 @@ export function calculateLoanSchedule(
       // periodic P&I schedule, treat it as Monthly rather than producing a
       // single, meaningless period.
       const months = phase.payment_frequency === "At Maturity" ? 1 : frequencyMonths(phase.payment_frequency);
-      const totalMonths = Math.max(1, monthsBetween(start, end));
+      // n and the instalment come from the CONTRACTUAL phase length, not
+      // the truncated one: a bank sets the instalment to amortize the loan
+      // over its full term, so cutting the schedule short must not
+      // re-amortize it into much bigger payments over the shorter window.
+      const totalMonths = Math.max(1, monthsBetween(start, contractualEnd));
       const n = Math.max(1, Math.round(totalMonths / months));
       const annualRate = rateOnDate(rates, start) / 100; // fixed at phase start -- see file header comment
       const periodicRate = annualRate * (months / 12);
@@ -158,7 +175,19 @@ export function calculateLoanSchedule(
 
       let cursor = start;
       for (let i = 0; i < n; i++) {
-        const next = i === n - 1 ? end : addMonths(cursor, months);
+        const next = i === n - 1 ? contractualEnd : addMonths(cursor, months);
+        if (next > end) {
+          // The cutoff lands mid-period: accrue the part of this period's
+          // interest that actually falls before it (pro-rata on days, on
+          // the opening balance) and stop. No principal -- that
+          // instalment is never reached.
+          const fraction = daysBetween(cursor, end) / Math.max(1, daysBetween(cursor, next));
+          const interest = balance * periodicRate * fraction;
+          if (interest > 0) {
+            periods.push({ phaseId: phase.id, periodStart: toISODate(cursor), periodEnd: toISODate(end), openingBalance: balance, interest, principal: 0, payment: interest, closingBalance: balance });
+          }
+          break;
+        }
         const interest = balance * periodicRate;
         const principalPortion = i === n - 1 ? balance : Math.min(balance, instalment - interest);
         const payment = interest + principalPortion;
@@ -171,4 +200,21 @@ export function calculateLoanSchedule(
   }
 
   return { periods, totalInterest: periods.reduce((s, p) => s + p.interest, 0), finalBalance: balance };
+}
+
+// The date a loan's interest should be costed to, in priority order:
+// the user's own override on the loan, else the project's Timeline
+// completion (the latest task due date) as the baseline, else null
+// meaning "no cutoff, use the full contractual term". Kept here so the
+// Loans subtab and the Feasibility subtab can't drift on which date they
+// each decided to use.
+export function resolveInterestCutoff(loanOverride: string | null | undefined, timelineCompletion: string | null): string | null {
+  return loanOverride || timelineCompletion || null;
+}
+
+// Latest due date across the project's Timeline tasks -- the baseline
+// project-completion date. Null when no task carries a due date.
+export function timelineCompletionDate(tasks: { due_date: string | null }[]): string | null {
+  const dates = tasks.map(t => t.due_date).filter((d): d is string => !!d).sort();
+  return dates.length ? dates[dates.length - 1] : null;
 }
