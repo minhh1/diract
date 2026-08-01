@@ -622,11 +622,15 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {/* Team filter */}
+      {/* Team filter -- each chip carries the same colour dot as its bar in
+          the List view's Teams column (teamColor()), so the two are
+          identifiable at a glance instead of needing to remember an
+          arbitrary colour-to-team mapping. */}
       <div className="flex flex-wrap items-center gap-1.5 px-1">
         {teams.map(t => (
           <button key={t.id} onClick={() => toggleTeamFilter(t.id)}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${teamFilter.has(t.id) ? "bg-indigo-600 border-indigo-600 text-white" : "border-slate-200 text-slate-500 hover:border-indigo-300"}`}>
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${teamFilter.has(t.id) ? "bg-indigo-600 border-indigo-600 text-white" : "border-slate-200 text-slate-500 hover:border-indigo-300"}`}>
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: teamColor(t.id, teams) }} />
             {t.team_name}
           </button>
         ))}

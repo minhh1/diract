@@ -9,7 +9,7 @@
 // tradeoff components/dashboard/tabs/InvoicesTab.tsx already makes for its
 // own custom-table-backed list.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, X, RefreshCw, Wand2, Trash2, Settings2 } from "lucide-react";
+import { Loader2, Plus, X, RefreshCw, Wand2, Trash2, Settings2, ExternalLink } from "lucide-react";
 import { money } from "./BudgetVsActualTable";
 
 interface BudgetLine {
@@ -87,6 +87,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
 
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncNeedsReconnect, setSyncNeedsReconnect] = useState(false);
   const [applyingRules, setApplyingRules] = useState(false);
 
   const [rules, setRules] = useState<ClassificationRule[]>([]);
@@ -185,20 +186,17 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
     await load();
   };
 
-  const classify = async (id: string, budgetLineId: string) => {
+  // Budget line and loan share one selector (below) -- picking either one
+  // clears the other, since a transaction represents one classification,
+  // not both at once, and a combined dropdown is the whole point (no
+  // separate wide column per option).
+  const classifyCombined = async (id: string, rawValue: string) => {
+    const [kind, ...rest] = rawValue.split(":");
+    const value = rest.join(":");
     await fetch("/api/finance-model/transactions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, budgetLineId: budgetLineId || null }),
-    });
-    await load();
-  };
-
-  const classifyLoan = async (id: string, loanId: string) => {
-    await fetch("/api/finance-model/transactions", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, loanId: loanId || null }),
+      body: JSON.stringify({ id, budgetLineId: kind === "bl" ? value : null, loanId: kind === "loan" ? value : null }),
     });
     await load();
   };
@@ -212,6 +210,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
   const syncFromXero = async () => {
     setSyncing(true);
     setSyncMessage(null);
+    setSyncNeedsReconnect(false);
     const res = await fetch("/api/finance-model/sync-xero", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -220,6 +219,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
     const json = await res.json().catch(() => ({}));
     setSyncing(false);
     setSyncMessage(res.ok ? `Imported ${json.imported}, skipped ${json.skipped} already-imported.` : (json.error || "Sync failed"));
+    setSyncNeedsReconnect(!res.ok && !!json.needsReconnect);
     if (res.ok) await load();
   };
 
@@ -293,7 +293,16 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
           <span className="text-slate-400 font-normal ml-2">({filtered.length} of {transactions.length})</span>
         </p>
         <div className="flex items-center gap-3">
-          {syncMessage && <p className="text-[11px] text-slate-400">{syncMessage}</p>}
+          {syncMessage && (
+            <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
+              {syncMessage}
+              {syncNeedsReconnect && (
+                <a href="/dashboard/admin?tab=xero" className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline">
+                  Reconnect <ExternalLink size={10} />
+                </a>
+              )}
+            </p>
+          )}
           <button onClick={applyRules} disabled={applyingRules} className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-40">
             {applyingRules ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} Apply rules
           </button>
@@ -425,8 +434,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                 <th className="px-2 py-2 font-bold">Contact</th>
                 <th className="px-2 py-2 font-bold">Reference</th>
                 <th className="px-2 py-2 font-bold">Description</th>
-                <th className="px-2 py-2 font-bold">Budget line</th>
-                {loans.length > 0 && <th className="px-2 py-2 font-bold">Loan</th>}
+                <th className="px-2 py-2 font-bold">Budget line / Loan</th>
                 <th className="px-2 py-2 font-bold">Source</th>
                 <th className="px-6 py-2 font-bold text-right cursor-pointer" onClick={() => toggleSort("amount")}>Amount {sortKey === "amount" ? (sortDir === "asc" ? "↑" : "↓") : ""}</th>
                 <th className="px-2 py-2 font-bold"></th>
@@ -440,19 +448,22 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                   <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.reference || "—"}</td>
                   <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.description || "—"}</td>
                   <td className="px-2 py-2">
-                    <select value={t.budget_line || ""} onChange={e => classify(t.id, e.target.value)} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600">
+                    <select
+                      value={t.budget_line ? `bl:${t.budget_line}` : t.loan_id ? `loan:${t.loan_id}` : ""}
+                      onChange={e => classifyCombined(t.id, e.target.value)}
+                      className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600 max-w-[200px]"
+                    >
                       <option value="">Unclassified</option>
-                      {budgetLines.map(l => <option key={l.id} value={l.id}>{l.category} — {l.label}</option>)}
+                      <optgroup label="Budget line">
+                        {budgetLines.map(l => <option key={`bl:${l.id}`} value={`bl:${l.id}`}>{l.category} — {l.label}</option>)}
+                      </optgroup>
+                      {loans.length > 0 && (
+                        <optgroup label="Loan">
+                          {loans.map(l => <option key={`loan:${l.id}`} value={`loan:${l.id}`}>{l.name || l.lender_type || "Loan"}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   </td>
-                  {loans.length > 0 && (
-                    <td className="px-2 py-2">
-                      <select value={t.loan_id || ""} onChange={e => classifyLoan(t.id, e.target.value)} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-600">
-                        <option value="">—</option>
-                        {loans.map(l => <option key={l.id} value={l.id}>{l.name || l.lender_type || "Loan"}</option>)}
-                      </select>
-                    </td>
-                  )}
                   <td className="px-2 py-2 text-slate-400">{t.source || "—"}</td>
                   <td className={`px-6 py-2 text-right font-medium whitespace-nowrap ${t.type === "Expense" ? "text-rose-600" : "text-emerald-600"}`}>
                     {t.type === "Expense" ? "−" : "+"}{money(Math.abs(t.amount ?? 0))}
