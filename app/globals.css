@@ -125,15 +125,23 @@
   scrollbar-width: none; /* Firefox */
 }
 
-/* Hide native horizontal scrollbar on the record-detail tab strip
-   (components/dashboard/TabBar.tsx) -- the fade+chevron affordance at
-   each end already signals there's more to scroll to, so the browser's
-   own scrollbar underneath it is redundant clutter. */
+/* Hide native horizontal scrollbar on tab strips (components/dashboard/
+   TabBar.tsx, the Finance Model subtab strip) -- the fade+chevron
+   affordance at each end already signals there's more to scroll to, so
+   the browser's own scrollbar underneath it is redundant clutter.
+   overflow-y: hidden is required, not just tidy: per the CSS Overflow
+   spec, setting overflow-x to anything but visible/clip while overflow-y
+   stays at its visible default forces the UA to silently promote
+   overflow-y to auto as well -- without this, the tab strip becomes
+   vertically scrollable/rubber-bandable too, which feels broken on a
+   touch device (a vertical swipe over the tabs can get captured by the
+   strip instead of scrolling the page). */
 .tab-strip-scroll::-webkit-scrollbar {
   display: none;
 }
 .tab-strip-scroll {
   scrollbar-width: none; /* Firefox */
+  overflow-y: hidden;
 }
 
 /* Client Update Pages' spreadsheet -- unlike top-scroll-mirror above (whose
