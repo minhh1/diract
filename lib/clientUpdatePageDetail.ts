@@ -648,10 +648,22 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     ? mappedItems.filter((item: any) => !Object.values(item.values).includes("(deleted)"))
     : mappedItems;
 
+  // Company-shared default sort/filter per group (see
+  // supabase/migrations/20260802120000_client_update_page_view_defaults.sql).
+  // Returned from the shared loader so the staff route and the public
+  // route can't disagree about what the board's default view is -- a
+  // public/demo viewer has no localStorage, so this is the ONLY way they
+  // ever see the view the admin actually works in.
+  const { data: viewDefaults } = await admin
+    .from("client_update_page_view_defaults")
+    .select("group_id, filters, sort")
+    .eq("page_id", pageId);
+
   return {
     groups: groups || [],
     items: finalItems,
     fields: fieldsWithRelationMeta,
     formatRules: formatRules || [],
+    viewDefaults: (viewDefaults || []).map((v: any) => ({ groupId: v.group_id, filters: v.filters || [], sort: v.sort || [] })),
   };
 }

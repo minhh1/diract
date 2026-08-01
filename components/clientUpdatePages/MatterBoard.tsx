@@ -97,6 +97,15 @@ interface Props {
   items: MatterBoardItem[];
   fields: MatterBoardField[];
   formatRules: MatterBoardFormatRule[];
+  // Company-shared default sort/filter per group, from the server. Used
+  // ONLY when this viewer has no localStorage choice of their own for that
+  // group -- so saving a default never yanks the board out from under
+  // someone mid-session, but every new user and every anonymous public
+  // viewer inherits the admin's view instead of an empty one.
+  viewDefaults?: { groupId: string; filters: { fieldId: string; values: string[] }[]; sort: { fieldId: string; dir: "asc" | "desc" }[] }[];
+  // Persists the CURRENT sort/filter as that shared default. Staff only
+  // (undefined for a client/public viewer, which hides the control).
+  onSaveViewDefault?: (groupId: string, filters: { fieldId: string; values: string[] }[], sort: { fieldId: string; dir: "asc" | "desc" }[]) => Promise<void> | void;
   dateFormat: string;
   freezeFirstColumn?: boolean;
   // Defaults true (matches client_update_pages.log_cell_changes' DB
@@ -247,7 +256,7 @@ const FORMAT_COLORS: Record<string, { swatch: string; row: string; smRow: string
 const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
-  pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
+  pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
   onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
@@ -264,6 +273,8 @@ export default function MatterBoard({
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sorts, setSorts] = useState<{ fieldId: string; dir: "asc" | "desc" }[]>([]);
+  const [savingViewDefault, setSavingViewDefault] = useState(false);
+  const [viewDefaultSaved, setViewDefaultSaved] = useState(false);
   const [showAddMatter, setShowAddMatter] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [showAutoAddRules, setShowAutoAddRules] = useState(false);
@@ -439,14 +450,23 @@ export default function MatterBoard({
   // saved for THIS group (see filtersPrefKey) on group change, same
   // guarded-init pattern as the status effect above, rather than always
   // resetting to blank.
+  // Keyed by group AND by the CONTENT of the shared defaults, not just the
+  // group: the board is populated in two passes (an optimistic/cached set
+  // followed by the fetched one), so keying on group alone marks itself
+  // initialised on the first pass -- before viewDefaults has arrived -- and
+  // then refuses to apply them. Comparing serialised content also means a
+  // routine board refresh, where the defaults are unchanged, does NOT
+  // stomp on a filter the viewer has since chosen themselves.
   const [filtersInitialisedFor, setFiltersInitialisedFor] = useState<string | null>(null);
   useEffect(() => {
     const groupKey = activeTop;
-    if (filtersInitialisedFor === groupKey) return;
-    const saved = getSavedFilters(groupKey);
+    const initKey = `${groupKey}::${JSON.stringify(viewDefaults ?? [])}`;
+    if (filtersInitialisedFor === initKey) return;
+    // Own choice first, then the company-shared default, then nothing.
+    const saved = getSavedFilters(groupKey) ?? viewDefaults?.find(v => v.groupId === groupKey)?.filters ?? null;
     setFilters(saved ? saved.map(f => ({ fieldId: f.fieldId, values: new Set(f.values) })) : []);
-    setFiltersInitialisedFor(groupKey);
-  }, [activeTop, filtersInitialisedFor]);
+    setFiltersInitialisedFor(initKey);
+  }, [activeTop, filtersInitialisedFor, viewDefaults]);
 
   // Saves on every change, but only once the group's saved filters have
   // actually been loaded (filtersInitialisedFor set) -- otherwise this
@@ -579,20 +599,24 @@ export default function MatterBoard({
   // persisted, so it survives a reload/reopen instead of resetting). Re-runs
   // per active group since each one's fields (and so its natural default)
   // can differ.
+  // Same two-pass keying as the filters effect above -- see its comment.
   const [sortInitialisedFor, setSortInitialisedFor] = useState<string | null>(null);
   useEffect(() => {
     const groupKey = activeTopGroup?.id ?? UNGROUPED;
-    if (sortInitialisedFor === groupKey || !visibleFields.length) return;
-    const saved = getSavedSort(groupKey);
+    const initKey = `${groupKey}::${JSON.stringify(viewDefaults ?? [])}`;
+    if (sortInitialisedFor === initKey || !visibleFields.length) return;
+    // Own choice first, then the company-shared default, then the old
+    // settlement-date guess.
+    const saved = getSavedSort(groupKey) ?? viewDefaults?.find(v => v.groupId === groupKey)?.sort ?? null;
     if (saved) {
       setSorts(saved);
     } else {
       const settlementField = visibleFields.find(f => f.label.toLowerCase().includes("settlement date"));
       setSorts(settlementField ? [{ fieldId: settlementField.id, dir: "asc" }] : []);
     }
-    setSortInitialisedFor(groupKey);
+    setSortInitialisedFor(initKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTopGroup?.id, visibleFields.length]);
+  }, [activeTopGroup?.id, visibleFields.length, viewDefaults]);
 
   // Saves on every change, but only once the group's saved sort has actually
   // been loaded (sortInitialisedFor set) -- otherwise this would fire on
@@ -953,6 +977,30 @@ export default function MatterBoard({
                 <button onClick={addSort}
                   className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-slate-200 text-slate-400 text-[10px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                   <Plus size={11} /> Add sort
+                </button>
+              )}
+              {/* Pushes the CURRENT sort+filter to the whole company, so
+                  colleagues and public/demo viewers open the board the way
+                  the admin actually works in it instead of unsorted and
+                  unfiltered. Staff only -- onSaveViewDefault is undefined
+                  for a client/public viewer. */}
+              {onSaveViewDefault && (
+                <button
+                  onClick={async () => {
+                    setSavingViewDefault(true);
+                    await onSaveViewDefault(
+                      activeTop,
+                      filters.map(f => ({ fieldId: f.fieldId, values: [...f.values] })),
+                      sorts
+                    );
+                    setSavingViewDefault(false);
+                    setViewDefaultSaved(true);
+                    setTimeout(() => setViewDefaultSaved(false), 2000);
+                  }}
+                  disabled={savingViewDefault}
+                  className="w-full mt-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors"
+                >
+                  {savingViewDefault ? "Saving..." : viewDefaultSaved ? "Saved for everyone" : "Save view for everyone"}
                 </button>
               )}
             </div>

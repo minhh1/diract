@@ -32,7 +32,13 @@ import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib
 import { readCache, writeCache } from "@/lib/queryCache";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
 
-interface Board { groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[]; }
+interface Board {
+  groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[];
+  // Company-shared default sort/filter (see MatterBoard's own prop
+  // comment) -- served by lib/clientUpdatePageDetail.ts to both the staff
+  // and public routes, so an anonymous viewer inherits the admin's view.
+  viewDefaults?: { groupId: string; filters: { fieldId: string; values: string[] }[]; sort: { fieldId: string; dir: "asc" | "desc" }[] }[];
+}
 interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; logCellChanges: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed" }
 
 const boardCacheKey = (slug: string) => `client_update_board_${slug}`;
@@ -132,7 +138,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
         // logCellChanges is a staff-only editing preference -- a client PIN
         // visitor never edits cells, so it's always true here (unused).
         const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, logCellChanges: true, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind };
-        const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [] };
+        const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [], viewDefaults: attempt.json.viewDefaults || [] };
         setMode("client");
         // Bail out to the same object reference when this revalidate just
         // confirms the cached paint above was already correct -- otherwise
@@ -159,7 +165,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     setMode("client");
     setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, logCellChanges: true, baseTable: json.baseTable, pageKind: json.pageKind });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
-    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
+    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [] };
     setBoard(board);
     setLoading(false);
   }, [fetchPublic, slug]);
@@ -171,7 +177,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     setMode("staff");
     setStaffPageId(json.page.id);
     const nextMeta: PageMeta = { title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind };
-    const nextBoard: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
+    const nextBoard: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [] };
     // Bail out to the same object reference when this call (the cache-warm
     // paint, the live by-slug revalidate right after it, or a background
     // reload after a mutation) doesn't actually change anything -- the live
@@ -265,7 +271,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     if (!ok) { setCodeError(json.error || "Incorrect access code"); return; }
     setCachedCode(slug, code);
     setNeedsCode(false);
-    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [] };
+    const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [] };
     setBoard(board);
     // `meta` is already set (loadAsClient sets it before ever showing the
     // PIN gate) -- cache it alongside this newly-validated code so the next
@@ -331,6 +337,25 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     if (!res.ok) throw new Error(json.error || "Couldn't load history");
     return json.logs || [];
   }, [mode, staffPageId, slug]);
+
+  // Persists the board's current sort/filter as the company-wide default
+  // (see the view-defaults route). Updates local state too so the "saved"
+  // value is what a re-render reads, without a full board reload.
+  const saveViewDefault = async (
+    groupId: string,
+    filters: { fieldId: string; values: string[] }[],
+    sort: { fieldId: string; dir: "asc" | "desc" }[]
+  ) => {
+    if (mode !== "staff" || !staffPageId) return;
+    await fetch(`/api/client-update-pages/${staffPageId}/view-defaults`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ groupId, filters, sort }),
+    });
+    setBoard(prev => prev && {
+      ...prev,
+      viewDefaults: [...(prev.viewDefaults || []).filter(v => v.groupId !== groupId), { groupId, filters, sort }],
+    });
+  };
 
   const renameGroup = (groupId: string, name: string) => {
     if (mode !== "staff" || !staffPageId) return;
@@ -686,6 +711,8 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
           items={board.items}
           fields={board.fields}
           formatRules={board.formatRules}
+          viewDefaults={board.viewDefaults}
+          onSaveViewDefault={mode === "staff" ? saveViewDefault : undefined}
           dateFormat={meta.dateFormat}
           freezeFirstColumn={meta.freezeFirstColumn}
           logCellChanges={meta.logCellChanges}
