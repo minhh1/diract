@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   // leak whether a given id exists.
   const { data: hub } = await admin
     .from("public_demo_hubs")
-    .select("id, company_id, title, is_active, expires_at")
+    .select("id, company_id, title, is_active, expires_at, excluded_keys")
     .eq("id", token)
     .maybeSingle()
     .then(r => r, () => ({ data: null }));
@@ -52,11 +52,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       .eq("company_id", hub.company_id).eq("is_active", true),
   ]);
 
+  const excluded = new Set(hub.excluded_keys || []);
   const sections = [
     ...(boardsRes.data || []).map(b => ({ kind: "board" as const, key: b.slug, title: b.title, accessCode: b.access_code })),
     ...(financeRes.data || []).map(f => ({ kind: "finance_model" as const, key: f.id, title: f.title, accessCode: f.access_code })),
     ...(solverRes.data || []).map(s => ({ kind: "solver" as const, key: s.id, title: s.title, accessCode: s.access_code })),
-  ];
+  ].filter(s => !excluded.has(s.key));
 
   return NextResponse.json({ title: hub.title, expiresAt: hub.expires_at, sections });
 }
