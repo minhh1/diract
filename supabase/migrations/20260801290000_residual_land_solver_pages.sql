@@ -8,7 +8,19 @@ SET request.jwt.claim.role = 'service_role';
 -- SAVE named calculations and come back to them later -- which is exactly
 -- why it needs the page-id + access-code gate: saves are server-side
 -- writes, so they only exist behind a link the company deliberately issued.
-CREATE TABLE residual_land_solver_pages (
+--
+-- WRITTEN IDEMPOTENTLY ON PURPOSE. These two tables already exist in
+-- production but have no row in supabase_migrations.schema_migrations,
+-- because this file was originally applied with `supabase db query
+-- --linked --file` -- which executes the SQL but, unlike `supabase db
+-- push`, records nothing in the ledger. A plain CREATE TABLE therefore
+-- aborts the next `db push` with "already exists" and blocks every
+-- migration queued behind it. IF NOT EXISTS (plus drop-then-create for
+-- the policies, which have no IF NOT EXISTS form) makes this a no-op
+-- against production while still building the tables correctly on a
+-- fresh database. Verified before this rewrite: the live columns match
+-- this definition exactly, so nothing here papers over schema drift.
+CREATE TABLE IF NOT EXISTS residual_land_solver_pages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -19,9 +31,10 @@ CREATE TABLE residual_land_solver_pages (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX residual_land_solver_pages_project_idx ON residual_land_solver_pages (project_id);
+CREATE INDEX IF NOT EXISTS residual_land_solver_pages_project_idx ON residual_land_solver_pages (project_id);
 
 ALTER TABLE residual_land_solver_pages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS residual_land_solver_pages_company ON residual_land_solver_pages;
 CREATE POLICY residual_land_solver_pages_company ON residual_land_solver_pages
   FOR ALL USING (company_id = active_company_id());
 
@@ -32,7 +45,7 @@ CREATE POLICY residual_land_solver_pages_company ON residual_land_solver_pages
 -- existing name overwrites it (the route updates rather than erroring on
 -- the unique constraint). company_id denormalized from the page so the
 -- company RLS policy doesn't need a join.
-CREATE TABLE residual_land_solver_saved_calcs (
+CREATE TABLE IF NOT EXISTS residual_land_solver_saved_calcs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   page_id uuid NOT NULL REFERENCES residual_land_solver_pages(id) ON DELETE CASCADE,
   company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
@@ -45,8 +58,9 @@ CREATE TABLE residual_land_solver_saved_calcs (
   UNIQUE (page_id, name)
 );
 
-CREATE INDEX residual_land_solver_saved_calcs_page_idx ON residual_land_solver_saved_calcs (page_id);
+CREATE INDEX IF NOT EXISTS residual_land_solver_saved_calcs_page_idx ON residual_land_solver_saved_calcs (page_id);
 
 ALTER TABLE residual_land_solver_saved_calcs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS residual_land_solver_saved_calcs_company ON residual_land_solver_saved_calcs;
 CREATE POLICY residual_land_solver_saved_calcs_company ON residual_land_solver_saved_calcs
   FOR ALL USING (company_id = active_company_id());
