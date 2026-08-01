@@ -15,7 +15,7 @@
 // duration bar in Diagram view; tasks without one render as a single-day
 // marker at their due date instead.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight, DollarSign } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
@@ -110,14 +110,18 @@ function blockedBy(taskId: string, dependenciesByTask: Record<string, string[]>,
     .filter((t): t is TaskRow => !!t && !t.is_completed);
 }
 
-// ── Edit modal: assignee, teams (multi-select), start/due dates, and
-// blocked-by (multi-select over the project's other tasks) -- opened from
-// a List row, a Card, or a Diagram bar, all three views share this one.
+// ── Edit modal: assignee, teams (multi-select), start/due dates,
+// blocked-by (multi-select over the project's other tasks), and a
+// "Convert to Budget Line" action (creates a new budget line via the same
+// POST /api/finance-model/budget-lines the rest of the app already uses,
+// with linkedTaskId=task.id so it automatically participates in Cash Flow
+// timing -- see lib/cashFlowEngine.ts) -- opened from a List row, a Card,
+// or a Diagram bar, all three views share this one.
 function TaskEditModal({
-  task, allTasks, teams, profiles, dependenciesByTask, companyId, userId, onClose, onSaved,
+  task, allTasks, teams, profiles, dependenciesByTask, companyId, userId, projectId, onClose, onSaved,
 }: {
   task: TaskRow; allTasks: TaskRow[]; teams: Team[]; profiles: Profile[];
-  dependenciesByTask: Record<string, string[]>; companyId: string; userId: string | null;
+  dependenciesByTask: Record<string, string[]>; companyId: string; userId: string | null; projectId: string;
   onClose: () => void; onSaved: () => void;
 }) {
   const [assigneeId, setAssigneeId] = useState(task.assignee_id || "");
@@ -126,6 +130,36 @@ function TaskEditModal({
   const [dueDate, setDueDate] = useState(task.due_date ? task.due_date.slice(0, 10) : "");
   const [dependsOn, setDependsOn] = useState<Set<string>>(new Set(dependenciesByTask[task.id] || []));
   const [saving, setSaving] = useState(false);
+
+  const [showConvert, setShowConvert] = useState(false);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [convertCategory, setConvertCategory] = useState("");
+  const [convertAmount, setConvertAmount] = useState("");
+  const [converting, setConverting] = useState(false);
+  const [converted, setConverted] = useState(false);
+
+  const openConvert = async () => {
+    setShowConvert(true);
+    if (categories.length) return;
+    const res = await fetch("/api/finance-model/budget-categories");
+    const json = await res.json().catch(() => ({}));
+    const cats = json.categories || [];
+    setCategories(cats);
+    setConvertCategory(cats[0]?.name || "");
+  };
+
+  const convertToBudgetLine = async () => {
+    const amount = parseFloat(convertAmount);
+    if (!convertCategory || !Number.isFinite(amount)) return;
+    setConverting(true);
+    const res = await fetch("/api/finance-model/budget-lines", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, category: convertCategory, label: task.name, budgetedAmount: amount, linkedTaskId: task.id }),
+    });
+    setConverting(false);
+    if (res.ok) { setConverted(true); setShowConvert(false); }
+  };
 
   const blocked = blockedBy(task.id, dependenciesByTask, allTasks);
   const isBlocked = blocked.length > 0;
@@ -227,6 +261,32 @@ function TaskEditModal({
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4">
+            {converted ? (
+              <p className="text-[11px] font-medium text-emerald-600 flex items-center gap-1.5"><DollarSign size={12} /> Budget line created -- linked to this task for Cash Flow timing.</p>
+            ) : !showConvert ? (
+              <button type="button" onClick={openConvert} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:underline">
+                <DollarSign size={12} /> Convert to budget line
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Convert to budget line</p>
+                <div className="flex items-center gap-2">
+                  <select value={convertCategory} onChange={e => setConvertCategory(e.target.value)} className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white">
+                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                  <input type="number" value={convertAmount} onChange={e => setConvertAmount(e.target.value)} placeholder="Amount" className="w-28 px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={convertToBudgetLine} disabled={converting || !convertAmount} className="px-4 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                    {converting ? "Adding..." : "Add"}
+                  </button>
+                  <button type="button" onClick={() => setShowConvert(false)} className="text-[11px] text-slate-400 hover:text-slate-600">Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -710,7 +770,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
       {editingTask && (
         <TaskEditModal
           task={editingTask} allTasks={tasks} teams={teams} profiles={profiles}
-          dependenciesByTask={dependenciesByTask} companyId={companyId || ""} userId={userId}
+          dependenciesByTask={dependenciesByTask} companyId={companyId || ""} userId={userId} projectId={projectId}
           onClose={() => setEditingTask(null)} onSaved={load}
         />
       )}
