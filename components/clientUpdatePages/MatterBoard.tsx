@@ -36,7 +36,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2 } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -253,6 +253,7 @@ export default function MatterBoard({
   const [showColumns, setShowColumns] = useState(false);
   const [showAutoAddRules, setShowAutoAddRules] = useState(false);
   const [showDateFormat, setShowDateFormat] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [conditionGroupId, setConditionGroupId] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [summarizingAll, setSummarizingAll] = useState(false);
@@ -610,6 +611,41 @@ export default function MatterBoard({
   const conditionGroup = groups.find(g => g.id === conditionGroupId) || null;
   const selectFields = visibleFields.filter(f => f.field_type === "select");
 
+  // Sum of Principal across whatever's currently in view (search + filters
+  // + sort all already applied to visibleItems) -- "how much is owing
+  // across my filtered set" is the whole point of a filter here, and that
+  // number was nowhere on the page before.
+  const principalField = baseTable === LOANS_BASE_TABLE_ID ? visibleFields.find(f => f.label === "Principal") : null;
+  const totalPrincipal = principalField ? visibleItems.reduce((sum, item) => sum + (Number(item.values[principalField.id]) || 0), 0) : null;
+
+  // Exports exactly what's on screen -- visibleFields/visibleItems already
+  // reflect the active group, search, filters, and sort, same set
+  // totalPrincipal above sums. Generic to every base table (projects/
+  // entities/custom), not just Loans -- a relation field's resolved value
+  // is already the display name string by the time it reaches
+  // item.values (see lib/clientUpdatePageDetail.ts's resolveValue), so no
+  // special-casing is needed here for it vs a plain text/date/currency one.
+  const csvEscape = (v: unknown): string => {
+    const s = String(v ?? "");
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const exportToCsv = () => {
+    const headers = [baseTable === "entities" ? "Entity" : "Matter", ...visibleFields.map(f => f.label)];
+    const rows = visibleItems.map(item => [
+      item.matterName,
+      ...visibleFields.map(f => formatValue(item.values[f.id], f, dateFormat)),
+    ]);
+    const csv = [headers, ...rows].map(row => row.map(csvEscape).join(",")).join("\r\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowMoreMenu(false);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -696,6 +732,20 @@ export default function MatterBoard({
               <Table2 size={12} /> Spreadsheet
             </button>
           </div>
+          <div className="relative">
+            <button onClick={() => setShowMoreMenu(v => !v)} title="More"
+              className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+              <MoreHorizontal size={14} />
+            </button>
+            {showMoreMenu && (
+              <div className="absolute right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-1.5 z-20 w-44">
+                <button onClick={exportToCsv}
+                  className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+                  <Download size={12} /> Export to CSV
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -759,9 +809,25 @@ export default function MatterBoard({
             </div>
           </SidebarSection>
 
-          {(formatRules.length > 0 || (canEdit && onAddFormatRule)) && (
+          {(formatRules.length > 0 || (canEdit && onAddFormatRule) || baseTable === LOANS_BASE_TABLE_ID) && (
             <SidebarSection title="Formatting">
               <div className="space-y-2">
+                {baseTable === LOANS_BASE_TABLE_ID && (
+                  // Read-only legend for loanDueSoonColor's baked-in row
+                  // coloring -- that's not a real client_update_page_format_
+                  // rules row (nothing to edit/remove here), so without this
+                  // a colored row had no explanation anywhere on the page.
+                  <div className="space-y-1 pb-1 mb-1 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-4 h-4 rounded-full shrink-0 ${FORMAT_COLORS.amber.swatch}`} />
+                      <span className="text-[11px] text-slate-500">Repayment due within 30 days</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-4 h-4 rounded-full shrink-0 ${FORMAT_COLORS.red.swatch}`} />
+                      <span className="text-[11px] text-slate-500">Repayment overdue</span>
+                    </div>
+                  </div>
+                )}
                 {formatRules.map(rule => {
                   const originalField = fields.find(f => f.id === rule.field_id);
                   const resolvedFieldId = resolveRuleFieldId(rule, fields, visibleFields);
@@ -847,6 +913,15 @@ export default function MatterBoard({
               )}
             </div>
           </SidebarSection>
+
+          {totalPrincipal !== null && (
+            <SidebarSection title="Total Principal">
+              <p className="text-[22px] font-extrabold text-indigo-700 leading-tight">
+                ${totalPrincipal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">across {visibleItems.length} loan{visibleItems.length === 1 ? "" : "s"} in view</p>
+            </SidebarSection>
+          )}
         </div>
 
         <div className="w-full flex-1 min-w-0">

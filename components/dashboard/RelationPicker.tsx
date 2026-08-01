@@ -1053,7 +1053,14 @@ export default function RelationPicker({
               if (e.key === 'Enter') e.preventDefault();
               selectOption(target);
             }}
-            placeholder={placeholder || (plain ? '' : 'Search...')}
+            // Shows the current value as the placeholder (not "Search...")
+            // while the dropdown is open with nothing typed yet -- opening
+            // to change a value used to blank it out visually the instant
+            // you clicked, even though nothing was actually cleared until a
+            // new option got picked. The list below also flags the current
+            // option with "(current)" so it's obvious which one to click to
+            // leave it unchanged.
+            placeholder={currentLabel || placeholder || (plain ? '' : 'Search...')}
             className="w-full bg-transparent outline-none"
           />
         ) : (
@@ -1135,11 +1142,11 @@ export default function RelationPicker({
                 type="button"
                 onClick={() => selectOption(opt)}
                 onMouseEnter={() => setHighlightedIndex(i)}
-                className={`w-full text-left px-4 py-2 text-[12px] font-medium text-slate-700 transition-colors ${
-                  i === highlightedIndex ? 'bg-indigo-50' : 'hover:bg-indigo-50'
-                }`}
+                className={`w-full text-left px-4 py-2 text-[12px] font-medium transition-colors ${
+                  opt.id === value ? 'text-indigo-700' : 'text-slate-700'
+                } ${i === highlightedIndex ? 'bg-indigo-50' : 'hover:bg-indigo-50'}`}
               >
-                {opt.label}
+                {opt.label}{opt.id === value && <span className="text-slate-400 font-normal"> (current)</span>}
               </button>
             ))
           )}
