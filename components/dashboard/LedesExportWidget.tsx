@@ -9,6 +9,7 @@
 // empty/blank state on any other table, same as any widget bound to the
 // wrong shape of table.
 import { FileDown } from "lucide-react";
+import { formatDateAU } from "@/lib/formatDate";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
@@ -41,7 +42,7 @@ export default function LedesExportWidget({ records }: { records: CustomTableRec
             {records.map(r => (
               <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                 <td className="px-5 py-2.5 font-semibold text-slate-800">{r.values.invoice_number || '—'}</td>
-                <td className="px-5 py-2.5 text-slate-500">{r.values.issue_date || '—'}</td>
+                <td className="px-5 py-2.5 text-slate-500">{formatDateAU(r.values.issue_date)}</td>
                 <td className="px-5 py-2.5 text-slate-500">{r.values.status || '—'}</td>
                 <td className="px-5 py-2.5 text-right font-medium text-slate-800">
                   {r.values.total_inc_gst != null && r.values.total_inc_gst !== '' ? aud.format(Number(r.values.total_inc_gst) || 0) : '—'}

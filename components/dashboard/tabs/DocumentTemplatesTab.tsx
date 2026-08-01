@@ -273,7 +273,7 @@ export default function DocumentTemplatesTab({ recordId }: Props) {
                 </div>
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   {p.templateIds.length} document{p.templateIds.length !== 1 ? "s" : ""}
-                  {p.expiresAt ? ` · expires ${new Date(p.expiresAt).toLocaleDateString()}` : " · no expiry"}
+                  {p.expiresAt ? ` · expires ${new Date(p.expiresAt).toLocaleDateString('en-AU')}` : " · no expiry"}
                   {p.accessCode && (
                     <span className="inline-flex items-center gap-1 ml-1">
                       · <Lock size={9} className="inline" /> code: <code className="text-slate-500 font-bold">{p.accessCode}</code>

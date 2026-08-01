@@ -59,20 +59,12 @@ export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
     quickAddFieldKeys: ['date', 'staff', 'supplier_name', 'expense_code', 'description', 'rate', 'quantity', 'gst_status', 'billable'],
     isFeeSource: true,
   },
-  {
-    slug: 'trust-transactions',
-    title: 'Trust',
-    icon: 'Landmark',
-    // Empty quickAddFieldKeys -- deliberately view/print-only (see
-    // buildMissingDefaultProjectDashboardTabs below, which skips the
-    // quick_add_form widget entirely for an empty spec). New trust entries
-    // only ever go through the Deposit/Transfer/Protect/Print Cheques
-    // actions on /dashboard/trust-account (see components/trust/), which
-    // own the shared-receipt-number/trust_account/cheque_number mechanics a
-    // bare quick-add form here would bypass.
-    gridFieldKeys: ['receipt_number', 'date', 'trust_account', 'type', 'payor_payee', 'purpose', 'amount_in', 'amount_out', 'running_balance'],
-    quickAddFieldKeys: [],
-  },
+  // Trust used to be seeded here as a generic 'custom_dashboard' grid --
+  // superseded by the dedicated 'trust_account' tab_type (see
+  // components/dashboard/tabs/TrustAccountTab.tsx and RecordDashboard.tsx's
+  // loadTabs, which seeds it directly, same Law-Firm-template gate as
+  // Finance Model). Existing matters' old grid tabs were migrated by
+  // supabase/migrations/20260802170000_trust_account_tab.sql.
   {
     slug: 'client-credits',
     title: 'Credits',

@@ -83,7 +83,11 @@ CREATE TRIGGER guard_ledger_values_trg
 --   matter                  -- the sub-ledger key; running balance and the
 --                              overdraw check are scoped to this value
 --   running_balance         -- written by this function, never by the caller
---   one auto_number_prefix field -- assigned by this function (r 36)
+--   auto_number_prefix field(s) -- assigned by this function (r 36). Trust
+--     Transactions has three parallel sequences (receipt_number/
+--     payment_number/journal_number) selected by the row's `type`; every
+--     other ledger table has exactly one auto-number field, selected
+--     unconditionally via the CASE's ELSE branch below.
 CREATE OR REPLACE FUNCTION insert_ledger_record(
   p_table_id uuid,
   p_values jsonb
@@ -127,7 +131,15 @@ BEGIN
   SELECT id INTO v_matter_field_id  FROM company_table_fields WHERE table_id = p_table_id AND field_key = 'matter'          AND deleted_at IS NULL;
   SELECT id INTO v_balance_field_id FROM company_table_fields WHERE table_id = p_table_id AND field_key = 'running_balance' AND deleted_at IS NULL;
   SELECT * INTO v_num_field FROM company_table_fields
-    WHERE table_id = p_table_id AND auto_number_prefix IS NOT NULL AND deleted_at IS NULL LIMIT 1;
+    WHERE table_id = p_table_id AND auto_number_prefix IS NOT NULL AND deleted_at IS NULL
+    AND field_key = CASE COALESCE(p_values->>'type', '')
+      WHEN 'Deposit' THEN 'receipt_number'
+      WHEN 'Withdrawal - Cheque' THEN 'payment_number'
+      WHEN 'Withdrawal - EFT' THEN 'payment_number'
+      WHEN 'Journal Transfer' THEN 'journal_number'
+      ELSE field_key
+    END
+    LIMIT 1;
 
   v_amount_in  := COALESCE(NULLIF(p_values->>'amount_in',  '')::numeric, 0);
   v_amount_out := COALESCE(NULLIF(p_values->>'amount_out', '')::numeric, 0);

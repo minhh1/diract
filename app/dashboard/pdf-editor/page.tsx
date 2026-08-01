@@ -120,7 +120,7 @@ export default function PdfEditorPage() {
               <button onClick={() => setSource({ kind: "existing", documentId: doc.id })} className="flex-1 min-w-0 text-left">
                 <p className="text-[13px] font-medium text-slate-900 truncate">{doc.name}</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Updated {new Date(doc.updated_at).toLocaleDateString()}
+                  Updated {new Date(doc.updated_at).toLocaleDateString('en-AU')}
                 </p>
               </button>
               <button

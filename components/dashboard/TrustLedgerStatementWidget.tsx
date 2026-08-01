@@ -12,6 +12,7 @@
 import { useState, useMemo } from "react";
 import { FileText, Printer } from "lucide-react";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
+import { formatDateAU } from "@/lib/formatDate";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
@@ -101,7 +102,7 @@ export default function TrustLedgerStatementWidget({ records }: { records: Custo
               <tbody>
                 {entries.map(r => (
                   <tr key={r.id} className="border-b border-slate-50">
-                    <td className="px-4 py-2 text-slate-500">{r.values.date || '—'}</td>
+                    <td className="px-4 py-2 text-slate-500">{formatDateAU(r.values.date)}</td>
                     <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{r.values.receipt_number || '—'}</td>
                     <td className="px-4 py-2 text-slate-600">{r.values.type || '—'}</td>
                     <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || r.values.purpose || '—'}</td>

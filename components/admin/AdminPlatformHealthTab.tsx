@@ -421,7 +421,7 @@ export default function AdminPlatformHealthTab() {
             )}
             {azureExpiring.map((a, i) => (
               <div key={i} className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-2xl text-[12px] text-amber-800">
-                {a.companyName}: {a.kind} client secret expires {new Date(a.expires_at).toLocaleDateString()}
+                {a.companyName}: {a.kind} client secret expires {new Date(a.expires_at).toLocaleDateString('en-AU')}
               </div>
             ))}
 
@@ -447,9 +447,9 @@ export default function AdminPlatformHealthTab() {
                           className="text-[11px] text-slate-400 mt-0.5 hover:text-indigo-600 hover:underline text-left"
                         >
                           {s.expires_at
-                            ? `Expires ${new Date(s.expires_at).toLocaleDateString()}`
+                            ? `Expires ${new Date(s.expires_at).toLocaleDateString('en-AU')}`
                             : s.last_rotated_at
-                              ? `Last rotated ${new Date(s.last_rotated_at).toLocaleDateString()}${s.rotation_interval_days ? `, every ${s.rotation_interval_days}d` : ""} (no expiry set)`
+                              ? `Last rotated ${new Date(s.last_rotated_at).toLocaleDateString('en-AU')}${s.rotation_interval_days ? `, every ${s.rotation_interval_days}d` : ""} (no expiry set)`
                               : "No expiry set. Click to add"}
                         </button>
                       )}
@@ -573,11 +573,11 @@ export default function AdminPlatformHealthTab() {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white border border-slate-100 rounded-[28px] p-5">
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Visits (30d)</p>
-                <p className="text-xl font-light text-slate-800">{analytics.totals.visits.toLocaleString()}</p>
+                <p className="text-xl font-light text-slate-800">{analytics.totals.visits.toLocaleString('en-AU')}</p>
               </div>
               <div className="bg-white border border-slate-100 rounded-[28px] p-5">
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">API calls (30d)</p>
-                <p className="text-xl font-light text-slate-800">{analytics.totals.invocations.toLocaleString()}</p>
+                <p className="text-xl font-light text-slate-800">{analytics.totals.invocations.toLocaleString('en-AU')}</p>
               </div>
             </div>
 

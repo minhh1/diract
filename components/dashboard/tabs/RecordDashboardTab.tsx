@@ -115,6 +115,25 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
 
   useEffect(() => { loadRecords(); }, [loadRecords]);
 
+  // Lets DashboardQuickAddForm skip its full-refetch fallback (onAdded ->
+  // loadRecords, a real round trip re-querying every row of the linked
+  // table) and instead append the just-created row straight into local
+  // state -- same shape as lib/hooks/useCustomTable.ts's own
+  // addRecordOptimistic, used by the standalone company-dashboard version
+  // of this same quick-add form. `records` here is already scoped to rows
+  // linking back to THIS record (see loadRecords above), and
+  // DashboardQuickAddForm always forces the link field to recordId via
+  // fixedValues, so the new row unconditionally belongs in it.
+  const addRecordOptimistic = useCallback((id: string, values: Record<string, any>) => {
+    setRecords(prev => {
+      if (prev.some(r => r.id === id)) return prev; // a real refetch already landed it first
+      const newRecord: CustomTableRecord = {
+        id, table_id: linkedTableId, created_at: new Date().toISOString(), values, displayValues: {},
+      };
+      return [newRecord, ...prev];
+    });
+  }, [linkedTableId]);
+
   useProgressBarWhile(loading);
 
   useEffect(() => {
@@ -262,6 +281,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
             filters={filters}
             setFilter={setFilter}
             onChanged={loadRecords}
+            onOptimisticAdd={addRecordOptimistic}
             mode="view"
             isLedger={isLedger}
             fixedValues={linkField ? { [linkField.field_key]: recordId } : undefined}

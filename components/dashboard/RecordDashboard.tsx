@@ -25,6 +25,7 @@ import PrecedentsTab from "./tabs/PrecedentsTab";
 import RecordDashboardTab from "./tabs/RecordDashboardTab";
 import InvoicesTab from "./tabs/InvoicesTab";
 import FinanceModelTab from "./tabs/FinanceModelTab";
+import TrustAccountTab from "./tabs/TrustAccountTab";
 import ResidualLandSolverTab from "./tabs/ResidualLandSolverTab";
 import SendSmsCard from "./SendSmsCard";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
@@ -584,6 +585,19 @@ export default function RecordDashboard({
           display_order: finalTabs.length + missingCoreTabs.length,
         });
       }
+      // Trust Account -- same Law Firm-template gate as Finance Model above.
+      // Supersedes the old generic 'custom_dashboard' grid the
+      // 'trust-transactions' spec in defaultRecordDashboardTabs.ts used to
+      // seed (migrated to this tab_type by
+      // supabase/migrations/20260802170000_trust_account_tab.sql), so this
+      // check only ever fires for a matter that somehow has neither.
+      if (systemTable === 'projects' && customTables.some(t => t.slug === 'trust-transactions') && !uniqueTabs.some(t => t.tab_type === 'trust_account')) {
+        missingCoreTabs.push({
+          company_id: cid, record_id: recordId, record_table: recordTable,
+          title: 'Trust Account', icon: 'Landmark', tab_type: 'trust_account',
+          display_order: finalTabs.length + missingCoreTabs.length,
+        });
+      }
       if (systemTable === 'entities' && !uniqueTabs.some(t => t.tab_type === 'related_matters')) {
         missingCoreTabs.push({
           company_id: cid, record_id: recordId, record_table: recordTable,
@@ -690,6 +704,16 @@ export default function RecordDashboard({
           icon: 'TrendingUp',
           tab_type: 'finance_model',
           display_order: 2,
+        }] : []),
+        // Trust Account -- same Law Firm-template gate as Finance Model above.
+        ...(systemTable === 'projects' && customTables.some(t => t.slug === 'trust-transactions') ? [{
+          company_id: cid,
+          record_id: recordId,
+          record_table: recordTable,
+          title: 'Trust Account',
+          icon: 'Landmark',
+          tab_type: 'trust_account',
+          display_order: 3,
         }] : []),
         ...(systemTable === 'entities' ? [{
           company_id: cid,
@@ -1401,6 +1425,9 @@ export default function RecordDashboard({
       )}
       {activeTab?.tab_type === 'finance_model' && (
         <FinanceModelTab recordId={recordId} />
+      )}
+      {activeTab?.tab_type === 'trust_account' && (
+        <TrustAccountTab recordId={recordId} />
       )}
       {activeTab?.tab_type === 'residual_land_solver' && (
         <ResidualLandSolverTab recordId={recordId} isProject={systemTable === 'projects'} />

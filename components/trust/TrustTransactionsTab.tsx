@@ -6,9 +6,10 @@
 // selected. Reads/writes the EXISTING Trust Transactions ledger table via
 // the same insert_ledger_record()/createRecord() mechanics every other
 // ledger table in this app uses -- nothing here is a new data structure.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus, ArrowLeftRight, ShieldPlus, Printer, Eye } from "lucide-react";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import DepositFundsModal from "./DepositFundsModal";
 import TransferFundsModal from "./TransferFundsModal";
 import ProtectFundsModal from "./ProtectFundsModal";
@@ -52,6 +53,8 @@ export default function TrustTransactionsTab({
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
 
   const sorted = [...records].sort((a, b) => String(b.values.date || '').localeCompare(String(a.values.date || '')));
+  const matterIds = useMemo(() => [...new Set(sorted.map(r => String(r.values.matter || '')).filter(Boolean))], [sorted]);
+  const matterNumbers = useMatterNumbers(matterIds);
 
   return (
     <div className="space-y-4">
@@ -78,6 +81,7 @@ export default function TrustTransactionsTab({
               <th className="text-left px-4 py-2.5">Entered Date</th>
               <th className="text-left px-4 py-2.5">Description</th>
               <th className="text-left px-4 py-2.5">Receipt No.</th>
+              <th className="text-left px-4 py-2.5">Matter No.</th>
               <th className="text-left px-4 py-2.5">Matter</th>
               <th className="text-right px-4 py-2.5">Debit</th>
               <th className="text-right px-4 py-2.5">Credit</th>
@@ -105,6 +109,7 @@ export default function TrustTransactionsTab({
                 <td className="px-4 py-2.5 text-slate-400">{formatDate(r.created_at)}</td>
                 <td className="px-4 py-2.5 text-slate-700 font-medium">{describe(r)}</td>
                 <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.cheque_number || '—'}</td>
+                <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{matterNumbers.get(String(r.values.matter || '')) || '—'}</td>
                 <td className="px-4 py-2.5 text-slate-600">{r.displayValues?.matter || '—'}</td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_out ? money(Number(r.values.amount_out)) : ''}</td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_in ? money(Number(r.values.amount_in)) : ''}</td>

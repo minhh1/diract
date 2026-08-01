@@ -52,8 +52,8 @@ function daysInMonth(year: number, month: number): number {
 
 function formatBucketLabel(bucket: string, granularity: ChartGranularity): string {
   const d = new Date(`${bucket}T00:00:00`);
-  if (granularity === 'month') return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
-  if (granularity === 'week') return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (granularity === 'month') return d.toLocaleDateString('en-AU', { month: 'short', year: '2-digit' });
+  if (granularity === 'week') return d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
   return String(d.getDate());
 }
 
@@ -160,7 +160,7 @@ export default function DashboardActivityChart({ series, granularity, chartType 
   };
 
   const headerLabel = granularity === 'day'
-    ? new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + ' activity'
+    ? new Date(year, month, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }) + ' activity'
     : `Last 12 ${granularity === 'week' ? 'weeks' : 'months'}`;
 
   // Bar-color treatment (single-hue vs categorical): an axis-tagged chart

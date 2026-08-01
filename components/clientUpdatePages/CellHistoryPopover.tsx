@@ -35,7 +35,7 @@ function timeAgo(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.round(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(iso).toLocaleDateString('en-AU');
 }
 
 export default function CellHistoryPopover({ field, fieldLabel, dateFormat, onFetch, onClose }: {

@@ -166,7 +166,7 @@ export default function ClientUpdatePagesTab() {
                   <>
                     <p className="text-[11px] text-slate-400">
                       {p.matterCount} record{p.matterCount === 1 ? "" : "s"}
-                      {p.visibility === "public" ? ` · PIN ${p.access_code}${p.expires_at ? ` · expires ${new Date(p.expires_at).toLocaleDateString()}` : " · no expiry"}` : ""}
+                      {p.visibility === "public" ? ` · PIN ${p.access_code}${p.expires_at ? ` · expires ${new Date(p.expires_at).toLocaleDateString('en-AU')}` : " · no expiry"}` : ""}
                     </p>
                     {p.is_active && p.visibility === "public" && (
                       <>

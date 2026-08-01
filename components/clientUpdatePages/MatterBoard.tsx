@@ -1519,7 +1519,7 @@ function formatNoteTimestamp(note: MatterBoardNote, dateFormat: string): string 
   if (!note.created_at) return datePart;
   const time = new Date(note.created_at);
   if (isNaN(time.getTime())) return datePart;
-  return `${datePart}, ${time.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  return `${datePart}, ${time.toLocaleTimeString('en-AU', { hour: "numeric", minute: "2-digit" })}`;
 }
 
 // ai_summary_generated_at is a real timestamptz (e.g. from Postgres now()),
@@ -1532,7 +1532,7 @@ function formatSummaryGeneratedAt(iso: string, dateFormat: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const match = DATE_FORMATS.find(f => f.value === dateFormat) || DATE_FORMATS[0];
-  return `${match.format(d)}, ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  return `${match.format(d)}, ${d.toLocaleTimeString('en-AU', { hour: "numeric", minute: "2-digit" })}`;
 }
 
 // Spreadsheet mode's own view of the AI summary MatterCard already shows in

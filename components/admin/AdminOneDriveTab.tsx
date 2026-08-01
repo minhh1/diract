@@ -180,7 +180,7 @@ export default function AdminOneDriveTab({ companyId }: Props) {
               <FolderOpen size={13} className={connection.admin_consent_granted && connection.drive_id ? "text-emerald-500 shrink-0" : "text-amber-500 shrink-0"} />
               <p className="text-[12px] font-medium text-slate-700 flex-1 truncate">
                 {connection.site_url}
-                {connection.last_synced_at && `, last synced ${new Date(connection.last_synced_at).toLocaleString()}`}
+                {connection.last_synced_at && `, last synced ${new Date(connection.last_synced_at).toLocaleString('en-AU')}`}
               </p>
               <button onClick={disconnect} className="p-1 text-slate-300 hover:text-red-500 transition-colors">
                 <Trash2 size={12} />

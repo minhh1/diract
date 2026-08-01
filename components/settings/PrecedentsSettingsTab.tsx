@@ -287,7 +287,7 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
           <FileText size={18} className="text-indigo-600 shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-bold text-slate-800 truncate">{letterhead.original_filename || "Letterhead.docx"}</p>
-            <p className="text-[11px] text-slate-400">Uploaded {new Date(letterhead.updated_at).toLocaleDateString()}</p>
+            <p className="text-[11px] text-slate-400">Uploaded {new Date(letterhead.updated_at).toLocaleDateString('en-AU')}</p>
           </div>
           <button onClick={handlePreview} disabled={previewing} title="Preview where issued content will land"
             className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-[11px] font-bold rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-40">

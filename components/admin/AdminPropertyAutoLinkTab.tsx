@@ -181,7 +181,7 @@ export default function AdminPropertyAutoLinkTab({ companyId }: Props) {
                     </p>
                   ))}
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">{new Date(r.created_at).toLocaleString()}</p>
+                <p className="text-[10px] text-slate-400 mt-1.5">{new Date(r.created_at).toLocaleString('en-AU')}</p>
                 {r.error && (
                   <p className="text-[10px] text-red-500 mt-1">Last attempt failed: {r.error}</p>
                 )}

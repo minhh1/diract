@@ -46,7 +46,7 @@ export default function HeartbeatStatusList({
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-bold text-slate-800">{def.label}</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  {hb ? `Last ran ${new Date(hb.last_run_at).toLocaleString()}` : "Never ran"}
+                  {hb ? `Last ran ${new Date(hb.last_run_at).toLocaleString('en-AU')}` : "Never ran"}
                 </p>
               </div>
               <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase shrink-0 ${

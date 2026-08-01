@@ -5,6 +5,7 @@
 // by/Name of Principal/Signature/Date). Same pdf-lib primitives as
 // generateTrustLedgerPdf.ts.
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { wrapPdfText } from "./pdfTextWrap";
 
 export interface BankReconciliationLine {
   date: string | null;
@@ -138,20 +139,19 @@ export async function generateBankReconciliationPdf(input: GenerateBankReconcili
     if (!rows.length) {
       text('No items.', MARGIN, 9, { color: [0.55, 0.55, 0.58] }); y -= 16;
     }
+    const ROW_SIZE = 9, LINE_H = 11;
     for (const row of rows) {
-      ensureRoom(16);
       const values: Record<string, string> = { date: formatDate(row.date), description: row.description, reference: row.reference || '', amount: money(row.amount) };
+      const wrapped = COLS.map(col => wrapPdfText(values[col.key] || '', regular, ROW_SIZE, col.width - 4));
+      const lineCount = Math.max(1, ...wrapped.map(w => w.length));
+      ensureRoom(lineCount * LINE_H + 4);
       for (let i = 0; i < COLS.length; i++) {
         const col = COLS[i];
-        const raw = values[col.key] || '';
-        const size = 9;
-        const truncated = regular.widthOfTextAtSize(raw, size) > col.width - 4
-          ? (() => { let s = raw; while (s.length > 1 && regular.widthOfTextAtSize(s + '…', size) > col.width - 4) s = s.slice(0, -1); return s + '…'; })()
-          : raw;
-        text(truncated, col.align === 'right' ? colX[i] + col.width : colX[i], size, { align: col.align });
+        const colXPos = col.align === 'right' ? colX[i] + col.width : colX[i];
+        wrapped[i].forEach((line, li) => text(line, colXPos, ROW_SIZE, { align: col.align }, y - li * LINE_H));
       }
       total += row.amount;
-      y -= 14;
+      y -= lineCount * LINE_H + 4;
     }
     ensureRoom(20);
     page.drawLine({ start: { x: MARGIN, y: y + 6 }, end: { x: PAGE_W - MARGIN, y: y + 6 }, thickness: 0.75, color: rgb(0.75, 0.75, 0.78) });

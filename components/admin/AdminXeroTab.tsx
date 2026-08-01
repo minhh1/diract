@@ -169,7 +169,7 @@ export default function AdminXeroTab() {
                 <Landmark size={13} className="text-emerald-500 shrink-0" />
                 <p className="text-[12px] font-medium text-slate-700 flex-1">
                   {c.tenant_name || c.tenant_id}
-                  {c.last_synced_at && `, last synced ${new Date(c.last_synced_at).toLocaleString()}`}
+                  {c.last_synced_at && `, last synced ${new Date(c.last_synced_at).toLocaleString('en-AU')}`}
                 </p>
                 <button onClick={() => disconnect(c.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors">
                   <Trash2 size={12} />

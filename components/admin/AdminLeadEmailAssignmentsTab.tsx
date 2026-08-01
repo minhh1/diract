@@ -189,7 +189,7 @@ export default function AdminLeadEmailAssignmentsTab({ companyId }: Props) {
                     {r.kind === "create_new" ? `Create new Lead: ${r.leadName}` : `Assign to ${r.leadName}`}
                   </p>
                   <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                    {r.subject || "(no subject)"}, from {r.from_name || r.from_address}, {new Date(r.created_at).toLocaleString()}
+                    {r.subject || "(no subject)"}, from {r.from_name || r.from_address}, {new Date(r.created_at).toLocaleString('en-AU')}
                   </p>
                   {r.match_reason && (
                     <p className="text-[10px] text-indigo-400 mt-0.5">{MATCH_REASON_LABELS[r.match_reason] || r.match_reason}</p>

@@ -98,7 +98,7 @@ export default function PrecedentsTab({ recordId }: Props) {
               <Download size={14} className="text-slate-400 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-[12px] font-bold text-slate-700 truncate">{i.subjectLine || i.precedentName}</p>
-                <p className="text-[10px] text-slate-400">{i.precedentName} · {new Date(i.createdAt).toLocaleString()}</p>
+                <p className="text-[10px] text-slate-400">{i.precedentName} · {new Date(i.createdAt).toLocaleString('en-AU')}</p>
               </div>
             </a>
           ))}

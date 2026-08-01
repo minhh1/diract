@@ -53,10 +53,19 @@ BEGIN
   END IF;
 
   -- ── Template shell ───────────────────────────────────────────────────
+  -- Name is "Australia Law Firm Seed Template" -- every date-typed field
+  -- this template seeds (and every trust/report screen built against it)
+  -- assumes en-AU (DD/MM/YYYY) display, and the trust ledger's whole design
+  -- (receipt numbering, running balances, overdraw guard) follows the
+  -- Legal Profession Uniform General Rules 2015 (NSW/Vic) specifically --
+  -- not a jurisdiction-neutral template. Slug stays 'law-firm' (stable
+  -- identifier referenced throughout the codebase/SQL); only the display
+  -- name changed. Existing installs are renamed by a migration (the
+  -- ON CONFLICT below only fires for a genuinely fresh row).
   INSERT INTO template_definitions (slug, name, description, industry, icon, color, owner_company_id, is_published, suggested_label_overrides)
   VALUES (
-    'law-firm', 'Law Firm',
-    'Matter fields on Projects, plus Invoices, Time & Fee Entries, Disbursements and an append-only Trust Transactions ledger for a legal practice.',
+    'law-firm', 'Australia Law Firm Seed Template',
+    'Matter fields on Projects, plus Invoices, Time & Fee Entries, Disbursements and an append-only Trust Transactions ledger for an Australian legal practice.',
     'Legal', 'Scale', '#4338ca', v_owner_company_id, true,
     jsonb_build_object('projects', jsonb_build_object('singular', 'Matter', 'plural', 'Matters'))
   )
@@ -280,7 +289,7 @@ BEGIN
     (template_table_id, field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order, auto_number_prefix, help_text)
   SELECT v_trust_table_id, v.field_key, v.label, v.field_type, v.select_options, v.linked_system_table, v.linked_template_table_id, v.linked_display_field, v.display_order, v.auto_number_prefix, v.help_text
   FROM (VALUES
-    ('receipt_number',  'Receipt No.',        'text',     NULL::jsonb, NULL::text,       NULL::uuid, NULL::text, 0, 'TR-'::text, 'Assigned automatically in consecutive sequence (r 36) -- leave blank'::text),
+    ('receipt_number',  'Receipt No.',        'text',     NULL::jsonb, NULL::text,       NULL::uuid, NULL::text, 0, 'TR-'::text, 'Assigned automatically in consecutive sequence for deposits (r 36) -- leave blank'::text),
     ('date',            'Date',               'date',     NULL::jsonb, NULL::text,       NULL::uuid, NULL::text, 1, NULL, NULL),
     ('matter',          'Matter',             'project',  NULL::jsonb, 'projects'::text, NULL::uuid, 'name'::text, 2, NULL, NULL),
     ('client',          'Client',             'entity',   NULL::jsonb, 'entities'::text, NULL::uuid, 'name', 3, NULL, NULL),
@@ -292,7 +301,9 @@ BEGIN
     ('amount_out',      'Amount Out',         'currency', NULL::jsonb, NULL::text,       NULL::uuid, NULL::text, 9, NULL, NULL),
     ('running_balance', 'Matter Balance',     'currency', NULL::jsonb, NULL::text,       NULL::uuid, NULL::text, 10, NULL, 'Running balance of this matter''s trust ledger after this entry (r 47) -- computed automatically'),
     ('invoice',         'Invoice',            'table_relation', NULL::jsonb, NULL::text, v_invoices_table_id, 'invoice_number', 11, NULL, 'For withdrawals of legal costs: the bill this payment relates to (r 42)'),
-    ('authority_reference', 'Withdrawal Authority', 'text', NULL::jsonb, NULL::text,     NULL::uuid, NULL::text, 12, NULL, 'Bill date + 7 business days elapsed, or the client''s written authority (r 42)')
+    ('authority_reference', 'Withdrawal Authority', 'text', NULL::jsonb, NULL::text,     NULL::uuid, NULL::text, 12, NULL, 'Bill date + 7 business days elapsed, or the client''s written authority (r 42)'),
+    ('payment_number',  'Payment No.',        'text',     NULL::jsonb, NULL::text,       NULL::uuid, NULL::text, 17, 'PY-'::text, 'Assigned automatically in consecutive sequence for withdrawals (r 36) -- leave blank'::text),
+    ('journal_number',  'Journal No.',        'text',     NULL::jsonb, NULL::text,       NULL::uuid, NULL::text, 18, 'JT-'::text, 'Assigned automatically in consecutive sequence for journal transfers (r 36) -- leave blank'::text)
   ) AS v(field_key, label, field_type, select_options, linked_system_table, linked_template_table_id, linked_display_field, display_order, auto_number_prefix, help_text)
   WHERE NOT EXISTS (
     SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
@@ -370,6 +381,31 @@ BEGIN
   WHERE NOT EXISTS (
     SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_recon_table_id AND field_key = v.field_key
   );
+
+  -- trust_account/payment_method/cheque_number on Trust Transactions --
+  -- these were added straight to the live catalog by
+  -- supabase/migrations/20260731100000_trust_account_page.sql and never
+  -- mirrored here, so a genuinely fresh install was missing them (caught
+  -- while adding the "Funds remained in Bank Account" payment_method
+  -- option below -- see supabase/migrations/20260802170000_trust_opening_balance_backfill.sql).
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, linked_template_table_id, linked_display_field, display_order)
+  SELECT v_trust_table_id, v.field_key, v.label, v.field_type, v.select_options, v.linked_template_table_id, v.linked_display_field, v.display_order
+  FROM (VALUES
+    ('trust_account',  'Trust Account',  'table_relation', NULL::jsonb, v_accounts_table_id, 'account_name'::text, 13),
+    -- "Funds remained in Bank Account" covers an opening balance carried
+    -- forward from a previous trust accounting system -- money that never
+    -- moved as a fresh deposit, so none of the other methods describe it.
+    ('payment_method', 'Payment Method', 'select', to_jsonb(ARRAY['Bank Transfer','Cash','Cheque','Credit Card','Funds remained in Bank Account']), NULL::uuid, NULL::text, 14)
+  ) AS v(field_key, label, field_type, select_options, linked_template_table_id, linked_display_field, display_order)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
+  );
+
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, display_order, auto_number_prefix, help_text)
+  SELECT v_trust_table_id, 'cheque_number', 'Cheque No.', 'text', 15, 'CHQ-', 'Assigned automatically when printing a trust cheque -- leave blank'
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = 'cheque_number');
 
   INSERT INTO template_definition_table_fields
     (template_table_id, field_key, label, field_type, linked_template_table_id, linked_display_field, display_order)

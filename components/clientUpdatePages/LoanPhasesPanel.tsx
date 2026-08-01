@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Plus, Loader2, CalendarRange } from "lucide-react";
+import { formatDateAU } from "@/lib/formatDate";
 
 interface Phase {
   id: string;
@@ -100,7 +101,7 @@ export default function LoanPhasesPanel({ loanId, canEdit }: { loanId: string; c
             ) : (
               <>
                 <span className="font-bold text-slate-700 text-[11px]">{p.repayment_type}</span>
-                <span className="text-slate-500 text-[11px]">{p.start_date} → {p.end_date}</span>
+                <span className="text-slate-500 text-[11px]">{formatDateAU(p.start_date)} → {formatDateAU(p.end_date)}</span>
                 <span className="text-slate-400 text-[11px]">{p.payment_frequency}</span>
                 {p.notes && <span className="text-slate-400 text-[11px] italic truncate">{p.notes}</span>}
               </>

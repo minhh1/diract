@@ -447,7 +447,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
               <Users2 size={13} className={connection.admin_consent_granted ? "text-emerald-500 shrink-0" : "text-amber-500 shrink-0"} />
               <p className="text-[12px] font-medium text-slate-700 flex-1">
                 Tenant {connection.tenant_id}
-                {connection.last_synced_at && `, last synced ${new Date(connection.last_synced_at).toLocaleString()}`}
+                {connection.last_synced_at && `, last synced ${new Date(connection.last_synced_at).toLocaleString('en-AU')}`}
               </p>
               <button onClick={disconnect} className="p-1 text-slate-300 hover:text-red-500 transition-colors">
                 <Trash2 size={12} />
@@ -463,7 +463,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
                 new Date(connection.secret_expires_at).getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000
                   ? "text-amber-600 font-bold" : "text-slate-400"
               }`}>
-                Client secret expires {new Date(connection.secret_expires_at).toLocaleDateString()}
+                Client secret expires {new Date(connection.secret_expires_at).toLocaleDateString('en-AU')}
               </p>
             )}
 
@@ -596,7 +596,7 @@ export default function AdminMsTeamsTab({ companyId }: Props) {
                     new Date(botConnection.secret_expires_at).getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000
                       ? "text-amber-600 font-bold" : "text-slate-400"
                   }`}>
-                    Bot secret expires {new Date(botConnection.secret_expires_at).toLocaleDateString()}
+                    Bot secret expires {new Date(botConnection.secret_expires_at).toLocaleDateString('en-AU')}
                   </p>
                 )}
               </div>

@@ -589,7 +589,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                   <p className="text-[13px] font-bold text-slate-800 truncate">{p.project_name}</p>
                   <p className="text-[11px] text-slate-400 truncate mt-0.5">{p.gmail_label_name}</p>
                   <p className="text-[10px] text-slate-300 mt-1">
-                    Archived {new Date(p.archived_at).toLocaleString()}
+                    Archived {new Date(p.archived_at).toLocaleString('en-AU')}
                     {archiveEmails.length > 0 && <>; copies held by {archiveEmails.join(", ")}</>}
                   </p>
                 </div>
@@ -755,8 +755,8 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                     <p className="text-[11px] text-red-500 mt-1 break-words">{f.last_error}</p>
                   )}
                   <p className="text-[10px] text-slate-300 mt-1.5">
-                    First failed {new Date(f.first_failed_at).toLocaleString()}
-                    {f.last_attempted_at && <>; last retried {new Date(f.last_attempted_at).toLocaleString()}</>}
+                    First failed {new Date(f.first_failed_at).toLocaleString('en-AU')}
+                    {f.last_attempted_at && <>; last retried {new Date(f.last_attempted_at).toLocaleString('en-AU')}</>}
                     {"; "}{f.attempts} recovery attempt{f.attempts !== 1 ? "s" : ""}
                   </p>
                 </div>
@@ -894,7 +894,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                         {describeActivity(row)}
                       </p>
                       <p className="text-[10px] text-slate-300 mt-0.5">
-                        {new Date(row.created_at).toLocaleString()}
+                        {new Date(row.created_at).toLocaleString('en-AU')}
                       </p>
                     </div>
                   </div>

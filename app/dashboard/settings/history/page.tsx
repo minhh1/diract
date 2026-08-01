@@ -105,7 +105,7 @@ export default function SchemaHistoryPage() {
                     {isRevertMarker ? `Reverted to step #${entry.reverted_from_seq}` : (entry.entity_label || 'Untitled')}
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    {ENTITY_LABELS[entry.entity_type] || entry.entity_type} · {entry.action} · {new Date(entry.created_at).toLocaleString()}
+                    {ENTITY_LABELS[entry.entity_type] || entry.entity_type} · {entry.action} · {new Date(entry.created_at).toLocaleString('en-AU')}
                   </p>
                 </div>
                 {!isRevertMarker && (

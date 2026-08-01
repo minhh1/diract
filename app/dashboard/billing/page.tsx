@@ -172,7 +172,7 @@ function BillingPageInner() {
             </p>
             {subscription.currentPeriodEnd && (
               <p className="text-[11px] text-slate-400">
-                Renews {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
+                Renews {new Date(subscription.currentPeriodEnd).toLocaleDateString('en-AU')}
               </p>
             )}
             {subscription.planId === "payg" && usageThisMonthUsd !== null && (

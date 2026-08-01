@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Search, Settings2, X, Plus, ChevronDown, ChevronUp, ChevronsUpDown, GripVertical, Loader2, Trash2, Download } from "lucide-react";
+import { Search, Settings2, X, Plus, ChevronDown, ChevronUp, ChevronsUpDown, GripVertical, Loader2, Trash2, Download, Upload } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/queryCache";
@@ -34,6 +34,7 @@ import ColumnConfigDrawer from "@/components/ColumnConfigDrawer";
 // small components anyway (i.e. hardly hurt by not deferring), so not
 // worth the risk to keep deferred.
 const NewRecordModal = dynamic(() => import("@/components/dashboard/NewRecordModal"));
+const DisbursementInvoiceImportModal = dynamic(() => import("@/components/dashboard/DisbursementInvoiceImportModal"));
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { matchesAllFilters } from "@/lib/filterMatch";
@@ -191,6 +192,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isImportingInvoice, setIsImportingInvoice] = useState(false);
   const { pendingIds: pendingArchiveIds, refreshPendingArchiveRequests } = usePendingArchiveRequests("company_table_records", companyId);
 
   // ── Filters ──────────────────────────────────────────────────────────
@@ -426,13 +428,24 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
         nextValues.set(colId, byTarget);
       }));
       if (active) {
-        setRelatedValues(nextValues);
-        setRelatedColMeta(nextMeta);
+        const nextMetaObj = Object.fromEntries(nextMeta);
+        const nextValuesObj = Object.fromEntries(Array.from(nextValues.entries()).map(([colId, byTarget]) => [colId, Object.fromEntries(byTarget)]));
+        // Bail out to the same Map reference when this revalidate just
+        // confirms the cache-seeded value was already correct -- otherwise
+        // every mount/revisit forces a re-render of every drilled-in
+        // "related" column even when nothing changed, which is what showed
+        // up as a column header/value flashing to its "Related field"/blank
+        // fallback and back on every click-away-click-back, not just first
+        // load (confirmed: this effect ran unconditionally regardless of
+        // the lazy useState initializers above already having seeded real
+        // data from cache).
+        setRelatedColMeta(prev => JSON.stringify(Object.fromEntries(prev)) === JSON.stringify(nextMetaObj) ? prev : nextMeta);
+        setRelatedValues(prev => {
+          const prevObj = Object.fromEntries(Array.from(prev.entries()).map(([colId, byTarget]) => [colId, Object.fromEntries(byTarget)]));
+          return JSON.stringify(prevObj) === JSON.stringify(nextValuesObj) ? prev : nextValues;
+        });
         if (ctxCompanyId) {
-          writeCache(relatedColsCacheKey(ctxCompanyId, tableSlug), {
-            meta: Object.fromEntries(nextMeta),
-            values: Object.fromEntries(Array.from(nextValues.entries()).map(([colId, byTarget]) => [colId, Object.fromEntries(byTarget)])),
-          });
+          writeCache(relatedColsCacheKey(ctxCompanyId, tableSlug), { meta: nextMetaObj, values: nextValuesObj });
         }
       }
     })();
@@ -729,6 +742,14 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
               >
                 <Download size={16} /> Export CSV
               </button>
+              {tableDef.slug === "disbursements" && (
+                <button
+                  onClick={() => setIsImportingInvoice(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold transition-all hover:bg-slate-100"
+                >
+                  <Upload size={16} /> Import from PDF
+                </button>
+              )}
               <button
                 onClick={() => {
                   if (!createFields.length) {
@@ -801,6 +822,13 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
           fields={createFields}
           onCreate={handleCreate}
           onClose={() => setIsCreating(false)}
+        />
+      )}
+
+      {isImportingInvoice && (
+        <DisbursementInvoiceImportModal
+          onClose={() => setIsImportingInvoice(false)}
+          onImported={() => refetch()}
         />
       )}
 

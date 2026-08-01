@@ -76,7 +76,7 @@ interface TrashItem {
 }
 
 function fmtDate(iso: string | null) {
-  return iso ? new Date(iso).toLocaleString() : null;
+  return iso ? new Date(iso).toLocaleString('en-AU') : null;
 }
 
 export default function TrashPage() {

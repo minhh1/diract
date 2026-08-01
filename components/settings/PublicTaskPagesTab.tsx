@@ -105,7 +105,7 @@ export default function PublicTaskPagesTab() {
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 {SCOPE_LABELS[p.scope]}{p.teamName ? ` (${p.teamName})` : ""} · by {p.createdBy}
-                {p.expiresAt ? ` · expires ${new Date(p.expiresAt).toLocaleDateString()}` : " · no expiry"}
+                {p.expiresAt ? ` · expires ${new Date(p.expiresAt).toLocaleDateString('en-AU')}` : " · no expiry"}
               </p>
             </div>
             {p.isActive && (

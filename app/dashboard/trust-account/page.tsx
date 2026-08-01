@@ -243,7 +243,7 @@ export default function TrustAccountPage() {
             records={accountRecords}
           />
         ) : (
-          <TrustReportsTab records={accountRecords} />
+          <TrustReportsTab records={accountRecords} trustAccountName={currentAccount?.values.account_name} />
         )}
       </div>
     </div>

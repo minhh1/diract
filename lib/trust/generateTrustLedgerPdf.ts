@@ -5,6 +5,7 @@
 // Amount/Debit/Credit/Balance), and a totals row. Same pdf-lib primitives as
 // generateTrustReceiptPdf.ts.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { wrapPdfText } from "./pdfTextWrap";
 
 export interface TrustLedgerRow {
   transactionDate: string | null;
@@ -44,17 +45,17 @@ function formatDate(d: string | null): string {
 }
 
 const COLS: { key: keyof TrustLedgerRow | 'multiAmount'; label: string; width: number; align: 'left' | 'right' }[] = [
-  { key: 'transactionDate', label: 'Transaction Date', width: 72, align: 'left' },
-  { key: 'enteredDate', label: 'Entered Date', width: 70, align: 'left' },
-  { key: 'reference', label: 'Reference', width: 60, align: 'left' },
-  { key: 'description', label: 'Description', width: 140, align: 'left' },
-  { key: 'reason', label: 'Reason', width: 90, align: 'left' },
-  { key: 'paidBy', label: 'Paid By', width: 90, align: 'left' },
-  { key: 'paidTo', label: 'Paid To', width: 90, align: 'left' },
-  { key: 'multiAmount', label: 'Multi Amount', width: 62, align: 'right' },
-  { key: 'debit', label: 'Debit', width: 62, align: 'right' },
-  { key: 'credit', label: 'Credit', width: 62, align: 'right' },
-  { key: 'balance', label: 'Balance', width: 62, align: 'right' },
+  { key: 'transactionDate', label: 'Transaction Date', width: 63, align: 'left' },
+  { key: 'enteredDate', label: 'Entered Date', width: 61, align: 'left' },
+  { key: 'reference', label: 'Reference', width: 52, align: 'left' },
+  { key: 'description', label: 'Description', width: 122, align: 'left' },
+  { key: 'reason', label: 'Reason', width: 78, align: 'left' },
+  { key: 'paidBy', label: 'Paid By', width: 78, align: 'left' },
+  { key: 'paidTo', label: 'Paid To', width: 78, align: 'left' },
+  { key: 'multiAmount', label: 'Multi Amount', width: 54, align: 'right' },
+  { key: 'debit', label: 'Debit', width: 54, align: 'right' },
+  { key: 'credit', label: 'Credit', width: 54, align: 'right' },
+  { key: 'balance', label: 'Balance', width: 54, align: 'right' },
 ];
 
 export async function generateTrustLedgerPdf(input: GenerateTrustLedgerPdfInput): Promise<Uint8Array> {
@@ -103,8 +104,8 @@ export async function generateTrustLedgerPdf(input: GenerateTrustLedgerPdfInput)
     y -= 14;
 
     let totalDebit = 0, totalCredit = 0;
+    const ROW_SIZE = 8, LINE_H = 10;
     for (const row of section.rows) {
-      ensureRoom(30);
       const values: Record<string, string> = {
         transactionDate: formatDate(row.transactionDate), enteredDate: formatDate(row.enteredDate),
         reference: row.reference || '', description: row.description, reason: row.reason || '',
@@ -112,18 +113,16 @@ export async function generateTrustLedgerPdf(input: GenerateTrustLedgerPdfInput)
         multiAmount: row.multiAmount != null ? money(row.multiAmount) : '',
         debit: row.debit ? money(row.debit) : '', credit: row.credit ? money(row.credit) : '', balance: money(row.balance),
       };
+      const wrapped = COLS.map(col => wrapPdfText(values[col.key as string] || '', regular, ROW_SIZE, col.width - 4));
+      const lineCount = Math.max(1, ...wrapped.map(w => w.length));
+      ensureRoom(lineCount * LINE_H + 16);
       for (let i = 0; i < COLS.length; i++) {
         const col = COLS[i];
-        const raw = values[col.key as string] || '';
-        const font = regular;
-        const size = 8;
-        const truncated = font.widthOfTextAtSize(raw, size) > col.width - 4
-          ? (() => { let s = raw; while (s.length > 1 && font.widthOfTextAtSize(s + '…', size) > col.width - 4) s = s.slice(0, -1); return s + '…'; })()
-          : raw;
-        text(truncated, col.align === 'right' ? colX[i] + col.width : colX[i], size, { align: col.align }, y);
+        const colXPos = col.align === 'right' ? colX[i] + col.width : colX[i];
+        wrapped[i].forEach((line, li) => text(line, colXPos, ROW_SIZE, { align: col.align }, y - li * LINE_H));
       }
       totalDebit += row.debit; totalCredit += row.credit;
-      y -= 14;
+      y -= lineCount * LINE_H + 4;
     }
 
     ensureRoom(20);
