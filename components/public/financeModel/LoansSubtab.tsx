@@ -9,7 +9,7 @@
 // component used everywhere else in the app) rather than a bespoke search
 // box.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink } from "lucide-react";
+import { Loader2, Plus, X, ChevronRight, Trash2, RefreshCw, Check, Unlink, Split, Search } from "lucide-react";
 import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
 import { calculateLoanSchedule, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
@@ -35,11 +35,158 @@ interface Loan {
   early_repayment_terms: string | null;
   security: string | null;
   notes: string | null;
+  // Attached by the GET route for the requesting project specifically --
+  // see app/api/finance-model/loans/route.ts's header comment.
+  allocation_percent: number;
+  allocated_principal_amount: number;
+  is_split: boolean;
 }
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+interface AllocationRow { id: string | null; projectId: string; projectName: string; splitPercent: number; }
+
+// Lets one loan be shared across more than one project, either split
+// equally (recomputed live as projects are added/removed) or by any
+// custom proportion (typed per row) -- "equal" isn't a persisted mode,
+// it's just what "Split equally" writes; adding a project only
+// re-equalizes if the CURRENT set already looks equal, so a deliberate
+// custom split is never silently overwritten by an add.
+function LoanSplitEditor({ loan, projectId, onChanged }: { loan: Loan; projectId: string; onChanged: () => void }) {
+  const [rows, setRows] = useState<AllocationRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<{ id: string; name: string }[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const res = await fetch(`/api/finance-model/loan-allocations?loanId=${loan.id}`);
+    const json = await res.json();
+    setRows((json.allocations || []).map((a: any) => ({ id: a.id, projectId: a.projectId, projectName: a.projectName, splitPercent: a.splitPercent })));
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [loan.id]);
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); setSearching(false); return; }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      const res = await fetch(`/api/projects/search?q=${encodeURIComponent(query)}`);
+      const json = await res.json();
+      const existingIds = new Set(rows.map(r => r.projectId));
+      setResults((json.projects || []).filter((p: any) => !existingIds.has(p.id)));
+      setSearching(false);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query, rows]);
+
+  const isRoughlyEqual = (list: AllocationRow[]) => list.length > 0 && list.every(r => Math.abs(r.splitPercent - 100 / list.length) < 0.05);
+  const equalize = (list: AllocationRow[]) => list.map(r => ({ ...r, splitPercent: 100 / list.length }));
+
+  const addProject = (p: { id: string; name: string }) => {
+    setRows(prev => {
+      const wasEqual = isRoughlyEqual(prev);
+      const next = [...prev, { id: null, projectId: p.id, projectName: p.name, splitPercent: 0 }];
+      return wasEqual ? equalize(next) : next;
+    });
+    setQuery("");
+    setResults([]);
+    setShowSearch(false);
+  };
+
+  const removeProject = (pid: string) => setRows(prev => (prev.length <= 1 ? prev : prev.filter(r => r.projectId !== pid)));
+  const updatePercent = (pid: string, value: number) => setRows(prev => prev.map(r => (r.projectId === pid ? { ...r, splitPercent: value } : r)));
+
+  const save = async () => {
+    setSaving(true);
+    await fetch("/api/finance-model/loan-allocations", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ loanId: loan.id, allocations: rows.map(r => ({ projectId: r.projectId, splitPercent: r.splitPercent })) }),
+    });
+    setSaving(false);
+    await load();
+    onChanged();
+  };
+
+  if (loading) {
+    return <div className="flex items-center gap-2 text-[11px] text-slate-400 py-3"><Loader2 size={12} className="animate-spin" /> Loading split...</div>;
+  }
+
+  const total = rows.reduce((s, r) => s + r.splitPercent, 0);
+  const withinTolerance = Math.abs(total - 100) < 0.05;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Split size={11} /> Split across projects</p>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => setRows(prev => equalize(prev))} disabled={rows.length < 2} className="text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-30 disabled:no-underline">
+            Split equally
+          </button>
+          <button type="button" onClick={() => setShowSearch(v => !v)} className="text-[11px] font-bold text-indigo-600 hover:underline flex items-center gap-1"><Plus size={11} /> Add project</button>
+        </div>
+      </div>
+
+      {showSearch && (
+        <div className="relative">
+          <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+          <input
+            value={query} onChange={e => setQuery(e.target.value)} placeholder="Search projects..." autoFocus
+            className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400"
+          />
+          {(searching || results.length > 0) && (
+            <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-2xl shadow-lg max-h-48 overflow-y-auto">
+              {searching ? (
+                <p className="text-[11px] text-slate-400 px-3 py-2">Searching...</p>
+              ) : (
+                results.map(p => (
+                  <button key={p.id} type="button" onClick={() => addProject(p)} className="w-full text-left px-3 py-2 text-[11px] text-slate-700 hover:bg-slate-50">
+                    {p.name}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        {rows.map(r => (
+          <div key={r.projectId} className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-1.5">
+            <p className={`flex-1 text-[11px] font-medium truncate ${r.projectId === projectId ? "text-indigo-600" : "text-slate-600"}`}>
+              {r.projectName}{r.projectId === projectId ? " (this project)" : ""}
+            </p>
+            <input
+              type="number" step="0.01" value={r.splitPercent}
+              onChange={e => updatePercent(r.projectId, parseFloat(e.target.value) || 0)}
+              className="w-16 text-right text-[11px] border border-slate-200 rounded-lg px-1.5 py-0.5 bg-white"
+            />
+            <span className="text-[10px] text-slate-400 w-3">%</span>
+            <span className="text-[11px] text-slate-500 w-24 text-right shrink-0">{money((loan.principal_amount || 0) * r.splitPercent / 100)}</span>
+            <button type="button" onClick={() => removeProject(r.projectId)} disabled={rows.length <= 1} className="text-slate-300 hover:text-rose-500 disabled:opacity-20 shrink-0">
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between pt-1">
+        <p className={`text-[11px] font-bold ${withinTolerance ? "text-emerald-600" : "text-amber-600"}`}>
+          Total: {total.toFixed(2)}%{!withinTolerance ? " (must total 100%)" : ""}
+        </p>
+        <button type="button" onClick={save} disabled={saving || !withinTolerance} className="text-[11px] font-bold bg-indigo-600 text-white rounded-full px-4 py-1.5 disabled:opacity-40">
+          {saving ? <Loader2 size={11} className="animate-spin" /> : "Save split"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: string; onChanged: () => void }) {
@@ -87,10 +234,16 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
 
   useEffect(() => { load(); }, [loan.id]);
 
+  // Interest/rate history and phases are intrinsic to the loan itself
+  // (shared regardless of split), but the SCHEDULE is computed against
+  // this project's allocated share of the principal, not the full
+  // facility -- an unsplit loan's allocated_principal_amount always
+  // equals principal_amount (100%), so this is a no-op for every loan
+  // that hasn't been split.
   const schedule = useMemo(() => {
-    if (!loan.principal_amount || !phases.length) return null;
-    return calculateLoanSchedule(loan.principal_amount, phases, rates);
-  }, [loan.principal_amount, phases, rates]);
+    if (!loan.allocated_principal_amount || !phases.length) return null;
+    return calculateLoanSchedule(loan.allocated_principal_amount, phases, rates);
+  }, [loan.allocated_principal_amount, phases, rates]);
 
   const addRate = async () => {
     const rate = parseFloat(newRate.interestRatePa);
@@ -227,6 +380,10 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
             ))}
           </div>
         )}
+      </div>
+
+      <div className="col-span-2 border-t border-slate-100 pt-3">
+        <LoanSplitEditor loan={loan} projectId={projectId} onChanged={onChanged} />
       </div>
 
       <div className="col-span-2 border-t border-slate-100 pt-3">
@@ -457,7 +614,14 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <p className="text-[13px] font-bold text-slate-700">{loan.principal_amount != null ? money(loan.principal_amount) : "—"}</p>
+                  <div className="text-right">
+                    <p className="text-[13px] font-bold text-slate-700">{loan.principal_amount != null ? money(loan.allocated_principal_amount) : "—"}</p>
+                    {loan.is_split && (
+                      <p className="text-[10px] font-bold text-indigo-500 flex items-center gap-1 justify-end">
+                        <Split size={9} /> {loan.allocation_percent.toFixed(0)}% of {money(loan.principal_amount || 0)}
+                      </p>
+                    )}
+                  </div>
                   <button onClick={e => { e.stopPropagation(); deleteLoan(loan.id); }} className="text-slate-300 hover:text-rose-500"><Trash2 size={13} /></button>
                 </div>
               </div>

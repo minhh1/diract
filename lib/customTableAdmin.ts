@@ -133,6 +133,22 @@ export async function getCustomTableRow(admin: any, table: CustomTableRef, recor
   return rows[0] || null;
 }
 
+// Rows by an explicit id list (e.g. loans a project has been split-
+// allocated onto via finance_model_loan_allocations, which live outside
+// this table's own "project" relation field so listCustomTableRows can't
+// find them). Filters out soft-deleted rows same as every other reader
+// here.
+export async function getCustomTableRowsByIds(admin: any, table: CustomTableRef, recordIds: string[]): Promise<Record<string, any>[]> {
+  if (!recordIds.length) return [];
+  const { data: alive } = await admin
+    .from("company_table_records")
+    .select("id")
+    .in("id", recordIds)
+    .is("deleted_at", null);
+  const aliveIds = (alive || []).map((r: any) => r.id);
+  return hydrateRows(admin, aliveIds, table.fields);
+}
+
 export async function createCustomTableRow(
   admin: any, table: CustomTableRef, userId: string | null, values: Record<string, any>
 ): Promise<string> {

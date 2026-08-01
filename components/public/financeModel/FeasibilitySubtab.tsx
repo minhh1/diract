@@ -70,6 +70,9 @@ interface Loan {
   id: string;
   name: string | null;
   principal_amount: number | null;
+  // This project's share -- see app/api/finance-model/loans/route.ts's
+  // header comment. Equals principal_amount for an unsplit loan.
+  allocated_principal_amount: number;
   lender_type: string | null;
   start_date: string | null;
 }
@@ -219,9 +222,13 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
       setInputs({ ...EMPTY_INPUTS, ...(inputsJson.inputs || {}) });
       setScenarios(scenariosJson.scenarios || []);
 
+      // A loan split across projects (see app/api/finance-model/loans/
+      // route.ts) only contributes THIS project's share to every total
+      // below -- allocated_principal_amount equals the full
+      // principal_amount for the (overwhelmingly common) unsplit case.
       const loans: Loan[] = loansJson.loans || [];
-      setTotalLoanPrincipal(loans.reduce((s, l) => s + (l.principal_amount || 0), 0));
-      setMoneyPartnerLoans(loans.filter(l => l.lender_type === "Money Partner" && l.principal_amount && l.start_date));
+      setTotalLoanPrincipal(loans.reduce((s, l) => s + (l.allocated_principal_amount || 0), 0));
+      setMoneyPartnerLoans(loans.filter(l => l.lender_type === "Money Partner" && l.allocated_principal_amount && l.start_date));
 
       const schedules = await Promise.all(loans.map(async loan => {
         const [phasesRes, ratesRes] = await Promise.all([
@@ -232,8 +239,8 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         const ratesJson = await ratesRes.json();
         const phases = (phasesJson.phases || []) as (LoanPhaseInput & { id: string })[];
         const rates = (ratesJson.rates || []) as LoanInterestRateEntry[];
-        if (!loan.principal_amount || !phases.length) return 0;
-        return calculateLoanSchedule(loan.principal_amount, phases, rates).totalInterest;
+        if (!loan.allocated_principal_amount || !phases.length) return 0;
+        return calculateLoanSchedule(loan.allocated_principal_amount, phases, rates).totalInterest;
       }));
       setTotalInterest(schedules.reduce((s, n) => s + n, 0));
     } catch (err) {
@@ -532,7 +539,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
       {/* ── Equity waterfall (only rendered if a Money Partner loan exists) ── */}
       <EquityWaterfallPanel
-        loans={moneyPartnerLoans.map((l): MoneyPartnerLoan => ({ id: l.id, name: l.name, principalAmount: l.principal_amount!, contributionDate: l.start_date! }))}
+        loans={moneyPartnerLoans.map((l): MoneyPartnerLoan => ({ id: l.id, name: l.name, principalAmount: l.allocated_principal_amount, contributionDate: l.start_date! }))}
         exitDate={monthlyCashFlow.length > 0 ? `${monthlyCashFlow[monthlyCashFlow.length - 1].month}-28` : null}
         totalDistributableProfit={leveragedCashFlow(facilitySimulation.rows).filter(f => f.amount > 0).reduce((s, f) => s + f.amount, 0)}
         preferredReturnPct={inputs.preferredReturnPct}
