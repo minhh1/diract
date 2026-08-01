@@ -14,7 +14,7 @@ import RelationPicker from "@/components/dashboard/RelationPicker";
 import { money } from "./BudgetVsActualTable";
 import { calculateLoanSchedule, type LoanInterestRateEntry, type LoanPhaseInput } from "@/lib/loanCalculator";
 
-const LENDER_TYPES = ["Senior", "Mezzanine", "Money Partner", "Other"];
+const LENDER_TYPES = ["Senior", "Mezzanine", "Private Lender", "Money Partner", "Other"];
 const REPAYMENT_PERIODS = ["Monthly", "Six-Monthly", "At End of Term"];
 const REPAYMENT_TYPES = ["Interest Only", "Amortizing"] as const;
 const FREQUENCIES = ["Monthly", "Quarterly", "Six-Monthly", "Annually", "At Maturity"];
