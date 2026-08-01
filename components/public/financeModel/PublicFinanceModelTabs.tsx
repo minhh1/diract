@@ -17,14 +17,14 @@
 import { useEffect, useState } from "react";
 import { Loader2, TrendingUp, Receipt, GanttChartSquare, Landmark, Calculator, FileBarChart, Lock } from "lucide-react";
 import { FinanceModelApiProvider } from "./FinanceModelApiContext";
-import OverviewSubtab from "./OverviewSubtab";
 import TimelineSubtab from "./TimelineSubtab";
 import LoansSubtab from "./LoansSubtab";
 import DutyFeesSubtab from "./DutyFeesSubtab";
 import PublicFeasibilitySandbox from "./PublicFeasibilitySandbox";
+import PublicBudgetSandbox from "./PublicBudgetSandbox";
 
 const SUBTABS = [
-  { id: "overview", label: "Overview & Cash Flow", icon: TrendingUp },
+  { id: "overview", label: "Budget vs Actual", icon: TrendingUp },
   { id: "transactions", label: "Transactions", icon: Receipt },
   { id: "timeline", label: "Timeline", icon: GanttChartSquare },
   { id: "loans", label: "Loans", icon: Landmark },
@@ -88,7 +88,13 @@ export default function PublicFinanceModelTabs({ pageId, accessCode }: { pageId:
           })}
         </div>
 
-        {subtab === "overview" && <OverviewSubtab projectId={projectId} onOpenDutyFees={() => setSubtab("duty_fees")} />}
+        {/* The real Budget vs Actual has every amount redacted on this
+            link, so it would render as a column of dots with nothing to
+            recalculate -- and a prospect could not add a line, because the
+            public route has no write endpoint. An editable EXAMPLE budget
+            shows how budgeting actually works instead, entirely in the
+            browser. */}
+        {subtab === "overview" && <PublicBudgetSandbox />}
         {subtab === "timeline" && <TimelineSubtab projectId={projectId} />}
         {subtab === "loans" && <LoansSubtab projectId={projectId} />}
         {subtab === "duty_fees" && <DutyFeesSubtab projectId={projectId} />}
