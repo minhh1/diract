@@ -15,7 +15,7 @@
 // duration bar in Diagram view; tasks without one render as a single-day
 // marker at their due date instead.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X } from "lucide-react";
+import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
@@ -54,7 +54,7 @@ function daysBetween(a: Date, b: Date): number {
 // gridlines stay evenly spaced regardless of how much date range the
 // tasks span) inside a horizontally-scrollable track.
 type Zoom = "week" | "month" | "all";
-const PX_PER_DAY: Record<Exclude<Zoom, "all">, number> = { week: 48, month: 14 };
+const PX_PER_DAY: Record<Exclude<Zoom, "all">, number> = { week: 72, month: 22 };
 
 function getTicks(zoom: Exclude<Zoom, "all">, start: Date, end: Date): { offsetDays: number; label: string }[] {
   const ticks: { offsetDays: number; label: string }[] = [];
@@ -220,10 +220,10 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"card" | "diagram" | "list">("card");
+  const [view, setView] = useState<"card" | "diagram" | "list">("diagram");
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set());
   const [groupByTeam, setGroupByTeam] = useState(false);
-  const [zoom, setZoom] = useState<Zoom>("all");
+  const [zoom, setZoom] = useState<Zoom>("week");
   const ganttScrollRef = useRef<HTMLDivElement>(null);
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
 
@@ -362,12 +362,26 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   // On entering week/month zoom, land the scroll position with "today" a
   // little in from the left edge (context for what's just passed, room to
   // see what's coming) rather than at the very start of the whole range.
+  // Depends on axisStart's *value* (not zoom alone) because axisStart
+  // itself shifts once real task dates load in after the initial render
+  // (before that, filteredTasks is empty and axisStart briefly defaults
+  // to a narrow today-only range) -- without this, the very first
+  // landing used that pre-load range and never corrected itself once the
+  // real, usually much wider, task date span arrived.
   useEffect(() => {
     if (zoom === "all" || !ganttScrollRef.current || !pxPerDay) return;
     const target = Math.max(0, todayOffsetDays * pxPerDay - 120);
     ganttScrollRef.current.scrollLeft = target;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom]);
+  }, [zoom, axisStart.getTime(), pxPerDay]);
+
+  // Prev/next paging -- a full week (7 days) or one calendar month's worth
+  // of days at a time, so repeated clicks move in predictable, human-sized
+  // steps instead of an arbitrary scroll amount.
+  const pageTime = (direction: 1 | -1) => {
+    if (!ganttScrollRef.current || !pxPerDay) return;
+    const stepDays = zoom === "week" ? 7 : 30;
+    ganttScrollRef.current.scrollBy({ left: direction * stepDays * pxPerDay, behavior: "smooth" });
+  };
 
   if (loading) {
     return (
@@ -398,7 +412,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     const offsetDays = daysBetween(axisStart, barStart);
     const durationDays = Math.max(daysBetween(barStart, barEnd), 0);
     const barLeft = pxPerDay ? `${offsetDays * pxPerDay}px` : `${(offsetDays / span) * 100}%`;
-    const barWidth = pxPerDay ? `${Math.max(durationDays * pxPerDay, 6)}px` : `${Math.max((durationDays / span) * 100, 0.8)}%`;
+    const barWidth = pxPerDay ? `${Math.max(durationDays * pxPerDay, 10)}px` : `${Math.max((durationDays / span) * 100, 0.8)}%`;
     const todayLeft = pxPerDay ? `${todayOffsetDays * pxPerDay}px` : `${(todayOffsetDays / span) * 100}%`;
     const color = t.task_statuses?.color_hex || (t.is_completed ? "#10b981" : "#6366f1");
     const blocked = blockedBy(t.id, dependenciesByTask, tasks);
@@ -412,11 +426,11 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
           {t.name}
         </p>
         <div
-          className="relative h-5 bg-slate-50 rounded-full"
+          className={`relative bg-slate-50 rounded-full ${pxPerDay ? "h-7" : "h-5"}`}
           style={pxPerDay ? { width: `${span * pxPerDay}px`, flex: "0 0 auto" } : { flex: "1 1 0%" }}
         >
           <div
-            className="absolute top-0.5 h-4 rounded-full"
+            className={`absolute rounded-full ${pxPerDay ? "top-1 h-5" : "top-0.5 h-4"}`}
             style={{ left: barLeft, width: barWidth, backgroundColor: color, opacity: t.is_completed ? 0.5 : 1 }}
             title={`${formatDate(t.start_date)} → ${formatDate(t.due_date)}`}
           />
@@ -552,12 +566,24 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
       ) : (
         <div className="bg-white border border-slate-200 rounded-[32px] p-6 space-y-2">
           <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
-              {(["week", "month", "all"] as const).map(z => (
-                <button key={z} onClick={() => setZoom(z)} className={`px-3 py-1 rounded-full text-[10px] font-bold capitalize ${zoom === z ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
-                  {z}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
+                {(["week", "month", "all"] as const).map(z => (
+                  <button key={z} onClick={() => setZoom(z)} className={`px-3 py-1 rounded-full text-[10px] font-bold capitalize ${zoom === z ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+                    {z}
+                  </button>
+                ))}
+              </div>
+              {pxPerDay && (
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => pageTime(-1)} title={`Previous ${zoom}`} className="p-1.5 rounded-full text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors">
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button onClick={() => pageTime(1)} title={`Next ${zoom}`} className="p-1.5 rounded-full text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </div>
             {zoom === "all" && (
               <div className="flex items-center gap-4 text-[10px] text-slate-400">
@@ -572,19 +598,19 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
               {pxPerDay && (
                 <div className="flex items-center gap-3">
                   <div className="w-40 shrink-0 sticky left-0 z-10 bg-white" />
-                  <div className="relative h-4" style={{ width: `${span * pxPerDay}px` }}>
+                  <div className="relative h-5" style={{ width: `${span * pxPerDay}px` }}>
                     {ticks.map(tick => {
                       // Skip a tick label that would collide with the
-                      // "Today" label below (~40px of clearance either side).
-                      if (showTodayLine && Math.abs(tick.offsetDays - todayOffsetDays) * pxPerDay < 40) return null;
+                      // "Today" label below (~46px of clearance either side).
+                      if (showTodayLine && Math.abs(tick.offsetDays - todayOffsetDays) * pxPerDay < 46) return null;
                       return (
-                        <span key={tick.offsetDays} className="absolute text-[9px] text-slate-400 whitespace-nowrap" style={{ left: `${tick.offsetDays * pxPerDay}px` }}>
+                        <span key={tick.offsetDays} className="absolute text-[10px] text-slate-500 whitespace-nowrap" style={{ left: `${tick.offsetDays * pxPerDay}px` }}>
                           {tick.label}
                         </span>
                       );
                     })}
                     {showTodayLine && (
-                      <span className="absolute text-[9px] font-bold text-rose-500 whitespace-nowrap" style={{ left: `${todayOffsetDays * pxPerDay}px`, transform: "translateX(-50%)" }}>
+                      <span className="absolute text-[10px] font-bold text-rose-500 whitespace-nowrap" style={{ left: `${todayOffsetDays * pxPerDay}px`, transform: "translateX(-50%)" }}>
                         Today
                       </span>
                     )}
