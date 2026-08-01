@@ -15,7 +15,7 @@
 // duration bar in Diagram view; tasks without one render as a single-day
 // marker at their due date instead.
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight, DollarSign, Search } from "lucide-react";
+import { Loader2, RefreshCw, List, GanttChartSquare, LayoutGrid, CheckCircle2, Circle, ClipboardList, Lock, X, ChevronLeft, ChevronRight, DollarSign, Search, SlidersHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { applyChecklistTemplate } from "@/lib/applyChecklistTemplate";
@@ -433,6 +433,241 @@ function TaskEditModal({
   );
 }
 
+// ── Bulk edit: the same deadline-driven tooling the Apply Template flow
+// gives a fresh template (shift the whole schedule, scale it to a new
+// deadline, or hand-pick which tasks to shrink/extend) but applied to this
+// project's REAL, already-created tasks. Unlike template items (whose dates
+// are derived live from an anchor chain), real tasks just store flat
+// start_date/due_date -- so every operation here computes a full set of new
+// dates up front and stages them locally (in `edits`), and nothing is
+// written to the tasks table until "Save changes". "Scale to fit" rescales
+// every dated task's offset-from-project-start AND its own duration by the
+// same ratio, anchored at the project's earliest date -- simple, predictable,
+// and handles both shrinking AND extending the deadline with one operation
+// (ratio < 1 or > 1), unlike trying to trace a single "critical chain" through
+// task_dependencies' general many-to-many graph.
+function BulkEditModal({
+  tasks, onClose, onSaved,
+}: {
+  tasks: TaskRow[]; onClose: () => void; onSaved: () => void;
+}) {
+  const [edits, setEdits] = useState<Record<string, { start_date: string | null; due_date: string | null }>>({});
+  const [shiftTo, setShiftTo] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const [chooseMode, setChooseMode] = useState(false);
+  const [chooseSearch, setChooseSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const datedTasks = useMemo(() => tasks.filter(t => t.start_date || t.due_date), [tasks]);
+
+  const effectiveDate = (task: TaskRow, field: "start_date" | "due_date"): string | null => {
+    const e = edits[task.id];
+    if (e) return e[field];
+    return task[field] ? task[field]!.slice(0, 10) : null;
+  };
+
+  const projectStart = useMemo(() => {
+    const dates = datedTasks.flatMap(t => [effectiveDate(t, "start_date"), effectiveDate(t, "due_date")]).filter((d): d is string => !!d);
+    return dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datedTasks, edits]);
+
+  const computedEnd = useMemo(() => {
+    const dates = datedTasks.map(t => effectiveDate(t, "due_date") ?? effectiveDate(t, "start_date")).filter((d): d is string => !!d);
+    return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datedTasks, edits]);
+
+  const deadlineGapDays = useMemo(() => {
+    if (!deadline || !computedEnd) return null;
+    return Math.round(daysBetween(new Date(deadline), new Date(computedEnd)));
+  }, [deadline, computedEnd]);
+
+  const applyShift = () => {
+    if (!shiftTo || !projectStart) return;
+    const deltaDays = Math.round(daysBetween(new Date(projectStart), new Date(shiftTo)));
+    if (!deltaDays) return;
+    setEdits(prev => {
+      const next = { ...prev };
+      for (const t of datedTasks) {
+        const s = effectiveDate(t, "start_date");
+        const d = effectiveDate(t, "due_date");
+        next[t.id] = { start_date: s ? shiftDate(s, deltaDays) : null, due_date: d ? shiftDate(d, deltaDays) : null };
+      }
+      return next;
+    });
+    setShiftTo("");
+  };
+
+  const scaleToFit = () => {
+    if (!deadline || !projectStart || !computedEnd) return;
+    const currentSpan = Math.round(daysBetween(new Date(projectStart), new Date(computedEnd)));
+    const targetSpan = Math.round(daysBetween(new Date(projectStart), new Date(deadline)));
+    if (currentSpan <= 0 || targetSpan <= 0) return;
+    const ratio = targetSpan / currentSpan;
+    setEdits(prev => {
+      const next = { ...prev };
+      for (const t of datedTasks) {
+        const s = effectiveDate(t, "start_date");
+        const d = effectiveDate(t, "due_date");
+        const newS = s ? shiftDate(projectStart, Math.round(daysBetween(new Date(projectStart), new Date(s)) * ratio)) : null;
+        const newD = d ? shiftDate(projectStart, Math.round(daysBetween(new Date(projectStart), new Date(d)) * ratio)) : null;
+        next[t.id] = { start_date: newS, due_date: newD };
+      }
+      return next;
+    });
+  };
+
+  const bumpDuration = (task: TaskRow, delta: number) => {
+    const s = effectiveDate(task, "start_date");
+    const d = effectiveDate(task, "due_date");
+    if (!s || !d) return;
+    const newD = shiftDate(d, delta);
+    if (newD < s) return;
+    setEdits(prev => ({ ...prev, [task.id]: { start_date: s, due_date: newD } }));
+  };
+
+  // Shrinkable/adjustable = a real span task (both dates set) -- sorted
+  // longest-first so "Choose tasks to adjust" surfaces the biggest lever
+  // first, same convention as the template Apply view.
+  const spanTasks = useMemo(() => {
+    return datedTasks
+      .filter(t => effectiveDate(t, "start_date") && effectiveDate(t, "due_date"))
+      .map(t => {
+        const s = effectiveDate(t, "start_date")!, d = effectiveDate(t, "due_date")!;
+        return { task: t, duration: Math.max(1, Math.round(daysBetween(new Date(s), new Date(d)))) };
+      })
+      .sort((a, b) => b.duration - a.duration);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datedTasks, edits]);
+
+  const filteredSpanTasks = spanTasks.filter(({ task }) => task.name.toLowerCase().includes(chooseSearch.trim().toLowerCase()));
+
+  const changedIds = Object.keys(edits);
+
+  const save = async () => {
+    setSaving(true);
+    await Promise.all(changedIds.map(taskId => supabase.from("tasks").update(edits[taskId]).eq("id", taskId)));
+    setSaving(false);
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm">
+      <div className="bg-white rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-2xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center gap-3 px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
+          <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-wide flex-1">Bulk edit schedule</h3>
+          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-700"><X size={16} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4">
+          {datedTasks.length === 0 ? (
+            <p className="text-center text-[12px] text-slate-300 italic py-8">No tasks with dates to edit yet.</p>
+          ) : (
+            <>
+              <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Move the whole schedule</p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div>
+                    <p className="text-[9px] text-slate-400 mb-1">New project start (currently {projectStart ?? "—"})</p>
+                    <input type="date" value={shiftTo} onChange={e => setShiftTo(e.target.value)}
+                      className="px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
+                  </div>
+                  <button type="button" onClick={applyShift} disabled={!shiftTo}
+                    className="px-4 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                    Shift schedule
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-indigo-50/50 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="min-w-[160px]">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project deadline</p>
+                    <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
+                      className="px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
+                  </div>
+                  {computedEnd && <p className="text-[11px] text-slate-500">Computed finish: <span className="font-bold text-slate-700">{computedEnd}</span></p>}
+                  {deadlineGapDays !== null && (
+                    <p className={`text-[11px] font-bold ${deadlineGapDays > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                      {deadlineGapDays > 0
+                        ? `${deadlineGapDays} day${deadlineGapDays === 1 ? "" : "s"} over deadline`
+                        : `${-deadlineGapDays} day${deadlineGapDays === -1 ? "" : "s"} to spare`}
+                    </p>
+                  )}
+                </div>
+                {deadline && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button type="button" onClick={scaleToFit} disabled={!deadlineGapDays}
+                      className="px-4 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                      Scale to fit
+                    </button>
+                    <button type="button" onClick={() => setChooseMode(m => !m)}
+                      className="px-4 py-1.5 border border-indigo-300 text-indigo-600 text-[11px] font-bold rounded-full hover:bg-indigo-100 transition-colors">
+                      {chooseMode ? "Hide task picker" : "Choose tasks to adjust"}
+                    </button>
+                  </div>
+                )}
+                {chooseMode && (
+                  <div className="space-y-2 pt-2 border-t border-indigo-100">
+                    <div className="relative">
+                      <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input value={chooseSearch} onChange={e => setChooseSearch(e.target.value)} placeholder="Search tasks..."
+                        className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400 bg-white" />
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {filteredSpanTasks.length === 0 && <p className="text-[10px] text-slate-300 py-2">No adjustable (span) tasks match.</p>}
+                      {filteredSpanTasks.map(({ task, duration }) => (
+                        <div key={task.id} className="flex items-center justify-between gap-2 px-3 py-1.5 bg-white rounded-full border border-slate-100">
+                          <p className="text-[11px] text-slate-600 truncate flex-1">{task.name}</p>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button type="button" onClick={() => bumpDuration(task, -1)} className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 text-[11px] font-bold leading-none">−</button>
+                            <span className="text-[11px] font-bold text-slate-700 w-10 text-center">{duration}d</span>
+                            <button type="button" onClick={() => bumpDuration(task, 1)} className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 text-[11px] font-bold leading-none">+</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                {changedIds.length > 0 && (
+                  <div className="flex items-center justify-between px-1">
+                    <p className="text-[10px] text-slate-400">{changedIds.length} task{changedIds.length === 1 ? "" : "s"} changed</p>
+                    <button type="button" onClick={() => setEdits({})} className="text-[10px] font-bold text-slate-400 hover:text-slate-600">Reset all</button>
+                  </div>
+                )}
+                {datedTasks
+                  .slice()
+                  .sort((a, b) => (effectiveDate(a, "due_date") || "").localeCompare(effectiveDate(b, "due_date") || ""))
+                  .map(t => {
+                    const changed = !!edits[t.id];
+                    return (
+                      <div key={t.id} className={`flex items-center gap-3 px-4 py-2 rounded-2xl ${changed ? "bg-indigo-50" : "bg-slate-50"}`}>
+                        <p className="flex-1 text-[11px] text-slate-700 truncate">{t.name}</p>
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap">{effectiveDate(t, "start_date") ?? "—"} → <span className={changed ? "font-bold text-indigo-600" : "font-medium"}>{effectiveDate(t, "due_date") ?? "—"}</span></span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-8 py-5 border-t border-slate-100 shrink-0">
+          <button onClick={save} disabled={saving || changedIds.length === 0}
+            className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+            {saving ? "Saving..." : changedIds.length ? `Save changes (${changedIds.length} task${changedIds.length === 1 ? "" : "s"})` : "No changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TimelineSubtab({ projectId }: { projectId: string }) {
   const { companyId, userId } = useCompany();
   const [loading, setLoading] = useState(true);
@@ -444,11 +679,12 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   const [view, setView] = useState<"card" | "diagram" | "list">("diagram");
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<"none" | "team" | "category">("none");
-  const [zoom, setZoom] = useState<Zoom>("week");
+  const [zoom, setZoom] = useState<Zoom>("all");
   const [periodOffset, setPeriodOffset] = useState(0);
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
   const [projectCreatedAt, setProjectCreatedAt] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
 
   // "Apply template" -- reuses the same checklist_templates/TemplateManager
   // machinery as the Checklist tab, company-wide templates seeded with a
@@ -810,6 +1046,9 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
           <button onClick={openTemplates} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
             <ClipboardList size={12} /> Apply template
           </button>
+          <button onClick={() => setShowBulkEdit(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+            <SlidersHorizontal size={12} /> Bulk edit
+          </button>
           {tasks.some(t => t.source_template_item_id) && (
             <button onClick={syncScheduleToTemplate} disabled={syncing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40">
               <RefreshCw size={12} /> {syncing ? "Syncing..." : "Sync schedule to template"}
@@ -1025,6 +1264,10 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
           projectCreatedAt={projectCreatedAt}
           onClose={() => setEditingTask(null)} onSaved={load}
         />
+      )}
+
+      {showBulkEdit && (
+        <BulkEditModal tasks={tasks} onClose={() => setShowBulkEdit(false)} onSaved={load} />
       )}
 
       {showTemplates && companyId && (
