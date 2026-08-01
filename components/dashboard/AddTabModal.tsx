@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   X, FileText, ListChecks, Calendar, Mail,
-  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard, PenSquare, Briefcase, TrendingUp
+  FolderKanban, Loader2, Plus, FileSignature, LayoutDashboard, PenSquare, Briefcase, TrendingUp, Landmark
 } from "lucide-react";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
@@ -58,6 +58,14 @@ const TEMPLATES: TabTemplate[] = [
     iconComponent: TrendingUp,
   },
   {
+    type: 'residual_land_solver',
+    title: 'Residual Land Solver',
+    icon: 'Landmark',
+    description: 'Max supportable land price at your target margin, with stamp duty re-derived at every candidate price',
+    color: 'bg-emerald-50 text-emerald-600',
+    iconComponent: Landmark,
+  },
+  {
     type: 'calendar',
     title: 'Calendar',
     icon: 'Calendar',
@@ -104,10 +112,13 @@ export default function AddTabModal({ customTables, systemTable, onAdd, onClose 
   const [linkedTableId, setLinkedTableId] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Finance Model is project-scoped (a single entity/SPV company can hold
-  // several projects, each needing its own budget) -- only offer it when
-  // adding a tab to a Project record.
-  const templates = TEMPLATES.filter(t => t.type !== 'finance_model' || systemTable === 'projects');
+  // Finance Model and the Residual Land Solver are project-scoped (a
+  // single entity/SPV company can hold several projects, each needing its
+  // own budget/assumptions) -- only offer them when adding a tab to a
+  // Project record.
+  const templates = TEMPLATES.filter(t =>
+    (t.type !== 'finance_model' && t.type !== 'residual_land_solver') || systemTable === 'projects'
+  );
   const selectedTemplate = templates.find(t => t.type === selected);
 
   const handleAdd = async () => {
