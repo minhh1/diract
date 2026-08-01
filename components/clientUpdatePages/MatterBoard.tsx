@@ -447,11 +447,19 @@ export default function MatterBoard({
   // currently present, not a fixed option list).
   const distinctValuesFor = (fieldId: string): string[] => {
     const vals = new Set<string>();
+    let hasBlank = false;
     for (const i of groupScopedItems) {
       const v = i.values[fieldId];
       if (v != null && v !== "") vals.add(String(v));
+      else hasBlank = true;
     }
-    return [...vals].sort();
+    // "" (blank/not-set) is a real, checkable option -- otherwise a boolean
+    // field like "Discharged" that's only ever explicitly written true (never
+    // false) offers no way to filter for "not discharged", since every unset
+    // row was invisible to this list entirely. Sorted after the real values,
+    // not alphabetically mixed in with them.
+    const sorted = [...vals].sort();
+    return hasBlank ? [...sorted, ""] : sorted;
   };
 
   const filterFilteredItems = filters.reduce(
@@ -701,9 +709,9 @@ export default function MatterBoard({
                     <div className="pl-1 space-y-0.5 max-h-32 overflow-y-auto">
                       {options.length === 0 && <p className="text-[10px] text-slate-300 italic px-2 py-1">No values yet</p>}
                       {options.map(o => (
-                        <label key={o} className="flex items-center gap-2 px-2 py-0.5 cursor-pointer">
+                        <label key={o || "__blank__"} className="flex items-center gap-2 px-2 py-0.5 cursor-pointer">
                           <input type="checkbox" checked={f.values.has(o)} onChange={() => toggleFilterValue(i, o)} className="accent-indigo-600 shrink-0" />
-                          <span className="text-[11px] text-slate-600 truncate">{o}</span>
+                          <span className={`text-[11px] truncate ${o ? "text-slate-600" : "text-slate-400 italic"}`}>{o || "(Blank)"}</span>
                         </label>
                       ))}
                     </div>
