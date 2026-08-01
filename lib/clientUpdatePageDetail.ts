@@ -669,7 +669,12 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   // real amounts inline ("surplus fund $65,278.91"), which a
   // column-type check alone would sail straight past.
   const scrub = (v: any) =>
-    typeof v === "string" ? v.replace(/\$\s?\d[\d,]*(\.\d+)?/g, "$\u2022\u2022\u2022\u2022\u2022\u2022") : v;
+    typeof v === "string" ? v
+      .replace(/\$\s?\d[\d,]*(\.\d+)?/g, "$\u2022\u2022\u2022\u2022\u2022\u2022")
+      // Money is often written into notes without a dollar sign
+      // ("336 repayments of 4,849.24"). Two decimal places is the
+      // giveaway -- narrow enough not to eat dates or account numbers.
+      .replace(/\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d{4,}\.\d{2}\b/g, "\u2022\u2022\u2022\u2022\u2022\u2022") : v;
 
   const redactedItems = opts.redactFigures
     ? finalItems.map((item: any) => {

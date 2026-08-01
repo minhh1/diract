@@ -23,6 +23,7 @@ import LoansSubtab from "./financeModel/LoansSubtab";
 import DutyFeesSubtab from "./financeModel/DutyFeesSubtab";
 import FeasibilitySubtab from "./financeModel/FeasibilitySubtab";
 import AttachmentsSubtab from "./financeModel/AttachmentsSubtab";
+import PublicFinanceModelTabs from "./financeModel/PublicFinanceModelTabs";
 
 interface Props {
   // Internal mode identifies the record directly (the viewer is already
@@ -230,7 +231,10 @@ export default function PublicFinanceModelContent({ projectId, pageId, mode = "i
   };
 
   if (mode === "public" && pageId) {
-    return <PublicOverview pageId={pageId} accessCode={accessCode} embedded={embedded} maskCurrency={maskCurrency} />;
+    // The full subtab set, not just Budget vs Actual. Safe to widen now
+    // that the public data route is GET-only and redacts money
+    // server-side; Transactions stays out (see PublicFinanceModelTabs).
+    return <PublicFinanceModelTabs pageId={pageId} accessCode={accessCode} />;
   }
 
   if (!projectId) return null;

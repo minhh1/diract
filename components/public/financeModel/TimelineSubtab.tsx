@@ -689,7 +689,12 @@ function BulkEditModal({
 
 export default function TimelineSubtab({ projectId }: { projectId: string }) {
   const { apiFetch } = useFinanceModelApi();
-  const { companyId, userId } = useCompany();
+  const { companyId: sessionCompanyId, userId } = useCompany();
+  // On a public page there is no CompanyContext -- fall back to the id the
+  // public shell resolved from the share page, or this subtab's load()
+  // returns early and it spins on "Loading..." forever.
+  const { companyId: publicCompanyId } = useFinanceModelApi();
+  const companyId = sessionCompanyId || publicCompanyId || "";
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [dependenciesByTask, setDependenciesByTask] = useState<Record<string, string[]>>({});

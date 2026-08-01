@@ -25,11 +25,16 @@ import { createContext, useContext, useMemo } from "react";
 export interface FinanceModelApi {
   apiFetch: (input: string, init?: RequestInit) => Promise<Response>;
   readOnly: boolean;
+  // A public page has no CompanyContext, but some subtabs gate their load
+  // on a companyId (TimelineSubtab returns early without one, so it would
+  // spin on "Loading..." forever). Supplied here for those to fall back to.
+  companyId?: string | null;
 }
 
 const defaultApi: FinanceModelApi = {
   apiFetch: (input, init) => fetch(input, init),
   readOnly: false,
+  companyId: null,
 };
 
 const FinanceModelApiContext = createContext<FinanceModelApi>(defaultApi);
@@ -39,12 +44,13 @@ export function useFinanceModelApi(): FinanceModelApi {
 }
 
 export function FinanceModelApiProvider({
-  pageId, accessCode, children,
-}: { pageId?: string; accessCode?: string; children: React.ReactNode }) {
+  pageId, accessCode, companyId, children,
+}: { pageId?: string; accessCode?: string; companyId?: string | null; children: React.ReactNode }) {
   const value = useMemo<FinanceModelApi>(() => {
     if (!pageId) return defaultApi;
     return {
       readOnly: true,
+      companyId,
       apiFetch: (input, init) => {
         // Only GETs can be served publicly; anything else is a subtab
         // trying to write on a read-only page. Fail it here with a clear
@@ -67,7 +73,7 @@ export function FinanceModelApiProvider({
         return fetch(target.toString(), init);
       },
     };
-  }, [pageId, accessCode]);
+  }, [pageId, accessCode, companyId]);
 
   return <FinanceModelApiContext.Provider value={value}>{children}</FinanceModelApiContext.Provider>;
 }

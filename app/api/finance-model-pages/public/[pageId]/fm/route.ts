@@ -60,6 +60,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const companyId = page.company_id;
   const projectId = page.project_id; // never from the query string -- see invariant 2
   const resource = req.nextUrl.searchParams.get("resource");
+  const redact = !!(page as any).redact_figures;
+
+  // Strips money before it leaves the server (see
+  // supabase/migrations/20260802140000_public_pages_redact_figures.sql for
+  // why this is server-decided rather than a request parameter). Amounts
+  // become null, not a placeholder string, so nothing recoverable is sent
+  // and downstream numeric code never meets a non-numeric value; free text
+  // is scrubbed too, since labels and notes carry amounts inline.
+  const MONEY_KEYS = /(amount|principal|price|cost|value|fee|duty|interest|balance|limit|total)/i;
+  const scrubText = (v: any) => typeof v === "string" ? v
+      .replace(/\$\s?\d[\d,]*(\.\d+)?/g, "$\u2022\u2022\u2022\u2022\u2022\u2022")
+      // Money is often written into notes without a dollar sign
+      // ("336 repayments of 4,849.24"). Two decimal places is the
+      // giveaway -- narrow enough not to eat dates or account numbers.
+      .replace(/\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d{4,}\.\d{2}\b/g, "\u2022\u2022\u2022\u2022\u2022\u2022") : v;
+  const redactRow = (row: any) => {
+    if (!redact || !row || typeof row !== "object") return row;
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(row)) {
+      // Custom-table values come back as strings as often as numbers, so
+      // a typeof check alone lets "745267.00" straight through -- match
+      // anything that IS a number or parses as one.
+      const isMoney = MONEY_KEYS.test(k) && (typeof v === "number" || (typeof v === "string" && v !== "" && !isNaN(Number(v))));
+      out[k] = isMoney ? null : scrubText(v);
+    }
+    return out;
+  };
+  const redactRows = (rows: any[]) => redact ? rows.map(redactRow) : rows;
 
   // Rows of a project-scoped custom table, by slug.
   const rowsOf = async (slug: string) => {
@@ -67,20 +95,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     return table ? await listCustomTableRows(admin, table, "project", projectId) : [];
   };
 
-  // Ids of every loan reachable from this project -- both loans homed here
-  // and loans split-allocated here. Used to authorise loanId-keyed child
-  // lookups (invariant 3).
-  const loanIdsForProject = async (): Promise<Set<string>> => {
-    const home = await rowsOf(LOANS_SLUG);
-    const { data: allocs } = await admin
+  // Is this loan reachable from the page's project -- either homed on it
+  // or split-allocated to it? Two point lookups rather than listing every
+  // loan on the project: the Feasibility subtab fires a phases AND a rates
+  // request per loan, so a full table read per request meant a dozen
+  // concurrent scans and requests that simply never came back.
+  const loanBelongsToProject = async (loanId: string): Promise<boolean> => {
+    const table = await getCustomTable(admin, companyId, LOANS_SLUG);
+    if (!table) return false;
+    const [row] = await getCustomTableRowsByIds(admin, table, [loanId]);
+    if (row && row.project === projectId) return true;
+    const { data } = await admin
       .from("finance_model_loan_allocations")
-      .select("loan_id").eq("company_id", companyId).eq("project_id", projectId);
-    return new Set([...home.map(l => l.id), ...(allocs || []).map((a: any) => a.loan_id)]);
+      .select("loan_id")
+      .eq("company_id", companyId).eq("project_id", projectId).eq("loan_id", loanId)
+      .maybeSingle();
+    return !!data;
   };
 
   switch (resource) {
     case "budget-lines":
-      return NextResponse.json({ budgetLines: await rowsOf(BUDGET_LINES_SLUG) });
+      return NextResponse.json({ budgetLines: redactRows(await rowsOf(BUDGET_LINES_SLUG)), figuresRedacted: redact });
 
     case "budget-categories": {
       const { data } = await admin
@@ -121,7 +156,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
         const percent = percentHere.has(l.id) ? percentHere.get(l.id)! : isSplit ? 0 : (homeIds.has(l.id) ? 100 : 0);
         return { ...l, allocation_percent: percent, allocated_principal_amount: principal * (percent / 100), is_split: isSplit };
       });
-      return NextResponse.json({ loans });
+      return NextResponse.json({ loans: redactRows(loans), figuresRedacted: redact });
     }
 
     case "loan-phases":
@@ -129,13 +164,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       const loanId = req.nextUrl.searchParams.get("loanId");
       if (!loanId) return NextResponse.json({ error: "loanId is required" }, { status: 400 });
       // Invariant 3 -- a loan from another project is simply not visible.
-      if (!(await loanIdsForProject()).has(loanId)) {
+      if (!(await loanBelongsToProject(loanId))) {
         return NextResponse.json(resource === "loan-phases" ? { phases: [] } : { rates: [] });
       }
       const slug = resource === "loan-phases" ? LOAN_PHASES_SLUG : LOAN_INTEREST_RATES_SLUG;
       const table = await getCustomTable(admin, companyId, slug);
       const rows = table ? await listCustomTableRows(admin, table, "loan", loanId) : [];
-      return NextResponse.json(resource === "loan-phases" ? { phases: rows } : { rates: rows });
+      const safeRows = redactRows(rows);
+      return NextResponse.json(resource === "loan-phases" ? { phases: safeRows } : { rates: safeRows });
     }
 
     case "feasibility-inputs": {
@@ -145,11 +181,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       for (const [jsKey, dbKey] of Object.entries(FEASIBILITY_FIELDS)) {
         inputs[jsKey] = row?.[dbKey] != null ? Number(row[dbKey]) : null;
       }
-      return NextResponse.json({ inputs });
+      return NextResponse.json({ inputs: redact ? redactRow(inputs) : inputs, figuresRedacted: redact });
     }
 
     case "feasibility-scenarios":
-      return NextResponse.json({ scenarios: await rowsOf(FEASIBILITY_SCENARIOS_SLUG) });
+      return NextResponse.json({ scenarios: redactRows(await rowsOf(FEASIBILITY_SCENARIOS_SLUG)) });
 
     case "attachments": {
       const { data } = await admin
@@ -159,9 +195,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
 
     case "overview": {
       const { data: project } = await admin.from("projects").select("name").eq("id", projectId).maybeSingle();
+      // projectId is handed back so the public shell can mount the
+      // subtabs, which are written against it. Harmless to expose: every
+      // read still goes through THIS route, which resolves the project
+      // from the page and ignores any caller-supplied id.
       return NextResponse.json({
+        projectId,
+        companyId,
         projectName: project?.name ?? null,
-        property: await loadProjectProperty(admin, projectId),
+        property: redact ? redactRow(await loadProjectProperty(admin, projectId)) : await loadProjectProperty(admin, projectId),
+        figuresRedacted: redact,
       });
     }
 
