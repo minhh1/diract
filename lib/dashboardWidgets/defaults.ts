@@ -18,6 +18,7 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   public_client_update_page: { label: 'Detailed table page', icon: 'Newspaper' },
   my_tasks_button: { label: 'My Tasks button', icon: 'ListChecks' },
   finance_model_search: { label: 'Finance Model search', icon: 'TrendingUp' },
+  residual_land_solver: { label: 'Residual Land Solver', icon: 'Landmark' },
 };
 
 // Sensible default size (grid units) for a freshly-added widget of each type;
@@ -43,6 +44,7 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   public_client_update_page: { w: 12, h: 12 },
   my_tasks_button: { w: 3, h: 2 },
   finance_model_search: { w: 12, h: 12 },
+  residual_land_solver: { w: 12, h: 12 },
 };
 
 // The only widget types that render meaningfully with no bound source table
@@ -53,7 +55,7 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
 // rather than let someone add a grid/chart/etc. that can never do anything.
 export const TABLE_INDEPENDENT_WIDGET_TYPES: DashboardWidgetType[] = [
   'heading', 'text', 'public_task_page', 'public_document_page', 'public_client_update_page',
-  'finance_model_search',
+  'finance_model_search', 'residual_land_solver',
 ];
 
 export function createWidget(type: DashboardWidgetType, existingWidgets: DashboardWidget[]): DashboardWidget {
@@ -78,5 +80,6 @@ export function createWidget(type: DashboardWidgetType, existingWidgets: Dashboa
     case 'public_client_update_page': return { ...base, type, config: { slug: null } };
     case 'my_tasks_button': return { ...base, type, config: { label: '', descriptionFieldId: null, matterFieldId: null } };
     case 'finance_model_search': return { ...base, type, config: {} };
+    case 'residual_land_solver': return { ...base, type, config: {} };
   }
 }

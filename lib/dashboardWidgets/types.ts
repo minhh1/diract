@@ -337,12 +337,23 @@ export interface FinanceModelWidget extends BaseWidget {
   config: Record<string, never>;
 }
 
+// Same search-a-project-then-render shape as FinanceModelWidget above (the
+// two share components/dashboard/FinanceModelSearchWidget.tsx via its
+// `variant` prop), but rendering the picked project's Residual Land Value
+// Solver (components/public/ResidualLandSolverContent.tsx) instead of its
+// full Finance Model. The viewer assigns the project at view time by
+// searching -- session-local, same ephemeral-select precedent, no config.
+export interface ResidualLandSolverWidget extends BaseWidget {
+  type: 'residual_land_solver';
+  config: Record<string, never>;
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
   | TrustReconciliationWidget | LedesExportWidget
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
   | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget
-  | FinanceModelWidget;
+  | FinanceModelWidget | ResidualLandSolverWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];

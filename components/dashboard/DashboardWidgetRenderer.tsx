@@ -297,6 +297,9 @@ export default function DashboardWidgetRenderer({
     case 'finance_model_search':
       return <FinanceModelSearchWidget />;
 
+    case 'residual_land_solver':
+      return <FinanceModelSearchWidget variant="residual_land_solver" />;
+
     default:
       return null;
   }

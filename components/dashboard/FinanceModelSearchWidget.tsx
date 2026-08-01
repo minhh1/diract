@@ -10,9 +10,18 @@
 // which projects were recently viewed and which are starred now persist
 // per-user (finance_model_project_recents/_stars) so returning users
 // don't have to re-search every time.
+//
+// Also backs the "Residual Land Solver" widget (variant
+// "residual_land_solver") -- identical search/Recent/Starred UX, but the
+// picked project renders its Residual Land Value Solver
+// (components/public/ResidualLandSolverContent.tsx) instead of the full
+// Finance Model. Recents/stars are deliberately shared between the two
+// variants: they're per-user "projects I work with" lists, not
+// per-widget state.
 import { useEffect, useRef, useState } from "react";
 import { Search, ArrowLeft, Loader2, Star, Clock } from "lucide-react";
 import PublicFinanceModelContent from "@/components/public/PublicFinanceModelContent";
+import ResidualLandSolverContent from "@/components/public/ResidualLandSolverContent";
 
 interface ProjectOption {
   id: string;
@@ -32,7 +41,7 @@ function StarButton({ starred, onToggle }: { starred: boolean; onToggle: () => v
   );
 }
 
-export default function FinanceModelSearchWidget() {
+export default function FinanceModelSearchWidget({ variant = "finance_model" }: { variant?: "finance_model" | "residual_land_solver" }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProjectOption[]>([]);
   const [searching, setSearching] = useState(false);
@@ -96,7 +105,9 @@ export default function FinanceModelSearchWidget() {
         <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-[12px] font-bold text-indigo-600 hover:underline">
           <ArrowLeft size={12} /> {selected.name}
         </button>
-        <PublicFinanceModelContent projectId={selected.id} mode="internal" embedded />
+        {variant === "residual_land_solver"
+          ? <ResidualLandSolverContent projectId={selected.id} />
+          : <PublicFinanceModelContent projectId={selected.id} mode="internal" embedded />}
       </div>
     );
   }
