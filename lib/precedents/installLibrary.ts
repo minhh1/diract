@@ -8,6 +8,7 @@
 // call repeatedly: it inserts what is missing and never touches a row the
 // firm has since edited. That is what lets the library grow over time
 // without cloning or overwriting anything a firm already has.
+import type { adminClient } from "@/lib/documentTemplateAuth";
 import { PRECEDENT_LIBRARY } from "@/lib/precedents/library";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 
@@ -18,12 +19,12 @@ export interface InstallResult {
 }
 
 /**
- * @param admin  service-role Supabase client
+ * @param admin  service-role Supabase client (see adminClient())
  * @param userId recorded as created_by; null when installed by an automated
  *               path with no acting user
  */
 export async function installPrecedentLibrary(
-  admin: any,
+  admin: ReturnType<typeof adminClient>,
   companyId: string,
   userId: string | null
 ): Promise<{ result?: InstallResult; error?: string }> {
@@ -37,9 +38,7 @@ export async function installPrecedentLibrary(
     .eq("company_id", companyId)
     .eq("table_name", "projects")
     .is("deleted_at", null);
-  const fieldIdByKey = new Map<string, string>(
-    (customFields || []).map((f: { field_key: string; id: string }) => [f.field_key, f.id])
-  );
+  const fieldIdByKey = new Map<string, string>((customFields || []).map(f => [f.field_key, f.id]));
 
   const { data: existing } = await admin
     .from("precedents")
@@ -47,7 +46,7 @@ export async function installPrecedentLibrary(
     .eq("company_id", companyId)
     .not("library_key", "is", null)
     .is("deleted_at", null);
-  const alreadyInstalled = new Set((existing || []).map((r: { library_key: string }) => r.library_key));
+  const alreadyInstalled = new Set((existing || []).map(r => r.library_key));
 
   const { data: maxOrderRow } = await admin
     .from("precedents")
