@@ -95,6 +95,13 @@ export function stripXmlIllegal(s: string): string {
 // (and therefore w:left, which is marker + STEP) changes.
 const STEP = 765;
 
+// Half-points (OOXML's font-size unit): 10pt, matching the body text. A
+// numbering level's marker carries its own size in numbering.xml, set
+// independently of the paragraph text next to it -- this firm's level 2 is
+// 11pt there against a 10pt body -- so left alone the number and the word
+// beside it don't match.
+const MARKER_SIZE = 20;
+
 /** Which numbered level a style sits at, or null if it isn't a numbered list. */
 function styleLevel(styleId: string): number | null {
   const m = /Level\s*-?\s*([1-5])/i.exec(styleId);
@@ -213,9 +220,26 @@ function patchNumberingTabs(zip: PizZip, stylesXml: string, styleIds: Set<string
     const lvlMatch = lvlRe.exec(absMatch[2]);
     if (!lvlMatch) continue;
 
-    const patchedLvl = /<w:pPr>[\s\S]*?<\/w:pPr>/.test(lvlMatch[0])
+    let patchedLvl = /<w:pPr>[\s\S]*?<\/w:pPr>/.test(lvlMatch[0])
       ? lvlMatch[0].replace(/<w:pPr>[\s\S]*?<\/w:pPr>/, `<w:pPr>${newIndTabs}</w:pPr>`)
       : lvlMatch[0].replace(/<w:rPr>/, `<w:pPr>${newIndTabs}</w:pPr><w:rPr>`);
+
+    // The marker's own size, not just its position: a template's numbering.xml
+    // sets this per level independently of the body text (this firm's level 2
+    // is 11pt against a 10pt body), so left alone the number reads a different
+    // size to the words next to it. w:sz/w:szCs come after w:rFonts and before
+    // anything else CT_RPr allows here, so appending just inside the closing
+    // tag (once any existing size is stripped) keeps valid element order.
+    const sizeXml = `<w:sz w:val="${MARKER_SIZE}"/><w:szCs w:val="${MARKER_SIZE}"/>`;
+    if (/<w:rPr>[\s\S]*?<\/w:rPr>/.test(patchedLvl)) {
+      patchedLvl = patchedLvl.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/, (_m, inner: string) => {
+        const stripped = inner.replace(/<w:sz w:val="\d+"\/>/g, "").replace(/<w:szCs w:val="\d+"\/>/g, "");
+        return `<w:rPr>${stripped}${sizeXml}</w:rPr>`;
+      });
+    } else {
+      patchedLvl = patchedLvl.replace(/<\/w:lvl>$/, `<w:rPr>${sizeXml}</w:rPr></w:lvl>`);
+    }
+
     const newAbsBody = absMatch[2].slice(0, lvlMatch.index) + patchedLvl + absMatch[2].slice(lvlMatch.index + lvlMatch[0].length);
     numberingXml = numberingXml.slice(0, absMatch.index) + absMatch[1] + newAbsBody + absMatch[3]
       + numberingXml.slice(absMatch.index + absMatch[0].length);
