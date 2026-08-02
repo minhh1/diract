@@ -118,7 +118,6 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
       // beneath at 10.5pt, and the document Title set so a footer that reads
       // it through a DOCPROPERTY field shows the deed name.
       ...L(null, [deedCover({ title: "DEED OF SETTLEMENT AND RELEASE", parties: ["[First party: name, ACN/ABN and address]", "[Second party: name, ACN/ABN and address]"] })]),
-      ...L(null, [""]),
       ...opening([
         ...L("DeedRecital", [
           "A dispute has arisen between the parties concerning ",
@@ -196,7 +195,6 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
       // beneath at 10.5pt, and the document Title set so a footer that reads
       // it through a DOCPROPERTY field shows the deed name.
       ...L(null, [deedCover({ title: "DEED OF CONFIDENTIALITY", parties: ["[Disclosing party: name, ACN/ABN and address]", "[Receiving party: name, ACN/ABN and address]"] })]),
-      ...L(null, [""]),
       ...opening([
         ...L("DeedRecital", [
           "The parties are discussing ",

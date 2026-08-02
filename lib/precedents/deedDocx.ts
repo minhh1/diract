@@ -403,7 +403,20 @@ function executionXml(spec: ExecutionSpec): string {
 const COVER = String.fromCharCode(5);
 const COVER_TITLE_SIZE = 32;   // half-points: 16pt
 const COVER_PARTY_SIZE = 21;   // half-points: 10.5pt
-const COVER_LEAD_LINES = 10;   // blank lines above the title
+
+// Twips (1 pt = 20 twips), used as explicit paragraph spacing rather than
+// blank paragraphs. A blank paragraph with no run has no explicit font size,
+// so its height falls back to whatever the template's default run properties
+// happen to be -- unreliable, and why the gap above the title collapsed
+// instead of pushing it down a third of the page. Explicit spacing doesn't
+// depend on any font.
+//
+// TOP positions the title down the page; BOTTOM is the gap between the
+// parties and the page break that follows, so the cover page has breathing
+// room at its foot rather than running straight into the break.
+const COVER_GAP_TOP = 2400;
+const COVER_GAP_BOTTOM = 2400;
+const COVER_TITLE_TO_PARTIES_GAP = 240;
 
 export interface CoverSpec {
   title: string;
@@ -415,21 +428,25 @@ export function deedCover(spec: CoverSpec): string {
   return COVER + JSON.stringify(spec);
 }
 
-function coverPara(text: string, size: number, bold: boolean): string {
+function coverPara(text: string, size: number, spacing: { before?: number; after?: number } = {}): string {
   const run = text
     ? `<w:r><w:rPr><w:rFonts w:ascii="${EXEC_FONT}" w:hAnsi="${EXEC_FONT}"/>` +
-      `${bold ? "<w:b/>" : ""}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>` +
+      `<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>` +
       `<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`
     : "";
-  return `<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>${run}</w:p>`;
+  const spacingAttrs = `${spacing.before !== undefined ? ` w:before="${spacing.before}"` : ""} w:after="${spacing.after ?? 0}"`;
+  return `<w:p><w:pPr><w:spacing${spacingAttrs}/></w:pPr>${run}</w:p>`;
 }
 
 function coverXml(spec: CoverSpec): string {
-  let out = "";
-  for (let i = 0; i < COVER_LEAD_LINES; i++) out += coverPara("", COVER_PARTY_SIZE, false);
-  out += coverPara(spec.title, COVER_TITLE_SIZE, false);
-  out += coverPara("", COVER_PARTY_SIZE, false);
-  for (const p of spec.parties) out += coverPara(p, COVER_PARTY_SIZE, false);
+  let out = coverPara(spec.title, COVER_TITLE_SIZE, {
+    before: COVER_GAP_TOP,
+    after: COVER_TITLE_TO_PARTIES_GAP,
+  });
+  spec.parties.forEach((p, i) => {
+    const isLast = i === spec.parties.length - 1;
+    out += coverPara(p, COVER_PARTY_SIZE, isLast ? { after: COVER_GAP_BOTTOM } : {});
+  });
   return out;
 }
 
