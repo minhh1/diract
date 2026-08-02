@@ -33,6 +33,7 @@ interface Precedent {
   requires_review: boolean | null;
   review_note: string | null;
   library_key: string | null;
+  uses_letterhead: boolean | null;
   // body_template is deliberately absent -- the list endpoint doesn't return
   // it (too heavy); PreviewModal fetches it per-precedent on open.
 }
@@ -410,20 +411,30 @@ function letterheadRows(detected: { role: string; options?: string[] }[]): { rol
 // art itself lives in the .docx and isn't reproduced here; the band at the
 // top stands in for it.
 function DocumentPreview({
-  segments, letterhead,
+  segments, letterhead, usesLetterhead,
 }: {
   segments: BodyTemplateSegment[];
   letterhead: Letterhead | null;
+  usesLetterhead: boolean;
 }) {
   const lines = toLines(segments);
-  const rows = letterhead ? letterheadRows(letterhead.detected_fields || []) : [];
+  const rows = usesLetterhead && letterhead ? letterheadRows(letterhead.detected_fields || []) : [];
 
   return (
     <div
       className="bg-white border border-slate-200 rounded-2xl px-8 py-7 text-slate-900"
       style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: "10pt", lineHeight: 1.45 }}
     >
-      {letterhead ? (
+      {!usesLetterhead ? (
+        // Court documents, deeds and prescribed forms carry their own heading
+        // (a statement of claim starts with COURT DETAILS, not the firm's
+        // logo), so no letterhead scaffold is drawn around them.
+        <div className="mb-6 py-3 border-b border-dashed border-slate-200 text-center">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300">
+            Not on letterhead &mdash; this document carries its own heading
+          </p>
+        </div>
+      ) : letterhead ? (
         <>
           <div className="mb-6 py-3 border-b border-dashed border-slate-200 text-center">
             <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300">
@@ -469,16 +480,23 @@ function DocumentPreview({
         );
       })}
 
-      {/* A letterhead with its own closing line supplies that wording, so it's
-          shown as a slot rather than guessed at; otherwise contentXml.ts
-          composes "Yours faithfully," and that is what will print. */}
-      <div style={{ height: "14pt" }} />
-      <p style={{ margin: "0 0 14pt" }}>
-        {letterhead && (letterhead.detected_fields || []).some(f => f.role === "closing")
-          ? <SlotChip label="Closing (from letterhead)" />
-          : "Yours faithfully,"}
-      </p>
-      <p style={{ margin: 0 }}><SlotChip label="Signing solicitor(s)" /></p>
+      {/* Only correspondence signs off this way. A statement of claim ends
+          with its own signature and verification blocks, which are part of
+          the prescribed form and so are written into the body itself.
+          A letterhead with its own closing line supplies that wording, so
+          it's shown as a slot rather than guessed at; otherwise
+          contentXml.ts composes "Yours faithfully," and that is what prints. */}
+      {usesLetterhead && (
+        <>
+          <div style={{ height: "14pt" }} />
+          <p style={{ margin: "0 0 14pt" }}>
+            {letterhead && (letterhead.detected_fields || []).some(f => f.role === "closing")
+              ? <SlotChip label="Closing (from letterhead)" />
+              : "Yours faithfully,"}
+          </p>
+          <p style={{ margin: 0 }}><SlotChip label="Signing solicitor(s)" /></p>
+        </>
+      )}
     </div>
   );
 }
@@ -714,7 +732,11 @@ function PreviewModal({
                 issue time &mdash; used for long-form documents where a fill-in template would not help.
               </p>
             ) : (
-              <DocumentPreview segments={segments} letterhead={letterhead} />
+              <DocumentPreview
+                segments={segments}
+                letterhead={letterhead}
+                usesLetterhead={precedent.uses_letterhead !== false}
+              />
             )}
           </div>
 

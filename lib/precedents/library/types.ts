@@ -69,6 +69,22 @@ export interface PrecedentSeed {
   segments?: BodyTemplateSegment[];
   requiresReview?: boolean;
   reviewNote?: string;
+  /**
+   * Whether the issued document goes on the firm's letterhead. Defaults from
+   * documentType (see DEFAULT_USES_LETTERHEAD): letters and advices do, court
+   * documents, deeds, prescribed forms and file notes don't, because they
+   * carry their own prescribed heading. Set explicitly only to override that.
+   */
+  usesLetterhead?: boolean;
+}
+
+/**
+ * A court document is filed under a prescribed form with its own heading; a
+ * deed is executed by the parties, not sent by the firm; a file note is an
+ * internal record. None of those belong on letterhead.
+ */
+export function defaultUsesLetterhead(documentType: PrecedentDocumentType): boolean {
+  return documentType === "letter" || documentType === "advice";
 }
 
 /** Fixed boilerplate. */

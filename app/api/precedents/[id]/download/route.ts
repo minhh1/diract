@@ -30,6 +30,43 @@ function safeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9 \-_()]/g, "").trim().slice(0, 120) || "precedent";
 }
 
+/**
+ * A standalone all-caps line is a section heading ("COURT DETAILS", "RELIEF
+ * CLAIMED"); a trailing colon means it introduces a value on the same line
+ * ("Case number:"), so it stays body text. Same rule the browser preview uses,
+ * so the two agree on what is a heading.
+ */
+function isHeadingLine(line: string): boolean {
+  const t = line.trim();
+  if (!t || t.length > 60 || t.endsWith(":")) return false;
+  return /[A-Z]/.test(t) && t === t.toUpperCase();
+}
+
+/**
+ * Builds the document without a letterhead, in the same Arial 10pt body /
+ * 12pt bold heading convention the letterhead path produces, so a firm's
+ * court documents and its letters look like they came from one office.
+ */
+async function buildStandaloneDocx(body: string): Promise<Buffer> {
+  const { Document, Packer, Paragraph, TextRun } = await import("docx");
+
+  const paragraphs = body.split("\n").map(line => {
+    if (!line.trim()) return new Paragraph({ spacing: { after: 120 } });
+    const heading = isHeadingLine(line);
+    return new Paragraph({
+      spacing: heading ? { before: 240, after: 120 } : { after: 120 },
+      children: [new TextRun({ text: line, bold: heading, size: heading ? 24 : 20, font: "Arial" })],
+    });
+  });
+
+  const doc = new Document({
+    // half-points: 20 = 10pt body, 24 = 12pt heading.
+    styles: { default: { document: { run: { font: "Arial", size: 20 } } } },
+    sections: [{ children: paragraphs }],
+  });
+  return Packer.toBuffer(doc);
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: precedentId } = await params;
   const auth = await authorizeCompanyMember();
@@ -38,7 +75,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: precedent } = await admin
     .from("precedents")
-    .select("id, company_id, name, body_template, ai_instructions")
+    .select("id, company_id, name, body_template, ai_instructions, uses_letterhead")
     .eq("id", precedentId).is("deleted_at", null).maybeSingle();
   if (!precedent || precedent.company_id !== companyId) {
     return NextResponse.json({ error: "Precedent not found" }, { status: 404 });
@@ -55,6 +92,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
+  const values: Record<string, string> = {};
+  for (const s of segments) if (s.type === "field") values[s.key] = placeholder(s.label);
+  const body = buildBodyFromTemplate(segments, values).trim();
+
+  // Court documents, deeds and prescribed forms are built standalone: they
+  // carry their own prescribed heading and putting the firm's letterhead
+  // above a statement of claim is not the approved form.
+  if (precedent.uses_letterhead === false) {
+    const standalone = await buildStandaloneDocx(body);
+    return new NextResponse(new Uint8Array(standalone), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename="${safeFilename(precedent.name)}.docx"`,
+      },
+    });
+  }
+
   const { data: letterhead } = await admin
     .from("company_letterheads")
     .select("storage_path, address_tag_key, content_tag_key, signoff_tag_key, detected_fields")
@@ -65,10 +119,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       { status: 400 }
     );
   }
-
-  const values: Record<string, string> = {};
-  for (const s of segments) if (s.type === "field") values[s.key] = placeholder(s.label);
-  const body = buildBodyFromTemplate(segments, values).trim();
 
   const detectedRoles = new Set<string>((letterhead.detected_fields || []).map((f: { role: string }) => f.role));
 

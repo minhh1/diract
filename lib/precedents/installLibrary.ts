@@ -10,6 +10,7 @@
 // without cloning or overwriting anything a firm already has.
 import type { adminClient } from "@/lib/documentTemplateAuth";
 import { PRECEDENT_LIBRARY } from "@/lib/precedents/library";
+import { defaultUsesLetterhead } from "@/lib/precedents/library/types";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 
 export interface InstallResult {
@@ -79,6 +80,7 @@ export async function installPrecedentLibrary(
         document_type: seed.documentType,
         requires_review: seed.requiresReview ?? false,
         review_note: seed.reviewNote ?? null,
+        uses_letterhead: seed.usesLetterhead ?? defaultUsesLetterhead(seed.documentType),
         library_key: seed.key,
         display_order: nextOrder++,
         created_by: userId,

@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       // Library taxonomy -- drives grouping, matter/jurisdiction scoping and
       // the review badge in PrecedentsTab. See
       // supabase/migrations/20260802180000_precedent_library.sql.
-      "category, subcategory, jurisdictions, matter_types, document_type, requires_review, review_note, library_key"
+      "category, subcategory, jurisdictions, matter_types, document_type, requires_review, review_note, library_key, uses_letterhead"
     )
     .eq("company_id", companyId)
     .eq("record_table", recordTable)
