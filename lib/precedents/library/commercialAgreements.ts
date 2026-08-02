@@ -28,40 +28,11 @@ import { text, field, type PrecedentSeed } from "./types";
 const COMMERCIAL = ["Commercial"];
 
 export const COMMERCIAL_AGREEMENT_PRECEDENTS: PrecedentSeed[] = [
-  // ── Confidentiality ─────────────────────────────────────────────
-  {
-    key: "cagr.nda_mutual",
-    name: "Confidentiality Agreement (Mutual)",
-    description: "Two-way NDA for parties exchanging confidential information during negotiations.",
-    category: "Commercial",
-    subcategory: "Confidentiality",
-    documentType: "deed",
-    matterTypes: COMMERCIAL,
-    aiInstructions:
-      "Draft a mutual confidentiality agreement. Include: definition of confidential information (broad, but with the standard carve-outs for information already public, already known, independently developed, or required to be disclosed by law or a regulator); permitted purpose, tightly defined; permitted disclosees (employees, advisers, financiers) and the obligation to procure their compliance; obligations of use and non-use; return or destruction on request, with a carve-out for backup archives and records required to be retained; term of the obligations (which should survive the agreement); no licence or IP transfer; no obligation to proceed with the transaction; remedies including acknowledgment that damages may be inadequate and injunctive relief may be sought; and governing law. Keep it proportionate -- an oppressive NDA delays deals and is often simply refused.",
-    segments: [
-      text("CONFIDENTIALITY AGREEMENT (MUTUAL)\n\nParties: "),
-      field("parties", "Parties", "Example Holdings Pty Ltd (ACN 000 000 000) and Sample Ventures Pty Ltd (ACN 111 111 111)"),
-      text("\nDate: "),
-      field("date", "Date", "20 September 2026"),
-      text("\n\nPERMITTED PURPOSE\n\n"),
-      field("purpose", "Permitted purpose", "Evaluating a possible acquisition by Sample Ventures Pty Ltd of the business assets of Example Holdings Pty Ltd."),
-      text("\n\nTERM OF OBLIGATIONS\n\n"),
-      field("term", "Term of confidentiality obligations", "3 years from the date of this agreement, and indefinitely in respect of any information constituting a trade secret."),
-      text("\n\n[Full agreement to be drafted -- see instructions]"),
-    ],
-  },
-  {
-    key: "cagr.nda_one_way",
-    name: "Confidentiality Agreement (One Way)",
-    description: "One-way NDA where only one party is disclosing.",
-    category: "Commercial",
-    subcategory: "Confidentiality",
-    documentType: "deed",
-    matterTypes: COMMERCIAL,
-    aiInstructions:
-      "Draft a one-way confidentiality agreement protecting the disclosing party. Same structure as a mutual NDA but drafted from the discloser's perspective: broader definition of confidential information, tighter permitted purpose, express acknowledgment that no representation or warranty is given as to accuracy or completeness of the information disclosed, no obligation to proceed, and a clear statement that no licence or right in the information passes. Where acting for the RECIPIENT, note in the covering advice which terms should be pushed back on -- particularly an unlimited term, a residuals clause, or an obligation extending to information the recipient already held.",
-  },
+  // Confidentiality lived here as two stubs, cagr.nda_mutual and
+  // cagr.nda_one_way, each carrying a heading and "[Full agreement to be
+  // drafted]". Both are now written out in full in agreementsBatch1.ts under
+  // new keys, and the stubs are gone so a firm installing today gets one
+  // confidentiality agreement of each kind rather than two.
 
   // ── Services and consultancy ────────────────────────────────────
   {

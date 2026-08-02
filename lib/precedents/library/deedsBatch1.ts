@@ -16,26 +16,9 @@
 // Batch 1 is the short instruments a general practice reaches for most often.
 // Longer commercial agreements follow in later batches.
 import { field, type PrecedentSeed } from "./types";
-import { deedLine } from "@/lib/precedents/deedDocx";
-import { executionBlock, executedAsLine, type PartyKind, type InstrumentKind } from "@/lib/precedents/executionClauses";
+import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE } from "./instrumentParts";
+import { executedAsLine } from "@/lib/precedents/executionClauses";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
-
-const L = (style: string | null, parts: (string | BodyTemplateSegment)[]) =>
-  deedLine<BodyTemplateSegment>(style, parts);
-
-/** One party's signing block, with the party description left as a field. */
-function executionLines(kind: PartyKind, instrument: InstrumentKind, fieldLabel: string): BodyTemplateSegment[] {
-  const PLACEHOLDER = "\u0000PARTY\u0000";
-  return executionBlock(kind, instrument, PLACEHOLDER).flatMap(line => {
-    if (!line.includes(PLACEHOLDER)) return L(null, [line]);
-    const [before, after] = line.split(PLACEHOLDER);
-    return L(null, [
-      before,
-      field(fieldLabel.toLowerCase().replace(/ /g, "_"), fieldLabel + ": full name, ACN and any trustee capacity", "ACME Pty Ltd ACN 000 000 000 as trustee for the ACME Trust"),
-      after,
-    ]);
-  });
-}
 
 /** The boilerplate every deed in this batch ends with. */
 function generalProvisions(): BodyTemplateSegment[] {
@@ -76,7 +59,7 @@ function generalProvisions(): BodyTemplateSegment[] {
     // lib/precedents/executionClauses.ts -- an individual signs a deed
     // differently from an agreement, and a company's block turns on whether
     // it signs under s 127(1) or s 126.
-    ...L(null, ["[Choose the signing block for each party: individual, company under s 127(1) with two officers, company with a sole director, or company by authorised representative under s 126.]"]),
+    ...L(null, [CHOOSE_EXECUTION_BLOCK_NOTE]),
     ...L(null, [""]),
     ...executionLines("individual", "deed", "First party"),
     ...L(null, [""]),
