@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Upload, FileText, Eye, Trash2, Loader2, Check, Plus, ChevronUp, ChevronDown, Lock, X,
+  Upload, FileText, Eye, Trash2, Loader2, Check, Plus, ChevronUp, ChevronDown, Lock, X, Calendar,
 } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
@@ -81,6 +81,12 @@ interface Precedent {
   ai_instructions: string | null;
   display_order: number;
   category?: string | null;
+  // When this precedent's own content was last prepared/edited (see
+  // supabase/migrations/20260803000000_precedents_updated_at.sql) -- shown
+  // so a stale precedent (due for a refresh, e.g. after a law change) is
+  // obvious at a glance rather than only discovered when something's wrong.
+  // Optional: the "Add precedent" placeholder row has no date yet.
+  updated_at?: string;
 }
 
 // Matches PrecedentsTab.tsx's own fallback label for a null category, so a
@@ -1022,7 +1028,6 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
 }) {
   const [name, setName] = useState(precedent.name);
   const [description, setDescription] = useState(precedent.description || "");
-  const [aiInstructions, setAiInstructions] = useState(precedent.ai_instructions || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1033,11 +1038,11 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
     const res = isNew
       ? await fetch("/api/precedents", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description, aiInstructions }),
+          body: JSON.stringify({ name, description }),
         })
       : await fetch(`/api/precedents/${precedent.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description, aiInstructions }),
+          body: JSON.stringify({ name, description }),
         });
     const json = await res.json();
     setSaving(false);
@@ -1048,7 +1053,14 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
   if (!isNew && !canEdit) {
     return (
       <div className="border border-slate-200 rounded-[24px] p-5">
-        <p className="text-[13px] font-bold text-slate-800">{precedent.name}</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-[13px] font-bold text-slate-800">{precedent.name}</p>
+          {precedent.updated_at && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[9px] font-bold">
+              <Calendar size={9} /> Prepared {new Date(precedent.updated_at).toLocaleDateString('en-AU')}
+            </span>
+          )}
+        </div>
         {precedent.description && <p className="text-[12px] text-slate-400 mt-1">{precedent.description}</p>}
       </div>
     );
@@ -1056,13 +1068,19 @@ function PrecedentCard({ precedent, isNew, canEdit, onSaved, onDelete, onCancel 
 
   return (
     <div className="border border-slate-200 rounded-[24px] p-5 space-y-3">
+      {/* So an admin editing this precedent can see at a glance whether it's
+          due for a refresh -- law changes, outdated wording -- without
+          leaving the settings screen. Not shown for a brand-new,
+          not-yet-saved precedent, which has no prepared date yet. */}
+      {!isNew && precedent.updated_at && (
+        <p className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <Calendar size={10} /> Prepared {new Date(precedent.updated_at).toLocaleDateString('en-AU')}
+        </p>
+      )}
       <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Order Confirmation"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] font-bold outline-none focus:border-indigo-400" />
       <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
         placeholder="Description shown to staff on the Precedent tab (optional)"
-        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
-      <textarea value={aiInstructions} onChange={e => setAiInstructions(e.target.value)} rows={3}
-        placeholder="Instructions for the optional AI drafting assist, e.g. 'This confirms an order has been placed. State the order details and expected delivery date.'"
         className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
       {!isNew && <BodyTemplateSection precedentId={precedent.id} canEdit={canEdit} />}
       {error && <p className="text-[11px] text-red-500">{error}</p>}

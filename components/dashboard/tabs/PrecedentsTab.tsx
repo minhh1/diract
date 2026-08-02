@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput, Search, ChevronDown, AlertTriangle } from "lucide-react";
+import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput, Search, ChevronDown, AlertTriangle, Calendar } from "lucide-react";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import { useCompany } from "@/components/CompanyContext";
 import PrecedentLibraryTopUp from "@/components/precedents/PrecedentLibraryTopUp";
@@ -39,6 +39,11 @@ interface Precedent {
   document_type: string | null;
   requires_review: boolean | null;
   review_note: string | null;
+  // When this precedent's own content was last prepared/edited (see
+  // supabase/migrations/20260803000000_precedents_updated_at.sql) -- shown
+  // so a precedent that hasn't been touched in a long time (law changes,
+  // outdated wording) is obvious before relying on it for a real matter.
+  updated_at: string;
 }
 
 const UNCATEGORISED = "Other";
@@ -202,6 +207,12 @@ export default function PrecedentsTab({ recordId, initialPrecedentId }: Props) {
                                 {p.jurisdictions.join(" / ")}
                               </span>
                             )}
+                            {/* So a precedent that hasn't been touched in a
+                                while is visible before relying on it for a
+                                real matter -- law changes, outdated wording. */}
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[9px] font-bold">
+                              <Calendar size={9} /> Prepared {new Date(p.updated_at).toLocaleDateString('en-AU')}
+                            </span>
                             {/* Court filings are scaffolds, not known-current
                                 prescribed forms -- surfaced here rather than
                                 left as an undocumented assumption. */}

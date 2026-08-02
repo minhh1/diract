@@ -90,7 +90,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { data, error } = await admin
     .from("precedents")
-    .update({ body_template: segments.length ? { segments } : null })
+    .update({ body_template: segments.length ? { segments } : null, updated_at: new Date().toISOString() })
     .eq("id", precedentId)
     .select("body_template")
     .single();

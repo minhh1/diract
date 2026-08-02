@@ -34,7 +34,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   if ("description" in body) update.description = String(body?.description || "").trim() || null;
   if ("aiInstructions" in body) update.ai_instructions = String(body?.aiInstructions || "").trim() || null;
+  // A reorder (drag/move) doesn't touch the precedent's own content, so it
+  // shouldn't reset the "prepared" date shown in the Precedent library/tab
+  // (see precedents_updated_at.sql) -- only name/description/ai_instructions
+  // edits count as re-preparing it.
+  const touchesContent = "name" in body || "description" in body || "aiInstructions" in body;
   if ("displayOrder" in body) update.display_order = Number(body.displayOrder) || 0;
+  if (touchesContent) update.updated_at = new Date().toISOString();
 
   const { error } = await admin.from("precedents").update(update).eq("id", precedentId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

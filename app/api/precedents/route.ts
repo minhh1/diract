@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await admin
     .from("precedents")
     .select(
-      "id, name, description, ai_instructions, display_order, created_at, " +
+      "id, name, description, ai_instructions, display_order, created_at, updated_at, " +
       // Library taxonomy -- drives grouping, matter/jurisdiction scoping and
       // the review badge in PrecedentsTab. See
       // supabase/migrations/20260802180000_precedent_library.sql.

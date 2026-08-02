@@ -29,7 +29,7 @@ export async function redetectBodyTemplate(admin: any, precedentId: string, comp
     .from("precedent_body_examples").select("storage_path").eq("precedent_id", precedentId);
 
   if (!examples?.length) {
-    await admin.from("precedents").update({ body_template: null }).eq("id", precedentId);
+    await admin.from("precedents").update({ body_template: null, updated_at: new Date().toISOString() }).eq("id", precedentId);
     return null;
   }
 
@@ -59,6 +59,6 @@ export async function redetectBodyTemplate(admin: any, precedentId: string, comp
     });
   }
 
-  await admin.from("precedents").update({ body_template: template }).eq("id", precedentId);
+  await admin.from("precedents").update({ body_template: template, updated_at: new Date().toISOString() }).eq("id", precedentId);
   return template;
 }
