@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await admin
     .from("precedent_issuances")
-    .select("id, precedent_id, subject_line, created_at, precedents(name)")
+    .select("id, precedent_id, subject_line, created_at, docx_storage_path, precedents(name)")
     .eq("company_id", companyId)
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
@@ -32,6 +32,9 @@ export async function GET(req: NextRequest) {
     precedentName: row.precedents?.name || "Deleted precedent",
     subjectLine: row.subject_line,
     createdAt: row.created_at,
+    // Issuances from before the .docx was kept alongside the PDF are
+    // PDF-only, so the Word link is only offered where there's one to serve.
+    hasDocx: !!row.docx_storage_path,
   }));
   return NextResponse.json({ issuances });
 }

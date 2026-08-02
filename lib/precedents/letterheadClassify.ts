@@ -177,11 +177,20 @@ function rebuildParagraph(originalParaXml: string, newText: string, bold: boolea
   return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(newText)}</w:t></w:r></w:p>`;
 }
 
-// A "label: value" paragraph (Our Ref:, Attention:) keeps its literal label
-// and gets the tag appended after the colon; every other role replaces the
-// whole paragraph, since the tag's own filled value already reads correctly
-// on its own (e.g. resolveSalutation's value already starts with "Dear ").
-const KEEP_LABEL_PREFIX_ROLES = new Set<Role>(["our_ref", "address"]);
+// A "label: value" paragraph (Our Ref:) keeps its literal label and gets the
+// tag appended after the colon; every other role replaces the whole
+// paragraph, since the tag's own filled value already reads correctly on its
+// own (e.g. resolveSalutation's value already starts with "Dear ").
+//
+// 'address' used to be in here too, which printed "Attention: 231 Moore
+// Street, ..." on every letter from a letterhead whose address block happened
+// to start with an Attention line -- an Attention line names a person and
+// nothing in the app collects one, so the label is dropped and the mailing
+// block stands on its own (see lib/precedents/addressBlock.ts). Letterheads
+// uploaded before this change still have the label baked into their stored
+// .docx, so it's also stripped at fill time -- see
+// lib/precedents/letterLayout.ts.
+const KEEP_LABEL_PREFIX_ROLES = new Set<Role>(["our_ref"]);
 
 // Rewrites word/document.xml in place: for each detected role, the FIRST
 // (lowest-index) paragraph becomes the tag (or keeps its "Label: " prefix --

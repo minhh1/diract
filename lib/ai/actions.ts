@@ -32,6 +32,44 @@ function pickBestMatch(name: string, candidates: ResolvedMatch[]): ResolveResult
   return { status: "ambiguous", candidates };
 }
 
+// Reading a reply that points AT one of the options the bot just listed,
+// rather than re-naming it. Observed live (2026-08-02): asked to pick
+// between "Order on Agent" and "Order on Agent (deposit release, NSW)", the
+// reply "Order on the Agent, first one" was fed straight back into name
+// resolution, which of course found no precedent literally called that and
+// offered to write the document with AI instead. Returns the chosen option's
+// exact name (which then resolves unambiguously, see pickBestMatch's exact-
+// name preference), or null when the reply isn't positional at all and
+// should be treated as a fresh name.
+const ORDINAL_PATTERNS: RegExp[] = [
+  /\b(first|1st)\b/, /\b(second|2nd)\b/, /\b(third|3rd)\b/, /\b(fourth|4th)\b/, /\b(fifth|5th)\b/,
+  /\b(sixth|6th)\b/, /\b(seventh|7th)\b/, /\b(eighth|8th)\b/, /\b(ninth|9th)\b/, /\b(tenth|10th)\b/,
+];
+// A bare word/numeral is only positional when it's the WHOLE reply -- "one"
+// inside a longer sentence is far more often filler ("give me one of those")
+// than a choice, and a stray "2" inside a document name is not a pick.
+const BARE_NUMBER_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
+export function pickFromCandidates(reply: string, candidateNames: string[]): string | null {
+  const normalized = reply.trim().toLowerCase().replace(/[.!]+$/, "");
+  if (!normalized || candidateNames.length < 2) return null;
+
+  const named = candidateNames.find((c) => c.trim().toLowerCase() === normalized);
+  if (named) return named;
+
+  if (/\b(last|final|bottom|latter)\b/.test(normalized)) return candidateNames[candidateNames.length - 1];
+
+  const ordinalAt = ORDINAL_PATTERNS.findIndex((p) => p.test(normalized));
+  if (ordinalAt !== -1) return candidateNames[ordinalAt] ?? null;
+
+  const numbered = normalized.match(/^(?:the\s+)?(?:option|number|no\.?|#)?\s*(\d{1,2})(?:\s*(?:one|option))?$/);
+  const bareWord = BARE_NUMBER_WORDS.indexOf(normalized.replace(/^the\s+/, ""));
+  const position = numbered ? Number(numbered[1]) : bareWord !== -1 ? bareWord + 1 : 0;
+  if (position >= 1 && position <= candidateNames.length) return candidateNames[position - 1];
+
+  return null;
+}
+
 // Fallback for when a plain ILIKE substring match finds nothing -- observed
 // live (2026-07-27): a user referenced project "7207/117 Bathurst Street"
 // as matter "Unit 7207, 117 Bathurst" (an extra generic word, and a comma

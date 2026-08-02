@@ -10,6 +10,8 @@
 // line its own bold run or give each section real paragraph spacing),
 // converts to PDF, stores it, and logs a precedent_issuances row.
 import { formatSubjectLine, formatLetterDate, resolveSalutation } from "@/lib/precedents/composeLetter";
+import { formatRecipientBlock, formatAddressBlock } from "@/lib/precedents/addressBlock";
+import { normalizeLetterLayout } from "@/lib/precedents/letterLayout";
 import { insertSignoffBlock, type SignoffPerson } from "@/lib/precedents/signoffXml";
 import { insertContentBlock } from "@/lib/precedents/contentXml";
 import { buildBodyFromTemplate } from "@/lib/precedents/bodyTemplateDetect";
@@ -46,7 +48,7 @@ export interface IssuePrecedentInput {
 }
 
 export type IssuePrecedentResult =
-  | { ok: true; issuanceId: string; subject: string; url: string | null }
+  | { ok: true; issuanceId: string; subject: string; url: string | null; docxUrl: string | null }
   | { ok: false; error: string; status: number };
 
 // Resolves each selected signer (a user_id, see precedent_settings.signers)
@@ -110,9 +112,15 @@ async function resolveMatterReference(admin: any, companyId: string, projectId: 
 
 export async function issuePrecedentDocument(admin: any, input: IssuePrecedentInput): Promise<IssuePrecedentResult> {
   const { companyId, userId, precedentId, projectId } = input;
-  const subjectInput = input.subject.trim();
+  // Every one of these is optional on at least one caller's path -- the bot's
+  // freeform General Document flow doesn't require a recipient address at all
+  // (see lib/ai/precedentAction.ts), and reading `.trim()` straight off an
+  // absent one crashed the whole issuance with "Cannot read properties of
+  // undefined (reading 'trim')" instead of the intended validation error
+  // below (observed live, 2026-08-02).
+  const subjectInput = (input.subject || "").trim();
   const draftBrief = (input.draftBrief || "").trim();
-  const recipientAddress = input.recipientAddress.trim();
+  const recipientAddress = (input.recipientAddress || "").trim();
   const recipientName = (input.recipientName || "").trim();
   const deliveryMode = (input.deliveryMode || "").trim();
   const salutationOverride = (input.salutation || "").trim();
@@ -200,13 +208,21 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
   // -- whether the letterhead has its own {{salutation}} tag or not.
   const resolvedSalutation = salutationOverride || resolveSalutation(settings.salutation_style, clientFirstName, clientFullName);
 
+  // Whatever was typed as the name/address (over chat, that's often one
+  // run-on line covering both) becomes the conventional mailing block --
+  // addressee, street line, "Suburb STATE POSTCODE". With no dedicated
+  // {{recipient_name}} tag on this letterhead, the addressee has nowhere else
+  // to go, so it heads the address block instead.
+  const recipientBlock = formatRecipientBlock(recipientName, recipientAddress);
   const fillData: Record<string, string> = {
-    [letterhead.address_tag_key]: recipientAddress,
+    [letterhead.address_tag_key]: detectedRoles.has("recipient_name")
+      ? recipientBlock.address
+      : formatAddressBlock(recipientName, recipientAddress),
   };
   if (detectedRoles.has("our_ref")) fillData.our_ref = matterReference || "";
   if (detectedRoles.has("date")) fillData.date = formatLetterDate(settings.date_format);
   if (detectedRoles.has("delivery_mode")) fillData.delivery_mode = deliveryMode;
-  if (detectedRoles.has("recipient_name")) fillData.recipient_name = recipientName;
+  if (detectedRoles.has("recipient_name")) fillData.recipient_name = recipientBlock.name;
   if (detectedRoles.has("salutation")) fillData.salutation = resolvedSalutation;
   if (detectedRoles.has("subject")) fillData.subject = formattedSubject;
 
@@ -215,7 +231,18 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
 
   let docxBuffer: Buffer;
   try {
-    let sourceBytes = insertSignoffBlock(Buffer.from(await fileData.arrayBuffer()), letterhead.signoff_tag_key, signoffs);
+    let sourceBytes = normalizeLetterLayout(Buffer.from(await fileData.arrayBuffer()), {
+      addressTagKey: letterhead.address_tag_key,
+      // Whichever of these the letterhead lays out first is the first line of
+      // the letter proper -- the top spacing goes above it.
+      letterTagKeys: [
+        ...[...detectedRoles.keys()].filter((role) => role !== "closing" && role !== "signoff"),
+        letterhead.address_tag_key,
+        letterhead.content_tag_key,
+      ],
+      subjectTagKey: detectedRoles.has("subject") ? "subject" : null,
+    });
+    sourceBytes = insertSignoffBlock(sourceBytes, letterhead.signoff_tag_key, signoffs);
     sourceBytes = insertContentBlock(sourceBytes, letterhead.content_tag_key, {
       date: detectedRoles.has("date") ? null : formatLetterDate(settings.date_format),
       ourRef: !detectedRoles.has("our_ref") && matterReference ? matterReference : null,
@@ -249,15 +276,30 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
   const { error: upErr } = await admin.storage.from(BUCKET).upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: false });
   if (upErr) return { ok: false, error: `Failed to store the document: ${upErr.message}`, status: 500 };
 
+  // The .docx the PDF was rendered from is kept too -- a letter almost always
+  // needs a last edit before it goes out, and re-typing it from a flat PDF
+  // was the only option before. Best-effort: a failed .docx upload leaves the
+  // issuance PDF-only rather than failing the whole issuance.
+  const docxStoragePath = `generated/${companyId}/${precedentId}/${issuanceId}.docx`;
+  const { error: docxUpErr } = await admin.storage.from(BUCKET).upload(docxStoragePath, docxBuffer, {
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    upsert: false,
+  });
+  if (docxUpErr) console.error("Failed to store the issued .docx:", docxUpErr.message);
+
   const { error: insertErr } = await admin.from("precedent_issuances").insert({
     id: issuanceId, precedent_id: precedentId, company_id: companyId, project_id: projectId,
     created_by: userId, prompt: draftBrief, subject_line: formattedSubject, storage_path: storagePath,
+    docx_storage_path: docxUpErr ? null : docxStoragePath,
   });
   if (insertErr) return { ok: false, error: insertErr.message, status: 500 };
 
-  const { data: signed } = await admin.storage.from(BUCKET).createSignedUrl(storagePath, SIGNED_URL_TTL);
+  const [{ data: signed }, { data: signedDocx }] = await Promise.all([
+    admin.storage.from(BUCKET).createSignedUrl(storagePath, SIGNED_URL_TTL),
+    docxUpErr ? Promise.resolve({ data: null }) : admin.storage.from(BUCKET).createSignedUrl(docxStoragePath, SIGNED_URL_TTL),
+  ]);
 
-  return { ok: true, issuanceId, subject: formattedSubject, url: signed?.signedUrl || null };
+  return { ok: true, issuanceId, subject: formattedSubject, url: signed?.signedUrl || null, docxUrl: signedDocx?.signedUrl || null };
 }
 
 const GENERAL_PRECEDENT_NAME = "General Document";

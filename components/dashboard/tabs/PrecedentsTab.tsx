@@ -47,6 +47,7 @@ interface Issuance {
   precedentName: string;
   subjectLine: string | null;
   createdAt: string;
+  hasDocx: boolean;
 }
 
 export default function PrecedentsTab({ recordId, initialPrecedentId }: Props) {
@@ -241,14 +242,21 @@ export default function PrecedentsTab({ recordId, initialPrecedentId }: Props) {
             <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">Nothing issued yet</p>
           )}
           {issuances.map(i => (
-            <a key={i.id} href={`/api/precedents/issuances/${i.id}/download`} target="_blank" rel="noopener noreferrer"
+            <div key={i.id}
               className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-[20px] hover:border-indigo-300 transition-colors">
               <Download size={14} className="text-slate-400 shrink-0" />
-              <div className="flex-1 min-w-0">
+              <a href={`/api/precedents/issuances/${i.id}/download`} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0">
                 <p className="text-[12px] font-bold text-slate-700 truncate">{i.subjectLine || i.precedentName}</p>
                 <p className="text-[10px] text-slate-400">{i.precedentName} · {new Date(i.createdAt).toLocaleString('en-AU')}</p>
-              </div>
-            </a>
+              </a>
+              {/* Anything issued before the editable .docx was kept alongside the PDF stays PDF-only. */}
+              {i.hasDocx && (
+                <a href={`/api/precedents/issuances/${i.id}/download?format=docx`} target="_blank" rel="noopener noreferrer"
+                  className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-indigo-500 hover:text-indigo-700">
+                  Word
+                </a>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -290,7 +298,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   const [body, setBody] = useState("");
   const [issuing, setIssuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ subject: string; url: string | null } | null>(null);
+  const [result, setResult] = useState<{ subject: string; url: string | null; docxUrl: string | null } | null>(null);
   // What lib/precedents/letterheadClassify.ts found in this firm's
   // letterhead beyond the always-present address/content/signoff tags --
   // only recipient_name and delivery_mode need input here, everything else
@@ -404,7 +412,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
     const json = await res.json();
     setIssuing(false);
     if (!res.ok) { setError(json.error || "Failed to issue document"); return; }
-    setResult({ subject: json.subject, url: json.url });
+    setResult({ subject: json.subject, url: json.url, docxUrl: json.docxUrl ?? null });
   };
 
   if (result) {
@@ -417,7 +425,15 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
           {result.url && (
             <a href={result.url} target="_blank" rel="noopener noreferrer"
               className="block w-full py-3 bg-slate-900 text-white text-[12px] font-bold rounded-full hover:bg-slate-700">
-              Open document
+              Open PDF
+            </a>
+          )}
+          {/* The .docx the PDF was rendered from — a letter almost always
+              needs one last edit before it goes out. */}
+          {result.docxUrl && (
+            <a href={result.docxUrl} target="_blank" rel="noopener noreferrer"
+              className="block w-full py-3 border border-slate-200 text-slate-600 text-[12px] font-bold rounded-full hover:bg-slate-50">
+              Download Word version
             </a>
           )}
           <button onClick={onIssued} className="w-full py-3 border border-slate-200 text-slate-600 text-[12px] font-bold rounded-full hover:bg-slate-50">

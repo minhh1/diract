@@ -64,9 +64,24 @@ export function parseIncomingActivity(activity: any): IncomingMessage | null {
   // unrecognized message (empty text, acked and ignored). A plain "message"
   // activity never carries a populated reactionsAdded array on its own, so
   // checking for that array's presence is a safe, type-agnostic signal.
-  const AFFIRMATIVE_REACTION_TYPES = new Set(["like", "plusOne", "heart"]);
+  //
+  // Matched case-insensitively and across every spelling Teams has been seen
+  // to send for the same two reactions -- the modern client's expanded emoji
+  // picker sends the emoji's own name (or the literal character) rather than
+  // the six classic type strings, so a tapped 👍/❤️ could arrive as "like",
+  // "thumbsup", "thumbs_up", "+1" or "👍" depending on client and channel.
+  // Reported live (2026-08-02) as the bot not recognizing a heart or a
+  // thumbs-up at all; anything unmatched is still ignored rather than
+  // guessed at.
+  const AFFIRMATIVE_REACTION_TYPES = new Set([
+    "like", "plusone", "+1", "thumbsup", "thumbs_up", "thumbs up", "👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿",
+    "heart", "hearts", "love", "redheart", "red_heart", "❤", "❤️", "🩷", "💖", "💗", "💙", "💚", "💛", "💜",
+    "yes", "ok", "okay", "approve", "approved", "tick", "check", "whitecheckmark", "white_check_mark", "✅", "✔", "✔️", "🆗",
+  ]);
   const reactionsAdded = (activity.reactionsAdded ?? []) as Array<{ type?: string }>;
-  const isLikeReaction = reactionsAdded.some((r) => r.type && AFFIRMATIVE_REACTION_TYPES.has(r.type));
+  const isLikeReaction = reactionsAdded.some(
+    (r) => typeof r.type === "string" && AFFIRMATIVE_REACTION_TYPES.has(r.type.trim().toLowerCase())
+  );
   const reactionTargetId: string | undefined = isLikeReaction ? activity.replyToId : undefined;
 
   // Diagnostic only, kept narrow (fires only when Teams actually sent a

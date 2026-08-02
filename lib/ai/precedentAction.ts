@@ -16,7 +16,7 @@
 // precedent_settings default. Signer selection, unlike salutation, IS
 // handled here -- see lib/botEngine/handleMessage.ts's proactive signoff
 // confirmation round, kicked off once this returns "confirming".
-import { resolvePrecedentByName, resolveProjectByName } from "./actions";
+import { resolvePrecedentByName, resolveProjectByName, pickFromCandidates } from "./actions";
 import { draftPrecedentContent, draftSubjectLine, type SubjectDraft } from "./precedentDraft";
 import { buildBodyFromTemplate, type BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import { resolveOrCreateGeneralPrecedent, resolveProjectSummary } from "@/lib/precedents/issuePrecedent";
@@ -55,6 +55,46 @@ export interface PrecedentConfirmingResult {
 }
 
 export type PrecedentAdvanceResult = PrecedentCollectingResult | PrecedentConfirmingResult;
+
+// The options the bot last listed for an ambiguous precedent/matter, kept in
+// `collected` (JSON, since collected is a flat string map) purely so the next
+// reply can be read as a pick from that list -- "the first one" means nothing
+// without knowing what was offered. Cleared as soon as the choice resolves.
+const CHOICES_KEY = { precedent_name: "precedent_choices", project_name: "project_choices" } as const;
+
+function rememberChoices(collected: Record<string, string>, field: keyof typeof CHOICES_KEY, names: string[]) {
+  collected[CHOICES_KEY[field]] = JSON.stringify(names);
+}
+
+// Rewrites a positional reply ("first one", "#2") into the exact option name
+// it points at, so the normal name resolution below can take it from there.
+function applyRememberedChoice(collected: Record<string, string>, field: keyof typeof CHOICES_KEY) {
+  const raw = collected[CHOICES_KEY[field]];
+  const reply = collected[field];
+  if (!raw || !reply?.trim()) return;
+  let names: string[] = [];
+  try { names = JSON.parse(raw); } catch { names = []; }
+  const picked = Array.isArray(names) ? pickFromCandidates(reply, names.map(String)) : null;
+  if (picked) collected[field] = picked;
+  delete collected[CHOICES_KEY[field]];
+}
+
+function numberedList(names: string[]): string {
+  return names.map((n, i) => `${i + 1}. ${n}`).join("\n");
+}
+
+// True when the one thing still pending is a "which of these did you mean?"
+// pick. The reply to that isn't a field value to run extraction over -- it's
+// a position or a name from the list just shown, so the shared bot engine
+// hands it through verbatim (see continueCollecting) and lets
+// applyRememberedChoice above resolve it.
+export function pendingChoiceField(
+  collected: Record<string, string>, pendingFieldKeys: string[]
+): keyof typeof CHOICES_KEY | null {
+  if (pendingFieldKeys.length !== 1) return null;
+  const field = pendingFieldKeys[0] as keyof typeof CHOICES_KEY;
+  return (field === "precedent_name" || field === "project_name") && collected[CHOICES_KEY[field]] ? field : null;
+}
 
 const PHASE1_FIELDS: PrecedentField[] = [
   { key: "precedent_name", label: "Which precedent (document type)", required: true },
@@ -198,6 +238,8 @@ export async function advancePrecedentAction(
   collectedIn: Record<string, string>
 ): Promise<PrecedentAdvanceResult> {
   const collected = { ...collectedIn };
+  applyRememberedChoice(collected, "precedent_name");
+  applyRememberedChoice(collected, "project_name");
 
   // Phase 1: resolve precedent + matter first -- every other field depends
   // on which precedent/letterhead this is. use_ai_fallback (set once the
@@ -221,9 +263,13 @@ export async function advancePrecedentAction(
     const precedentResult = await resolvePrecedentByName(admin, companyId, collected.precedent_name);
     if (precedentResult.status === "ambiguous") {
       delete collected.precedent_name;
+      const names = precedentResult.candidates.map(c => c.name);
+      rememberChoices(collected, "precedent_name", names);
       return {
         status: "collecting", collected, missingFields: ["precedent_name"],
-        question: buildQuestion([PHASE1_FIELDS[0]], [`I found multiple precedents matching that: ${precedentResult.candidates.map(c => c.name).join(", ")}.`]),
+        // Numbered, since the reply is now allowed to just name a position
+        // ("the first one") instead of retyping the precedent's full name.
+        question: `I found multiple precedents matching that:\n${numberedList(names)}\n\nWhich one? Reply with its number or its name.`,
       };
     }
     if (precedentResult.status === "not_found") {
@@ -245,10 +291,18 @@ export async function advancePrecedentAction(
   const projectResult = await resolveProjectByName(admin, companyId, collected.project_name);
   if (projectResult.status !== "found") {
     delete collected.project_name;
-    const note = projectResult.status === "ambiguous"
-      ? `I found multiple matters matching that: ${projectResult.candidates.map(c => c.name).join(", ")}.`
-      : "I couldn't find a matter matching that.";
-    return { status: "collecting", collected, missingFields: ["project_name"], question: buildQuestion([PHASE1_FIELDS[1]], [note]) };
+    if (projectResult.status === "ambiguous") {
+      const names = projectResult.candidates.map(c => c.name);
+      rememberChoices(collected, "project_name", names);
+      return {
+        status: "collecting", collected, missingFields: ["project_name"],
+        question: `I found multiple matters matching that:\n${numberedList(names)}\n\nWhich one? Reply with its number or its name.`,
+      };
+    }
+    return {
+      status: "collecting", collected, missingFields: ["project_name"],
+      question: buildQuestion([PHASE1_FIELDS[1]], ["I couldn't find a matter matching that."]),
+    };
   }
   const projectId = projectResult.match.id;
 
@@ -384,7 +438,10 @@ export async function advancePrecedentAction(
     params: {
       precedentId, projectId, subject,
       body, fieldValues,
-      recipientAddress: collected.recipient_address,
+      // Optional on the freeform General Document path (an internal memo has
+      // no addressee), so it's normalized here rather than left undefined for
+      // issuePrecedentDocument to trip over.
+      recipientAddress: collected.recipient_address ?? "",
       recipientName: collected.recipient_name,
       deliveryMode: collected.delivery_mode,
       draftBrief,

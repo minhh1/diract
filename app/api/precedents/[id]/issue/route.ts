@@ -50,5 +50,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
-  return NextResponse.json({ ok: true, issuanceId: result.issuanceId, subject: result.subject, url: result.url });
+  return NextResponse.json({ ok: true, issuanceId: result.issuanceId, subject: result.subject, url: result.url, docxUrl: result.docxUrl });
 }

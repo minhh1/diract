@@ -67,6 +67,11 @@ export function buildContentXml(pPr: string, input: ComposeContentInput): string
   if (input.ourRef) parts.push(paragraphXml(pPr, `Our Ref: ${input.ourRef}`, false));
   if (input.date || input.ourRef) parts.push(blankParagraphXml(pPr));
   if (input.subject) {
+    // Exactly one blank line above and below the subject heading -- the
+    // "above" one only when something actually precedes it, since a leading
+    // blank at the very top of the block is just a stray gap (the letter's
+    // own top spacing is handled in lib/precedents/letterLayout.ts).
+    if (parts.length && parts[parts.length - 1] !== blankParagraphXml(pPr)) parts.push(blankParagraphXml(pPr));
     parts.push(paragraphXml(pPr, input.subject, true));
     parts.push(blankParagraphXml(pPr));
   }

@@ -24,7 +24,7 @@ import {
 import { advanceFileAction, buildFileMissingFieldsTool, type FileAdvanceResult } from "@/lib/ai/fileActions";
 import {
   advancePrecedentAction, allKnownFields, buildPrecedentMissingFieldsTool, draftSubjectFromCollected, looksLikeDraftRequest,
-  type PrecedentAdvanceResult,
+  pendingChoiceField, type PrecedentAdvanceResult,
 } from "@/lib/ai/precedentAction";
 import { issuePrecedentDocument } from "@/lib/precedents/issuePrecedent";
 import { advanceAppointmentAction, buildAppointmentMissingFieldsTool, type AppointmentAdvanceResult } from "@/lib/ai/appointmentAction";
@@ -925,6 +925,19 @@ async function continueCollecting(
       return;
     }
 
+    // Special case: the pending question is "which of these did you mean?"
+    // -- the reply picks from a list the bot just showed ("the first one",
+    // "2"), which extraction would either mangle into a literal precedent
+    // name or fail to recognize as an answer at all. Passed through verbatim
+    // for advancePrecedentAction to resolve against the remembered options.
+    const choiceField = pendingChoiceField(collectedSoFar, pendingFieldKeys);
+    if (choiceField) {
+      const merged = { ...collectedSoFar, [choiceField]: msg.question.trim() };
+      const result = await advancePrecedentAction(admin, companyId, linked.user_id, DEFAULT_HOSTED_MODEL_ID, sourceTypes, merged);
+      await applyPrecedentAdvanceResult(admin, linked, msg, adapter, actionType, result);
+      return;
+    }
+
     // Special case: a reply to the subject-line question that reads as
     // "you draft it" gets a subject drafted from the matter's own data
     // instead of being parsed as a literal subject (see looksLikeDraftRequest).
@@ -1057,6 +1070,16 @@ async function finalizeConfirmedAction(
   }
 }
 
+// Every issued document now exists as both a PDF and the editable .docx it
+// was rendered from (see lib/precedents/issuePrecedent.ts) -- a letter almost
+// always needs a last edit before it goes out, and over chat the link IS the
+// delivery, so both are handed back rather than only the PDF.
+function describeIssuance(result: Awaited<ReturnType<typeof issuePrecedentDocument>>): string {
+  if (!result.ok) return `Sorry, that didn't work: ${result.error}`;
+  const wordLink = result.docxUrl ? `\nWord: ${result.docxUrl}` : "";
+  return `Done, issued "${result.subject}":\nPDF: ${result.url}${wordLink}`;
+}
+
 // Resolves this matter/company's configured signers (precedent_settings) --
 // if none, issues immediately exactly as before this feature existed. If
 // there are some, proactively DMs whichever are reachable on this channel
@@ -1072,7 +1095,7 @@ async function beginOrSkipSignoffRound(
 ): Promise<string> {
   const issueDirectly = async (signerIds?: string[]) => {
     const result = await issuePrecedentDocument(admin, { ...issueParams, companyId, userId: linked.user_id, signerIds });
-    return result.ok ? `Done, issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
+    return describeIssuance(result);
   };
 
   const [{ data: projectSettings }, { data: companySettings }] = await Promise.all([
@@ -1138,7 +1161,7 @@ async function maybeFinalizeSignoffRequest(admin: any, adapter: ChannelAdapter, 
   let resultText: string;
   try {
     const result = await issuePrecedentDocument(admin, { ...issueParams, companyId: request.company_id, userId: request.requested_by, signerIds: finalSignerIds });
-    resultText = result.ok ? `Done, issued "${result.subject}": ${result.url}` : `Sorry, that didn't work: ${result.error}`;
+    resultText = describeIssuance(result);
   } catch (err) {
     resultText = `Sorry, that didn't work: ${err instanceof Error ? err.message : String(err)}`;
   }
