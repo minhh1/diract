@@ -23,6 +23,7 @@ export async function GET() {
       id: p.id,
       title: p.title,
       scope: p.scope,
+      teamId: p.team_id,
       teamName: p.teams?.team_name || null,
       columns: p.columns,
       expiresAt: p.expires_at,

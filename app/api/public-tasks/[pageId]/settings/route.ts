@@ -1,13 +1,18 @@
 // app/api/public-tasks/[pageId]/settings/route.ts
-// Edits an existing public_task_pages row's title/columns/expiry (and
-// team_id, only when its scope is "team") -- everything a page's
-// creator/admin might want to change after the fact without revoking and
-// recreating it (which would also mint a new pageId/URL, breaking any
-// already-shared link). scope itself is deliberately NOT editable here,
-// same reasoning as DashboardBuilderPage's "can't change source table
-// after creation" -- it's an access-control decision, not a display
-// preference, so changing it should be a new page, not a silent edit of one
-// already shared under a given URL. Mirrors revoke/route.ts's auth check.
+// Edits an existing public_task_pages row's title/columns/expiry/scope (and
+// team_id, when scope is "team") -- everything a page's creator/admin might
+// want to change after the fact without revoking and recreating it (which
+// would also mint a new pageId/URL, breaking any already-shared link).
+// scope changes go through the exact same permission checks
+// create/route.ts's own POST already enforces (company-wide requires an
+// admin, team requires membership/leadership) -- access only ever
+// broadens/narrows for people already inside this company's session-gated
+// pages, unlike client_update_pages' public+PIN link, so there's no
+// already-shared-secret to invalidate the way a PIN rotation would need.
+// 'my_and_unassigned' is deliberately not offered here -- see
+// create/route.ts's own comment, it's a dashboard-widget-only scope, not
+// something this settings form should let a page drift into or out of.
+// Mirrors revoke/route.ts's auth check.
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { createClient } from "@supabase/supabase-js";
@@ -20,8 +25,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const { title, columns, expiresAt, teamId } = body;
+  const { title, columns, expiresAt, teamId, scope } = body;
   if (!title?.trim()) return NextResponse.json({ error: "Title is required" }, { status: 400 });
+  if (scope !== undefined && !["self", "team", "company"].includes(scope)) {
+    return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
+  }
+  if (scope === "team" && !teamId) {
+    return NextResponse.json({ error: "Team is required" }, { status: 400 });
+  }
   const validKeys = new Set(PUBLIC_TASK_COLUMNS.map(c => c.key));
   const cleanColumns = Array.isArray(columns) ? columns.filter((c: string) => validKeys.has(c as any)) : [];
 
@@ -49,10 +60,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
     columns: cleanColumns,
     expires_at: expiresAt || null,
   };
-  // teamId only ever applies to (and is only ever sent for) a team-scoped
-  // page -- reassigning it to a different team the caller has standing to
-  // manage. Left untouched for every other scope.
-  if (page.scope === "team" && teamId) {
+
+  const nextScope = scope ?? page.scope;
+  if (scope !== undefined && scope !== page.scope) {
+    if (scope === "company" && !isAdmin) {
+      return NextResponse.json({ error: "Only company admins can share with the whole company" }, { status: 403 });
+    }
+    update.scope = scope;
+  }
+  // teamId applies whenever the (possibly just-changed) scope is "team" --
+  // either reassigning an already-team-scoped page to a different team, or
+  // supplying the team for a page switching into "team" scope. Cleared to
+  // null when moving away from "team" so a stale team_id doesn't linger.
+  if (nextScope === "team") {
+    if (!teamId) return NextResponse.json({ error: "Team is required" }, { status: 400 });
     const { data: team } = await admin.from("teams").select("id, leader_id").eq("id", teamId).maybeSingle();
     if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
     if (!isAdmin && team.leader_id !== user.id) {
@@ -61,6 +82,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
       if (!teamMembership) return NextResponse.json({ error: "You're not a member of this team" }, { status: 403 });
     }
     update.team_id = teamId;
+  } else if (nextScope !== page.scope) {
+    update.team_id = null;
   }
 
   const { error } = await admin.from("public_task_pages").update(update).eq("id", pageId);

@@ -13,7 +13,7 @@ import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Team { id: string; team_name: string; leader_id: string | null; }
 interface Page {
-  id: string; title: string; scope: string; teamName: string | null;
+  id: string; title: string; scope: string; teamId: string | null; teamName: string | null;
   columns: string[]; expiresAt: string | null; isActive: boolean;
   createdAt: string; createdBy: string;
 }
@@ -137,7 +137,7 @@ export default function PublicTaskPagesTab() {
       )}
 
       {editingPage && (
-        <EditPageModal page={editingPage} onClose={() => setEditingPage(null)} onSaved={() => { setEditingPage(null); refetch(); }} />
+        <EditPageModal page={editingPage} isAdmin={isAdmin} teamOptions={teamOptions} onClose={() => setEditingPage(null)} onSaved={() => { setEditingPage(null); refetch(); }} />
       )}
     </div>
   );
@@ -285,14 +285,17 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
   );
 }
 
-// Edits an existing page's title/columns/expiry via PATCH .../settings --
-// deliberately no scope/team picker here, unlike CreatePageModal above:
-// scope is an access-control decision baked into the page's already-shared
-// URL, not something to silently change in place (see that route's own doc
-// comment). Revoking and recreating is the correct path if the scope
-// itself needs to change.
-function EditPageModal({ page, onClose, onSaved }: { page: Page; onClose: () => void; onSaved: () => void }) {
+// Edits an existing page's title/scope/columns/expiry via PATCH
+// .../settings. scope/team picker mirrors CreatePageModal's above --
+// changing it is a real access-control decision (see that route's own doc
+// comment), but the page keeps its existing pageId/URL, so it's an
+// in-place edit, not a revoke-and-recreate.
+function EditPageModal({ page, isAdmin, teamOptions, onClose, onSaved }: {
+  page: Page; isAdmin: boolean; teamOptions: Team[]; onClose: () => void; onSaved: () => void;
+}) {
   const [title, setTitle] = useState(page.title);
+  const [scope, setScope] = useState<"self" | "team" | "company">(page.scope as "self" | "team" | "company");
+  const [teamId, setTeamId] = useState(page.teamId || "");
   const [columns, setColumns] = useState<string[]>(page.columns || []);
   const [noExpiry, setNoExpiry] = useState(!page.expiresAt);
   const [expiresAt, setExpiresAt] = useState(page.expiresAt || defaultExpiry());
@@ -303,12 +306,16 @@ function EditPageModal({ page, onClose, onSaved }: { page: Page; onClose: () => 
 
   const handleSave = async () => {
     if (!title.trim()) { setError("Title is required"); return; }
+    if (scope === "team" && !teamId) { setError("Select a team"); return; }
     setSaving(true);
     setError(null);
     const res = await fetch(`/api/public-tasks/${page.id}/settings`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, columns, expiresAt: noExpiry ? null : expiresAt }),
+      body: JSON.stringify({
+        title, scope, teamId: scope === "team" ? teamId : undefined,
+        columns, expiresAt: noExpiry ? null : expiresAt,
+      }),
     });
     const json = await res.json();
     setSaving(false);
@@ -329,6 +336,42 @@ function EditPageModal({ page, onClose, onSaved }: { page: Page; onClose: () => 
             <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Weekly team tasks"
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400" />
           </div>
+
+          <div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">What should it show</p>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                <input type="radio" checked={scope === "self"} onChange={() => setScope("self")} />
+                <span className="text-[12px] text-slate-700">Just my tasks</span>
+              </label>
+              {teamOptions.length > 0 && (
+                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                  <input type="radio" checked={scope === "team"} onChange={() => setScope("team")} />
+                  <span className="text-[12px] text-slate-700">My team's tasks</span>
+                </label>
+              )}
+              {isAdmin && (
+                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-2xl cursor-pointer has-[:checked]:border-indigo-400 has-[:checked]:bg-indigo-50">
+                  <input type="radio" checked={scope === "company"} onChange={() => setScope("company")} />
+                  <span className="text-[12px] text-slate-700">Everyone's tasks (admin)</span>
+                </label>
+              )}
+            </div>
+          </div>
+
+          {scope === "team" && teamOptions.length > 1 && (
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Team</p>
+              <select value={teamId} onChange={e => setTeamId(e.target.value)}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
+                <option value="">Select team...</option>
+                {teamOptions.map(t => <option key={t.id} value={t.id}>{t.team_name}</option>)}
+              </select>
+            </div>
+          )}
+          {scope === "team" && teamOptions.length === 1 && (
+            (() => { if (teamId !== teamOptions[0].id) setTeamId(teamOptions[0].id); return null; })()
+          )}
 
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Columns to show</p>
