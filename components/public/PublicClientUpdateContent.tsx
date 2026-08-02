@@ -475,6 +475,30 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, ai_summary: json.summary, ai_summary_generated_at: json.generatedAt } : i) });
   };
 
+  // Settlement-date AI review (projects pages only -- see
+  // lib/clientUpdatePageSettlementReview.ts). Deliberately doesn't do the
+  // usual optimistic setBoard update itself -- when it agrees, the caller
+  // (MatterBoard's reviewSettlement/reviewSettlement in SpreadsheetView)
+  // calls onDataChanged (reloadStaffBoard below) to pick up both the new
+  // value AND the "AI set this" flag in one real refetch, rather than
+  // hand-constructing that flag shape here.
+  const reviewSettlement = async (itemId: string, fieldId: string, propertyId?: string) => {
+    if (mode !== "staff" || !staffPageId) return { agreed: false, newDate: null, reasoning: "Not signed in as staff." };
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/ai-review-settlement`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldId, propertyId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Failed to review emails");
+    return { agreed: !!json.agreed, newDate: json.newDate ?? null, reasoning: json.reasoning || "" };
+  };
+
+  const confirmAiFlag = async (itemId: string, fieldId: string, propertyId?: string) => {
+    if (mode !== "staff" || !staffPageId) return;
+    await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/ai-review-settlement/confirm`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldId, propertyId }),
+    });
+  };
+
   const addNote = (itemId: string, note: string, propertyId?: string) => {
     if (!note.trim()) return;
     const tempId = `temp-${Date.now()}`;
@@ -748,6 +772,8 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
           onClearSummaries={mode === "staff" && meta.baseTable !== "entities" ? clearSummaries : undefined}
           onRenameMatter={mode === "staff" ? renameMatter : undefined}
           onReorderFields={mode === "staff" ? reorderFields : undefined}
+          onReviewSettlement={mode === "staff" && meta.baseTable === "projects" ? reviewSettlement : undefined}
+          onConfirmAiFlag={mode === "staff" && meta.baseTable === "projects" ? confirmAiFlag : undefined}
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
           onFreezeFirstColumnChanged={mode === "staff" ? changeFreezeColumn : undefined}

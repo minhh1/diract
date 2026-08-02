@@ -9,6 +9,7 @@
 // sync yet, only individually-assigned messages, so it wouldn't have
 // meaningful volume to summarize from.
 import { callHostedModel } from "./modelCall";
+import { fetchCombinedMatterEmails, formatMatterEmailBlock } from "./matterEmails";
 
 const SYSTEM_PROMPT =
   "You write a single sentence summarising where a legal matter is up to, based on its recent email " +
@@ -22,23 +23,10 @@ export interface MatterEmailSummary { summary: string; inputTokens: number; outp
 export async function summarizeMatterEmails(
   admin: any, companyId: string, modelId: string, itemId: string, projectId: string, matterName: string
 ): Promise<MatterEmailSummary | null> {
-  const [{ data: syncedEmails }, { data: appendedEmails }] = await Promise.all([
-    admin.from("project_emails").select("subject, from_name, snippet, created_at")
-      .eq("company_id", companyId).eq("project_id", projectId)
-      .order("created_at", { ascending: false }).limit(25),
-    admin.from("client_update_page_emails").select("subject, from_name, snippet, email_date, created_at")
-      .eq("item_id", itemId).order("email_date", { ascending: false }).limit(25),
-  ]);
-
-  const combined = [
-    ...(syncedEmails || []).map((e: any) => ({ ...e, sortDate: e.created_at })),
-    ...(appendedEmails || []).map((e: any) => ({ ...e, sortDate: e.email_date })),
-  ].sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime()).slice(0, 25);
+  const combined = await fetchCombinedMatterEmails(admin, companyId, itemId, projectId);
   if (!combined.length) return null;
 
-  const emailBlock = combined
-    .map((e: any) => `[${new Date(e.sortDate).toLocaleDateString()}] From ${e.from_name || "unknown"} -- "${e.subject || "(no subject)"}": ${e.snippet || ""}`)
-    .join("\n");
+  const emailBlock = formatMatterEmailBlock(combined);
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },

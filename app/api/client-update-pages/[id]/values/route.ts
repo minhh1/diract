@@ -276,6 +276,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     else row.value_text = value ?? null;
     const { error } = await admin.from("project_property_values").upsert(row, { onConflict: "project_property_id,field_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // A direct edit here IS a human review of this cell -- clears any
+    // "AI set this, not yet confirmed" flag left by the settlement-date
+    // review feature (see client_update_page_ai_field_flags's migration
+    // header) regardless of which project_property field was touched, not
+    // just Settlement Date, since the same mechanism could cover another
+    // field later.
+    await admin.from("client_update_page_ai_field_flags").delete()
+      .eq("item_id", itemId).eq("project_property_id", projectPropertyId).eq("field_key", field.field_key);
     if (isRelation) {
       const [oldLabel, newLabel] = await Promise.all([resolveRelationLabel(admin, relationTable, oldValue), resolveRelationLabel(admin, relationTable, value)]);
       await logAfterSave(oldLabel, newLabel);

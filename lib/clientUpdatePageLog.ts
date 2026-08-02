@@ -12,7 +12,7 @@
 // app/api/client-update-pages/[id]/logs/route.ts and the public
 // cell-logs route.
 export async function logChange(
-  admin: any, pageId: string, actorName: string | null, source: "staff" | "client", action: string, detail: string,
+  admin: any, pageId: string, actorName: string | null, source: "staff" | "client" | "ai", action: string, detail: string,
   cell?: { itemId: string; fieldId: string; oldValue: string | null; newValue: string | null; reason: string | null }
 ) {
   await admin.from("client_update_page_logs").insert({

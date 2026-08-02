@@ -61,7 +61,7 @@ export const ENTITY_BASE_COLUMNS = [
 export async function loadPageDetail(admin: any, pageId: string, opts: { clientVisibleOnly?: boolean; baseTable?: string; pageKind?: string; redactFigures?: boolean } = {}) {
   const baseTable = opts.baseTable || "projects";
   const isCustomTable = !isSystemTable(baseTable);
-  const [{ data: groups }, { data: items }, { data: allFields }, { data: formatRules }, { data: relationFieldDefs }] = await Promise.all([
+  const [{ data: groups }, { data: items }, { data: allFields }, { data: formatRules }, { data: relationFieldDefs }, { data: aiFieldFlags }] = await Promise.all([
     admin.from("client_update_groups").select("id, name, display_order, parent_group_id, condition_field_id, condition_value, default_status_names").eq("page_id", pageId).order("display_order"),
     admin.from("client_update_page_items").select("id, record_table, record_id, group_id, display_order, display_name, ai_summary, ai_summary_generated_at").eq("page_id", pageId).order("display_order"),
     admin.from("client_update_page_fields").select("id, field_source, field_key, label, display_order, client_visible, field_type, select_options, group_id").eq("page_id", pageId).order("display_order"),
@@ -79,8 +79,18 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
       ? admin.from("company_table_fields").select("id, field_type, linked_table_id, linked_display_field").eq("table_id", baseTable)
           .in("field_type", ["entity", "property", "project", "table_relation"]).is("deleted_at", null)
       : Promise.resolve({ data: [] as any[] }),
+    // "AI set this, not yet confirmed" markers -- see
+    // client_update_page_ai_field_flags's migration header. Keyed by
+    // (item_id, project_property_id, field_key) below, not
+    // client_update_page_fields.id, since the Settlement Date column is
+    // configured more than once on the Niksen page and every one of those
+    // duplicate columns should show the same flag.
+    admin.from("client_update_page_ai_field_flags").select("item_id, project_property_id, field_key, reasoning, applied_value").eq("page_id", pageId),
   ]);
   const fields = opts.clientVisibleOnly ? (allFields || []).filter((f: any) => f.client_visible) : (allFields || []);
+  const aiFlagByKey = new Map<string, { reasoning: string; appliedValue: string }>(
+    (aiFieldFlags || []).map((f: any) => [`${f.item_id}:${f.project_property_id}:${f.field_key}`, { reasoning: f.reasoning, appliedValue: f.applied_value }])
+  );
 
   // recordId is whichever record this item points at -- see
   // client_update_page_items.record_id (generic, any base_table) in
@@ -379,6 +389,16 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     return v ? (v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? v.value_record_id ?? null) : null;
   }
 
+  // Sibling to resolveProjectPropertyField -- whether THIS cell currently
+  // carries an unconfirmed AI-applied value (see the ai_field_flags select
+  // above), for the settlement-date review feature's underline treatment.
+  function resolveAiFlag(field: any, itemId: string, projectId: string, propertyId: string | undefined) {
+    if (!propertyId) return null;
+    const projectPropertyId = projectPropertyIdByPair.get(`${projectId}:${propertyId}`);
+    if (!projectPropertyId) return null;
+    return aiFlagByKey.get(`${itemId}:${projectPropertyId}:${field.field_key}`) ?? null;
+  }
+
   function resolvePropertyField(field: any, propertyId: string | undefined): any {
     if (!propertyId) return null;
     const property = propertyById.get(propertyId);
@@ -607,16 +627,26 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   // was added.
   const mappedItems = (items || []).filter((i: any) => baseRecordById.has(recordId(i))).map((i: any) => {
     const rid = recordId(i);
+    const propIds = propertyIdsByProject.get(rid) || [];
     return {
       ...i,
       matterName: i.display_name || displayNameById.get(rid) || "",
       values: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveValue(f, i)])),
       relationIds: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveRelationId(f, i)])),
       relationCapacities: Object.fromEntries((fields || []).map((f: any) => [f.id, resolveRelationCapacity(f, i)])),
+      // Only ever populated for a project_property field (settlement-date
+      // review is the only feature that writes these today) -- every other
+      // field_source's entry is just omitted, not null, so a consumer can
+      // tell "never reviewed" from "not applicable" if that ever matters.
+      aiFlags: Object.fromEntries(
+        projectPropertyFields
+          .map((f: any) => [f.id, resolveAiFlag(f, i.id, rid, propIds[0])])
+          .filter(([, flag]: any) => flag)
+      ),
       notes: notesByItem.get(i.id) || [],
       emails: emailsByItem.get(i.id) || [],
       properties: baseTable === "projects"
-        ? (propertyIdsByProject.get(rid) || []).map((pid: string) => ({
+        ? propIds.map((pid: string) => ({
             id: pid,
             address: propertyById.get(pid)?.street_address ?? null,
             values: {
@@ -625,6 +655,11 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
             },
             relationIds: Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyRelationId(f, pid)])),
             relationCapacities: Object.fromEntries(propertyFields.map((f: any) => [f.id, resolvePropertyRelationCapacity(f, pid)])),
+            aiFlags: Object.fromEntries(
+              projectPropertyFields
+                .map((f: any) => [f.id, resolveAiFlag(f, i.id, rid, pid)])
+                .filter(([, flag]: any) => flag)
+            ),
           }))
         : [],
     };

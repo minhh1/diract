@@ -35,8 +35,8 @@
 // app/public/tasks/[pageId]/page.tsx's task table.
 "use client";
 
-import { useState, useEffect, useMemo, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -64,8 +64,13 @@ function isRelationField(field: MatterBoardField): boolean {
 }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
 export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
-export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; }
-export interface MatterBoardItem { id: string; record_id?: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; }
+// Set on a project_property field's client_update_page_fields.id once the
+// AI settlement-date review feature has written a new value there that a
+// staff member hasn't confirmed yet (see client_update_page_ai_field_flags)
+// -- drives the underline/AiFlagValue treatment in ValueCell/SpreadsheetCell.
+export type MatterBoardAiFlags = Record<string, { reasoning: string; appliedValue: string }>;
+export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; aiFlags?: MatterBoardAiFlags; }
+export interface MatterBoardItem { id: string; record_id?: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; aiFlags?: MatterBoardAiFlags; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
@@ -141,6 +146,15 @@ interface Props {
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onSummarizeOpenMatters?: () => Promise<{ generated: number; skipped: number; failed: string[] }>;
   onClearSummaries?: () => Promise<number>;
+  // Settlement-date AI review (projects pages only -- see
+  // lib/clientUpdatePageSettlementReview.ts). onReviewSettlement is the
+  // manual "Review emails" button's handler; onConfirmAiFlag clears the
+  // "AI set this, not yet confirmed" marker on a cell once staff have
+  // looked at it. Both undefined for a client/public viewer -- confirming
+  // is staff-only, though the underline itself is shown to everyone (see
+  // ValueCell/SpreadsheetCell's AiFlagValue).
+  onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
+  onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
   onRenameMatter?: (itemId: string, name: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
   onDataChanged?: () => void; // matters added / columns changed -- needs a full refetch
@@ -284,7 +298,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, maskCurrency = false, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
-  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule,
+  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewSettlement, onConfirmAiFlag,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [deepLinkFixItemId, setDeepLinkFixItemId] = useState<string | null>(initialFixItemId ?? null);
@@ -1053,7 +1067,8 @@ export default function MatterBoard({
               {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
                   expanded={expandedCardKey === key} onToggleExpand={() => setExpandedCardKey(expandedCardKey === key ? null : key)}
-                  onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged} />
+                  onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged}
+                  onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</p>
@@ -1061,7 +1076,8 @@ export default function MatterBoard({
             </div>
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
-              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged} />
+              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged}
+              onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} />
           )}
         </div>
       </div>
@@ -1201,6 +1217,7 @@ function expandByProperty(items: MatterBoardItem[], propertyFieldIds: string[]):
         // showed the first property's trust).
         relationIds: propertyFieldIds.length ? { ...item.relationIds, ...Object.fromEntries(propertyFieldIds.map(fid => [fid, p.relationIds?.[fid] ?? null])) } : item.relationIds,
         relationCapacities: propertyFieldIds.length ? { ...item.relationCapacities, ...Object.fromEntries(propertyFieldIds.map(fid => [fid, p.relationCapacities?.[fid] ?? null])) } : item.relationCapacities,
+        aiFlags: (propertyFieldIds.length ? { ...item.aiFlags, ...Object.fromEntries(propertyFieldIds.map(fid => [fid, p.aiFlags?.[fid]])) } : item.aiFlags) as MatterBoardAiFlags | undefined,
         notes: item.notes.filter(n => n.property_id == null || n.property_id === p.id),
       },
     }));
@@ -1329,7 +1346,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged }: {
+function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   expanded: boolean; onToggleExpand: () => void;
@@ -1343,11 +1360,34 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onRenameMatter?: (itemId: string, name: string) => void;
   onDataChanged?: () => void;
+  onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
+  onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
 }) {
   const [generating, setGenerating] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(item.matterName);
   const [showFix, setShowFix] = useState(false);
+  const [reviewingFieldId, setReviewingFieldId] = useState<string | null>(null);
+
+  const reviewSettlement = async (fieldId: string) => {
+    if (!onReviewSettlement || reviewingFieldId) return;
+    setReviewingFieldId(fieldId);
+    try {
+      const result = await onReviewSettlement(item.id, fieldId, propertyId);
+      if (result.agreed) onDataChanged?.();
+      else window.alert(result.reasoning || "No agreement on a new settlement date was found in the emails.");
+    } catch (e: any) {
+      window.alert(e?.message || "Couldn't review emails.");
+    } finally {
+      setReviewingFieldId(null);
+    }
+  };
+
+  const confirmAiFlag = async (fieldId: string) => {
+    if (!onConfirmAiFlag) return;
+    await onConfirmAiFlag(item.id, fieldId, propertyId);
+    onDataChanged?.();
+  };
 
   const generateSummary = async () => {
     if (!onGenerateSummary || generating) return;
@@ -1423,6 +1463,8 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {fields.map(f => (
               <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue}
+                aiFlag={item.aiFlags?.[f.id]} onConfirmAiFlag={onConfirmAiFlag ? () => confirmAiFlag(f.id) : undefined}
+                onReview={onReviewSettlement && f.field_source === "project_property" ? () => reviewSettlement(f.id) : undefined} reviewing={reviewingFieldId === f.id}
                 onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
@@ -1446,7 +1488,62 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
   );
 }
 
-function ValueCell({ field, value, relationId, relationCapacity, dateFormat, maskCurrency = false, editable: editableProp, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; dateFormat: string; maskCurrency?: boolean; editable: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
+// A cell the settlement-date AI review feature just set, still awaiting a
+// human look (see client_update_page_ai_field_flags) -- underlined and a
+// distinct colour so it reads as "AI touched this" at a glance, to BOTH
+// staff and whoever's viewing the public page (this shows regardless of
+// canConfirm, which just gates whether the Confirm/Edit actions render --
+// a client sees the same underline with only the reasoning, no controls).
+// Click toggles a small popover rather than the row's own click-to-edit,
+// which this replaces while a flag is present -- "Edit instead" inside the
+// popover is the way back to the normal edit path for staff who disagree
+// with the AI's applied value.
+function AiFlagValue({ displayText, reasoning, canConfirm, onConfirm, onEditInstead }: {
+  displayText: React.ReactNode; reasoning: string; canConfirm: boolean;
+  onConfirm?: () => Promise<void>; onEditInstead?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <span ref={ref} className="relative inline-block">
+      <button type="button" onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        className="underline decoration-2 decoration-purple-400 text-purple-700 hover:text-purple-900 transition-colors text-left">
+        {displayText}
+      </button>
+      {open && (
+        <div onClick={e => e.stopPropagation()}
+          className="absolute z-50 top-full left-0 mt-1 w-64 bg-white border border-purple-200 rounded-2xl shadow-xl p-3 space-y-2">
+          <p className="flex items-center gap-1 text-[9px] font-bold text-purple-500 uppercase tracking-widest"><Sparkles size={10} /> AI-reviewed</p>
+          <p className="text-[11px] text-slate-600">{reasoning}</p>
+          {canConfirm && (onConfirm || onEditInstead) && (
+            <div className="flex items-center gap-2">
+              {onConfirm && (
+                <button onClick={async () => { setConfirming(true); await onConfirm(); setConfirming(false); setOpen(false); }} disabled={confirming}
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-purple-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40">
+                  {confirming ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Confirm
+                </button>
+              )}
+              {onEditInstead && (
+                <button onClick={() => { setOpen(false); onEditInstead(); }} className="text-[10px] text-slate-400 hover:text-slate-600 shrink-0">Edit instead</button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+function ValueCell({ field, value, relationId, relationCapacity, dateFormat, maskCurrency = false, editable: editableProp, aiFlag, onConfirmAiFlag, onReview, reviewing, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; dateFormat: string; maskCurrency?: boolean; editable: boolean; aiFlag?: { reasoning: string; appliedValue: string } | null; onConfirmAiFlag?: () => Promise<void>; onReview?: () => Promise<void>; reviewing?: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1458,6 +1555,12 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, mas
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{field.label}</p>
       {onShowHistory && (
         <button onClick={onShowHistory} title="See what changed" className="text-slate-300 hover:text-indigo-600 transition-colors"><History size={9} /></button>
+      )}
+      {onReview && (
+        <button onClick={onReview} disabled={reviewing} title="Review emails for a settlement date change"
+          className="text-slate-300 hover:text-purple-600 disabled:opacity-40 transition-colors">
+          {reviewing ? <Loader2 size={9} className="animate-spin" /> : <Sparkles size={9} />}
+        </button>
       )}
     </div>
   );
@@ -1500,6 +1603,11 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, mas
         <input autoFocus type={isDateField(field) ? "date" : "text"} value={draft ?? ""} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
           className="w-full px-2 py-1 border border-indigo-300 rounded-lg text-[12px] outline-none" />
+      ) : aiFlag ? (
+        <p className="text-[12px] rounded px-1 -mx-1 min-h-[18px]">
+          <AiFlagValue displayText={formatValue(value, field, dateFormat, maskCurrency)} reasoning={aiFlag.reasoning}
+            canConfirm={editable} onConfirm={onConfirmAiFlag} onEditInstead={() => { setDraft(value ?? ""); setEditing(true); }} />
+        </p>
       ) : (
         <p onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
           className={`text-[12px] text-slate-700 rounded px-1 -mx-1 min-h-[18px] ${editable ? "cursor-text hover:bg-slate-50" : ""}`}>
@@ -1712,7 +1820,7 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onDataChanged }: {
+function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
@@ -1726,9 +1834,34 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
   onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onDataChanged?: () => void;
+  onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
+  onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
 }) {
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
+  // Keyed by "<itemId>:<fieldId>" -- one table, many rows, so (unlike
+  // MatterCard's per-item reviewingFieldId) this needs to identify which
+  // ROW's review is in flight, not just which field.
+  const [reviewingKey, setReviewingKey] = useState<string | null>(null);
+  const reviewSettlement = async (itemId: string, fieldId: string, propertyId: string | undefined) => {
+    if (!onReviewSettlement || reviewingKey) return;
+    const key = `${itemId}:${fieldId}`;
+    setReviewingKey(key);
+    try {
+      const result = await onReviewSettlement(itemId, fieldId, propertyId);
+      if (result.agreed) onDataChanged?.();
+      else window.alert(result.reasoning || "No agreement on a new settlement date was found in the emails.");
+    } catch (e: any) {
+      window.alert(e?.message || "Couldn't review emails.");
+    } finally {
+      setReviewingKey(null);
+    }
+  };
+  const confirmAiFlag = async (itemId: string, fieldId: string, propertyId: string | undefined) => {
+    if (!onConfirmAiFlag) return;
+    await onConfirmAiFlag(itemId, fieldId, propertyId);
+    onDataChanged?.();
+  };
   // Unlike MatterCard (one instance per item, so its own local `generating`
   // state is naturally scoped to that item), this is one component for the
   // whole table -- keyed by item id so regenerating one row's summary
@@ -1847,6 +1980,9 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
               )}
               {fields.map((f, i) => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
+                  aiFlag={item.aiFlags?.[f.id]} onConfirmAiFlag={onConfirmAiFlag ? () => confirmAiFlag(item.id, f.id, propertyId) : undefined}
+                  onReview={onReviewSettlement && f.field_source === "project_property" ? () => reviewSettlement(item.id, f.id, propertyId) : undefined}
+                  reviewing={reviewingKey === `${item.id}:${f.id}`}
                   onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
               ))}
@@ -1902,7 +2038,7 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
   );
 }
 
-function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded, dateFormat, maskCurrency = false, editable: editableProp, frozen, frozenBg, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; expanded?: boolean; dateFormat: string; maskCurrency?: boolean; editable: boolean; frozen?: boolean; frozenBg?: string; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
+function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded, dateFormat, maskCurrency = false, editable: editableProp, frozen, frozenBg, aiFlag, onConfirmAiFlag, onReview, reviewing, onSave, onShowHistory }: { field: MatterBoardField; value: any; relationId?: string | null; relationCapacity?: string | null; expanded?: boolean; dateFormat: string; maskCurrency?: boolean; editable: boolean; frozen?: boolean; frozenBg?: string; aiFlag?: { reasoning: string; appliedValue: string } | null; onConfirmAiFlag?: () => Promise<void>; onReview?: () => Promise<void>; reviewing?: boolean; onSave: (v: any, capacity?: string | null) => void; onShowHistory?: () => void }) {
   const [draft, setDraft] = useState(value ?? "");
   const [editing, setEditing] = useState(false);
   const editable = editableProp && field.field_source !== "related_entity"; // read-only -- see values/route.ts
@@ -1928,6 +2064,12 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
   const historyButton = onShowHistory && (
     <button onClick={e => { e.stopPropagation(); onShowHistory(); }} title="See what changed"
       className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-indigo-600 transition-opacity shrink-0"><History size={10} /></button>
+  );
+  const reviewButton = onReview && (
+    <button onClick={e => { e.stopPropagation(); onReview(); }} disabled={reviewing} title="Review emails for a settlement date change"
+      className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-purple-600 disabled:opacity-40 transition-opacity shrink-0">
+      {reviewing ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+    </button>
   );
 
   if (isRelationField(field)) {
@@ -1979,6 +2121,20 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
       </td>
     );
   }
+  if (aiFlag) {
+    return (
+      <td className={`group px-4 py-4 text-slate-600 ${frozenClass}`}>
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`inline-block align-bottom ${expanded ? "whitespace-nowrap" : truncateClass}`}>
+            <AiFlagValue displayText={formatValue(value, field, dateFormat, maskCurrency)} reasoning={aiFlag.reasoning}
+              canConfirm={editable} onConfirm={onConfirmAiFlag} onEditInstead={() => { setDraft(value ?? ""); setEditing(true); }} />
+          </span>
+          {historyButton}
+          {reviewButton}
+        </span>
+      </td>
+    );
+  }
   return (
     <td onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
       className={`group px-4 py-4 text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
@@ -1987,6 +2143,7 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
           {value == null || value === "" ? "—" : formatValue(value, field, dateFormat, maskCurrency)}
         </span>
         {historyButton}
+        {reviewButton}
       </span>
     </td>
   );
