@@ -17,6 +17,8 @@ import {
   PenSquare, Search, X, AlertTriangle, Loader2, FileText, Filter, Settings2,
 } from "lucide-react";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
+import { suggestAutoFill, type BindableField } from "@/lib/precedents/suggestAutoFill";
+import { useCompany } from "@/components/CompanyContext";
 
 interface Precedent {
   id: string;
@@ -136,7 +138,7 @@ export default function PrecedentLibraryBrowser() {
         </div>
         <Link
           href="/dashboard/settings?view=precedents"
-          className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold text-slate-600 hover:bg-slate-100 transition-all"
+          className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-[11px] font-bold text-slate-600 hover:bg-slate-100 transition-colors"
         >
           <Settings2 size={14} /> Manage library
         </Link>
@@ -152,9 +154,11 @@ export default function PrecedentLibraryBrowser() {
             className="w-full bg-slate-50 border border-slate-200 rounded-full pl-10 pr-4 py-2.5 text-[12px] outline-none focus:ring-4 focus:ring-indigo-100"
           />
         </div>
+        {/* min-w keeps the button the same width once the count appears, so
+            selecting a filter doesn't resize the search box beside it. */}
         <button
           onClick={() => setShowFilters(p => !p)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+          className={`flex items-center justify-center gap-2 min-w-[104px] px-4 py-2.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors ${
             activeFilterCount ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
           }`}
         >
@@ -274,7 +278,7 @@ function FilterRow({
           <button
             key={opt}
             onClick={() => onChange(value === opt ? null : opt)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-colors ${
               value === opt ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-500 hover:bg-slate-100"
             }`}
           >
@@ -282,6 +286,203 @@ function FilterRow({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// One rendered line of the document: inline runs of text and fill-in fields.
+type Inline =
+  | { kind: "text"; text: string }
+  | { kind: "field"; seg: Extract<BodyTemplateSegment, { type: "field" }> };
+
+// Segments are a flat run of text and fields with newlines living inside the
+// text; the document has to be laid out as paragraphs, so split on newline
+// and keep fields attached to the line they fall on.
+function toLines(segments: BodyTemplateSegment[]): Inline[][] {
+  const lines: Inline[][] = [[]];
+  for (const seg of segments) {
+    if (seg.type === "field") {
+      lines[lines.length - 1].push({ kind: "field", seg });
+      continue;
+    }
+    const parts = (seg.text || "").split("\n");
+    parts.forEach((part, i) => {
+      if (i > 0) lines.push([]);
+      if (part) lines[lines.length - 1].push({ kind: "text", text: part });
+    });
+  }
+  return lines;
+}
+
+// The library writes section headings as standalone all-caps lines ("SCOPE OF
+// WORK", "PAYMENT DETAILS"). A trailing colon means it's a label introducing
+// a value on the same line ("AMOUNT REQUIRED:"), not a heading.
+function isHeading(line: Inline[]): boolean {
+  if (line.some(p => p.kind === "field")) return false;
+  const t = line.map(p => (p.kind === "text" ? p.text : "")).join("").trim();
+  if (!t || t.length > 60 || t.endsWith(":")) return false;
+  return /[A-Z]/.test(t) && t === t.toUpperCase();
+}
+
+// Tight padding: a wider chip leaves a visible gap before the following full
+// stop, which reads as a typo in something meant to show layout.
+function FieldChip({ seg }: { seg: Extract<BodyTemplateSegment, { type: "field" }> }) {
+  return (
+    <span
+      title={seg.autoFillFieldId ? "Pre-fills from the matter" : "Filled in when issued"}
+      className={`inline rounded px-0.5 font-bold ${
+        seg.autoFillFieldId ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"
+      }`}
+    >
+      {seg.label}
+    </span>
+  );
+}
+
+// Renders the template the way the issued document reads: Arial, 10pt body,
+// 12pt bold headings, on a page rather than in a code block. Matches the
+// letterhead the firm uploaded (its content paragraphs are sz=20, i.e. 10pt),
+// so what a solicitor sees here is what comes out of the printer.
+function DocumentPreview({ segments }: { segments: BodyTemplateSegment[] }) {
+  const lines = toLines(segments);
+
+  return (
+    <div
+      className="bg-white border border-slate-200 rounded-2xl px-8 py-7 text-slate-900"
+      style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: "10pt", lineHeight: 1.45 }}
+    >
+      {lines.map((line, i) => {
+        // A blank line is paragraph spacing, not an empty paragraph.
+        if (!line.length) return <div key={i} style={{ height: "10pt" }} />;
+        const heading = isHeading(line);
+        return (
+          <p
+            key={i}
+            style={
+              heading
+                ? { fontSize: "12pt", fontWeight: 700, margin: "14pt 0 6pt" }
+                : { margin: 0 }
+            }
+          >
+            {line.map((p, j) =>
+              p.kind === "text" ? <span key={j}>{p.text}</span> : <FieldChip key={j} seg={p.seg} />
+            )}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+// Which matter field each fill-in field pulls from. The library ships its
+// fields unbound because it can't know what a given firm called things, so
+// this proposes a match (lib/precedents/suggestAutoFill.ts) and a human
+// confirms it -- a wrong binding puts wrong text in a letter silently, which
+// is worse than a blank the author notices.
+function AutoFillSection({
+  precedentId, segments, availableFields, isAdmin, onSaved,
+}: {
+  precedentId: string;
+  segments: BodyTemplateSegment[];
+  availableFields: BindableField[];
+  isAdmin: boolean;
+  onSaved: (t: { segments: BodyTemplateSegment[] }) => void;
+}) {
+  const fieldSegs = useMemo(
+    () => segments.filter((s): s is Extract<BodyTemplateSegment, { type: "field" }> => s.type === "field"),
+    [segments]
+  );
+
+  // key -> chosen custom field id ("" = not bound). Seeded from what's saved,
+  // falling back to a suggestion so the common case is one click to accept.
+  const initial = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of fieldSegs) {
+      m[s.key] = s.autoFillFieldId || suggestAutoFill(s.label, availableFields)?.field.id || "";
+    }
+    return m;
+  }, [fieldSegs, availableFields]);
+
+  const [choice, setChoice] = useState<Record<string, string>>(initial);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const dirty = fieldSegs.some(s => (s.autoFillFieldId || "") !== (choice[s.key] || ""));
+  const suggestedCount = fieldSegs.filter(s => !s.autoFillFieldId && choice[s.key]).length;
+
+  const save = async () => {
+    setSaving(true);
+    const next = segments.map(s =>
+      s.type === "field" ? { ...s, autoFillFieldId: choice[s.key] || null } : s
+    );
+    const res = await fetch(`/api/precedents/${precedentId}/body-template`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments: next }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      onSaved({ segments: next });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    }
+  };
+
+  if (!fieldSegs.length) return null;
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Auto-fill</p>
+        {suggestedCount > 0 && (
+          <p className="text-[9px] text-emerald-600 font-bold">{suggestedCount} suggested</p>
+        )}
+      </div>
+      <p className="text-[10px] text-slate-400 mb-3 leading-relaxed">
+        A bound field pre-fills from the matter when the document is issued, instead of being typed each time.
+        Leave one unbound if no matter field holds that information.
+      </p>
+
+      <div className="border border-slate-200 rounded-2xl divide-y divide-slate-100">
+        {fieldSegs.map(s => {
+          const isSuggestion = !s.autoFillFieldId && !!choice[s.key];
+          return (
+            <div key={s.key} className="flex items-center gap-3 px-4 py-2.5">
+              <span className="text-[11px] font-bold text-slate-700 flex-1 min-w-0 truncate">{s.label}</span>
+              {isSuggestion && (
+                <span className="text-[9px] font-bold text-emerald-600 shrink-0">suggested</span>
+              )}
+              <select
+                value={choice[s.key] || ""}
+                disabled={!isAdmin}
+                onChange={e => setChoice(c => ({ ...c, [s.key]: e.target.value }))}
+                className="text-[11px] border border-slate-200 rounded-full px-3 py-1.5 bg-white max-w-[220px] disabled:text-slate-400 disabled:bg-slate-50"
+              >
+                <option value="">Typed in each time</option>
+                {availableFields.map(f => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+
+      {isAdmin ? (
+        <div className="flex items-center gap-3 mt-3">
+          <button
+            onClick={save}
+            disabled={!dirty || saving}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-[11px] font-bold rounded-full hover:bg-slate-700 disabled:opacity-40 transition-colors"
+          >
+            {saving && <Loader2 size={12} className="animate-spin" />}
+            {saving ? "Saving" : "Save auto-fill"}
+          </button>
+          {saved && <span className="text-[10px] font-bold text-emerald-600">Saved</span>}
+        </div>
+      ) : (
+        <p className="text-[10px] text-slate-400 mt-3">Only a company admin can change these bindings.</p>
+      )}
     </div>
   );
 }
@@ -295,15 +496,23 @@ function PreviewModal({ precedent, onClose }: { precedent: Precedent; onClose: (
   // heaviest column (~500KB across a seeded library), and the list only needs
   // it for whichever one precedent the user actually opens.
   const [template, setTemplate] = useState<{ segments: BodyTemplateSegment[] } | null>(null);
+  const [availableFields, setAvailableFields] = useState<BindableField[]>([]);
   const [loadingTemplate, setLoadingTemplate] = useState(true);
+  const { isAdmin } = useCompany();
 
   // No setLoadingTemplate(true) here: the modal is keyed on the precedent id
   // by its parent, so a different precedent remounts with the initial state.
+  // The same call returns the company's bindable matter fields, so the
+  // auto-fill section costs no extra round trip.
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/precedents/${precedent.id}/body-template`)
       .then(r => r.json())
-      .then(json => { if (!cancelled) setTemplate(json.template || null); })
+      .then(json => {
+        if (cancelled) return;
+        setTemplate(json.template || null);
+        setAvailableFields(json.availableFields || []);
+      })
       .catch(() => { if (!cancelled) setTemplate(null); })
       .finally(() => { if (!cancelled) setLoadingTemplate(false); });
     return () => { cancelled = true; };
@@ -379,27 +588,19 @@ function PreviewModal({ precedent, onClose }: { precedent: Precedent; onClose: (
                 issue time &mdash; used for long-form documents where a fill-in template would not help.
               </p>
             ) : (
-              <div className="bg-slate-50 rounded-2xl p-5 text-[12px] leading-relaxed whitespace-pre-wrap font-mono">
-                {segments.map((s, i) =>
-                  s.type === "text" ? (
-                    <span key={i} className="text-slate-700">{s.text}</span>
-                  ) : (
-                    <span
-                      key={i}
-                      title={s.autoFillFieldId ? "Pre-fills from the matter" : "Filled in when issued"}
-                      className={`inline-block px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-bold not-italic ${
-                        s.autoFillFieldId
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-indigo-100 text-indigo-700"
-                      }`}
-                    >
-                      {s.label}{s.autoFillFieldId ? " (auto)" : ""}
-                    </span>
-                  )
-                )}
-              </div>
+              <DocumentPreview segments={segments} />
             )}
           </div>
+
+          {segments.length > 0 && (
+            <AutoFillSection
+              precedentId={precedent.id}
+              segments={segments}
+              availableFields={availableFields}
+              isAdmin={isAdmin}
+              onSaved={setTemplate}
+            />
+          )}
 
           <p className="text-[10px] text-slate-300 leading-relaxed">
             Precedents are a starting point. Adapt to the matter and check anything jurisdiction-specific before
