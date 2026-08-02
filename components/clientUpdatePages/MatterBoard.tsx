@@ -36,7 +36,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, CalendarCheck, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -155,6 +155,12 @@ interface Props {
   // ValueCell/SpreadsheetCell's AiFlagValue).
   onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
   onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
+  // Bulk sibling to onReviewSettlement -- checks every matter on the page at
+  // once and logs a status entry for each regardless of outcome (agreed,
+  // extension requested, followed up, not yet agreed, no discussion), unlike
+  // the per-matter button/automatic trigger which only ever log when
+  // agreement is actually reached.
+  onReviewAllSettlementStatus?: () => Promise<{ reviewed: number; agreed: number; failed: string[] }>;
   onRenameMatter?: (itemId: string, name: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
   onDataChanged?: () => void; // matters added / columns changed -- needs a full refetch
@@ -308,7 +314,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, maskCurrency = false, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
-  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewSettlement, onConfirmAiFlag,
+  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewSettlement, onConfirmAiFlag, onReviewAllSettlementStatus,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [deepLinkFixItemId, setDeepLinkFixItemId] = useState<string | null>(initialFixItemId ?? null);
@@ -342,6 +348,21 @@ export default function MatterBoard({
   const [reasonInput, setReasonInput] = useState("");
   const [historyTarget, setHistoryTarget] = useState<{ itemId: string; fieldId: string; fieldLabel: string; field: MatterBoardField } | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
+  const [checkingAllStatus, setCheckingAllStatus] = useState(false);
+
+  const reviewAllSettlementStatus = async () => {
+    if (!onReviewAllSettlementStatus || checkingAllStatus) return;
+    setCheckingAllStatus(true);
+    try {
+      const result = await onReviewAllSettlementStatus();
+      const parts = [`Checked ${result.reviewed} matter${result.reviewed === 1 ? "" : "s"}`, `${result.agreed} agreed to a new date`];
+      if (result.failed.length) parts.push(`${result.failed.length} failed: ${result.failed.join(", ")}`);
+      window.alert(parts.join("; "));
+      onDataChanged?.();
+    } finally {
+      setCheckingAllStatus(false);
+    }
+  };
 
   const summarizeOpenMatters = async () => {
     if (!onSummarizeOpenMatters || summarizingAll) return;
@@ -804,6 +825,12 @@ export default function MatterBoard({
                 <button onClick={clearSummaries} disabled={clearingAll} title="Clear all AI summaries on this page"
                   className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-red-300 hover:text-red-600 disabled:opacity-40 transition-colors">
                   {clearingAll ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
+                </button>
+              )}
+              {onReviewAllSettlementStatus && (
+                <button onClick={reviewAllSettlementStatus} disabled={checkingAllStatus} title="AI confirm settlement date status for every matter (logs a status entry for each)"
+                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-purple-300 hover:text-purple-600 disabled:opacity-40 transition-colors">
+                  {checkingAllStatus ? <Loader2 size={14} className="animate-spin" /> : <CalendarCheck size={14} />}
                 </button>
               )}
               <button onClick={() => setShowLogs(true)} title="Activity log"

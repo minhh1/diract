@@ -15,7 +15,7 @@
 // source 'ai' so it's clearly distinguishable from a human edit in the
 // activity log, and records the AI usage event for billing.
 import { HOSTED_MODELS, costUsd } from "@/lib/billing/aiModels";
-import { reviewSettlementDateAgreement } from "@/lib/ai/matterSettlementDateReview";
+import { reviewSettlementDateAgreement, type SettlementStatus } from "@/lib/ai/matterSettlementDateReview";
 import { logChange } from "@/lib/clientUpdatePageLog";
 
 // HOSTED_MODELS[0], not the cheaper [1] -- see rewrite-text/route.ts's note
@@ -29,19 +29,28 @@ export interface SettlementReviewResult {
   ran: boolean;
   agreed: boolean;
   newDate: string | null;
+  status: SettlementStatus | null;
   reasoning: string;
 }
 
 export async function runSettlementDateReview(
   admin: any, companyId: string, userId: string | null,
   pageId: string, itemId: string, fieldId: string, fieldKey: string,
-  projectId: string, matterName: string, propertyId?: string
+  projectId: string, matterName: string, propertyId?: string,
+  // Off by default -- the automatic per-email trigger and the single-matter
+  // manual button both stay silent (as they always have) when there's no
+  // agreement, so a matter with an unresolved back-and-forth doesn't get a
+  // fresh "still not agreed" log entry every time an email is logged. Only
+  // the bulk "confirm settlement status for all matters" action
+  // (.../settlement-status-all/route.ts) opts in, since its whole point is
+  // one log entry per matter regardless of outcome.
+  logStatusEvenIfNotAgreed = false
 ): Promise<SettlementReviewResult> {
   const { data: links } = await admin.from("project_properties")
     .select("id, property_id").eq("project_id", projectId).order("created_at", { ascending: true });
   const linkedRows = links || [];
   const targetLink = (propertyId && linkedRows.find((l: any) => l.property_id === propertyId)) || linkedRows[0];
-  if (!targetLink) return { ran: false, agreed: false, newDate: null, reasoning: "This matter has no linked property." };
+  if (!targetLink) return { ran: false, agreed: false, newDate: null, status: null, reasoning: "This matter has no linked property." };
   const projectPropertyId = targetLink.id;
 
   const { data: existingVal } = await admin.from("project_property_values")
@@ -49,7 +58,7 @@ export async function runSettlementDateReview(
   const currentDate: string | null = existingVal?.value_date ?? null;
 
   const result = await reviewSettlementDateAgreement(admin, companyId, MODEL_ID, itemId, projectId, matterName, currentDate);
-  if (!result) return { ran: false, agreed: false, newDate: null, reasoning: "No emails found for this matter yet." };
+  if (!result) return { ran: false, agreed: false, newDate: null, status: null, reasoning: "No emails found for this matter yet." };
 
   const cost = costUsd("hosted", MODEL_ID, result);
   await admin.from("ai_usage_events").insert({
@@ -58,7 +67,11 @@ export async function runSettlementDateReview(
   });
 
   if (!result.agreed || !result.newDate) {
-    return { ran: true, agreed: false, newDate: null, reasoning: result.reasoning };
+    if (logStatusEvenIfNotAgreed) {
+      await logChange(admin, pageId, "AI review", "ai", "settlement_status",
+        `AI review: settlement date status for "${matterName}" -- ${result.reasoning}`);
+    }
+    return { ran: true, agreed: false, newDate: null, status: result.status, reasoning: result.reasoning };
   }
 
   const { error } = await admin.from("project_property_values").upsert({
@@ -77,5 +90,5 @@ export async function runSettlementDateReview(
     `AI review: set "Settlement Date" to ${result.newDate} on "${matterName}" -- ${result.reasoning}`,
     { itemId, fieldId, oldValue: currentDate, newValue: result.newDate, reason: result.reasoning });
 
-  return { ran: true, agreed: true, newDate: result.newDate, reasoning: result.reasoning };
+  return { ran: true, agreed: true, newDate: result.newDate, status: "agreed", reasoning: result.reasoning };
 }

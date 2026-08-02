@@ -13,20 +13,26 @@
 import { callHostedModel } from "./modelCall";
 import { fetchCombinedMatterEmails, formatMatterEmailBlock } from "./matterEmails";
 
-const SYSTEM_PROMPT = `You review email correspondence for a property conveyancing matter to determine whether BOTH parties (the vendor and purchaser, or their respective solicitors) have clearly and mutually agreed, in writing, to change the matter's settlement date to one specific new date.
+const SYSTEM_PROMPT = `You review email correspondence for a property conveyancing matter to determine the CURRENT STATUS of the settlement date -- whether both parties (the vendor and purchaser, or their respective solicitors) have clearly and mutually agreed, in writing, to change it to one specific new date, or, if not, where the negotiation currently stands.
 
 Rules:
-- A request or proposal from only ONE side that hasn't been confirmed by the other is NOT agreement.
-- Vague discussion of "maybe extending" without a specific date is NOT agreement.
-- Emails that only reconfirm the CURRENT settlement date (given to you below) are NOT a change.
-- Only answer "agreed" if you can point to a specific new date both sides have accepted.
+- A request or proposal from only ONE side that hasn't been confirmed by the other is NOT agreement -- classify it as "extension_requested".
+- If staff or a party has chased up a still-unanswered request, classify it as "followed_up".
+- Vague discussion of "maybe extending" without a specific date, or emails that only reconfirm the CURRENT settlement date (given to you below), are "not_yet_agreed".
+- If the recent emails don't mention the settlement date at all, use "no_discussion".
+- Only use "agreed" if you can point to a specific new date both sides have accepted.
 
 Respond with ONLY a JSON object, nothing else -- no markdown fences, no prose:
-{"agreed": boolean, "newDate": "YYYY-MM-DD" or null, "reasoning": "one short sentence explaining the decision"}`;
+{"status": "agreed" | "extension_requested" | "followed_up" | "not_yet_agreed" | "no_discussion", "agreed": boolean, "newDate": "YYYY-MM-DD" or null, "reasoning": "one short sentence describing the status, naming the relevant date(s) and who requested/followed up where applicable"}
+
+"agreed" must be true only when status is "agreed"; "newDate" must be set only when status is "agreed".`;
+
+export type SettlementStatus = "agreed" | "extension_requested" | "followed_up" | "not_yet_agreed" | "no_discussion";
 
 export interface SettlementDateReview {
   agreed: boolean;
   newDate: string | null;
+  status: SettlementStatus;
   reasoning: string;
   inputTokens: number;
   outputTokens: number;
@@ -61,10 +67,17 @@ export async function reviewSettlementDateAgreement(
   const validDate = typeof parsed.newDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.newDate);
   const agreed = !!parsed.agreed && validDate && parsed.newDate !== currentDate;
   const reasoning = typeof parsed.reasoning === "string" && parsed.reasoning.trim() ? parsed.reasoning.trim() : "No clear mutual agreement on a new date found.";
+  const VALID_STATUSES: SettlementStatus[] = ["agreed", "extension_requested", "followed_up", "not_yet_agreed", "no_discussion"];
+  // Falls back to inferring from `agreed` alone if the model's own `status`
+  // is missing or malformed, rather than trusting an unvalidated string --
+  // "not_yet_agreed" is the safe default for anything else, same spirit as
+  // `agreed` itself defaulting to false on a bad response.
+  const status: SettlementStatus = VALID_STATUSES.includes(parsed.status) ? parsed.status : agreed ? "agreed" : "not_yet_agreed";
 
   return {
     agreed,
     newDate: agreed ? parsed.newDate : null,
+    status: agreed ? "agreed" : status,
     reasoning,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,

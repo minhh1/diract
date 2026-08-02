@@ -499,6 +499,21 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     });
   };
 
+  // Bulk sibling to reviewSettlement -- see
+  // app/api/client-update-pages/[id]/settlement-status-all/route.ts's own
+  // header for why this is the one path that logs a status entry for every
+  // matter regardless of outcome, not just the ones where agreement is
+  // reached. Reloads the board afterward the same way summarizeOpenMatters
+  // does, since some matters may have had their date actually updated.
+  const reviewAllSettlementStatus = async () => {
+    if (mode !== "staff" || !staffPageId) return { reviewed: 0, agreed: 0, failed: [] as string[] };
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/settlement-status-all`, { method: "POST" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Couldn't check settlement status");
+    await loadAsStaff();
+    return json;
+  };
+
   const addNote = (itemId: string, note: string, propertyId?: string) => {
     if (!note.trim()) return;
     const tempId = `temp-${Date.now()}`;
@@ -774,6 +789,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
           onReorderFields={mode === "staff" ? reorderFields : undefined}
           onReviewSettlement={mode === "staff" && meta.baseTable === "projects" ? reviewSettlement : undefined}
           onConfirmAiFlag={mode === "staff" && meta.baseTable === "projects" ? confirmAiFlag : undefined}
+          onReviewAllSettlementStatus={mode === "staff" && meta.baseTable === "projects" ? reviewAllSettlementStatus : undefined}
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
           onFreezeFirstColumnChanged={mode === "staff" ? changeFreezeColumn : undefined}
