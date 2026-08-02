@@ -3,14 +3,21 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
+import { readCache, writeCache } from "@/lib/queryCache";
 
 // Resolves a set of `projects` record ids to their Matter Type -- a
 // per-company custom field (see supabase/template_law_firm_seed.sql's
 // "Matter fields on projects" block, field_key 'matter_type'), same
-// EAV/batching shape as useMatterNumbers.ts.
+// EAV/batching/caching shape as useMatterNumbers.ts (including its own
+// localStorage seeding -- this previously started blank on every mount too).
+const cacheKey = (companyId: string) => `matter_types_${companyId}`;
+
 export function useMatterTypes(matterIds: string[]): Map<string, string> {
   const { companyId } = useCompany();
-  const [types, setTypes] = useState<Map<string, string>>(new Map());
+  const [types, setTypes] = useState<Map<string, string>>(() => {
+    const cached = companyId ? readCache<Record<string, string>>(cacheKey(companyId)) : null;
+    return cached ? new Map(Object.entries(cached)) : new Map();
+  });
 
   useEffect(() => {
     if (!companyId) return;
@@ -35,6 +42,7 @@ export function useMatterTypes(matterIds: string[]): Map<string, string> {
       setTypes(prev => {
         const next = new Map(prev);
         data.forEach((r: any) => { if (r.value_text) next.set(r.record_id, r.value_text); });
+        writeCache(cacheKey(companyId), Object.fromEntries(next));
         return next;
       });
     })();
