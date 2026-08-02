@@ -13,7 +13,7 @@
 // or the WhatsApp Cloud API.
 import { resolveSourceTypes, retrieveGroundingContext, buildSystemPrompt } from "@/lib/ai/retrieval";
 import { callHostedModel, callHostedModelWithTools, callSelfHostedModel, type ToolCall } from "@/lib/ai/modelCall";
-import { buildActionTools, buildMissingFieldsTool, translateFieldAnswers, TOOL_USE_GUARDRAILS, isConversationalOnly } from "@/lib/ai/actionTools";
+import { buildActionTools, buildMissingFieldsTool, translateFieldAnswers, TOOL_USE_GUARDRAILS, isConversationalOnly, sameMessageAboveHint } from "@/lib/ai/actionTools";
 import { loadFieldConfig, type ActionType, type FieldDef } from "@/lib/ai/actionFields";
 import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
@@ -33,6 +33,7 @@ import { bookAppointment } from "@/lib/ai/calendarBooking";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { APP_URL } from "@/lib/config";
+import { getCompanyTimezone } from "@/lib/companyTimezone";
 
 // Everything a channel needs to plug into the shared engine: which tables
 // hold its linked accounts/pending actions/link requests, the column its
@@ -125,12 +126,23 @@ const DEFAULT_HOSTED_MODEL_ID = HOSTED_MODELS[0].id;
 // it correctly said it "couldn't understand the date 'tomorrow'"). Included
 // in every tool-calling/extraction call so due_date can be given in natural
 // language, not just literal YYYY-MM-DD.
-function todayContextMessage() {
+//
+// `timezone` (the company's own, see lib/companyTimezone.ts) is required,
+// not optional -- this used to hardcode UTC for both the weekday AND the
+// date, which silently resolves to the WRONG calendar day for any Australian
+// company for several hours every morning: at 9am AEST (UTC+10), UTC is
+// still 11pm the previous day. Observed live (2026-08-03): a 9:11am message
+// with "due today" got booked for "Sunday, 02/08/2026" when the real local
+// day was already Monday 03/08 -- the bot was still living in UTC's Sunday.
+function todayContextMessage(timezone: string) {
   const today = new Date();
-  const weekday = today.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+  const weekday = today.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
+  // en-CA formats as YYYY-MM-DD, the same shape toISOString().slice(0, 10)
+  // gave before -- but resolved in the company's own local date, not UTC's.
+  const isoDate = today.toLocaleDateString("en-CA", { timeZone: timezone });
   return {
     role: "system",
-    content: `Today is ${weekday}, ${today.toISOString().slice(0, 10)} (YYYY-MM-DD). If the user gives a relative date (e.g. "today", "tomorrow", "next Wednesday", "in 3 days"), convert it to an absolute YYYY-MM-DD date yourself before returning it. A bare weekday name with no qualifier (e.g. just "Monday", not "next Monday" or "this Monday") means the closest upcoming occurrence of that weekday -- today itself if today already is that weekday, otherwise the next one ahead, never one in the past.`,
+    content: `Today is ${weekday}, ${isoDate} (YYYY-MM-DD). If the user gives a relative date (e.g. "today", "tomorrow", "next Wednesday", "in 3 days"), convert it to an absolute YYYY-MM-DD date yourself before returning it. A bare weekday name with no qualifier (e.g. just "Monday", not "next Monday" or "this Monday") means the closest upcoming occurrence of that weekday -- today itself if today already is that weekday, otherwise the next one ahead, never one in the past.`,
   };
 }
 
@@ -239,12 +251,18 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
   // Loaded before the pending-action check (not just before the RAG path
   // further down) because continuing a "collecting" create_file/update_file/
   // issue_precedent action needs sourceTypes for the drafting call's
-  // grounding context.
-  const { data: settings } = await admin
-    .from("ai_chat_settings")
-    .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap")
-    .eq("company_id", companyId)
-    .maybeSingle();
+  // grounding context. timezone rides along here too -- every downstream
+  // todayContextMessage() call (this function's own tool-calling call, and
+  // continueCollecting's three) needs it, so it's resolved once up front
+  // rather than re-queried per branch.
+  const [{ data: settings }, timezone] = await Promise.all([
+    admin
+      .from("ai_chat_settings")
+      .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap")
+      .eq("company_id", companyId)
+      .maybeSingle(),
+    getCompanyTimezone(admin, companyId),
+  ]);
   const sourceTypes = resolveSourceTypes(settings);
 
   // A pending create/update-task/project/file/issue_precedent action takes
@@ -295,7 +313,7 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
     }
 
     if (pending.status === "collecting") {
-      await continueCollecting(admin, companyId, linked, msg, adapter, sourceTypes, pending.action_type, pending.collected ?? {}, pending.next_fields ?? []);
+      await continueCollecting(admin, companyId, linked, msg, adapter, sourceTypes, timezone, pending.action_type, pending.collected ?? {}, pending.next_fields ?? []);
       return;
     }
 
@@ -366,11 +384,13 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
     let toolResult;
     try {
       const identityMsg = senderIdentityMessage(msg);
+      const aboveHint = sameMessageAboveHint(msg.question);
       const toolCallMessages = [
         modelMessages[0],
         { role: "system", content: TOOL_USE_GUARDRAILS },
-        todayContextMessage(),
+        todayContextMessage(timezone),
         ...(identityMsg ? [identityMsg] : []),
+        ...(aboveHint ? [aboveHint] : []),
         ...modelMessages.slice(1),
       ];
       const [taskFields, projectFields] = await Promise.all([
@@ -813,6 +833,7 @@ async function continueCollecting(
   msg: ChannelMessage,
   adapter: ChannelAdapter,
   sourceTypes: string[],
+  timezone: string,
   actionType: string,
   collectedSoFar: Record<string, string>,
   pendingFieldKeys: string[]
@@ -887,7 +908,7 @@ async function continueCollecting(
         DEFAULT_HOSTED_MODEL_ID,
         [
           { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-          todayContextMessage(),
+          todayContextMessage(timezone),
           { role: "user", content: msg.question },
         ],
         buildAppointmentMissingFieldsTool(pendingFieldKeys)
@@ -980,7 +1001,7 @@ async function continueCollecting(
         DEFAULT_HOSTED_MODEL_ID,
         [
           { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-          todayContextMessage(),
+          todayContextMessage(timezone),
           { role: "user", content: msg.question },
         ],
         buildPrecedentMissingFieldsTool(pendingFields)
@@ -1026,7 +1047,7 @@ async function continueCollecting(
       DEFAULT_HOSTED_MODEL_ID,
       [
         { role: "system", content: "Extract only the details the user's message actually answers. Never invent or guess a value for anything it doesn't address." },
-        todayContextMessage(),
+        todayContextMessage(timezone),
         ...(identityMsg ? [identityMsg] : []),
         { role: "user", content: msg.question },
       ],

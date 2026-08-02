@@ -18,6 +18,22 @@
 // tool-calling call, not the plain RAG chat path, which has no tools to
 // misuse in the first place.
 //
+// A fourth failure (2026-08-03, live, Teams group chat): one message
+// addressed to a colleague AND the bot together --
+// "Hoang Chau pls check in with client and call her back today, she just
+// called [@Diract AI] add above task in for Hoang, matter 260532, due today
+// 4pm, notes ..." -- got "I need a few more details: Task name" instead of
+// using "Hoang Chau pls check in with client and call her back today, she
+// just called" as the name. TOOL_USE_GUARDRAILS's existing "above"/"the
+// above" handling only ever illustrated it as a reference to a SEPARATE
+// prior message ("usually the immediately preceding message") -- it never
+// covered "above" pointing at earlier text within the SAME message, before
+// wherever the bot's own @mention sits (parseActivity.ts's
+// stripMentionMarkup removes the mention itself, leaving that earlier text
+// with nothing marking it as special). Both are now spelled out, with the
+// same-message case checked first since that's what's actually in front of
+// the model when it's the true referent.
+//
 // A second, related failure observed live (2026-07-24): after a user fully
 // completed a create_project flow up to "reply yes to confirm or no to
 // cancel" and then sent an unrelated "Hi" instead of yes/no, the pending
@@ -29,8 +45,40 @@
 // user back in a fresh "I need a few more details" flow they never asked
 // to restart. Fixed by making the *current* message, not history, the sole
 // trigger for a tool call -- explicitly called out below.
+// A deterministic assist for the same-message "above" case TOOL_USE_GUARDRAILS
+// describes -- rather than trust the model to reliably find the sentence
+// boundary itself inside a longer, multi-purpose message (that's exactly
+// where the 2026-08-03 failure happened), this locates the word "above" in
+// the CURRENT message and hands the model the literal text preceding it as
+// an explicit, labeled hint, removing the need for it to also correctly
+// segment the sentence on its own. Advisory only -- the model still sees
+// the full original message and decides whether "above" is even the
+// referenced-content pattern here (as opposed to, say, "the amount above
+// $500", which has nothing to do with a task/project name) or whether
+// there's no leading text at all, meaning it's a prior-message reference
+// instead (see TOOL_USE_GUARDRAILS's case 2).
+// The optional leading groups are greedy, so when a trigger verb ("add",
+// "create", "make", optionally with "please"/"pls") sits directly before
+// "above", the match starts there instead of at "above" itself -- keeping
+// that verb (and any "the") OUT of the extracted "before" text, since it's
+// part of the instruction to the bot, not the referenced content. Observed
+// live (2026-08-03): without this, "...she just called  add above task..."
+// extracted "...she just called  add" -- the trailing "add" leaking in from
+// treating "above" alone as the cut point.
+const ABOVE_REFERENCE_RE = /(?:\b(?:please\s+|pls\s+)?(?:add|create|make)\s+)?(?:the\s+)?\babove\b/i;
+export function sameMessageAboveHint(text: string): { role: string; content: string } | null {
+  const match = ABOVE_REFERENCE_RE.exec(text);
+  if (!match) return null;
+  const before = text.slice(0, match.index).trim();
+  if (!before) return null;
+  return {
+    role: "system",
+    content: `The current message contains the word "above" partway through. Everything in that SAME message before that point is: "${before}". If the user is asking you to create a task/project from "above"/"the above", this text is almost certainly what they mean -- use it verbatim as the name rather than asking for one. Ignore this hint if "above" clearly refers to something else in context (e.g. a numeric comparison) or the message has nothing task/project-like about it.`,
+  };
+}
+
 export const TOOL_USE_GUARDRAILS =
-  "You also have tools for creating/updating tasks and projects. Only call one of these when the user's CURRENT message is clearly and explicitly asking you to create or change something specific, using real details they actually provided. Base that decision only on the current message -- earlier turns in the conversation (including a task that was previously discussed, started, confirmed, or left unfinished) are context for filling in the details of a request the current message is actually making, never a justification by themselves for calling a tool now. A current message that's just a greeting, acknowledgement, thanks, or other small talk (e.g. \"hi\", \"thanks\", \"ok\", \"lol\") must never trigger a tool call on its own, even if the conversation earlier discussed creating or updating something -- respond normally in plain text instead. Never invent a placeholder name, project, or value to fill a required field. If a request is action-like but missing a required detail (e.g. no project name for a new task), ask a clarifying question in plain text instead of guessing or calling a tool with incomplete or invented information. If the user refers back to something already in the conversation instead of restating it -- e.g. \"create the above task\", \"create above task\", \"make this a task\", \"add that as a project\" -- use the actual text of the message(s) they're pointing to (usually the immediately preceding message) to fill in the corresponding field (e.g. the referenced message's full text becomes the task/project name) instead of asking for it again or leaving it blank. Copy that referenced text verbatim -- never summarize, shorten, or paraphrase it into your own wording.";
+  "You also have tools for creating/updating tasks and projects. Only call one of these when the user's CURRENT message is clearly and explicitly asking you to create or change something specific, using real details they actually provided. Base that decision only on the current message -- earlier turns in the conversation (including a task that was previously discussed, started, confirmed, or left unfinished) are context for filling in the details of a request the current message is actually making, never a justification by themselves for calling a tool now. A current message that's just a greeting, acknowledgement, thanks, or other small talk (e.g. \"hi\", \"thanks\", \"ok\", \"lol\") must never trigger a tool call on its own, even if the conversation earlier discussed creating or updating something -- respond normally in plain text instead. Never invent a placeholder name, project, or value to fill a required field. If a request is action-like but missing a required detail (e.g. no project name for a new task), ask a clarifying question in plain text instead of guessing or calling a tool with incomplete or invented information. If the user refers back to something already in the conversation instead of restating it -- e.g. \"create the above task\", \"create above task\", \"make this a task\", \"add that as a project\" -- \"above\"/\"this\" can point at two different places, and you must check which before treating it as missing: (1) earlier text in THIS SAME current message, before the part addressed to you -- e.g. \"Hoang Chau please call the client back today, she called. [mention] add above task in for Hoang\" means the task is \"Hoang Chau please call the client back today, she called\", the sentence(s) in that same message before your own name/mention (which won't appear in the text you see -- it's already been stripped out), NOT something to look up elsewhere; (2) only when the current message has no such content of its own before the instruction to you (it's addressed to you from the very start) does \"above\" mean the immediately preceding message in the conversation instead. Whichever it is, use the actual referenced text verbatim to fill in the corresponding field (e.g. the referenced text becomes the task/project name) instead of asking for it again or leaving it blank -- never summarize, shorten, or paraphrase it into your own wording.";
 
 // A third occurrence of the same failure (2026-07-24, live): a cancelled
 // create_task got fully reconstructed from conversation history -- project,
@@ -348,7 +396,7 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
             name: {
               type: "string",
               description:
-                "The task's name/title. If the user references a prior message instead of stating one directly (e.g. \"create the above task\", \"create above task\", \"make this a task\"), use the COMPLETE, VERBATIM text of the message they're pointing to (usually the one immediately before) as the name -- copy it exactly, do not summarize, shorten, paraphrase, or rewrite it into your own words. Otherwise, ONLY fill this in if the user actually stated a name -- omit this property entirely rather than inventing a placeholder.",
+                "The task's name/title. If the user references \"the above\"/\"this\" instead of stating a name directly (e.g. \"create the above task\", \"create above task\", \"make this a task\"), check the CURRENT message itself first -- if it has its own text before the part addressed to you (e.g. \"Hoang Chau please call the client back, she called. add above task in for Hoang\"), that leading text IS the task, not something to look up elsewhere. Only if the current message has no such leading text of its own does \"above\" mean the immediately preceding message in the conversation instead. Either way, use the COMPLETE, VERBATIM referenced text as the name -- copy it exactly, do not summarize, shorten, paraphrase, or rewrite it into your own words. Otherwise, ONLY fill this in if the user actually stated a name -- omit this property entirely rather than inventing a placeholder.",
             },
             project_name: {
               type: "string",
@@ -390,7 +438,7 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
             name: {
               type: "string",
               description:
-                "The project's name. If the user references a prior message instead of stating one directly (e.g. \"create the above as a project\", \"make this a project\"), use the COMPLETE, VERBATIM text of the message they're pointing to as the name -- copy it exactly, do not summarize, shorten, paraphrase, or rewrite it into your own words. Otherwise, ONLY fill this in if the user actually stated a name -- omit this property entirely rather than inventing a placeholder.",
+                "The project's name. If the user references \"the above\"/\"this\" instead of stating a name directly (e.g. \"create the above as a project\", \"make this a project\"), check the CURRENT message itself first -- if it has its own text before the part addressed to you, that leading text IS the project, not something to look up elsewhere. Only if the current message has no such leading text of its own does \"above\" mean the immediately preceding message in the conversation instead. Either way, use the COMPLETE, VERBATIM referenced text as the name -- copy it exactly, do not summarize, shorten, paraphrase, or rewrite it into your own words. Otherwise, ONLY fill this in if the user actually stated a name -- omit this property entirely rather than inventing a placeholder.",
             },
             description: { type: "string", description: "A description of the project, if mentioned." },
             status: { type: "string", description: "Initial status, if mentioned (defaults to Open)." },
