@@ -515,12 +515,25 @@ export default function RecordDashboard({
   };
 
   const loadTabs = async (cid: string) => {
-    const { data: tabData } = await supabase
-      .from('record_tabs')
-      .select('*')
-      .eq('record_id', recordId)
-      .eq('record_table', recordTable)
-      .order('display_order');
+    // Fetched fresh here rather than reading the `customTables` state
+    // (from useCustomTables(ctxUserId) above) -- loadTabs runs once, fired
+    // from the loadAll() effect at mount, and its closure over `customTables`
+    // is frozen at whatever that state happened to be AT THAT MOMENT.
+    // Confirmed live: on a hard reload / direct URL open of a matter that's
+    // never had its default tabs seeded, this effect reliably wins the race
+    // against useCustomTables' own fetch (which needs its own round trip),
+    // so every customTables.some(...) gate below saw an empty array and
+    // silently skipped seeding Trust Account/Finance Model/Precedents/Time &
+    // Fees/Disbursements -- permanently, since nothing ever retries once
+    // this function has already run. A plain client-side navigation into
+    // the same matter doesn't show the bug (CompanyContext/useCustomTables
+    // are already warm from the app shell by then), which is why it went
+    // unnoticed. Only `id`/`slug` are needed by anything below.
+    const [{ data: tabData }, { data: tablesForSeeding }] = await Promise.all([
+      supabase.from('record_tabs').select('*').eq('record_id', recordId).eq('record_table', recordTable).order('display_order'),
+      supabase.from('company_tables').select('id, slug').eq('company_id', cid).is('deleted_at', null),
+    ]);
+    const seedTables = tablesForSeeding || [];
 
     if (tabData && tabData.length > 0) {
       // Deduplicate — keep only first tab of each title
@@ -584,7 +597,7 @@ export default function RecordDashboard({
       // below): only if the company actually has the underlying table.
       // Cross-tenant leak fixed here previously showed this tab on a law
       // firm's Matters with no Finance Model data behind it at all.
-      if (systemTable === 'projects' && customTables.some(t => t.slug === 'finance-model-budget-lines') && !uniqueTabs.some(t => t.tab_type === 'finance_model')) {
+      if (systemTable === 'projects' && seedTables.some(t => t.slug === 'finance-model-budget-lines') && !uniqueTabs.some(t => t.tab_type === 'finance_model')) {
         missingCoreTabs.push({
           company_id: cid, record_id: recordId, record_table: recordTable,
           title: 'Finance Model', icon: 'TrendingUp', tab_type: 'finance_model',
@@ -597,7 +610,7 @@ export default function RecordDashboard({
       // seed (migrated to this tab_type by
       // supabase/migrations/20260802170000_trust_account_tab.sql), so this
       // check only ever fires for a matter that somehow has neither.
-      if (systemTable === 'projects' && customTables.some(t => t.slug === 'trust-transactions') && !uniqueTabs.some(t => t.tab_type === 'trust_account')) {
+      if (systemTable === 'projects' && seedTables.some(t => t.slug === 'trust-transactions') && !uniqueTabs.some(t => t.tab_type === 'trust_account')) {
         missingCoreTabs.push({
           company_id: cid, record_id: recordId, record_table: recordTable,
           title: 'Trust Account', icon: 'Landmark', tab_type: 'trust_account',
@@ -614,7 +627,7 @@ export default function RecordDashboard({
       // count query is deliberately inside the "tab is missing" check: once
       // seeded, uniqueTabs short-circuits it and this never queries again on
       // subsequent record loads.
-      if (systemTable === 'projects' && customTables.some(t => t.slug === 'trust-transactions') && !uniqueTabs.some(t => t.tab_type === 'precedents')) {
+      if (systemTable === 'projects' && seedTables.some(t => t.slug === 'trust-transactions') && !uniqueTabs.some(t => t.tab_type === 'precedents')) {
         const { count: precedentCount } = await supabase
           .from('precedents')
           .select('id', { count: 'exact', head: true })
@@ -649,7 +662,7 @@ export default function RecordDashboard({
       // matter that already has both is a no-op every subsequent load.
       if (systemTable === 'projects') {
         const { tabs: missingTabs, widgetsByLinkedTableId } = await buildMissingDefaultProjectDashboardTabs(
-          cid, recordId, finalTabs.length, existingLinkedTableIds, customTables
+          cid, recordId, finalTabs.length, existingLinkedTableIds, seedTables
         );
         if (missingTabs.length) {
           const { data: insertedTabs } = await supabase.from('record_tabs').insert(missingTabs).select();
@@ -732,7 +745,7 @@ export default function RecordDashboard({
         // Finance Model is Niksen-specific -- gated on the company actually
         // having the underlying custom tables, unlike Checklist above. See
         // the matching comment on the top-up path further up this file.
-        ...(systemTable === 'projects' && customTables.some(t => t.slug === 'finance-model-budget-lines') ? [{
+        ...(systemTable === 'projects' && seedTables.some(t => t.slug === 'finance-model-budget-lines') ? [{
           company_id: cid,
           record_id: recordId,
           record_table: recordTable,
@@ -742,7 +755,7 @@ export default function RecordDashboard({
           display_order: 2,
         }] : []),
         // Trust Account -- same Law Firm-template gate as Finance Model above.
-        ...(systemTable === 'projects' && customTables.some(t => t.slug === 'trust-transactions') ? [{
+        ...(systemTable === 'projects' && seedTables.some(t => t.slug === 'trust-transactions') ? [{
           company_id: cid,
           record_id: recordId,
           record_table: recordTable,
@@ -764,7 +777,7 @@ export default function RecordDashboard({
 
       let widgetsByLinkedTableId = new Map<string, DashboardWidget[]>();
       if (systemTable === 'projects') {
-        const result = await buildMissingDefaultProjectDashboardTabs(cid, recordId, defaultTabs.length, new Set(), customTables);
+        const result = await buildMissingDefaultProjectDashboardTabs(cid, recordId, defaultTabs.length, new Set(), seedTables);
         defaultTabs.push(...result.tabs);
         widgetsByLinkedTableId = result.widgetsByLinkedTableId;
       }
