@@ -20,7 +20,11 @@
 import PizZip from "pizzip";
 import { DEED_STYLES } from "@/lib/precedents/deedTemplateStyles";
 
-const MARK = "";
+const MARK = "\u0001";
+// Splits a line into left and right cells. A second control character, for
+// the same reason as MARK: nothing typed into a deed can contain one. Both are
+// stripped before the text reaches the XML (see stripXmlIllegal).
+const COL = "\u0002";
 
 /** Prefixes a line so the deed renderer knows which style to apply. */
 export function styled(styleId: string, text: string): string {
@@ -39,6 +43,21 @@ export function parseDeedBody(body: string): DeedLine[] {
     const m = /^([^]*)([\s\S]*)$/.exec(raw);
     return m ? { style: m[1] || null, text: m[2] } : { style: null, text: raw };
   });
+}
+
+/**
+ * A two-column line, used for signing blocks where two officers sign side by
+ * side. Rendered as a borderless table row so the columns line up the way a
+ * firm's own execution page does; stacking them reads as one long list and
+ * loses which signature belongs to which officer.
+ */
+export function deedColumns(left: string, right: string): string {
+  return `${left}${COL}${right}`;
+}
+
+/** Whether a line is a two-column row. */
+export function isColumnLine(text: string): boolean {
+  return text.includes(COL);
 }
 
 /** Strips style markers, for anything that wants the plain words. */
@@ -86,6 +105,22 @@ function resolveStyleId(wanted: string, templateStyles: Record<string, string>, 
   return null;
 }
 
+/** One borderless two-column row; widths are half the A4 text width each. */
+function columnRowXml(styleId: string | null, left: string, right: string): string {
+  const cell = (t: string) =>
+    `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="4513"/>` +
+    `<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>` +
+    `</w:tcPr>${paragraphXml(styleId, t)}</w:tc>`;
+  return `<w:tr>${cell(left)}${cell(right)}</w:tr>`;
+}
+
+function columnTableXml(rows: string): string {
+  return `<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="9026"/>` +
+    `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>` +
+    `<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="4513"/><w:gridCol w:w="4513"/></w:tblGrid>${rows}</w:tbl>`;
+}
+
 function paragraphXml(styleId: string | null, text: string): string {
   const pPr = styleId ? `<w:pPr><w:pStyle w:val="${escapeXml(styleId)}"/></w:pPr>` : "";
   if (!text) return `<w:p>${pPr}</w:p>`;
@@ -122,9 +157,23 @@ export function buildDeedDocx(templateBytes: Buffer, body: string): Buffer {
     void name;
   }
 
-  const paragraphs = parseDeedBody(body)
-    .map(l => paragraphXml(l.style ? resolveStyleId(l.style, templateStyles, byName) : null, l.text))
-    .join("");
+  // Consecutive two-column lines collapse into one table, so a signing block
+  // stays a single aligned unit rather than a run of one-row tables.
+  const lines = parseDeedBody(body);
+  let paragraphs = "";
+  let pendingRows = "";
+  const flushRows = () => { if (pendingRows) { paragraphs += columnTableXml(pendingRows); pendingRows = ""; } };
+  for (const l of lines) {
+    const style = l.style ? resolveStyleId(l.style, templateStyles, byName) : null;
+    if (isColumnLine(l.text)) {
+      const [left, right] = l.text.split(COL);
+      pendingRows += columnRowXml(style, left, right ?? "");
+      continue;
+    }
+    flushRows();
+    paragraphs += paragraphXml(style, l.text);
+  }
+  flushRows();
 
   // Keep the template's sectPr: it carries the page size, margins and the
   // header/footer relationships, so dropping it would lose the firm's own

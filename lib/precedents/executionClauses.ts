@@ -22,6 +22,8 @@
 // Trustee capacity is not a fifth variant -- it belongs in how the party is
 // described ("X Pty Ltd ACN nnn as trustee for the Y Trust"), which is why
 // the party description is a field rather than being assembled here.
+import { deedColumns } from "@/lib/precedents/deedDocx";
+
 export type PartyKind =
   | "individual"
   | "company_127_two_officers"
@@ -120,20 +122,17 @@ export function executionBlock(
         "Address of witness (print)",
       ];
     case "company_127_two_officers":
+      // Side by side: two officers sign next to each other on a firm's own
+      // execution page, and stacking them loses which name belongs to which
+      // signature. deedColumns marks the split for the renderer.
       return [
         head,
         "",
-        "______________________________",
-        "Signature of director",
+        deedColumns("______________________________", "______________________________"),
+        deedColumns("Signature of director", "Signature of director / company secretary"),
         "",
-        "______________________________",
-        "Full name (print)",
-        "",
-        "______________________________",
-        "Signature of director / company secretary",
-        "",
-        "______________________________",
-        "Full name (print)",
+        deedColumns("______________________________", "______________________________"),
+        deedColumns("Full name (print)", "Full name (print)"),
       ];
     case "company_127_sole_director":
       return [
@@ -161,4 +160,63 @@ export function executionBlock(
 /** Shown above the signing page. */
 export function executedAsLine(instrument: InstrumentKind): string {
   return instrument === "deed" ? "Executed as a deed." : "Executed as an agreement.";
+}
+
+/**
+ * Recognises which signing block is which in an uploaded execution page.
+ *
+ * Matching is on the operative words rather than on position, because firms
+ * order their execution pages differently and some include only the variants
+ * they use. A block we can't place is ignored rather than guessed at -- the
+ * built-in scheme covers anything missing, and a misfiled block would put the
+ * wrong statutory words under a party's name.
+ */
+export function classifyExecutionBlock(text: string): PartyKind | null {
+  const t = text.toLowerCase();
+  if (t.includes("section 126") || t.includes("sections 126")) return "company_126_authorised";
+  if (t.includes("127")) {
+    // "sole director" appears in the block itself; two-officer blocks name a
+    // second signatory instead.
+    return t.includes("sole director") ? "company_127_sole_director" : "company_127_two_officers";
+  }
+  if (t.includes("in the presence of")) return "individual";
+  return null;
+}
+
+/**
+ * Splits an execution page into blocks. A new block starts at each line
+ * beginning "Executed by" or "Signed, sealed and delivered by", which is how
+ * every variant opens.
+ */
+export function splitExecutionBlocks(lines: string[]): string[][] {
+  const out: string[][] = [];
+  let current: string[] | null = null;
+  for (const line of lines) {
+    if (/^\s*(executed by|signed,? sealed and delivered by)\b/i.test(line)) {
+      if (current) out.push(current);
+      current = [line];
+    } else if (current) {
+      current.push(line);
+    }
+  }
+  if (current) out.push(current);
+  return out;
+}
+
+/**
+ * The key a recognised block is stored under.
+ *
+ * An individual has two forms -- the deed one opens "Signed, sealed and
+ * delivered", the agreement one "Executed by" -- and both appear on a firm's
+ * execution page. Keying only by party kind would let the second overwrite the
+ * first, so individuals carry the instrument in their key. A company's block
+ * is the same either way and doesn't need it.
+ */
+export function executionBlockKey(text: string): string | null {
+  const kind = classifyExecutionBlock(text);
+  if (!kind) return null;
+  if (kind !== "individual") return kind;
+  return /signed,?\s+sealed\s+and\s+delivered/i.test(text)
+    ? "individual_deed"
+    : "individual_agreement";
 }

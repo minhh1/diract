@@ -15,6 +15,7 @@ import {
 import { useCompany } from "@/components/CompanyContext";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import DeedTemplateSection from "@/components/settings/DeedTemplateSection";
+import ExecutionTemplateSection from "@/components/settings/ExecutionTemplateSection";
 
 interface DetectedField { role: string; options?: string[] }
 
@@ -109,6 +110,7 @@ export default function PrecedentsSettingsTab() {
     <div className="space-y-6">
       <LetterheadSection isAdmin={isAdmin} />
       <DeedTemplateSection isAdmin={isAdmin} />
+      <ExecutionTemplateSection isAdmin={isAdmin} />
       <SettingsSection isAdmin={isAdmin} staff={staff} staffLoading={staffLoading} />
       <StaffSignoffsSection isAdmin={isAdmin} currentUserId={userId} staff={staff} loading={staffLoading} onChanged={loadStaff} />
       <LibrarySection isAdmin={isAdmin} />
