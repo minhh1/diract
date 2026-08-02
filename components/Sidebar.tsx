@@ -740,6 +740,27 @@ export default function Sidebar() {
   };
   const tablesPanelOpen = activeRailSection === 'tables';
 
+  // Whether to show the Precedents row in the table list. Gated on the
+  // company actually having a precedent library so a tenant without one
+  // doesn't get a link to an empty page -- same reasoning as the Trust
+  // Account row below, but the signal is precedent rows rather than a table.
+  // head:true so this is a count, not a fetch, and only while the panel the
+  // row appears in is open.
+  const [hasPrecedents, setHasPrecedents] = useState(false);
+  useEffect(() => {
+    if (!ctxCompanyId || !tablesPanelOpen) return;
+    let cancelled = false;
+    supabase
+      .from('precedents')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', ctxCompanyId)
+      .eq('record_table', 'projects')
+      .eq('is_system', false)
+      .is('deleted_at', null)
+      .then(({ count }) => { if (!cancelled) setHasPrecedents(!!count); });
+    return () => { cancelled = true; };
+  }, [ctxCompanyId, tablesPanelOpen]);
+
   // Shared with GenericMasterTable via useCompanyCustomFields' module cache —
   // when the tree's table matches the active page's table, this fires once.
   // Skipped while the Tables panel itself isn't showing (e.g. browsing a
@@ -1471,6 +1492,26 @@ export default function Sidebar() {
                   >
                     <Landmark size={16} className="shrink-0" />
                     <span className="truncate">Trust Account</span>
+                  </button>
+                )}
+
+                {/* Precedents — the firm's library as a browsable
+                    destination, distinct from issuing one on a matter (that
+                    lives on the matter's own Precedents tab). Same
+                    fixed-bespoke-page pattern as Trust Account above. See
+                    app/dashboard/precedents/page.tsx. */}
+                {hasPrecedents && (
+                  <button
+                    onClick={() => { if (!pathname.startsWith('/dashboard/precedents')) { startNavigation(); router.push('/dashboard/precedents'); } }}
+                    aria-label="Precedents"
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                      pathname.startsWith('/dashboard/precedents')
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <PenSquare size={16} className="shrink-0" />
+                    <span className="truncate">Precedents</span>
                   </button>
                 )}
                   </>
