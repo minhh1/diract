@@ -270,12 +270,20 @@ export function executionSpec(
     case "company_127_two_officers":
       return {
         opener, party, tail,
-        left: ["Signature of director"],
-        right: ["Signature of director / company secretary"],
+        left: ["Signature of director", "Full name (print)"],
+        right: ["Signature of director / company secretary", "Full name (print)"],
       };
     case "company_127_sole_director":
-      return { opener, party, tail, left: ["Signature of sole director"], right: [] };
+      return {
+        opener, party, tail,
+        left: ["Signature of sole director", "Full name (print)"],
+        right: [],
+      };
     case "company_126_authorised":
-      return { opener, party, tail, left: ["Signature of authorised representative"], right: [] };
+      return {
+        opener, party, tail,
+        left: ["Signature of authorised representative", "Full name (print)"],
+        right: [],
+      };
   }
 }
