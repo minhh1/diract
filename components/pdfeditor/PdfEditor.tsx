@@ -100,6 +100,13 @@ export default function PdfEditor({ source, onBack }: Props) {
   // next (confirmed: ~10pt vs. ~7.2pt across two real contracts) and a
   // single hardcoded guess can't fit every one of them.
   const [defaultCheckboxSize, setDefaultCheckboxSize] = useState(DEFAULT_CHECKBOX_SIZE_PDF);
+  // Once the user has explicitly typed a size, that's an explicit instruction
+  // -- honor it exactly and skip the pixel auto-detect (see
+  // detectRealCheckboxRect in PdfPageView.tsx) for new placements entirely,
+  // rather than silently letting a "confident" detection on the real
+  // document's own checkbox keep overriding it. Before that first edit,
+  // auto-detect stays in charge (the whole point of it existing).
+  const [checkboxSizeOverridden, setCheckboxSizeOverridden] = useState(false);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [pendingSignature, setPendingSignature] = useState<string | null>(null);
   const [showPageManager, setShowPageManager] = useState(false);
@@ -405,7 +412,10 @@ export default function PdfEditor({ source, onBack }: Props) {
                   value={defaultCheckboxSize}
                   onChange={(e) => {
                     const n = parseFloat(e.target.value);
-                    if (!Number.isNaN(n)) setDefaultCheckboxSize(Math.min(60, Math.max(4, n)));
+                    if (!Number.isNaN(n)) {
+                      setDefaultCheckboxSize(Math.min(60, Math.max(4, n)));
+                      setCheckboxSizeOverridden(true);
+                    }
                   }}
                   title="Default box size (pt) used when a click can't be auto-measured against a real checkbox on the page"
                   className="w-14 h-7 rounded-full text-center text-[12px] bg-white text-slate-700 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300"
@@ -498,6 +508,7 @@ export default function PdfEditor({ source, onBack }: Props) {
                   checkboxStyle={checkboxStyle}
                   placeChecked={placeChecked}
                   defaultCheckboxSize={defaultCheckboxSize}
+                  checkboxSizeOverridden={checkboxSizeOverridden}
                   pendingSignature={pendingSignature}
                   onAddOp={handleAddOp}
                   onUpdateOp={handleUpdateOp}
