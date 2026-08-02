@@ -1,6 +1,6 @@
 // components/precedents/PrecedentLibraryBrowser.tsx
 // Browse the whole precedent library: search, filter by the taxonomy, and
-// preview a precedent's drafting instructions and fill-in fields.
+// preview the document itself.
 //
 // Distinct from PrecedentsTab.tsx, which is scoped to one matter and exists
 // to ISSUE a document. This is for finding out what the firm has -- before a
@@ -168,7 +168,7 @@ export default function PrecedentLibraryBrowser() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name, description or drafting instructions..."
+            placeholder="Search by name, description or content..."
             className="w-full bg-slate-50 border border-slate-200 rounded-full pl-10 pr-4 py-2.5 text-[12px] outline-none focus:ring-4 focus:ring-indigo-100"
           />
         </div>
@@ -760,14 +760,6 @@ function PreviewModal({
             </div>
           )}
 
-          {precedent.ai_instructions && (
-            <div>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Drafting approach</p>
-              <p className="text-[12px] text-slate-600 leading-relaxed whitespace-pre-wrap">
-                {precedent.ai_instructions}
-              </p>
-            </div>
-          )}
 
           <div>
             <div className="flex items-baseline gap-2 mb-2">
