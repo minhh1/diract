@@ -18,6 +18,7 @@
 // comes out on the firm's page setup, with the firm's headers and footers and
 // the firm's numbering, and only the words are ours.
 import PizZip from "pizzip";
+import { DEED_STYLES } from "@/lib/precedents/deedTemplateStyles";
 
 const MARK = "";
 
@@ -73,7 +74,16 @@ function escapeXml(s: string): string {
 function resolveStyleId(wanted: string, templateStyles: Record<string, string>, byName: Map<string, string>): string | null {
   if (templateStyles[wanted]) return wanted;
   const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return byName.get(normalise(wanted)) ?? null;
+  const direct = byName.get(normalise(wanted));
+  if (direct) return direct;
+  // Fall back to the other names this style is known by, so a template that
+  // predates the generic naming still resolves.
+  const entry = DEED_STYLES.find(s => s.id === wanted || normalise(s.name) === normalise(wanted));
+  for (const alias of entry?.aliases ?? []) {
+    const hit = byName.get(normalise(alias));
+    if (hit) return hit;
+  }
+  return null;
 }
 
 function paragraphXml(styleId: string | null, text: string): string {

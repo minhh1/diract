@@ -36,6 +36,12 @@ export interface DeedStyle {
    * tables aren't needed by every instrument.
    */
   required: boolean;
+  /**
+   * Other names the same style is known by. A firm that already has a deed
+   * template names its styles for itself, and should not have to rename them
+   * to match ours, so those names resolve here too.
+   */
+  aliases?: string[];
 }
 
 /**
@@ -44,27 +50,27 @@ export interface DeedStyle {
  * it never has to rename its own styles to suit us.
  */
 export const DEED_STYLES: DeedStyle[] = [
-  { id: "HLHeading", name: "HL Heading", purpose: "Every heading, whatever it introduces -- Background, Operative Provisions, Schedule, Execution. One heading style, not one per section.", required: true },
-  { id: "HLRecital", name: "HL Recital", purpose: "The recitals themselves, lettered A, B, C. The word \"Background\" above them is a heading, not a recital.", required: true },
-  { id: "HLRecital-Level2", name: "HL Recital - Level 2", purpose: "Sub-recital", required: false },
-  { id: "HLRecital-Level3", name: "HL Recital - Level 3", purpose: "Third-level recital", required: false },
-  { id: "HLList-Level1-Bold", name: "HL List - Level 1 - Bold", purpose: "Numbered clause heading (1, 2, 3)", required: true },
-  { id: "HLList-Level1-NotBold", name: "HL List - Level 1 - Not Bold", purpose: "Level 1 clause text without a heading", required: false },
-  { id: "HLList-Level1-Bold-Nonumbering-Nounderline", name: "HL List - Level 1 - Bold - No numbering - No underline", purpose: "Unnumbered level 1 heading", required: false },
-  { id: "HLList-Level2-Bold", name: "HL List - Level 2 - Bold", purpose: "Sub-clause heading (1.1, 1.2)", required: true },
-  { id: "HLList-Level2-Normal", name: "HL List - Level 2 - Normal", purpose: "Sub-clause body text (1.1, 1.2)", required: true },
-  { id: "HLListLevel2-Nonumbering", name: "HL List Level 2 - No numbering", purpose: "Continuation paragraph at level 2, no number", required: true },
-  { id: "HLListLevel2-NonumberingandBold", name: "HL List Level 2 - No numbering and Bold", purpose: "Bold continuation at level 2", required: false },
-  { id: "HLList-Level3", name: "HL List - Level 3", purpose: "Third level, lettered (a), (b), (c)", required: true },
-  { id: "HLList-Level3-Nonumbering", name: "HL List - Level 3 - No numbering", purpose: "Continuation at level 3", required: false },
-  { id: "HLList-Level4", name: "HL List - Level 4", purpose: "Fourth level, romanised (i), (ii)", required: true },
-  { id: "HLList-Level5", name: "HL List - Level 5", purpose: "Fifth level (I), (II)", required: false },
-  { id: "HLSchedule", name: "HL Schedule", purpose: "Schedule headings, numbered separately from the clauses", required: false },
-  { id: "HLTableDefinition-Bold", name: "HL Table Definition - Bold", purpose: "Defined term in a definitions table", required: false },
-  { id: "HLTableDefinition-NotBold", name: "HL Table Definition - Not Bold", purpose: "Definition text in a definitions table", required: false },
-  { id: "HLTable-Level1", name: "HL Table - Level 1", purpose: "Numbered item inside a table", required: false },
-  { id: "HLTable-Level2", name: "HL Table - Level 2", purpose: "Second-level item inside a table", required: false },
-  { id: "HLOfficeDetails", name: "HL Office Details", purpose: "Small print in the footer block", required: false },
+  { id: "DeedHeading", aliases: ["HL Heading"], name: "Deed Heading", purpose: "Every heading, whatever it introduces -- Background, Operative Provisions, Schedule, Execution. One heading style, not one per section.", required: true },
+  { id: "DeedRecital", aliases: ["HL Recital"], name: "Deed Recital", purpose: "The recitals themselves, lettered A, B, C. The word \"Background\" above them is a heading, not a recital.", required: true },
+  { id: "DeedRecital-Level2", aliases: ["HL Recital - Level 2"], name: "Deed Recital - Level 2", purpose: "Sub-recital", required: false },
+  { id: "DeedRecital-Level3", aliases: ["HL Recital - Level 3"], name: "Deed Recital - Level 3", purpose: "Third-level recital", required: false },
+  { id: "DeedList-Level1-Bold", aliases: ["HL List - Level 1 - Bold"], name: "Deed List - Level 1 - Bold", purpose: "Numbered clause heading (1, 2, 3)", required: true },
+  { id: "DeedList-Level1-NotBold", aliases: ["HL List - Level 1 - Not Bold"], name: "Deed List - Level 1 - Not Bold", purpose: "Level 1 clause text without a heading", required: false },
+  { id: "DeedList-Level1-Bold-NoNumbering", aliases: ["HL List - Level 1 - Bold - No numbering - No underline"], name: "Deed List - Level 1 - Bold - No numbering - No underline", purpose: "Unnumbered level 1 heading", required: false },
+  { id: "DeedList-Level2-Bold", aliases: ["HL List - Level 2 - Bold"], name: "Deed List - Level 2 - Bold", purpose: "Sub-clause heading (1.1, 1.2)", required: true },
+  { id: "DeedList-Level2-Normal", aliases: ["HL List - Level 2 - Normal"], name: "Deed List - Level 2 - Normal", purpose: "Sub-clause body text (1.1, 1.2)", required: true },
+  { id: "DeedList-Level2-NoNumbering", aliases: ["HL List Level 2 - No numbering"], name: "Deed List Level 2 - No numbering", purpose: "Continuation paragraph at level 2, no number", required: true },
+  { id: "DeedList-Level2-NoNumbering-Bold", aliases: ["HL List Level 2 - No numbering and Bold"], name: "Deed List Level 2 - No numbering and Bold", purpose: "Bold continuation at level 2", required: false },
+  { id: "DeedList-Level3", aliases: ["HL List - Level 3"], name: "Deed List - Level 3", purpose: "Third level, lettered (a), (b), (c)", required: true },
+  { id: "DeedList-Level3-NoNumbering", aliases: ["HL List - Level 3 - No numbering"], name: "Deed List - Level 3 - No numbering", purpose: "Continuation at level 3", required: false },
+  { id: "DeedList-Level4", aliases: ["HL List - Level 4"], name: "Deed List - Level 4", purpose: "Fourth level, romanised (i), (ii)", required: true },
+  { id: "DeedList-Level5", aliases: ["HL List - Level 5"], name: "Deed List - Level 5", purpose: "Fifth level (I), (II)", required: false },
+  { id: "DeedSchedule", aliases: ["HL Schedule"], name: "Deed Schedule", purpose: "Schedule headings, numbered separately from the clauses", required: false },
+  { id: "DeedTableDefinition-Bold", aliases: ["HL Table Definition - Bold"], name: "Deed Table Definition - Bold", purpose: "Defined term in a definitions table", required: false },
+  { id: "DeedTableDefinition-NotBold", aliases: ["HL Table Definition - Not Bold"], name: "Deed Table Definition - Not Bold", purpose: "Definition text in a definitions table", required: false },
+  { id: "DeedTable-Level1", aliases: ["HL Table - Level 1"], name: "Deed Table - Level 1", purpose: "Numbered item inside a table", required: false },
+  { id: "DeedTable-Level2", aliases: ["HL Table - Level 2"], name: "Deed Table - Level 2", purpose: "Second-level item inside a table", required: false },
+  { id: "DeedOfficeDetails", aliases: ["HL Office Details"], name: "Deed Office Details", purpose: "Small print in the footer block", required: false },
 ];
 
 export interface DeedTemplateCheck {
@@ -85,8 +91,8 @@ export interface DeedTemplateCheck {
 /**
  * Reads the styles a .docx defines. Matches on style NAME rather than id,
  * because Word derives an id from the name when a style is created in the UI
- * and the two drift -- "HL List - Level 1 - Bold" becomes
- * "HLList-Level1-Bold", but a style created by a different route may not.
+ * and the two drift -- "Deed List - Level 1 - Bold" becomes
+ * "DeedList-Level1-Bold", but a style created by a different route may not.
  * Comparison ignores case and spacing for the same reason.
  */
 export function readDocxStyles(bytes: Buffer): Record<string, string> {
@@ -115,7 +121,12 @@ export function checkDeedTemplate(bytes: Buffer): DeedTemplateCheck {
   const found = readDocxStyles(bytes);
   const have = new Set(Object.values(found).map(normalise));
   const haveIds = new Set(Object.keys(found).map(normalise));
-  const has = (s: DeedStyle) => have.has(normalise(s.name)) || haveIds.has(normalise(s.id));
+  // Aliases too: a firm whose template already names these styles its own way
+  // should not have to rename them to match ours.
+  const has = (s: DeedStyle) =>
+    have.has(normalise(s.name)) ||
+    haveIds.has(normalise(s.id)) ||
+    (s.aliases ?? []).some(a => have.has(normalise(a)) || haveIds.has(normalise(a)));
 
   const missingRequired = DEED_STYLES.filter(s => s.required && !has(s));
   const missingOptional = DEED_STYLES.filter(s => !s.required && !has(s));

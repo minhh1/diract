@@ -153,10 +153,10 @@ export async function buildCourtFormDocx(body: string): Promise<Buffer> {
 
 
 /** Deed style ids that should render as a heading when there is no template. */
-const DEED_HEADING_STYLES = new Set(["HLHeading"]);
+const DEED_HEADING_STYLES = new Set(["DeedHeading"]);
 const DEED_BOLD_STYLES = new Set([
-  "HLList-Level1-Bold", "HLList-Level2-Bold",
-  "HLListLevel2-NonumberingandBold", "HLList-Level1-Bold-Nonumbering-Nounderline",
+  "DeedList-Level1-Bold", "DeedList-Level2-Bold",
+  "DeedList-Level2-NoNumbering-Bold", "DeedList-Level1-Bold-NoNumbering",
 ]);
 
 function hasStyleMarkers(body: string): boolean {
