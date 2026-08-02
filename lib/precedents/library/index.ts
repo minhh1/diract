@@ -40,6 +40,8 @@ import { LITIGATION_COURT_PRECEDENTS } from "./litigationCourt";
 import { EMPLOYMENT_PRECEDENTS } from "./employment";
 import { PROBATE_STATES_PRECEDENTS } from "./probateStates";
 import { CRIMINAL_STATES_PRECEDENTS } from "./criminalStates";
+import { FAMILY_LAW_COURT_PRECEDENTS } from "./familyLawCourt";
+import { CONVEYANCING_EXTRA_PRECEDENTS } from "./conveyancingExtra";
 
 export const PRECEDENT_LIBRARY: PrecedentSeed[] = [
   ...CLIENT_CARE_PRECEDENTS,
@@ -59,6 +61,8 @@ export const PRECEDENT_LIBRARY: PrecedentSeed[] = [
   ...EMPLOYMENT_PRECEDENTS,
   ...PROBATE_STATES_PRECEDENTS,
   ...CRIMINAL_STATES_PRECEDENTS,
+  ...FAMILY_LAW_COURT_PRECEDENTS,
+  ...CONVEYANCING_EXTRA_PRECEDENTS,
 ];
 
 // Fails loudly at import time rather than silently seeding a duplicate key
