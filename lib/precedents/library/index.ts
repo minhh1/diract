@@ -42,6 +42,8 @@ import { COURT_FCFCOA_PRECEDENTS } from "./courtFcfcoa";
 import { COURT_SUBMISSIONS_PRECEDENTS } from "./courtSubmissions";
 import { DEEDS_BATCH_1 } from "./deedsBatch1";
 import { AGREEMENTS_BATCH_1 } from "./agreementsBatch1";
+import { AGREEMENTS_BATCH_2 } from "./agreementsBatch2";
+import { AGREEMENTS_BATCH_3 } from "./agreementsBatch3";
 import { EMPLOYMENT_PRECEDENTS } from "./employment";
 import { PROBATE_STATES_PRECEDENTS } from "./probateStates";
 import { CRIMINAL_STATES_PRECEDENTS } from "./criminalStates";
@@ -77,6 +79,8 @@ export const PRECEDENT_LIBRARY: PrecedentSeed[] = [
   ...COURT_SUBMISSIONS_PRECEDENTS,
   ...DEEDS_BATCH_1,
   ...AGREEMENTS_BATCH_1,
+  ...AGREEMENTS_BATCH_2,
+  ...AGREEMENTS_BATCH_3,
   ...EMPLOYMENT_PRECEDENTS,
   ...PROBATE_STATES_PRECEDENTS,
   ...CRIMINAL_STATES_PRECEDENTS,

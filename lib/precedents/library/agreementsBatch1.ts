@@ -10,9 +10,10 @@
 // words of execution are "Executed by", not "Signed, sealed and delivered":
 // sealing and delivery are what make a deed a deed, and putting them on an
 // agreement is a drafting error rather than a flourish. And the general
-// provisions say "this agreement" throughout. Everything else -- the styled
-// paragraphs, the signing blocks -- is shared with the deeds through
-// instrumentParts.ts.
+// provisions say "this agreement" throughout. The styled paragraph helper and
+// signing blocks come from instrumentParts.ts (shared with the deeds); the
+// parts specific to agreements -- opening, interpretation, general provisions,
+// execution -- come from agreementParts.ts (shared across agreement batches).
 //
 // documentType is "deed" even so. It is the rendering hint that routes a
 // document through the firm's own deed template (see the download route), and
@@ -26,156 +27,8 @@
 // installPrecedentLibrary only ever inserts new keys and a firm that already
 // installed the stub would otherwise never see the full draft.
 import { field, type PrecedentSeed } from "./types";
-import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE } from "./instrumentParts";
-import { executedAsLine } from "@/lib/precedents/executionClauses";
-import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
-
-interface Party {
-  /** Field key, which also prefixes the short-name field. */
-  key: string;
-  /** How the party is described when the fields are filled in. */
-  label: string;
-  example: string;
-  shortExample: string;
-}
-
-/** Date, parties and recitals. */
-function opening(a: Party, b: Party, recitals: BodyTemplateSegment[]): BodyTemplateSegment[] {
-  const partyBlock = (p: Party) => [
-    ...L(null, [field(p.key, `${p.label}: name, ACN/ABN, address and email`, p.example)]),
-    ...L(null, ["(", field(`${p.key}_short`, `${p.label} short name`, p.shortExample), ")"]),
-    ...L(null, [""]),
-  ];
-  return [
-    ...L(null, ["Date: ", field("agreement_date", "Date of the agreement", "12 August 2026")]),
-    ...L(null, [""]),
-    ...L("DeedHeading", ["Parties"]),
-    ...partyBlock(a),
-    ...partyBlock(b),
-    ...L("DeedHeading", ["Background"]),
-    ...recitals,
-    ...L(null, [""]),
-    ...L("DeedHeading", ["Operative Provisions"]),
-  ];
-}
-
-/**
- * The four carve-outs from the definition of Confidential Information.
- *
- * Without them the obligation is unworkable -- it would bite on information
- * the recipient already had, or that everyone has, and no recipient can run a
- * business under that. They are the same in both agreements, so they are
- * written once.
- */
-function confidentialInformationExceptions(): BodyTemplateSegment[] {
-  return [
-    ...L("DeedList-Level4", [
-      "is, or becomes, generally available to the public other than through a breach of this agreement or of any other obligation of confidence;",
-    ]),
-    ...L("DeedList-Level4", [
-      "the Recipient can show by written records that it lawfully held before it was disclosed, free of any obligation of confidence;",
-    ]),
-    ...L("DeedList-Level4", [
-      "the Recipient develops independently without using or referring to the Confidential Information; or",
-    ]),
-    ...L("DeedList-Level4", [
-      "the Recipient lawfully receives from a third party who is entitled to disclose it without restriction.",
-    ]),
-  ];
-}
-
-/** The interpretation rules, identical in both agreements. */
-function interpretation(): BodyTemplateSegment[] {
-  return [
-    ...L("DeedList-Level1-Bold", ["Interpretation"]),
-    ...L("DeedList-Level2-NoNumbering", ["In this agreement, unless the context requires otherwise:"]),
-    ...L("DeedList-Level3", ["the singular includes the plural and the reverse;"]),
-    ...L("DeedList-Level3", [
-      "a reference to a person includes a body corporate, an unincorporated body, a partnership, a trust and a government agency;",
-    ]),
-    ...L("DeedList-Level3", ['"includes" and "including" are not words of limitation;']),
-    ...L("DeedList-Level3", [
-      "a reference to legislation includes that legislation as amended, replaced or re-enacted;",
-    ]),
-    ...L("DeedList-Level3", ["headings are for convenience only and do not affect interpretation; and"]),
-    ...L("DeedList-Level3", [
-      "no rule of construction applies to the disadvantage of a party because that party prepared this agreement.",
-    ]),
-  ];
-}
-
-/** Notices and the boilerplate both agreements end with. */
-function generalProvisions(): BodyTemplateSegment[] {
-  return [
-    ...L("DeedList-Level1-Bold", ["Notices"]),
-    ...L("DeedList-Level2-Normal", [
-      "A notice under this agreement must be in writing and sent to the address or email address of the party set out at the beginning of this agreement, or to any other address that party notifies in writing.",
-    ]),
-    ...L("DeedList-Level2-Normal", ["A notice is taken to be received:"]),
-    ...L("DeedList-Level3", ["if delivered by hand, on delivery;"]),
-    ...L("DeedList-Level3", ["if sent by post within Australia, on the third Business Day after posting; and"]),
-    ...L("DeedList-Level3", [
-      "if sent by email, at the time the email enters the addressee's information system, unless the sender receives an automated message that it has not been delivered.",
-    ]),
-    ...L("DeedList-Level1-Bold", ["General"]),
-    ...L("DeedList-Level2-Bold", ["Entire agreement"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "This agreement records the entire agreement between the parties about its subject matter and supersedes all previous negotiations, understandings and agreements about that subject matter.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["Variation"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "No variation of this agreement is effective unless it is in writing and signed by each party.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["Waiver"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "A right under this agreement may only be waived in writing signed by the party giving the waiver. Failure to exercise a right, or delay in exercising it, is not a waiver of that right or of any other right.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["Assignment"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "A party must not assign or otherwise deal with its rights under this agreement without the prior written consent of the other party.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["Severance"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "If a provision of this agreement is void, voidable or unenforceable, it is to be read down so far as necessary to make it valid, and if it cannot be read down it is severed, without affecting the validity of the rest of this agreement.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["No partnership or agency"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "Nothing in this agreement creates a partnership, joint venture, employment or agency relationship between the parties.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["Counterparts"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "This agreement may be signed in counterparts, including by exchange of signed copies sent by email, and all counterparts together constitute one agreement.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["Costs"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "Each party bears its own costs of preparing and signing this agreement.",
-    ]),
-    ...L("DeedList-Level2-Bold", ["Governing law"]),
-    ...L("DeedList-Level2-NoNumbering", [
-      "This agreement is governed by the law of ",
-      field("jurisdiction", "Governing law", "New South Wales"),
-      ", and each party submits to the non-exclusive jurisdiction of the courts of that place and of the courts of appeal from them.",
-    ]),
-  ];
-}
-
-/** The signing page. Both parties are companies in the example; the note tells the drafter to swap either block. */
-function execution(firstPartyLabel: string, secondPartyLabel: string): BodyTemplateSegment[] {
-  return [
-    ...L(null, [""]),
-    ...L("DeedHeading", ["Execution"]),
-    ...L(null, [executedAsLine("agreement")]),
-    ...L(null, [""]),
-    // An individual's block differs between a deed and an agreement, and a
-    // company's turns on whether it signs under s 127(1) or s 126, so the
-    // choice is put to the solicitor -- see executionClauses.ts.
-    ...L(null, [CHOOSE_EXECUTION_BLOCK_NOTE]),
-    ...L(null, [""]),
-    ...executionLines("company_127_two_officers", "agreement", firstPartyLabel),
-    ...L(null, [""]),
-    ...executionLines("company_127_two_officers", "agreement", secondPartyLabel),
-  ];
-}
+import { L } from "./instrumentParts";
+import { opening, interpretation, generalProvisions, execution, confidentialInformationExceptions } from "./agreementParts";
 
 export const AGREEMENTS_BATCH_1: PrecedentSeed[] = [
   {

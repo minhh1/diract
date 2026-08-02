@@ -28,46 +28,12 @@ import { text, field, type PrecedentSeed } from "./types";
 const COMMERCIAL = ["Commercial"];
 
 export const COMMERCIAL_AGREEMENT_PRECEDENTS: PrecedentSeed[] = [
-  // Confidentiality lived here as two stubs, cagr.nda_mutual and
-  // cagr.nda_one_way, each carrying a heading and "[Full agreement to be
-  // drafted]". Both are now written out in full in agreementsBatch1.ts under
-  // new keys, and the stubs are gone so a firm installing today gets one
-  // confidentiality agreement of each kind rather than two.
-
-  // ── Services and consultancy ────────────────────────────────────
-  {
-    key: "cagr.consultancy_agreement",
-    name: "Consultancy Agreement",
-    description: "Engagement of a consultant, with IP, confidentiality and contractor-status protections.",
-    category: "Commercial",
-    subcategory: "Services",
-    documentType: "deed",
-    matterTypes: COMMERCIAL,
-    aiInstructions:
-      "Draft a consultancy agreement. Include: scope of services and deliverables (by reference to a schedule so the agreement need not be redrafted for each engagement); fees, expenses and invoicing; term and termination, including for convenience on notice and immediately for breach or insolvency; intellectual property, assigning IP created in performing the services to the principal with a licence back for the consultant's general know-how; confidentiality; the consultant's status as an independent contractor and not an employee, with an indemnity for tax and superannuation if the characterisation is challenged; insurance requirements; restraint where appropriate; and liability caps. Flag in the drafting that a contractor clause does not determine the true characterisation -- the substance of the relationship governs, and superannuation may be payable to an individual contracting principally for their labour regardless of what the agreement says.",
-  },
-  {
-    key: "cagr.independent_contractor_agreement",
-    name: "Independent Contractor Agreement",
-    description: "Contractor engagement with sham-contracting and superannuation risk addressed.",
-    category: "Commercial",
-    subcategory: "Services",
-    documentType: "deed",
-    matterTypes: COMMERCIAL,
-    aiInstructions:
-      "Draft an independent contractor agreement. Cover services, fees, term, IP assignment, confidentiality, insurance and termination. Critically, address the characterisation risk directly in the drafting notes: label alone does not determine status; the multi-factor test looks at control, ability to delegate, provision of tools, commercial risk and integration into the business; sham contracting attracts penalties; and superannuation may be payable where the contract is principally for the person's labour, even for a genuine contractor. Where the contractor operates through a company, note that this reduces but does not eliminate the risk.",
-  },
-  {
-    key: "cagr.terms_of_trade",
-    name: "Terms and Conditions of Trade (Sale of Goods and Services)",
-    description: "Standard trading terms including retention of title and PPSR protection.",
-    category: "Commercial",
-    subcategory: "Trading Terms",
-    documentType: "deed",
-    matterTypes: COMMERCIAL,
-    aiInstructions:
-      "Draft terms and conditions of trade for a supplier. Include: application of the terms and how they are incorporated (this is where most terms fail -- they must be brought to the customer's attention before the contract is formed, not printed on the back of the invoice); price and GST; payment terms, interest on overdue amounts and recovery costs; delivery and risk; RETENTION OF TITLE, drafted so it is registrable as a purchase money security interest on the PPSR, together with a charging clause and consent to registration; warranties and the limits on excluding them given the Australian Consumer Law consumer guarantees cannot be contracted out of; limitation of liability; personal guarantee from directors where the customer is a company; and termination. Emphasise that retention of title is worthless unless registered on the PPSR within the statutory window.",
-  },
+  // Five agreements lived here as stubs -- confidentiality (mutual and one
+  // way), consultancy, independent contractor and terms of trade -- each
+  // carrying only aiInstructions and no body. All five are now written out in
+  // full in agreementsBatch1.ts and agreementsBatch2.ts under new keys, and
+  // the stubs are gone so a firm installing today gets one of each rather
+  // than a stub alongside the full draft.
 
   // ── Deal documents ──────────────────────────────────────────────
   {
@@ -104,31 +70,11 @@ export const COMMERCIAL_AGREEMENT_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Check the binding/non-binding split is unambiguous. A heads of agreement that is silent on this, or that uses language of commitment in the commercial terms, can be held to be a binding contract.",
   },
-  {
-    key: "cagr.share_sale_agreement",
-    name: "Share Sale Agreement",
-    description: "Sale of shares in a company, with warranties, conditions and completion mechanics.",
-    category: "Commercial",
-    subcategory: "Business Sale",
-    documentType: "deed",
-    matterTypes: COMMERCIAL,
-    aiInstructions:
-      "Draft a share sale agreement. Include: parties and the shares being sold; purchase price and any adjustment mechanism (completion accounts or locked box); conditions precedent (regulatory approvals, third party consents, change of control consents under material contracts and leases); conduct of the business between signing and completion; completion mechanics and deliverables (share transfers, resignations, minute books, ASIC forms, releases of guarantees); warranties from the seller as to title, capacity, accounts, tax, litigation, employees, IP and compliance; disclosure against warranties and the disclosure letter; limitations on warranty claims (time limits, de minimis, cap); tax indemnity; restraint; and confidentiality. Note in the drafting that a share sale transfers liabilities with the company, unlike an asset sale, so buyer-side due diligence and warranty protection matter far more.",
-    requiresReview: true,
-    reviewNote:
-      "Duty on a transfer of shares differs by state and by whether the company is land-rich. Confirm the duty position and any landholder duty exposure before completion.",
-  },
-  {
-    key: "cagr.asset_sale_agreement",
-    name: "Asset Sale Agreement",
-    description: "Sale of business assets rather than shares, with employee and contract transfer provisions.",
-    category: "Commercial",
-    subcategory: "Business Sale",
-    documentType: "deed",
-    matterTypes: COMMERCIAL,
-    aiInstructions:
-      "Draft an asset sale agreement. Include: identification of the assets sold and, importantly, the assets and liabilities EXCLUDED; apportionment of the price across goodwill, plant and equipment, and stock; GST and the going concern exemption with its conditions expressly recorded as required; conditions precedent including landlord consent to lease assignment and any licence transfer; treatment of employees (whether the buyer offers employment, and how accrued entitlements are adjusted); assignment or novation of contracts; PPSR releases; warranties; restraint; and completion deliverables. Note that unlike a share sale, historical liabilities generally stay with the seller, which is why sellers usually prefer share sales and buyers usually prefer asset sales.",
-  },
+  // Share Sale Agreement and Asset Sale Agreement lived here as stubs
+  // (cagr.share_sale_agreement, cagr.asset_sale_agreement). Both are now
+  // written out in full in agreementsBatch3.ts under new keys, and the stubs
+  // are gone so a firm installing today gets one of each rather than a stub
+  // alongside the full draft.
   {
     key: "cagr.restraint_of_trade_deed",
     name: "Restraint of Trade Deed",
