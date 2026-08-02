@@ -54,16 +54,22 @@ function generalProvisions(): BodyTemplateSegment[] {
     ...L("DeedHeading", ["Execution"]),
     ...L(null, [executedAsLine("deed")]),
     ...L(null, [""]),
-    // The signing block depends on what each party is, not on the deed, so
-    // the party kind is asked for rather than assumed. See
-    // lib/precedents/executionClauses.ts -- an individual signs a deed
-    // differently from an agreement, and a company's block turns on whether
-    // it signs under s 127(1) or s 126.
-    ...L(null, [CHOOSE_EXECUTION_BLOCK_NOTE]),
+    // All four blocks are laid out, not one guessed at. Which a party uses
+    // turns on what that party IS -- a natural person, or a company signing
+    // under s 127(1) or s 126 -- and the precedent cannot know that. Deleting
+    // the three that don't apply is quick; noticing that the wrong statutory
+    // words are under a party's name is not.
+    ...L(null, ["[Keep the block that fits each party and delete the rest.]"]),
     ...L(null, [""]),
-    ...executionLines("individual", "deed", "First party"),
+    ...executionLines("individual", "deed", "Individual party"),
     ...L(null, [""]),
-    ...executionLines("company_127_two_officers", "deed", "Second party"),
+    ...executionLines("individual", "agreement", "Individual party"),
+    ...L(null, [""]),
+    ...executionLines("company_127_two_officers", "deed", "Company party"),
+    ...L(null, [""]),
+    ...executionLines("company_127_sole_director", "deed", "Company party"),
+    ...L(null, [""]),
+    ...executionLines("company_126_authorised", "deed", "Company party"),
   ];
 }
 

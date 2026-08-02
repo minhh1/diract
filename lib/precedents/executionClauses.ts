@@ -220,3 +220,23 @@ export function executionBlockKey(text: string): string | null {
     ? "individual_deed"
     : "individual_agreement";
 }
+
+/**
+ * Replaces the party named in an uploaded block with a placeholder.
+ *
+ * A firm's execution page is a real signing page from a real matter, so the
+ * blocks arrive with actual names in them ("Executed by Anh Thu Doan in the
+ * presence of"). Used verbatim they would put a stranger's name on every
+ * deed, so the name is found and swapped out. It appears in the opening line
+ * between the verb and the operative words, and again under the signature
+ * line ("Signature of Anh Thu Doan").
+ */
+export function parameteriseBlock(lines: string[], placeholder: string): string[] {
+  const head = lines[0] ?? "";
+  const m = /^\s*(?:executed by|signed,?\s+sealed\s+and\s+delivered\s+by)\s+(.+?)\s+(?:in the presence of|in accordance with)/i.exec(head);
+  const name = m?.[1]?.trim();
+  if (!name) return lines;
+  // Escape for use in a regex; a company name can contain "." and "(".
+  const pattern = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+  return lines.map(l => l.replace(pattern, placeholder));
+}
