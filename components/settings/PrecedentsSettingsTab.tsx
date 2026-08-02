@@ -80,7 +80,12 @@ interface Precedent {
   description: string | null;
   ai_instructions: string | null;
   display_order: number;
+  category?: string | null;
 }
+
+// Matches PrecedentsTab.tsx's own fallback label for a null category, so a
+// precedent groups the same way whichever screen you're looking at it from.
+const UNCATEGORISED = "Other";
 
 interface StaffMember {
   userId: string;
@@ -669,6 +674,11 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
   const [uploadingTemplates, setUploadingTemplates] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const uploadElapsed = useElapsedSeconds(uploadingTemplates);
+  // null = no filter applied ("All"). The library is 250+ precedents once
+  // the seeded set is installed, so filtering to just one category -- most
+  // usefully "Your Templates", the firm's own hand-written or uploaded ones
+  // -- is what makes this list navigable rather than one long scroll.
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/precedents?recordTable=projects");
@@ -734,6 +744,19 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
     load();
   };
 
+  // Order of first appearance, which is already category-then-display_order
+  // from the API -- so chips come out in the same sequence the flat list
+  // itself groups into, "Your Templates" included wherever it naturally
+  // sorts alongside the seeded library's own categories.
+  const categories: string[] = [];
+  for (const p of precedents) {
+    const c = p.category || UNCATEGORISED;
+    if (!categories.includes(c)) categories.push(c);
+  }
+  const filteredPrecedents = categoryFilter
+    ? precedents.filter(p => (p.category || UNCATEGORISED) === categoryFilter)
+    : precedents;
+
   if (loading) return null;
 
   return (
@@ -774,9 +797,31 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
 
       <PrecedentLibraryTopUp isAdmin={isAdmin} variant="panel" onInstalled={load} className="mb-4" />
 
+      {categories.length > 1 && (
+        <div className="flex items-center gap-1.5 mb-4 overflow-x-auto pb-1">
+          <button onClick={() => setCategoryFilter(null)}
+            className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors ${
+              categoryFilter === null ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}>
+            All ({precedents.length})
+          </button>
+          {categories.map(c => (
+            <button key={c} onClick={() => setCategoryFilter(c)}
+              className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors ${
+                categoryFilter === c ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}>
+              {c} ({precedents.filter(p => (p.category || UNCATEGORISED) === c).length})
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-3">
         {precedents.length === 0 && !showCreate && (
           <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">No precedents yet</p>
+        )}
+        {precedents.length > 0 && filteredPrecedents.length === 0 && (
+          <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest p-8">No precedents in this category</p>
         )}
         {showCreate && (
           <PrecedentCard
@@ -788,12 +833,12 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
             onDelete={() => setShowCreate(false)}
           />
         )}
-        {precedents.map((p, i) => (
+        {filteredPrecedents.map((p, i) => (
           <div key={p.id} className="flex items-start gap-2">
             {isAdmin && (
               <div className="flex flex-col pt-6 shrink-0">
                 <button onClick={() => move(p.id, -1)} disabled={i === 0} className="text-slate-300 hover:text-indigo-600 disabled:opacity-20"><ChevronUp size={13} /></button>
-                <button onClick={() => move(p.id, 1)} disabled={i === precedents.length - 1} className="text-slate-300 hover:text-indigo-600 disabled:opacity-20"><ChevronDown size={13} /></button>
+                <button onClick={() => move(p.id, 1)} disabled={i === filteredPrecedents.length - 1} className="text-slate-300 hover:text-indigo-600 disabled:opacity-20"><ChevronDown size={13} /></button>
               </div>
             )}
             <div className="flex-1">

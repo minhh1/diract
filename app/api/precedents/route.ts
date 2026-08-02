@@ -7,6 +7,7 @@
 // one is admin-only (see app/api/precedents/[id]/route.ts).
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { hasLawFirmTemplate } from "@/lib/precedents/installLibrary";
 
 export async function GET(req: NextRequest) {
   const auth = await authorizeCompanyMember();
@@ -70,6 +71,15 @@ export async function POST(req: NextRequest) {
   if (auth.error) return auth.error;
   const { admin, user, companyId } = auth;
 
+  // Precedents is a Law Firm-template-exclusive feature (its tab/menu entry
+  // is hidden from every other tenant -- see Sidebar.tsx/settings/page.tsx/
+  // RecordDashboard.tsx). Guard the manual-add API too, not just the UI, so
+  // it can't be used to create a row that then flips those presence-based
+  // tab gates on for a company that was never meant to have this feature.
+  if (!(await hasLawFirmTemplate(admin, companyId))) {
+    return NextResponse.json({ error: "Precedents are only available to companies on the Law Firm template" }, { status: 403 });
+  }
+
   let body: any;
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
@@ -81,15 +91,24 @@ export async function POST(req: NextRequest) {
     .from("precedents").select("display_order").eq("company_id", companyId).order("display_order", { ascending: false }).limit(1).maybeSingle();
   const nextOrder = (maxOrderRow?.display_order ?? -1) + 1;
 
+  // Defaults to its own category rather than landing in PrecedentsTab's
+  // catch-all "Other" group -- a firm's own hand-written or uploaded
+  // precedents are a meaningfully different thing from the seeded library
+  // (no library_key, no jurisdiction/matter-type scoping) and are worth
+  // being able to filter to as their own group, not indistinguishable from
+  // whatever else happened to have no category.
+  const category = body?.category ? String(body.category) : "Your Templates";
+
   const { data, error } = await admin.from("precedents").insert({
     company_id: companyId,
     record_table: String(body?.recordTable || "projects"),
     name,
     description: body?.description ? String(body.description) : null,
     ai_instructions: body?.aiInstructions ? String(body.aiInstructions) : null,
+    category,
     display_order: nextOrder,
     created_by: user.id,
-  }).select("id, name, description, ai_instructions, display_order, created_at").single();
+  }).select("id, name, description, ai_instructions, category, display_order, created_at").single();
 
   if (error || !data) return NextResponse.json({ error: error?.message || "Failed to create precedent" }, { status: 500 });
   return NextResponse.json({ ok: true, precedent: data });
