@@ -452,11 +452,13 @@ export default function PdfPageView({
   const onAddOpRef = useRef(onAddOp);
   const onDeleteOpRef = useRef(onDeleteOp);
   const onUpdateOpRef = useRef(onUpdateOp);
+  const checkboxStyleRef = useRef(checkboxStyle);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
   useEffect(() => { opsRef.current = ops; }, [ops]);
   useEffect(() => { onAddOpRef.current = onAddOp; }, [onAddOp]);
   useEffect(() => { onDeleteOpRef.current = onDeleteOp; }, [onDeleteOp]);
   useEffect(() => { onUpdateOpRef.current = onUpdateOp; }, [onUpdateOp]);
+  useEffect(() => { checkboxStyleRef.current = checkboxStyle; }, [checkboxStyle]);
 
   const viewport = useMemo(() => pdfPage.getViewport({ scale }), [pdfPage, scale]);
   const pageOps = useMemo(() => ops.filter((o) => o.page === pageIndex), [ops, pageIndex]);
@@ -677,6 +679,7 @@ export default function PdfPageView({
       width: boxSize,
       height: boxSize,
       checked: !wasChecked,
+      style: checkboxStyleRef.current,
     });
   }
 
@@ -773,17 +776,50 @@ export default function PdfPageView({
       setTextBoxDraft({ screenX: pos.x, screenY: pos.y, pdfX, pdfY });
       setTextBoxValue("");
     } else if (activeTool === "checkbox") {
+      const pos = overlayPos(e);
+      const [pdfX, pdfY] = viewport.convertToPdfPoint(pos.x, pos.y);
+      // Clicking back onto a checkbox this tool ALREADY placed (easy to do on
+      // a form with a whole grid of them, one click apart) toggles that one
+      // instead of stacking a second op on top of it -- hit-tested against
+      // the same padded footprint the checkbox actually renders/whites out
+      // to, not just its bare 10pt box, so this is forgiving of a slightly
+      // imprecise re-click the same way the box's own whiteout already is.
+      const hit = pageOps.find((existing): existing is PdfEditOp & { type: "checkbox" } =>
+        existing.type === "checkbox" &&
+        pdfX >= existing.x - CHECKBOX_WHITEOUT_PAD_X_PDF && pdfX <= existing.x + existing.width + CHECKBOX_WHITEOUT_PAD_X_PDF &&
+        pdfY >= existing.y - CHECKBOX_WHITEOUT_PAD_Y_PDF && pdfY <= existing.y + existing.height + CHECKBOX_WHITEOUT_PAD_Y_PDF
+      );
+      if (hit) {
+        onUpdateOp(hit.id, { checked: !hit.checked });
+        return;
+      }
+      // Otherwise, before falling back to a generic click-centered box, check
+      // whether this click actually landed on a REAL checkbox glyph pdf.js
+      // found in the text layer (rare for a vector-drawn/scanned form -- most
+      // real contracts have neither, see CheckboxOp's doc comment -- but some
+      // documents genuinely do use one). If so, "identify" and use THAT
+      // glyph's own real bounding box via the same toggleCheckbox the Select
+      // tool's own span click listener already calls, rather than guessing a
+      // default-sized box at the click point -- its geometry is exact where a
+      // guess wouldn't be, and its current checked/unchecked state (from the
+      // glyph's own original character, e.g. ☒ vs ☐) is known where a fresh
+      // guess would just default to placeChecked instead.
+      const glyphIndex = textItemsRef.current.findIndex((item, i) => {
+        if (!item || !isCheckboxGlyph(textDivsRef.current[i]?.dataset.originalText || item.str)) return false;
+        const x0 = item.transform[4], y0 = item.transform[5];
+        return pdfX >= x0 - 2 && pdfX <= x0 + item.width + 2 && pdfY >= y0 - item.height * 0.3 && pdfY <= y0 + item.height * 1.1;
+      });
+      if (glyphIndex !== -1) {
+        toggleCheckbox(glyphIndex);
+        return;
+      }
       // Places a checked box centered on the click point -- sidesteps
       // detecting the source document's own checkbox entirely (most real
       // contracts draw theirs as vector line-art or a scanned image, neither
-      // of which pdf.js's text layer can see -- see CheckboxOp's doc comment).
-      // Starts checked by default (placing one is almost always "check this
-      // box") or unchecked if the toolbar's "Empty box" choice is active
-      // (e.g. to visually uncheck a box the source document already has
-      // marked) -- either way it's still just a click away from the other
-      // state via the render block's own click handler below.
-      const pos = overlayPos(e);
-      const [pdfX, pdfY] = viewport.convertToPdfPoint(pos.x, pos.y);
+      // of which pdf.js's text layer can see). Starts checked by default
+      // (placing one is almost always "check this box") or unchecked if the
+      // toolbar's "Empty box" choice is active (e.g. to visually uncheck a
+      // box the source document already has marked).
       const size = DEFAULT_CHECKBOX_SIZE_PDF;
       const op: CheckboxOp = {
         id: crypto.randomUUID(), type: "checkbox", page: pageIndex,
@@ -791,7 +827,11 @@ export default function PdfPageView({
         style: checkboxStyle,
       };
       onAddOp(op);
-      onPlacementComplete();
+      // Deliberately NOT onPlacementComplete() -- unlike a textbox or
+      // signature (each a one-off placement that's done once you've typed/
+      // signed), a real form usually has many checkboxes to get through in a
+      // row. Staying in this tool (same as Highlight/Draw already do) means
+      // one click each instead of re-selecting "Add checkbox" every time.
     } else if (activeTool === "signature" && pendingSignature) {
       const pos = overlayPos(e);
       const [pdfX, pdfY] = viewport.convertToPdfPoint(pos.x, pos.y);
@@ -989,8 +1029,15 @@ export default function PdfPageView({
               }}
             >
               <div style={{
+                // No overflow:hidden here -- FILL_RATIO above deliberately
+                // sizes the glyph a little BIGGER than r.width/r.height so it
+                // reads as "filling" the box; clipping that back down to fit
+                // exactly would cut off the very edges (most visibly the top
+                // border line) that overflow was there to draw in the first
+                // place. The surrounding whiteout padding already has room
+                // for it -- that's what it's calibrated for.
                 position: "absolute", left: padX, top: padY, width: r.width, height: r.height,
-                display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
+                display: "flex", alignItems: "center", justifyContent: "center",
                 fontFamily: CHECKBOX_FONT_FAMILY, fontSize: fontSizePx, lineHeight: 1, color: "#0f172a",
                 pointerEvents: "none",
               }}>
