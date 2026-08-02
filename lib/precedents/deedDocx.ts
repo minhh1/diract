@@ -387,12 +387,33 @@ function columnTableXml(rows: string): string {
     `<w:tblGrid><w:gridCol w:w="4513"/><w:gridCol w:w="4513"/></w:tblGrid>${rows}</w:tbl>`;
 }
 
+/**
+ * A definitions clause reads "Term means ..." or "Term has the meaning given
+ * in ...", with the defined term as the first words of the paragraph. Bolding
+ * it is what lets a reader scan the Definitions clause for the term they're
+ * after, rather than reading every line start to finish. Anchored to the
+ * start of the paragraph, so an unrelated sentence that happens to use
+ * "means" mid-way through is never affected -- a definition is the only thing
+ * that opens this way in this library's content.
+ */
+const DEFINED_TERM_RE = /^([^]+?)(\s+(?:means\b|has the meaning\b)[^]*)$/;
+
+function runsXml(text: string): string {
+  const m = DEFINED_TERM_RE.exec(text);
+  if (!m) return `<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+  const [, term, rest] = m;
+  return (
+    `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXml(term)}</w:t></w:r>` +
+    `<w:r><w:t xml:space="preserve">${escapeXml(rest)}</w:t></w:r>`
+  );
+}
+
 function paragraphXml(styleId: string | null, text: string): string {
   const pPr = styleId
     ? `<w:pPr><w:pStyle w:val="${escapeXml(styleId)}"/>${indentXml(styleId)}</w:pPr>`
     : "";
   if (!text) return `<w:p>${pPr}</w:p>`;
-  return `<w:p>${pPr}<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+  return `<w:p>${pPr}${runsXml(text)}</w:p>`;
 }
 
 /**
