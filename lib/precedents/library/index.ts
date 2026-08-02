@@ -39,6 +39,7 @@ import { COMMERCIAL_PRECEDENTS } from "./commercial";
 import { LITIGATION_COURT_PRECEDENTS } from "./litigationCourt";
 import { COURT_NSW_UCPR_PRECEDENTS } from "./courtNswUcpr";
 import { COURT_FCFCOA_PRECEDENTS } from "./courtFcfcoa";
+import { COURT_SUBMISSIONS_PRECEDENTS } from "./courtSubmissions";
 import { EMPLOYMENT_PRECEDENTS } from "./employment";
 import { PROBATE_STATES_PRECEDENTS } from "./probateStates";
 import { CRIMINAL_STATES_PRECEDENTS } from "./criminalStates";
@@ -71,6 +72,7 @@ export const PRECEDENT_LIBRARY: PrecedentSeed[] = [
   ...LITIGATION_COURT_PRECEDENTS,
   ...COURT_NSW_UCPR_PRECEDENTS,
   ...COURT_FCFCOA_PRECEDENTS,
+  ...COURT_SUBMISSIONS_PRECEDENTS,
   ...EMPLOYMENT_PRECEDENTS,
   ...PROBATE_STATES_PRECEDENTS,
   ...CRIMINAL_STATES_PRECEDENTS,

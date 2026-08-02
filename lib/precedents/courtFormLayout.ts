@@ -55,6 +55,10 @@ const FORM_LABELS = new Set([
   "witness capacity", "print name and lawyer's code",
   "signature of interpreter", "interpreter's full name", "interpreter's address",
   "filed in",
+  // Submissions headers
+  "matter", "case number", "date of hearing", "date of sentence",
+  "file number", "applicant", "respondent", "prepared for",
+  "court and division", "date",
   "person affected by orders sought", "order for discovery", "made on",
 ]);
 
@@ -96,6 +100,14 @@ const FORM_SECTIONS = new Set([
   "about the parties", "about the independent children's lawyer (if any)",
   "about you (the deponent)", "evidence", "signature",
   "alternative jurat for non-english speaking affidavit",
+  // Submissions and outlines, which have no prescribed form but do have a
+  // settled shape the bench expects.
+  "the application", "show cause", "unacceptable risk", "matters under s 18",
+  "conditions proposed", "the offence", "objective seriousness",
+  "purposes of sentencing (s 3a)", "aggravating factors (s 21a(2))",
+  "mitigating factors (s 21a(3))", "plea of guilty (s 25d)",
+  "sentence contended for", "orders sought", "issues in dispute", "agreed",
+  "risk", "evidence relied on", "chronology",
 ]);
 
 export type Block =
