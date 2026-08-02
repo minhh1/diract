@@ -666,6 +666,9 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
   const [precedents, setPrecedents] = useState<Precedent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [uploadingTemplates, setUploadingTemplates] = useState(false);
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+  const uploadElapsed = useElapsedSeconds(uploadingTemplates);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/precedents?recordTable=projects");
@@ -675,6 +678,39 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Lets a firm bring in documents it already has rather than starting every
+  // precedent from a blank form. Each file becomes its own precedent -- named
+  // from the filename -- and is immediately uploaded as that precedent's first
+  // body-template example, reusing the same detection pipeline as manually
+  // adding a precedent and then uploading an example under it (see
+  // BodyTemplateSection below). One file failing to parse doesn't stop the
+  // rest; each is created and uploaded independently and errors are collected.
+  const handleUploadTemplates = async (fileList: FileList | null) => {
+    if (!fileList || !fileList.length) return;
+    setUploadingTemplates(true);
+    setUploadErrors([]);
+    const errors: string[] = [];
+    for (const file of Array.from(fileList)) {
+      const name = file.name.replace(/\.(docx|doc)$/i, "").replace(/[_-]+/g, " ").trim() || file.name;
+      const createRes = await fetch("/api/precedents", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const createJson = await createRes.json();
+      if (!createRes.ok) { errors.push(`${file.name}: ${createJson.error || "could not create the precedent"}`); continue; }
+      const form = new FormData();
+      form.append("files", file);
+      const upRes = await fetch(`/api/precedents/${createJson.precedent.id}/body-template/examples`, { method: "POST", body: form });
+      if (!upRes.ok) {
+        const upJson = await upRes.json().catch(() => ({}));
+        errors.push(`${file.name}: ${upJson.error || "saved, but the template could not be read"}`);
+      }
+    }
+    setUploadingTemplates(false);
+    setUploadErrors(errors);
+    load();
+  };
 
   const move = async (id: string, dir: -1 | 1) => {
     const idx = precedents.findIndex(p => p.id === id);
@@ -704,11 +740,37 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
     <div className="bg-white border border-slate-200 rounded-[40px] p-8">
       <div className="flex items-center justify-between mb-4">
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Precedent library</p>
-        <button onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
-          <Plus size={13} /> Add precedent
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <label className={`flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-[11px] font-bold rounded-full hover:bg-slate-50 transition-colors ${uploadingTemplates ? "opacity-50" : "cursor-pointer"}`}>
+              {uploadingTemplates ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+              Upload your own template
+              <input type="file" accept=".docx,.doc" multiple className="hidden" disabled={uploadingTemplates}
+                onChange={e => { handleUploadTemplates(e.target.files); e.target.value = ""; }} />
+            </label>
+          )}
+          <button onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors">
+            <Plus size={13} /> Add precedent
+          </button>
+        </div>
       </div>
+      {isAdmin && (
+        <p className="text-[11px] text-slate-400 mb-4 -mt-2">
+          Already have documents your firm uses? Upload the .docx files and each becomes a precedent, with a reusable body and fill-in fields detected automatically.
+        </p>
+      )}
+      {uploadingTemplates && (
+        <p className="text-[11px] text-indigo-500 flex items-center gap-1.5 mb-4">
+          <Loader2 size={12} className="animate-spin" />
+          {uploadElapsed < 5 ? "Uploading…" : "Reading each document and building a template with AI…"}
+        </p>
+      )}
+      {uploadErrors.length > 0 && (
+        <div className="mb-4 space-y-1">
+          {uploadErrors.map((e, i) => <p key={i} className="text-[11px] text-red-500">{e}</p>)}
+        </div>
+      )}
 
       <PrecedentLibraryTopUp isAdmin={isAdmin} variant="panel" onInstalled={load} className="mb-4" />
 
