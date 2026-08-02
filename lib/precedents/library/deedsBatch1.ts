@@ -18,6 +18,7 @@
 import { field, type PrecedentSeed } from "./types";
 import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE } from "./instrumentParts";
 import { executedAsLine } from "@/lib/precedents/executionClauses";
+import { DEED_PAGE_BREAK } from "@/lib/precedents/deedDocx";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 
 /** The boilerplate every deed in this batch ends with. */
@@ -76,6 +77,9 @@ function generalProvisions(): BodyTemplateSegment[] {
 /** Parties and recitals, common to every deed in the batch. */
 function opening(recitals: BodyTemplateSegment[]): BodyTemplateSegment[] {
   return [
+    // The cover page carries the title and the footer and nothing else; the
+    // parties and operative provisions begin overleaf.
+    ...L(null, [DEED_PAGE_BREAK]),
     ...L(null, ["Date: ", field("deed_date", "Date of the deed", "12 August 2026")]),
     ...L(null, [""]),
     ...L("DeedHeading", ["Parties"]),

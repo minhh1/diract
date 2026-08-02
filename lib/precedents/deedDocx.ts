@@ -51,6 +51,12 @@ export function parseDeedBody(body: string): DeedLine[] {
  * firm's own execution page does; stacking them reads as one long list and
  * loses which signature belongs to which officer.
  */
+/**
+ * Ends the cover page. A deed's first page carries the title and the footer
+ * and nothing else; the parties and the operative provisions start overleaf.
+ */
+export const DEED_PAGE_BREAK = "\u0003";
+
 export function deedColumns(left: string, right: string): string {
   return `${left}${COL}${right}`;
 }
@@ -74,6 +80,39 @@ export function stripStyleMarkers(body: string): string {
  */
 export function stripXmlIllegal(s: string): string {
   return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+}
+
+// 1.35 cm in twips (1 cm = 567 twips). Every numbered level hangs by this
+// much, and each level's left indent is one step further in, so level 2's
+// text starts where level 1's text started and so on. Without this the levels
+// are independent and (i)/(ii)/(iii) sits under the wrong column.
+const STEP = 765;
+
+/** Which numbered level a style sits at, or null if it isn't a numbered list. */
+function styleLevel(styleId: string): number | null {
+  const m = /Level\s*-?\s*([1-5])/i.exec(styleId);
+  if (m) return Number(m[1]);
+  if (/Recital-Level2/i.test(styleId)) return 2;
+  if (/Recital-Level3/i.test(styleId)) return 3;
+  if (/Recital/i.test(styleId)) return 1;
+  return null;
+}
+
+/**
+ * Explicit indents on every numbered paragraph.
+ *
+ * The template's own numbering decides these otherwise, and a firm's levels
+ * are often set independently of each other -- which is how (i)/(ii)/(iii)
+ * ends up indented to level 3 rather than level 4. Stating them here makes
+ * the levels share an alignment grid: level n starts at n x 1.35 cm and hangs
+ * back 1.35 cm, so each level's text begins exactly where the level above it
+ * began.
+ */
+function indentXml(styleId: string | null): string {
+  if (!styleId) return "";
+  const level = styleLevel(styleId);
+  if (!level) return "";
+  return `<w:ind w:left="${level * STEP}" w:hanging="${STEP}"/>`;
 }
 
 function escapeXml(s: string): string {
@@ -122,7 +161,9 @@ function columnTableXml(rows: string): string {
 }
 
 function paragraphXml(styleId: string | null, text: string): string {
-  const pPr = styleId ? `<w:pPr><w:pStyle w:val="${escapeXml(styleId)}"/></w:pPr>` : "";
+  const pPr = styleId
+    ? `<w:pPr><w:pStyle w:val="${escapeXml(styleId)}"/>${indentXml(styleId)}</w:pPr>`
+    : "";
   if (!text) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
@@ -171,6 +212,10 @@ export function buildDeedDocx(templateBytes: Buffer, body: string): Buffer {
       continue;
     }
     flushRows();
+    if (l.text === DEED_PAGE_BREAK) {
+      paragraphs += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+      continue;
+    }
     paragraphs += paragraphXml(style, l.text);
   }
   flushRows();
