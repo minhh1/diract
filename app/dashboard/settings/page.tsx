@@ -118,6 +118,9 @@ function SettingsPageInner() {
   const searchParams = useSearchParams();
   const { companyId, userId } = useCompany();
   const { tables: customTables } = useCustomTables(userId);
+  // Precedents is a Law Firm-template-exclusive feature -- see
+  // Sidebar.tsx's matching hasLawFirmTemplate for the full reasoning.
+  const hasLawFirmTemplate = customTables.some(t => t.slug === 'trust-transactions');
   const [view, setView] = useState<SettingsView>("menu");
   const [publicPagesTab, setPublicPagesTab] = useState<"tasks" | "client_updates">("tasks");
 
@@ -416,13 +419,15 @@ function SettingsPageInner() {
                 <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
               </button>
 
-              <button onClick={() => setView("precedents")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
-                <div className="flex items-center gap-5">
-                  <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-amber-600 transition-colors"><PenSquare size={20} /></div>
-                  <span className="text-[15px] font-medium text-slate-700">Precedents</span>
-                </div>
-                <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
-              </button>
+              {hasLawFirmTemplate && (
+                <button onClick={() => setView("precedents")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
+                  <div className="flex items-center gap-5">
+                    <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-amber-600 transition-colors"><PenSquare size={20} /></div>
+                    <span className="text-[15px] font-medium text-slate-700">Precedents</span>
+                  </div>
+                  <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
+                </button>
+              )}
 
               <button onClick={() => setView("invoice_template")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
                 <div className="flex items-center gap-5">
@@ -435,7 +440,7 @@ function SettingsPageInner() {
           )}
 
           {/* ── PRECEDENTS ── */}
-          {view === 'precedents' && <PrecedentsSettingsTab />}
+          {view === 'precedents' && hasLawFirmTemplate && <PrecedentsSettingsTab />}
 
           {/* ── INVOICE TEMPLATE ── */}
           {view === 'invoice_template' && <InvoiceTemplateSettingsTab />}
