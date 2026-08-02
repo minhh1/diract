@@ -19,6 +19,24 @@ export interface InstallResult {
   total: number;
 }
 
+// Whether this company has the Law Firm marketplace template installed --
+// signalled by presence of its Trust Transactions table, the same proxy
+// RecordDashboard.tsx/Sidebar.tsx already use for other Law Firm-only
+// features (Trust Account, Finance Model's own cross-tenant fix). There's no
+// cheaper company-type/industry column reliable enough to gate on instead --
+// see components/settings/InvoiceTemplateSettingsTab.tsx's isLawFirm comment;
+// company_type is a free-text admin field, not a template marker.
+export async function hasLawFirmTemplate(admin: ReturnType<typeof adminClient>, companyId: string): Promise<boolean> {
+  const { data } = await admin
+    .from("company_tables")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("slug", "trust-transactions")
+    .is("deleted_at", null)
+    .maybeSingle();
+  return !!data;
+}
+
 /**
  * @param admin  service-role Supabase client (see adminClient())
  * @param userId recorded as created_by; null when installed by an automated
@@ -41,12 +59,17 @@ export async function installPrecedentLibrary(
     .is("deleted_at", null);
   const fieldIdByKey = new Map<string, string>((customFields || []).map(f => [f.field_key, f.id]));
 
+  // Deliberately NOT filtered by deleted_at. A library_key the company has
+  // ever had is one it has already been given; if it was deleted, that was a
+  // decision. Filtering deleted rows out here made every re-install resurrect
+  // precedents a firm had retired -- and because the unique index is partial
+  // (WHERE deleted_at IS NULL) nothing at the database level stopped it, so
+  // the firm silently got the old copy back alongside whatever replaced it.
   const { data: existing } = await admin
     .from("precedents")
     .select("library_key")
     .eq("company_id", companyId)
-    .not("library_key", "is", null)
-    .is("deleted_at", null);
+    .not("library_key", "is", null);
   const alreadyInstalled = new Set((existing || []).map(r => r.library_key));
 
   const { data: maxOrderRow } = await admin

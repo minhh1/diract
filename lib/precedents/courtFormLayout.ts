@@ -44,6 +44,17 @@ const FORM_LABELS = new Set([
   "street address", "postal address", "telephone",
   // Subpoena / notices
   "to", "last day for service", "date time and place for production",
+  // FCFCOA affidavit field labels
+  "name of person swearing/affirming this affidavit", "date of swearing/affirming",
+  "applicant 1 family name", "applicant 1 given names",
+  "respondent 1 family name", "respondent 1 given names",
+  "address for service in australia for the party filing this affidavit",
+  "phone", "email", "lawyer's code", "family name", "given names", "gender",
+  "usual occupation", "independent children's lawyer",
+  "signature of deponent", "place", "full name of witness (please print)",
+  "witness capacity", "print name and lawyer's code",
+  "signature of interpreter", "interpreter's full name", "interpreter's address",
+  "filed in",
   "person affected by orders sought", "order for discovery", "made on",
 ]);
 
@@ -79,6 +90,12 @@ const FORM_SECTIONS = new Set([
   "order to the subpoena recipient", "proposed access order",
   "notice to the subpoena recipient", "date, time and place for production",
   "issued by the court",
+  // FCFCOA affidavit (0625 v1a) -- the approved family law form is organised
+  // into lettered Parts rather than named sections.
+  "part a", "part b", "part c", "part d", "part e", "part f",
+  "about the parties", "about the independent children's lawyer (if any)",
+  "about you (the deponent)", "evidence", "signature",
+  "alternative jurat for non-english speaking affidavit",
 ]);
 
 export type Block =
