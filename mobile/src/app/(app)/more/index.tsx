@@ -20,11 +20,13 @@ import { OpenInBrowserRow } from '@/components/OpenInBrowserRow';
 import { useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
 import { PushNotificationSettingsRow } from '@/components/PushNotificationSettingsRow';
+import { VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID } from '@/lib/allowedCompany';
 
 export default function MoreScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { profile, signOut } = useSession();
+  const canUseVirtualComputers = profile?.active_company_id === VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID;
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={styles.content}>
@@ -64,7 +66,9 @@ export default function MoreScreen() {
         <OpenInBrowserRow label="Outlook inbox" path="/dashboard/outlook" icon={Inbox} />
         <OpenInBrowserRow label="Gmail inbox" path="/dashboard/gmail" icon={MailCheck} />
         <OpenInBrowserRow label="Billing & invoicing" path="/dashboard/billing" icon={CreditCard} />
-        <OpenInBrowserRow label="Virtual computers" path="/dashboard/virtual-computers" icon={Monitor} />
+        {canUseVirtualComputers && (
+          <OpenInBrowserRow label="Virtual computers" path="/dashboard/virtual-computers" icon={Monitor} />
+        )}
         <OpenInBrowserRow label="Marketplace" path="/dashboard/marketplace" icon={Store} />
         <OpenInBrowserRow label="Admin" path="/dashboard/admin" icon={ShieldCheck} />
         <OpenInBrowserRow label="Company settings" path="/dashboard/settings" icon={Clapperboard} />
