@@ -26,15 +26,24 @@ export interface TextEditOp {
   color: RGB;
 }
 
-// A checkbox mark: a hollow square + optional "X", drawn directly rather than
-// a substituted text glyph — both because the Standard-14/WinAnsi fonts
-// pdf-lib embeds can't render Unicode box glyphs (☐/☑/☒) at all, and because
-// most real-world generated PDFs (this app's own contracts included) draw
-// their checkboxes as vector line-art in the page content stream, not as text
-// glyphs in the first place — pdf.js's text layer never sees those at all, so
-// there's nothing to click. x/y/width/height are the box's own bottom-left
-// corner and side length in PDF space (not derived from any source glyph),
-// so the exact same shape works whether this box was:
+// Which mark a checked CheckboxOp draws -- see applyEdits.ts and
+// PdfPageView.tsx's own CHECKBOX_* glyph constants for what each renders as.
+// "overlay-x" is the odd one out: no box, no whiteout, just two diagonal
+// lines drawn directly on top of whatever's already there -- for a document
+// whose own checkbox is already visible and just needs a mark added, rather
+// than one this tool is standing in for entirely.
+export type CheckboxStyle = "ballot-x" | "squared-times" | "ballot-check" | "overlay-x";
+
+// A checkbox mark: a hollow square + a checked-state glyph, drawn directly
+// rather than a substituted text glyph from the SOURCE document's own font
+// — both because the Standard-14/WinAnsi fonts pdf-lib embeds can't render
+// Unicode box glyphs (☐/☑/☒/⊠) at all, and because most real-world generated
+// PDFs (this app's own contracts included) draw their checkboxes as vector
+// line-art in the page content stream, not as text glyphs in the first
+// place — pdf.js's text layer never sees those at all, so there's nothing to
+// click. x/y/width/height are the box's own bottom-left corner and side
+// length in PDF space (not derived from any source glyph), so the exact same
+// shape works whether this box was:
 //   - toggled from a real checkbox glyph pdf.js DID find in the text layer
 //     (itemIndex set, geometry computed once from that glyph's own bounding
 //     box at creation time — see toggleCheckbox in PdfPageView.tsx), or
@@ -51,6 +60,7 @@ export interface CheckboxOp {
   width: number;
   height: number;
   checked: boolean;
+  style?: CheckboxStyle; // undefined (e.g. an older saved op) means "ballot-x", the original default
 }
 
 export interface HighlightOp {

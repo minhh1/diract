@@ -10,13 +10,38 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PDFPageProxy } from "pdfjs-dist";
 import { TextCursor } from "lucide-react";
-import type { CheckboxOp, DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, TextRun, ToolId } from "@/lib/pdfeditor/types";
+import type { CheckboxOp, CheckboxStyle, DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, TextRun, ToolId } from "@/lib/pdfeditor/types";
 import { matchStandardFont, standardFontCss } from "@/lib/pdfeditor/fontMatch";
 
 // Shared offscreen canvas for text-width measurement — used to auto-grow the
 // inline-edit input as the user types and to size the matching post-commit
 // overlay, so the two line up with no visual jump between them.
 let measureCanvas: HTMLCanvasElement | null = null;
+
+// Real ☐/☒/⊠/☑ Unicode glyphs for the committed-checkbox render below, drawn
+// from the same bundled symbol font applyEdits.ts embeds into the saved PDF
+// (see its own top-of-file comment, including why this is a .ttf and not a
+// .woff/.woff2, and why it's DejaVu Sans rather than a Noto symbol font) —
+// loaded once per session via the Font Loading API (not a CSS @font-face,
+// since there's no stylesheet to put one in here) and cached module-wide the
+// same way measureCanvas above is, rather than per-PdfPageView-instance
+// (every page would otherwise redo it).
+const CHECKBOX_FONT_FAMILY = "PdfEditorCheckboxSymbols";
+const CHECKBOX_EMPTY_CHAR = "☐"; // U+2610 -- every style's unchecked state
+const CHECKBOX_X_CHAR = "☒"; // U+2612 -- "ballot-x" style, checked
+const CHECKBOX_SQUARED_TIMES_CHAR = "⊠"; // U+22A0 -- "squared-times" style, checked
+const CHECKBOX_CHECK_CHAR = "☑"; // U+2611 -- "ballot-check" style, checked
+let checkboxFontLoadPromise: Promise<void> | null = null;
+function ensureCheckboxFontLoaded(): Promise<void> {
+  if (!checkboxFontLoadPromise) {
+    checkboxFontLoadPromise = (async () => {
+      const face = new FontFace(CHECKBOX_FONT_FAMILY, "url(/fonts/checkbox-symbols.ttf)");
+      await face.load();
+      document.fonts.add(face);
+    })();
+  }
+  return checkboxFontLoadPromise;
+}
 // Single-glyph checkbox characters commonly used in generated business PDFs
 // (ballot box, white square variants, shadowed/dingbat squares), plus plain
 // bracket-style boxes some documents use instead of a real glyph. The
@@ -35,17 +60,60 @@ function isCheckedGlyph(str: string): boolean {
 }
 
 // Side length (PDF points) for a checkbox freehand-placed via the "Checkbox"
-// tool, where there's no source glyph to size it from — matches the typical
-// visual size of a checkbox in a generated business form (see the contracts
-// this was verified against), close enough that most placements need no
+// tool, where there's no source glyph to size it from. Confirmed against a
+// real contract's own checkbox, not just eyeballed: measured its actual
+// rendered outer border-to-border footprint via pixel analysis (pngjs
+// against a 400dpi render of the original page) at ~9.9-10.1pt on both
+// sides, i.e. already matches -- close enough that most placements need no
 // further resizing.
 const DEFAULT_CHECKBOX_SIZE_PDF = 10;
+
+// How far (PDF points) the checkbox's whiteout extends past its own drawn
+// box -- FLAT amounts, not proportional to the box's own size, because the
+// two are unrelated: DEFAULT_CHECKBOX_SIZE_PDF above is how big the NEW
+// drawn box looks, but the ORIGINAL checkbox it needs to fully hide could be
+// a different size entirely, positioned wherever the user's click happened
+// to land relative to its true (unknown -- see CheckboxOp's doc comment)
+// center. Kept modest in BOTH directions: swept 18 different checkbox/label
+// pairs across a real contract (pngjs pixel analysis against a 400dpi
+// render, cross-checked with `pdftotext -bbox` for each label's real
+// position) rather than trusting just the one location tried earlier, and
+// found the real minimum gap to a label's first letter is ~3.25pt ("fixed
+// floor coverings", tightest of the 18) and the real minimum row-to-row
+// spacing is ~13.5pt (the inclusions grid) -- both tighter than they first
+// looked from a single sample, and both tighter than a 5pt/3pt pad (10pt box
+// + that padding = 16pt tall, taller than the 13.5pt row spacing it needs to
+// fit inside). See applyEdits.ts's matching save-time constants.
+const CHECKBOX_WHITEOUT_PAD_X_PDF = 2.5;
+const CHECKBOX_WHITEOUT_PAD_Y_PDF = 1.5;
 
 function measureTextWidth(text: string, fontSizePx: number, fontFamily: string): number {
   if (!measureCanvas) measureCanvas = document.createElement("canvas");
   const ctx = measureCanvas.getContext("2d")!;
   ctx.font = `${fontSizePx}px ${fontFamily}`;
   return ctx.measureText(text || " ").width;
+}
+
+// Ink-box ratios (per 1px of font size) for a checkbox glyph -- used instead
+// of measureTextWidth above for that one case, since Canvas 2D's plain
+// .width is an ADVANCE metric (how much horizontal space the character
+// reserves) rather than how big the shape actually drawn inside it is.
+// Confirmed directly against this font's own glyph data (fontkit, matching
+// applyEdits.ts's own computeGlyphPlacement) that the visible box on every
+// one of these glyphs is only ~80% of that advance width -- sizing off it
+// rendered a checkbox that looked visibly smaller than the box it was meant
+// to fill. actualBoundingBox{Left,Right,Ascent,Descent} are Canvas's own ink
+// metrics, the browser-side equivalent of the font's real glyph bbox.
+function measureGlyphInkRatios(glyph: string, fontFamily: string): { widthRatio: number; heightRatio: number } {
+  if (!measureCanvas) measureCanvas = document.createElement("canvas");
+  const ctx = measureCanvas.getContext("2d")!;
+  const probeSize = 100;
+  ctx.font = `${probeSize}px ${fontFamily}`;
+  const m = ctx.measureText(glyph);
+  return {
+    widthRatio: (m.actualBoundingBoxLeft + m.actualBoundingBoxRight) / probeSize,
+    heightRatio: (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) / probeSize,
+  };
 }
 
 // Reads the current browser text selection as a [start, end) character range
@@ -130,6 +198,8 @@ interface Props {
   scale: number;
   ops: PdfEditOp[]; // all pages' ops
   activeTool: ToolId;
+  checkboxStyle: CheckboxStyle; // which mark a freshly-placed checkbox uses -- see the toolbar's own style picker in PdfEditor.tsx
+  placeChecked: boolean; // whether a freshly-placed checkbox starts checked (the default) or already unchecked -- see EMPTY_BOX_CHOICE in PdfEditor.tsx
   pendingSignature: string | null;
   onAddOp: (op: PdfEditOp) => void;
   onUpdateOp: (id: string, patch: Partial<PdfEditOp>) => void; // reposition/resize/reformat an existing op
@@ -163,12 +233,19 @@ function pdfRectToScreen(viewport: any, x: number, y: number, width: number, hei
 const rgbCss = (c: [number, number, number]) => `rgb(${c[0] * 255}, ${c[1] * 255}, ${c[2] * 255})`;
 
 export default function PdfPageView({
-  pdfPage, pageIndex, scale, ops, activeTool, pendingSignature, onAddOp, onUpdateOp, onDeleteOp, onPlacementComplete,
+  pdfPage, pageIndex, scale, ops, activeTool, checkboxStyle, placeChecked, pendingSignature, onAddOp, onUpdateOp, onDeleteOp, onPlacementComplete,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
+
+  // Kicks off (once, module-wide -- see ensureCheckboxFontLoaded) loading the
+  // symbol font the committed-checkbox render below needs. Fire-and-forget:
+  // the glyph briefly renders in a fallback font/tofu box until this
+  // resolves, then the browser repaints it in place on its own once the
+  // FontFace is registered -- no state/re-render needed here for that.
+  useEffect(() => { ensureCheckboxFontLoaded(); }, []);
 
   // ── Annotation selection / drag / delete (select tool only) ─────────────
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
@@ -699,17 +776,19 @@ export default function PdfPageView({
       // Places a checked box centered on the click point -- sidesteps
       // detecting the source document's own checkbox entirely (most real
       // contracts draw theirs as vector line-art or a scanned image, neither
-      // of which pdf.js's text layer can see -- see CheckboxOp's doc comment),
-      // so this works on every document instead of only ones using a
-      // recognized text glyph. Defaults to checked since placing one is
-      // almost always "check this box", not "add an empty box" -- toggle it
-      // off via the render block's own click handler below if that's wrong.
+      // of which pdf.js's text layer can see -- see CheckboxOp's doc comment).
+      // Starts checked by default (placing one is almost always "check this
+      // box") or unchecked if the toolbar's "Empty box" choice is active
+      // (e.g. to visually uncheck a box the source document already has
+      // marked) -- either way it's still just a click away from the other
+      // state via the render block's own click handler below.
       const pos = overlayPos(e);
       const [pdfX, pdfY] = viewport.convertToPdfPoint(pos.x, pos.y);
       const size = DEFAULT_CHECKBOX_SIZE_PDF;
       const op: CheckboxOp = {
         id: crypto.randomUUID(), type: "checkbox", page: pageIndex,
-        x: pdfX - size / 2, y: pdfY - size / 2, width: size, height: size, checked: true,
+        x: pdfX - size / 2, y: pdfY - size / 2, width: size, height: size, checked: placeChecked,
+        style: checkboxStyle,
       };
       onAddOp(op);
       onPlacementComplete();
@@ -801,48 +880,58 @@ export default function PdfPageView({
           );
         })}
 
-        {/* Committed checkboxes — a drawn box (not a substituted glyph, since Unicode
-            box characters aren't in the Standard-14/WinAnsi encoding pdf-lib embeds)
-            with the "X" filling nearly the whole box, matching applyEdits.ts's
-            save-time geometry exactly (x/y/width/height ARE the box now, computed
-            once at creation time — see CheckboxOp's doc comment — not re-derived
-            from a source glyph on every render the way this used to work). Click
-            toggles checked; drag repositions; select-then-Delete or the badge
-            removes it — same interaction set as every other placed annotation. */}
+        {/* Committed checkboxes — real ☐/☒/⊠/☑ Unicode glyphs via the bundled
+            symbol font (ensureCheckboxFontLoaded above), matching what
+            applyEdits.ts embeds into the saved PDF exactly, rather than a
+            hand-drawn rectangle + lines standing in for one (except
+            "overlay-x", which IS still two drawn lines -- see its own branch
+            below, and CheckboxStyle's doc comment for why). Geometry
+            (x/y/width/height) is the box itself, computed once at creation
+            time — see CheckboxOp's doc comment — not re-derived from a source
+            glyph on every render. Click toggles checked; drag repositions;
+            select-then-Delete or the badge removes it — same interaction set
+            as every other placed annotation. */}
         {pageOps.filter((o): o is PdfEditOp & { type: "checkbox" } => o.type === "checkbox").map((o) => {
+          const style: CheckboxStyle = o.style ?? "ballot-x";
           const r = pdfRectToScreen(viewport, o.x, o.y, o.width, o.height);
           const offset = dragOffset?.id === o.id ? dragOffset : null;
           const selected = selectedOpId === o.id;
-          return (
-            <div
-              key={o.id}
-              onPointerDown={(e) => beginDrag(o.id, o.x, o.y, e)}
-              onPointerMove={onDragMove}
-              onPointerUp={onDragEnd}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (justDraggedRef.current) { justDraggedRef.current = false; return; }
-                if (activeTool !== "select") return;
-                onUpdateOp(o.id, { checked: !o.checked });
-              }}
-              title={activeTool === "select" ? "Click to toggle, drag to move" : undefined}
-              style={{
-                position: "absolute", left: r.left - 1, top: r.top - 1, width: r.width + 2, height: r.height + 2, background: "white",
-                pointerEvents: activeTool === "select" ? "auto" : "none",
-                cursor: activeTool === "select" ? "pointer" : undefined,
-                transform: offset ? `translate(${offset.dx}px, ${offset.dy}px)` : undefined,
-                outline: selected ? "1.5px dashed #3b82f6" : undefined, outlineOffset: 2,
-              }}
-            >
-              <div style={{
-                position: "absolute", left: 1, top: 1, width: r.width, height: r.height,
-                border: `${Math.max(1, r.width * 0.08)}px solid #0f172a`, boxSizing: "border-box",
-              }}>
+          const commonProps = {
+            onPointerDown: (e: React.PointerEvent) => beginDrag(o.id, o.x, o.y, e),
+            onPointerMove: onDragMove,
+            onPointerUp: onDragEnd,
+            onClick: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              if (justDraggedRef.current) { justDraggedRef.current = false; return; }
+              if (activeTool !== "select") return;
+              onUpdateOp(o.id, { checked: !o.checked });
+            },
+          };
+
+          if (style === "overlay-x") {
+            // No whiteout, no box background -- draws directly on top of
+            // whatever's already there (see CheckboxStyle's doc comment).
+            // Unchecked has nothing to actually draw (that's the point of
+            // this style), but still needs SOME visible/clickable hit target
+            // in the editor itself, or there'd be no way to select, drag, or
+            // re-check it once toggled off -- a faint dashed placeholder,
+            // never part of the saved PDF (applyEdits.ts's own "overlay-x"
+            // branch draws nothing at all when unchecked).
+            return (
+              <div
+                key={o.id}
+                {...commonProps}
+                title={activeTool === "select" ? "Click to toggle, drag to move" : undefined}
+                style={{
+                  position: "absolute", left: r.left, top: r.top, width: r.width, height: r.height,
+                  pointerEvents: activeTool === "select" ? "auto" : "none",
+                  cursor: activeTool === "select" ? "pointer" : undefined,
+                  transform: offset ? `translate(${offset.dx}px, ${offset.dy}px)` : undefined,
+                  outline: selected ? "1.5px dashed #3b82f6" : !o.checked ? "1px dashed rgba(15, 23, 42, 0.35)" : undefined,
+                  outlineOffset: 2,
+                }}
+              >
                 {o.checked && (() => {
-                  // Two diagonal lines, not an "X" glyph — precisely sizable via
-                  // the inset below (a glyph's side-bearing makes that unreliable) —
-                  // small inset so the mark fills nearly the whole box, not just its
-                  // middle third the way this used to render.
                   const inset = r.width * 0.12;
                   const thickness = Math.max(1, r.width * 0.14);
                   return (
@@ -852,6 +941,60 @@ export default function PdfPageView({
                     </svg>
                   );
                 })()}
+                <DeleteBadge id={o.id} />
+              </div>
+            );
+          }
+
+          // A checkbox placed via the tool doesn't know the ORIGINAL vector-drawn
+          // or scanned checkbox's real size underneath it (that's the whole
+          // problem this tool exists to sidestep — see CheckboxOp's doc comment),
+          // so a snug 1px whiteout risks leaving a sliver of the old box's border
+          // peeking out around the new one on anything but a perfectly-sized,
+          // perfectly-centered placement. Generously oversized instead — plain
+          // white blends into the page background regardless, so there's no
+          // downside to erasing more than strictly necessary here.
+          const padX = CHECKBOX_WHITEOUT_PAD_X_PDF * scale;
+          const padY = CHECKBOX_WHITEOUT_PAD_Y_PDF * scale;
+          const glyph = !o.checked ? CHECKBOX_EMPTY_CHAR
+            : style === "squared-times" ? CHECKBOX_SQUARED_TIMES_CHAR
+            : style === "ballot-check" ? CHECKBOX_CHECK_CHAR
+            : CHECKBOX_X_CHAR;
+          // Sized off the glyph's own ACTUAL ink box (see
+          // measureGlyphInkRatios's own doc comment) rather than its advance
+          // width, same approach and same reasoning as applyEdits.ts's
+          // matching save-time computeGlyphPlacement, so the live preview
+          // always matches what actually gets saved. The larger of the two
+          // ink ratios is the binding constraint (sizing off the smaller one
+          // would let the OTHER dimension overflow the box before FILL_RATIO
+          // is even applied), and FILL_RATIO nudges it a little past an exact
+          // fit -- what actually reads as "filling" the box rather than
+          // looking undersized inside its own outline. Centering itself,
+          // unlike the PDF side's manual bbox-offset math, is just flexbox
+          // here (see the container div below).
+          const FILL_RATIO = 1.08;
+          const { widthRatio, heightRatio } = measureGlyphInkRatios(glyph, CHECKBOX_FONT_FAMILY);
+          const fontSizePx = (r.width / Math.max(widthRatio, heightRatio)) * FILL_RATIO;
+          return (
+            <div
+              key={o.id}
+              {...commonProps}
+              title={activeTool === "select" ? "Click to toggle, drag to move" : undefined}
+              style={{
+                position: "absolute", left: r.left - padX, top: r.top - padY, width: r.width + padX * 2, height: r.height + padY * 2, background: "white",
+                pointerEvents: activeTool === "select" ? "auto" : "none",
+                cursor: activeTool === "select" ? "pointer" : undefined,
+                transform: offset ? `translate(${offset.dx}px, ${offset.dy}px)` : undefined,
+                outline: selected ? "1.5px dashed #3b82f6" : undefined, outlineOffset: 2,
+              }}
+            >
+              <div style={{
+                position: "absolute", left: padX, top: padY, width: r.width, height: r.height,
+                display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
+                fontFamily: CHECKBOX_FONT_FAMILY, fontSize: fontSizePx, lineHeight: 1, color: "#0f172a",
+                pointerEvents: "none",
+              }}>
+                {glyph}
               </div>
               <DeleteBadge id={o.id} />
             </div>

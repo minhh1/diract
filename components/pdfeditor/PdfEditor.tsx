@@ -25,7 +25,7 @@ import SignaturePad from "./SignaturePad";
 import PageManager from "./PageManager";
 import { applyEdits } from "@/lib/pdfeditor/applyEdits";
 import { loadPdfDocument } from "@/lib/pdfeditor/loadPdf";
-import type { PdfEditOp, ToolId } from "@/lib/pdfeditor/types";
+import type { CheckboxStyle, PdfEditOp, ToolId } from "@/lib/pdfeditor/types";
 
 export type PdfSource = { kind: "existing"; documentId: string } | { kind: "new"; file: File };
 
@@ -47,6 +47,29 @@ const TOOLS: { id: ToolId; label: string; icon: any }[] = [
   { id: "signature", label: "Signature", icon: PenTool },
 ];
 
+// Which mark the "Add checkbox" tool places next -- see CheckboxStyle's own
+// doc comment for what each one means. Shown as a small picker in the header
+// only while that tool is active (below), and remembered for the next
+// placement rather than being a per-op choice made after the fact.
+const CHECKBOX_STYLES: { id: CheckboxStyle; glyph: string; label: string }[] = [
+  { id: "ballot-x", glyph: "☒", label: "Box with X" },
+  { id: "squared-times", glyph: "⊠", label: "Squared times" },
+  { id: "ballot-check", glyph: "☑", label: "Box with check" },
+  { id: "overlay-x", glyph: "✕", label: "X only, over the existing box" },
+];
+// A 5th, separate choice in that same picker: places an already-UNCHECKED
+// box instead of the usual checked default -- e.g. to visually uncheck a box
+// the source document already has marked, the same way any of the 4 styles
+// above already whites out and redraws over whatever's there, just without a
+// mark inside it. Modeled as forcing checked=false (with the style fixed to
+// "ballot-x", not whatever style button was last active) rather than as a
+// 5th CheckboxStyle value, since every real style already renders identically
+// as a plain ☐ once unchecked -- this only needs to guarantee THAT render
+// path is what happens, not invent a new one. Deliberately excludes
+// "overlay-x": unchecked means "draw nothing at all" for that one (no box to
+// begin with), which wouldn't visibly do anything here.
+const EMPTY_BOX_CHOICE = { glyph: "☐", label: "Empty box (e.g. to uncheck one)" };
+
 export default function PdfEditor({ source, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -66,6 +89,10 @@ export default function PdfEditor({ source, onBack }: Props) {
   const [history, setHistory] = useState<PdfEditOp[][]>([]);
   const [future, setFuture] = useState<PdfEditOp[][]>([]);
   const [activeTool, setActiveTool] = useState<ToolId>("select");
+  const [checkboxStyle, setCheckboxStyle] = useState<CheckboxStyle>("ballot-x");
+  // Whether the NEXT placed checkbox starts checked (the usual default) or
+  // already unchecked -- see EMPTY_BOX_CHOICE's own doc comment above.
+  const [placeChecked, setPlaceChecked] = useState(true);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [pendingSignature, setPendingSignature] = useState<string | null>(null);
   const [showPageManager, setShowPageManager] = useState(false);
@@ -338,6 +365,33 @@ export default function PdfEditor({ source, onBack }: Props) {
               ))}
             </div>
 
+            {/* Which mark the checkbox tool places next -- only shown while
+                that tool's actually selected, same idea as the textbox
+                tool's own bold/italic/underline picker having nothing to do
+                until there's a textbox being placed. */}
+            {activeTool === "checkbox" && (
+              <div className="flex items-center gap-1 bg-slate-100 rounded-full p-1">
+                {CHECKBOX_STYLES.map((s) => (
+                  <button
+                    key={s.id}
+                    title={s.label}
+                    onClick={() => { setCheckboxStyle(s.id); setPlaceChecked(true); }}
+                    className={`w-7 h-7 rounded-full text-[13px] transition-all ${placeChecked && checkboxStyle === s.id ? "bg-white shadow-sm text-slate-900" : "text-slate-400 hover:text-slate-700"}`}
+                  >
+                    {s.glyph}
+                  </button>
+                ))}
+                <span className="w-px h-4 bg-slate-300 mx-0.5" />
+                <button
+                  title={EMPTY_BOX_CHOICE.label}
+                  onClick={() => { setCheckboxStyle("ballot-x"); setPlaceChecked(false); }}
+                  className={`w-7 h-7 rounded-full text-[13px] transition-all ${!placeChecked ? "bg-white shadow-sm text-slate-900" : "text-slate-400 hover:text-slate-700"}`}
+                >
+                  {EMPTY_BOX_CHOICE.glyph}
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center gap-1">
               <button title="Undo" onClick={undo} disabled={!history.length} className="p-2 rounded-full text-slate-400 hover:text-slate-700 disabled:opacity-30">
                 <Undo2 size={16} />
@@ -420,6 +474,8 @@ export default function PdfEditor({ source, onBack }: Props) {
                   scale={scale}
                   ops={ops}
                   activeTool={activeTool}
+                  checkboxStyle={checkboxStyle}
+                  placeChecked={placeChecked}
                   pendingSignature={pendingSignature}
                   onAddOp={handleAddOp}
                   onUpdateOp={handleUpdateOp}
