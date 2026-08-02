@@ -167,18 +167,18 @@ export const COURT_NSW_UCPR_PRECEDENTS: PrecedentSeed[] = [
       text(
         "\n3. Costs.\n\n" +
         "[For a liquidated claim, complete the following. Delete it for an unliquidated claim.]\n\n" +
-        "   Amount of claim   $"
+        "Amount of claim: $"
       ),
       field("amount_of_claim", "Amount of claim", "250,000.00"),
-      text("\n   Interest          $"),
+      text("\nInterest: $"),
       field("interest_amount", "Interest", "8,450.00"),
-      text("\n   Filing fees       $"),
+      text("\nFiling fees: $"),
       field("filing_fees", "Filing fees", "1,286.00"),
-      text("\n   Service fees      $"),
+      text("\nService fees: $"),
       field("service_fees", "Service fees", "120.00"),
-      text("\n   Solicitors fees   $"),
+      text("\nSolicitors fees: $"),
       field("solicitors_fees", "Solicitors fees", "2,600.00"),
-      text("\n   TOTAL             $"),
+      text("\nTOTAL: $"),
       field("total_claim", "Total", "262,456.00"),
       text(
         "\n\nPLEADINGS AND PARTICULARS\n\nTHE PARTIES\n\n1. The plaintiff is and was at all material times "
