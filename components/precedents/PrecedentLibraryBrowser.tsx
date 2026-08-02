@@ -14,7 +14,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import {
-  PenSquare, Search, X, AlertTriangle, Loader2, FileText, Filter, Settings2,
+  PenSquare, Search, X, AlertTriangle, Loader2, FileText, Filter, Settings2, Download,
 } from "lucide-react";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import { suggestAutoFill, type BindableField } from "@/lib/precedents/suggestAutoFill";
@@ -35,6 +35,15 @@ interface Precedent {
   library_key: string | null;
   // body_template is deliberately absent -- the list endpoint doesn't return
   // it (too heavy); PreviewModal fetches it per-precedent on open.
+}
+
+// The company's letterhead, as returned by GET /api/precedents/letterhead.
+// detected_fields are the roles lib/precedents/letterheadClassify.ts found in
+// it (our_ref, date, salutation, ...) -- what the letterhead supplies around
+// the precedent's own body.
+interface Letterhead {
+  original_filename: string;
+  detected_fields: { role: string; options?: string[] }[] | null;
 }
 
 const UNCATEGORISED = "Other";
@@ -58,10 +67,17 @@ export default function PrecedentLibraryBrowser() {
   const [preview, setPreview] = useState<Precedent | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Company-wide, so it's fetched once here rather than per preview.
+  const [letterhead, setLetterhead] = useState<Letterhead | null>(null);
+
   const load = useCallback(async () => {
-    const res = await fetch("/api/precedents?recordTable=projects");
+    const [res, lhRes] = await Promise.all([
+      fetch("/api/precedents?recordTable=projects"),
+      fetch("/api/precedents/letterhead"),
+    ]);
     const json = await res.json();
     setPrecedents(json.precedents || []);
+    setLetterhead(await lhRes.json().then(j => j.letterhead || null).catch(() => null));
     setLoading(false);
   }, []);
 
@@ -251,7 +267,9 @@ export default function PrecedentLibraryBrowser() {
         ))}
       </div>
 
-      {preview && <PreviewModal key={preview.id} precedent={preview} onClose={() => setPreview(null)} />}
+      {preview && (
+        <PreviewModal key={preview.id} precedent={preview} letterhead={letterhead} onClose={() => setPreview(null)} />
+      )}
     </div>
   );
 }
@@ -339,18 +357,98 @@ function FieldChip({ seg }: { seg: Extract<BodyTemplateSegment, { type: "field" 
   );
 }
 
+// A slot the letterhead fills in, as opposed to a fill-in field in the body.
+// Amber so it reads as "this comes from the letterhead / the issue form", not
+// as something typed into the precedent itself.
+function SlotChip({ label }: { label: string }) {
+  return (
+    <span className="inline rounded px-0.5 font-bold bg-amber-100 text-amber-800">{label}</span>
+  );
+}
+
+// What each letterhead role contributes to the letter. Roles come from
+// lib/precedents/letterheadClassify.ts, detected per company when the
+// letterhead was uploaded -- a firm whose letterhead has no Our Ref line
+// simply has no our_ref role, and that row doesn't render.
+const ROLE_SLOTS: Record<string, { prefix?: string; label: string; bold?: boolean }> = {
+  our_ref: { prefix: "Our Ref: ", label: "Matter reference" },
+  date: { label: "Date of issue" },
+  delivery_mode: { label: "Delivery mode" },
+  recipient_name: { label: "Recipient name" },
+  address: { label: "Recipient address" },
+  salutation: { label: "Salutation" },
+  subject: { label: "Subject", bold: true },
+  closing: { label: "Yours faithfully," },
+};
+
+// Roles in the order the letterhead lays them out. detected_fields is built
+// in paragraph order by applyClassification, so it already carries that
+// order; address isn't in it (it's a core tag, not a detected field), and it
+// belongs with the recipient, so it's spliced in.
+function letterheadRows(detected: { role: string; options?: string[] }[]): { role: string; options?: string[] }[] {
+  const rows = [...detected];
+  const hasAddress = rows.some(r => r.role === "address");
+  if (!hasAddress) {
+    const at = rows.findIndex(r => r.role === "recipient_name");
+    const before = rows.findIndex(r => r.role === "salutation");
+    const insertAt = at >= 0 ? at + 1 : before >= 0 ? before : rows.length;
+    rows.splice(insertAt, 0, { role: "address" });
+  }
+  // closing sits below the body in the finished letter, so it's rendered
+  // after it rather than with the header rows.
+  return rows.filter(r => ROLE_SLOTS[r.role] && r.role !== "closing");
+}
+
 // Renders the template the way the issued document reads: Arial, 10pt body,
 // 12pt bold headings, on a page rather than in a code block. Matches the
 // letterhead the firm uploaded (its content paragraphs are sz=20, i.e. 10pt),
 // so what a solicitor sees here is what comes out of the printer.
-function DocumentPreview({ segments }: { segments: BodyTemplateSegment[] }) {
+//
+// The body is shown inside the letterhead's own scaffold -- Our Ref, date,
+// delivery mode, recipient, salutation, subject above it; closing and signoff
+// below -- because that's the document that actually gets sent. The header
+// art itself lives in the .docx and isn't reproduced here; the band at the
+// top stands in for it.
+function DocumentPreview({
+  segments, letterhead,
+}: {
+  segments: BodyTemplateSegment[];
+  letterhead: Letterhead | null;
+}) {
   const lines = toLines(segments);
+  const rows = letterhead ? letterheadRows(letterhead.detected_fields || []) : [];
 
   return (
     <div
       className="bg-white border border-slate-200 rounded-2xl px-8 py-7 text-slate-900"
       style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: "10pt", lineHeight: 1.45 }}
     >
+      {letterhead ? (
+        <>
+          <div className="mb-6 py-3 border-b border-dashed border-slate-200 text-center">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300">
+              {letterhead.original_filename} &mdash; letterhead header
+            </p>
+          </div>
+          {rows.map(r => {
+            const slot = ROLE_SLOTS[r.role];
+            return (
+              <p key={r.role} style={{ margin: "0 0 6pt", fontSize: slot.bold ? "12pt" : undefined, fontWeight: slot.bold ? 700 : undefined }}>
+                {slot.prefix}
+                <SlotChip label={r.options?.length ? `${slot.label}: ${r.options.join(" / ")}` : slot.label} />
+              </p>
+            );
+          })}
+          <div style={{ height: "10pt" }} />
+        </>
+      ) : (
+        <div className="mb-6 py-3 border-b border-dashed border-amber-200 text-center">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500">
+            No letterhead uploaded &mdash; issued documents will have no header
+          </p>
+        </div>
+      )}
+
       {lines.map((line, i) => {
         // A blank line is paragraph spacing, not an empty paragraph.
         if (!line.length) return <div key={i} style={{ height: "10pt" }} />;
@@ -370,6 +468,17 @@ function DocumentPreview({ segments }: { segments: BodyTemplateSegment[] }) {
           </p>
         );
       })}
+
+      {/* A letterhead with its own closing line supplies that wording, so it's
+          shown as a slot rather than guessed at; otherwise contentXml.ts
+          composes "Yours faithfully," and that is what will print. */}
+      <div style={{ height: "14pt" }} />
+      <p style={{ margin: "0 0 14pt" }}>
+        {letterhead && (letterhead.detected_fields || []).some(f => f.role === "closing")
+          ? <SlotChip label="Closing (from letterhead)" />
+          : "Yours faithfully,"}
+      </p>
+      <p style={{ margin: 0 }}><SlotChip label="Signing solicitor(s)" /></p>
     </div>
   );
 }
@@ -491,7 +600,13 @@ function AutoFillSection({
 // drafting instructions that steer the AI, and the body template with its
 // fill-in fields made visible rather than rendered as prose -- a solicitor
 // deciding whether to use a precedent wants to see where the gaps are.
-function PreviewModal({ precedent, onClose }: { precedent: Precedent; onClose: () => void }) {
+function PreviewModal({
+  precedent, letterhead, onClose,
+}: {
+  precedent: Precedent;
+  letterhead: Letterhead | null;
+  onClose: () => void;
+}) {
   // Fetched per-preview rather than with the list: body_template is by far the
   // heaviest column (~500KB across a seeded library), and the list only needs
   // it for whichever one precedent the user actually opens.
@@ -547,7 +662,18 @@ function PreviewModal({ precedent, onClose }: { precedent: Precedent; onClose: (
               )}
             </div>
           </div>
-          <button onClick={onClose} className="shrink-0 p-1"><X size={18} className="text-slate-400" /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            {segments.length > 0 && (
+              <a
+                href={`/api/precedents/${precedent.id}/download`}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white text-[11px] font-bold rounded-full hover:bg-slate-700 transition-colors"
+                title="Download as a Word document on the firm's letterhead, with blanks to fill in"
+              >
+                <Download size={13} /> Word
+              </a>
+            )}
+            <button onClick={onClose} className="p-1"><X size={18} className="text-slate-400" /></button>
+          </div>
         </div>
 
         <div className="px-7 py-6 space-y-6">
@@ -588,7 +714,7 @@ function PreviewModal({ precedent, onClose }: { precedent: Precedent; onClose: (
                 issue time &mdash; used for long-form documents where a fill-in template would not help.
               </p>
             ) : (
-              <DocumentPreview segments={segments} />
+              <DocumentPreview segments={segments} letterhead={letterhead} />
             )}
           </div>
 
