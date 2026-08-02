@@ -5,12 +5,11 @@
 // check, just bumps last_seen_at so the sweep route can tell whether the
 // last two pings (~60 min) showed any activity.
 import { NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { loadVm } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm } from "../../_lib";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
 

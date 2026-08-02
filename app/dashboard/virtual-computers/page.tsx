@@ -19,9 +19,16 @@ interface Vm {
 export default function VirtualComputersPage() {
   const [vms, setVms] = useState<Vm[]>([]);
   const [loading, setLoading] = useState(true);
+  // Set once, on the first load, if the API 403s -- authorizeVirtualComputersAccess()
+  // (app/api/virtual-computers/_lib.ts) restricts this whole feature to one
+  // company. Shown instead of the normal "no VM assigned yet" empty state,
+  // which would otherwise misleadingly suggest an admin just hasn't set one
+  // up yet.
+  const [notAvailable, setNotAvailable] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/virtual-computers/list");
+    if (res.status === 403) { setNotAvailable(true); setLoading(false); return; }
     const json = await res.json();
     setVms(json.virtualComputers || []);
     setLoading(false);
@@ -44,6 +51,11 @@ export default function VirtualComputersPage() {
 
       {loading ? (
         <p className="text-[11px] text-slate-400">Loading...</p>
+      ) : notAvailable ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center bg-white border border-slate-200 rounded-[32px]">
+          <Monitor size={28} className="text-slate-300 mb-3" />
+          <p className="text-[13px] text-slate-500">Virtual computers aren&apos;t available for this company.</p>
+        </div>
       ) : vms.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center bg-white border border-slate-200 rounded-[32px]">
           <Monitor size={28} className="text-slate-300 mb-3" />

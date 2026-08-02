@@ -1,12 +1,11 @@
 // app/api/virtual-computers/[id]/reassign/route.ts
 // Admin-only. Changes which company member can see/connect to a VM.
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { loadVm } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm } from "../../_lib";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, isAdmin } = auth;
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });

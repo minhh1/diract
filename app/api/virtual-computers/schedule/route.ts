@@ -2,10 +2,10 @@
 // Company-wide business-hours schedule (see supabase/company_vm_schedules.sql
 // and app/api/virtual-computers/sweep/route.ts). Admin-only to read/write.
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { authorizeVirtualComputersAccess } from "../_lib";
 
 export async function GET() {
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId } = auth;
 
@@ -27,7 +27,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, isAdmin } = auth;
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });

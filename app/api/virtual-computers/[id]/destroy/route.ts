@@ -1,14 +1,13 @@
 // app/api/virtual-computers/[id]/destroy/route.ts
 // Admin-only. Tears down the underlying cloud instance and marks the row destroyed.
 import { NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getProvider } from "@/lib/vmProviders/registry";
-import { loadVm, resolveCredentials, closeUsageEvent } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm, resolveCredentials, closeUsageEvent } from "../../_lib";
 import type { CloudProviderId } from "@/lib/vmProviders/types";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, isAdmin } = auth;
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });

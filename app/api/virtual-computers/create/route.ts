@@ -11,17 +11,16 @@
 // credentialId needed, but requires an active/trialing subscription with a
 // free slot, and only sizes included in the plan are allowed.
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getProvider, PROVISIONABLE_PROVIDERS } from "@/lib/vmProviders/registry";
 import { PRICING } from "@/lib/vmProviders/pricing";
 import { getPlatformCredentials } from "@/lib/vmProviders/platformCredentials";
 import { PLANS, isPlanId } from "@/lib/billing/plans";
-import { generateRemotePassword, generateWindowsPassword, openUsageEvent, getCompanySchedule, debugSshKeyIds } from "../_lib";
+import { authorizeVirtualComputersAccess, generateRemotePassword, generateWindowsPassword, openUsageEvent, getCompanySchedule, debugSshKeyIds } from "../_lib";
 import { nextLocalMidnight } from "@/lib/vmProviders/scheduling";
 import type { CloudProviderId, ProviderCredentials, VmOs, VmProtocol } from "@/lib/vmProviders/types";
 
 export async function POST(req: NextRequest) {
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });

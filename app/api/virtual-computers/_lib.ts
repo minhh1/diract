@@ -1,13 +1,29 @@
 // app/api/virtual-computers/_lib.ts
 // Shared helpers for the virtual-computers API routes. Not a route itself
 // (no exported HTTP method handlers), so Next.js ignores it for routing.
+import { NextResponse } from "next/server";
 import crypto from "crypto";
 import net from "net";
+import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getPlatformCredentials } from "@/lib/vmProviders/platformCredentials";
 import { getProvider } from "@/lib/vmProviders/registry";
 import { nextLocalMidnight } from "@/lib/vmProviders/scheduling";
 import { verifyWindowsRdpLogin } from "@/lib/vmProviders/windowsLoginCheck";
+import { VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID } from "@/lib/vmProviders/allowedCompany";
 import type { CloudProviderId, ProviderCredentials, VmOs, VmProtocol } from "@/lib/vmProviders/types";
+
+// Drop-in replacement for authorizeCompanyMember() -- every virtual-
+// computers route already destructures { admin, user, companyId, isAdmin }
+// or { error } from that call, so this preserves the exact same shape and
+// just adds the allowlist check on top.
+export async function authorizeVirtualComputersAccess() {
+  const auth = await authorizeCompanyMember();
+  if ("error" in auth) return auth;
+  if (auth.companyId !== VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID) {
+    return { error: NextResponse.json({ error: "Virtual computers aren't available for this company" }, { status: 403 }) };
+  }
+  return auth;
+}
 
 // A cloud provider reporting the host instance as "running" only means the
 // underlying machine powered on -- for Windows on DigitalOcean (a from-

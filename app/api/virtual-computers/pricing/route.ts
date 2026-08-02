@@ -1,12 +1,12 @@
 // app/api/virtual-computers/pricing/route.ts
 // Feeds the cost-comparison table in the admin "create virtual computer" form.
 import { NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { authorizeVirtualComputersAccess } from "../_lib";
 import { PRICING, PROVIDER_LABELS } from "@/lib/vmProviders/pricing";
 import { PROVISIONABLE_PROVIDERS } from "@/lib/vmProviders/registry";
 
 export async function GET() {
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   if (!auth.isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 

@@ -4,12 +4,11 @@
 // access level as connecting to the VM itself. Takes effect on next
 // connect, not live mid-session (see supabase/virtual_computers_resolution.sql).
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { loadVm } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm } from "../../_lib";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
 

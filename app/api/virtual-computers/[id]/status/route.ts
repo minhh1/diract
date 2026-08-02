@@ -1,12 +1,11 @@
 // app/api/virtual-computers/[id]/status/route.ts
 // Poll target while a VM is provisioning. Assigned member or admin only.
 import { NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { loadVm, reconcileProvisioningVm } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm, reconcileProvisioningVm } from "../../_lib";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
 

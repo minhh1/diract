@@ -30,6 +30,7 @@ import { pushWithFallback } from "@/lib/navigateWithFallback";
 import { perfLog } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 import NotificationBell from "@/components/NotificationBell";
+import { VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID } from "@/lib/vmProviders/allowedCompany";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -740,7 +741,16 @@ export default function Sidebar() {
   };
   const tablesPanelOpen = activeRailSection === 'tables';
 
-  // Whether to show the Precedents row in the table list. Gated on the
+  // Precedents is a Law Firm-template-exclusive feature (the marketplace
+  // template's own seeded document library -- see
+  // supabase/template_law_firm_seed.sql) -- gated the same way Trust
+  // Account is just below, on the company having the template's Trust
+  // Accounts table, so it never shows for a tenant that isn't on that
+  // template, even if it somehow has precedent rows of its own (see
+  // app/api/precedents/route.ts's matching server-side guard).
+  const hasLawFirmTemplate = customTables.some(t => t.slug === 'trust-accounts');
+
+  // Whether to show the Precedents row in the table list. Also gated on the
   // company actually having a precedent library so a tenant without one
   // doesn't get a link to an empty page -- same reasoning as the Trust
   // Account row below, but the signal is precedent rows rather than a table.
@@ -748,7 +758,7 @@ export default function Sidebar() {
   // row appears in is open.
   const [hasPrecedents, setHasPrecedents] = useState(false);
   useEffect(() => {
-    if (!ctxCompanyId || !tablesPanelOpen) return;
+    if (!ctxCompanyId || !tablesPanelOpen || !hasLawFirmTemplate) return;
     let cancelled = false;
     supabase
       .from('precedents')
@@ -759,7 +769,7 @@ export default function Sidebar() {
       .is('deleted_at', null)
       .then(({ count }) => { if (!cancelled) setHasPrecedents(!!count); });
     return () => { cancelled = true; };
-  }, [ctxCompanyId, tablesPanelOpen]);
+  }, [ctxCompanyId, tablesPanelOpen, hasLawFirmTemplate]);
 
   // Shared with GenericMasterTable via useCompanyCustomFields' module cache —
   // when the tree's table matches the active page's table, this fires once.
@@ -1500,7 +1510,7 @@ export default function Sidebar() {
                     lives on the matter's own Precedents tab). Same
                     fixed-bespoke-page pattern as Trust Account above. See
                     app/dashboard/precedents/page.tsx. */}
-                {hasPrecedents && (
+                {hasLawFirmTemplate && hasPrecedents && (
                   <button
                     onClick={() => { if (!pathname.startsWith('/dashboard/precedents')) { startNavigation(); router.push('/dashboard/precedents'); } }}
                     aria-label="Precedents"
@@ -1796,7 +1806,7 @@ export default function Sidebar() {
           {activeRailSection === 'tools' && (
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
               <p className="px-3 mb-1 text-[9px] font-bold text-slate-300 uppercase tracking-widest">Tools</p>
-              {TOOLS_LINKS.map(link => (
+              {TOOLS_LINKS.filter(link => link.href !== '/dashboard/virtual-computers' || ctxCompanyId === VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID).map(link => (
                 <SidebarNavLink
                   key={link.href}
                   href={link.href}
@@ -1812,7 +1822,7 @@ export default function Sidebar() {
           {activeRailSection === 'settings' && (
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
               <p className="px-3 mb-1 text-[9px] font-bold text-slate-300 uppercase tracking-widest">Settings</p>
-              {SETTINGS_LINKS.map(link => {
+              {SETTINGS_LINKS.filter(link => link.label !== 'Precedents' || hasLawFirmTemplate).map(link => {
                 const [linkPath, linkQuery] = link.href.split('?view=');
                 const isActive = link.matchExact
                   ? pathname === linkPath && !currentSettingsView
@@ -1838,8 +1848,12 @@ export default function Sidebar() {
               <p className="px-3 mb-1 text-[9px] font-bold text-slate-300 uppercase tracking-widest">Admin</p>
               {/* A Team Leader who isn't a company admin only gets Default
                   Settings, scoped to their own team(s) -- see
-                  app/dashboard/admin/page.tsx's restrictToTeamIds. */}
-              {(ctxIsAdmin ? ADMIN_LINKS : ADMIN_LINKS.filter(link => link.tab === 'defaults')).map(link => (
+                  app/dashboard/admin/page.tsx's restrictToTeamIds. Virtual
+                  computers is separately restricted to one company -- see
+                  lib/vmProviders/allowedCompany.ts. */}
+              {(ctxIsAdmin ? ADMIN_LINKS : ADMIN_LINKS.filter(link => link.tab === 'defaults'))
+                .filter(link => link.tab !== 'virtualComputers' || ctxCompanyId === VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID)
+                .map(link => (
                 <SidebarNavLink
                   key={link.tab}
                   href={`/dashboard/admin?tab=${link.tab}`}

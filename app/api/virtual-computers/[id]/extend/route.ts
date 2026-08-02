@@ -5,13 +5,12 @@
 // mid-session. Also bumps last_seen_at since clicking the prompt is itself
 // unambiguous activity.
 import { NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { loadVm, getCompanySchedule } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm, getCompanySchedule } from "../../_lib";
 import { nextLocalMidnight } from "@/lib/vmProviders/scheduling";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
 

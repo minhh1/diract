@@ -2,9 +2,8 @@
 // Mints a short-lived Guacamole auth token for a running VM. Assigned
 // member or admin only.
 import { NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getGuacamoleSession, resolveGuacamoleUrl } from "@/lib/guacamole";
-import { loadVm } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm } from "../../_lib";
 import type { VmProtocol, CloudProviderId } from "@/lib/vmProviders/types";
 import { resolveFlyRegion } from "@/lib/vmProviders/regions";
 
@@ -17,7 +16,7 @@ const DEFAULT_HEIGHT = 1080;
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
 

@@ -19,8 +19,7 @@
 // whoever resets it locked out instead of helped -- so this is rejected
 // outright for that combination rather than pretending to support it.
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { loadVm } from "../../_lib";
+import { authorizeVirtualComputersAccess, loadVm } from "../../_lib";
 
 const UNSAFE_WINDOWS_CHARS = /["`$\\]/; // see generateWindowsPassword's own comment for why these are excluded
 
@@ -42,7 +41,7 @@ function validatePassword(password: string, os: "linux" | "windows", protocol: s
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
 

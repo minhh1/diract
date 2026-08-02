@@ -2,12 +2,12 @@
 // Admin-only CRUD for company_cloud_credentials. GET never returns the
 // `credentials` column to the browser.
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { authorizeVirtualComputersAccess } from "../_lib";
 
 const VALID_PROVIDERS = ["digitalocean", "aws", "gcp"];
 
 export async function GET() {
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, isAdmin } = auth;
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
@@ -23,7 +23,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
   if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });

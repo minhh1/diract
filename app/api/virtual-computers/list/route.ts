@@ -2,10 +2,10 @@
 // Admins see every virtual computer in the company; regular members see
 // only the one(s) assigned to them.
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { authorizeVirtualComputersAccess } from "../_lib";
 
 export async function GET(req: NextRequest) {
-  const auth = await authorizeCompanyMember();
+  const auth = await authorizeVirtualComputersAccess();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
 
