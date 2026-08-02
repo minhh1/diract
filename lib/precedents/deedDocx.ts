@@ -212,6 +212,14 @@ export function buildDeedDocx(templateBytes: Buffer, body: string): Buffer {
       continue;
     }
     flushRows();
+    if (l.text.startsWith(COVER)) {
+      try {
+        const spec = JSON.parse(l.text.slice(1)) as CoverSpec;
+        paragraphs += coverXml(spec);
+        setFooterDocumentName(zip, spec.title);
+      } catch { /* malformed: skip */ }
+      continue;
+    }
     if (l.text.startsWith(EXEC)) {
       try { paragraphs += executionXml(JSON.parse(l.text.slice(1))); } catch { /* malformed: skip */ }
       continue;
@@ -358,4 +366,100 @@ function executionXml(spec: ExecutionSpec): string {
     `<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr>` +
     `<w:tblGrid><w:gridCol w:w="${EXEC_SIDE}"/><w:gridCol w:w="${EXEC_SPACER}"/><w:gridCol w:w="${EXEC_SIDE}"/></w:tblGrid>` +
     row + `</w:tbl>` + execPara("");
+}
+
+
+// ---------------------------------------------------------------------------
+// Cover page
+//
+// A deed's cover carries the title and the parties and nothing else. Measured
+// from a firm's own deed: the title sits about a third of the way down, left
+// aligned at 16pt, with the parties beneath it at 10.5pt. Written as explicit
+// runs rather than styles because a cover page is a fixed piece of typography
+// -- it isn't part of the numbered scheme the body styles describe.
+// ---------------------------------------------------------------------------
+
+const COVER = String.fromCharCode(5);
+const COVER_TITLE_SIZE = 32;   // half-points: 16pt
+const COVER_PARTY_SIZE = 21;   // half-points: 10.5pt
+const COVER_LEAD_LINES = 10;   // blank lines above the title
+
+export interface CoverSpec {
+  title: string;
+  /** One line per party, in the order they appear in the deed. */
+  parties: string[];
+}
+
+export function deedCover(spec: CoverSpec): string {
+  return COVER + JSON.stringify(spec);
+}
+
+function coverPara(text: string, size: number, bold: boolean): string {
+  const run = text
+    ? `<w:r><w:rPr><w:rFonts w:ascii="${EXEC_FONT}" w:hAnsi="${EXEC_FONT}"/>` +
+      `${bold ? "<w:b/>" : ""}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>` +
+      `<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`
+    : "";
+  return `<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>${run}</w:p>`;
+}
+
+function coverXml(spec: CoverSpec): string {
+  let out = "";
+  for (let i = 0; i < COVER_LEAD_LINES; i++) out += coverPara("", COVER_PARTY_SIZE, false);
+  out += coverPara(spec.title, COVER_TITLE_SIZE, false);
+  out += coverPara("", COVER_PARTY_SIZE, false);
+  for (const p of spec.parties) out += coverPara(p, COVER_PARTY_SIZE, false);
+  return out;
+}
+
+/**
+ * Puts the deed's name in the footer.
+ *
+ * A firm's footer shows the document name through a field, so left alone
+ * every deed carries whatever the template was called ("Deed Template").
+ *
+ * The name goes into the field's cached result, not into the document's Title
+ * property. Setting Title looked like the tidier fix and was worse: a footer
+ * can carry several overlapping fields -- COMMENTS, DOCPROPERTY "Title" and
+ * TITLE all appear in one real template -- and populating Title makes every
+ * one of them resolve, printing the deed's name three times. Replacing the
+ * cached result of the field that is actually displaying something changes
+ * exactly what is on the page.
+ */
+function setDocVariable(zip: PizZip, name: string, value: string): void {
+  const file = zip.file("word/settings.xml");
+  if (!file) return;
+  const xml = file.asText();
+  const varRe = new RegExp(`(<w:docVar w:name="${name}" w:val=")[^"]*(")`);
+  let updated: string;
+  if (varRe.test(xml)) {
+    updated = xml.replace(varRe, (_m, a, b) => `${a}${escapeXml(value)}${b}`);
+  } else if (/<w:docVars>/.test(xml)) {
+    updated = xml.replace("<w:docVars>", `<w:docVars><w:docVar w:name="${name}" w:val="${escapeXml(value)}"/>`);
+  } else {
+    updated = xml.replace(/<w:settings[^>]*>/, m =>
+      `${m}<w:docVars><w:docVar w:name="${name}" w:val="${escapeXml(value)}"/></w:docVars>`);
+  }
+  if (updated !== xml) zip.file("word/settings.xml", updated);
+}
+
+function setFooterDocumentName(zip: PizZip, title: string): void {
+  // The cached result alone is not enough: Word and LibreOffice both
+  // recompute a DOCVARIABLE from the variable itself, so the stale name comes
+  // straight back. Set the variable AND the cached text -- the variable is
+  // what recomputation reads, the cached text is what shows before it runs.
+  setDocVariable(zip, "FileName", title);
+  for (const name of Object.keys(zip.files)) {
+    if (!/^word\/(footer|header)\d*\.xml$/.test(name)) continue;
+    const file = zip.file(name);
+    if (!file) continue;
+    const xml = file.asText();
+    // Only touch a field that has a cached result to replace; one with none
+    // is not what is showing the stale name.
+    const updated = xml.replace(
+      /(<w:instrText[^>]*>[^<]*DOCVARIABLE[^<]*<\/w:instrText>[\s\S]*?<w:fldChar w:fldCharType="separate"\/>[\s\S]*?<w:t[^>]*>)([^<]*)(<\/w:t>)/,
+      (_m, before, _old, after) => `${before}${escapeXml(title)}${after}`
+    );
+    if (updated !== xml) zip.file(name, updated);
+  }
 }

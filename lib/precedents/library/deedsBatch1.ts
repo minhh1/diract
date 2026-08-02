@@ -18,7 +18,7 @@
 import { field, type PrecedentSeed } from "./types";
 import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE } from "./instrumentParts";
 import { executedAsLine } from "@/lib/precedents/executionClauses";
-import { DEED_PAGE_BREAK } from "@/lib/precedents/deedDocx";
+import { DEED_PAGE_BREAK, deedCover } from "@/lib/precedents/deedDocx";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 
 /** The boilerplate every deed in this batch ends with. */
@@ -110,7 +110,10 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
     aiInstructions:
       "The operative parts are the payment, the release and the bar. Get the release wording right: identify precisely what is released, by whom, in favour of whom, and whether it extends to claims the parties do not yet know about. A release that recites 'all claims' without defining the Dispute is worth little. Include the bar to proceedings so the deed can be pleaded in answer to any later claim. Keep 'no admission' -- it is what makes settlement possible.",
     segments: [
-      ...L(null, ["DEED OF SETTLEMENT AND RELEASE"]),
+      // Cover page: title a third of the way down at 16pt with the parties
+      // beneath at 10.5pt, and the document Title set so a footer that reads
+      // it through a DOCPROPERTY field shows the deed name.
+      ...L(null, [deedCover({ title: "DEED OF SETTLEMENT AND RELEASE", parties: ["[First party: name, ACN/ABN and address]", "[Second party: name, ACN/ABN and address]"] })]),
       ...L(null, [""]),
       ...opening([
         ...L("DeedRecital", [
@@ -185,7 +188,10 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
     aiInstructions:
       "Define Confidential Information by reference to what is actually being disclosed rather than reciting a generic definition, and carve out what is already public, independently developed, or received from a third party without restriction -- without those carve-outs the obligation is unworkable. State the permitted purpose precisely, because everything else follows from it. Include the compelled-disclosure exception and the obligation to notify before disclosing.",
     segments: [
-      ...L(null, ["DEED OF CONFIDENTIALITY"]),
+      // Cover page: title a third of the way down at 16pt with the parties
+      // beneath at 10.5pt, and the document Title set so a footer that reads
+      // it through a DOCPROPERTY field shows the deed name.
+      ...L(null, [deedCover({ title: "DEED OF CONFIDENTIALITY", parties: ["[Disclosing party: name, ACN/ABN and address]", "[Receiving party: name, ACN/ABN and address]"] })]),
       ...L(null, [""]),
       ...opening([
         ...L("DeedRecital", [
