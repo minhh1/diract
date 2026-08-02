@@ -62,7 +62,7 @@ function DateFieldRow({ field, value, onSave }: { field: RecordField; value: unk
     <>
       <Pressable onPress={() => setPickerOpen(true)} style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
-        <Text style={[styles.value, { color: theme.text }]}>{value ? new Date(value as string).toLocaleDateString() : '—'}</Text>
+        <Text style={[styles.value, { color: theme.text }]}>{value ? new Date(value as string).toLocaleDateString('en-AU') : '—'}</Text>
       </Pressable>
       {pickerOpen && (
         <DateTimePicker

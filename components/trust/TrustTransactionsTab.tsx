@@ -7,13 +7,14 @@
 // the same insert_ledger_record()/createRecord() mechanics every other
 // ledger table in this app uses -- nothing here is a new data structure.
 import { useMemo, useState } from "react";
-import { Plus, ArrowLeftRight, ShieldPlus, Printer, Eye } from "lucide-react";
+import { Plus, ArrowLeftRight, ShieldPlus, Printer, Send, Eye } from "lucide-react";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import DepositFundsModal from "./DepositFundsModal";
 import TransferFundsModal from "./TransferFundsModal";
 import ProtectFundsModal from "./ProtectFundsModal";
 import PrintChequesModal from "./PrintChequesModal";
+import TrustPaymentModal from "./TrustPaymentModal";
 import PdfPreviewModal from "../dashboard/PdfPreviewModal";
 
 function money(n: number): string {
@@ -39,17 +40,18 @@ function describe(r: CustomTableRecord): string {
 }
 
 export default function TrustTransactionsTab({
-  companyId, userId, trustAccountId, trustAccounts, trustTable, records, availableBalance,
+  companyId, userId, trustAccountId, trustAccounts, trustTable, protectedTable, records, availableBalance,
 }: {
   companyId: string;
   userId: string;
   trustAccountId: string;
   trustAccounts: CustomTableRecord[];
   trustTable: ReturnType<typeof useCustomTable>;
+  protectedTable: ReturnType<typeof useCustomTable>;
   records: CustomTableRecord[];
   availableBalance: number;
 }) {
-  const [modal, setModal] = useState<'deposit' | 'transfer' | 'protect' | 'cheque' | null>(null);
+  const [modal, setModal] = useState<'deposit' | 'transfer' | 'protect' | 'cheque' | 'payment' | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
 
   const sorted = [...records].sort((a, b) => String(b.values.date || '').localeCompare(String(a.values.date || '')));
@@ -67,6 +69,9 @@ export default function TrustTransactionsTab({
         </button>
         <button onClick={() => setModal('protect')} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:border-amber-300 transition-all">
           <ShieldPlus size={13} /> Protect Funds
+        </button>
+        <button onClick={() => setModal('payment')} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:border-slate-400 transition-all">
+          <Send size={13} /> Trust Payment
         </button>
         <button onClick={() => setModal('cheque')} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:border-slate-400 transition-all">
           <Printer size={13} /> Print Cheques
@@ -148,7 +153,15 @@ export default function TrustTransactionsTab({
           companyId={companyId} userId={userId} trustAccountId={trustAccountId}
           availableBalance={availableBalance}
           onClose={() => setModal(null)}
-          onProtected={() => setModal(null)}
+          onProtected={() => { setModal(null); protectedTable.refetch(); }}
+        />
+      )}
+      {modal === 'payment' && (
+        <TrustPaymentModal
+          companyId={companyId} userId={userId} trustAccountId={trustAccountId} trustAccounts={trustAccounts}
+          trustTable={trustTable}
+          onClose={() => setModal(null)}
+          onProcessed={() => { setModal(null); trustTable.refetch(); }}
         />
       )}
       {modal === 'cheque' && (

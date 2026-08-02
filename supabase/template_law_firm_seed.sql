@@ -396,7 +396,7 @@ BEGIN
     -- "Funds remained in Bank Account" covers an opening balance carried
     -- forward from a previous trust accounting system -- money that never
     -- moved as a fresh deposit, so none of the other methods describe it.
-    ('payment_method', 'Payment Method', 'select', to_jsonb(ARRAY['Bank Transfer','Cash','Cheque','Credit Card','Funds remained in Bank Account']), NULL::uuid, NULL::text, 14)
+    ('payment_method', 'Payment Method', 'select', to_jsonb(ARRAY['Bank Transfer','Cash','Cheque','Credit Card','Funds remained in Bank Account','Bank Cheque','Direct Debit','Trust Cheque']), NULL::uuid, NULL::text, 14)
   ) AS v(field_key, label, field_type, select_options, linked_template_table_id, linked_display_field, display_order)
   WHERE NOT EXISTS (
     SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
@@ -411,6 +411,24 @@ BEGIN
     (template_table_id, field_key, label, field_type, linked_template_table_id, linked_display_field, display_order)
   SELECT v_trust_table_id, 'reconciled_in', 'Reconciled In', 'table_relation', v_recon_table_id, 'period_start', 16
   WHERE NOT EXISTS (SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = 'reconciled_in');
+
+  -- Trust Payment modal fields (Transfer Type / Account Name / Account
+  -- Number / Internal Note) -- see
+  -- supabase/migrations/20260802180000_trust_payment_modal_fields.sql for
+  -- the full rationale and the live-catalog/installed-company rollout.
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, select_options, display_order, help_text)
+  SELECT v_trust_table_id, v.field_key, v.label, v.field_type, v.select_options, v.display_order, v.help_text
+  FROM (VALUES
+    ('transfer_type',  'Transfer Type',  'select', to_jsonb(ARRAY['Direct Deposit','BPAY']), 17, 'Only shown for Bank Transfer / Direct Debit payments'::text),
+    ('account_name',   'Account Name',   'text',   NULL::jsonb, 18, NULL::text),
+    ('payee_bsb',       'BSB',            'text',   NULL::jsonb, 19, NULL::text),
+    ('account_number', 'Account Number', 'text',   NULL::jsonb, 20, NULL::text),
+    ('internal_note',  'Internal Note',  'text',   NULL::jsonb, 21, NULL::text)
+  ) AS v(field_key, label, field_type, select_options, display_order, help_text)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
+  );
 
   -- ── Client Credits (operating-side ledger -- NOT trust; client credit
   -- balances / overpayments against invoices, entirely separate account) ──

@@ -15,7 +15,7 @@ export interface GenerateTrustOverdrawnPdfInput {
   rows: TrustOverdrawnRow[];
 }
 
-const PAGE_W = 595.28, PAGE_H = 841.89; // A4 portrait -- three columns is plenty
+const PAGE_W = 841.89, PAGE_H = 595.28; // A4 landscape -- standardised orientation across every trust report -- three columns is plenty
 const MARGIN = 50;
 
 function money(n: number): string {

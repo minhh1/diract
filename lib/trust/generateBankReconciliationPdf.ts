@@ -36,7 +36,7 @@ export interface GenerateBankReconciliationPdfInput {
   company?: { name: string; abn: string | null };
 }
 
-const PAGE_W = 595.28, PAGE_H = 841.89; // A4 portrait
+const PAGE_W = 841.89, PAGE_H = 595.28; // A4 landscape -- standardised orientation across every trust report
 const MARGIN = 48;
 
 function money(n: number): string {

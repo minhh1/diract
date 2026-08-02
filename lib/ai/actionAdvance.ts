@@ -258,7 +258,7 @@ export async function advanceAction(
     // so a mis-guessed relative date ("Monday" meant as this week vs next)
     // is obvious at a glance in the confirmation, not something the user
     // has to mentally calculate before replying "yes".
-    const displayValue = field.kind === "date" ? `${new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })}, ${value}` : value;
+    const displayValue = field.kind === "date" ? `${new Date(`${value}T00:00:00Z`).toLocaleDateString("en-AU", { weekday: "long", timeZone: "UTC" })}, ${new Date(`${value}T00:00:00Z`).toLocaleDateString("en-AU", { timeZone: "UTC" })}` : value;
     summaryParts.push(`${cleanLabel(field.label).toLowerCase()}: ${displayValue}${tag}`);
   }
 

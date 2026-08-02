@@ -26,10 +26,11 @@ function money(n: number): string {
 }
 
 export default function DepositFundsModal({
-  companyId, userId, trustAccountId, trustAccounts, trustTable, onClose, onDeposited,
+  companyId, userId, trustAccountId, trustAccounts, trustTable, fixedMatterId, fixedMatterLabel, onClose, onDeposited,
 }: {
   companyId: string; userId: string; trustAccountId: string; trustAccounts: CustomTableRecord[];
   trustTable: ReturnType<typeof useCustomTable>;
+  fixedMatterId?: string; fixedMatterLabel?: string;
   onClose: () => void;
   onDeposited: (receiptNumber: string) => void;
 }) {
@@ -42,7 +43,7 @@ export default function DepositFundsModal({
   const [addressInput, setAddressInput] = useState('');
   const [checkingAddress, setCheckingAddress] = useState(false);
   const [reason, setReason] = useState('');
-  const [rows, setRows] = useState<MatterRow[]>([{ id: nextRowId++, matterId: null, matterLabel: null, amount: '' }]);
+  const [rows, setRows] = useState<MatterRow[]>([{ id: nextRowId++, matterId: fixedMatterId ?? null, matterLabel: fixedMatterLabel ?? null, amount: '' }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,22 +158,30 @@ export default function DepositFundsModal({
           {rows.map(row => (
             <div key={row.id} className="flex items-center gap-2">
               <div className="flex-1">
-                <RelationPicker linkedSystemTable="projects" displayField="name" value={row.matterId}
-                  onSelect={(id, label) => updateRow(row.id, { matterId: id, matterLabel: label })} placeholder="Select a matter..." />
+                {fixedMatterId ? (
+                  <div className="w-full bg-slate-100 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium text-slate-500">{fixedMatterLabel}</div>
+                ) : (
+                  <RelationPicker linkedSystemTable="projects" displayField="name" value={row.matterId}
+                    onSelect={(id, label) => updateRow(row.id, { matterId: id, matterLabel: label })} placeholder="Select a matter..." />
+                )}
               </div>
               <div className="w-36 relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                 <input type="number" step="0.01" value={row.amount} onChange={e => updateRow(row.id, { amount: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 pl-7 pr-4 text-sm font-medium outline-none" placeholder="0.00" />
               </div>
-              <button onClick={() => removeRow(row.id)} disabled={rows.length === 1} className="p-2 text-slate-300 hover:text-rose-500 disabled:opacity-30">
-                <Trash2 size={14} />
-              </button>
+              {!fixedMatterId && (
+                <button onClick={() => removeRow(row.id)} disabled={rows.length === 1} className="p-2 text-slate-300 hover:text-rose-500 disabled:opacity-30">
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           ))}
-          <button onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-bold text-teal-700 hover:text-teal-900">
-            <Plus size={12} /> Add matter
-          </button>
+          {!fixedMatterId && (
+            <button onClick={addRow} className="flex items-center gap-1.5 text-[11px] font-bold text-teal-700 hover:text-teal-900">
+              <Plus size={12} /> Add matter
+            </button>
+          )}
         </div>
 
         <div className="bg-slate-50 rounded-2xl px-4 py-3 flex items-center justify-between">

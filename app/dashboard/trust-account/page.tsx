@@ -220,6 +220,7 @@ export default function TrustAccountPage() {
             trustAccountId={currentAccountId}
             trustAccounts={activeAccounts}
             trustTable={trustTable}
+            protectedTable={protectedTable}
             records={accountRecords}
             availableBalance={available}
           />

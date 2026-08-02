@@ -9,16 +9,39 @@
 // replaces the earlier generic 'custom_dashboard' grid version of this tab
 // (see supabase/migrations/20260802170000_trust_account_tab.sql, which
 // migrated any matter that already had that grid over to this tab_type).
-import { useMemo } from "react";
-import { Landmark, ExternalLink } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Landmark, ExternalLink, Plus, Send } from "lucide-react";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
 import { formatDateAU } from "@/lib/formatDate";
+import DepositFundsModal from "@/components/trust/DepositFundsModal";
+import TrustPaymentModal from "@/components/trust/TrustPaymentModal";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
-export default function TrustAccountTab({ recordId }: { recordId: string }) {
-  const { records, recordsLoading } = useCustomTable('trust-transactions');
+export default function TrustAccountTab({ recordId, companyId, userId }: { recordId: string; companyId: string; userId: string }) {
+  const trustTable = useCustomTable('trust-transactions');
+  const accountsTable = useCustomTable('trust-accounts');
+  const { records, recordsLoading } = trustTable;
+  const [modal, setModal] = useState<'deposit' | 'payment' | null>(null);
+
+  const activeAccounts = useMemo(
+    () => accountsTable.records.filter(r => r.values.is_active !== false),
+    [accountsTable.records]
+  );
+  // Default to whichever trust account this matter's most recent entry used,
+  // falling back to the firm's first active account -- there's no "current
+  // account" concept threaded down to the matter level (that only exists on
+  // the company-wide /dashboard/trust-account page), so this is the same
+  // best-effort default that page itself uses when nothing is selected yet.
+  const defaultAccountId = useMemo(() => {
+    const sorted = [...records].filter(r => String(r.values.matter || '') === recordId)
+      .sort((a, b) => String(a.values.date || '').localeCompare(String(b.values.date || '')));
+    return sorted[sorted.length - 1]?.values.trust_account || activeAccounts[0]?.id || null;
+  }, [records, recordId, activeAccounts]);
+
+  const matterNames = useRecordNames('projects', [recordId]);
+  const matterLabel = matterNames.get(recordId);
 
   const entries = useMemo(() => {
     return records
@@ -48,11 +71,21 @@ export default function TrustAccountTab({ recordId }: { recordId: string }) {
             <p className="text-[11px] text-slate-400">Every trust transaction for this matter, with running balance</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {entries.length > 0 && (
             <span className="text-[10px] font-bold text-teal-700 bg-teal-50 rounded-full px-3 py-1.5 uppercase tracking-wider">
               Balance {aud.format(closingBalance)}
             </span>
+          )}
+          {defaultAccountId && (
+            <>
+              <button onClick={() => setModal('deposit')} className="flex items-center gap-1.5 px-4 py-2 bg-teal-700 text-white rounded-full text-[12px] font-semibold hover:bg-teal-800 transition-all">
+                <Plus size={13} /> Deposit Trust
+              </button>
+              <button onClick={() => setModal('payment')} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-full text-[12px] font-semibold hover:border-slate-400 transition-all">
+                <Send size={13} /> Trust Payment
+              </button>
+            </>
           )}
           <a
             href={`/api/trust-ledger/${recordId}/pdf`}
@@ -116,6 +149,25 @@ export default function TrustAccountTab({ recordId }: { recordId: string }) {
           )}
         </table>
       </div>
+
+      {modal === 'deposit' && defaultAccountId && (
+        <DepositFundsModal
+          companyId={companyId} userId={userId} trustAccountId={defaultAccountId} trustAccounts={activeAccounts}
+          trustTable={trustTable}
+          fixedMatterId={recordId} fixedMatterLabel={matterLabel || undefined}
+          onClose={() => setModal(null)}
+          onDeposited={() => { setModal(null); trustTable.refetch(); }}
+        />
+      )}
+      {modal === 'payment' && defaultAccountId && (
+        <TrustPaymentModal
+          companyId={companyId} userId={userId} trustAccountId={defaultAccountId} trustAccounts={activeAccounts}
+          trustTable={trustTable}
+          fixedMatterId={recordId} fixedMatterLabel={matterLabel || undefined}
+          onClose={() => setModal(null)}
+          onProcessed={() => { setModal(null); trustTable.refetch(); }}
+        />
+      )}
     </div>
   );
 }

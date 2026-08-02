@@ -108,8 +108,9 @@ export async function advanceAppointmentAction(collectedIn: Record<string, strin
     return { status: "collecting", collected, missingFields: missing.map((f) => f.key), question: buildQuestion(missing, conflictNotes) };
   }
 
-  const weekday = new Date(`${collected.date}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
-  const summaryParts = [`"${collected.name}"`, `${weekday}, ${collected.date} at ${collected.start_time} for 1 hour`];
+  const weekday = new Date(`${collected.date}T00:00:00Z`).toLocaleDateString("en-AU", { weekday: "long", timeZone: "UTC" });
+  const displayDate = new Date(`${collected.date}T00:00:00Z`).toLocaleDateString("en-AU", { timeZone: "UTC" });
+  const summaryParts = [`"${collected.name}"`, `${weekday}, ${displayDate} at ${collected.start_time} for 1 hour`];
   if (collected.address?.trim()) summaryParts.push(`at ${collected.address.trim()}`);
   if (collected.notes?.trim()) summaryParts.push(`notes: ${collected.notes.trim()}`);
   const summary = `I'll book an appointment: ${summaryParts.join(", ")}.`;

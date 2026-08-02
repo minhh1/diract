@@ -12,7 +12,7 @@ import { CreateRecordSheet } from './CreateRecordSheet';
 function subtitleFor(row: RecordRow): string | null {
   const status = row.values.status ?? row.values.entity_type ?? row.values.stage;
   if (typeof status === 'string' && status) return status;
-  if (row.createdAt) return `Added ${new Date(row.createdAt).toLocaleDateString()}`;
+  if (row.createdAt) return `Added ${new Date(row.createdAt).toLocaleDateString('en-AU')}`;
   return null;
 }
 
