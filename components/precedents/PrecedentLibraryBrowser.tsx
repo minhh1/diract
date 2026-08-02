@@ -22,6 +22,7 @@ import { useCompany } from "@/components/CompanyContext";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { isFormSection, formLabelPrefix } from "@/lib/precedents/courtFormLayout";
+import { stripStyleMarkers } from "@/lib/precedents/deedDocx";
 
 interface Precedent {
   id: string;
@@ -322,7 +323,14 @@ type Inline =
 // and keep fields attached to the line they fall on.
 function toLines(segments: BodyTemplateSegment[]): Inline[][] {
   const lines: Inline[][] = [[]];
-  for (const seg of segments) {
+  for (const raw of segments) {
+    // A deed marks each paragraph's Word style with a control-character
+    // marker meant for the .docx renderer. It is invisible in a browser, so
+    // left in place it shows the style name as if it were part of the text --
+    // "HLHeading Parties". Strip it here; the styling it carries is applied
+    // when the document is generated from the firm's deed template.
+    const seg: BodyTemplateSegment =
+      raw.type === "text" ? { ...raw, text: stripStyleMarkers(raw.text) } : raw;
     if (seg.type === "field") {
       lines[lines.length - 1].push({ kind: "field", seg });
       continue;

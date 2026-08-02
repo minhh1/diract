@@ -20,6 +20,7 @@ import {
   WidthType, BorderStyle, ShadingType, AlignmentType,
 } from "docx";
 import { classify } from "@/lib/precedents/courtFormLayout";
+import { stripXmlIllegal, parseDeedBody } from "@/lib/precedents/deedDocx";
 
 // half-points: 20 = 10pt body, 24 = 12pt heading.
 const BODY_SIZE = 20;
@@ -35,7 +36,9 @@ const VALUE_WIDTH = 5956;
 const TABLE_WIDTH = LABEL_WIDTH + VALUE_WIDTH;
 
 function run(text: string, bold = false, size = BODY_SIZE) {
-  return new TextRun({ text, bold, size, font: FONT });
+  // Guard against characters XML forbids reaching the document -- see
+  // stripXmlIllegal. A single one makes the whole file unreadable in Word.
+  return new TextRun({ text: stripXmlIllegal(text), bold, size, font: FONT });
 }
 
 const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
@@ -88,6 +91,12 @@ function buildTable(rows: TableRow[]): Table {
  * sections shouldn't split it.
  */
 export async function buildCourtFormDocx(body: string): Promise<Buffer> {
+  // A deed carries paragraph-style markers meant for the firm's own deed
+  // template. Without one uploaded we still have to produce a readable
+  // document, so the markers drive bold/heading here instead of being dropped
+  // -- and they must not survive into the XML either way (see stripXmlIllegal).
+  if (hasStyleMarkers(body)) return buildFromDeedStyles(body);
+
   const blocks = classify(body);
   const children: (Paragraph | Table)[] = [];
 
@@ -135,6 +144,42 @@ export async function buildCourtFormDocx(body: string): Promise<Buffer> {
   }
   flush();
 
+  const doc = new Document({
+    styles: { default: { document: { run: { font: FONT, size: BODY_SIZE } } } },
+    sections: [{ children }],
+  });
+  return Packer.toBuffer(doc);
+}
+
+
+/** Deed style ids that should render as a heading when there is no template. */
+const DEED_HEADING_STYLES = new Set(["HLHeading"]);
+const DEED_BOLD_STYLES = new Set([
+  "HLList-Level1-Bold", "HLList-Level2-Bold",
+  "HLListLevel2-NonumberingandBold", "HLList-Level1-Bold-Nonumbering-Nounderline",
+]);
+
+function hasStyleMarkers(body: string): boolean {
+  return parseDeedBody(body).some(l => l.style);
+}
+
+/**
+ * Fallback rendering for a deed when the firm has not uploaded a deed
+ * template. The template is what supplies numbering and indentation, so
+ * without one the best that can be done is honour the emphasis the styles
+ * imply and keep the text readable -- which is far better than emitting the
+ * marker names as visible text, and better than a file Word refuses to open.
+ */
+async function buildFromDeedStyles(body: string): Promise<Buffer> {
+  const children = parseDeedBody(body).map(line => {
+    if (!line.text.trim()) return new Paragraph({ spacing: { after: 120 }, children: [] });
+    const heading = !!line.style && DEED_HEADING_STYLES.has(line.style);
+    const bold = heading || (!!line.style && DEED_BOLD_STYLES.has(line.style));
+    return new Paragraph({
+      spacing: heading ? { before: 240, after: 120 } : { after: 120 },
+      children: [run(line.text, bold, heading ? HEADING_SIZE : BODY_SIZE)],
+    });
+  });
   const doc = new Document({
     styles: { default: { document: { run: { font: FONT, size: BODY_SIZE } } } },
     sections: [{ children }],

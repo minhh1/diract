@@ -45,8 +45,19 @@ export function stripStyleMarkers(body: string): string {
   return body.replace(/[^]*/g, "");
 }
 
+/**
+ * Removes characters XML 1.0 forbids outright. Control characters below 0x20
+ * other than tab, newline and carriage return are not merely discouraged --
+ * they cannot be represented at all, and a document containing one is
+ * rejected by Word as unreadable rather than being shown with odd glyphs.
+ * The style marker is one of them, so it must never reach the output.
+ */
+export function stripXmlIllegal(s: string): string {
+  return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+}
+
 function escapeXml(s: string): string {
-  return s
+  return stripXmlIllegal(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
