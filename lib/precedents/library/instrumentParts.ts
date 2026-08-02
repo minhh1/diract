@@ -26,6 +26,11 @@ export interface PartyDetail {
   shortExample: string;
 }
 
+/** "DEED OF SETTLEMENT AND RELEASE" -> "Deed of settlement and release" -- the library authors titles in caps for the cover page's own big display type, but the repeat here reads as shouting at this size. */
+function sentenceCase(title: string): string {
+  return title.charAt(0).toUpperCase() + title.slice(1).toLowerCase();
+}
+
 /**
  * The block a firm's own deeds open with, overleaf from the cover page: the
  * title again with a rule above it, the date, and a Name/Address/Shortname
@@ -37,6 +42,11 @@ export interface PartyDetail {
  * the cover page's party lines do. Shared between deeds and agreements
  * because none of it is instrument-specific -- the words "deed" and
  * "agreement" don't appear anywhere in this block.
+ *
+ * Closes on a blank table row and then the rule paragraph, so the rule reads
+ * as belonging to that trailing blank row rather than sitting directly under
+ * the last party's Shortname -- and the same blank row separates every party
+ * from the next, last one included.
  */
 export function partyDetails(
   title: string,
@@ -44,13 +54,15 @@ export function partyDetails(
   parties: PartyDetail[]
 ): BodyTemplateSegment[] {
   const out: BodyTemplateSegment[] = [
-    ...L("DeedHeading", [ruleAbove(4, title)]),
-    ...L("DeedHeading", [ruleAbove(0, "Date")]),
-    ...L(null, [field("instrument_date", dateFieldLabel, "12 August 2026")]),
+    ...L("DeedHeading", [ruleAbove(4, sentenceCase(title))]),
+    // "Date" is bold, the value beside it isn't -- one line, not the label
+    // stacked over the value -- so this is marked bold explicitly rather
+    // than styled, unlike every other line here.
+    ...L(null, [ruleAbove(0, `${BOLD_MARK}Date${BOLD_MARK} `), field("instrument_date", dateFieldLabel, "12 August 2026")]),
     ...L(null, [""]),
     ...L("DeedHeading", [ruleAbove(8, "Parties")]),
   ];
-  parties.forEach((p, i) => {
+  parties.forEach(p => {
     out.push(...L(null, [
       partyRow("Name"), BOLD_MARK,
       field(`${p.key}_name`, `${p.label}: full name, and ACN/ABN if a company`, p.nameExample),
@@ -65,7 +77,7 @@ export function partyDetails(
       field(`${p.key}_short`, `${p.label}: short name`, p.shortExample),
       BOLD_MARK,
     ]));
-    if (i < parties.length - 1) out.push(...L(null, [partyRow("")]));
+    out.push(...L(null, [partyRow("")]));
   });
   out.push(...L("DeedHeading", [ruleAbove(8, "")]));
   return out;

@@ -43,7 +43,6 @@ export function opening(title: string, recitals: BodyTemplateSegment[]): BodyTem
         shortExample: "the Employee",
       },
     ]),
-    ...L(null, [""]),
     ...L("DeedHeading", ["Background"]),
     ...recitals,
     ...L(null, [""]),

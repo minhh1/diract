@@ -63,7 +63,6 @@ export function opening(
       { key: a.key, label: a.label, nameExample: a.example, shortExample: a.shortExample },
       { key: b.key, label: b.label, nameExample: b.example, shortExample: b.shortExample },
     ]),
-    ...L(null, [""]),
     ...L("DeedHeading", ["Background"]),
     ...recitals,
     ...L(null, [""]),

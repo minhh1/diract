@@ -98,7 +98,6 @@ function opening(title: string, recitals: BodyTemplateSegment[]): BodyTemplateSe
         shortExample: "the Employee",
       },
     ]),
-    ...L(null, [""]),
     ...L("DeedHeading", ["Background"]),
     ...recitals,
     ...L(null, [""]),

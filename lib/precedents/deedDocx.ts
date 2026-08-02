@@ -433,11 +433,16 @@ const PARTY_LABEL_COL = 1848;
 // isn't worth it.
 const PARTY_VALUE_COL = 9026 - PARTY_TABLE_INDENT - PARTY_LABEL_COL;
 
+// Explicit Arial 10 (not inherited from the template's default paragraph
+// style), so the table reads consistently whatever a firm's own Normal
+// style happens to be.
+const PARTY_FONT: RunFont = { family: "Arial", size: 20 };
+
 function partyColumnRowXml(left: string, right: string): string {
   const cell = (t: string, width: number) =>
     `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${width}"/>` +
     `<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>` +
-    `</w:tcPr>${paragraphXml(null, t)}</w:tc>`;
+    `</w:tcPr>${paragraphXml(null, t, PARTY_FONT)}</w:tc>`;
   return `<w:tr>${cell(left, PARTY_LABEL_COL)}${cell(right, PARTY_VALUE_COL)}</w:tr>`;
 }
 
@@ -460,7 +465,11 @@ function partyColumnTableXml(rows: string): string {
  */
 const DEFINED_TERM_RE = /^([^]+?)(\s+(?:means\b|has the meaning\b)[^]*)$/;
 
-function runsXml(text: string): string {
+/** Forces a run to a specific font/size regardless of the template's own default -- used for the parties table, which must read Arial 10 whatever the surrounding style is. */
+interface RunFont { family: string; size: number; }
+
+function runsXml(text: string, font?: RunFont): string {
+  const fontXml = font ? `<w:rFonts w:ascii="${font.family}" w:hAnsi="${font.family}"/><w:sz w:val="${font.size}"/><w:szCs w:val="${font.size}"/>` : "";
   // Explicit bold spans (the parties table's values) take priority over the
   // definitions auto-bold below -- the two never occur in the same text, but
   // if they ever did, an author who went to the trouble of marking a span
@@ -470,22 +479,24 @@ function runsXml(text: string): string {
       .split(BOLD_MARK)
       .map((t, i) => {
         if (!t) return "";
-        return i % 2 === 1
-          ? `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXml(t)}</w:t></w:r>`
-          : `<w:r><w:t xml:space="preserve">${escapeXml(t)}</w:t></w:r>`;
+        const rPr = i % 2 === 1 ? `<w:rPr><w:b/>${fontXml}</w:rPr>` : (fontXml ? `<w:rPr>${fontXml}</w:rPr>` : "");
+        return `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(t)}</w:t></w:r>`;
       })
       .join("");
   }
   const m = DEFINED_TERM_RE.exec(text);
-  if (!m) return `<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+  if (!m) {
+    const rPr = fontXml ? `<w:rPr>${fontXml}</w:rPr>` : "";
+    return `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+  }
   const [, term, rest] = m;
   return (
-    `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXml(term)}</w:t></w:r>` +
-    `<w:r><w:t xml:space="preserve">${escapeXml(rest)}</w:t></w:r>`
+    `<w:r><w:rPr><w:b/>${fontXml}</w:rPr><w:t xml:space="preserve">${escapeXml(term)}</w:t></w:r>` +
+    `<w:r>${fontXml ? `<w:rPr>${fontXml}</w:rPr>` : ""}<w:t xml:space="preserve">${escapeXml(rest)}</w:t></w:r>`
   );
 }
 
-function paragraphXml(styleId: string | null, text: string): string {
+function paragraphXml(styleId: string | null, text: string, font?: RunFont): string {
   // ruleAbove() prefixes a weight + the rest of the text -- see its own
   // comment. Stripped here rather than left for runsXml, since it describes
   // the paragraph, not a run within it.
@@ -500,7 +511,7 @@ function paragraphXml(styleId: string | null, text: string): string {
   const pPrInner = (styleId ? `<w:pStyle w:val="${escapeXml(styleId)}"/>` : "") + ruleXml + (styleId ? indentXml(styleId) : "");
   const pPr = pPrInner ? `<w:pPr>${pPrInner}</w:pPr>` : "";
   if (!text) return `<w:p>${pPr}</w:p>`;
-  return `<w:p>${pPr}${runsXml(text)}</w:p>`;
+  return `<w:p>${pPr}${runsXml(text, font)}</w:p>`;
 }
 
 /**
