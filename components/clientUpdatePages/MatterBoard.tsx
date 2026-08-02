@@ -174,6 +174,16 @@ function isCurrencyField(field: MatterBoardField): boolean {
   return field.field_type === "currency";
 }
 
+// The "Review emails for a settlement date change" button belongs on the
+// Settlement Date field specifically, not every project_property field --
+// matches the exact label check the automatic trigger uses server-side
+// (app/api/client-update-pages/[id]/items/[itemId]/emails/route.ts's
+// autoReviewSettlementDates) so the manual button and the automatic
+// trigger can never target a different field from each other.
+function isSettlementDateField(field: MatterBoardField): boolean {
+  return field.field_source === "project_property" && field.label.trim().toLowerCase() === "settlement date";
+}
+
 // Niksen Loans board only: flags a row red once its Repayment Date has
 // passed, amber once it's within 30 days -- a discharged (paid-off) loan
 // is excluded regardless of how close/past its date is, since that date
@@ -1464,7 +1474,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
             {fields.map(f => (
               <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue}
                 aiFlag={item.aiFlags?.[f.id]} onConfirmAiFlag={onConfirmAiFlag ? () => confirmAiFlag(f.id) : undefined}
-                onReview={onReviewSettlement && f.field_source === "project_property" ? () => reviewSettlement(f.id) : undefined} reviewing={reviewingFieldId === f.id}
+                onReview={onReviewSettlement && isSettlementDateField(f) ? () => reviewSettlement(f.id) : undefined} reviewing={reviewingFieldId === f.id}
                 onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
@@ -1604,10 +1614,14 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, mas
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
           className="w-full px-2 py-1 border border-indigo-300 rounded-lg text-[12px] outline-none" />
       ) : aiFlag ? (
-        <p className="text-[12px] rounded px-1 -mx-1 min-h-[18px]">
+        // A plain div, not a <p> like the other branches here -- AiFlagValue's
+        // popover renders a <div> (it needs real block layout, not just
+        // inline text), and a <div> can't validly nest inside a <p> (confirmed
+        // live: React logged exactly that DOM-nesting warning before this).
+        <div className="text-[12px] rounded px-1 -mx-1 min-h-[18px]">
           <AiFlagValue displayText={formatValue(value, field, dateFormat, maskCurrency)} reasoning={aiFlag.reasoning}
             canConfirm={editable} onConfirm={onConfirmAiFlag} onEditInstead={() => { setDraft(value ?? ""); setEditing(true); }} />
-        </p>
+        </div>
       ) : (
         <p onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
           className={`text-[12px] text-slate-700 rounded px-1 -mx-1 min-h-[18px] ${editable ? "cursor-text hover:bg-slate-50" : ""}`}>
@@ -1981,7 +1995,7 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
               {fields.map((f, i) => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
                   aiFlag={item.aiFlags?.[f.id]} onConfirmAiFlag={onConfirmAiFlag ? () => confirmAiFlag(item.id, f.id, propertyId) : undefined}
-                  onReview={onReviewSettlement && f.field_source === "project_property" ? () => reviewSettlement(item.id, f.id, propertyId) : undefined}
+                  onReview={onReviewSettlement && isSettlementDateField(f) ? () => reviewSettlement(item.id, f.id, propertyId) : undefined}
                   reviewing={reviewingKey === `${item.id}:${f.id}`}
                   onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
@@ -2124,14 +2138,17 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
   if (aiFlag) {
     return (
       <td className={`group px-4 py-4 text-slate-600 ${frozenClass}`}>
-        <span className="inline-flex items-center gap-1.5">
-          <span className={`inline-block align-bottom ${expanded ? "whitespace-nowrap" : truncateClass}`}>
+        {/* div, not span, wrapping AiFlagValue -- same reasoning as the
+            ValueCell version of this branch: its popover is a real <div>,
+            and a <div> isn't valid inline (span) content. */}
+        <div className="flex items-center gap-1.5">
+          <div className={`inline-block align-bottom ${expanded ? "whitespace-nowrap" : truncateClass}`}>
             <AiFlagValue displayText={formatValue(value, field, dateFormat, maskCurrency)} reasoning={aiFlag.reasoning}
               canConfirm={editable} onConfirm={onConfirmAiFlag} onEditInstead={() => { setDraft(value ?? ""); setEditing(true); }} />
-          </span>
+          </div>
           {historyButton}
           {reviewButton}
-        </span>
+        </div>
       </td>
     );
   }
