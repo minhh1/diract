@@ -7,7 +7,7 @@
 // app/api/precedents/settings).
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput, Search, ChevronDown, AlertTriangle } from "lucide-react";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
@@ -15,6 +15,12 @@ import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 interface Props {
   recordId: string;
   companyId: string;
+  /**
+   * Set when the user arrived from the precedent library's "Use on a matter".
+   * Opens that precedent's issue modal straight away, so the hand-off lands on
+   * the document they picked rather than on the list.
+   */
+  initialPrecedentId?: string | null;
 }
 
 interface Precedent {
@@ -43,7 +49,7 @@ interface Issuance {
   createdAt: string;
 }
 
-export default function PrecedentsTab({ recordId }: Props) {
+export default function PrecedentsTab({ recordId, initialPrecedentId }: Props) {
   const [precedents, setPrecedents] = useState<Precedent[]>([]);
   const [issuances, setIssuances] = useState<Issuance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +62,8 @@ export default function PrecedentsTab({ recordId }: Props) {
   // matter_type. "Show all" is the escape hatch for the times it isn't.
   const [showAll, setShowAll] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Fires once per mount, not once per list refresh.
+  const openedDeepLink = useRef(false);
 
   const load = useCallback(async () => {
     const [precRes, issRes] = await Promise.all([
@@ -64,11 +72,20 @@ export default function PrecedentsTab({ recordId }: Props) {
     ]);
     const precJson = await precRes.json();
     const issJson = await issRes.json();
-    setPrecedents(precJson.precedents || []);
+    const list: Precedent[] = precJson.precedents || [];
+    setPrecedents(list);
     setMatterType(precJson.matterType ?? null);
     setIssuances(issJson.issuances || []);
     setLoading(false);
-  }, [recordId]);
+    // Only on the first load: if the user came in via a deep link, open that
+    // precedent. Guarded by openedDeepLink so reloading the list after an
+    // issuance doesn't reopen the modal they just closed.
+    if (initialPrecedentId && !openedDeepLink.current) {
+      openedDeepLink.current = true;
+      const target = list.find(p => p.id === initialPrecedentId);
+      if (target) { setShowAll(true); setIssuing(target); }
+    }
+  }, [recordId, initialPrecedentId]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -91,6 +91,12 @@ export default function RecordDashboard({
   // in loadAll) and record_tabs actually resolving.
   const [tabsLoaded, setTabsLoaded] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // Deep link from the precedent library ("Use on a matter"). Read once on
+  // mount rather than via useSearchParams so it doesn't re-fire and re-open
+  // the issue modal after the user closes it.
+  const [initialPrecedentId] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('precedent')
+  );
   const [tabFieldLayouts, setTabFieldLayouts] = useState<Record<string, FieldLayout[]>>({});
   const [loading, setLoading] = useState(!initialRecord); // skip spinner if we have initial data
   const [isEditingTabs, setIsEditingTabs] = useState(false);
@@ -599,13 +605,16 @@ export default function RecordDashboard({
         });
       }
       // Precedents -- seeded directly below Trust Account. Gated on the
-      // company actually having a precedent library so a non-law-firm tenant
-      // doesn't get an empty tab (same reasoning as Finance Model and Trust
-      // Account above, but the signal is precedent rows rather than a table).
-      // The count query is deliberately inside the "tab is missing" check:
-      // once seeded, uniqueTabs short-circuits it and this never queries
-      // again on subsequent record loads.
-      if (systemTable === 'projects' && !uniqueTabs.some(t => t.tab_type === 'precedents')) {
+      // company having the Law Firm template (same 'trust-transactions'
+      // signal as Trust Account above -- Precedents is that template's own
+      // seeded document library, not a generic feature) AND actually having
+      // a precedent library, so a non-law-firm tenant doesn't get an empty
+      // tab, or a tab at all if it somehow has precedent rows of its own
+      // (see app/api/precedents/route.ts's matching server-side guard). The
+      // count query is deliberately inside the "tab is missing" check: once
+      // seeded, uniqueTabs short-circuits it and this never queries again on
+      // subsequent record loads.
+      if (systemTable === 'projects' && customTables.some(t => t.slug === 'trust-transactions') && !uniqueTabs.some(t => t.tab_type === 'precedents')) {
         const { count: precedentCount } = await supabase
           .from('precedents')
           .select('id', { count: 'exact', head: true })
@@ -684,7 +693,11 @@ export default function RecordDashboard({
       }
 
       setTabs(finalTabs);
-      setActiveTabId(finalTabs[0].id);
+      // Arriving from the precedent library with ?precedent=<id>: open the
+      // Precedents tab rather than the first one, so the hand-off from
+      // PrecedentLibraryBrowser's "Use on a matter" lands where it promised.
+      const precedentTab = initialPrecedentId && finalTabs.find(t => t.tab_type === 'precedents');
+      setActiveTabId(precedentTab ? precedentTab.id : finalTabs[0].id);
 
       const { data: layouts } = await fieldLayoutsPromise;
       if (layouts?.length) {
@@ -1421,7 +1434,7 @@ export default function RecordDashboard({
         <DocumentTemplatesTab recordId={recordId} companyId={companyId} />
       )}
       {activeTab?.tab_type === 'precedents' && (
-        <PrecedentsTab recordId={recordId} companyId={companyId} />
+        <PrecedentsTab recordId={recordId} companyId={companyId} initialPrecedentId={initialPrecedentId} />
       )}
       {activeTab?.tab_type === 'custom_dashboard' && activeTab.linked_table_id && (
         <RecordDashboardTab

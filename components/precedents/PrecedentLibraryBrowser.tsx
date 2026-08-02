@@ -14,11 +14,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import {
-  PenSquare, Search, X, AlertTriangle, Loader2, FileText, Filter, Settings2, Download,
+  PenSquare, Search, X, AlertTriangle, Loader2, FileText, Filter, Settings2, Download, Briefcase,
 } from "lucide-react";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import { suggestAutoFill, type BindableField } from "@/lib/precedents/suggestAutoFill";
 import { useCompany } from "@/components/CompanyContext";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import { isFormSection, formLabelPrefix } from "@/lib/precedents/courtFormLayout";
 
 interface Precedent {
@@ -346,6 +348,90 @@ function isHeading(line: Inline[]): boolean {
 
 // Tight padding: a wider chip leaves a visible gap before the following full
 // stop, which reads as a typo in something meant to show layout.
+/**
+ * Picks a matter to use this precedent on.
+ *
+ * The library is reached without a matter in hand -- that's the point of it --
+ * but issuing a document needs one, because the issue pipeline resolves the
+ * client, the matter reference and the signers from it. So rather than
+ * duplicating the issue flow here, this hands off to the matter's own
+ * Precedents tab with the precedent already selected.
+ */
+function MatterPickerModal({
+  precedent, onClose,
+}: {
+  precedent: Precedent;
+  onClose: () => void;
+}) {
+  const { companyId } = useCompany();
+  const router = useRouter();
+  const [matters, setMatters] = useState<{ id: string; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    supabase
+      .from("projects")
+      .select("id, name")
+      .eq("company_id", companyId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setMatters(data || []);
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [companyId]);
+
+  const needle = q.trim().toLowerCase();
+  const shown = needle
+    ? matters.filter(m => (m.name || "").toLowerCase().includes(needle))
+    : matters;
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl max-w-lg w-full max-h-[75vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-5 border-b border-slate-100">
+          <p className="text-[14px] font-bold text-slate-800">Use on a matter</p>
+          <p className="text-[11px] text-slate-400 mt-1">{precedent.name}</p>
+          <input
+            autoFocus
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Search matters..."
+            className="mt-4 w-full bg-slate-50 border border-slate-200 rounded-full px-4 py-2 text-[12px] outline-none focus:ring-4 focus:ring-indigo-100"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto p-3">
+          {loading ? (
+            <p className="flex items-center justify-center gap-2 text-[11px] text-slate-400 py-10">
+              <Loader2 size={12} className="animate-spin" /> Loading matters&hellip;
+            </p>
+          ) : !shown.length ? (
+            <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">
+              No matters match
+            </p>
+          ) : (
+            shown.map(m => (
+              <button
+                key={m.id}
+                onClick={() => router.push(`/dashboard/projects?id=${m.id}&precedent=${precedent.id}`)}
+                className="w-full text-left px-4 py-2.5 rounded-2xl text-[12px] text-slate-700 hover:bg-indigo-50/60 transition-colors"
+              >
+                {m.name || "(untitled matter)"}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** The line as plain text, with fields standing in as their label. */
 function linePlainText(line: Inline[]): string {
   return line.map(p => (p.kind === "text" ? p.text : p.seg.label)).join("").trim();
@@ -685,6 +771,7 @@ function PreviewModal({
   const [template, setTemplate] = useState<{ segments: BodyTemplateSegment[] } | null>(null);
   const [availableFields, setAvailableFields] = useState<BindableField[]>([]);
   const [loadingTemplate, setLoadingTemplate] = useState(true);
+  const [pickingMatter, setPickingMatter] = useState(false);
   const { isAdmin } = useCompany();
 
   // No setLoadingTemplate(true) here: the modal is keyed on the precedent id
@@ -735,6 +822,13 @@ function PreviewModal({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setPickingMatter(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full hover:bg-indigo-700 transition-colors"
+              title="Choose a matter and issue this precedent on it"
+            >
+              <Briefcase size={13} /> Use on a matter
+            </button>
             {segments.length > 0 && (
               <a
                 href={`/api/precedents/${precedent.id}/download`}
@@ -798,10 +892,14 @@ function PreviewModal({
 
           <p className="text-[10px] text-slate-300 leading-relaxed">
             Precedents are a starting point. Adapt to the matter and check anything jurisdiction-specific before
-            it goes out. To issue this on a matter, open the matter and use its Precedents tab.
+            it goes out.
           </p>
         </div>
       </div>
+
+      {pickingMatter && (
+        <MatterPickerModal precedent={precedent} onClose={() => setPickingMatter(false)} />
+      )}
     </div>
   );
 }
