@@ -16,7 +16,7 @@
 // signing variants with an instruction to keep the ones that fit and delete
 // the rest, matching deedsBatch1.ts's own two-party-of-unknown-kind deeds.
 import { field } from "./types";
-import { L, executionLines } from "./instrumentParts";
+import { L, executionLines, partyDetails } from "./instrumentParts";
 import { executedAsLine } from "@/lib/precedents/executionClauses";
 import { DEED_PAGE_BREAK, deedCover } from "@/lib/precedents/deedDocx";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
@@ -29,14 +29,20 @@ export function opening(title: string, recitals: BodyTemplateSegment[]): BodyTem
       parties: ["[First party: name, ACN/ABN and address]", "[Second party: name, ACN/ABN and address]"],
     })]),
     ...L(null, [DEED_PAGE_BREAK]),
-    ...L(null, ["Date: ", field("deed_date", "Date of the deed", "12 August 2026")]),
-    ...L(null, [""]),
-    ...L("DeedHeading", ["Parties"]),
-    ...L(null, [field("party_a", "First party: name, ACN/ABN and address", "ACME Pty Ltd ACN 000 000 000 of Level 3, 20 Market Street, Sydney NSW 2000")]),
-    ...L(null, ["(", field("party_a_short", "First party short name", "the Company"), ")"]),
-    ...L(null, [""]),
-    ...L(null, [field("party_b", "Second party: name, ACN/ABN and address", "John Citizen of 10 Smith Street, Parramatta NSW 2150")]),
-    ...L(null, ["(", field("party_b_short", "Second party short name", "the Employee"), ")"]),
+    ...partyDetails(title, "Date of the deed", [
+      {
+        key: "party_a", label: "First party",
+        nameExample: "ACME Pty Ltd ACN 000 000 000",
+        addressExample: "Level 3, 20 Market Street, Sydney NSW 2000",
+        shortExample: "the Company",
+      },
+      {
+        key: "party_b", label: "Second party",
+        nameExample: "John Citizen",
+        addressExample: "10 Smith Street, Parramatta NSW 2150",
+        shortExample: "the Employee",
+      },
+    ]),
     ...L(null, [""]),
     ...L("DeedHeading", ["Background"]),
     ...recitals,

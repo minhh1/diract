@@ -13,7 +13,7 @@
 // sentence for no real saving, so instrumentParts.ts stays the only thing
 // actually common to both.
 import { field } from "./types";
-import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE } from "./instrumentParts";
+import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE, partyDetails } from "./instrumentParts";
 import { executedAsLine } from "@/lib/precedents/executionClauses";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import { DEED_PAGE_BREAK, deedCover } from "@/lib/precedents/deedDocx";
@@ -36,6 +36,13 @@ export interface Party {
  * revisited when deedsBatch1.ts's own deeds got a cover page. `title` is
  * threaded through from each precedent rather than assumed, since it's the
  * one thing this shared helper can't know on its own.
+ *
+ * The Name/Address/Shortname table (partyDetails, shared with deedParts.ts)
+ * expects a name and an address as separate fields. Party.example here still
+ * holds both combined ("ACME Pty Ltd ACN 000 000 000 of Level 3, ..., email
+ * ..."), across some two dozen precedents -- splitting every one of those is
+ * a real but separate job, so for now the combined example goes into the
+ * Name field and Address prompts on its own with a generic placeholder.
  */
 export function opening(
   title: string,
@@ -43,11 +50,6 @@ export function opening(
   b: Party,
   recitals: BodyTemplateSegment[]
 ): BodyTemplateSegment[] {
-  const partyBlock = (p: Party) => [
-    ...L(null, [field(p.key, `${p.label}: name, ACN/ABN, address and email`, p.example)]),
-    ...L(null, ["(", field(`${p.key}_short`, `${p.label} short name`, p.shortExample), ")"]),
-    ...L(null, [""]),
-  ];
   return [
     ...L(null, [deedCover({
       title,
@@ -57,11 +59,11 @@ export function opening(
       ],
     })]),
     ...L(null, [DEED_PAGE_BREAK]),
-    ...L(null, ["Date: ", field("agreement_date", "Date of the agreement", "12 August 2026")]),
+    ...partyDetails(title, "Date of the agreement", [
+      { key: a.key, label: a.label, nameExample: a.example, shortExample: a.shortExample },
+      { key: b.key, label: b.label, nameExample: b.example, shortExample: b.shortExample },
+    ]),
     ...L(null, [""]),
-    ...L("DeedHeading", ["Parties"]),
-    ...partyBlock(a),
-    ...partyBlock(b),
     ...L("DeedHeading", ["Background"]),
     ...recitals,
     ...L(null, [""]),

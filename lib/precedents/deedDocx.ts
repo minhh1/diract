@@ -66,6 +66,36 @@ export function isColumnLine(text: string): boolean {
   return text.includes(COL);
 }
 
+// Three more control characters, for the party-details block at the top of a
+// deed (see partyRow/ruleAbove/BOLD_MARK below) -- same reasoning as MARK and
+// COL: never typed by a solicitor, stripped before the XML is written.
+const RULE = "\u0006";
+const PARTY_COL = "\u0008";
+/** Toggles bold on/off within a run of text -- see runsXml. */
+export const BOLD_MARK = "\u0007";
+
+/**
+ * Marks a paragraph as carrying a horizontal rule and 1.5-line spacing, the
+ * way the title, "Parties" and the line closing the parties table all do on
+ * the firm's own deeds. weight 0 is spacing with no visible rule (the "Date"
+ * line, which sits under the title's own rule with nothing repeated above
+ * it); 4 and 8 are single-line borders of that weight, matching a thin rule
+ * under the title against the heavier one that brackets the parties table.
+ */
+export function ruleAbove(weight: 0 | 4 | 8, text: string): string {
+  return `${RULE}${weight}${text}`;
+}
+
+/** One row of the parties table: a label ("Name", "Address", "Shortname") and, appended by the caller, its value. */
+export function partyRow(label: string): string {
+  return `${label}${PARTY_COL}`;
+}
+
+/** Whether a line is a parties-table row. */
+function isPartyColumnLine(text: string): boolean {
+  return text.includes(PARTY_COL);
+}
+
 /** Strips style markers, for anything that wants the plain words. */
 export function stripStyleMarkers(body: string): string {
   return body.replace(/[^]*/g, "");
@@ -387,6 +417,38 @@ function columnTableXml(rows: string): string {
     `<w:tblGrid><w:gridCol w:w="4513"/><w:gridCol w:w="4513"/></w:tblGrid>${rows}</w:tbl>`;
 }
 
+// The parties table at the top of a deed: "Name"/"Address"/"Shortname" down
+// the left, the party's own details on the right. Indented one STEP in from
+// the margin (the same step every numbered level uses), so it starts under
+// where the "Parties" heading's own text sits rather than under its marker.
+// The label column is sized around "Shortname" -- the longest of the three
+// labels -- so it, the widest label, leaves exactly one STEP before the
+// value column starts; "Name" and "Address" end up with more breathing room,
+// which is the firm's own template's own effect, not an inconsistency in it.
+const PARTY_TABLE_INDENT = STEP;
+const PARTY_LABEL_COL = 1848;
+// 9026 is the same A4-less-margins width EXEC_TOTAL uses further down this
+// file -- duplicated rather than shared because EXEC_TOTAL isn't declared
+// until after this point, and reordering the file for one shared number
+// isn't worth it.
+const PARTY_VALUE_COL = 9026 - PARTY_TABLE_INDENT - PARTY_LABEL_COL;
+
+function partyColumnRowXml(left: string, right: string): string {
+  const cell = (t: string, width: number) =>
+    `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${width}"/>` +
+    `<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>` +
+    `</w:tcPr>${paragraphXml(null, t)}</w:tc>`;
+  return `<w:tr>${cell(left, PARTY_LABEL_COL)}${cell(right, PARTY_VALUE_COL)}</w:tr>`;
+}
+
+function partyColumnTableXml(rows: string): string {
+  return `<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="${PARTY_LABEL_COL + PARTY_VALUE_COL}"/>` +
+    `<w:tblInd w:w="${PARTY_TABLE_INDENT}" w:type="dxa"/><w:tblLayout w:type="fixed"/>` +
+    `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>` +
+    `<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="${PARTY_LABEL_COL}"/><w:gridCol w:w="${PARTY_VALUE_COL}"/></w:tblGrid>${rows}</w:tbl>`;
+}
+
 /**
  * A definitions clause reads "Term means ..." or "Term has the meaning given
  * in ...", with the defined term as the first words of the paragraph. Bolding
@@ -399,6 +461,21 @@ function columnTableXml(rows: string): string {
 const DEFINED_TERM_RE = /^([^]+?)(\s+(?:means\b|has the meaning\b)[^]*)$/;
 
 function runsXml(text: string): string {
+  // Explicit bold spans (the parties table's values) take priority over the
+  // definitions auto-bold below -- the two never occur in the same text, but
+  // if they ever did, an author who went to the trouble of marking a span
+  // explicitly meant something more specific than the "Term means" guess.
+  if (text.includes(BOLD_MARK)) {
+    return text
+      .split(BOLD_MARK)
+      .map((t, i) => {
+        if (!t) return "";
+        return i % 2 === 1
+          ? `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXml(t)}</w:t></w:r>`
+          : `<w:r><w:t xml:space="preserve">${escapeXml(t)}</w:t></w:r>`;
+      })
+      .join("");
+  }
   const m = DEFINED_TERM_RE.exec(text);
   if (!m) return `<w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
   const [, term, rest] = m;
@@ -409,9 +486,19 @@ function runsXml(text: string): string {
 }
 
 function paragraphXml(styleId: string | null, text: string): string {
-  const pPr = styleId
-    ? `<w:pPr><w:pStyle w:val="${escapeXml(styleId)}"/>${indentXml(styleId)}</w:pPr>`
-    : "";
+  // ruleAbove() prefixes a weight + the rest of the text -- see its own
+  // comment. Stripped here rather than left for runsXml, since it describes
+  // the paragraph, not a run within it.
+  let ruleXml = "";
+  if (text.startsWith(RULE)) {
+    const weight = text[1];
+    ruleXml =
+      (weight !== "0" ? `<w:pBdr><w:top w:val="single" w:sz="${weight}" w:space="1" w:color="auto"/></w:pBdr>` : "") +
+      `<w:spacing w:line="360" w:lineRule="auto"/>`;
+    text = text.slice(2);
+  }
+  const pPrInner = (styleId ? `<w:pStyle w:val="${escapeXml(styleId)}"/>` : "") + ruleXml + (styleId ? indentXml(styleId) : "");
+  const pPr = pPrInner ? `<w:pPr>${pPrInner}</w:pPr>` : "";
   if (!text) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runsXml(text)}</w:p>`;
 }
@@ -461,11 +548,20 @@ export function buildDeedDocx(
   const lines = parseDeedBody(body);
   let paragraphs = "";
   let pendingRows = "";
+  let pendingPartyRows = "";
   const usedStyles = new Set<string>();
   const flushRows = () => { if (pendingRows) { paragraphs += columnTableXml(pendingRows); pendingRows = ""; } };
+  const flushPartyRows = () => { if (pendingPartyRows) { paragraphs += partyColumnTableXml(pendingPartyRows); pendingPartyRows = ""; } };
   for (const l of lines) {
     const style = l.style ? resolveStyleId(l.style, templateStyles, byName) : null;
     if (style) usedStyles.add(style);
+    if (isPartyColumnLine(l.text)) {
+      flushRows();
+      const [left, right] = l.text.split(PARTY_COL);
+      pendingPartyRows += partyColumnRowXml(left, right ?? "");
+      continue;
+    }
+    flushPartyRows();
     if (isColumnLine(l.text)) {
       const [left, right] = l.text.split(COL);
       pendingRows += columnRowXml(style, left, right ?? "");
@@ -497,6 +593,7 @@ export function buildDeedDocx(
     paragraphs += paragraphXml(style, l.text);
   }
   flushRows();
+  flushPartyRows();
   patchNumberingTabs(zip, stylesXml, usedStyles);
 
   // Keep the template's sectPr: it carries the page size, margins and the

@@ -16,7 +16,7 @@
 // Batch 1 is the short instruments a general practice reaches for most often.
 // Longer commercial agreements follow in later batches.
 import { field, type PrecedentSeed } from "./types";
-import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE } from "./instrumentParts";
+import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE, partyDetails } from "./instrumentParts";
 import { executedAsLine } from "@/lib/precedents/executionClauses";
 import { DEED_PAGE_BREAK, deedCover } from "@/lib/precedents/deedDocx";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
@@ -79,19 +79,25 @@ function generalProvisions(): BodyTemplateSegment[] {
 }
 
 /** Parties and recitals, common to every deed in the batch. */
-function opening(recitals: BodyTemplateSegment[]): BodyTemplateSegment[] {
+function opening(title: string, recitals: BodyTemplateSegment[]): BodyTemplateSegment[] {
   return [
     // The cover page carries the title and the footer and nothing else; the
     // parties and operative provisions begin overleaf.
     ...L(null, [DEED_PAGE_BREAK]),
-    ...L(null, ["Date: ", field("deed_date", "Date of the deed", "12 August 2026")]),
-    ...L(null, [""]),
-    ...L("DeedHeading", ["Parties"]),
-    ...L(null, [field("party_a", "First party: name, ACN/ABN and address", "ACME Pty Ltd ACN 000 000 000 of Level 3, 20 Market Street, Sydney NSW 2000")]),
-    ...L(null, ["(", field("party_a_short", "First party short name", "the Company"), ")"]),
-    ...L(null, [""]),
-    ...L(null, [field("party_b", "Second party: name, ACN/ABN and address", "John Citizen of 10 Smith Street, Parramatta NSW 2150")]),
-    ...L(null, ["(", field("party_b_short", "Second party short name", "the Employee"), ")"]),
+    ...partyDetails(title, "Date of the deed", [
+      {
+        key: "party_a", label: "First party",
+        nameExample: "ACME Pty Ltd ACN 000 000 000",
+        addressExample: "Level 3, 20 Market Street, Sydney NSW 2000",
+        shortExample: "the Company",
+      },
+      {
+        key: "party_b", label: "Second party",
+        nameExample: "John Citizen",
+        addressExample: "10 Smith Street, Parramatta NSW 2150",
+        shortExample: "the Employee",
+      },
+    ]),
     ...L(null, [""]),
     ...L("DeedHeading", ["Background"]),
     ...recitals,
@@ -118,7 +124,7 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
       // beneath at 10.5pt, and the document Title set so a footer that reads
       // it through a DOCPROPERTY field shows the deed name.
       ...L(null, [deedCover({ title: "DEED OF SETTLEMENT AND RELEASE", parties: ["[First party: name, ACN/ABN and address]", "[Second party: name, ACN/ABN and address]"] })]),
-      ...opening([
+      ...opening("DEED OF SETTLEMENT AND RELEASE", [
         ...L("DeedRecital", [
           "A dispute has arisen between the parties concerning ",
           field("dispute", "The dispute", "the supply of goods under invoice 1043 dated 15 April 2025"),
@@ -195,7 +201,7 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
       // beneath at 10.5pt, and the document Title set so a footer that reads
       // it through a DOCPROPERTY field shows the deed name.
       ...L(null, [deedCover({ title: "DEED OF CONFIDENTIALITY", parties: ["[Disclosing party: name, ACN/ABN and address]", "[Receiving party: name, ACN/ABN and address]"] })]),
-      ...opening([
+      ...opening("DEED OF CONFIDENTIALITY", [
         ...L("DeedRecital", [
           "The parties are discussing ",
           field("purpose", "The permitted purpose", "a possible acquisition of the business of the Company"),
