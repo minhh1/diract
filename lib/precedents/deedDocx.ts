@@ -123,3 +123,37 @@ export function buildDeedDocx(templateBytes: Buffer, body: string): Buffer {
   // DEFLATE explicitly -- PizZip stores uncompressed by default.
   return zip.generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
+
+/**
+ * Authors one styled paragraph of a deed as body-template segments.
+ *
+ * The style marker has to sit at the very start of the line, so it is folded
+ * into the first text segment; fields then follow inline as normal. Each line
+ * ends with a newline, which is what parseDeedBody splits on.
+ *
+ * Typed loosely against the segment shape rather than importing
+ * BodyTemplateSegment, so this module stays free of the letter path's types.
+ */
+export function deedLine<T extends { type: string }>(
+  styleId: string | null,
+  parts: (string | T)[]
+): T[] {
+  const out: T[] = [];
+  const prefix = styleId ? `${MARK}${styleId}${MARK}` : "";
+  let first = true;
+  for (const p of parts) {
+    if (typeof p === "string") {
+      out.push({ type: "text", text: (first ? prefix : "") + p } as unknown as T);
+      first = false;
+    } else {
+      if (first) {
+        out.push({ type: "text", text: prefix } as unknown as T);
+        first = false;
+      }
+      out.push(p);
+    }
+  }
+  if (first) out.push({ type: "text", text: prefix } as unknown as T);
+  out.push({ type: "text", text: "\n" } as unknown as T);
+  return out;
+}
