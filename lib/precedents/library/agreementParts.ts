@@ -16,7 +16,7 @@ import { field } from "./types";
 import { L, executionLines, CHOOSE_EXECUTION_BLOCK_NOTE } from "./instrumentParts";
 import { executedAsLine } from "@/lib/precedents/executionClauses";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
-import { DEED_PAGE_BREAK } from "@/lib/precedents/deedDocx";
+import { DEED_PAGE_BREAK, deedCover } from "@/lib/precedents/deedDocx";
 
 export interface Party {
   /** Field key, which also prefixes the short-name field. */
@@ -27,14 +27,36 @@ export interface Party {
   shortExample: string;
 }
 
-/** Date, parties and recitals. */
-export function opening(a: Party, b: Party, recitals: BodyTemplateSegment[]): BodyTemplateSegment[] {
+/**
+ * The cover page, the date, the parties and the recitals.
+ *
+ * Every agreement built on this shared opening had gone straight from its
+ * title into the date and clauses on one page -- opening() never called
+ * deedCover(), because it existed before deedCover() did and was never
+ * revisited when deedsBatch1.ts's own deeds got a cover page. `title` is
+ * threaded through from each precedent rather than assumed, since it's the
+ * one thing this shared helper can't know on its own.
+ */
+export function opening(
+  title: string,
+  a: Party,
+  b: Party,
+  recitals: BodyTemplateSegment[]
+): BodyTemplateSegment[] {
   const partyBlock = (p: Party) => [
     ...L(null, [field(p.key, `${p.label}: name, ACN/ABN, address and email`, p.example)]),
     ...L(null, ["(", field(`${p.key}_short`, `${p.label} short name`, p.shortExample), ")"]),
     ...L(null, [""]),
   ];
   return [
+    ...L(null, [deedCover({
+      title,
+      parties: [
+        `[${a.label}: name, ACN/ABN, address and email]`,
+        `[${b.label}: name, ACN/ABN, address and email]`,
+      ],
+    })]),
+    ...L(null, [DEED_PAGE_BREAK]),
     ...L(null, ["Date: ", field("agreement_date", "Date of the agreement", "12 August 2026")]),
     ...L(null, [""]),
     ...L("DeedHeading", ["Parties"]),

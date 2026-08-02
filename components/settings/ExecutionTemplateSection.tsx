@@ -13,7 +13,8 @@ import { EXECUTION_VARIANTS } from "@/lib/precedents/executionClauses";
 interface ExecutionTemplate {
   id: string;
   original_filename: string;
-  blocks: Record<string, string[]> | null;
+  /** key -> the block's OOXML. Only presence at each key matters here. */
+  blocks: Record<string, string> | null;
   updated_at: string;
 }
 

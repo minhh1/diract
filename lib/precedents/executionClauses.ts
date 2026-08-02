@@ -243,6 +243,17 @@ export function parameteriseBlock(lines: string[], placeholder: string): string[
 
 
 /**
+ * The key a block is stored/looked up under -- shared vocabulary between what
+ * an uploaded template's blocks are classified into (executionBlockKey) and
+ * what the built-in scheme emits per variant (below), so an override always
+ * lands on the block it's meant to replace.
+ */
+function specKey(kind: PartyKind, instrument: InstrumentKind): string {
+  if (kind !== "individual") return kind;
+  return instrument === "deed" ? "individual_deed" : "individual_agreement";
+}
+
+/**
  * The signing block as a three-column table spec: witness on the left, the
  * signatory on the right, a narrow spacer between.
  *
@@ -254,7 +265,8 @@ export function executionSpec(
   kind: PartyKind,
   instrument: InstrumentKind,
   party: string
-): { opener: string; party: string; tail: string; left: string[]; right: string[] } {
+): { key: string; opener: string; party: string; tail: string; left: string[]; right: string[] } {
+  const key = specKey(kind, instrument);
   const opener = opener_(kind, instrument);
   const tail = statutoryWords(kind);
   switch (kind) {
@@ -263,25 +275,25 @@ export function executionSpec(
       // signs opposite. Both are needed for a deed and the witness is usual
       // on an agreement too.
       return {
-        opener, party, tail,
+        key, opener, party, tail,
         left: ["Signature of witness", "Full name of witness (print)", "Address of witness (print)"],
         right: [`Signature of ${party}`],
       };
     case "company_127_two_officers":
       return {
-        opener, party, tail,
+        key, opener, party, tail,
         left: ["Signature of director", "Full name (print)"],
         right: ["Signature of director / company secretary", "Full name (print)"],
       };
     case "company_127_sole_director":
       return {
-        opener, party, tail,
+        key, opener, party, tail,
         left: ["Signature of sole director", "Full name (print)"],
         right: [],
       };
     case "company_126_authorised":
       return {
-        opener, party, tail,
+        key, opener, party, tail,
         left: ["Signature of authorised representative", "Full name (print)"],
         right: [],
       };

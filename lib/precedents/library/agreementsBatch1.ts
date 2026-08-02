@@ -45,9 +45,8 @@ export const AGREEMENTS_BATCH_1: PrecedentSeed[] = [
     aiInstructions:
       "This is a genuinely mutual agreement: every obligation is expressed by reference to a Recipient and a Discloser, so it works whichever way information happens to flow. Keep it that way -- redrafting it as 'Party A must' is how a mutual NDA quietly becomes one-sided. Define Confidential Information by reference to what is actually being disclosed rather than reciting a generic list, and never cut the four carve-outs: information that is public, already lawfully held, independently developed, or received from a third party free to disclose it. Keep the compelled-disclosure exception together with the obligation to give notice first, because notice is what allows the discloser to seek a protective order. Keep it proportionate. An oppressive NDA delays the deal it was meant to protect and is often simply refused.",
     segments: [
-      ...L(null, ["CONFIDENTIALITY AGREEMENT (MUTUAL)"]),
-      ...L(null, [""]),
       ...opening(
+        "CONFIDENTIALITY AGREEMENT (MUTUAL)",
         {
           key: "party_a",
           label: "First party",
@@ -231,9 +230,8 @@ export const AGREEMENTS_BATCH_1: PrecedentSeed[] = [
     aiInstructions:
       "Everything flows one way here: the Discloser discloses and the Recipient receives, and no obligation should be expressed reciprocally. The definition of Confidential Information is deliberately wider than in the mutual form -- it catches what the recipient observes on a site visit or in a data room, not only what is handed over -- but the four carve-outs stay, because a definition without them is unenforceable rather than merely wide. Keep the acknowledgment that the Discloser gives no warranty as to accuracy and that the Recipient relies on its own enquiries: it is the clause that stops the NDA being used as a springboard for a misleading-conduct claim. If asked to draft the recipient-side markup instead, work from this document and say which clauses you are narrowing and why.",
     segments: [
-      ...L(null, ["CONFIDENTIALITY AGREEMENT (ONE WAY)"]),
-      ...L(null, [""]),
       ...opening(
+        "CONFIDENTIALITY AGREEMENT (ONE WAY)",
         {
           key: "discloser",
           label: "Disclosing party",

@@ -51,9 +51,8 @@ export const AGREEMENTS_BATCH_2: PrecedentSeed[] = [
     aiInstructions:
       "This is a full consultancy agreement, not a scope note. Keep the engagement genuinely tied to the Schedule -- services, fees and term are fields, not prose, because a consultancy that has to be redrafted for every new engagement defeats the point of a precedent. Keep the independent contractor clause doing real work: it should say the Consultant controls how the services are performed, may (subject to the Principal's consent) use its own personnel, and is responsible for its own tax and superannuation, with an indemnity if that characterisation is later challenged -- but do not let the drafting imply the label itself is what protects the Principal. Assign IP created in performing the services to the Principal on payment, with a licence back for the Consultant's own pre-existing tools and know-how; without the licence-back a consultant who reuses a method or template across clients is technically infringing every subsequent client's copyright. Keep the liability cap and the insurance clause aligned -- a cap with no insurance behind it is not worth much if the Consultant cannot pay it.",
     segments: [
-      ...L(null, ["CONSULTANCY AGREEMENT"]),
-      ...L(null, [""]),
       ...opening(
+        "CONSULTANCY AGREEMENT",
         {
           key: "principal",
           label: "Principal",
@@ -248,9 +247,8 @@ export const AGREEMENTS_BATCH_2: PrecedentSeed[] = [
     aiInstructions:
       "This document exists mainly to withstand a characterisation challenge, and it only does that if the operative clauses actually differ from an employment contract, not just the labels. Give the Contractor a genuine, usable right to delegate or subcontract (subject to the Principal's consent, which must not be unreasonably withheld); make clear the Contractor supplies its own equipment and tools unless Schedule 1 says otherwise; state expressly that the Contractor is free to provide services to others during the term, subject only to confidentiality and any genuine conflict of interest; and structure payment as invoicing against milestones or time, not as a salary. Do not include a clause purporting to declare the Contractor's status conclusively -- courts look at the substance of the relationship, not a label the parties chose, so a declaratory clause protects nobody and can look like an attempt to disguise the true relationship. Keep the sham contracting risk in the review note rather than the contract itself: it is advice to the drafter, not something a clause can fix.",
     segments: [
-      ...L(null, ["INDEPENDENT CONTRACTOR AGREEMENT"]),
-      ...L(null, [""]),
       ...opening(
+        "INDEPENDENT CONTRACTOR AGREEMENT",
         {
           key: "principal",
           label: "Principal",
@@ -417,9 +415,8 @@ export const AGREEMENTS_BATCH_2: PrecedentSeed[] = [
     aiInstructions:
       "Draft standard terms and conditions of trade, structured as a credit application the Customer signs once and which then governs every order. Clause 3 (incorporation) is where most trading terms actually fail in practice, because they are relied on without ever being validly incorporated -- state plainly that these terms apply to every Order, and that any terms the Customer proposes are excluded unless the Supplier agrees to them in writing. Draft retention of title (clause 8) so it is registrable as a purchase money security interest under the Personal Property Securities Act 2009 (Cth): title stays with the Supplier until the Customer has paid everything it owes the Supplier, not just for the goods in that order; the Customer holds unpaid Goods as bailee; and if the Customer sells Goods before paying for them, the proceeds are held on trust for the Supplier up to the amount owing. Pair it with a general security clause and an attorney appointment so the Supplier can perfect and, if needed, complete registration itself. On liability, do not exclude the Australian Consumer Law consumer guarantees -- they cannot be excluded -- but do limit liability for their breach to the extent s 64A of the ACL permits (repair, replacement, resupply or the cost of it) for goods and services not ordinarily acquired for personal use. Draft the personal guarantee as a genuine, standalone indemnity, not a throwaway line, because it is usually the only real recourse if a corporate Customer folds still owing money.",
     segments: [
-      ...L(null, ["TERMS AND CONDITIONS OF TRADE"]),
-      ...L(null, [""]),
       ...opening(
+        "TERMS AND CONDITIONS OF TRADE",
         {
           key: "supplier",
           label: "Supplier",

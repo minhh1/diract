@@ -88,6 +88,17 @@ export function stripXmlIllegal(s: string): string {
 // are independent and (i)/(ii)/(iii) sits under the wrong column.
 const STEP = 765;
 
+// Level 4 -- (i)/(ii)/(iii) -- is the one level the uniform grid above gets
+// wrong. Read out of the firm's own template (numId 28, ilvl 3, the same
+// definition its own "HL List - Level 4" style points at): left 1440 twips,
+// hanging 360. That's narrower than the STEP grid would put it, and narrower
+// even than level 3 above it -- not a mistake, just how this template's own
+// roman-numeral level is defined, and matching it exactly is more faithful to
+// "use the firm's template" than forcing every level onto one invented
+// progression. Only this level is special-cased; the others use the grid.
+const LEVEL_4_LEFT = 1440;
+const LEVEL_4_HANG = 360;
+
 /** Which numbered level a style sits at, or null if it isn't a numbered list. */
 function styleLevel(styleId: string): number | null {
   const m = /Level\s*-?\s*([1-5])/i.exec(styleId);
@@ -106,21 +117,23 @@ function styleLevel(styleId: string): number | null {
  * ends up indented to level 3 rather than level 4. Stating them here makes
  * the levels share an alignment grid: level n starts at n x 1.35 cm and hangs
  * back 1.35 cm, so each level's text begins exactly where the level above it
- * began.
+ * began -- except level 4, which uses the firm's own real values instead.
  */
 function indentXml(styleId: string | null): string {
   if (!styleId) return "";
   const level = styleLevel(styleId);
   if (!level) return "";
+  const left = level === 4 ? LEVEL_4_LEFT : level * STEP;
+  const hang = level === 4 ? LEVEL_4_HANG : STEP;
   // A paragraph with no number has nothing to hang: hanging it pulls the
   // first line back into the gutter where the number would have been, so it
   // starts left of the numbered text above it. Squaring it off at the text
   // position of its own level is what makes it sit under the paragraph it
   // continues.
   if (/no\s*-?numbering/i.test(styleId)) {
-    return `<w:ind w:left="${level * STEP}" w:firstLine="0"/>`;
+    return `<w:ind w:left="${left}" w:firstLine="0"/>`;
   }
-  return `<w:ind w:left="${level * STEP}" w:hanging="${STEP}"/>`;
+  return `<w:ind w:left="${left}" w:hanging="${hang}"/>`;
 }
 
 function escapeXml(s: string): string {
@@ -129,6 +142,99 @@ function escapeXml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Where the party's name goes in an uploaded execution block.
+ *
+ * A firm's execution page is parsed out of a real signing page from a real
+ * matter, so its blocks arrive with actual names in them. Parsing
+ * (executionTemplateParse.ts) replaces the name it finds with this token;
+ * generation replaces the token with whichever party this deed's own block
+ * is for. Both are text-node-scoped (replaceTextInRuns), so the substitution
+ * can never land inside a tag and corrupt the XML.
+ */
+export const EXECUTION_PARTY_TOKEN = "[PARTY_NAME]";
+
+/**
+ * Finds `search` across `<w:t>` runs and replaces it with `replacement`.
+ * Scoped to text nodes so a search string that happens to match part of an
+ * attribute value or a tag name can't corrupt the markup around it.
+ *
+ * The search can span more than one run. Word routinely splits a phrase it
+ * would read as one word across several runs -- a formatting change
+ * mid-name, a spell-check marker, a save from an earlier edit -- so "Cao
+ * Development B Pty Ltd ACN 676 277 991" is not one `<w:t>` in a real
+ * signing page, it is several. A single-run regex finds nothing in that
+ * case, silently leaves the real name in place, and every deed generated
+ * from the block would carry a stranger's name. This walks the runs in
+ * order, matches against their concatenated text, and if the match crosses
+ * a run boundary keeps whatever the boundary runs had before/after the
+ * match in their own formatting, drops the runs fully inside it, and puts
+ * the replacement in the first run of the match, in that run's own
+ * formatting.
+ */
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+export function replaceTextInRuns(xml: string, search: string, replacement: string): string {
+  if (!search) return xml;
+
+  const RUN = /<w:t\b[^>]*>([^<]*)<\/w:t>/g;
+  interface Run { start: number; end: number; decoded: string; }
+  const runs: Run[] = [];
+  let rm: RegExpExecArray | null;
+  // Matching and splicing both happen in DECODED space: a run's raw XML text
+  // can itself contain entities (a name with "&" is not rare), and comparing
+  // against a decoded search string would silently miss it. Everything
+  // spliced back in -- prefix, replacement and suffix alike -- is re-encoded
+  // once on the way out.
+  while ((rm = RUN.exec(xml))) runs.push({ start: rm.index, end: rm.index + rm[0].length, decoded: decodeXmlEntities(rm[1]) });
+  if (!runs.length) return xml;
+
+  let pos = 0;
+  const spans = runs.map(r => { const s = pos; pos += r.decoded.length; return { start: s, end: pos }; });
+  const concatenated = runs.map(r => r.decoded).join("");
+
+  const matches: number[] = [];
+  let cursor = 0;
+  let matchAt = concatenated.indexOf(search, cursor);
+  while (matchAt >= 0) { matches.push(matchAt); cursor = matchAt + search.length; matchAt = concatenated.indexOf(search, cursor); }
+
+  let out = xml;
+  // Rebuild from the last match backwards: replacing one match changes the
+  // string's length, which would invalidate the xml offsets already found
+  // for the others if applied forwards.
+  for (let mi = matches.length - 1; mi >= 0; mi--) {
+    const matchStart = matches[mi];
+    const matchEnd = matchStart + search.length;
+    const firstRunIdx = spans.findIndex(s => matchStart >= s.start && matchStart < s.end);
+    const lastRunIdx = spans.findIndex(s => matchEnd > s.start && matchEnd <= s.end);
+    if (firstRunIdx < 0 || lastRunIdx < 0) continue;
+
+    const firstRun = runs[firstRunIdx];
+    const lastRun = runs[lastRunIdx];
+    const prefix = firstRun.decoded.slice(0, matchStart - spans[firstRunIdx].start);
+    const suffix = lastRun.decoded.slice(matchEnd - spans[lastRunIdx].start);
+
+    // The first run keeps its prefix + the replacement, in its own
+    // formatting; any run strictly inside the match is dropped entirely;
+    // the last run keeps only its suffix. Splicing spliceStart..spliceEnd
+    // removes exactly firstRun's <w:t>, every run between, and lastRun's
+    // <w:t> -- everything else (the <w:r>/<w:rPr> wrappers on either side)
+    // is untouched because it sits outside that range.
+    const firstOpenTag = /^<w:t\b[^>]*>/.exec(xml.slice(firstRun.start, firstRun.end))![0];
+    const replacementXml =
+      `${firstOpenTag}${escapeXml(prefix)}${escapeXml(replacement)}${escapeXml(suffix)}</w:t>`;
+    out = out.slice(0, firstRun.start) + replacementXml + out.slice(lastRun.end);
+  }
+  return out;
 }
 
 /**
@@ -177,10 +283,20 @@ function paragraphXml(styleId: string | null, text: string): string {
 }
 
 /**
- * @param templateBytes the firm's uploaded deed template
- * @param body          the deed, with style markers from styled()
+ * @param templateBytes       the firm's uploaded deed template
+ * @param body                the deed, with style markers from styled()
+ * @param executionOverrides  key (see ExecutionSpec.key) -> the firm's own
+ *   execution block, as parsed by executionTemplateParse.ts. Where a key has
+ *   an override, that OOXML is spliced in verbatim in place of our own
+ *   generated table -- keeping the firm's own columns, spacer width, bold and
+ *   italic runs, blank rows and signature rule, whatever they are. A key with
+ *   no override falls back to the built-in block for that kind.
  */
-export function buildDeedDocx(templateBytes: Buffer, body: string): Buffer {
+export function buildDeedDocx(
+  templateBytes: Buffer,
+  body: string,
+  executionOverrides?: Record<string, string>
+): Buffer {
   const zip = new PizZip(templateBytes);
   const docFile = zip.file("word/document.xml");
   if (!docFile) throw new Error("The deed template has no document body.");
@@ -229,7 +345,13 @@ export function buildDeedDocx(templateBytes: Buffer, body: string): Buffer {
       continue;
     }
     if (l.text.startsWith(EXEC)) {
-      try { paragraphs += executionXml(JSON.parse(l.text.slice(1))); } catch { /* malformed: skip */ }
+      try {
+        const spec = JSON.parse(l.text.slice(1)) as ExecutionSpec;
+        const override = executionOverrides?.[spec.key];
+        paragraphs += override
+          ? replaceTextInRuns(override, EXECUTION_PARTY_TOKEN, escapeXml(spec.party))
+          : executionXml(spec);
+      } catch { /* malformed: skip */ }
       continue;
     }
     if (l.text === DEED_PAGE_BREAK) {
@@ -314,6 +436,14 @@ const EXEC_SPACER = 397;       // 0.7 cm
 const EXEC_SIDE = Math.floor((EXEC_TOTAL - EXEC_SPACER) / 2);
 
 export interface ExecutionSpec {
+  /**
+   * Which uploaded block, if any, replaces this one. Matches the keys
+   * executionTemplateParse.ts stores an uploaded template's blocks under --
+   * "individual_deed" | "individual_agreement" | "company_127_two_officers" |
+   * "company_127_sole_director" | "company_126_authorised" -- so the two
+   * stay in lockstep by construction rather than by convention.
+   */
+  key: string;
   /** "Executed by" or "Signed, sealed and delivered by" -- rendered bold. */
   opener: string;
   /** The signing party, rendered bold. */

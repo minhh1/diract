@@ -6,23 +6,13 @@
 // thought about this still gets correct signing blocks.
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import PizZip from "pizzip";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { convertDocToDocx } from "@/lib/gotenberg";
-import { splitExecutionBlocks, executionBlockKey } from "@/lib/precedents/executionClauses";
+import { extractExecutionBlocks } from "@/lib/precedents/executionTemplateParse";
 
 const BUCKET = "precedent-documents";
 const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 const OLE2 = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-
-/** Paragraph text, in order, from a .docx. */
-function docxLines(bytes: Buffer): string[] {
-  const xml = new PizZip(bytes).file("word/document.xml")?.asText() ?? "";
-  return xml
-    .split(/<\/w:p>/)
-    .map(p => p.replace(/<[^>]+>/g, "").trim())
-    .filter(Boolean);
-}
 
 export async function GET() {
   const auth = await authorizeCompanyMember();
@@ -61,15 +51,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "That file is not a Word document" }, { status: 400 });
   }
 
-  // Recognise what's in the file. A block we can't place is reported rather
+  // Recognise what's in the file, keeping each block as the OOXML it already
+  // is (its table, columns, spacer width, bold/italic runs, blank rows) --
+  // see executionTemplateParse.ts. A block we can't place is reported rather
   // than guessed at -- putting the wrong statutory words under a party's name
   // is worse than falling back to the built-in block.
-  const blocks: Record<string, string[]> = {};
-  let unrecognised = 0;
-  for (const block of splitExecutionBlocks(docxLines(bytes))) {
-    const key = executionBlockKey(block.join(" "));
-    if (key) blocks[key] = block; else unrecognised++;
-  }
+  const { blocks, unrecognised } = extractExecutionBlocks(bytes);
   if (!Object.keys(blocks).length) {
     return NextResponse.json(
       { error: "No signing blocks were recognised. Each block should start \"Executed by\" or \"Signed, sealed and delivered by\"." },

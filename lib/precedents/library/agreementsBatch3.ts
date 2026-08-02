@@ -47,9 +47,8 @@ export const AGREEMENTS_BATCH_3: PrecedentSeed[] = [
     aiInstructions:
       "Draft a share sale agreement for a trade sale of a proprietary company. Definitions need to carry real weight here -- Sale Shares, Completion, Warranties, Disclosure Materials and Tax all get used precisely and often, so define them once and use them consistently rather than redescribing what is being sold each time. Build the price mechanism around completion accounts: a Price payable at Completion based on an estimate, then adjusted after Completion against actual net assets or working capital at the Completion Date, with a dispute mechanism if the parties disagree on the completion accounts. Keep disclosure doing its real job -- a warranty is only actionable to the extent NOT disclosed, so the Disclosure Letter and Disclosure Materials need to be defined precisely and the Warranties made subject to them, or every warranty becomes a moving target. Build a genuine limitations regime: a time bar for bringing a claim, a per-claim and aggregate threshold before anything is claimable, an overall cap tied to the Price, and the usual carve-outs (fraud, the title and capacity warranties, and tax) that a cap should never protect. Keep the tax indemnity separate from the general warranties and uncapped or capped separately, because a buyer's real tax exposure on a share sale is inherited history, not a warranty claim. Emphasise in the review note, not the document, that a share sale carries the target's liabilities across -- that is a fact for the solicitor to weigh, not something a clause can change.",
     segments: [
-      ...L(null, ["SHARE SALE AGREEMENT"]),
-      ...L(null, [""]),
       ...opening(
+        "SHARE SALE AGREEMENT",
         {
           key: "seller",
           label: "Seller",
@@ -287,9 +286,8 @@ export const AGREEMENTS_BATCH_3: PrecedentSeed[] = [
     aiInstructions:
       "Draft an asset sale agreement for the sale of a business as a going concern. The single most important thing this document does is say precisely what is sold and what is not -- draw Assets and Excluded Assets, and correspondingly Assumed Liabilities and Excluded Liabilities, so there is no gap and no overlap, because unlike a share sale where everything comes with the company, here anything not identified as transferring simply doesn't. Apportion the Price across goodwill, plant and equipment, and stock, because the apportionment affects each party's tax treatment and duty exposure. Record the GST going concern conditions expressly rather than assuming them: supply for consideration, the Buyer registered for GST, the Seller carrying on the enterprise until completion, and the supply including everything necessary for the Buyer to continue operating it. On employees, give the Buyer a genuine choice of who it offers employment to, and deal explicitly with how accrued leave is apportioned between Seller and Buyer -- silence on this is one of the most common sources of dispute after completion of a business sale. On contracts, distinguish between what can be assigned and what needs the counterparty's consent to novate. Keep warranties proportionate to an asset sale -- the buyer's main protection here is structural (it only takes what is scheduled), so the warranties exist to backstop condition and title, not to replicate the full company-history warranties a share sale needs.",
     segments: [
-      ...L(null, ["ASSET SALE AGREEMENT"]),
-      ...L(null, [""]),
       ...opening(
+        "ASSET SALE AGREEMENT",
         {
           key: "seller",
           label: "Seller",
