@@ -41,9 +41,16 @@ import { COURT_NSW_UCPR_PRECEDENTS } from "./courtNswUcpr";
 import { COURT_FCFCOA_PRECEDENTS } from "./courtFcfcoa";
 import { COURT_SUBMISSIONS_PRECEDENTS } from "./courtSubmissions";
 import { DEEDS_BATCH_1 } from "./deedsBatch1";
+import { DEEDS_BATCH_2 } from "./deedsBatch2";
+import { DEEDS_BATCH_3 } from "./deedsBatch3";
+import { DEEDS_BATCH_4 } from "./deedsBatch4";
 import { AGREEMENTS_BATCH_1 } from "./agreementsBatch1";
 import { AGREEMENTS_BATCH_2 } from "./agreementsBatch2";
 import { AGREEMENTS_BATCH_3 } from "./agreementsBatch3";
+import { AGREEMENTS_BATCH_4 } from "./agreementsBatch4";
+import { AGREEMENTS_BATCH_5 } from "./agreementsBatch5";
+import { AGREEMENTS_BATCH_6 } from "./agreementsBatch6";
+import { AGREEMENTS_BATCH_7 } from "./agreementsBatch7";
 import { EMPLOYMENT_PRECEDENTS } from "./employment";
 import { PROBATE_STATES_PRECEDENTS } from "./probateStates";
 import { CRIMINAL_STATES_PRECEDENTS } from "./criminalStates";
@@ -78,9 +85,16 @@ export const PRECEDENT_LIBRARY: PrecedentSeed[] = [
   ...COURT_FCFCOA_PRECEDENTS,
   ...COURT_SUBMISSIONS_PRECEDENTS,
   ...DEEDS_BATCH_1,
+  ...DEEDS_BATCH_2,
+  ...DEEDS_BATCH_3,
+  ...DEEDS_BATCH_4,
   ...AGREEMENTS_BATCH_1,
   ...AGREEMENTS_BATCH_2,
   ...AGREEMENTS_BATCH_3,
+  ...AGREEMENTS_BATCH_4,
+  ...AGREEMENTS_BATCH_5,
+  ...AGREEMENTS_BATCH_6,
+  ...AGREEMENTS_BATCH_7,
   ...EMPLOYMENT_PRECEDENTS,
   ...PROBATE_STATES_PRECEDENTS,
   ...CRIMINAL_STATES_PRECEDENTS,

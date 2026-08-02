@@ -120,6 +120,9 @@ function textPosition(level: number): number {
  * left of its text (w:hanging = STEP, constant), and an unnumbered paragraph
  * at the same level sits flush with that text, first line included --
  * w:firstLine="0" rather than a hang, because it has no marker to hang past.
+ *
+ * This only fixes where the WRAPPED line sits. The marker's own tab is a
+ * separate problem -- see patchNumberingTabs below.
  */
 function indentXml(styleId: string | null): string {
   if (!styleId) return "";
@@ -130,6 +133,96 @@ function indentXml(styleId: string | null): string {
     return `<w:ind w:left="${left}" w:firstLine="0"/>`;
   }
   return `<w:ind w:left="${left}" w:hanging="${STEP}"/>`;
+}
+
+/**
+ * Where the auto-number's own tab lands is not decided by the paragraph's
+ * w:ind at all -- it comes from the numbering level's own w:tabs (or, when a
+ * level defines none, the document's default tab grid). A paragraph-level
+ * w:tabs override was tried here and made no difference under LibreOffice:
+ * the number is a field the numbering definition controls, not the
+ * paragraph. So the level itself has to carry the right tab stop, or the
+ * marker's text lands short of where the wrapped line below it indents to --
+ * exactly the "(a)" that doesn't line up with its own second line.
+ *
+ * Walks a style's basedOn chain to find the numId + ilvl it numbers with.
+ * Needed because a level's own style often declares only the ilvl (its
+ * marker shape) and inherits the numId -- which abstractNum, and so which
+ * other levels it shares an alignment grid with -- from a style above it.
+ */
+function resolveNumbering(stylesXml: string, styleId: string): { numId: string; ilvl: string } | null {
+  let id: string | null = styleId;
+  let ilvl: string | null = null;
+  const seen = new Set<string>();
+  while (id && !seen.has(id)) {
+    seen.add(id);
+    const escaped: string = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m: RegExpExecArray | null = new RegExp(`<w:style\\b[^>]*w:styleId="${escaped}"[^>]*>([\\s\\S]*?)</w:style>`).exec(stylesXml);
+    if (!m) return null;
+    const body: string = m[1];
+    const numPr = /<w:numPr>([\s\S]*?)<\/w:numPr>/.exec(body)?.[1];
+    if (numPr) {
+      if (ilvl === null) ilvl = /<w:ilvl w:val="(\d+)"/.exec(numPr)?.[1] ?? "0";
+      const numId = /<w:numId w:val="(\d+)"/.exec(numPr)?.[1];
+      if (numId && numId !== "0") return { numId, ilvl: ilvl ?? "0" };
+    }
+    id = /<w:basedOn w:val="([^"]+)"/.exec(body)?.[1] ?? null;
+  }
+  return null;
+}
+
+/**
+ * Rewrites the tab stop (and, for good measure, the indent) on every
+ * numbering level actually used in this deed, so the number's own tab lands
+ * exactly where paragraphXml's w:ind puts the wrapped text -- see
+ * resolveNumbering above for why this can't be done at the paragraph level.
+ * Scoped to the levels used rather than every level in the template's
+ * numbering.xml, so an unrelated list elsewhere in the template (if the firm
+ * ever adds one) is left alone.
+ */
+function patchNumberingTabs(zip: PizZip, stylesXml: string, styleIds: Set<string>): void {
+  const numberingFile = zip.file("word/numbering.xml");
+  if (!numberingFile) return;
+  let numberingXml = numberingFile.asText();
+
+  const numIdToAbstract = new Map<string, string>();
+  const numRe = /<w:num w:numId="(\d+)"[^>]*>([\s\S]*?)<\/w:num>/g;
+  let nm: RegExpExecArray | null;
+  while ((nm = numRe.exec(numberingXml))) {
+    const absId = /<w:abstractNumId w:val="(\d+)"/.exec(nm[2])?.[1];
+    if (absId) numIdToAbstract.set(nm[1], absId);
+  }
+
+  let changed = false;
+  for (const styleId of styleIds) {
+    const level = styleLevel(styleId);
+    if (!level || /no\s*-?numbering/i.test(styleId)) continue;
+    const ref = resolveNumbering(stylesXml, styleId);
+    if (!ref) continue;
+    const absId = numIdToAbstract.get(ref.numId);
+    if (!absId) continue;
+    const left = textPosition(level);
+    const newIndTabs = `<w:tabs><w:tab w:val="num" w:pos="${left}"/></w:tabs><w:ind w:left="${left}" w:hanging="${STEP}"/>`;
+
+    const absEscaped = absId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const absRe = new RegExp(`(<w:abstractNum w:abstractNumId="${absEscaped}"[^>]*>)([\\s\\S]*?)(<\\/w:abstractNum>)`);
+    const absMatch = absRe.exec(numberingXml);
+    if (!absMatch) continue;
+
+    const lvlRe = new RegExp(`<w:lvl w:ilvl="${ref.ilvl}"[^>]*>[\\s\\S]*?<\\/w:lvl>`);
+    const lvlMatch = lvlRe.exec(absMatch[2]);
+    if (!lvlMatch) continue;
+
+    const patchedLvl = /<w:pPr>[\s\S]*?<\/w:pPr>/.test(lvlMatch[0])
+      ? lvlMatch[0].replace(/<w:pPr>[\s\S]*?<\/w:pPr>/, `<w:pPr>${newIndTabs}</w:pPr>`)
+      : lvlMatch[0].replace(/<w:rPr>/, `<w:pPr>${newIndTabs}</w:pPr><w:rPr>`);
+    const newAbsBody = absMatch[2].slice(0, lvlMatch.index) + patchedLvl + absMatch[2].slice(lvlMatch.index + lvlMatch[0].length);
+    numberingXml = numberingXml.slice(0, absMatch.index) + absMatch[1] + newAbsBody + absMatch[3]
+      + numberingXml.slice(absMatch.index + absMatch[0].length);
+    changed = true;
+  }
+
+  if (changed) zip.file("word/numbering.xml", numberingXml);
 }
 
 function escapeXml(s: string): string {
@@ -323,9 +416,11 @@ export function buildDeedDocx(
   const lines = parseDeedBody(body);
   let paragraphs = "";
   let pendingRows = "";
+  const usedStyles = new Set<string>();
   const flushRows = () => { if (pendingRows) { paragraphs += columnTableXml(pendingRows); pendingRows = ""; } };
   for (const l of lines) {
     const style = l.style ? resolveStyleId(l.style, templateStyles, byName) : null;
+    if (style) usedStyles.add(style);
     if (isColumnLine(l.text)) {
       const [left, right] = l.text.split(COL);
       pendingRows += columnRowXml(style, left, right ?? "");
@@ -357,6 +452,7 @@ export function buildDeedDocx(
     paragraphs += paragraphXml(style, l.text);
   }
   flushRows();
+  patchNumberingTabs(zip, stylesXml, usedStyles);
 
   // Keep the template's sectPr: it carries the page size, margins and the
   // header/footer relationships, so dropping it would lose the firm's own
