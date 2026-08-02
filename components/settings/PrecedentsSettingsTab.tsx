@@ -16,6 +16,7 @@ import { useCompany } from "@/components/CompanyContext";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import DeedTemplateSection from "@/components/settings/DeedTemplateSection";
 import ExecutionTemplateSection from "@/components/settings/ExecutionTemplateSection";
+import PrecedentLibraryTopUp from "@/components/precedents/PrecedentLibraryTopUp";
 
 interface DetectedField { role: string; options?: string[] }
 
@@ -708,6 +709,8 @@ function LibrarySection({ isAdmin }: { isAdmin: boolean }) {
           <Plus size={13} /> Add precedent
         </button>
       </div>
+
+      <PrecedentLibraryTopUp isAdmin={isAdmin} variant="panel" onInstalled={load} className="mb-4" />
 
       <div className="space-y-3">
         {precedents.length === 0 && !showCreate && (

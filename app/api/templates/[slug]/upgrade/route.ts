@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { installPrecedentLibrary, TEMPLATES_WITH_PRECEDENT_LIBRARY } from "@/lib/precedents/installLibrary";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authorizeCompanyMember();
@@ -36,5 +37,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  return NextResponse.json(data);
+  // Top up the precedent library the same way install does -- a company that
+  // installed "law-firm" before the library grew otherwise has no way to pick
+  // up what's been added since except a separate trip to Settings. Runs after
+  // the RPC and is deliberately non-fatal, matching install/route.ts.
+  let precedents;
+  if (TEMPLATES_WITH_PRECEDENT_LIBRARY.has(slug)) {
+    const { result, error: precedentError } = await installPrecedentLibrary(admin, companyId, auth.user.id);
+    if (precedentError) console.error("[template-upgrade] precedent library failed:", precedentError);
+    else precedents = result;
+  }
+
+  return NextResponse.json({ ...data, precedents });
 }

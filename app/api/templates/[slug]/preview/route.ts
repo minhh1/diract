@@ -9,6 +9,7 @@
 // the client to choose.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { TEMPLATES_WITH_PRECEDENT_LIBRARY, getPrecedentLibraryStatus } from "@/lib/precedents/installLibrary";
 
 // Human-readable first auto number (mirrors next_field_sequence's
 // formatting in supabase/company_table_field_sequences.sql: date tokens in
@@ -209,12 +210,24 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     };
   });
 
+  // Templates that ship the seeded precedent library (see
+  // lib/precedents/installLibrary.ts) have a top-up that lives entirely
+  // outside install_company_template/upgrade_company_template's schema
+  // diffing -- it's authored in TypeScript, not template rows -- so it has
+  // to be counted separately and folded into hasUpgrade by hand, or a
+  // company that's fully up to date on tables and dashboards but behind on
+  // precedents would be told it has nothing pending.
+  const precedentLibrary = TEMPLATES_WITH_PRECEDENT_LIBRARY.has(slug)
+    ? await getPrecedentLibraryStatus(admin, companyId)
+    : null;
+
   // Whether there's anything for upgrade_company_template to actually do --
   // only meaningful when alreadyInstalled (a fresh install always "has
   // everything to add" by definition, so this flag isn't shown then).
   const hasUpgrade =
     tableConflicts.some(t => !t.owned || t.newFields.length > 0) ||
-    dashboards.some(d => !d.owned);
+    dashboards.some(d => !d.owned) ||
+    !!(precedentLibrary && precedentLibrary.available > 0);
 
   const fieldConflicts = await Promise.all(
     (systemFields || []).map(async f => {
@@ -287,6 +300,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     systemFields: fieldConflicts,
     dashboards,
     recordTabs,
+    precedentLibrary,
     suggestedLabelOverrides: template.suggested_label_overrides || {},
   });
 }

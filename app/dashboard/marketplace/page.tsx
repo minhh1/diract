@@ -84,6 +84,12 @@ interface PreviewResult {
   systemFields: PreviewConflict[];
   dashboards: PreviewDashboard[];
   recordTabs?: PreviewRecordTab[];
+  // Present only for templates that ship the seeded precedent library (see
+  // TEMPLATES_WITH_PRECEDENT_LIBRARY in lib/precedents/installLibrary.ts).
+  // It's a count, not a per-item manifest, unlike tables/dashboards above --
+  // the library runs to hundreds of documents, too many to review one by one
+  // here.
+  precedentLibrary?: { total: number; installed: number; available: number } | null;
   suggestedLabelOverrides: Record<string, { singular: string; plural: string }>;
 }
 
@@ -647,6 +653,22 @@ export default function MarketplacePage() {
                       </div>
                     </div>
                   ))}
+
+                  {preview.precedentLibrary && (
+                    <>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">
+                        Precedent library <span className="font-normal normal-case">(Australian law-firm document library)</span>
+                      </p>
+                      <div className="p-3 bg-white border border-slate-200 rounded-2xl flex items-center justify-between">
+                        <p className="text-[12px] font-bold text-slate-800">
+                          {preview.precedentLibrary.installed} of {preview.precedentLibrary.total} precedents
+                        </p>
+                        {preview.precedentLibrary.available > 0
+                          ? <span className="text-[9px] font-bold text-emerald-600 uppercase">{preview.precedentLibrary.available} new</span>
+                          : <span className="text-[9px] font-bold text-slate-400 uppercase">Installed</span>}
+                      </div>
+                    </>
+                  )}
 
                   {preview.dashboards.length > 0 && (
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pt-2">

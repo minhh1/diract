@@ -19,6 +19,45 @@ export interface InstallResult {
   total: number;
 }
 
+// Templates that ship the seeded Australian precedent library alongside
+// their tables and dashboards. Slug-keyed rather than a flag on
+// template_definitions because the library is authored in TypeScript, not
+// stored as template rows -- there is nothing in the template record itself
+// to hang it off. Shared by the template install/upgrade/preview routes and
+// the standalone library-install route so they agree on which templates get
+// the top-up offered at all.
+export const TEMPLATES_WITH_PRECEDENT_LIBRARY = new Set(["law-firm"]);
+
+// Deliberately NOT filtered by deleted_at -- see installPrecedentLibrary's
+// own comment below. A library_key the company has ever had counts as
+// "installed" whether or not it was since deleted, because re-installing on
+// top of a firm's own deletion decision is exactly the bug this guards
+// against.
+async function getAlreadyInstalledKeys(admin: ReturnType<typeof adminClient>, companyId: string): Promise<Set<string>> {
+  const { data: existing } = await admin
+    .from("precedents")
+    .select("library_key")
+    .eq("company_id", companyId)
+    .not("library_key", "is", null);
+  return new Set((existing || []).map(r => r.library_key));
+}
+
+export interface PrecedentLibraryStatus {
+  total: number;
+  installed: number;
+  available: number;
+}
+
+/** How current a company's install is against today's library, without installing anything. */
+export async function getPrecedentLibraryStatus(
+  admin: ReturnType<typeof adminClient>,
+  companyId: string
+): Promise<PrecedentLibraryStatus> {
+  const alreadyInstalled = await getAlreadyInstalledKeys(admin, companyId);
+  const available = PRECEDENT_LIBRARY.filter(seed => !alreadyInstalled.has(seed.key)).length;
+  return { total: PRECEDENT_LIBRARY.length, installed: PRECEDENT_LIBRARY.length - available, available };
+}
+
 // Whether this company has the Law Firm marketplace template installed --
 // signalled by presence of its Trust Transactions table, the same proxy
 // RecordDashboard.tsx/Sidebar.tsx already use for other Law Firm-only
@@ -59,18 +98,12 @@ export async function installPrecedentLibrary(
     .is("deleted_at", null);
   const fieldIdByKey = new Map<string, string>((customFields || []).map(f => [f.field_key, f.id]));
 
-  // Deliberately NOT filtered by deleted_at. A library_key the company has
-  // ever had is one it has already been given; if it was deleted, that was a
-  // decision. Filtering deleted rows out here made every re-install resurrect
+  // Deliberately NOT filtered by deleted_at -- see getAlreadyInstalledKeys.
+  // Filtering deleted rows out here made every re-install resurrect
   // precedents a firm had retired -- and because the unique index is partial
   // (WHERE deleted_at IS NULL) nothing at the database level stopped it, so
   // the firm silently got the old copy back alongside whatever replaced it.
-  const { data: existing } = await admin
-    .from("precedents")
-    .select("library_key")
-    .eq("company_id", companyId)
-    .not("library_key", "is", null);
-  const alreadyInstalled = new Set((existing || []).map(r => r.library_key));
+  const alreadyInstalled = await getAlreadyInstalledKeys(admin, companyId);
 
   const { data: maxOrderRow } = await admin
     .from("precedents")

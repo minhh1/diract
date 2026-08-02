@@ -8,14 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { installPrecedentLibrary } from "@/lib/precedents/installLibrary";
-
-// Templates that ship the seeded Australian precedent library alongside
-// their tables and dashboards (see lib/precedents/library/). Slug-keyed
-// rather than a flag on template_definitions because the library is authored
-// in TypeScript, not stored as template rows -- there is nothing in the
-// template record itself to hang it off.
-const TEMPLATES_WITH_PRECEDENT_LIBRARY = new Set(["law-firm"]);
+import { installPrecedentLibrary, TEMPLATES_WITH_PRECEDENT_LIBRARY } from "@/lib/precedents/installLibrary";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authorizeCompanyMember();

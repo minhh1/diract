@@ -10,8 +10,7 @@
 // points share one implementation.
 import { NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { installPrecedentLibrary } from "@/lib/precedents/installLibrary";
-import { PRECEDENT_LIBRARY } from "@/lib/precedents/library";
+import { installPrecedentLibrary, hasLawFirmTemplate, getPrecedentLibraryStatus } from "@/lib/precedents/installLibrary";
 
 export async function POST() {
   const auth = await authorizeCompanyMember();
@@ -20,6 +19,12 @@ export async function POST() {
 
   if (!isAdmin) {
     return NextResponse.json({ error: "Only a company admin can install the precedent library" }, { status: 403 });
+  }
+  // The seeded library is Australian-law-firm-specific content -- see
+  // supabase/template_law_firm_seed.sql -- not a generic feature every
+  // tenant should be able to self-serve into their company.
+  if (!(await hasLawFirmTemplate(admin, companyId))) {
+    return NextResponse.json({ error: "The precedent library is only available to companies on the Law Firm template" }, { status: 403 });
   }
 
   const { result, error } = await installPrecedentLibrary(admin, companyId, user.id);
@@ -34,17 +39,9 @@ export async function GET() {
   if (auth.error) return auth.error;
   const { admin, companyId } = auth;
 
-  const { data: existing } = await admin
-    .from("precedents")
-    .select("library_key")
-    .eq("company_id", companyId)
-    .not("library_key", "is", null)
-    .is("deleted_at", null);
-  const alreadyInstalled = new Set((existing || []).map(r => r.library_key));
+  if (!(await hasLawFirmTemplate(admin, companyId))) {
+    return NextResponse.json({ error: "The precedent library is only available to companies on the Law Firm template" }, { status: 403 });
+  }
 
-  return NextResponse.json({
-    total: PRECEDENT_LIBRARY.length,
-    installed: alreadyInstalled.size,
-    available: PRECEDENT_LIBRARY.filter(s => !alreadyInstalled.has(s.key)).length,
-  });
+  return NextResponse.json(await getPrecedentLibraryStatus(admin, companyId));
 }

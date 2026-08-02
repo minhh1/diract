@@ -11,6 +11,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { PenSquare, Loader2, X, Sparkles, Download, Settings2, Check, FileOutput, Search, ChevronDown, AlertTriangle } from "lucide-react";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
+import { useCompany } from "@/components/CompanyContext";
+import PrecedentLibraryTopUp from "@/components/precedents/PrecedentLibraryTopUp";
 
 interface Props {
   recordId: string;
@@ -51,6 +53,7 @@ interface Issuance {
 }
 
 export default function PrecedentsTab({ recordId, initialPrecedentId }: Props) {
+  const { isAdmin } = useCompany();
   const [precedents, setPrecedents] = useState<Precedent[]>([]);
   const [issuances, setIssuances] = useState<Issuance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +140,7 @@ export default function PrecedentsTab({ recordId, initialPrecedentId }: Props) {
             <Settings2 size={13} /> Customize for this matter
           </button>
         </div>
+        <PrecedentLibraryTopUp isAdmin={isAdmin} variant="banner" onInstalled={load} className="mb-3" />
         {precedents.length > 0 && (
           <div className="flex items-center gap-2 mb-3">
             <div className="relative flex-1">
