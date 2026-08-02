@@ -497,6 +497,9 @@ function runsXml(text: string, font?: RunFont): string {
 }
 
 const LINE_SPACING_150 = `<w:spacing w:line="360" w:lineRule="auto"/>`;
+// 480 = 2.0x -- the parties table's rows (Name/Address/Shortname) want more
+// room than the 1.5x everything else in this block uses.
+const LINE_SPACING_200 = `<w:spacing w:line="480" w:lineRule="auto"/>`;
 
 function paragraphXml(styleId: string | null, text: string, font?: RunFont, spacing?: boolean): string {
   // ruleAbove() prefixes a weight + the rest of the text -- see its own
@@ -516,7 +519,7 @@ function paragraphXml(styleId: string | null, text: string, font?: RunFont, spac
       (weight === "8" ? "" : LINE_SPACING_150);
     text = text.slice(2);
   } else if (spacing) {
-    ruleXml = LINE_SPACING_150;
+    ruleXml = LINE_SPACING_200;
   }
   const pPrInner = (styleId ? `<w:pStyle w:val="${escapeXml(styleId)}"/>` : "") + ruleXml + (styleId ? indentXml(styleId) : "");
   const pPr = pPrInner ? `<w:pPr>${pPrInner}</w:pPr>` : "";
