@@ -212,6 +212,10 @@ export function buildDeedDocx(templateBytes: Buffer, body: string): Buffer {
       continue;
     }
     flushRows();
+    if (l.text.startsWith(EXEC)) {
+      try { paragraphs += executionXml(JSON.parse(l.text.slice(1))); } catch { /* malformed: skip */ }
+      continue;
+    }
     if (l.text === DEED_PAGE_BREAK) {
       paragraphs += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
       continue;
@@ -271,4 +275,87 @@ export function deedLine<T extends { type: string }>(
   if (first) out.push({ type: "text", text: prefix } as unknown as T);
   out.push({ type: "text", text: "\n" } as unknown as T);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Execution blocks
+//
+// A signing block is a three-column table, not prose: the witness details run
+// down the left, the signatory signs on the right, and a narrow spacer between
+// them keeps the two apart so it reads clearly. Built here rather than as
+// styled lines because the cells need their own runs -- the opening verb and
+// the party's name are bold while the rest of the sentence is not, and a
+// signature rule needs room to sign above it.
+// ---------------------------------------------------------------------------
+
+/** Marks a line as an execution block; the payload is the spec as JSON. */
+const EXEC = String.fromCharCode(4);
+
+const EXEC_FONT = "Arial";
+const EXEC_SIZE = 20;          // half-points: 10pt
+const EXEC_TOTAL = 9026;       // A4 less 1 inch margins, in twips
+const EXEC_SPACER = 397;       // 0.7 cm
+const EXEC_SIDE = Math.floor((EXEC_TOTAL - EXEC_SPACER) / 2);
+
+export interface ExecutionSpec {
+  /** "Executed by" or "Signed, sealed and delivered by" -- rendered bold. */
+  opener: string;
+  /** The signing party, rendered bold. */
+  party: string;
+  /** " in the presence of:" or the statutory words -- not bold. */
+  tail: string;
+  /** Left column: the witness's lines, or a second officer. */
+  left: string[];
+  /** Right column: the signatory's own lines. */
+  right: string[];
+}
+
+export function deedExecution(spec: ExecutionSpec): string {
+  return EXEC + JSON.stringify(spec);
+}
+
+function execRun(text: string, bold: boolean): string {
+  return `<w:r><w:rPr><w:rFonts w:ascii="${EXEC_FONT}" w:hAnsi="${EXEC_FONT}"/>` +
+    `${bold ? "<w:b/>" : ""}<w:sz w:val="${EXEC_SIZE}"/><w:szCs w:val="${EXEC_SIZE}"/></w:rPr>` +
+    `<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+}
+
+function execPara(runs: string): string {
+  return `<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>${runs}</w:p>`;
+}
+
+/**
+ * A signature rule: three empty lines to sign in, then the underscored line,
+ * then its caption. The space above the rule is what makes a signing page
+ * usable -- a rule with nothing above it cannot actually be signed.
+ */
+function signatureCell(caption: string): string {
+  return (
+    execPara("") + execPara("") + execPara("") +
+    execPara(execRun("______________________________", false)) +
+    execPara(execRun(caption, false))
+  );
+}
+
+function execCell(width: number, content: string): string {
+  return `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${width}"/>` +
+    `<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>` +
+    `</w:tcPr>${content || execPara("")}</w:tc>`;
+}
+
+function executionXml(spec: ExecutionSpec): string {
+  const head = execPara(
+    execRun(spec.opener + " ", true) + execRun(spec.party, true) + execRun(spec.tail, false)
+  );
+  const row = `<w:tr>` +
+    execCell(EXEC_SIDE, spec.left.map(signatureCell).join("")) +
+    execCell(EXEC_SPACER, "") +
+    execCell(EXEC_SIDE, spec.right.map(signatureCell).join("")) +
+    `</w:tr>`;
+  return head +
+    `<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="${EXEC_TOTAL}"/>` +
+    `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>` +
+    `<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="${EXEC_SIDE}"/><w:gridCol w:w="${EXEC_SPACER}"/><w:gridCol w:w="${EXEC_SIDE}"/></w:tblGrid>` +
+    row + `</w:tbl>` + execPara("");
 }

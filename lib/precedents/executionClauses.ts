@@ -67,7 +67,7 @@ export const EXECUTION_VARIANTS: ExecutionVariant[] = [
 ];
 
 /** Opening words, which are the part that differs between a deed and an agreement. */
-function opener(kind: PartyKind, instrument: InstrumentKind): string {
+function opener_(kind: PartyKind, instrument: InstrumentKind): string {
   if (kind === "individual") {
     return instrument === "deed"
       ? "Signed, sealed and delivered by"
@@ -102,7 +102,7 @@ export function executionBlock(
   instrument: InstrumentKind,
   party: string
 ): string[] {
-  const head = `${opener(kind, instrument)} ${party}${statutoryWords(kind)}`;
+  const head = `${opener_(kind, instrument)} ${party}${statutoryWords(kind)}`;
 
   switch (kind) {
     case "individual":
@@ -239,4 +239,43 @@ export function parameteriseBlock(lines: string[], placeholder: string): string[
   // Escape for use in a regex; a company name can contain "." and "(".
   const pattern = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
   return lines.map(l => l.replace(pattern, placeholder));
+}
+
+
+/**
+ * The signing block as a three-column table spec: witness on the left, the
+ * signatory on the right, a narrow spacer between.
+ *
+ * Replaces the flat line list for rendering. A signing page is a layout
+ * problem, not a prose one -- who signs where, and which name sits under
+ * which rule, is the whole point of it.
+ */
+export function executionSpec(
+  kind: PartyKind,
+  instrument: InstrumentKind,
+  party: string
+): { opener: string; party: string; tail: string; left: string[]; right: string[] } {
+  const opener = opener_(kind, instrument);
+  const tail = statutoryWords(kind);
+  switch (kind) {
+    case "individual":
+      // The witness attests, so their details run down the left; the party
+      // signs opposite. Both are needed for a deed and the witness is usual
+      // on an agreement too.
+      return {
+        opener, party, tail,
+        left: ["Signature of witness", "Full name of witness (print)", "Address of witness (print)"],
+        right: [`Signature of ${party}`],
+      };
+    case "company_127_two_officers":
+      return {
+        opener, party, tail,
+        left: ["Signature of director"],
+        right: ["Signature of director / company secretary"],
+      };
+    case "company_127_sole_director":
+      return { opener, party, tail, left: ["Signature of sole director"], right: [] };
+    case "company_126_authorised":
+      return { opener, party, tail, left: ["Signature of authorised representative"], right: [] };
+  }
 }
