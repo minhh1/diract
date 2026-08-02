@@ -8,6 +8,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { installPrecedentLibrary } from "@/lib/precedents/installLibrary";
+
+// Templates that ship the seeded Australian precedent library alongside
+// their tables and dashboards (see lib/precedents/library/). Slug-keyed
+// rather than a flag on template_definitions because the library is authored
+// in TypeScript, not stored as template rows -- there is nothing in the
+// template record itself to hang it off.
+const TEMPLATES_WITH_PRECEDENT_LIBRARY = new Set(["law-firm"]);
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authorizeCompanyMember();
@@ -37,5 +45,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     return NextResponse.json({ error: error.message }, { status });
   }
 
-  return NextResponse.json(data);
+  // Seed the precedent library for templates that ship one. Runs after the
+  // RPC so the matter_type custom field exists and fill-in fields can bind
+  // to it. Deliberately non-fatal: the template itself installed fine, and
+  // failing the whole install over the precedent library would be a worse
+  // outcome than a firm having to top it up from Settings afterwards.
+  let precedents;
+  if (TEMPLATES_WITH_PRECEDENT_LIBRARY.has(slug)) {
+    const { result, error: precedentError } = await installPrecedentLibrary(admin, companyId, auth.user.id);
+    if (precedentError) console.error("[template-install] precedent library failed:", precedentError);
+    else precedents = result;
+  }
+
+  return NextResponse.json({ ...data, precedents });
 }

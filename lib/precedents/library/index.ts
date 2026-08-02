@@ -35,6 +35,8 @@ import { SMALL_CLAIMS_NSW_PRECEDENTS, CRIMINAL_NSW_PRECEDENTS } from "./smallCla
 import { IMMIGRATION_PRECEDENTS } from "./immigration";
 import { CONVEYANCING_STATES_PRECEDENTS } from "./conveyancingStates";
 import { STATE_PI_CIVIL_PRECEDENTS } from "./statesPiCivil";
+import { COMMERCIAL_PRECEDENTS } from "./commercial";
+import { LITIGATION_COURT_PRECEDENTS } from "./litigationCourt";
 
 export const PRECEDENT_LIBRARY: PrecedentSeed[] = [
   ...CLIENT_CARE_PRECEDENTS,
@@ -49,6 +51,8 @@ export const PRECEDENT_LIBRARY: PrecedentSeed[] = [
   ...IMMIGRATION_PRECEDENTS,
   ...CONVEYANCING_STATES_PRECEDENTS,
   ...STATE_PI_CIVIL_PRECEDENTS,
+  ...COMMERCIAL_PRECEDENTS,
+  ...LITIGATION_COURT_PRECEDENTS,
 ];
 
 // Fails loudly at import time rather than silently seeding a duplicate key
