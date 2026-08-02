@@ -439,10 +439,13 @@ const PARTY_VALUE_COL = 9026 - PARTY_TABLE_INDENT - PARTY_LABEL_COL;
 const PARTY_FONT: RunFont = { family: "Arial", size: 20 };
 
 function partyColumnRowXml(left: string, right: string): string {
+  // The spacer row between/after parties (both cells empty) stays at 1.5x --
+  // it's a gap, not a line of text wanting extra room.
+  const rowSpacing = left || right ? "250" : "150";
   const cell = (t: string, width: number) =>
     `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${width}"/>` +
     `<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>` +
-    `</w:tcPr>${paragraphXml(null, t, PARTY_FONT, true)}</w:tc>`;
+    `</w:tcPr>${paragraphXml(null, t, PARTY_FONT, rowSpacing)}</w:tc>`;
   return `<w:tr>${cell(left, PARTY_LABEL_COL)}${cell(right, PARTY_VALUE_COL)}</w:tr>`;
 }
 
@@ -497,11 +500,12 @@ function runsXml(text: string, font?: RunFont): string {
 }
 
 const LINE_SPACING_150 = `<w:spacing w:line="360" w:lineRule="auto"/>`;
-// 480 = 2.0x -- the parties table's rows (Name/Address/Shortname) want more
-// room than the 1.5x everything else in this block uses.
-const LINE_SPACING_200 = `<w:spacing w:line="480" w:lineRule="auto"/>`;
+// 600 = 2.5x -- the parties table's Name/Address/Shortname rows want more
+// room than the 1.5x everything else in this block uses. The blank row
+// between/after parties stays at 1.5x -- see partyColumnRowXml.
+const LINE_SPACING_250 = `<w:spacing w:line="600" w:lineRule="auto"/>`;
 
-function paragraphXml(styleId: string | null, text: string, font?: RunFont, spacing?: boolean): string {
+function paragraphXml(styleId: string | null, text: string, font?: RunFont, spacing?: "150" | "250"): string {
   // ruleAbove() prefixes a weight + the rest of the text -- see its own
   // comment. Stripped here rather than left for runsXml, since it describes
   // the paragraph, not a run within it.
@@ -518,8 +522,10 @@ function paragraphXml(styleId: string | null, text: string, font?: RunFont, spac
       (weight !== "0" ? `<w:pBdr><w:top w:val="single" w:sz="${weight}" w:space="1" w:color="auto"/></w:pBdr>` : "") +
       (weight === "8" ? "" : LINE_SPACING_150);
     text = text.slice(2);
-  } else if (spacing) {
-    ruleXml = LINE_SPACING_200;
+  } else if (spacing === "250") {
+    ruleXml = LINE_SPACING_250;
+  } else if (spacing === "150") {
+    ruleXml = LINE_SPACING_150;
   }
   const pPrInner = (styleId ? `<w:pStyle w:val="${escapeXml(styleId)}"/>` : "") + ruleXml + (styleId ? indentXml(styleId) : "");
   const pPr = pPrInner ? `<w:pPr>${pPrInner}</w:pPr>` : "";
