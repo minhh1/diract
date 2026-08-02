@@ -52,6 +52,10 @@ function generalProvisions(): BodyTemplateSegment[] {
       "Each party bears its own costs of preparing and signing this deed.",
     ]),
     ...L(null, [""]),
+    // The signing page starts a fresh page: a deed that is signed halfway
+    // down a page of clauses reads as an afterthought, and the block can be
+    // separated from what it signs.
+    ...L(null, [DEED_PAGE_BREAK]),
     ...L("DeedHeading", ["Execution"]),
     ...L(null, [executedAsLine("deed")]),
     ...L(null, [""]),

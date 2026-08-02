@@ -112,6 +112,14 @@ function indentXml(styleId: string | null): string {
   if (!styleId) return "";
   const level = styleLevel(styleId);
   if (!level) return "";
+  // A paragraph with no number has nothing to hang: hanging it pulls the
+  // first line back into the gutter where the number would have been, so it
+  // starts left of the numbered text above it. Squaring it off at the text
+  // position of its own level is what makes it sit under the paragraph it
+  // continues.
+  if (/no\s*-?numbering/i.test(styleId)) {
+    return `<w:ind w:left="${level * STEP}" w:firstLine="0"/>`;
+  }
   return `<w:ind w:left="${level * STEP}" w:hanging="${STEP}"/>`;
 }
 
@@ -352,20 +360,33 @@ function execCell(width: number, content: string): string {
 }
 
 function executionXml(spec: ExecutionSpec): string {
-  const head = execPara(
-    execRun(spec.opener + " ", true) + execRun(spec.party, true) + execRun(spec.tail, false)
-  );
-  const row = `<w:tr>` +
+  // The opener is a row of the table rather than a paragraph above it, sitting
+  // in column 1 with the other two blank. Outside the table it drifts out of
+  // alignment with the block it introduces, and the block can break away from
+  // it across a page.
+  const openerRow =
+    `<w:tr><w:trPr><w:cantSplit/></w:trPr>` +
+    execCell(EXEC_SIDE, execPara(
+      execRun(spec.opener + " ", true) + execRun(spec.party, true) + execRun(spec.tail, false)
+    )) +
+    execCell(EXEC_SPACER, "") +
+    execCell(EXEC_SIDE, "") +
+    `</w:tr>`;
+  // cantSplit keeps a signing block whole: half a signature page at the foot
+  // of one page and half at the head of the next is not signable.
+  const row = `<w:tr><w:trPr><w:cantSplit/></w:trPr>` +
     execCell(EXEC_SIDE, spec.left.map(signatureCell).join("")) +
     execCell(EXEC_SPACER, "") +
     execCell(EXEC_SIDE, spec.right.map(signatureCell).join("")) +
     `</w:tr>`;
-  return head +
-    `<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="${EXEC_TOTAL}"/>` +
+  return `<w:tbl><w:tblPr><w:tblW w:type="dxa" w:w="${EXEC_TOTAL}"/>` +
+    // Fixed layout, or the renderer redistributes the columns to fit their
+    // contents and the 0.7 cm spacer comes out far wider than asked for.
+    `<w:tblLayout w:type="fixed"/>` +
     `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>` +
     `<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr>` +
     `<w:tblGrid><w:gridCol w:w="${EXEC_SIDE}"/><w:gridCol w:w="${EXEC_SPACER}"/><w:gridCol w:w="${EXEC_SIDE}"/></w:tblGrid>` +
-    row + `</w:tbl>` + execPara("");
+    openerRow + row + `</w:tbl>` + execPara("");
 }
 
 
