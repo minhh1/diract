@@ -227,7 +227,7 @@ export function applyDefaultDeedStyles(bytes: Buffer): Buffer {
   const numOffset = maxNum + 1;
 
   let abstractBlock = "";
-  for (const [absId, xml] of Object.entries(DEFAULT_DEED_STYLES.abstractNums)) {
+  for (const xml of Object.values(DEFAULT_DEED_STYLES.abstractNums)) {
     abstractBlock += xml.replace(
       /w:abstractNumId="(\d+)"/g,
       (_, v) => `w:abstractNumId="${Number(v) + absOffset}"`
