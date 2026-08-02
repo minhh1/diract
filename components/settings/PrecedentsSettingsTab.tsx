@@ -227,7 +227,18 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
     setUploading(true);
     invalidatePreviewCache(); // stale once the source file changes
     const key = companyId ? pendingUploadKey(companyId) : null;
-    if (key) localStorage.setItem(key, JSON.stringify({ startedAt: Date.now() }));
+    // The marker is ~30 bytes, but localStorage is shared with the app's
+    // caches and can already be full, in which case setItem throws
+    // QuotaExceededError. That must not take the upload down with it: the
+    // marker only exists so an upload interrupted by a page change can be
+    // resumed, and losing it costs the resume, not the upload.
+    if (key) {
+      try {
+        localStorage.setItem(key, JSON.stringify({ startedAt: Date.now() }));
+      } catch {
+        // Full or unavailable -- proceed without the resume marker.
+      }
+    }
     try {
       const form = new FormData();
       form.append("file", file);

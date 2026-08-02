@@ -19,6 +19,7 @@ import { insertContentBlock } from "@/lib/precedents/contentXml";
 import { insertSignoffBlock } from "@/lib/precedents/signoffXml";
 import { buildBodyFromTemplate, type BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import { buildCourtFormDocx } from "@/lib/precedents/courtFormDocx";
+import { buildDeedDocx } from "@/lib/precedents/deedDocx";
 
 const BUCKET = "precedent-documents";
 
@@ -39,7 +40,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: precedent } = await admin
     .from("precedents")
-    .select("id, company_id, name, body_template, ai_instructions, uses_letterhead")
+    .select("id, company_id, name, body_template, ai_instructions, uses_letterhead, document_type")
     .eq("id", precedentId).is("deleted_at", null).maybeSingle();
   if (!precedent || precedent.company_id !== companyId) {
     return NextResponse.json({ error: "Precedent not found" }, { status: 404 });
@@ -60,9 +61,31 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   for (const s of segments) if (s.type === "field") values[s.key] = placeholder(s.label);
   const body = buildBodyFromTemplate(segments, values).trim();
 
-  // Court documents, deeds and prescribed forms are built standalone: they
-  // carry their own prescribed heading and putting the firm's letterhead
-  // above a statement of claim is not the approved form.
+  // A deed is generated INTO the firm's deed template, because that is where
+  // its numbering and indentation live -- see lib/precedents/deedDocx.ts.
+  // Without a template uploaded there is nothing to apply, so it falls through
+  // to the standalone builder, which honours the emphasis the styles imply but
+  // cannot number anything.
+  if (precedent.document_type === "deed") {
+    const { data: deedTemplate } = await admin
+      .from("company_deed_templates").select("storage_path").eq("company_id", companyId).maybeSingle();
+    if (deedTemplate?.storage_path) {
+      const { data: tplFile } = await admin.storage.from(BUCKET).download(deedTemplate.storage_path);
+      if (tplFile) {
+        const out = buildDeedDocx(Buffer.from(await tplFile.arrayBuffer()), body);
+        return new NextResponse(new Uint8Array(out), {
+          headers: {
+            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "Content-Disposition": `attachment; filename="${safeFilename(precedent.name)}.docx"`,
+          },
+        });
+      }
+    }
+  }
+
+  // Court documents and prescribed forms are built standalone: they carry
+  // their own prescribed heading and putting the firm's letterhead above a
+  // statement of claim is not the approved form.
   if (precedent.uses_letterhead === false) {
     const standalone = await buildCourtFormDocx(body);
     return new NextResponse(new Uint8Array(standalone), {
