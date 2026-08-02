@@ -20,7 +20,7 @@ import {
   ArrowLeft, MousePointer2, Type, Highlighter, Pencil, PenTool, SquareCheck,
   Undo2, Redo2, Save, ZoomIn, ZoomOut, Loader2, Trash2, Download, Files,
 } from "lucide-react";
-import PdfPageView from "./PdfPageView";
+import PdfPageView, { DEFAULT_CHECKBOX_SIZE_PDF } from "./PdfPageView";
 import SignaturePad from "./SignaturePad";
 import PageManager from "./PageManager";
 import { applyEdits } from "@/lib/pdfeditor/applyEdits";
@@ -93,6 +93,13 @@ export default function PdfEditor({ source, onBack }: Props) {
   // Whether the NEXT placed checkbox starts checked (the usual default) or
   // already unchecked -- see EMPTY_BOX_CHOICE's own doc comment above.
   const [placeChecked, setPlaceChecked] = useState(true);
+  // Fallback side length (PDF points) for a freshly-placed checkbox when a
+  // click can't be auto-measured against a real box on the page (see
+  // detectRealCheckboxRect in PdfPageView.tsx) -- user-adjustable since real
+  // documents' own checkbox sizes genuinely vary from one template to the
+  // next (confirmed: ~10pt vs. ~7.2pt across two real contracts) and a
+  // single hardcoded guess can't fit every one of them.
+  const [defaultCheckboxSize, setDefaultCheckboxSize] = useState(DEFAULT_CHECKBOX_SIZE_PDF);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [pendingSignature, setPendingSignature] = useState<string | null>(null);
   const [showPageManager, setShowPageManager] = useState(false);
@@ -389,6 +396,20 @@ export default function PdfEditor({ source, onBack }: Props) {
                 >
                   {EMPTY_BOX_CHOICE.glyph}
                 </button>
+                <span className="w-px h-4 bg-slate-300 mx-0.5" />
+                <input
+                  type="number"
+                  min={4}
+                  max={60}
+                  step={0.5}
+                  value={defaultCheckboxSize}
+                  onChange={(e) => {
+                    const n = parseFloat(e.target.value);
+                    if (!Number.isNaN(n)) setDefaultCheckboxSize(Math.min(60, Math.max(4, n)));
+                  }}
+                  title="Default box size (pt) used when a click can't be auto-measured against a real checkbox on the page"
+                  className="w-14 h-7 rounded-full text-center text-[12px] bg-white text-slate-700 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                />
               </div>
             )}
 
@@ -476,6 +497,7 @@ export default function PdfEditor({ source, onBack }: Props) {
                   activeTool={activeTool}
                   checkboxStyle={checkboxStyle}
                   placeChecked={placeChecked}
+                  defaultCheckboxSize={defaultCheckboxSize}
                   pendingSignature={pendingSignature}
                   onAddOp={handleAddOp}
                   onUpdateOp={handleUpdateOp}

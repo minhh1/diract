@@ -60,13 +60,15 @@ function isCheckedGlyph(str: string): boolean {
 }
 
 // Side length (PDF points) for a checkbox freehand-placed via the "Checkbox"
-// tool, where there's no source glyph to size it from. Confirmed against a
-// real contract's own checkbox, not just eyeballed: measured its actual
-// rendered outer border-to-border footprint via pixel analysis (pngjs
-// against a 400dpi render of the original page) at ~9.9-10.1pt on both
-// sides, i.e. already matches -- close enough that most placements need no
-// further resizing.
-const DEFAULT_CHECKBOX_SIZE_PDF = 10;
+// tool when NEITHER a source glyph NOR detectRealCheckboxRect's own
+// pixel-measurement (see below) found a real box to size against -- e.g. a
+// click that missed, or a checkbox drawn too faintly/anti-aliased to read
+// reliably. User-adjustable via the toolbar's own size field in
+// PdfEditor.tsx (exported for that field's initial value), since real
+// documents genuinely vary (confirmed: one contract's real boxes measured
+// ~10pt, another's ~7.2pt) and this is now just the last-resort guess, not
+// the primary sizing mechanism it used to be.
+export const DEFAULT_CHECKBOX_SIZE_PDF = 10;
 
 // How far (PDF points) the checkbox's whiteout extends past its own drawn
 // box -- FLAT amounts, not proportional to the box's own size, because the
@@ -200,6 +202,7 @@ interface Props {
   activeTool: ToolId;
   checkboxStyle: CheckboxStyle; // which mark a freshly-placed checkbox uses -- see the toolbar's own style picker in PdfEditor.tsx
   placeChecked: boolean; // whether a freshly-placed checkbox starts checked (the default) or already unchecked -- see EMPTY_BOX_CHOICE in PdfEditor.tsx
+  defaultCheckboxSize: number; // PDF points -- user-adjustable fallback side length, only used when a click can't be auto-measured against a real box (see detectRealCheckboxRect)
   pendingSignature: string | null;
   onAddOp: (op: PdfEditOp) => void;
   onUpdateOp: (id: string, patch: Partial<PdfEditOp>) => void; // reposition/resize/reformat an existing op
@@ -230,10 +233,76 @@ function pdfRectToScreen(viewport: any, x: number, y: number, width: number, hei
   };
 }
 
+// Inverse of pdfRectToScreen -- a screen-space rect (canvas/overlay pixels)
+// back to PDF-space x/y/width/height, for the pixel-detected box rect below.
+function screenRectToPdf(viewport: any, left: number, top: number, width: number, height: number) {
+  const [px1, py1] = viewport.convertToPdfPoint(left, top);
+  const [px2, py2] = viewport.convertToPdfPoint(left + width, top + height);
+  return {
+    x: Math.min(px1, px2), y: Math.min(py1, py2),
+    width: Math.abs(px2 - px1), height: Math.abs(py2 - py1),
+  };
+}
+
+// Auto-measures the REAL checkbox/box the user clicked on by reading the
+// already-rendered page bitmap, the same border-scanning idea used to
+// manually pixel-audit real templates during development (pngjs against a
+// pdftoppm render) -- doing it live against the canvas pdf.js already
+// painted means the tool adapts to whatever size a given document's own
+// checkboxes actually are, rather than leaning on one hardcoded guess that
+// only ever matched the first template it was tuned against. Scans outward
+// from the click along the horizontal/vertical lines through it for the
+// nearest dark pixel in each of the four directions -- the box's own drawn
+// border strokes, assuming the click landed roughly inside the box (a safe
+// assumption: that's where a user aiming for "this checkbox" clicks).
+// Returns the raw screen-pixel rect (canvas/overlay space, same coordinate
+// system as overlayPos) or null if nothing box-shaped was found nearby --
+// callers fall back to the manual/default size in that case.
+function detectRealCheckboxRect(canvas: HTMLCanvasElement, clickSx: number, clickSy: number) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  const cx = Math.round(clickSx), cy = Math.round(clickSy);
+  const searchRadius = 40; // px -- generous for any real checkbox at typical editor zoom levels
+  const left0 = Math.max(0, cx - searchRadius), top0 = Math.max(0, cy - searchRadius);
+  const right0 = Math.min(canvas.width, cx + searchRadius), bottom0 = Math.min(canvas.height, cy + searchRadius);
+  const w0 = right0 - left0, h0 = bottom0 - top0;
+  if (w0 <= 0 || h0 <= 0 || cx < left0 || cx >= right0 || cy < top0 || cy >= bottom0) return null;
+  let data: ImageData;
+  try {
+    data = ctx.getImageData(left0, top0, w0, h0);
+  } catch {
+    return null; // e.g. a tainted canvas -- shouldn't happen for a same-origin PDF, but never let this throw
+  }
+  const px = data.data;
+  const isDark = (x: number, y: number) => {
+    const i = ((y - top0) * w0 + (x - left0)) * 4;
+    return (px[i] + px[i + 1] + px[i + 2]) / 3 < 150; // ink vs. the page's white/light background
+  };
+  const findEdge = (axis: "x" | "y", dir: 1 | -1) => {
+    for (let d = 0; d <= searchRadius; d++) {
+      const x = axis === "x" ? cx + d * dir : cx;
+      const y = axis === "y" ? cy + d * dir : cy;
+      if (x < left0 || x >= right0 || y < top0 || y >= bottom0) return null;
+      if (isDark(x, y)) return axis === "x" ? x : y;
+    }
+    return null;
+  };
+  const left = findEdge("x", -1);
+  const right = findEdge("x", 1);
+  const top = findEdge("y", -1);
+  const bottom = findEdge("y", 1);
+  if (left == null || right == null || top == null || bottom == null) return null;
+  const width = right - left, height = bottom - top;
+  if (width < 3 || height < 3) return null; // too small to be a real border -- likely stray ink/noise at the click
+  const ratio = width / height;
+  if (ratio < 0.5 || ratio > 2) return null; // not roughly square -- probably not a checkbox
+  return { left, top, width, height };
+}
+
 const rgbCss = (c: [number, number, number]) => `rgb(${c[0] * 255}, ${c[1] * 255}, ${c[2] * 255})`;
 
 export default function PdfPageView({
-  pdfPage, pageIndex, scale, ops, activeTool, checkboxStyle, placeChecked, pendingSignature, onAddOp, onUpdateOp, onDeleteOp, onPlacementComplete,
+  pdfPage, pageIndex, scale, ops, activeTool, checkboxStyle, placeChecked, defaultCheckboxSize, pendingSignature, onAddOp, onUpdateOp, onDeleteOp, onPlacementComplete,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -348,6 +417,40 @@ export default function PdfPageView({
     onUpdateOp(rs.id, { fontSize });
   };
 
+  // ── Checkbox resize (drag a handle to scale the box's own side length) ──
+  // A placed checkbox has no way to know the real document's own checkbox
+  // size underneath it (see CheckboxOp's doc comment) — DEFAULT_CHECKBOX_SIZE_PDF
+  // is only a best guess, and real templates vary (confirmed: one contract's
+  // real boxes measured ~10pt, another's ~7.2pt). Rather than re-tuning that
+  // one guess forever, let the user drag it to match whatever's actually
+  // underneath, same drag-a-handle interaction as the text box's font-size
+  // resize above, but scaling width/height together (kept equal, since a
+  // checkbox is always square) instead of a font size.
+  const checkboxResizeStateRef = useRef<{ id: string; startClientX: number; startSize: number } | null>(null);
+  const [checkboxResizePreview, setCheckboxResizePreview] = useState<{ id: string; size: number } | null>(null);
+
+  const beginCheckboxResize = (o: CheckboxOp, e: React.PointerEvent) => {
+    e.stopPropagation();
+    checkboxResizeStateRef.current = { id: o.id, startClientX: e.clientX, startSize: o.width };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onCheckboxResizeMove = (e: React.PointerEvent) => {
+    const rs = checkboxResizeStateRef.current;
+    if (!rs) return;
+    const dx = e.clientX - rs.startClientX;
+    const size = Math.min(60, Math.max(4, rs.startSize + dx / scale));
+    setCheckboxResizePreview({ id: rs.id, size });
+  };
+  const onCheckboxResizeEnd = (e: React.PointerEvent) => {
+    const rs = checkboxResizeStateRef.current;
+    if (!rs) return;
+    checkboxResizeStateRef.current = null;
+    const dx = e.clientX - rs.startClientX;
+    const size = Math.min(60, Math.max(4, rs.startSize + dx / scale));
+    setCheckboxResizePreview(null);
+    onUpdateOp(rs.id, { width: size, height: size });
+  };
+
   function TextBoxToolbar({ o }: { o: TextBoxOp }) {
     if (selectedOpId !== o.id) return null;
     const btnStyle = (active: boolean): React.CSSProperties => ({
@@ -453,12 +556,14 @@ export default function PdfPageView({
   const onDeleteOpRef = useRef(onDeleteOp);
   const onUpdateOpRef = useRef(onUpdateOp);
   const checkboxStyleRef = useRef(checkboxStyle);
+  const defaultCheckboxSizeRef = useRef(defaultCheckboxSize);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
   useEffect(() => { opsRef.current = ops; }, [ops]);
   useEffect(() => { onAddOpRef.current = onAddOp; }, [onAddOp]);
   useEffect(() => { onDeleteOpRef.current = onDeleteOp; }, [onDeleteOp]);
   useEffect(() => { onUpdateOpRef.current = onUpdateOp; }, [onUpdateOp]);
   useEffect(() => { checkboxStyleRef.current = checkboxStyle; }, [checkboxStyle]);
+  useEffect(() => { defaultCheckboxSizeRef.current = defaultCheckboxSize; }, [defaultCheckboxSize]);
 
   const viewport = useMemo(() => pdfPage.getViewport({ scale }), [pdfPage, scale]);
   const pageOps = useMemo(() => ops.filter((o) => o.page === pageIndex), [ops, pageIndex]);
@@ -813,17 +918,31 @@ export default function PdfPageView({
         toggleCheckbox(glyphIndex);
         return;
       }
-      // Places a checked box centered on the click point -- sidesteps
-      // detecting the source document's own checkbox entirely (most real
-      // contracts draw theirs as vector line-art or a scanned image, neither
-      // of which pdf.js's text layer can see). Starts checked by default
-      // (placing one is almost always "check this box") or unchecked if the
-      // toolbar's "Empty box" choice is active (e.g. to visually uncheck a
-      // box the source document already has marked).
-      const size = DEFAULT_CHECKBOX_SIZE_PDF;
+      // Still no glyph -- most real checkboxes are vector line-art or a
+      // scanned image, neither of which pdf.js's text layer sees at all (see
+      // CheckboxOp's doc comment). Before falling back to a guessed size,
+      // try to actually MEASURE the real box: the page bitmap pdf.js already
+      // painted onto the canvas has it right there in pixels, the same
+      // border-scanning idea used to manually pixel-audit real templates
+      // during development -- see detectRealCheckboxRect's own doc comment.
+      // This is what lets the tool adapt per-document (confirmed two real
+      // contracts have genuinely different real box sizes, ~10pt vs ~7.2pt)
+      // instead of a single hardcoded guess that only ever matched whichever
+      // template it was last tuned against.
+      const canvas = canvasRef.current;
+      const detected = canvas ? detectRealCheckboxRect(canvas, pos.x, pos.y) : null;
+      const rect = detected
+        ? screenRectToPdf(viewport, detected.left, detected.top, detected.width, detected.height)
+        : (() => {
+            // Nothing box-shaped found nearby -- fall back to the toolbar's
+            // adjustable default size, click-centered (still draggable to
+            // resize afterwards via the selected box's own resize handle).
+            const size = defaultCheckboxSizeRef.current;
+            return { x: pdfX - size / 2, y: pdfY - size / 2, width: size, height: size };
+          })();
       const op: CheckboxOp = {
         id: crypto.randomUUID(), type: "checkbox", page: pageIndex,
-        x: pdfX - size / 2, y: pdfY - size / 2, width: size, height: size, checked: placeChecked,
+        x: rect.x, y: rect.y, width: rect.width, height: rect.height, checked: placeChecked,
         style: checkboxStyle,
       };
       onAddOp(op);
@@ -933,9 +1052,22 @@ export default function PdfPageView({
             as every other placed annotation. */}
         {pageOps.filter((o): o is PdfEditOp & { type: "checkbox" } => o.type === "checkbox").map((o) => {
           const style: CheckboxStyle = o.style ?? "ballot-x";
-          const r = pdfRectToScreen(viewport, o.x, o.y, o.width, o.height);
+          const liveSize = checkboxResizePreview?.id === o.id ? checkboxResizePreview.size : o.width;
+          const r = pdfRectToScreen(viewport, o.x, o.y, liveSize, liveSize);
           const offset = dragOffset?.id === o.id ? dragOffset : null;
           const selected = selectedOpId === o.id;
+          const resizeHandle = selected && (
+            <div
+              onPointerDown={(e) => beginCheckboxResize(o, e)}
+              onPointerMove={onCheckboxResizeMove}
+              onPointerUp={onCheckboxResizeEnd}
+              title="Drag to resize"
+              style={{
+                position: "absolute", right: -6, bottom: -6, width: 10, height: 10, borderRadius: 9999,
+                background: "#3b82f6", border: "1.5px solid white", cursor: "nwse-resize", boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+              }}
+            />
+          );
           const commonProps = {
             onPointerDown: (e: React.PointerEvent) => beginDrag(o.id, o.x, o.y, e),
             onPointerMove: onDragMove,
@@ -982,6 +1114,7 @@ export default function PdfPageView({
                   );
                 })()}
                 <DeleteBadge id={o.id} />
+                {resizeHandle}
               </div>
             );
           }
@@ -1044,6 +1177,7 @@ export default function PdfPageView({
                 {glyph}
               </div>
               <DeleteBadge id={o.id} />
+              {resizeHandle}
             </div>
           );
         })}
