@@ -82,22 +82,18 @@ export function stripXmlIllegal(s: string): string {
   return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
 }
 
-// 1.35 cm in twips (1 cm = 567 twips). Every numbered level hangs by this
-// much, and each level's left indent is one step further in, so level 2's
-// text starts where level 1's text started and so on. Without this the levels
-// are independent and (i)/(ii)/(iii) sits under the wrong column.
+// 1.35 cm in twips (1 cm = 567 twips).
+//
+// Levels 1 and 2 share one marker column, then each level from 3 on steps in
+// by one STEP. This looked like an odd guess until the firm gave the exact
+// geometry directly: level 1 and level 2 numbered items both have their
+// marker at the margin (0), level 3's at 1.35cm, level 4's at 2.70cm -- and
+// separately confirmed by the template's own numbering.xml, where "HL List -
+// Level 1" and "HL List - Level 2" turned out to define IDENTICAL indents.
+// Text always sits exactly one STEP to the right of its own marker, so
+// w:hanging is the constant STEP at every level; only the marker's position
+// (and therefore w:left, which is marker + STEP) changes.
 const STEP = 765;
-
-// Level 4 -- (i)/(ii)/(iii) -- is the one level the uniform grid above gets
-// wrong. Read out of the firm's own template (numId 28, ilvl 3, the same
-// definition its own "HL List - Level 4" style points at): left 1440 twips,
-// hanging 360. That's narrower than the STEP grid would put it, and narrower
-// even than level 3 above it -- not a mistake, just how this template's own
-// roman-numeral level is defined, and matching it exactly is more faithful to
-// "use the firm's template" than forcing every level onto one invented
-// progression. Only this level is special-cased; the others use the grid.
-const LEVEL_4_LEFT = 1440;
-const LEVEL_4_HANG = 360;
 
 /** Which numbered level a style sits at, or null if it isn't a numbered list. */
 function styleLevel(styleId: string): number | null {
@@ -109,31 +105,31 @@ function styleLevel(styleId: string): number | null {
   return null;
 }
 
+/** Twips from the margin to this level's TEXT (one STEP right of its marker). */
+function textPosition(level: number): number {
+  return Math.max(1, level - 1) * STEP;
+}
+
 /**
  * Explicit indents on every numbered paragraph.
  *
  * The template's own numbering decides these otherwise, and a firm's levels
  * are often set independently of each other -- which is how (i)/(ii)/(iii)
- * ends up indented to level 3 rather than level 4. Stating them here makes
- * the levels share an alignment grid: level n starts at n x 1.35 cm and hangs
- * back 1.35 cm, so each level's text begins exactly where the level above it
- * began -- except level 4, which uses the firm's own real values instead.
+ * ends up indented to the wrong column. Stating them here instead makes every
+ * level line up on one grid: a numbered paragraph's marker sits STEP to the
+ * left of its text (w:hanging = STEP, constant), and an unnumbered paragraph
+ * at the same level sits flush with that text, first line included --
+ * w:firstLine="0" rather than a hang, because it has no marker to hang past.
  */
 function indentXml(styleId: string | null): string {
   if (!styleId) return "";
   const level = styleLevel(styleId);
   if (!level) return "";
-  const left = level === 4 ? LEVEL_4_LEFT : level * STEP;
-  const hang = level === 4 ? LEVEL_4_HANG : STEP;
-  // A paragraph with no number has nothing to hang: hanging it pulls the
-  // first line back into the gutter where the number would have been, so it
-  // starts left of the numbered text above it. Squaring it off at the text
-  // position of its own level is what makes it sit under the paragraph it
-  // continues.
+  const left = textPosition(level);
   if (/no\s*-?numbering/i.test(styleId)) {
     return `<w:ind w:left="${left}" w:firstLine="0"/>`;
   }
-  return `<w:ind w:left="${left}" w:hanging="${hang}"/>`;
+  return `<w:ind w:left="${left}" w:hanging="${STEP}"/>`;
 }
 
 function escapeXml(s: string): string {
