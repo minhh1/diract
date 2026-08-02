@@ -26,9 +26,25 @@ export interface PartyDetail {
   shortExample: string;
 }
 
-/** "DEED OF SETTLEMENT AND RELEASE" -> "Deed of settlement and release" -- the library authors titles in caps for the cover page's own big display type, but the repeat here reads as shouting at this size. */
-function sentenceCase(title: string): string {
-  return title.charAt(0).toUpperCase() + title.slice(1).toLowerCase();
+// Short prepositions, articles and conjunctions stay lowercase in a title
+// unless they open it -- standard title-case convention.
+const TITLE_CASE_LOWERCASE = new Set([
+  "a", "an", "the", "and", "but", "or", "nor", "for", "so", "yet",
+  "of", "in", "on", "at", "to", "by", "up", "off", "out", "as", "per", "via",
+  "from", "into", "onto", "upon", "with", "without",
+]);
+
+/** "DEED OF SETTLEMENT AND RELEASE" -> "Deed of Settlement and Release" -- the library authors titles in caps for the cover page's own big display type, but the repeat here reads as shouting at this size. */
+function titleCase(title: string): string {
+  return title
+    .toLowerCase()
+    .split(" ")
+    .map((word, i) => {
+      const core = word.replace(/^[^a-z]+/, "");
+      if (i > 0 && TITLE_CASE_LOWERCASE.has(core)) return word;
+      return word.replace(/^([^a-z]*)([a-z])/, (_m, pre: string, c: string) => pre + c.toUpperCase());
+    })
+    .join(" ");
 }
 
 /**
@@ -54,7 +70,7 @@ export function partyDetails(
   parties: PartyDetail[]
 ): BodyTemplateSegment[] {
   const out: BodyTemplateSegment[] = [
-    ...L("DeedHeading", [ruleAbove(4, sentenceCase(title))]),
+    ...L("DeedHeading", [ruleAbove(4, titleCase(title))]),
     // "Date" is bold, the value beside it isn't -- one line, not the label
     // stacked over the value -- so this is marked bold explicitly rather
     // than styled, unlike every other line here.

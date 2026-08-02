@@ -442,7 +442,7 @@ function partyColumnRowXml(left: string, right: string): string {
   const cell = (t: string, width: number) =>
     `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${width}"/>` +
     `<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>` +
-    `</w:tcPr>${paragraphXml(null, t, PARTY_FONT)}</w:tc>`;
+    `</w:tcPr>${paragraphXml(null, t, PARTY_FONT, true)}</w:tc>`;
   return `<w:tr>${cell(left, PARTY_LABEL_COL)}${cell(right, PARTY_VALUE_COL)}</w:tr>`;
 }
 
@@ -496,17 +496,27 @@ function runsXml(text: string, font?: RunFont): string {
   );
 }
 
-function paragraphXml(styleId: string | null, text: string, font?: RunFont): string {
+const LINE_SPACING_150 = `<w:spacing w:line="360" w:lineRule="auto"/>`;
+
+function paragraphXml(styleId: string | null, text: string, font?: RunFont, spacing?: boolean): string {
   // ruleAbove() prefixes a weight + the rest of the text -- see its own
   // comment. Stripped here rather than left for runsXml, since it describes
   // the paragraph, not a run within it.
+  //
+  // Only weight 0 (Date) and 4 (the title) get the 1.5-line spacing: they
+  // sit above the parties table and want the room. Weight 8 marks the rule
+  // that brackets "Parties" and the one that closes the table -- the closing
+  // one in particular needs to sit right against the blank row above it and
+  // Background below, not add a line of its own on top of them.
   let ruleXml = "";
   if (text.startsWith(RULE)) {
     const weight = text[1];
     ruleXml =
       (weight !== "0" ? `<w:pBdr><w:top w:val="single" w:sz="${weight}" w:space="1" w:color="auto"/></w:pBdr>` : "") +
-      `<w:spacing w:line="360" w:lineRule="auto"/>`;
+      (weight === "8" ? "" : LINE_SPACING_150);
     text = text.slice(2);
+  } else if (spacing) {
+    ruleXml = LINE_SPACING_150;
   }
   const pPrInner = (styleId ? `<w:pStyle w:val="${escapeXml(styleId)}"/>` : "") + ruleXml + (styleId ? indentXml(styleId) : "");
   const pPr = pPrInner ? `<w:pPr>${pPrInner}</w:pPr>` : "";
