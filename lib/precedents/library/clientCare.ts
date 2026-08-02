@@ -2,44 +2,162 @@
 // File-lifecycle and client-care correspondence: the documents every matter
 // needs regardless of practice area or state.
 //
-// All jurisdiction-neutral (no `jurisdictions`), with one deliberate
-// exception -- costs disclosure thresholds and the "uniform law" framing
-// differ, so those carry a review note rather than pretending one form fits
-// every state. The Legal Profession Uniform Law applies in NSW and VIC
-// only; QLD/SA/WA/TAS each have their own costs regime, which is why the
-// costs agreement precedents below prompt for the governing Act rather than
-// hard-coding one.
+// Mostly jurisdiction-neutral (no `jurisdictions`), with one deliberate
+// exception -- costs disclosure. The Legal Profession Uniform Law (Uniform
+// Law) now applies in NSW, VIC and QLD (Queensland joined 1 July 2024, via
+// the Legal Profession Uniform Law Application Act 2022 (Qld)); SA, WA and
+// TAS each retain their own, separate costs-disclosure regime under their
+// own Legal Profession/Legal Practitioners Act. Because the disclosures a
+// solicitor is actually obliged to give differ in substance between those
+// two groups -- not just the citation -- costs agreement and disclosure is
+// four separate precedents below: one Uniform Law version (NSW/VIC/QLD) and
+// one each for SA, WA and TAS. All four carry a review note, because the
+// dollar thresholds that trigger simplified disclosure, and some of the
+// section numbers, are the kind of detail that gets amended.
 import { text, field, type PrecedentSeed } from "./types";
 
 export const CLIENT_CARE_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "care.costs_agreement_disclosure",
-    name: "Costs Agreement and Costs Disclosure",
-    description: "Engagement terms, estimate of costs and disclosure obligations. Sent at the start of every matter.",
+    name: "Costs Agreement and Costs Disclosure (Uniform Law - NSW/VIC/QLD)",
+    description: "Engagement terms and the full costs disclosure required by the Legal Profession Uniform Law. Sent at the start of every matter in NSW, VIC or QLD.",
     category: "Client Care",
     subcategory: "Engagement",
     documentType: "letter",
+    jurisdictions: ["NSW", "VIC", "QLD"],
     aiInstructions:
-      "Draft a costs agreement and costs disclosure letter. Cover: scope of work, who will do the work and their rates, an estimate of total costs (or a range with the basis for it), disbursements likely to be incurred, billing frequency, interest on overdue accounts, the client's right to negotiate the billing method, and the client's rights if they dispute costs. Keep the tone professional but plain-English. Do NOT state a specific statutory threshold or cite a specific costs Act unless the state is known -- the Legal Profession Uniform Law applies only in NSW and Victoria; Queensland, South Australia, Western Australia and Tasmania each have their own regime.",
+      "Draft a costs agreement and costs disclosure letter that satisfies Part 4.3 of the Legal Profession Uniform Law (the Uniform Law), which applies in NSW, VIC and QLD. It must cover, at minimum: the basis on which costs are calculated; the total estimate of legal costs or, if that is not reasonably practicable, a range with the reason it cannot be estimated more precisely, and an undertaking to update the client if the estimate is likely to be exceeded; likely disbursements; the billing method and frequency; any interest rate charged on overdue accounts (interest may only be charged if it is disclosed); whether this is a conditional costs agreement and, if so, the uplift fee and that it is capped by the Uniform Law; the client's right to negotiate the billing method and the costs agreement itself; the client's right to a progress report and an itemised bill on request; the client's right to have the costs assessed, including the time limit to apply; the client's right to complain to the local regulator; the effect of any failure to disclose (costs may not be recoverable until assessed, and the costs agreement may be void or able to be set aside); and disclosure of any interest that could affect the practice's ability to give impartial advice. Note that a matter where the likely total costs are below the prescribed lower threshold only requires simplified disclosure -- do not assume that applies without checking the client's likely costs against the current threshold. Do not state the current dollar thresholds, the uplift fee cap percentage or specific section numbers as fixed without flagging them for verification, since Uniform Law regulations are amended.",
     segments: [
-      text("We are pleased to act for you in this matter. This letter sets out our terms of engagement and the costs disclosure we are required to give you.\n\n"),
-      text("SCOPE OF WORK\n\nWe will act for you in relation to "),
+      text("We are pleased to act for you in this matter. This letter sets out our costs agreement and the costs disclosure we are required to give you under the Legal Profession Uniform Law (the Uniform Law), applied in this state by the "),
+      field("application_act", "State Application Act", "Legal Profession Uniform Law Application Act 2014 (NSW)"),
+      text(".\n\nSCOPE OF WORK\n\nWe will act for you in relation to "),
       field("scope", "Scope of work", "the purchase of 12 Example Street, Sydney NSW 2000"),
       text(".\n\nPERSON RESPONSIBLE\n\nThe person with day-to-day conduct of your matter is "),
       field("solicitor", "Solicitor with conduct", "Jane Smith, Senior Associate"),
       text(", who will be supervised by "),
       field("supervisor", "Supervising principal", "Minh Huynh, Principal"),
-      text(".\n\nOUR FEES\n\nOur professional fees for this matter are estimated at "),
+      text(".\n\nBASIS ON WHICH OUR COSTS ARE CALCULATED\n\n"),
+      field("fee_basis", "Basis on which fees are calculated", "Our fees are calculated on a time basis, charged at the hourly rate of the fee earner who does the work, in accordance with the attached rate schedule (currently ranging from $180 to $650 per hour plus GST depending on seniority)."),
+      text("\n\nESTIMATE OF TOTAL LEGAL COSTS\n\nWe estimate our total legal costs for this matter, excluding disbursements, at "),
       field("fee_estimate", "Fee estimate (or range)", "$2,500 to $3,500 plus GST"),
-      text(".\n\nThis estimate is based on the work proceeding without unusual complication. We will tell you promptly if anything arises that is likely to change it materially.\n\nDISBURSEMENTS\n\nIn addition to our fees, the following disbursements are likely: "),
+      text(". "),
+      field("estimate_basis", "Basis of the estimate, or why only a range can be given", "This estimate assumes the matter proceeds to completion without unusual complication. If it is not possible to give a single figure because of matters not yet known, explain what those are here."),
+      text(" If it becomes apparent that this estimate is likely to be exceeded, we will tell you as soon as reasonably practicable and explain why, in accordance with our ongoing disclosure obligation.\n\nDISBURSEMENTS\n\nIn addition to our fees, the following disbursements are likely: "),
       field("disbursements", "Likely disbursements", "title searches, council and water certificates, PEXA settlement fee, and transfer duty"),
-      text(".\n\nBILLING\n\nWe will bill you "),
+      text(".\n\nINTEREST ON OVERDUE ACCOUNTS\n\n"),
+      field("interest_rate", "Interest rate on overdue accounts (or 'We do not charge interest on overdue accounts')", "We may charge interest on any account not paid within 30 days, at the rate prescribed from time to time under the Uniform Law (currently confirmed with each invoice)."),
+      text("\n\nCONDITIONAL COSTS AGREEMENT / UPLIFT FEE\n\n"),
+      field("uplift_fee", "Uplift fee position (or 'This is not a conditional costs agreement and no uplift fee applies')", "This is not a conditional costs agreement and no uplift fee applies."),
+      text("\n\nBILLING\n\nWe will bill you "),
       field("billing_frequency", "Billing frequency", "on completion of the matter"),
-      text(". Accounts are payable within 14 days.\n\nYOUR RIGHTS\n\nYou have the right to negotiate the billing method, to receive an itemised account, and to seek an assessment of our costs if you dispute them. If you have any questions about this agreement, please raise them with us before signing.\n\nPlease sign and return the enclosed copy to confirm your instructions."),
+      text(". Accounts are payable within 14 days.\n\nYOUR RIGHTS UNDER THE UNIFORM LAW\n\nYou have the right to:\n\n1. negotiate the billing method with us (for example, a fixed fee instead of time-based billing);\n2. negotiate this costs agreement itself;\n3. receive an itemised bill on request;\n4. receive a progress report on the costs incurred to date, on reasonable request;\n5. apply to have our costs assessed if you consider them excessive -- an application must generally be made within the time limit the Uniform Law allows, and we will tell you that time limit again when we send our bill; and\n6. make a complaint about our costs, or our conduct, to "),
+      field("regulator", "Local regulator for complaints", "the Office of the Legal Services Commissioner"),
+      text(".\n\nIF WE DO NOT PROPERLY DISCLOSE\n\nIf we fail to make the disclosures the Uniform Law requires, you may not be required to pay our costs until they have been assessed, and this costs agreement may be void or liable to be set aside. We take these obligations seriously and will update this disclosure if anything material changes.\n\nOUR INDEPENDENCE\n\n"),
+      field("interest_disclosure", "Any interest that could affect impartial advice (or 'We have no interest that could affect our ability to give you independent advice in this matter')", "We have no interest that could affect our ability to give you independent advice in this matter."),
+      text("\n\nACCEPTANCE\n\nPlease sign and return the enclosed copy to confirm your acceptance of this costs agreement. If you continue to instruct us without doing so, we will treat that as acceptance of these terms. If you have any questions about this agreement, please raise them with us before proceeding."),
     ],
     requiresReview: true,
     reviewNote:
-      "Costs disclosure obligations and thresholds differ by state (Uniform Law in NSW/VIC only). Confirm the governing regime and current threshold before sending.",
+      "Confirm the current lower threshold for simplified disclosure, the current uplift fee cap, the current time limit to apply for a costs assessment, and the correct local regulator name for the state -- all are prescribed by regulation or by the local Uniform Law Application Act and are amended from time to time. If the likely total costs are below the current simplified-disclosure threshold, use a shorter, simplified disclosure instead of this full version.",
+  },
+  {
+    key: "care.costs_agreement_disclosure_wa",
+    name: "Costs Agreement and Costs Disclosure (WA)",
+    description: "Engagement terms and costs disclosure under the Legal Profession Act 2008 (WA), which is not part of the Uniform Law scheme.",
+    category: "Client Care",
+    subcategory: "Engagement",
+    documentType: "letter",
+    jurisdictions: ["WA"],
+    aiInstructions:
+      "Draft a costs agreement and costs disclosure letter for Western Australia, under the Legal Profession Act 2008 (WA), which is a separate regime from the Legal Profession Uniform Law. It must cover the same practical ground as a Uniform Law disclosure -- basis of costs, an estimate or range, disbursements, billing method and frequency, interest on overdue accounts, the client's right to negotiate the billing method and the agreement, the right to an itemised bill and progress reports, the right to have costs reviewed or taxed, the consequence of inadequate disclosure, and the local complaints body (the Legal Practice Board of Western Australia). Do not state specific section numbers or dollar thresholds as fixed without flagging them for verification.",
+    segments: [
+      text("We are pleased to act for you in this matter. This letter sets out our costs agreement and the costs disclosure we are required to give you under the Legal Profession Act 2008 (WA).\n\nSCOPE OF WORK\n\nWe will act for you in relation to "),
+      field("scope", "Scope of work", "the purchase of 42 Example Street, Subiaco WA 6008"),
+      text(".\n\nPERSON RESPONSIBLE\n\nThe person with day-to-day conduct of your matter is "),
+      field("solicitor", "Solicitor with conduct", "Jane Smith, Senior Associate"),
+      text(", supervised by "),
+      field("supervisor", "Supervising principal", "Minh Huynh, Principal"),
+      text(".\n\nBASIS ON WHICH OUR COSTS ARE CALCULATED\n\n"),
+      field("fee_basis", "Basis on which fees are calculated", "Our fees are calculated on a time basis, charged at the hourly rate of the fee earner who does the work, in accordance with the attached rate schedule."),
+      text("\n\nESTIMATE OF TOTAL LEGAL COSTS\n\nWe estimate our total legal costs for this matter, excluding disbursements, at "),
+      field("fee_estimate", "Fee estimate (or range)", "$2,800 to $3,800 plus GST"),
+      text(". This estimate assumes the matter proceeds without unusual complication. We will tell you promptly if anything arises that is likely to make it inaccurate.\n\nDISBURSEMENTS\n\n"),
+      field("disbursements", "Likely disbursements", "title searches, Landgate registration fees, settlement agent fees, and transfer duty"),
+      text(".\n\nINTEREST ON OVERDUE ACCOUNTS\n\n"),
+      field("interest_rate", "Interest rate on overdue accounts (or 'We do not charge interest on overdue accounts')", "We may charge interest on any account not paid within 30 days, at the rate we notify you of in writing before it is applied."),
+      text("\n\nBILLING\n\nWe will bill you "),
+      field("billing_frequency", "Billing frequency", "on completion of the matter"),
+      text(". Accounts are payable within 14 days.\n\nYOUR RIGHTS\n\nYou have the right to:\n\n1. negotiate the billing method with us;\n2. negotiate this costs agreement itself;\n3. receive an itemised bill and a progress report on reasonable request;\n4. have our costs reviewed if you consider them excessive, within the time limit the Act allows; and\n5. make a complaint about our costs, or our conduct, to the Legal Practice Board of Western Australia.\n\nIF WE DO NOT PROPERLY DISCLOSE\n\nIf we fail to make the disclosures the Act requires, our costs agreement may be affected and our ability to recover costs may be limited until they are reviewed. We take these obligations seriously.\n\nACCEPTANCE\n\nPlease sign and return the enclosed copy to confirm your acceptance of this costs agreement. If you continue to instruct us without doing so, we will treat that as acceptance of these terms."),
+    ],
+    requiresReview: true,
+    reviewNote:
+      "Confirm the current Part and section numbers of the Legal Profession Act 2008 (WA) dealing with costs disclosure, the current threshold (if any) for simplified disclosure, the time limit to apply for a costs review, and the correct current name of the regulator before sending -- WA's regime and its administering body have been subject to change.",
+  },
+  {
+    key: "care.costs_agreement_disclosure_sa",
+    name: "Costs Agreement and Costs Disclosure (SA)",
+    description: "Engagement terms and costs disclosure under the Legal Practitioners Act 1981 (SA), which is not part of the Uniform Law scheme.",
+    category: "Client Care",
+    subcategory: "Engagement",
+    documentType: "letter",
+    jurisdictions: ["SA"],
+    aiInstructions:
+      "Draft a costs agreement and costs disclosure letter for South Australia, under the Legal Practitioners Act 1981 (SA), which is a separate regime from the Legal Profession Uniform Law. Cover basis of costs, an estimate or range, disbursements, billing method and frequency, interest on overdue accounts, the client's right to negotiate the billing method and the agreement, the right to an itemised bill and progress reports, the right to have costs assessed, the consequence of inadequate disclosure, and the local regulator (the Legal Profession Conduct Commissioner). Do not state specific section numbers or dollar thresholds as fixed without flagging them for verification.",
+    segments: [
+      text("We are pleased to act for you in this matter. This letter sets out our costs agreement and the costs disclosure we are required to give you under the Legal Practitioners Act 1981 (SA).\n\nSCOPE OF WORK\n\nWe will act for you in relation to "),
+      field("scope", "Scope of work", "the purchase of 9 Example Street, Norwood SA 5067"),
+      text(".\n\nPERSON RESPONSIBLE\n\nThe person with day-to-day conduct of your matter is "),
+      field("solicitor", "Solicitor with conduct", "Jane Smith, Senior Associate"),
+      text(", supervised by "),
+      field("supervisor", "Supervising principal", "Minh Huynh, Principal"),
+      text(".\n\nBASIS ON WHICH OUR COSTS ARE CALCULATED\n\n"),
+      field("fee_basis", "Basis on which fees are calculated", "Our fees are calculated on a time basis, charged at the hourly rate of the fee earner who does the work, in accordance with the attached rate schedule."),
+      text("\n\nESTIMATE OF TOTAL LEGAL COSTS\n\nWe estimate our total legal costs for this matter, excluding disbursements, at "),
+      field("fee_estimate", "Fee estimate (or range)", "$2,600 to $3,600 plus GST"),
+      text(". This estimate assumes the matter proceeds without unusual complication. We will tell you promptly if anything arises that is likely to make it inaccurate.\n\nDISBURSEMENTS\n\n"),
+      field("disbursements", "Likely disbursements", "title searches, Land Services SA registration fees, and stamp duty"),
+      text(".\n\nINTEREST ON OVERDUE ACCOUNTS\n\n"),
+      field("interest_rate", "Interest rate on overdue accounts (or 'We do not charge interest on overdue accounts')", "We may charge interest on any account not paid within 30 days, at the rate we notify you of in writing before it is applied."),
+      text("\n\nBILLING\n\nWe will bill you "),
+      field("billing_frequency", "Billing frequency", "on completion of the matter"),
+      text(". Accounts are payable within 14 days.\n\nYOUR RIGHTS\n\nYou have the right to:\n\n1. negotiate the billing method with us;\n2. negotiate this costs agreement itself;\n3. receive an itemised bill and a progress report on reasonable request;\n4. apply to have our costs assessed if you consider them excessive, within the time limit the Act allows; and\n5. make a complaint about our costs, or our conduct, to the Legal Profession Conduct Commissioner.\n\nIF WE DO NOT PROPERLY DISCLOSE\n\nIf we fail to make the disclosures the Act requires, our costs agreement may be affected and our ability to recover costs may be limited until they are assessed. We take these obligations seriously.\n\nACCEPTANCE\n\nPlease sign and return the enclosed copy to confirm your acceptance of this costs agreement. If you continue to instruct us without doing so, we will treat that as acceptance of these terms."),
+    ],
+    requiresReview: true,
+    reviewNote:
+      "Confirm the current provisions of the Legal Practitioners Act 1981 (SA) dealing with costs disclosure, the current threshold (if any) for simplified disclosure, the time limit to apply for a costs assessment, and the correct current name and contact details of the Legal Profession Conduct Commissioner before sending.",
+  },
+  {
+    key: "care.costs_agreement_disclosure_tas",
+    name: "Costs Agreement and Costs Disclosure (TAS)",
+    description: "Engagement terms and costs disclosure under the Legal Profession Act 2007 (TAS), which is not part of the Uniform Law scheme.",
+    category: "Client Care",
+    subcategory: "Engagement",
+    documentType: "letter",
+    jurisdictions: ["TAS"],
+    aiInstructions:
+      "Draft a costs agreement and costs disclosure letter for Tasmania, under the Legal Profession Act 2007 (TAS), which is a separate regime from the Legal Profession Uniform Law. Cover basis of costs, an estimate or range, disbursements, billing method and frequency, interest on overdue accounts, the client's right to negotiate the billing method and the agreement, the right to an itemised bill and progress reports, the right to have costs assessed, the consequence of inadequate disclosure, and the local regulator (the Legal Profession Board of Tasmania). Do not state specific section numbers or dollar thresholds as fixed without flagging them for verification.",
+    segments: [
+      text("We are pleased to act for you in this matter. This letter sets out our costs agreement and the costs disclosure we are required to give you under the Legal Profession Act 2007 (TAS).\n\nSCOPE OF WORK\n\nWe will act for you in relation to "),
+      field("scope", "Scope of work", "the purchase of 7 Example Street, Battery Point TAS 7004"),
+      text(".\n\nPERSON RESPONSIBLE\n\nThe person with day-to-day conduct of your matter is "),
+      field("solicitor", "Solicitor with conduct", "Jane Smith, Senior Associate"),
+      text(", supervised by "),
+      field("supervisor", "Supervising principal", "Minh Huynh, Principal"),
+      text(".\n\nBASIS ON WHICH OUR COSTS ARE CALCULATED\n\n"),
+      field("fee_basis", "Basis on which fees are calculated", "Our fees are calculated on a time basis, charged at the hourly rate of the fee earner who does the work, in accordance with the attached rate schedule."),
+      text("\n\nESTIMATE OF TOTAL LEGAL COSTS\n\nWe estimate our total legal costs for this matter, excluding disbursements, at "),
+      field("fee_estimate", "Fee estimate (or range)", "$2,700 to $3,700 plus GST"),
+      text(". This estimate assumes the matter proceeds without unusual complication. We will tell you promptly if anything arises that is likely to make it inaccurate.\n\nDISBURSEMENTS\n\n"),
+      field("disbursements", "Likely disbursements", "title searches, Land Titles Office registration fees, and duty"),
+      text(".\n\nINTEREST ON OVERDUE ACCOUNTS\n\n"),
+      field("interest_rate", "Interest rate on overdue accounts (or 'We do not charge interest on overdue accounts')", "We may charge interest on any account not paid within 30 days, at the rate we notify you of in writing before it is applied."),
+      text("\n\nBILLING\n\nWe will bill you "),
+      field("billing_frequency", "Billing frequency", "on completion of the matter"),
+      text(". Accounts are payable within 14 days.\n\nYOUR RIGHTS\n\nYou have the right to:\n\n1. negotiate the billing method with us;\n2. negotiate this costs agreement itself;\n3. receive an itemised bill and a progress report on reasonable request;\n4. apply to have our costs assessed if you consider them excessive, within the time limit the Act allows; and\n5. make a complaint about our costs, or our conduct, to the Legal Profession Board of Tasmania.\n\nIF WE DO NOT PROPERLY DISCLOSE\n\nIf we fail to make the disclosures the Act requires, our costs agreement may be affected and our ability to recover costs may be limited until they are assessed. We take these obligations seriously.\n\nACCEPTANCE\n\nPlease sign and return the enclosed copy to confirm your acceptance of this costs agreement. If you continue to instruct us without doing so, we will treat that as acceptance of these terms."),
+    ],
+    requiresReview: true,
+    reviewNote:
+      "Confirm the current provisions of the Legal Profession Act 2007 (TAS) dealing with costs disclosure, the current threshold (if any) for simplified disclosure, the time limit to apply for a costs assessment, and the correct current name and contact details of the Legal Profession Board of Tasmania before sending.",
   },
   {
     key: "care.client_authority_to_act",
