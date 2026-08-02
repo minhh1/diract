@@ -59,10 +59,11 @@ function titleCase(title: string): string {
  * because none of it is instrument-specific -- the words "deed" and
  * "agreement" don't appear anywhere in this block.
  *
- * Closes on a blank table row and then the rule paragraph, so the rule reads
- * as belonging to that trailing blank row rather than sitting directly under
- * the last party's Shortname -- and the same blank row separates every party
- * from the next, last one included.
+ * The blank table row separates one party from the next, but doesn't follow
+ * the last one -- the rule paragraph closing the table sits directly under
+ * the last party's Shortname instead, so the closing rule doesn't leave two
+ * gaps stacked (the blank row, then the rule's own position) before
+ * Background.
  */
 export function partyDetails(
   title: string,
@@ -78,7 +79,7 @@ export function partyDetails(
     ...L(null, [""]),
     ...L("DeedHeading", [ruleAbove(8, "Parties")]),
   ];
-  parties.forEach(p => {
+  parties.forEach((p, i) => {
     out.push(...L(null, [
       partyRow("Name"), BOLD_MARK,
       field(`${p.key}_name`, `${p.label}: full name, and ACN/ABN if a company`, p.nameExample),
@@ -93,7 +94,7 @@ export function partyDetails(
       field(`${p.key}_short`, `${p.label}: short name`, p.shortExample),
       BOLD_MARK,
     ]));
-    out.push(...L(null, [partyRow("")]));
+    if (i < parties.length - 1) out.push(...L(null, [partyRow("")]));
   });
   out.push(...L("DeedHeading", [ruleAbove(8, "")]));
   return out;
