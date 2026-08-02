@@ -260,7 +260,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft an OPEN offer in family law proceedings. Unlike a without prejudice or Calderbank offer, an open offer is admissible for all purposes and can be shown to the Court at any time, not just on costs. Explain in the drafting note that this is used where a party wants the Court to see the reasonableness of their position during the proceeding itself. Set out the proposed orders in full, the period for acceptance, and that the offer is made openly and may be produced to the Court.",
+      "Draft an OPEN offer in family law proceedings. Unlike a without prejudice or Calderbank offer, an open offer is admissible for all purposes and can be shown to the Court at any time, not just on costs. Explain in the drafting note that this is used where a party wants the Court to see the reasonableness of their position during the proceeding itself. Set out the proposed orders in full, the period for acceptance, that the offer is made openly and may be produced to the Court, and what the client's position will be if the offer lapses unaccepted (whether it remains available to be revived, or the client's position hardens).",
     segments: [
       text("OPEN OFFER\n\nThis offer is made on an OPEN basis. It may be produced to the Court at any time and for any purpose.\n\nOur client offers to resolve these proceedings on the following terms:\n\n"),
       field("orders", "Proposed orders", "1. The children live with the Applicant and spend time with the Respondent each alternate weekend from after school Friday to Sunday 5:00pm, one mid-week overnight, and half of all school holidays.\n2. The former matrimonial home be sold and the net proceeds divided 56% to the Applicant and 44% to the Respondent.\n3. Each party retain their own superannuation, vehicle and bank accounts.\n4. Each party bear their own costs."),
@@ -268,6 +268,8 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
       field("rationale", "Why made openly", "Our client wishes the Court to be aware of the terms on which she has been willing to resolve this matter from an early stage, and of the reasonableness of that position."),
       text("\n\nOPEN FOR ACCEPTANCE UNTIL\n\n"),
       field("open_until", "Open until", "5:00pm on 10 March 2027"),
+      text("\n\n"),
+      field("lapse_position", "Position if the offer lapses unaccepted", "If this offer is not accepted by that time, it lapses. Our client reserves the right to make a different offer, or none, and to rely on this offer as evidence of the reasonableness of her position throughout these proceedings."),
       text("\n\nIf accepted, we will prepare consent orders giving effect to these terms."),
     ],
   },
@@ -306,7 +308,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft an acceptance of an offer. Acceptance must be UNEQUIVOCAL and must accept the offer as made -- any qualification or added condition is a counter offer, not an acceptance, and destroys the original offer. Identify the offer by date, state acceptance in plain terms, and propose the steps to formalise. Do not introduce new terms.",
+      "Draft an acceptance of an offer. Acceptance must be UNEQUIVOCAL and must accept the offer as made -- any qualification or added condition is a counter offer, not an acceptance, and destroys the original offer. Identify the offer by date, state acceptance in plain terms, and propose the steps to formalise. Address what happens if the other side later refuses to sign the consent orders reflecting an accepted offer -- a concluded agreement may still be enforceable even without formal orders, and that possibility should be flagged rather than left unaddressed. Do not introduce new terms.",
     segments: [
       text("ACCEPTANCE OF OFFER\n\nWe refer to your client's offer dated "),
       field("offer_date", "Offer date", "20 February 2027"),
@@ -314,7 +316,8 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
       field("accepted_terms", "The accepted terms, restated", "1. The children live with the Applicant and spend time with the Respondent each alternate weekend, one mid-week overnight, and half of all school holidays.\n2. The former matrimonial home be sold and the net proceeds divided 56% to the Applicant and 44% to the Respondent.\n3. Each party retain their own superannuation, vehicle and bank accounts.\n4. Each party bear their own costs."),
       text("\n\nNEXT STEPS\n\n"),
       field("next_steps", "Formalisation steps", "We will prepare an Application for Consent Orders and draft Orders giving effect to these terms and provide them to you within 7 days for your client's signature."),
-      text("\n\nPlease confirm your client will vacate the listing currently in place once the orders are filed."),
+      text("\n\nPlease confirm your client will vacate the listing currently in place once the orders are filed.\n\n"),
+      field("non_signing_position", "Position if the other party later declines to sign the consent orders", "For completeness, our client's position is that these terms now constitute a concluded and binding agreement between the parties, and our client reserves the right to seek to enforce it even if your client later declines to sign formal consent orders reflecting it."),
     ],
     requiresReview: true,
     reviewNote:
@@ -329,13 +332,13 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a withdrawal of an outstanding offer. Identify the offer withdrawn and state clearly it is withdrawn and no longer capable of acceptance from the time of the letter. Explain briefly why (usually a change in circumstances or new information). If a replacement offer is made, set it out separately and clearly. Note that withdrawing an offer may affect its costs consequences, so the reason should be defensible.",
+      "Draft a withdrawal of an outstanding offer. Identify the offer withdrawn and state clearly it is withdrawn and no longer capable of acceptance from the time of the letter. Explain briefly why (usually a change in circumstances or new information). If a replacement offer is made, set it out separately and clearly, with its own acceptance deadline. Note that withdrawing an offer may affect its costs consequences -- if it is withdrawn shortly before a hearing or without good reason, the other side may still rely on the withdrawn offer's terms as a costs benchmark -- so the reason given should be defensible and genuinely explain the change.",
     segments: [
       text("WITHDRAWAL OF OFFER\n\nWe refer to our client's offer dated "),
       field("offer_date", "Offer date", "20 February 2027"),
       text(".\n\nThat offer is WITHDRAWN with effect from the date of this letter and is no longer capable of acceptance.\n\nREASON\n\n"),
       field("reason", "Reason for withdrawal", "The single expert valuation received on 8 March 2027 assesses the former matrimonial home at $1,240,000, being $90,000 above the figure on which our client's offer was calculated. The offer no longer reflects the pool."),
-      text("\n\n"),
+      text("\n\nThis withdrawal reflects a genuine change in circumstances and is not made for tactical reasons or to avoid a hearing that is imminent.\n\n"),
       field("replacement", "Replacement offer (or 'No replacement offer is made at this time.')", "REPLACEMENT OFFER\n\nOur client offers instead to resolve on the following terms:\n\n1. The parenting arrangements as previously proposed, unchanged.\n2. The former matrimonial home be sold and the net proceeds divided 56% to our client and 44% to your client, calculated on the valuation of $1,240,000.\n3. Each party bear their own costs.\n\nThis replacement offer is open until 5:00pm on 24 March 2027."),
     ],
   },

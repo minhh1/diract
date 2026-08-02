@@ -129,7 +129,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a short covering letter serving a costs notice on the Court and the other party at a court event. Identify the proceedings, the event and its date, and confirm the notice states costs incurred to date and estimated to the next stage. Keep it purely administrative.",
+      "Draft a short covering letter serving a costs notice on the Court and the other party at a court event. Identify the proceedings, the event and its date, and confirm the notice states costs incurred to date and estimated to the next stage. Set out the actual figures (costs incurred to date, and the estimate to the conclusion of the next event) rather than describing them only in the abstract, since that summary is what the other party and the Court actually use. Keep it otherwise administrative.",
     segments: [
       text("COSTS NOTICE\n\nFEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA\nRegistry: "),
       field("registry", "Registry", "Sydney"),
@@ -143,7 +143,9 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
       field("party", "Party we act for", "Applicant"),
       text(" and file and serve the enclosed Costs Notice in advance of the "),
       field("event", "Court event and date", "interim hearing listed on 12 November 2026"),
-      text(".\n\nThe Notice states the costs incurred by our client to date and the costs estimated to be incurred to the conclusion of that event.\n\nA copy has been served on the "),
+      text(".\n\nCOSTS SUMMARY\n\n"),
+      field("costs_summary", "Costs incurred to date and estimate to next stage", "Costs incurred to date: $14,850 (inclusive of GST and disbursements).\nEstimated costs to the conclusion of the interim hearing: a further $6,200.\nEstimated total costs to a final hearing, if the matter proceeds that far: $65,000 to $85,000."),
+      text("\n\nThe Notice states the costs incurred by our client to date and the costs estimated to be incurred to the conclusion of that event, in accordance with the Family Law Rules.\n\nA copy has been served on the "),
       field("served_on", "Served on", "Respondent's solicitors"),
       text(" today."),
     ],

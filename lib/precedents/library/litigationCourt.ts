@@ -93,7 +93,7 @@ export const LITIGATION_COURT_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Verify the current prescribed form, the required notice period, and whether the relief sought requires a supporting affidavit or written submissions in the relevant court.",
     aiInstructions:
-      "Draft a notice of motion. State precisely the orders sought, numbered; identify the party applying; state the return date if known; and identify the evidence relied upon. Orders must be drafted so that a Court could make them exactly as written -- vague relief is refused or sent back for redrafting.",
+      "Draft a notice of motion. State precisely the orders sought, numbered; identify the party applying; state whether the motion is made on notice or ex parte (and if ex parte, the urgency and why notice was not given); state the return date if known; identify the evidence relied upon and whether written submissions will be filed; and state the basis on which costs of the motion are sought. Orders must be drafted so that a Court could make them exactly as written -- vague relief is refused or sent back for redrafting.",
     segments: [
       text("NOTICE OF MOTION\n\nCourt: "),
       field("court", "Court and registry", "District Court of New South Wales, Sydney Registry"),
@@ -105,10 +105,14 @@ export const LITIGATION_COURT_PRECEDENTS: PrecedentSeed[] = [
       field("defendant", "Defendant", "XYZ Builders Pty Ltd"),
       text("\n\nThe "),
       field("moving_party", "Moving party", "Plaintiff"),
-      text(" applies for the following orders:\n\n"),
+      text(" applies "),
+      field("basis_of_application", "Basis of application (on notice / ex parte and why)", "on notice to the Defendant"),
+      text(" for the following orders:\n\n"),
       field("orders_sought", "Orders sought", "1. That the Defendant provide further and better particulars of paragraphs 3 and 6 of the Defence within 14 days.\n2. That in default of compliance with order 1, paragraphs 3 and 6 of the Defence be struck out.\n3. That the Defendant pay the Plaintiff's costs of this motion."),
       text("\n\nEVIDENCE RELIED UPON\n\n"),
       field("evidence", "Evidence relied upon", "The affidavit of Jane Smith sworn 20 September 2026, and the correspondence exhibited to it."),
+      text("\n\n"),
+      field("submissions_note", "Written submissions (or 'No written submissions are filed with this motion')", "Short written submissions in support of this motion are filed with it."),
       text("\n\nReturn date: "),
       field("return_date", "Return date", "12 October 2026"),
       text("\n\nDated: "),
@@ -155,7 +159,7 @@ export const LITIGATION_COURT_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Verify the current form and the period allowed for production in the relevant court. A notice that is oppressively wide or amounts to a fishing expedition may be set aside with costs.",
     aiInstructions:
-      "Draft a notice to produce. Describe each document or class of document with enough precision that the recipient knows exactly what is required -- a class described too broadly risks being set aside as oppressive. State the date, time and place for production.",
+      "Draft a notice to produce. Describe each document or class of document with enough precision that the recipient knows exactly what is required -- a class described too broadly risks being set aside as oppressive. State the date, time and place for production, the rule or basis under which the notice is given (commonly requiring the document to have been referred to in a pleading, affidavit or other document already filed by the recipient), and what the party giving the notice will do if production is refused or is incomplete.",
     segments: [
       text("NOTICE TO PRODUCE\n\nCourt: "),
       field("court", "Court and registry", "District Court of New South Wales, Sydney Registry"),
@@ -163,12 +167,15 @@ export const LITIGATION_COURT_PRECEDENTS: PrecedentSeed[] = [
       field("proceedings_number", "Proceedings number", "2026/00123456"),
       text("\n\nTo: "),
       field("recipient", "Party required to produce", "The Defendant, XYZ Builders Pty Ltd"),
+      text("\n\n"),
+      field("basis", "Basis for the notice", "This notice is given because the documents below are referred to in the Defence filed by the Defendant on 5 September 2026."),
       text("\n\nYou are required to produce the following documents:\n\n"),
       field("documents", "Documents required", "1. All site diaries and daily records maintained at the 12 Example Street site between 1 March 2026 and 30 June 2026.\n2. All photographs taken of materials delivered to that site on 26 April 2026.\n3. All correspondence between the Defendant and any alternative supplier of building materials between 26 April 2026 and 31 May 2026.\n4. All invoices rendered to the Defendant by any alternative supplier for materials of the same description in that period."),
       text("\n\nProduce to: "),
       field("production_place", "Place for production", "the Registry of the District Court of New South Wales, Sydney"),
       text("\nBy: "),
       field("production_date", "Date and time for production", "10:00am on 10 October 2026"),
+      text("\n\nIf these documents are not produced by that date, or production is incomplete, we are instructed to apply to the Court for an order for production and to seek the costs of that application."),
     ],
   },
   {
@@ -183,7 +190,7 @@ export const LITIGATION_COURT_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Service requirements differ by document type and by whether the recipient is an individual or a company (for companies, service at the registered office under s 109X of the Corporations Act). Verify service was effected in a manner the rules permit before deposing to it.",
     aiInstructions:
-      "Draft an affidavit of service. State precisely who served, what was served, on whom, when, where and by what method. If served personally, state how the person was identified. If served on a company, state the address and the basis on which it is the registered office. Precision matters -- a default judgment obtained on defective proof of service will be set aside with costs.",
+      "Draft an affidavit of service. State precisely who served, what was served, on whom, when, where and by what method. If served personally, state how the person was identified. If served on a company, state the address and the basis on which it is the registered office. If personal service was attempted and failed before a substituted method was used, depose to the attempts made and why the method used was reasonable in the circumstances. Precision matters -- a default judgment obtained on defective proof of service will be set aside with costs.",
     segments: [
       text("AFFIDAVIT OF SERVICE\n\nCourt: "),
       field("court", "Court and registry", "District Court of New South Wales, Sydney Registry"),
@@ -202,6 +209,8 @@ export const LITIGATION_COURT_PRECEDENTS: PrecedentSeed[] = [
       text(".\n\n3. I effected service by "),
       field("method", "Method of service", "leaving the document at the company's registered office at 40 Industrial Drive, Wetherill Park NSW 2164, that address being the registered office of the company as recorded in a current ASIC company extract obtained by me on 19 August 2026"),
       text(".\n\n"),
+      field("prior_attempts", "Prior unsuccessful attempts, if service was not straightforward (or 'Not applicable -- service was effected on the first attempt')", "Not applicable -- service was effected on the first attempt."),
+      text("\n\n"),
       field("identification", "Identification (personal service) or additional detail", "4. Annexed and marked 'A' is a copy of the ASIC company extract referred to above."),
       text("\n\nSWORN/AFFIRMED at "),
       field("place", "Place", "Sydney"),

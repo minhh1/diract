@@ -49,7 +49,7 @@ export const CONVEYANCING_STATES_DEPTH_PRECEDENTS: PrecedentSeed[] = [
       field("period_end", "Cooling-off period expires", "19 August 2026"),
       text(".\n\nDEPOSIT\n\nPlease arrange refund of the deposit of "),
       field("deposit", "Deposit paid", "$59,000"),
-      text(", less the amount your client is entitled to retain under the Act, within the period required.\n\nPlease confirm the refund arrangements by return."),
+      text(", less the amount your client is entitled to retain under the Act, within the period required.\n\nPlease confirm the refund arrangements by return. If the refund is not made within the period the Act requires, our client will refer the matter to Consumer Affairs Victoria and reserves the right to recover the amount together with interest."),
     ],
     requiresReview: true,
     reviewNote:
@@ -79,7 +79,7 @@ export const CONVEYANCING_STATES_DEPTH_PRECEDENTS: PrecedentSeed[] = [
       field("penalty", "Penalty amount", "$1,800.00"),
       text(".\n\nPlease arrange refund of the balance of the deposit, being "),
       field("refund", "Balance to be refunded", "$34,200.00"),
-      text(", to our trust account within the period required.\n\nPlease confirm by return."),
+      text(", to our trust account within the period required.\n\nPlease confirm by return. If the balance is not refunded promptly, our client reserves the right to pursue recovery, including through the Queensland Civil and Administrative Tribunal if necessary."),
     ],
     requiresReview: true,
     reviewNote:
@@ -111,7 +111,7 @@ export const CONVEYANCING_STATES_DEPTH_PRECEDENTS: PrecedentSeed[] = [
       field("period_end", "Period expires", "18 August 2026"),
       text(". This notice is given within that period.\n\nDEPOSIT\n\nPlease arrange refund of the deposit of "),
       field("deposit", "Deposit", "$43,000"),
-      text(" to our trust account.\n\nPlease confirm by return."),
+      text(" to our trust account, in full and without deduction -- unlike some other states, South Australia does not entitle the vendor to retain any part of the deposit where the purchaser cools off validly within time.\n\nPlease confirm by return."),
     ],
     requiresReview: true,
     reviewNote:
@@ -202,7 +202,7 @@ export const CONVEYANCING_STATES_DEPTH_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["TAS"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a post-contract letter for a Tasmanian purchase. Confirm the contract date, list condition dates and settlement, restate that there is no cooling-off period so the conditions are the only protection, and explain duty is payable to the State Revenue Office of Tasmania with registration through the Land Titles Office.",
+      "Draft a post-contract letter for a Tasmanian purchase. Confirm the contract date, list condition dates and settlement, restate that there is no cooling-off period so the conditions are the only protection, explain that an extension of any condition date must be agreed in writing before it passes, and explain duty is payable to the State Revenue Office of Tasmania with registration through the Land Titles Office.",
     segments: [
       text("We confirm the contract for your purchase of "),
       field("property", "Property", "7 Example Street, Battery Point TAS 7004"),
@@ -212,7 +212,7 @@ export const CONVEYANCING_STATES_DEPTH_PRECEDENTS: PrecedentSeed[] = [
       field("key_dates", "Key dates", "Building inspection due:  29 August 2026\nFinance approval due:     5 September 2026\nSettlement:               25 September 2026"),
       text("\n\nWHAT YOU NEED TO DO\n\n"),
       field("client_actions", "Client actions", "1. Arrange your building inspection immediately.\n2. Press your lender for unconditional approval before 5 September.\n3. Arrange insurance from settlement.\n4. Tell us at once if any date is at risk."),
-      text("\n\nDUTY AND REGISTRATION\n\nDuty is payable to the State Revenue Office of Tasmania. We will confirm the amount with your settlement figures. The transfer will be registered with the Land Titles Office."),
+      text("\n\nEXTENSIONS MUST BE IN WRITING BEFORE THE DATE PASSES\n\nIf you need more time on any condition, tell us before the date, not after. An extension agreed after a condition date has passed does not revive it -- by then you may already have lost the benefit of the condition.\n\nDUTY AND REGISTRATION\n\nDuty is payable to the State Revenue Office of Tasmania. We will confirm the amount with your settlement figures, and whether any first home buyer duty concession applies. The transfer will be registered with the Land Titles Office."),
     ],
   },
 
@@ -330,7 +330,7 @@ export const CONVEYANCING_STATES_DEPTH_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["VIC", "QLD", "SA", "WA", "TAS"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a default notice / notice to complete for a purchase outside NSW. Identify the contract, state the default, require completion by a specified date and time, state that time is of the essence, set out interest and costs payable, and state the consequences of continued failure. The notice period and the form of notice are set by the contract in each state, so the drafting must follow the contract's own default provisions rather than a NSW template.",
+      "Draft a default notice / notice to complete for a purchase outside NSW. Identify the contract, state the default, require completion by a specified date and time, state that time is of the essence, set out interest and costs payable, and state the consequences of continued failure. Confirm the client's readiness to complete is genuine (funds available, transfer executed, settlement platform ready), since a notice given by a party not itself ready to complete is invalid, and note any prior correspondence chasing completion. The notice period and the form of notice are set by the contract in each state, so the drafting must follow the contract's own default provisions rather than a NSW template.",
     segments: [
       text("DEFAULT NOTICE\n\nContract: "),
       field("property", "Property", "24 Example Street, Richmond VIC 3121"),
@@ -338,7 +338,9 @@ export const CONVEYANCING_STATES_DEPTH_PRECEDENTS: PrecedentSeed[] = [
       field("contract_date", "Contract date", "14 August 2026"),
       text("\n\nCompletion was due on "),
       field("due_date", "Completion due", "13 October 2026"),
-      text(". Your client failed to complete and remains in default.\n\nOur client is ready, willing and able to complete.\n\nNOTICE\n\nOur client requires completion by "),
+      text(". Your client failed to complete and remains in default.\n\n"),
+      field("prior_correspondence", "Prior correspondence chasing completion (or 'This is the first correspondence on the default')", "We wrote to you on 14 and 20 October 2026 seeking a completion date, without a satisfactory response."),
+      text("\n\nOur client is ready, willing and able to complete, having executed the transfer and readied the necessary funds and settlement arrangements.\n\nNOTICE\n\nOur client requires completion by "),
       field("notice_date", "Complete by", "2:00pm on 27 October 2026"),
       text(", and TIME IS OF THE ESSENCE in respect of that date.\n\nThis notice is given under "),
       field("contract_clause", "Contract clause relied on", "General Condition 27 of the contract"),

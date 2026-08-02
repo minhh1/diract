@@ -19,7 +19,7 @@ export const CONVEYANCING_EXTRA_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a notice of rescission. Identify the contract and property, state the ground relied on and the facts establishing it, state that the client rescinds, and set out the consequences sought -- return of the deposit with interest, release of any caveat, and reservation of rights as to damages. Rescission is a serious step and a wrongful purported rescission is itself repudiatory, so the ground must be clearly established before it is served.",
+      "Draft a notice of rescission. Identify the contract and property, state the ground relied on and the facts establishing it, state that the client rescinds, and set out the consequences sought -- return of the deposit with interest, release of any caveat, and reservation of rights as to damages. Address what happens if the other side disputes the rescission (a deposit dispute letter to the stakeholder, and if the rescinding party's own interest needs protecting, a caveat) and note the client's position on a claim for the costs and expenses thrown away by the aborted transaction, not just the deposit. Rescission is a serious step and a wrongful purported rescission is itself repudiatory, so the ground must be clearly established before it is served.",
     segments: [
       text("NOTICE OF RESCISSION\n\nContract: "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
@@ -33,7 +33,11 @@ export const CONVEYANCING_EXTRA_PRECEDENTS: PrecedentSeed[] = [
       field("deposit", "Deposit", "$125,000"),
       text(" together with any interest earned;\n2. "),
       field("other_consequences", "Other consequences sought", "the withdrawal of the vendor's caveat lodged on 14 August 2026"),
-      text(".\n\nOur client reserves all rights, including as to damages and costs."),
+      text(".\n\n"),
+      field("further_loss", "Other costs and expenses thrown away being claimed (or 'Nil')", "Our client also claims the costs of the building and pest inspection and loan application fees incurred in reliance on the contract, totalling $1,850, which we will separately itemise."),
+      text("\n\nIF THIS IS DISPUTED\n\n"),
+      field("dispute_response", "What happens if the other side disputes the rescission", "If your client disputes that our client is entitled to rescind, please advise immediately. Our client will in that event write separately to the stakeholder instructing that the deposit not be released to either party pending resolution."),
+      text("\n\nOur client reserves all rights, including as to damages and costs."),
     ],
     requiresReview: true,
     reviewNote:
@@ -123,7 +127,7 @@ export const CONVEYANCING_EXTRA_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a letter dealing with a settlement delay. Where the client is causing the delay, explain the reason candidly, propose a revised settlement date, acknowledge any penalty interest payable, and ask the other side to confirm they will not terminate. Where the other side is causing it, record the default, reserve rights, note interest is accruing, and require a firm date. The precedent should work either way, with the direction prompted.",
+      "Draft a letter dealing with a settlement delay. Where the client is causing the delay, explain the reason candidly, propose a revised settlement date, acknowledge any penalty interest payable, ask the other side to confirm they will not terminate, and address practical continuity matters such as insurance and the PEXA workspace. Where the other side is causing it, record the default, reserve rights, note interest is accruing, and require a firm date. Note what happens if the revised date is also missed -- that the client's patience and any indulgence granted is not open-ended. The precedent should work either way, with the direction prompted.",
     segments: [
       text("SETTLEMENT - "),
       field("subject", "Subject line", "PROPOSED EXTENSION"),
@@ -137,7 +141,9 @@ export const CONVEYANCING_EXTRA_PRECEDENTS: PrecedentSeed[] = [
       field("proposal", "Proposal", "We propose settlement be rescheduled to 2:00pm on 25 September 2026. Our client accepts that penalty interest is payable under clause 14 for the period of delay and will include it in the settlement figures."),
       text("\n\n"),
       field("reservation", "Reservation of rights or request for confirmation", "We ask that your client confirm it will not issue a notice to complete or take any step to terminate in the meantime. Our client's position is that a two day delay of this kind, promptly notified and with interest paid, does not warrant that course."),
-      text("\n\nPlease confirm as a matter of urgency so that the PEXA workspace can be rescheduled."),
+      text("\n\n"),
+      field("further_delay_position", "Position if the revised date is also missed", "This indulgence is not open-ended. If our client is unable to complete by the revised date, our client will need to reconsider its position, and we would expect the same courtesy from your client."),
+      text("\n\nPlease confirm as a matter of urgency so that the PEXA workspace and building insurance can be rescheduled accordingly."),
     ],
   },
   {

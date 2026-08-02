@@ -26,7 +26,7 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
     subcategory: "Pre-litigation",
     documentType: "letter",
     aiInstructions:
-      "Draft a letter before action. Set out the factual background concisely, the legal basis of the claim, the loss suffered and how it is calculated, what the client requires to resolve the matter, and a deadline. Invite the recipient to respond or propose an alternative. This letter may later be shown to the Court on costs, so it must be measured, accurate and proportionate -- overstatement is a liability.",
+      "Draft a letter before action. Set out the factual background concisely, the legal basis of the claim, the loss suffered and how it is calculated, what the client requires to resolve the matter, what steps (if any) have already been taken to resolve it informally, and a deadline. Invite the recipient to respond, propose an alternative, or engage in ADR. Note what documents are enclosed in support. This letter may later be shown to the Court on costs, so it must be measured, accurate and proportionate -- overstatement is a liability.",
     segments: [
       text("LETTER BEFORE ACTION\n\nWe act for "),
       field("client_name", "Our client", "ABC Supplies Pty Ltd"),
@@ -38,11 +38,15 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
       field("loss_amount", "Loss claimed", "$18,450.00"),
       text(", calculated as "),
       field("loss_calculation", "How the loss is calculated", "the invoiced value of materials delivered and accepted but unpaid"),
-      text(".\n\nWHAT OUR CLIENT REQUIRES\n\n"),
+      text(".\n\nSUPPORTING DOCUMENTS\n\nEnclosed in support of this claim are "),
+      field("enclosures", "Documents enclosed", "copies of the signed supply agreement, the delivery dockets and the unpaid invoices"),
+      text(".\n\nPRIOR ATTEMPTS TO RESOLVE\n\n"),
+      field("prior_attempts", "Steps already taken to resolve informally (or 'This is the first formal step taken')", "Our client has raised this directly with your client on several occasions since May 2026 without a satisfactory response."),
+      text("\n\nWHAT OUR CLIENT REQUIRES\n\n"),
       field("relief_sought", "What is required to resolve", "Payment of $18,450.00 within 21 days."),
       text("\n\nIf this matter is not resolved by "),
       field("deadline", "Deadline", "30 August 2026"),
-      text(", our client intends to commence proceedings. Our client will rely on this letter on the question of costs.\n\nWe invite your client to respond, or to put forward a proposal for resolution, before that date."),
+      text(", our client intends to commence proceedings. Our client will rely on this letter on the question of costs.\n\nWe invite your client to respond, to put forward a proposal for resolution, or to suggest mediation, before that date."),
     ],
   },
   {
@@ -53,7 +57,7 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
     subcategory: "Court Documents",
     documentType: "court_document",
     aiInstructions:
-      "Draft a notice of acting for filing. Include the court and registry, the proceedings number, the parties, a statement that the firm acts for the named party, and the firm's address for service including email. Keep it to the minimum content the rules require.",
+      "Draft a notice of acting for filing. Include the court and registry, the proceedings number, the parties, a statement that the firm acts for the named party, whether it replaces an earlier solicitor on the record (a notice of acting following a change of solicitor has different content requirements to a first appearance), the firm's address for service including email, and a request that other parties update their service list and direct future correspondence and service accordingly. Keep it otherwise to the minimum content the rules require.",
     segments: [
       text("NOTICE OF ACTING\n\nCourt: "),
       field("court", "Court and registry", "District Court of New South Wales, Sydney Registry"),
@@ -67,14 +71,16 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
       field("firm_name", "Firm name", "Huynh Lawyers"),
       text(" acts for the "),
       field("party_acting_for", "Party we act for", "Plaintiff"),
-      text(" in these proceedings.\n\nAddress for service:\n\n"),
+      text(" in these proceedings"),
+      field("prior_solicitor", "Prior solicitor being replaced (or 'and is the first solicitor on the record for that party')", ", in place of Example Solicitors who previously acted"),
+      text(".\n\nAddress for service:\n\n"),
       field("address_for_service", "Address for service", "Huynh Lawyers\nLevel 1, 123 Example Street\nSydney NSW 2000\nEmail: service@example.com.au"),
-      text("\n\nDated: "),
+      text("\n\nAll parties are requested to update their records and direct all future correspondence, documents and service to the above address.\n\nDated: "),
       field("date", "Date", "20 August 2026"),
     ],
     requiresReview: true,
     reviewNote:
-      "Notice of acting is a prescribed form in most courts. Verify the correct current form, heading format and filing method for the court seised of the proceedings.",
+      "Notice of acting is a prescribed form in most courts. Verify the correct current form, heading format and filing method for the court seised of the proceedings, and whether a change of solicitor requires a separate prescribed form (rather than a plain notice of acting) in that court.",
   },
   {
     key: "lit.affidavit_general",
@@ -123,15 +129,17 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
     subcategory: "Interlocutory",
     documentType: "letter",
     aiInstructions:
-      "Draft a request for further and better particulars. Identify the pleading and the specific paragraphs, and for each set out precisely what particular is sought and why the pleading as it stands does not enable the client to know the case they must meet. Number the requests. Give a deadline and note that an application may be made if particulars are not provided.",
+      "Draft a request for further and better particulars. Identify the pleading and the specific paragraphs, and for each set out precisely what particular is sought and why the pleading as it stands does not enable the client to know the case they must meet. Number the requests, ask that the response adopt the same numbering, and note the effect on the client's own pleading deadline (usually that time to plead does not run, or the client reserves the right to seek an extension, until proper particulars are given). Give a deadline and note that an application may be made if particulars are not provided.",
     segments: [
       text("REQUEST FOR FURTHER AND BETTER PARTICULARS\n\nWe refer to the "),
       field("pleading", "Pleading", "Statement of Claim filed 1 August 2026"),
       text(".\n\nOur client is unable to properly plead to that document in its current form. We request the following particulars:\n\n"),
       field("requests", "Numbered requests", "1. Of paragraph 6, where it is alleged that the goods were 'accepted': state the date, place and manner of the alleged acceptance, and identify each person by whom it is alleged acceptance occurred.\n\n2. Of paragraph 9, where loss is alleged: state how the sum of $18,450.00 is calculated, identifying each component."),
-      text("\n\nPlease provide these particulars by "),
+      text("\n\nPlease respond to each request using the same numbering, so it is clear which particular answers which request.\n\nPlease provide these particulars by "),
       field("deadline", "Deadline", "3 September 2026"),
-      text(".\n\nIf they are not provided, our client will apply to the Court for an order that they be given, and will seek the costs of that application."),
+      text(".\n\n"),
+      field("pleading_deadline_position", "Position on our client's own pleading deadline", "Our client reserves its position on the time to plead until proper particulars have been provided, and will seek an extension if necessary."),
+      text("\n\nIf the particulars are not provided, our client will apply to the Court for an order that they be given, and will seek the costs of that application."),
     ],
   },
   {
@@ -142,7 +150,7 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
     subcategory: "Interlocutory",
     documentType: "letter",
     aiInstructions:
-      "Draft a covering letter serving a subpoena. Identify the proceedings, state what the subpoena requires (attendance, production, or both), the date and place for compliance, enclose conduct money and state the amount, and note the recipient may apply to set the subpoena aside or seek their reasonable costs of compliance. Be courteous -- the recipient is usually a third party with no interest in the dispute.",
+      "Draft a covering letter serving a subpoena. Identify the proceedings, state what the subpoena requires (attendance, production, or both), the date and place for compliance, enclose conduct money and state the amount, note the deadline to apply to set the subpoena aside (this is usually earlier than the compliance date itself, and is the more time-critical date for the recipient), address how privileged or confidential documents should be handled (produced to the court under seal for the parties to argue over access, not simply withheld), and note what happens to the documents after the hearing. Be courteous -- the recipient is usually a third party with no interest in the dispute.",
     segments: [
       text("We act for "),
       field("client_name", "Our client", "ABC Supplies Pty Ltd"),
@@ -156,7 +164,11 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
       field("compliance_place", "Place for compliance", "the Registry of the District Court of New South Wales, Sydney"),
       text(".\n\nCONDUCT MONEY\n\nWe enclose conduct money of "),
       field("conduct_money", "Conduct money", "$50.00"),
-      text(".\n\nIf your reasonable costs of complying exceed that amount, please contact us and we will consider a further payment.\n\nYOUR RIGHTS\n\nYou may apply to the Court to have the subpoena set aside, in whole or in part. If you consider any of the documents sought are privileged or confidential, please contact us before the compliance date.\n\nIf you have any difficulty complying by the date above, please contact us promptly."),
+      text(".\n\nIf your reasonable costs of complying exceed that amount, please contact us and we will consider a further payment.\n\nYOUR RIGHTS\n\nYou may apply to the Court to have the subpoena set aside, in whole or in part, but any such application must generally be made "),
+      field("set_aside_deadline", "Deadline to apply to set aside (usually before compliance date)", "well before the compliance date -- please contact us or the Court registry urgently if you wish to object"),
+      text(".\n\nIf you consider any of the documents sought are privileged or confidential, please do not simply withhold them -- contact us before the compliance date, as the usual course is for them to be produced to the Court under sealed cover so the question of access can be resolved by the Court rather than by you.\n\n"),
+      field("post_hearing_position", "What happens to the documents after the hearing", "Documents produced under the subpoena will be dealt with in accordance with the Court's usual practice, and may be returned to you or destroyed once the proceedings are finally determined."),
+      text("\n\nIf you have any difficulty complying by the date above, please contact us promptly."),
     ],
     requiresReview: true,
     reviewNote:
@@ -202,7 +214,7 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
     subcategory: "Settlement Offers",
     documentType: "letter",
     aiInstructions:
-      "Draft a covering letter enclosing draft consent orders. Set out the orders proposed in numbered form, confirm they reflect the agreement reached, ask for signature and return by a date, and state who will file them. Note if the orders are to be made in chambers or require a listing.",
+      "Draft a covering letter enclosing draft consent orders. Set out the orders proposed in numbered form, confirm they reflect the agreement reached, ask for signature and return by a date, state who will file them and whether the orders are to be made in chambers or require a listing, and address what happens if the other side wants to propose a change (a marked-up version returned promptly, rather than delay). If there is a hearing date currently listed, note whether it needs to be vacated once orders are made.",
     segments: [
       text("We refer to the agreement reached between our respective clients.\n\nWe enclose draft Short Minutes of Order reflecting that agreement:\n\n"),
       field("orders", "Proposed orders", "1. The Defendant pay the Plaintiff the sum of $12,000 within 14 days.\n2. Upon payment, the proceedings be dismissed.\n3. Each party bear its own costs."),
@@ -210,7 +222,9 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
       field("return_by", "Return by", "3 September 2026"),
       text(".\n\nWe will then "),
       field("filing_arrangements", "Filing arrangements", "file the orders with the Court and seek that they be made in chambers"),
-      text(".\n\nIf you consider any amendment is required, please let us know promptly."),
+      text(".\n\n"),
+      field("listing_note", "Note on any current listing (or 'There is no hearing currently listed')", "There is presently a directions hearing listed for 12 September 2026. Once the orders are made we will ask the Court to vacate that listing."),
+      text("\n\nIf you consider any amendment is required, please mark up and return the draft promptly so the orders are not delayed."),
     ],
   },
   {
@@ -246,13 +260,17 @@ export const LITIGATION_PRECEDENTS: PrecedentSeed[] = [
     subcategory: "ADR",
     documentType: "letter",
     aiInstructions:
-      "Draft a letter proposing mediation. Suggest one or more mediators, propose timing and venue (including whether remote), address how the mediator's fees are to be shared, confirm the mediation will be without prejudice and confidential, and note who must attend with authority to settle. Frame it as a constructive, cost-saving step.",
+      "Draft a letter proposing mediation. Suggest one or more mediators, propose timing and venue (including whether remote), address how the mediator's fees are to be shared, confirm the mediation will be without prejudice and confidential, note who must attend with authority to settle, and address the position statement (that each party will exchange a short position statement in advance) and what happens to the existing court timetable while mediation is arranged (usually that it should not be treated as a reason to delay other steps unless the other side agrees). Frame it as a constructive, cost-saving step.",
     segments: [
       text("We consider this matter is suitable for mediation, and that an early mediation is likely to save both parties substantial cost.\n\nPROPOSED MEDIATOR\n\nWe propose "),
       field("mediator", "Proposed mediator(s)", "Ms M Mediator of Example ADR, or alternatively Mr N Neutral"),
       text(".\n\nTIMING AND VENUE\n\nWe propose "),
       field("timing_venue", "Timing and venue", "a half-day mediation in the week commencing 15 September 2026, conducted remotely"),
-      text(".\n\nCOSTS\n\nWe propose the mediator's fees be shared equally between the parties, with each party bearing its own costs of attending.\n\nCONFIDENTIALITY\n\nThe mediation would be conducted on a without prejudice and confidential basis, and nothing said in it would be admissible in the proceedings.\n\nATTENDANCE\n\nEach party should be represented by a person with full authority to settle.\n\nPlease let us know whether your client agrees, and if not, which aspects require discussion."),
+      text(".\n\nCOSTS\n\nWe propose the mediator's fees be shared equally between the parties, with each party bearing its own costs of attending.\n\nPOSITION STATEMENTS\n\nWe suggest each party exchange a short position statement, no more than a few pages, "),
+      field("position_statement_timing", "Timing for exchanging position statements", "at least 5 business days before the mediation"),
+      text(", so the mediation time is used productively rather than on each side explaining its case from scratch.\n\nCONFIDENTIALITY\n\nThe mediation would be conducted on a without prejudice and confidential basis, and nothing said in it would be admissible in the proceedings.\n\nATTENDANCE\n\nEach party should be represented by a person with full authority to settle.\n\nEXISTING TIMETABLE\n\n"),
+      field("timetable_position", "Position on the existing court timetable while mediation is arranged", "We do not propose that arranging mediation be treated as a reason to delay the current directions timetable, unless your client agrees otherwise in writing."),
+      text("\n\nPlease let us know whether your client agrees, and if not, which aspects require discussion."),
     ],
   },
 ];

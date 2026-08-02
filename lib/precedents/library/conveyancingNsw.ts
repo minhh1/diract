@@ -141,7 +141,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a letter to the vendor's solicitor requesting contract amendments. Number each request, state the clause affected, the amendment sought and (briefly) why. Keep the tone collegiate -- these are negotiated between practitioners and an aggressive letter slows the deal. Note which amendments are essential to the client and which are sought but not deal-critical, if instructed.",
+      "Draft a letter to the vendor's solicitor requesting contract amendments. Number each request, state the clause affected, the amendment sought and (briefly) why. Keep the tone collegiate -- these are negotiated between practitioners and an aggressive letter slows the deal. Note which amendments are essential to the client and which are sought but not deal-critical, if instructed. Give a date by which a response is needed to keep the transaction moving, and note what the client's instructions are if the essential items are not agreed.",
     segments: [
       text("We act for the purchaser and refer to the contract for sale of "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
@@ -149,6 +149,10 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("amendments", "Numbered amendment requests", "1. Clause 14 - please amend the completion period from 42 days to 60 days to align with our client's finance timetable.\n\n2. Special condition 25 - please delete. Our client is not prepared to accept an exclusion of the vendor's liability for the pool fencing.\n\n3. Please insert a special condition making the contract subject to and conditional upon our client obtaining unconditional finance approval within 21 days of exchange.\n\n4. Please provide a copy of the pool compliance certificate."),
       text("\n\n"),
       field("priority_note", "Priority note (optional)", "Items 2 and 4 are essential to our client. We have instructions to be flexible on item 1."),
+      text("\n\nWe would be grateful for your response by "),
+      field("response_deadline", "Response requested by", "close of business 14 August 2026"),
+      text(" so that exchange is not delayed.\n\n"),
+      field("fallback_position", "What happens if the essential items are not agreed (optional)", "If items 2 and 4 cannot be agreed, our client's instructions are to reconsider whether to proceed, so please raise any difficulty with us directly and promptly rather than through the agent."),
       text("\n\nWe look forward to your reply so that exchange can proceed promptly."),
     ],
   },
@@ -162,13 +166,17 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a reply to the purchaser's amendment requests on behalf of the vendor. Respond to each numbered request in turn, stating clearly whether it is agreed, refused or agreed subject to a counter-proposal. Where refused, give a short reason. End by confirming what the vendor requires in order to exchange.",
+      "Draft a reply to the purchaser's amendment requests on behalf of the vendor. Respond to each numbered request in turn, stating clearly whether it is agreed, refused or agreed subject to a counter-proposal. Where refused, give a short reason. Note whether the vendor's position is open to further negotiation or final, and whether the property remains on the market to other buyers in the meantime. End by confirming what the vendor requires in order to exchange and by when.",
     segments: [
       text("We act for the vendor and refer to your letter of "),
       field("their_letter_date", "Date of their letter", "10 August 2026"),
       text(" requesting amendments.\n\nOur client's position on each request is:\n\n"),
       field("responses", "Response to each request", "1. Completion period - agreed. We will amend to 60 days.\n\n2. Special condition 25 - not agreed. The vendor is not prepared to give any warranty as to the pool fencing, having never used the pool. The vendor will instead reduce the price by $2,000.\n\n3. Finance condition - not agreed. The property is being sold at auction terms and the vendor requires an unconditional exchange.\n\n4. Pool compliance certificate - enclosed."),
-      text("\n\nSubject to the above, our client is ready to exchange. Please confirm your client's position so that we can arrange exchange "),
+      text("\n\n"),
+      field("negotiation_position", "Whether this position is final or open to further discussion", "Our client's position on items 2 and 3 is final. The property remains on the market and our client is continuing to entertain other offers in the meantime."),
+      text("\n\nSubject to the above, our client is ready to exchange. Please confirm your client's position by "),
+      field("response_deadline", "Response required by", "close of business 14 August 2026"),
+      text(" so that we can arrange exchange "),
       field("exchange_timing", "Proposed exchange timing", "this week"),
       text("."),
     ],
@@ -206,7 +214,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a post-exchange letter. Confirm exchange occurred and on what date, state the completion date, and list every key date the client must diarise (cooling-off expiry if applicable, finance condition date, building and pest condition date, and completion). Set out what the client must do next and by when -- particularly arranging insurance and finalising finance. Clear and practical; this is the letter clients refer back to.",
+      "Draft a post-exchange letter. Confirm exchange occurred and on what date, state the completion date, and list every key date the client must diarise (cooling-off expiry if applicable, finance condition date, building and pest condition date, and completion). Set out what the client must do next and by when -- particularly arranging insurance and finalising finance. Note briefly what happens if a condition (finance or building/pest) is not satisfied by its date, since that is usually the client's real point of anxiety after exchange, and confirm how and when the client should contact the firm with questions. Clear and practical; this is the letter clients refer back to.",
     segments: [
       text("We confirm that contracts were exchanged on "),
       field("exchange_date", "Exchange date", "12 August 2026"),
@@ -218,6 +226,8 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("client_actions", "Client actions", "1. Arrange building insurance to commence immediately -- risk passes to you now, not at completion.\n2. Provide your lender with a copy of the contract and press for unconditional approval before 2 September.\n3. Do not book removalists for the morning of settlement; settlements can be delayed."),
       text("\n\nWHAT WE WILL DO\n\n"),
       field("our_actions", "Our next steps", "We will order final searches, prepare the duty assessment and create the PEXA workspace, and will write to you again with the settlement figures approximately one week before completion."),
+      text("\n\nIF A CONDITION IS NOT SATISFIED\n\n"),
+      field("condition_failure_note", "What happens if finance or building/pest condition is not met by its date", "If you are not able to obtain unconditional finance approval by the finance condition date, contact us before that date -- do not wait until it has passed. Depending on the contract terms, an extension may be able to be negotiated, or you may be entitled to rescind and recover the deposit."),
       text("\n\nPlease contact us immediately if anything changes with your finance."),
     ],
   },
@@ -231,7 +241,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a notice to complete. It must identify the contract and the property, state that the party is in default for failing to complete on the due date, require completion by a specified date and time, state that time is of the essence, and set out the consequences of failure (termination, forfeiture of deposit, and a claim for damages or specific performance). Also state the interest and costs payable. Getting the notice period wrong invalidates the notice, so the period must be checked against the contract before sending.",
+      "Draft a notice to complete. It must identify the contract and the property, state that the party is in default for failing to complete on the due date, require completion by a specified date and time, state that time is of the essence, and set out the consequences of failure (termination, forfeiture of deposit, and a claim for damages or specific performance). Also state the interest and costs payable, confirm the client's readiness to complete is genuine (funds available, transfer executed, PEXA workspace ready) since a notice given by a party not itself ready to complete is invalid, and note any prior correspondence chasing completion that has gone unanswered. Getting the notice period wrong invalidates the notice, so the period must be checked against the contract before sending.",
     segments: [
       text("NOTICE TO COMPLETE\n\nContract: "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
@@ -239,7 +249,9 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("contract_date", "Contract date", "12 August 2026"),
       text("\n\nCompletion was due on "),
       field("due_date", "Completion due date", "23 September 2026"),
-      text(". Your client failed to complete on that date and remains in default.\n\nOur client is ready, willing and able to complete.\n\nTAKE NOTICE that our client requires your client to complete the contract by "),
+      text(". Your client failed to complete on that date and remains in default.\n\n"),
+      field("prior_correspondence", "Prior correspondence chasing completion (or 'This is the first correspondence on the default')", "We wrote to you on 24 September 2026 and again on 30 September 2026 seeking a completion date, without a satisfactory response."),
+      text("\n\nOur client is ready, willing and able to complete, having executed the transfer, arranged discharge of any encumbrance affecting the property, and readied the PEXA workspace for settlement.\n\nTAKE NOTICE that our client requires your client to complete the contract by "),
       field("notice_date", "Complete by (date and time)", "2:00pm on 8 October 2026"),
       text(".\n\nTIME IS OF THE ESSENCE in respect of that date.\n\nAMOUNTS PAYABLE\n\nIn addition to the balance of the purchase price, your client must pay "),
       field("additional_amounts", "Interest, costs and other amounts", "interest at the contract rate from 23 September 2026 to the date of completion, and our client's costs of this notice of $550"),
@@ -280,11 +292,13 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a letter requesting the vendor's foreign resident capital gains withholding clearance certificate. Explain that without a valid clearance certificate covering the vendor and the completion date, the purchaser is legally obliged to withhold a percentage of the price and remit it to the ATO. Ask for the certificate before settlement. Do NOT state the withholding rate or the property value threshold as fixed numbers -- both have been changed and must be confirmed against current ATO guidance.",
+      "Draft a letter requesting the vendor's foreign resident capital gains withholding clearance certificate. Explain that without a valid clearance certificate covering the vendor and the completion date, the purchaser is legally obliged to withhold a percentage of the price and remit it to the ATO. Note that the certificate can take time to issue, so it should be applied for as early as possible, and that where there are multiple vendors a certificate is needed for each of them individually. Ask for the certificate before settlement, and note that if withholding does occur, the vendor's remedy is to claim a credit for the withheld amount when it lodges its own tax return, not from the purchaser. Do NOT state the withholding rate or the property value threshold as fixed numbers -- both have been changed and must be confirmed against current ATO guidance.",
     segments: [
       text("We act for the purchaser of "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
-      text(".\n\nPlease provide a foreign resident capital gains withholding clearance certificate issued by the Australian Taxation Office for each vendor, valid as at the completion date.\n\nIf a valid clearance certificate is not provided before completion, our client is required by law to withhold the applicable percentage of the purchase price and remit it to the ATO at settlement. Our client will do so, and the amount withheld will be deducted from the funds otherwise payable to your client.\n\nWe would prefer to avoid that outcome. Please provide the certificate by "),
+      text(".\n\nPlease provide a foreign resident capital gains withholding clearance certificate issued by the Australian Taxation Office for each vendor, valid as at the completion date.\n\n"),
+      field("multiple_vendors_note", "Note on number of vendors (or 'There is a single vendor')", "As there are two vendors, a separate clearance certificate is required for each of them."),
+      text("\n\nIf a valid clearance certificate is not provided before completion, our client is required by law to withhold the applicable percentage of the purchase price and remit it to the ATO at settlement. Our client will do so, and the amount withheld will be deducted from the funds otherwise payable to your client. If that occurs, your client's remedy is to claim a credit for the amount withheld when lodging its own tax return -- it is not something our client can refund directly.\n\nWe would prefer to avoid that outcome, and note that clearance certificates can take some weeks to issue, so we recommend your client apply now if it has not already done so. Please provide the certificate by "),
       field("deadline", "Provide by", "16 September 2026"),
       text("."),
     ],
@@ -348,7 +362,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a short letter confirming settlement has completed. State the date and time, confirm keys are available from the agent, note that the transfer will be registered and the client notified, list any amounts refunded or still to be accounted for, and set out what the client should now do (notify insurer, connect services, expect council and water notices). Warm and brief -- this is good news.",
+      "Draft a short letter confirming settlement has completed. State the date and time, confirm keys are available from the agent, note that the transfer will be registered and the client notified, list any amounts refunded or still to be accounted for, set out what the client should now do (notify insurer, connect services, expect council and water notices), and note that a final invoice or account statement follows separately and that the file will otherwise be closed once outstanding matters are finalised. Include a short fraud-awareness note, since post-settlement is exactly when scam calls purporting to be from the firm or the bank tend to target clients. Warm and brief -- this is good news.",
     segments: [
       text("We are pleased to confirm that settlement of your purchase of "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
@@ -358,6 +372,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("keys", "Key collection", "The keys are available for collection now from Example Real Estate."),
       text("\n\nWHAT HAPPENS NEXT\n\nThe transfer will be registered at NSW Land Registry Services. We will confirm once registration is complete and provide you with a copy of the title record.\n\nWHAT YOU SHOULD DO NOW\n\n1. Confirm your building insurance is in place and notes you as the owner.\n2. Connect electricity, gas, water and internet.\n3. Expect council and water notices in your name from the next quarter.\n\n"),
       field("accounting_note", "Trust accounting note", "The balance of $312.40 held in our trust account will be refunded to your nominated account within two business days."),
+      text("\n\nWe will send you our final invoice and a copy of the registered title once registration is confirmed, at which point we will consider your file complete.\n\nA REMINDER ON SCAMS\n\nNow that settlement has occurred, please be alert to unsolicited calls or emails asking for further payments or your banking details, purporting to be from us, your bank or a government agency. We will never ask you to make a payment by phone or email out of the blue -- if in doubt, call us on a number you have independently verified."),
     ],
   },
 
@@ -372,13 +387,15 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a letter to the selling agent enclosing the draft contract for sale. Confirm the contract contains the prescribed documents required before marketing can commence, note anything still outstanding, and ask the agent to direct all contract enquiries to this office. Remind the agent not to permit exchange without our involvement.",
+      "Draft a letter to the selling agent enclosing the draft contract for sale. Confirm the contract contains the prescribed documents required before marketing can commence, note anything still outstanding, state the price expectations or reserve if the vendor has authorised sharing them, ask the agent to direct all contract enquiries to this office, and remind the agent not to permit exchange or accept a deposit other than as stakeholder without our involvement. Note the vendor's position on a s 66W cooling-off waiver request from a purchaser's solicitor -- normally that any such request must be referred to us, not agreed to by the agent.",
     segments: [
       text("We act for the vendor of "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
       text(" and enclose the draft contract for sale.\n\nThe contract includes the documents prescribed for marketing, namely the title search, plan, s 10.7 planning certificate and drainage diagram.\n\n"),
       field("outstanding", "Anything still outstanding", "We are still awaiting the swimming pool compliance certificate and will forward it as soon as it is to hand."),
-      text("\n\nPlease direct all enquiries about the contract from prospective purchasers' solicitors to this office.\n\nPlease do not permit any exchange of contracts, or accept any deposit other than as stakeholder, without first contacting us."),
+      text("\n\n"),
+      field("price_guidance", "Price expectations, if the vendor has authorised sharing them (or 'Please refer any price enquiries to our client directly')", "Our client's expectations are in the order of $1,200,000 to $1,300,000, but please confirm any specific figure with us before quoting it to a prospective purchaser."),
+      text("\n\nPlease direct all enquiries about the contract from prospective purchasers' solicitors to this office.\n\nPlease do not permit any exchange of contracts, or accept any deposit other than as stakeholder, without first contacting us. If a purchaser's solicitor asks whether our client will provide a s 66W cooling-off waiver certificate, please refer that request to us rather than responding directly."),
     ],
     requiresReview: true,
     reviewNote:
@@ -394,7 +411,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a letter to the vendor's lender requesting discharge of mortgage. Provide the loan account reference, the property, the proposed settlement date, and ask for payout figures valid to that date. Ask the lender to nominate its PEXA subscriber details and to join the workspace. Note that lenders are slow -- ask for confirmation of receipt and give a clear deadline.",
+      "Draft a letter to the vendor's lender requesting discharge of mortgage. Provide the loan account reference, the property, the proposed settlement date, and ask for payout figures valid to that date. Ask the lender to nominate its PEXA subscriber details and to join the workspace. Note the payout figures will need to be reconfirmed if settlement is delayed past their expiry, and ask the lender to notify the firm promptly if that occurs so a revised figure can be obtained in time. Note that lenders are slow -- ask for confirmation of receipt and give a clear deadline, and note the consequence if the discharge is not organised in time (settlement cannot proceed and the vendor may be exposed to a purchaser's notice to complete).",
     segments: [
       text("We act for "),
       field("borrower", "Borrower / our client", "John Vendor and Mary Vendor"),
@@ -404,9 +421,9 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("loan_account", "Loan account number", "1234 5678 9012"),
       text("\n\nOur client has signed the enclosed discharge authority. Please:\n\n1. arrange discharge of the mortgage over the property;\n2. provide payout figures valid to the proposed settlement date of "),
       field("settlement_date", "Proposed settlement date", "23 September 2026"),
-      text(";\n3. nominate your PEXA subscriber details and join the workspace when invited.\n\nPlease confirm receipt of this request and advise if anything further is required.\n\nGiven the settlement date, we would be grateful for your response by "),
+      text(";\n3. nominate your PEXA subscriber details and join the workspace when invited.\n\nIf the payout figures you provide expire before that date, please notify us immediately so a revised figure can be requested in time -- our client cannot afford a delay to settlement caused by an expired payout figure.\n\nPlease confirm receipt of this request and advise if anything further is required.\n\nGiven the settlement date, we would be grateful for your response by "),
       field("response_deadline", "Response required by", "9 September 2026"),
-      text("."),
+      text(". If the discharge is not ready in time, our client risks being unable to complete and being exposed to a notice to complete from the purchaser."),
     ],
   },
   {
@@ -419,15 +436,19 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft an order on the agent authorising release of the deposit following settlement. State that settlement has completed, authorise the agent to deduct its commission and agreed marketing costs, and direct payment of the balance to the vendor's nominated account. Ask for the agent's tax invoice and a statement of account.",
+      "Draft an order on the agent authorising release of the deposit following settlement. State that settlement has completed, authorise the agent to deduct its commission (referencing the agency agreement so the amount is not open-ended) and agreed marketing costs, direct payment of the balance to the vendor's nominated account, and ask for the agent's tax invoice and a statement of account. Note that if the commission or marketing costs charged do not match the agency agreement, the vendor's instructions are to withhold authorisation for the discrepancy pending clarification. Confirm the deadline for the agent to act and that keys are to be released to the purchaser.",
     segments: [
       text("ORDER ON AGENT\n\nProperty: "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
       text("\n\nWe confirm that settlement completed on "),
       field("settlement_date", "Settlement date", "23 September 2026"),
-      text(".\n\nYou are authorised and directed to:\n\n1. deduct your commission and agreed marketing costs from the deposit held by you as stakeholder; and\n2. pay the balance to our client as follows:\n\n"),
+      text(".\n\nYou are authorised and directed to:\n\n1. deduct your commission and agreed marketing costs from the deposit held by you as stakeholder, in accordance with the agency agreement dated "),
+      field("agency_agreement_date", "Agency agreement date", "1 July 2026"),
+      text("; and\n2. pay the balance to our client as follows:\n\n"),
       field("payment_direction", "Payment direction", "Account name: J & M Vendor\nBSB: 000-000\nAccount number: 00000000"),
-      text("\n\nPlease provide your tax invoice and a statement of account showing the deduction and the balance paid.\n\nPlease also release the keys to the purchaser."),
+      text("\n\nPlease provide your tax invoice and a statement of account showing the deduction and the balance paid within "),
+      field("payment_deadline", "Deadline for payment and statement", "5 business days"),
+      text(". If the commission or marketing costs charged differ from the agency agreement, please contact us before making the deduction.\n\nPlease also release the keys to the purchaser."),
     ],
   },
   {
@@ -440,7 +461,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft an attornment notice to a tenant. Notify the tenant that the property has been sold and settlement has occurred, identify the new owner, direct that all future rent be paid to the new owner or their agent from a specified date, confirm the bond will be transferred, and confirm the tenancy continues on its existing terms. Reassure the tenant that their tenancy is unaffected -- tenants receiving these letters often fear eviction.",
+      "Draft an attornment notice to a tenant. Notify the tenant that the property has been sold and settlement has occurred, identify the new owner, direct that all future rent be paid to the new owner or their agent from a specified date, confirm the bond will be transferred, confirm the tenancy continues on its existing terms including the fixed term end date and rent amount, and give the tenant a contact for repairs and maintenance going forward. Reassure the tenant that their tenancy is unaffected -- tenants receiving these letters often fear eviction.",
     segments: [
       text("NOTICE TO TENANT - CHANGE OF OWNERSHIP\n\nProperty: "),
       field("property", "Property", "12 Example Street, Sydney NSW 2000"),
@@ -448,7 +469,11 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("settlement_date", "Settlement date", "23 September 2026"),
       text(".\n\nThe new owner of the property is "),
       field("new_owner", "New owner", "Alex Purchaser"),
-      text(".\n\nYOUR TENANCY CONTINUES UNCHANGED\n\nYour tenancy is not affected by the sale. It continues on exactly the same terms as before. You do not need to do anything except pay your rent to the new owner as set out below.\n\nWHERE TO PAY RENT\n\nFrom "),
+      text(".\n\nYOUR TENANCY CONTINUES UNCHANGED\n\nYour tenancy is not affected by the sale. It continues on exactly the same terms as before -- "),
+      field("tenancy_terms", "Existing tenancy terms (rent and term end date)", "rent of $650 per week, with the fixed term expiring on 30 June 2027"),
+      text(". You do not need to do anything except pay your rent to the new owner as set out below.\n\nREPAIRS AND MAINTENANCE\n\nFor any repairs or maintenance requests from now on, please contact "),
+      field("maintenance_contact", "Contact for repairs and maintenance", "Example Property Management on (02) 0000 0000"),
+      text(" rather than the previous owner.\n\nWHERE TO PAY RENT\n\nFrom "),
       field("rent_from_date", "Rent payable to new owner from", "24 September 2026"),
       text(", please pay all rent to:\n\n"),
       field("rent_details", "Rent payment details", "Example Property Management\nBSB: 000-000\nAccount number: 00000000\nReference: 12 Example St"),
@@ -469,7 +494,7 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CONVEYANCING,
     aiInstructions:
-      "Draft a GST withholding notification from vendor to purchaser for new residential premises or potential residential land. State whether the purchaser is required to withhold, and if so give the vendor's name and ABN, the amount or the method of calculating it, and when it must be paid to the ATO. Note the purchaser must lodge the ATO online forms before settlement. Do NOT hard-code the withholding fraction -- it differs between the standard rate and the margin scheme, and should be stated as a fill-in field.",
+      "Draft a GST withholding notification from vendor to purchaser for new residential premises or potential residential land. State whether the purchaser is required to withhold, and if so give the vendor's name and ABN, the amount or the method of calculating it, and when it must be paid to the ATO. Explain briefly why the margin scheme does or does not apply here, since that is what drives the fraction withheld and is the detail most likely to be queried. Note the purchaser must lodge the ATO online forms before settlement and provide the payment reference number to the vendor's representative, and that the vendor will credit the withheld amount against the price at settlement so the purchaser is not paying it twice.",
     segments: [
       text("GST WITHHOLDING NOTIFICATION\n\nProperty: "),
       field("property", "Property", "Lot 305, 10 Sample Road, Parramatta NSW 2150"),
@@ -481,7 +506,9 @@ export const CONVEYANCING_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("supplier_abn", "Supplier ABN", "00 000 000 000"),
       text("\n\nAMOUNT TO BE WITHHELD\n\n"),
       field("amount", "Amount and basis", "$87,272.73, being 1/11th of the contract price (the margin scheme does not apply to this supply)."),
-      text("\n\nWHEN IT MUST BE PAID\n\nThe amount must be paid to the Australian Taxation Office on or before the day settlement occurs.\n\nWHAT THE PURCHASER MUST DO\n\nThe purchaser must lodge the ATO GST property settlement forms (Form 1 and Form 2) before settlement, and provide the payment reference number to the vendor's representative."),
+      text("\n\nWHY THIS FRACTION APPLIES\n\n"),
+      field("margin_scheme_explanation", "Why the margin scheme does or does not apply", "The vendor is not applying the margin scheme to this sale, so the standard withholding fraction of 1/11th of the price applies rather than the reduced margin scheme fraction."),
+      text("\n\nWHEN IT MUST BE PAID\n\nThe amount must be paid to the Australian Taxation Office on or before the day settlement occurs. The amount withheld will be credited against the purchase price at settlement, so the purchaser is not required to pay it in addition to the balance otherwise due.\n\nWHAT THE PURCHASER MUST DO\n\nThe purchaser must lodge the ATO GST property settlement forms (Form 1 and Form 2) before settlement, and provide the payment reference number to the vendor's representative."),
     ],
     requiresReview: true,
     reviewNote:

@@ -147,7 +147,7 @@ export const STATE_PI_CIVIL_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["VIC"],
     matterTypes: CIVIL,
     aiInstructions:
-      "Draft a covering letter for a VCAT application in the Civil Claims List. Identify the list, parties, nature of the dispute, orders sought and documents lodged. Note that VCAT ordinarily does not award costs and that legal representation may require leave.",
+      "Draft a covering letter for a VCAT application in the Civil Claims List. Identify the list, parties, nature of the dispute, orders sought and documents lodged. Note whether the dispute is one where a compulsory conciliation conference is likely to be listed before a final hearing, and what the client should expect from that process. Note that VCAT ordinarily does not award costs and that legal representation may require leave, and briefly explain why leave might or might not be granted (complexity, value, or one side already being represented).",
     segments: [
       text("APPLICATION - VICTORIAN CIVIL AND ADMINISTRATIVE TRIBUNAL\n\nList: "),
       field("list", "List", "Civil Claims List"),
@@ -161,7 +161,10 @@ export const STATE_PI_CIVIL_PRECEDENTS: PrecedentSeed[] = [
       field("orders", "Orders sought", "An order that the respondent pay the applicant $11,400 being the cost of rectifying the defective work."),
       text("\n\nDOCUMENTS LODGED\n\n"),
       field("documents", "Documents lodged", "1. Application form\n2. Contract and invoices\n3. Independent trade report\n4. Photographs\n5. Correspondence between the parties"),
-      text("\n\nWe note VCAT ordinarily does not award costs and that representation may require leave."),
+      text("\n\nWHAT TO EXPECT NEXT\n\n"),
+      field("next_steps", "What happens next", "We expect the Tribunal will first list this matter for a compulsory conciliation conference, at which a Member will assist the parties to reach an agreed outcome. If that is unsuccessful, the matter will be listed for a final hearing."),
+      text("\n\nREPRESENTATION\n\nWe note VCAT ordinarily does not award costs and that legal representation may require leave of the Tribunal. "),
+      field("leave_position", "Basis on which leave for representation is sought (if applicable)", "Given the technical building evidence involved, we intend to seek leave to represent our client at any hearing."),
     ],
   },
   {
@@ -174,7 +177,7 @@ export const STATE_PI_CIVIL_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["QLD"],
     matterTypes: CIVIL,
     aiInstructions:
-      "Draft a covering letter for a QCAT minor civil dispute application. Identify the parties, the nature of the dispute, the orders sought and the documents lodged. Note that QCAT minor civil disputes are subject to a monetary limit and that parties are generally not legally represented without leave.",
+      "Draft a covering letter for a QCAT minor civil dispute application. Identify the parties, the nature of the dispute, the orders sought and the documents lodged, and confirm the amount claimed is within the current monetary limit for a minor civil dispute (a claim above it must instead go to the Magistrates Court, so this should be checked and stated, not assumed). Note that QCAT will generally first try to resolve the dispute informally at a hearing before a Magistrate or an adjudicator, and that parties are generally not legally represented without leave -- state briefly why leave is or is not being sought.",
     segments: [
       text("APPLICATION - QUEENSLAND CIVIL AND ADMINISTRATIVE TRIBUNAL\n\nMinor civil dispute\n\nApplicant: "),
       field("applicant", "Applicant", "Jane Citizen"),
@@ -184,9 +187,12 @@ export const STATE_PI_CIVIL_PRECEDENTS: PrecedentSeed[] = [
       field("dispute", "Nature of the dispute", "Debt owing for goods supplied and not paid for."),
       text("\n\nAMOUNT CLAIMED\n\n"),
       field("amount", "Amount claimed", "$9,800 plus filing fee"),
+      text("\n\n"),
+      field("monetary_limit_confirmation", "Confirmation the claim is within the monetary limit", "This amount is within the current monetary limit for a minor civil dispute claim for a debt or liquidated demand."),
       text("\n\nDOCUMENTS LODGED\n\n"),
       field("documents", "Documents lodged", "1. Application form\n2. Invoices\n3. Delivery dockets\n4. Letter of demand and proof of service"),
-      text("\n\nWe note parties in a minor civil dispute are generally not legally represented without the Tribunal's leave."),
+      text("\n\nWHAT TO EXPECT\n\nMinor civil disputes are generally resolved at a single hearing before a Magistrate or adjudicator, conducted informally and without strict rules of evidence.\n\nREPRESENTATION\n\nWe note parties in a minor civil dispute are generally not legally represented without the Tribunal's leave. "),
+      field("leave_position", "Basis on which leave for representation is sought (if applicable, or 'Our client does not intend to seek leave to be represented at the hearing')", "Our client does not intend to seek leave to be represented at the hearing and will attend in person."),
     ],
     requiresReview: true,
     reviewNote:

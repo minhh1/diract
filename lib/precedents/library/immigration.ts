@@ -80,7 +80,7 @@ export const IMMIGRATION_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: MIGRATION,
     aiInstructions:
-      "Draft a covering letter for an application to the Administrative Review Tribunal for review of a visa decision. Identify the decision, its date, the applicant, the visa in question, and the grounds on which review is sought. Note that the application is made within the prescribed period. List documents lodged. Warn that ART time limits are strict and generally cannot be extended.",
+      "Draft a covering letter for an application to the Administrative Review Tribunal for review of a visa decision. Identify the decision, its date, the applicant, the visa in question, and the grounds on which review is sought. Note that the application is made within the prescribed period, and state that period expressly (the date it expires) so compliance is transparent, not merely asserted. List documents lodged. Address the applicant's status while the review is on foot -- typically a bridging visa continues or is applied for -- since that is usually the client's most pressing practical concern. Warn that ART time limits are strict and generally cannot be extended.",
     segments: [
       text("APPLICATION FOR REVIEW - ADMINISTRATIVE REVIEW TRIBUNAL\n\nApplicant: "),
       field("applicant", "Applicant", "Priya Sharma"),
@@ -92,7 +92,11 @@ export const IMMIGRATION_PRECEDENTS: PrecedentSeed[] = [
       field("file_reference", "File reference", "TRN 1234567890"),
       text("\n\nGROUNDS FOR REVIEW\n\n"),
       field("grounds", "Grounds for review", "The delegate found the applicant did not meet the English language requirement, having overlooked the PTE Academic result lodged with the application on 14 July 2026. That result satisfies the requirement. The decision proceeded on a factual error apparent on the face of the Department's own file."),
-      text("\n\nThis application is lodged within the prescribed period for review.\n\nDOCUMENTS LODGED\n\n"),
+      text("\n\nThis application is lodged within the prescribed period for review, which expires on "),
+      field("review_deadline", "Date the review period expires", "1 November 2026"),
+      text(".\n\nBRIDGING VISA POSITION\n\n"),
+      field("bridging_visa_position", "Status while the review is on foot", "Lodging this application enlivens the applicant's bridging visa, allowing her to remain lawfully in Australia while the review is determined. We have confirmed her bridging visa conditions with her separately."),
+      text("\n\nDOCUMENTS LODGED\n\n"),
       field("documents", "Documents lodged", "1. Application for review\n2. Copy of the decision record\n3. PTE Academic result dated 14 July 2026 with confirmation of lodgement\n4. Copy of the original visa application"),
       text("\n\nWe request that the Tribunal set aside the decision and substitute a decision granting the visa."),
     ],

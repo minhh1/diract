@@ -86,7 +86,8 @@ export const PROBATE_STATES_PRECEDENTS: PrecedentSeed[] = [
       field("assets_known", "Assets identified so far", "We understand the estate comprises the property at 9 Example Street, Norwood (approximately $860,000) and bank accounts of about $52,000."),
       text("\n\nTHE PROCESS\n\n"),
       field("process_note", "Process detail", "We will prepare the application and your supporting affidavit, and lodge with the Probate Registry. Allow approximately 4 to 8 weeks."),
-      text("\n\nFAMILY PROVISION\n\nAn eligible person may apply for provision from the estate under the Inheritance (Family Provision) Act 1972 (SA). A limitation period applies, running from the grant.\n\nDO NOT DISTRIBUTE TOO EARLY\n\nYou can be personally liable if you distribute and a valid claim is later made. We will confirm when distribution is safe."),
+      text("\n\nFAMILY PROVISION\n\nAn eligible person may apply for provision from the estate under the Inheritance (Family Provision) Act 1972 (SA). A limitation period applies, running from the grant.\n\nNOTICE TO CREDITORS\n\nWe recommend publishing a notice of intended distribution, which gives creditors a fixed period to make a claim and, once that period passes without a claim, protects you from personal liability to a creditor you did not know about.\n\nDO NOT DISTRIBUTE TOO EARLY\n\nYou can be personally liable if you distribute and a valid claim is later made. We will confirm when distribution is safe.\n\nOUR FEES\n\n"),
+      field("fee_estimate", "Fee estimate for the application", "Our estimate for obtaining the grant, exclusive of the Court filing fee and disbursements, is $2,800 to $3,600 plus GST, depending on the complexity of the assets."),
     ],
     requiresReview: true,
     reviewNote:
@@ -108,7 +109,8 @@ export const PROBATE_STATES_PRECEDENTS: PrecedentSeed[] = [
       field("assets_known", "Assets identified so far", "We understand the estate comprises the property at 42 Example Street, Subiaco (approximately $980,000) and bank accounts of about $71,000."),
       text("\n\nTHE PROCESS\n\n"),
       field("process_note", "Process detail", "We will prepare the application, your affidavit and the statement of assets and liabilities for lodgement with the Probate Registry. Allow approximately 4 to 8 weeks."),
-      text("\n\nFAMILY PROVISION\n\nAn eligible person may apply for provision under the Family Provision Act 1972 (WA), within the limitation period running from the grant.\n\nDO NOT DISTRIBUTE TOO EARLY\n\nDistributing before the protective period has run exposes you personally if a claim is made. We will advise when it is safe to distribute."),
+      text("\n\nFAMILY PROVISION\n\nAn eligible person may apply for provision under the Family Provision Act 1972 (WA), within the limitation period running from the grant.\n\nNOTICE TO CREDITORS\n\nWe recommend publishing a notice of intended distribution to give creditors a fixed period to come forward. Once that period passes without a claim, you are protected from personal liability to a creditor you did not know about.\n\nDO NOT DISTRIBUTE TOO EARLY\n\nDistributing before the protective period has run exposes you personally if a claim is made. We will advise when it is safe to distribute.\n\nOUR FEES\n\n"),
+      field("fee_estimate", "Fee estimate for the application", "Our estimate for obtaining the grant, exclusive of the Court filing fee and disbursements, is $2,800 to $3,600 plus GST, depending on the complexity of the assets."),
     ],
     requiresReview: true,
     reviewNote:

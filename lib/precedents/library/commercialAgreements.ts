@@ -117,7 +117,7 @@ export const COMMERCIAL_AGREEMENT_PRECEDENTS: PrecedentSeed[] = [
     documentType: "form",
     matterTypes: COMMERCIAL,
     aiInstructions:
-      "Draft a company resolution. Identify whether it is a directors' resolution or a members' resolution, and whether ordinary or special (a special resolution requires 75% and prior notice). Record the company, the date, those present or the circulating signatories, the resolution itself in operative terms, and any declaration of interest required. Note that a sole director company can resolve by recording the decision, and that resolutions should be entered in the minute book.",
+      "Draft a company resolution. Identify whether it is a directors' resolution or a members' resolution, and whether ordinary or special (a special resolution requires 75% and prior notice, which should be stated if applicable). Record the company, the date, those present or the circulating signatories, the resolution itself in operative terms, and any declaration of interest required. Confirm whether the constitution or a shareholders agreement requires anything beyond a bare majority (unanimous consent, a class consent) for this particular decision, since assuming an ordinary majority suffices when it does not is a common drafting trap. Note that a sole director company can resolve by recording the decision, and that resolutions should be entered in the minute book and any register of members' or directors' resolutions kept up to date.",
     segments: [
       text("MINUTES OF MEETING / CIRCULATING RESOLUTION\n\nCompany: "),
       field("company", "Company", "Example Holdings Pty Ltd (ACN 000 000 000)"),
@@ -129,12 +129,15 @@ export const COMMERCIAL_AGREEMENT_PRECEDENTS: PrecedentSeed[] = [
       field("present", "Present or signatories", "John Citizen (Director)\nMary Citizen (Director)"),
       text("\n\nDECLARATIONS OF INTEREST\n\n"),
       field("interests", "Declarations of interest (or 'Nil')", "John Citizen declared an interest in the transaction the subject of the resolution below, being a director of the counterparty. The remaining director consented to his participation."),
+      text("\n\n"),
+      field("threshold_check", "Confirmation of the required voting threshold and that it is met", "The constitution requires only a simple majority of directors for this decision, and no shareholders agreement provision imposes a higher threshold. A simple majority is satisfied by the signatories below."),
       text("\n\nRESOLVED\n\n"),
       field("resolution", "The resolution", "THAT the Company enter into a loan agreement with Example Bank Limited for a facility of $750,000 on the terms of the draft provided, and THAT any one director be authorised to execute the loan agreement and all associated security documents on behalf of the Company."),
       text("\n\nSigned: ____________________________\n"),
       field("signatory1", "Signatory 1", "John Citizen, Director"),
       text("\n\nSigned: ____________________________\n"),
       field("signatory2", "Signatory 2", "Mary Citizen, Director"),
+      text("\n\nThis resolution is to be entered in the Company's minute book."),
     ],
   },
 ];

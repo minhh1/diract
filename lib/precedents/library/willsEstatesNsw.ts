@@ -158,7 +158,7 @@ export const WILLS_ESTATES_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: WILLS,
     aiInstructions:
-      "Draft a letter notifying an institution of a death and requesting information. Ask for the balance as at the date of death, details of any accrued interest, details of any liabilities, confirmation of any nominated beneficiary, and the institution's requirements for release of funds. Ask that the account be frozen against further withdrawals but that direct debits for insurance be maintained if relevant.",
+      "Draft a letter notifying an institution of a death and requesting information. Ask for the balance as at the date of death, details of any accrued interest, details of any liabilities, confirmation of any nominated beneficiary, whether the institution will release small amounts without a grant of probate (many have a small estate threshold, which can matter for early expenses like the funeral), and the institution's requirements for release of funds. Ask that the account be frozen against further withdrawals but that direct debits for insurance be maintained if relevant, and ask the institution to confirm receipt and provide a reference number for follow-up.",
     segments: [
       text("NOTIFICATION OF DEATH\n\nWe act for the executor of the estate of "),
       field("deceased", "Deceased", "Robert Citizen"),
@@ -168,9 +168,9 @@ export const WILLS_ESTATES_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("date_of_death", "Date of death", "3 July 2026"),
       text(".\n\nWe enclose a certified copy of the death certificate.\n\nAccount/reference: "),
       field("account_reference", "Account or reference", "Account 1234 5678"),
-      text("\n\nPlease provide:\n\n1. the balance as at the date of death, and any interest accrued to that date;\n2. details of any liabilities owing;\n3. confirmation of any nominated beneficiary or binding death benefit nomination;\n4. your requirements for release of the funds to the estate.\n\nPlease place a stop on any further withdrawals from the account, but "),
+      text("\n\nPlease provide:\n\n1. the balance as at the date of death, and any interest accrued to that date;\n2. details of any liabilities owing;\n3. confirmation of any nominated beneficiary or binding death benefit nomination;\n4. your requirements for release of the funds to the estate, including whether you will release funds without production of a grant of probate given the amount involved.\n\nPlease place a stop on any further withdrawals from the account, but "),
       field("direct_debits", "Direct debit instruction", "please continue to honour the direct debit for the building insurance on the property"),
-      text(".\n\nWe will provide a copy of the grant of probate once it issues."),
+      text(".\n\nGiven there may be immediate expenses such as the funeral to meet, please also let us know if an advance can be released before the grant issues.\n\nPlease confirm receipt of this notification and provide a reference for our follow-up. We will provide a copy of the grant of probate once it issues."),
     ],
   },
   {

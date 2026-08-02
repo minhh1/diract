@@ -62,7 +62,7 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CIVIL,
     aiInstructions:
-      "Draft a covering letter for an NCAT application. Identify the division, the parties, the nature of the dispute, the orders sought, and list the documents lodged. Keep it brief and administrative.",
+      "Draft a covering letter for an NCAT application. Identify the division, the parties, the nature of the dispute, the orders sought, and list the documents lodged. Note the filing fee paid and, if the party is legally represented, that representation in the Consumer and Commercial Division does not require leave below the relevant threshold but may above it. Briefly note what the applicant should expect next (typically a first directions hearing before any final hearing). Keep it otherwise brief and administrative.",
     segments: [
       text("APPLICATION - NSW CIVIL AND ADMINISTRATIVE TRIBUNAL\n\nDivision: "),
       field("division", "Division", "Consumer and Commercial Division"),
@@ -76,6 +76,10 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("orders_sought", "Orders sought", "1. An order that the respondent rectify the defective waterproofing and tiling, or alternatively pay the applicant $14,200 being the cost of rectification.\n2. An order for the refund of $2,800 paid for work not performed."),
       text("\n\nDOCUMENTS LODGED\n\n"),
       field("documents", "Documents lodged", "1. Application form\n2. Building contract dated 3 March 2026\n3. Invoices and proof of payment\n4. Independent building report dated 12 August 2026\n5. Photographs of the defective work\n6. Correspondence between the parties"),
+      text("\n\nWHAT TO EXPECT\n\n"),
+      field("next_steps", "What happens next", "We expect the Tribunal will first list this matter for a directions hearing, at which orders may be made for evidence to be filed before a final hearing date is set."),
+      text("\n\nREPRESENTATION\n\n"),
+      field("representation_note", "Representation position", "As the amount in dispute is above the threshold at which representation is available as of right, our client's representation before the Tribunal does not require leave."),
     ],
   },
   {
@@ -98,7 +102,7 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("proceedings_number", "Proceedings number", "2026/00123456"),
       text("\nAmount claimed: "),
       field("amount", "Amount claimed", "$18,450.00 plus interest and costs"),
-      text("\n\nWHAT YOU MUST DO\n\nIf you dispute the claim, you must file a Defence within the period stated in the Statement of Claim. If you do not, our client may enter default judgment against you without further notice to you.\n\nA judgment may affect your credit rating and can be enforced against your property, wages or bank accounts.\n\nIF YOU WISH TO RESOLVE THIS\n\nThe matter can still be resolved. If you pay the amount claimed, or wish to discuss a payment arrangement, contact us promptly."),
+      text("\n\nWHAT YOU MUST DO\n\nIf you dispute the claim, you must file a Defence within the period stated in the Statement of Claim, and serve a copy on us. If you do not, our client may enter default judgment against you without further notice to you.\n\nA judgment may affect your credit rating and can be enforced against your property, wages or bank accounts. It also generally attracts interest until paid.\n\nIF YOU DISPUTE ONLY PART OF THE CLAIM\n\nIf you accept some of the claim but dispute the rest, you should still file a Defence addressing each part -- silence on any part will generally be treated as an admission of it.\n\nIF YOU WISH TO RESOLVE THIS\n\nThe matter can still be resolved. If you pay the amount claimed, or wish to discuss a payment arrangement, contact us promptly -- doing so does not require you to file a Defence if agreement is reached before the defence period expires."),
     ],
     requiresReview: true,
     reviewNote:
@@ -131,8 +135,13 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("service_date", "Date served", "20 August 2026"),
       text(" by "),
       field("service_method", "Method of service", "post to the defendant's registered office, in accordance with s 109X of the Corporations Act 2001 (Cth)"),
-      text(".\n\nThe time for filing a defence has expired and no defence has been filed.\n\nJUDGMENT SOUGHT\n\n"),
+      text(".\n\nThe time for filing a defence has expired and no defence has been filed.\n\n"),
+      field("search_confirmation", "Confirmation the court file was checked immediately before this request", "The court file was checked on the date of this request and confirms no defence, notice of motion or other document has been filed by the defendant."),
+      text("\n\nJUDGMENT SOUGHT\n\n"),
       field("calculation", "Judgment calculation", "Liquidated claim                $18,450.00\nInterest to date of judgment      $612.40\nFiling and service costs          $325.00\nProfessional costs                $792.00\n                              -------------\nTOTAL                          $20,179.40"),
+      text("\n\nInterest is calculated at "),
+      field("interest_basis", "Basis for interest calculation", "the rate prescribed by the Uniform Civil Procedure Rules from the date the cause of action arose to the date of this request"),
+      text(".\n\nOnce judgment is entered, we will write to the client separately with enforcement options if the judgment is not satisfied voluntarily."),
     ],
   },
   {
@@ -200,7 +209,7 @@ export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CRIMINAL,
     aiInstructions:
-      "Draft a letter to police prosecutors requesting service of the brief of evidence. Identify the client, the charges, the court and the next return date, note that a plea of not guilty has been entered or is contemplated, and request the brief together with any relevant material including custody records, CCTV, body-worn video and any material that may assist the defence. Ask for it before the next mention.",
+      "Draft a letter to police prosecutors requesting service of the brief of evidence. Identify the client, the charges, the court and the next return date, note that a plea of not guilty has been entered or is contemplated, and request the brief together with any relevant material including custody records, CCTV, body-worn video and any material that may assist the defence. Remind prosecutors of their continuing duty of disclosure, not just at first service. Ask for it before the next mention, and note what will be raised with the Court if it is not served in time.",
     segments: [
       text("REQUEST FOR BRIEF OF EVIDENCE\n\nAccused: "),
       field("accused", "Accused", "John Citizen, date of birth 12 May 1994"),
@@ -212,7 +221,7 @@ export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("reference", "CAN or court reference", "H12345678"),
       text("\n\nWe act for the accused. "),
       field("plea_position", "Plea position", "A plea of not guilty has been entered and the matter has been adjourned for service of the brief."),
-      text("\n\nPlease serve the brief of evidence, including:\n\n1. all statements of witnesses the prosecution intends to call;\n2. the accused's criminal history;\n3. any recorded interview with the accused and a transcript;\n4. custody records;\n5. any CCTV, body-worn video or other electronic material;\n6. any photographs, medical records or expert reports relied upon;\n7. any material in the prosecution's possession that may assist the defence.\n\nPlease serve the brief in accordance with the Court's directions and in any event before the next mention."),
+      text("\n\nPlease serve the brief of evidence, including:\n\n1. all statements of witnesses the prosecution intends to call;\n2. the accused's criminal history;\n3. any recorded interview with the accused and a transcript;\n4. custody records;\n5. any CCTV, body-worn video or other electronic material;\n6. any photographs, medical records or expert reports relied upon;\n7. any material in the prosecution's possession that may assist the defence.\n\nWe also remind the prosecution of its continuing duty of disclosure -- if further relevant material comes into the prosecution's possession after the brief is served, including material that may assist the defence, it must be disclosed as it arises rather than withheld until requested again.\n\nPlease serve the brief in accordance with the Court's directions and in any event before the next mention. If the brief is not served in time, we will raise the delay with the Court at that mention and may seek an order or a further adjournment on that basis."),
     ],
   },
   {

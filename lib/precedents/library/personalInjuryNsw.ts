@@ -137,7 +137,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: PI,
     aiInstructions:
-      "Draft a request for clinical records from a treating doctor or hospital. Enclose the client's signed authority, identify the patient and the relevant period, specify what is sought (clinical notes, imaging and reports, referrals, correspondence, and prescribing records), and ask for an itemised account. Ask for records covering a period before the injury as well, since the other side will obtain them and prior history is better known early than discovered at hearing.",
+      "Draft a request for clinical records from a treating doctor or hospital. Enclose the client's signed authority, identify the patient and the relevant period, specify what is sought (clinical notes, imaging and reports, referrals, correspondence, and prescribing records), and ask for an itemised account. Ask for records covering a period before the injury as well, since the other side will obtain them and prior history is better known early than discovered at hearing. Give a reasonable deadline and note what will happen if the request goes unanswered (a follow-up, and ultimately a subpoena if the matter proceeds to litigation), and specify the format required (electronic copy preferred, to avoid delay and cost of physical copying).",
     segments: [
       text("REQUEST FOR MEDICAL RECORDS\n\nPatient: "),
       field("patient", "Patient", "Jane Citizen, date of birth 4 April 1988"),
@@ -147,7 +147,9 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("period", "Period of records sought", "1 January 2021 to date"),
       text(", including:\n\n1. all clinical notes and consultation records;\n2. all imaging and radiology reports;\n3. all specialist referrals and reports received;\n4. all correspondence relating to the patient;\n5. prescribing and medication records;\n6. any certificates of capacity or medical certificates issued.\n\n"),
       field("specific_request", "Any specific request", "We are particularly interested in any records relating to prior lower back complaints."),
-      text("\n\nPlease provide your itemised account with the records and we will attend to payment promptly."),
+      text("\n\nFORMAT AND TIMEFRAME\n\nWe would be grateful to receive the records electronically, by secure email or upload, in preference to physical copies. We would appreciate receiving them within "),
+      field("timeframe", "Timeframe requested", "21 days"),
+      text(". If we do not hear from you within that time we will follow up, and if the records are still not provided we may need to obtain them by subpoena if proceedings become necessary.\n\nPlease provide your itemised account with the records and we will attend to payment promptly."),
     ],
   },
   {
@@ -187,7 +189,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: PI,
     aiInstructions:
-      "Draft a letter warning the client of an approaching limitation period. State the date the period expires, what must be done before it, what happens if it is missed (the claim is generally lost entirely and an extension requires the Court's permission which is not readily given), and what instructions are needed and by when. This letter protects both the client and the firm -- it must be unambiguous, and it should be sent well before the deadline, not on its eve.",
+      "Draft a letter warning the client of an approaching limitation period. State the date the period expires, what must be done before it, what happens if it is missed (the claim is generally lost entirely and an extension requires the Court's permission which is not readily given), what instructions are needed and by when, and how the client should confirm receipt of the warning (so there is a clear record they were told, protecting both client and firm). Note what the firm will do if instructions are not received in time -- typically that the firm cannot act to protect the claim without them, and may need to cease acting if the deadline is genuinely at risk. This letter protects both the client and the firm -- it must be unambiguous, and it should be sent well before the deadline, not on its eve.",
     segments: [
       text("URGENT - LIMITATION PERIOD\n\nWe write to put you on clear notice of a deadline affecting your claim.\n\nYOUR LIMITATION PERIOD EXPIRES ON: "),
       field("expiry_date", "Limitation expiry date", "14 June 2029"),
@@ -195,7 +197,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("required_steps", "Steps required before expiry", "1. Completion of the medico-legal assessment.\n2. Resolution of the statutory benefits dispute currently before the Personal Injury Commission.\n3. Your instructions to commence proceedings."),
       text("\n\nWHAT WE NEED FROM YOU\n\n"),
       field("instructions_needed", "Instructions needed and by when", "Please confirm your instructions to commence proceedings by 14 March 2029 at the latest, so that we have adequate time to prepare and file."),
-      text("\n\nIf we do not receive your instructions in time, we may be unable to protect your position.\n\nPlease telephone us to discuss if anything about this letter is unclear."),
+      text("\n\nIF WE DO NOT HEAR FROM YOU\n\nIf we do not receive clear instructions by the date above, we will be unable to protect your position and, if the deadline remains at risk, may need to formally cease acting for you so that you have the opportunity to instruct another firm in time.\n\nPLEASE CONFIRM RECEIPT\n\nPlease confirm in writing (by email is sufficient) that you have received and understood this letter, so that we both have a clear record of it.\n\nPlease telephone us to discuss if anything about this letter is unclear."),
     ],
     requiresReview: true,
     reviewNote:
@@ -211,7 +213,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: PI,
     aiInstructions:
-      "Draft a covering letter for an application to the Personal Injury Commission. Identify the division (Motor Accidents or Workers Compensation), the nature of the dispute, the decision under challenge and its date, the outcome sought, and list the documents lodged. Keep it administrative and precise -- the substance belongs in the application and supporting statements.",
+      "Draft a covering letter for an application to the Personal Injury Commission. Identify the division (Motor Accidents or Workers Compensation), the nature of the dispute, the decision under challenge and its date, the outcome sought, list the documents lodged, and confirm the application is within the time limit for disputing that decision (stating the date by which it had to be lodged). Note whether the matter will proceed to the Commission's informal telephone conference / mediation stage or straight to a merit review, since that affects what the claimant should expect next. Keep it otherwise administrative and precise -- the substance belongs in the application and supporting statements.",
     segments: [
       text("APPLICATION TO THE PERSONAL INJURY COMMISSION\n\nDivision: "),
       field("division", "Division", "Motor Accidents Division"),
@@ -229,6 +231,10 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("outcome_sought", "Outcome sought", "A determination that the claimant remains entitled to weekly statutory benefits, and that the proposed course of 12 physiotherapy sessions is reasonable and necessary treatment."),
       text("\n\nDOCUMENTS LODGED\n\n"),
       field("documents", "Documents lodged", "1. Application form\n2. Claimant's statement\n3. Certificates of capacity\n4. GP clinical records\n5. MRI report dated 2 August 2026\n6. Internal review decision dated 18 September 2026"),
+      text("\n\nTIMELINESS\n\nThis application is lodged within the time limit for disputing the internal review decision, which required lodgement by "),
+      field("deadline", "Deadline for lodging this dispute", "18 December 2026"),
+      text(".\n\nNEXT STEPS\n\n"),
+      field("next_steps", "What happens next in the Commission process", "We expect the Commission will first list this dispute for an informal telephone conference in an attempt to resolve it by agreement. If that is unsuccessful, it will proceed to assessment by a Member. We will keep you informed of each step."),
     ],
     requiresReview: true,
     reviewNote:

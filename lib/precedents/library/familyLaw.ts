@@ -121,13 +121,15 @@ export const FAMILY_LAW_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a covering letter enclosing an Application for Consent Orders and draft orders. Confirm the orders reflect the agreement reached, explain that the Court must be satisfied the orders are just and equitable (property) or in the children's best interests (parenting) before making them, ask for signing and return, and note who will file. Recommend the other party obtain independent legal advice if unrepresented.",
+      "Draft a covering letter enclosing an Application for Consent Orders and draft orders. Confirm the orders reflect the agreement reached, explain that the Court must be satisfied the orders are just and equitable (property) or in the children's best interests (parenting) before making them, note the filing fee and who will pay it, ask for signing and return by a date, and note who will file. Recommend the other party obtain independent legal advice if unrepresented, and note that the orders are not effective until actually made by the Court, so nothing should be implemented (transfers, refinancing) before that occurs unless expressly agreed.",
     segments: [
       text("We enclose an Application for Consent Orders and draft Orders reflecting the agreement reached between the parties.\n\nSUMMARY OF THE ORDERS\n\n"),
       field("orders_summary", "Summary of the orders", "1. Our client retains the former matrimonial home and pays your client $128,000 within 90 days.\n2. Each party retains their own superannuation.\n3. The children live with our client and spend time with your client on alternate weekends and half of all school holidays."),
+      text("\n\nFILING FEE\n\n"),
+      field("filing_fee", "Filing fee and who pays it", "The Court filing fee is payable on lodgement. Our client will pay it and it has been factored into the agreed division."),
       text("\n\nPlease arrange for your client to sign the Application and the Orders where indicated and return them to us by "),
       field("return_by", "Return by", "20 September 2026"),
-      text(".\n\nWe will then file the documents with the Court. The Court must be satisfied that property orders are just and equitable, and that parenting orders are in the children's best interests, before making them.\n\n"),
+      text(".\n\nWe will then file the documents with the Court. The Court must be satisfied that property orders are just and equitable, and that parenting orders are in the children's best interests, before making them.\n\nPlease note the orders are not binding until the Court actually makes them. Nothing should be implemented -- transfers signed, refinancing arranged, or superannuation split -- before that occurs, unless the parties expressly agree otherwise in writing.\n\n"),
       field("ilp_note", "Note if the other party is unrepresented", "If your client is not legally represented, we strongly recommend they obtain independent legal advice before signing."),
     ],
   },
