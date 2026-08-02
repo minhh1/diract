@@ -26,6 +26,14 @@ const BODY_SIZE = 20;
 const HEADING_SIZE = 24;
 const FONT = "Arial";
 
+// Twips. A4 portrait less 1" margins is about 9026 twips of text width.
+// Column widths must be given explicitly and in DXA: with percentage widths
+// the library emits <w:gridCol w:w="100"/>, i.e. columns 100 twips wide, and
+// Word will not open the file.
+const LABEL_WIDTH = 3070;
+const VALUE_WIDTH = 5956;
+const TABLE_WIDTH = LABEL_WIDTH + VALUE_WIDTH;
+
 function run(text: string, bold = false, size = BODY_SIZE) {
   return new TextRun({ text, bold, size, font: FONT });
 }
@@ -52,22 +60,23 @@ function headingRow(text: string): TableRow {
 function kvRow(label: string, value: string): TableRow {
   const cell = (children: Paragraph[], width: number) =>
     new TableCell({
-      width: { size: width, type: WidthType.PERCENTAGE },
+      width: { size: width, type: WidthType.DXA },
       margins: { top: 60, bottom: 60, left: 100, right: 100 },
       borders: { top: NO_BORDER, bottom: HAIRLINE, left: NO_BORDER, right: NO_BORDER },
       children,
     });
   return new TableRow({
     children: [
-      cell([new Paragraph({ children: [run(label)] })], 34),
-      cell([new Paragraph({ children: [run(value)] })], 66),
+      cell([new Paragraph({ children: [run(label)] })], LABEL_WIDTH),
+      cell([new Paragraph({ children: [run(value)] })], VALUE_WIDTH),
     ],
   });
 }
 
 function buildTable(rows: TableRow[]): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: TABLE_WIDTH, type: WidthType.DXA },
+    columnWidths: [LABEL_WIDTH, VALUE_WIDTH],
     rows,
   });
 }
