@@ -19,6 +19,7 @@ import {
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
 import { suggestAutoFill, type BindableField } from "@/lib/precedents/suggestAutoFill";
 import { useCompany } from "@/components/CompanyContext";
+import { isFormSection, formLabelPrefix } from "@/lib/precedents/courtFormLayout";
 
 interface Precedent {
   id: string;
@@ -345,6 +346,34 @@ function isHeading(line: Inline[]): boolean {
 
 // Tight padding: a wider chip leaves a visible gap before the following full
 // stop, which reads as a typo in something meant to show layout.
+/** The line as plain text, with fields standing in as their label. */
+function linePlainText(line: Inline[]): string {
+  return line.map(p => (p.kind === "text" ? p.text : p.seg.label)).join("").trim();
+}
+
+/**
+ * Everything after the first colon, keeping field chips intact -- the value
+ * side of a form's label/value row.
+ */
+function renderValueAfterColon(line: Inline[]) {
+  const out: React.ReactNode[] = [];
+  let seenColon = false;
+  line.forEach((p, j) => {
+    if (p.kind === "field") {
+      if (seenColon) out.push(<FieldChip key={j} seg={p.seg} />);
+      return;
+    }
+    if (seenColon) { out.push(<span key={j}>{p.text}</span>); return; }
+    const idx = p.text.indexOf(":");
+    if (idx >= 0) {
+      seenColon = true;
+      const rest = p.text.slice(idx + 1);
+      if (rest.trim()) out.push(<span key={j}>{rest.trimStart()}</span>);
+    }
+  });
+  return out;
+}
+
 function FieldChip({ seg }: { seg: Extract<BodyTemplateSegment, { type: "field" }> }) {
   return (
     <span
@@ -463,6 +492,31 @@ function DocumentPreview({
       {lines.map((line, i) => {
         // A blank line is paragraph spacing, not an empty paragraph.
         if (!line.length) return <div key={i} style={{ height: "10pt" }} />;
+
+        // Court documents are laid out as the approved forms are -- shaded
+        // section bars and two-column label/value rows -- using the same
+        // classification the .docx renderer uses, so the preview and the
+        // downloaded file agree. See lib/precedents/courtFormLayout.ts.
+        if (!usesLetterhead) {
+          const plain = linePlainText(line);
+          if (isFormSection(plain)) {
+            return (
+              <div key={i} className="bg-slate-200/70 border border-slate-300 px-3 py-1.5 mt-4 mb-2">
+                <span style={{ fontSize: "12pt", fontWeight: 700 }}>{plain}</span>
+              </div>
+            );
+          }
+          const label = formLabelPrefix(plain);
+          if (label) {
+            return (
+              <div key={i} className="flex border-b border-slate-200">
+                <div className="w-1/3 shrink-0 px-3 py-1.5">{label}</div>
+                <div className="flex-1 px-3 py-1.5">{renderValueAfterColon(line)}</div>
+              </div>
+            );
+          }
+        }
+
         const heading = isHeading(line);
         return (
           <p
