@@ -3,7 +3,7 @@
 // Eliminates duplicate auth calls in Sidebar + GenericMasterTable.
 "use client";
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useLayoutEffect, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache, clearShellCache } from "@/lib/shellCache";
 import { resolveCompanyBootstrap } from "@/lib/companyBootstrap";
@@ -96,21 +96,54 @@ interface CachedCompanyState {
 export const COMPANY_CACHE_KEY = "company-context";
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
-  const [cachedBoot] = useState<CachedCompanyState | null>(() => readShellCache<CachedCompanyState>(COMPANY_CACHE_KEY));
-  const [companyId, setCompanyId] = useState<string | null>(cachedBoot?.companyId ?? null);
-  const [companyName, setCompanyName] = useState<string | null>(cachedBoot?.companyName ?? null);
-  const [companyType, setCompanyType] = useState<string | null>(cachedBoot?.companyType ?? null);
-  const [userId, setUserId] = useState<string | null>(cachedBoot?.userId ?? null);
-  const [userEmail, setUserEmail] = useState<string | null>(cachedBoot?.userEmail ?? null);
-  const [isAdmin, setIsAdmin] = useState(cachedBoot?.isAdmin ?? false);
-  const [isSiteAdmin, setIsSiteAdmin] = useState(cachedBoot?.isSiteAdmin ?? false);
-  const [myTeamIds, setMyTeamIds] = useState<string[]>(cachedBoot?.myTeamIds ?? []);
-  const [ledTeamIds, setLedTeamIds] = useState<string[]>(cachedBoot?.ledTeamIds ?? []);
-  const [loading, setLoading] = useState(!cachedBoot);
-  const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>(cachedBoot?.tableLabelOverrides ?? {});
-  const [disabledSystemTables, setDisabledSystemTables] = useState<DisabledSystemTables>(cachedBoot?.disabledSystemTables ?? {});
-  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(cachedBoot?.invoiceSettings ?? emptyInvoiceSettings());
-  const [logoUrl, setLogoUrl] = useState<string | null>(cachedBoot?.logoUrl ?? null);
+  // Every field below starts at its SSR-safe default -- never read from
+  // localStorage during the initial render. readShellCache depends on
+  // `window`, which doesn't exist during SSR but does exist by the time the
+  // client hydrates, so seeding useState from it directly (as this used to)
+  // made the client's very first render already diverge from the
+  // server-rendered HTML -- a hydration mismatch React can only resolve by
+  // discarding and re-rendering the whole tree client-side. Applying the
+  // cache in the layout effect below instead keeps that first render
+  // identical on both sides, and still lands before the browser paints, so a
+  // repeat visit still looks instant -- there's just one throwaway render in
+  // between that nobody sees.
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [companyType, setCompanyType] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isSiteAdmin, setIsSiteAdmin] = useState(false);
+  const [myTeamIds, setMyTeamIds] = useState<string[]>([]);
+  const [ledTeamIds, setLedTeamIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tableLabelOverrides, setTableLabelOverrides] = useState<TableLabelOverrides>({});
+  const [disabledSystemTables, setDisabledSystemTables] = useState<DisabledSystemTables>({});
+  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>(emptyInvoiceSettings());
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  // Runs once, synchronously, before the browser paints -- fires before the
+  // bootstrap effect below in the same commit, so a cached identity is
+  // already showing by the time that effect's network round trip resolves
+  // and (silently) corrects it.
+  useLayoutEffect(() => {
+    const cachedBoot = readShellCache<CachedCompanyState>(COMPANY_CACHE_KEY);
+    if (!cachedBoot) return;
+    setCompanyId(cachedBoot.companyId);
+    setCompanyName(cachedBoot.companyName);
+    setCompanyType(cachedBoot.companyType);
+    setUserId(cachedBoot.userId);
+    setUserEmail(cachedBoot.userEmail);
+    setIsAdmin(cachedBoot.isAdmin);
+    setIsSiteAdmin(cachedBoot.isSiteAdmin);
+    setMyTeamIds(cachedBoot.myTeamIds);
+    setLedTeamIds(cachedBoot.ledTeamIds);
+    setTableLabelOverrides(cachedBoot.tableLabelOverrides);
+    setDisabledSystemTables(cachedBoot.disabledSystemTables);
+    setInvoiceSettings(cachedBoot.invoiceSettings);
+    setLogoUrl(cachedBoot.logoUrl);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
