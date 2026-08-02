@@ -580,4 +580,179 @@ export const COURT_NSW_UCPR_PRECEDENTS: PrecedentSeed[] = [
       text("\n\nISSUED BY THE COURT\n\nDate of issue: ______________________________\n\nSignature / seal of the court: ______________________________"),
     ],
   },
+
+  {
+    key: "court.nsw.ucpr.form_77_notice_of_acting",
+    name: "Notice of Change / Appointment of Solicitor (NSW UCPR Form 77)",
+    description: "Notice that a party has appointed this firm, or changed solicitors, in existing proceedings.",
+    category: "Litigation",
+    subcategory: "Conduct of proceedings",
+    documentType: "court_document",
+    jurisdictions: NSW,
+    matterTypes: CIVIL,
+    requiresReview: true,
+    reviewNote: REVIEW_FORM("UCPR Form 77", "version 2") +
+      " The form serves two different purposes -- change of solicitor where the party had one, appointment where they acted in person. Delete the branch that does not apply; filing both is a common error.",
+    aiInstructions:
+      "A short procedural form. The only judgment involved is which branch applies: CHANGE OF SOLICITOR where the party already had a solicitor on the record, APPOINTMENT OF SOLICITOR where they were acting in person. Filing it changes the address for service, so confirm the new address is in NSW unless an exception in UCPR 4.5(3) applies, and serve the notice on every other active party.",
+    segments: [
+      ...ucprShell({
+        formLine: "Form 77 (version 2)\nUCPR 7.26 and 7.28",
+        heading: "NOTICE OF CHANGE OF SOLICITOR / APPOINTMENT OF SOLICITOR",
+        filedForRole: "plaintiff",
+      }),
+      text(
+        "\n\n[Delete whichever does not apply.]\n\nCHANGE OF SOLICITOR\n\n"
+      ),
+      field("party_name", "Party and role", "ACME Pty Ltd, plaintiff"),
+      text(" has appointed "),
+      field("new_solicitor", "New solicitor and firm", "Jane Smith, Huynh Lawyers"),
+      text(" to act as its solicitor in these proceedings in the place of "),
+      field("former_solicitor", "Former solicitor and firm", "John Brown, Brown & Co"),
+      text(".\n\nAPPOINTMENT OF SOLICITOR\n\n"),
+      field("party_name_2", "Party and role", "ACME Pty Ltd, plaintiff"),
+      text(" has appointed "),
+      field("new_solicitor_2", "Solicitor and firm", "Jane Smith, Huynh Lawyers"),
+      text(
+        " to act as its solicitor in these proceedings.\n\nSIGNATURE\n\n" +
+        "[If acting for a plaintiff or cross-claimant, include:] I have advised the plaintiff that court fees may be payable during these proceedings. These fees may include a hearing allocation fee.\n\n" +
+        "Signature: ______________________________\n\nCapacity: "
+      ),
+      field("signing_capacity", "Capacity", "Solicitor on record"),
+      text("\nDate of signature: "),
+      field("signature_date", "Date of signature", "12 August 2026"),
+    ],
+  },
+
+  {
+    key: "court.nsw.ucpr.form_41_affidavit_of_service",
+    name: "Affidavit of Service (NSW UCPR Form 41)",
+    description: "Proof of service in the approved form, deposing to who was served, when, where and how.",
+    category: "Litigation",
+    subcategory: "Service",
+    documentType: "court_document",
+    jurisdictions: NSW,
+    matterTypes: CIVIL,
+    requiresReview: true,
+    reviewNote: REVIEW_FORM("UCPR Form 41", "version 3") +
+      " Default judgment depends on this affidavit, so it must state the date, place, method and the identity of the person served with precision -- a defective affidavit of service is the commonest reason a default judgment application is refused, and a judgment entered on one can be set aside.",
+    aiInstructions:
+      "Depose to service as a fact observed, not as a conclusion. State who served, that the deponent is over 16, the exact date and place, the identity of the person served and how that identity was established, the documents served (describing a filed document by its name and filing date), and the method of service. Where the person served said anything at the time, record it. Do not write 'service was effected in accordance with the rules' -- that is the conclusion the court draws from the facts deposed to.",
+    segments: [
+      ...ucprShell({
+        formLine: "Form 41 (version 3)\nUCPR 35.8",
+        heading: "AFFIDAVIT OF SERVICE",
+        filedForRole: "plaintiff",
+      }),
+      text("\n\nAFFIDAVIT\n\nName: "),
+      field("deponent_name", "Name of deponent", "Peter Walsh"),
+      text("\nAddress: "),
+      field("deponent_address", "Address", "Level 1, 100 George Street, Sydney NSW 2000"),
+      text("\nOccupation: "),
+      field("deponent_occupation", "Occupation", "Law clerk"),
+      text("\nDate: "),
+      field("affidavit_date", "Date", "12 August 2026"),
+      text("\n\nI say on oath / affirm:\n\n1. I am "),
+      field("deponent_role", "Role of deponent", "a law clerk employed by the solicitors for the plaintiff"),
+      text(".\n\n2. I am over the age of 16 years.\n\n3. On "),
+      field("service_date", "Date of service", "5 August 2026"),
+      text(" at "),
+      field("service_place", "Place of service", "10 Smith Street, Parramatta NSW 2150"),
+      text(", I served "),
+      field("person_served", "Name of person served", "John Citizen"),
+      text(" with the following documents: "),
+      field("documents_served", "Documents served", "Statement of claim filed 1 August 2026"),
+      text(".\n\n4. I served the documents by "),
+      field("method", "Method of service", "handing them to him personally, having first confirmed his identity by asking him whether he was John Citizen, to which he answered yes"),
+      text(".\n\n5. At the time of service "),
+      field("what_was_said", "What the person served said, if anything (otherwise delete)", "he said words to the effect: \"I have been expecting this.\""),
+      text("."),
+      ...AFFIDAVIT_JURAT,
+    ],
+  },
+
+  {
+    key: "court.nsw.ucpr.form_38_default_judgment",
+    name: "Default Judgment - Liquidated Claim (NSW UCPR Form 38)",
+    description: "Notice of motion and supporting affidavit for default judgment on a liquidated claim, dealt with in the absence of the parties.",
+    category: "Litigation",
+    subcategory: "Enforcement",
+    documentType: "court_document",
+    jurisdictions: NSW,
+    matterTypes: ["Litigation", "Debt Recovery"],
+    requiresReview: true,
+    reviewNote: REVIEW_FORM("UCPR Form 38", "version 4") +
+      " Only for a liquidated claim: use Form 39 for unliquidated damages and Form 36 for possession of land. Judgment cannot be entered before the time for filing a defence has expired, and the affidavit must account for every payment or credit since the proceedings began.",
+    aiInstructions:
+      "Two documents in one: the notice of motion and the affidavit in support. The affidavit is where applications fail. It must identify the source of the deponent's knowledge of the debt, prove service on each defendant by reference to the affidavit of service, state the amount owing at commencement, and then account for anything that has happened since -- payments received or credits accrued must be deducted and the reduced figure stated. Interest must be identified as either the prescribed rate under UCPR 6.12(8) or a contractual rate, and the contractual term relied on identified. Do not claim costs at a figure the scale does not support.",
+    segments: [
+      ...ucprShell({
+        formLine: "Form 38 (version 4)\nUCPR 16.3 and 16.6",
+        heading: "NOTICE OF MOTION - DEFAULT JUDGMENT FOR LIQUIDATED CLAIM",
+        filedForRole: "plaintiff",
+      }),
+      text("\n\nPERSON AFFECTED BY ORDERS SOUGHT\n\n"),
+      field("person_affected", "Defendant and role", "John Citizen, defendant"),
+      text(
+        "\n\nHEARING DETAILS\n\nThis motion is to be dealt with in the absence of the parties.\n\n" +
+        "ORDERS SOUGHT\n\n1. Judgment for the plaintiff against the defendant for $"
+      ),
+      field("judgment_amount", "Judgment amount", "262,456.00"),
+      text(
+        ".\n2. The defendant pay the plaintiff's costs.\n\n" +
+        "SIGNATURE\n\nSignature of legal representative: ______________________________\n\nCapacity: "
+      ),
+      field("signing_capacity", "Capacity", "Solicitor on record"),
+      text("\nDate of signature: "),
+      field("signature_date", "Date of signature", "12 August 2026"),
+      text("\n\nAFFIDAVIT\n\nName: "),
+      field("deponent_name", "Name of deponent", "Sarah Nguyen"),
+      text("\nAddress: "),
+      field("deponent_address", "Address", "Level 3, 20 Market Street, Sydney NSW 2000"),
+      text("\nOccupation: "),
+      field("deponent_occupation", "Occupation", "Credit manager"),
+      text("\nDate: "),
+      field("affidavit_date", "Date", "12 August 2026"),
+      text("\n\nI say on oath / affirm:\n\n1. I am "),
+      field("deponent_role", "Deponent's capacity and what qualifies them", "the credit manager of the plaintiff and have the conduct of its ledger for the defendant's account"),
+      text(".\n\n2. The source of my knowledge of the matters in this affidavit concerning the debt is "),
+      field("knowledge_source", "Source of knowledge", "the plaintiff's accounting records, which I maintain"),
+      text(".\n\n3. The statement of claim was served on the defendant "),
+      field("service_mode", "Mode of service", "personally"),
+      text(" on "),
+      field("service_date", "Date of service", "5 August 2026"),
+      text(". The source of my knowledge is the affidavit of service of "),
+      field("service_affidavit", "Name and date of the affidavit of service", "Peter Walsh sworn 12 August 2026"),
+      text(
+        ".\n\n4. The amount owing to the plaintiff at the time of commencement of the proceedings in respect of the cause of action for which the proceedings were commenced was $"
+      ),
+      field("amount_at_commencement", "Amount owing at commencement", "250,000.00"),
+      text(
+        ".\n\n5. [Delete whichever does not apply.]\n\n" +
+        "   Since the commencement of the proceedings, no payments have been received or credits accrued to reduce the amount of the claim.\n\n" +
+        "   Since the commencement of the proceedings, payments have been made or credits have accrued to the amount of $"
+      ),
+      field("payments_since", "Payments or credits since commencement", "0.00"),
+      text(", which have reduced the amount of the claim to $"),
+      field("reduced_amount", "Reduced amount of the claim", "250,000.00"),
+      text(
+        ".\n\n6. The amount owing to the plaintiff and the amounts claimed for interest and costs as at the date of swearing this affidavit are:\n\n" +
+        "Current amount owing: $"
+      ),
+      field("current_owing", "Current amount owing", "250,000.00"),
+      text("\nInterest claimed at "),
+      field("interest_basis", "Interest rate and its basis", "the prescribed rate under UCPR 6.12(8)"),
+      text(": $"),
+      field("interest_amount", "Interest", "8,450.00"),
+      text("\nFiling fees: $"),
+      field("filing_fees", "Filing fees", "1,286.00"),
+      text("\nService fees: $"),
+      field("service_fees", "Service fees", "120.00"),
+      text("\nSolicitors fees: $"),
+      field("solicitors_fees", "Solicitors fees", "2,600.00"),
+      text("\nTOTAL: $"),
+      field("total_judgment", "Total", "262,456.00"),
+      ...AFFIDAVIT_JURAT,
+    ],
+  },
 ];

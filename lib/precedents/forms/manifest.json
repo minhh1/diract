@@ -3,64 +3,16 @@
   "checkedInto": "lib/precedents/forms",
   "forms": [
     {
-      "id": "nsw.ucpr.3a",
-      "name": "Statement of claim (legally represented)",
-      "form": "Form 3A (version 7)",
-      "rule": "UCPR 6.2",
-      "file": "nsw/ucpr_form_3a_v7.docx",
-      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_3a_v71.doc",
+      "id": "fcfcoa.affidavit",
+      "name": "Affidavit - Family law and child support proceedings",
+      "form": "0625 v1a",
+      "rule": "FCFCOA (Family Law) Rules 2021 r 2.14, 5.08",
+      "file": "fcfcoa/affidavit_familylaw_0625v1a.docx",
+      "sourceUrl": "https://www.fcfcoa.gov.au/sites/default/files/2026-03/affidavit_familylaw_0625v1a.docx",
       "obtainedOn": "2026-08-02",
-      "storedSha256": "4ddd1e2bcbe6647e299024afc903527786462c2fb6248dc4a43d1e48343ed84f",
-      "sourceSha256": "bc8f1a4e95140e48cc145cf73e0d223e0c97cbcb0c793603079b7e72f8c55d1c",
-      "convertedFromDoc": true
-    },
-    {
-      "id": "nsw.ucpr.4a",
-      "name": "Summons (legally represented)",
-      "form": "Form 4A (version 4)",
-      "rule": "UCPR 6.4",
-      "file": "nsw/ucpr_form_4a_v4.docx",
-      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_4a_v41.doc",
-      "obtainedOn": "2026-08-02",
-      "storedSha256": "5f929d36d41254ed9568d5ad3c65ceb075e2ef18555cd89289a765a8b409ece7",
-      "sourceSha256": "86c17d23dda47230d43cded6169557a9df7596128382b88c2590fedd9b4f2053",
-      "convertedFromDoc": true
-    },
-    {
-      "id": "nsw.ucpr.6a",
-      "name": "Appearance",
-      "form": "Form 6A (version 1)",
-      "rule": "UCPR 6.9, 6.11",
-      "file": "nsw/ucpr_form_6a_v1.docx",
-      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_6a_appearance.doc",
-      "obtainedOn": "2026-08-02",
-      "storedSha256": "9fe16e9c1bc91ad53c23dedf256b3adc347991c4751fd06b9fbff0daab730fb9",
-      "sourceSha256": "c1124a7e8b85f005baa67e857b447e71c3e8d9c09e682cbbe07952ff1f1af4c8",
-      "convertedFromDoc": true
-    },
-    {
-      "id": "nsw.ucpr.7a",
-      "name": "Defence (legally represented)",
-      "form": "Form 7A (version 5)",
-      "rule": "UCPR 14.3",
-      "file": "nsw/ucpr_form_7a_v5.docx",
-      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_7a_v51.doc",
-      "obtainedOn": "2026-08-02",
-      "storedSha256": "176821edee86d19641e49d1ede4a48eea4bb9fc58dd07054e46e7783f4f28056",
-      "sourceSha256": "c92fbb54b736303ef5cfe271dee1ce8617a4f09e850f949940efd26782e7f67e",
-      "convertedFromDoc": true
-    },
-    {
-      "id": "nsw.ucpr.9",
-      "name": "Statement of cross-claim",
-      "form": "Form 9 (version 6)",
-      "rule": "UCPR 9.1",
-      "file": "nsw/ucpr_form_9_v6.docx",
-      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_9_v61.doc",
-      "obtainedOn": "2026-08-02",
-      "storedSha256": "b85aeaad1c1b73ccf4e19aaf341fd0699201122ce0a57c064b9f20dc8c166234",
-      "sourceSha256": "1cfd4ce101ef62444368feaaa4b70ab34f07945b661dd41aa1337f5c4459d9e5",
-      "convertedFromDoc": true
+      "storedSha256": "216c376f26114fda4ca81275a8a59a10aec4e5f81be1bb33e5db60b0735b50b6",
+      "sourceSha256": "216c376f26114fda4ca81275a8a59a10aec4e5f81be1bb33e5db60b0735b50b6",
+      "convertedFromDoc": false
     },
     {
       "id": "nsw.ucpr.11",
@@ -99,6 +51,30 @@
       "convertedFromDoc": true
     },
     {
+      "id": "nsw.ucpr.38",
+      "name": "Notice of motion - default judgment for liquidated claim",
+      "form": "Form 38 (version 4)",
+      "rule": "UCPR 16.3, 16.6",
+      "file": "nsw/ucpr_form_38_v4.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_38_v4.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "8ee33b1793d874f84e36d4de388527a0ede316cf487da2392416cf48ec97c2f6",
+      "sourceSha256": "e150857417566d8eeaed8d4ebf8536b6980199d6138c87704e97746d4457cfcc",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.3a",
+      "name": "Statement of claim (legally represented)",
+      "form": "Form 3A (version 7)",
+      "rule": "UCPR 6.2",
+      "file": "nsw/ucpr_form_3a_v7.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_3a_v71.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "4ddd1e2bcbe6647e299024afc903527786462c2fb6248dc4a43d1e48343ed84f",
+      "sourceSha256": "bc8f1a4e95140e48cc145cf73e0d223e0c97cbcb0c793603079b7e72f8c55d1c",
+      "convertedFromDoc": true
+    },
+    {
       "id": "nsw.ucpr.40",
       "name": "Affidavit",
       "form": "Form 40 (version 8)",
@@ -111,16 +87,76 @@
       "convertedFromDoc": false
     },
     {
-      "id": "fcfcoa.affidavit",
-      "name": "Affidavit - Family law and child support proceedings",
-      "form": "0625 v1a",
-      "rule": "FCFCOA (Family Law) Rules 2021 r 2.14, 5.08",
-      "file": "fcfcoa/affidavit_familylaw_0625v1a.docx",
-      "sourceUrl": "https://www.fcfcoa.gov.au/sites/default/files/2026-03/affidavit_familylaw_0625v1a.docx",
+      "id": "nsw.ucpr.41",
+      "name": "Affidavit of service",
+      "form": "Form 41 (version 3)",
+      "rule": "UCPR 35.8",
+      "file": "nsw/ucpr_form_41_v3.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_41_v3.doc",
       "obtainedOn": "2026-08-02",
-      "storedSha256": "216c376f26114fda4ca81275a8a59a10aec4e5f81be1bb33e5db60b0735b50b6",
-      "sourceSha256": "216c376f26114fda4ca81275a8a59a10aec4e5f81be1bb33e5db60b0735b50b6",
-      "convertedFromDoc": false
+      "storedSha256": "39a362a3c35b4bf3d1b77e80e1af811506ed5c0cd43c914e2d91f7d199c6025c",
+      "sourceSha256": "a117c20682301a0822ff70825ff090f9b0174a7cfef4fa7578dc9beb65992b37",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.4a",
+      "name": "Summons (legally represented)",
+      "form": "Form 4A (version 4)",
+      "rule": "UCPR 6.4",
+      "file": "nsw/ucpr_form_4a_v4.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_4a_v41.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "5f929d36d41254ed9568d5ad3c65ceb075e2ef18555cd89289a765a8b409ece7",
+      "sourceSha256": "86c17d23dda47230d43cded6169557a9df7596128382b88c2590fedd9b4f2053",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.6a",
+      "name": "Appearance",
+      "form": "Form 6A (version 1)",
+      "rule": "UCPR 6.9, 6.11",
+      "file": "nsw/ucpr_form_6a_v1.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_6a_appearance.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "9fe16e9c1bc91ad53c23dedf256b3adc347991c4751fd06b9fbff0daab730fb9",
+      "sourceSha256": "c1124a7e8b85f005baa67e857b447e71c3e8d9c09e682cbbe07952ff1f1af4c8",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.77",
+      "name": "Notice of change of solicitor or appointment of solicitor",
+      "form": "Form 77 (version 2)",
+      "rule": "UCPR 7.26, 7.28",
+      "file": "nsw/ucpr_form_77_v2.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_77_v2.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "8c090422a9e4c6e776b1c82cfcf01a7b39e4e0105f9706d1799ca1b2ec4da2d9",
+      "sourceSha256": "014a11af9b73a4f3465b5f18648d72e090a6ff0e0cd95b3f9d81fa472d67c636",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.7a",
+      "name": "Defence (legally represented)",
+      "form": "Form 7A (version 5)",
+      "rule": "UCPR 14.3",
+      "file": "nsw/ucpr_form_7a_v5.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_7a_v51.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "176821edee86d19641e49d1ede4a48eea4bb9fc58dd07054e46e7783f4f28056",
+      "sourceSha256": "c92fbb54b736303ef5cfe271dee1ce8617a4f09e850f949940efd26782e7f67e",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.9",
+      "name": "Statement of cross-claim",
+      "form": "Form 9 (version 6)",
+      "rule": "UCPR 9.1",
+      "file": "nsw/ucpr_form_9_v6.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_9_v61.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "b85aeaad1c1b73ccf4e19aaf341fd0699201122ce0a57c064b9f20dc8c166234",
+      "sourceSha256": "1cfd4ce101ef62444368feaaa4b70ab34f07945b661dd41aa1337f5c4459d9e5",
+      "convertedFromDoc": true
     }
   ]
 }

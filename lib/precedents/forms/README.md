@@ -15,16 +15,19 @@ one by construction.
 
 | File | Form | Rule | Source | Obtained |
 |---|---|---|---|---|
-| `nsw/ucpr_form_3a_v7.docx` | Form 3A (version 7) | UCPR 6.2 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_3a_v71.doc) | 2026-08-02 |
-| `nsw/ucpr_form_4a_v4.docx` | Form 4A (version 4) | UCPR 6.4 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_4a_v41.doc) | 2026-08-02 |
-| `nsw/ucpr_form_6a_v1.docx` | Form 6A (version 1) | UCPR 6.9, 6.11 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_6a_appearance.doc) | 2026-08-02 |
-| `nsw/ucpr_form_7a_v5.docx` | Form 7A (version 5) | UCPR 14.3 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_7a_v51.doc) | 2026-08-02 |
-| `nsw/ucpr_form_9_v6.docx` | Form 9 (version 6) | UCPR 9.1 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_9_v61.doc) | 2026-08-02 |
+| `fcfcoa/affidavit_familylaw_0625v1a.docx` | 0625 v1a | FCFCOA (Family Law) Rules 2021 r 2.14, 5.08 | [source](https://www.fcfcoa.gov.au/sites/default/files/2026-03/affidavit_familylaw_0625v1a.docx) | 2026-08-02 |
 | `nsw/ucpr_form_11_v3.docx` | Form 11 (version 3) | UCPR 21.3 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_11_v3.doc) | 2026-08-02 |
 | `nsw/ucpr_form_19_v2.docx` | Form 19 (version 2) | UCPR 21.10 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_19_v2.doc) | 2026-08-02 |
 | `nsw/ucpr_form_26a_v5.docx` | Form 26A (version 5) | UCPR 33.2 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_26a_v5.doc) | 2026-08-02 |
+| `nsw/ucpr_form_38_v4.docx` | Form 38 (version 4) | UCPR 16.3, 16.6 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_38_v4.doc) | 2026-08-02 |
+| `nsw/ucpr_form_3a_v7.docx` | Form 3A (version 7) | UCPR 6.2 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_3a_v71.doc) | 2026-08-02 |
 | `nsw/ucpr_form_40_v8.docx` | Form 40 (version 8) | UCPR 35.1 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_40_v8.docx) | 2026-08-02 |
-| `fcfcoa/affidavit_familylaw_0625v1a.docx` | 0625 v1a | FCFCOA (Family Law) Rules 2021 r 2.14, 5.08 | [source](https://www.fcfcoa.gov.au/sites/default/files/2026-03/affidavit_familylaw_0625v1a.docx) | 2026-08-02 |
+| `nsw/ucpr_form_41_v3.docx` | Form 41 (version 3) | UCPR 35.8 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_41_v3.doc) | 2026-08-02 |
+| `nsw/ucpr_form_4a_v4.docx` | Form 4A (version 4) | UCPR 6.4 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_4a_v41.doc) | 2026-08-02 |
+| `nsw/ucpr_form_6a_v1.docx` | Form 6A (version 1) | UCPR 6.9, 6.11 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_6a_appearance.doc) | 2026-08-02 |
+| `nsw/ucpr_form_77_v2.docx` | Form 77 (version 2) | UCPR 7.26, 7.28 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_77_v2.doc) | 2026-08-02 |
+| `nsw/ucpr_form_7a_v5.docx` | Form 7A (version 5) | UCPR 14.3 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_7a_v51.doc) | 2026-08-02 |
+| `nsw/ucpr_form_9_v6.docx` | Form 9 (version 6) | UCPR 9.1 | [source](https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_9_v61.doc) | 2026-08-02 |
 
 Sites: NSW UCPR forms are published by the Department of Communities and
 Justice at <https://www.dcj.nsw.gov.au/content/dcj/ctsd/ucpr/ucpr.html>;
