@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import type { BodyTemplateSegment } from "@/lib/precedents/bodyTemplateDetect";
+import DeedTemplateSection from "@/components/settings/DeedTemplateSection";
 
 interface DetectedField { role: string; options?: string[] }
 
@@ -107,6 +108,7 @@ export default function PrecedentsSettingsTab() {
   return (
     <div className="space-y-6">
       <LetterheadSection isAdmin={isAdmin} />
+      <DeedTemplateSection isAdmin={isAdmin} />
       <SettingsSection isAdmin={isAdmin} staff={staff} staffLoading={staffLoading} />
       <StaffSignoffsSection isAdmin={isAdmin} currentUserId={userId} staff={staff} loading={staffLoading} onChanged={loadStaff} />
       <LibrarySection isAdmin={isAdmin} />
