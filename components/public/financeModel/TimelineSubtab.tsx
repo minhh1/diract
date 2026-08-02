@@ -159,7 +159,7 @@ function TaskEditModal({
   projectCreatedAt: string | null;
   onClose: () => void; onSaved: () => void;
 }) {
-  const { apiFetch } = useFinanceModelApi();
+  const { apiFetch, readOnly } = useFinanceModelApi();
   const [assigneeId, setAssigneeId] = useState(task.assignee_id || "");
   const [teamIds, setTeamIds] = useState<Set<string>>(new Set(task.teams.map(t => t.id)));
   const [startDate, setStartDate] = useState(task.start_date || "");
@@ -258,12 +258,13 @@ function TaskEditModal({
   };
 
   const toggleCompletion = async () => {
-    if (!task.is_completed && isBlocked) return;
+    if (readOnly || (!task.is_completed && isBlocked)) return;
     await supabase.from("tasks").update({ is_completed: !task.is_completed }).eq("id", task.id);
     onSaved();
   };
 
   const save = async () => {
+    if (readOnly) return;
     setSaving(true);
     await supabase.from("tasks").update({
       assignee_id: assigneeId || null,
@@ -308,7 +309,7 @@ function TaskEditModal({
       <div className="bg-white rounded-t-[40px] sm:rounded-[40px] shadow-2xl w-full max-w-lg mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-8 pt-8 pb-4 border-b border-slate-100 shrink-0">
           <div className="flex-1">
-            <button onClick={toggleCompletion} disabled={!task.is_completed && isBlocked}
+            <button onClick={toggleCompletion} disabled={readOnly || (!task.is_completed && isBlocked)}
               className={`inline-flex items-center gap-2 text-[14px] font-bold ${task.is_completed ? "text-emerald-600" : "text-slate-800"}`}
               title={!task.is_completed && isBlocked ? `Blocked by: ${blocked.map(t => t.name).join(", ")}` : undefined}>
               {task.is_completed ? <CheckCircle2 size={16} /> : isBlocked ? <Lock size={14} className="text-slate-300" /> : <Circle size={16} className="text-slate-300" />}
@@ -361,7 +362,7 @@ function TaskEditModal({
             </label>
           )}
 
-          {task.source_template_item_id && (
+          {!readOnly && task.source_template_item_id && (
             <div className="border-t border-slate-100 pt-3">
               {templateUpdated ? (
                 <p className="text-[11px] font-medium text-emerald-600">Template updated to match this task's current dates.</p>
@@ -415,6 +416,7 @@ function TaskEditModal({
             </div>
           </div>
 
+          {!readOnly && (
           <div className="border-t border-slate-100 pt-4">
             {converted ? (
               <p className="text-[11px] font-medium text-emerald-600 flex items-center gap-1.5"><DollarSign size={12} /> Budget line created -- linked to this task for Cash Flow timing.</p>
@@ -440,12 +442,17 @@ function TaskEditModal({
               </div>
             )}
           </div>
+          )}
         </div>
 
         <div className="px-8 py-5 border-t border-slate-100 shrink-0">
-          <button onClick={save} disabled={saving} className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-            {saving ? "Saving..." : "Save"}
-          </button>
+          {readOnly ? (
+            <p className="text-center text-[11px] text-slate-400 italic py-2">Read-only preview</p>
+          ) : (
+            <button onClick={save} disabled={saving} className="w-full py-3 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+              {saving ? "Saving..." : "Save"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -775,6 +782,26 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     setLoading(true);
     setError(null);
     try {
+      // A public viewer has no Supabase session, so direct client reads
+      // (teams/profiles/projects) return nothing under RLS -- the read-only
+      // public route bundles all three into the same tasks response instead
+      // (see app/api/finance-model-pages/public/[pageId]/fm/route.ts's
+      // "tasks" case). profiles stay empty there: the only thing that used
+      // them (the Assignee picker) is a write action, hidden in read-only
+      // mode anyway.
+      if (readOnly) {
+        const taskRes = await apiFetch(`/api/finance-model/tasks?projectId=${projectId}`);
+        const json = await taskRes.json();
+        if (!taskRes.ok) { setError(json.error || "Failed to load"); return; }
+        setTasks(json.tasks || []);
+        const depMap: Record<string, string[]> = {};
+        for (const d of json.dependencies || []) (depMap[d.task_id] ||= []).push(d.depends_on_task_id);
+        setDependenciesByTask(depMap);
+        setTeams(json.teams || []);
+        setProfiles([]);
+        setProjectCreatedAt(json.projectCreatedAt || null);
+        return;
+      }
       const [taskRes, teamsRes, profilesRes, projectRes] = await Promise.all([
         apiFetch(`/api/finance-model/tasks?projectId=${projectId}`),
         // teams_select RLS scopes to "any company this user is a member of,"
@@ -814,6 +841,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
   };
 
   const toggleCompletion = async (task: TaskRow) => {
+    if (readOnly) return;
     const blocked = blockedBy(task.id, dependenciesByTask, tasks);
     if (!task.is_completed && blocked.length > 0) return;
     await supabase.from("tasks").update({ is_completed: !task.is_completed }).eq("id", task.id);
@@ -1056,7 +1084,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
     return (
       <div onClick={() => setEditingTask(t)} className="bg-white border border-slate-200 rounded-2xl p-3 space-y-1.5 cursor-pointer hover:border-indigo-300 transition-colors">
         <div className="flex items-start gap-2">
-          <button onClick={e => { e.stopPropagation(); toggleCompletion(t); }} disabled={!t.is_completed && blocked.length > 0}
+          <button onClick={e => { e.stopPropagation(); toggleCompletion(t); }} disabled={readOnly || (!t.is_completed && blocked.length > 0)}
             className="mt-0.5 shrink-0">
             {t.is_completed ? <CheckCircle2 size={14} className="text-emerald-500" /> : blocked.length > 0 ? <Lock size={11} className="text-slate-300" /> : <Circle size={14} className="text-slate-300" />}
           </button>
@@ -1079,16 +1107,28 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
       <div className="flex items-center justify-between px-1 flex-wrap gap-2">
         <p className="text-[11px] text-slate-400">{filteredTasks.length} of {tasks.length} task{tasks.length === 1 ? "" : "s"}</p>
         <div className="flex items-center gap-2">
-          <button onClick={openTemplates} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-            <ClipboardList size={12} /> Apply template
-          </button>
-          <button onClick={() => setShowBulkEdit(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-            <SlidersHorizontal size={12} /> Bulk edit
-          </button>
-          {tasks.some(t => t.source_template_item_id) && (
-            <button onClick={syncScheduleToTemplate} disabled={syncing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40">
-              <RefreshCw size={12} /> {syncing ? "Syncing..." : "Sync schedule to template"}
-            </button>
+          {/* Every one of these writes directly via the Supabase client
+              (TemplateManager, BulkEditModal, and syncScheduleToTemplate all
+              call supabase.from(...) rather than going through apiFetch) --
+              on the public page there's no session for RLS to authorize, so
+              they'd silently fail. Hidden entirely there rather than left to
+              break, per FinanceModelApiContext's "hide write affordances"
+              contract (readOnly is a UI courtesy; the public route already
+              has no write endpoint to actually enforce this). */}
+          {!readOnly && (
+            <>
+              <button onClick={openTemplates} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+                <ClipboardList size={12} /> Apply template
+              </button>
+              <button onClick={() => setShowBulkEdit(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
+                <SlidersHorizontal size={12} /> Bulk edit
+              </button>
+              {tasks.some(t => t.source_template_item_id) && (
+                <button onClick={syncScheduleToTemplate} disabled={syncing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40">
+                  <RefreshCw size={12} /> {syncing ? "Syncing..." : "Sync schedule to template"}
+                </button>
+              )}
+            </>
           )}
           {view !== "card" && (
             <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
@@ -1169,7 +1209,7 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
                 return (
                   <tr key={t.id} className="border-t border-slate-50 hover:bg-slate-50/60">
                     <td className="px-6 py-2">
-                      <button onClick={() => toggleCompletion(t)} disabled={!t.is_completed && blocked.length > 0}
+                      <button onClick={() => toggleCompletion(t)} disabled={readOnly || (!t.is_completed && blocked.length > 0)}
                         title={blocked.length > 0 && !t.is_completed ? `Blocked by: ${blocked.map(b => b.name).join(", ")}` : undefined}>
                         {t.is_completed ? <CheckCircle2 size={14} className="text-emerald-500" /> : blocked.length > 0 ? <Lock size={12} className="text-slate-300" /> : <Circle size={14} className="text-slate-300" />}
                       </button>

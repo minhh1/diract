@@ -129,11 +129,43 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     }
 
     case "tasks": {
-      const { data } = await admin
+      // Mirrors app/api/finance-model/tasks/route.ts's shape exactly (the
+      // Timeline subtab is shared between the authenticated dashboard and
+      // this public page) -- the columns this used to select (status,
+      // display_order, parent_task_id, blocked_by_task_id) don't exist on
+      // `tasks` at all, so this silently returned zero rows on every public
+      // page (Supabase's `error` was never checked, so the empty `data`
+      // fell through as if the project genuinely had no tasks).
+      const { data: taskRows } = await admin
         .from("tasks")
-        .select("id, name, start_date, due_date, status, display_order, parent_task_id, blocked_by_task_id")
-        .eq("project_id", projectId).is("deleted_at", null).order("display_order");
-      return NextResponse.json({ tasks: data || [] });
+        .select(`
+          id, name, notes, start_date, due_date, is_completed, assignee_id, category, source_template_item_id,
+          assignee:assignee_id(id, full_name), task_statuses:status_id(label, color_hex),
+          task_teams(team_id, teams:team_id(id, team_name))
+        `)
+        .eq("project_id", projectId).is("deleted_at", null).order("due_date", { ascending: true, nullsFirst: false });
+      const taskIds = (taskRows || []).map((t: any) => t.id);
+      const { data: dependencies } = taskIds.length
+        ? await admin.from("task_dependencies").select("task_id, depends_on_task_id").in("task_id", taskIds)
+        : { data: [] };
+      const tasks = (taskRows || []).map((t: any) => ({
+        ...t,
+        teams: (t.task_teams || []).map((tt: any) => tt.teams).filter(Boolean),
+        task_teams: undefined,
+      }));
+      // Bundled into this same response rather than three more resource
+      // cases: TimelineSubtab's load() fetched these directly from Supabase
+      // (teams/profiles/projects), which returns nothing under RLS with no
+      // session -- same class of bug as the tasks query above, just failing
+      // quietly instead of on the wrong columns.
+      const [{ data: teams }, { data: projectRow }] = await Promise.all([
+        admin.from("teams").select("id, team_name, category_tags").eq("company_id", companyId).eq("is_active", true).order("team_name"),
+        admin.from("projects").select("created_at").eq("id", projectId).single(),
+      ]);
+      return NextResponse.json({
+        tasks, dependencies: dependencies || [], teams: teams || [],
+        projectCreatedAt: projectRow?.created_at || null,
+      });
     }
 
     case "loans": {
