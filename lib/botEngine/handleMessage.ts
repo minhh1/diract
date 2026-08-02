@@ -17,7 +17,7 @@ import { buildActionTools, buildMissingFieldsTool, translateFieldAnswers, TOOL_U
 import { loadFieldConfig, type ActionType, type FieldDef } from "@/lib/ai/actionFields";
 import { advanceAction } from "@/lib/ai/actionAdvance";
 import {
-  resolveTaskByName, resolveStatusByLabel, resolveProjectByName, resolveProfileByName,
+  resolveTaskByName, resolveStatusByLabel, resolveProjectByName, resolveProfileByName, resolvePrecedentByName,
   createTask, updateTask, createProject, updateProject, addProjectLabel,
   createOnedriveFile, updateOnedriveFile, isOnedriveConnected,
 } from "@/lib/ai/actions";
@@ -27,6 +27,7 @@ import {
   pendingChoiceField, type PrecedentAdvanceResult,
 } from "@/lib/ai/precedentAction";
 import { issuePrecedentDocument } from "@/lib/precedents/issuePrecedent";
+import { deliverBlankTemplate } from "@/lib/precedents/blankTemplate";
 import { advanceAppointmentAction, buildAppointmentMissingFieldsTool, type AppointmentAdvanceResult } from "@/lib/ai/appointmentAction";
 import { bookAppointment } from "@/lib/ai/calendarBooking";
 import { costUsd, HOSTED_MODELS } from "@/lib/billing/aiModels";
@@ -540,6 +541,17 @@ async function handleToolCall(
     }
     const result = await advancePrecedentAction(admin, companyId, linked.user_id, DEFAULT_HOSTED_MODEL_ID, sourceTypes, collected);
     return applyPrecedentAdvanceResult(admin, linked, msg, adapter, "issue_precedent", result);
+  }
+
+  if (toolCall.name === "send_blank_template") {
+    const precedentName = args.precedent_name as string | undefined;
+    if (!precedentName) return reply("Which precedent do you want a blank template for?");
+    const precedentResult = await resolvePrecedentByName(admin, companyId, precedentName);
+    if (precedentResult.status !== "found") return askAbout("precedent", precedentResult, precedentName);
+
+    const delivered = await deliverBlankTemplate(admin, companyId, precedentResult.match.id);
+    if (!delivered.ok) return reply(`Sorry, that didn't work: ${delivered.error}`);
+    return reply(`Here's a blank "${precedentResult.match.name}" -- every fill-in field is highlighted:\n${delivered.url}`);
   }
 
   if (toolCall.name === "create_appointment") {

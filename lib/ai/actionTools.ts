@@ -284,6 +284,27 @@ const ISSUE_PRECEDENT_TOOL = {
   },
 };
 
+// A blank form has no matter/recipient/content to gather -- it's just the
+// firm's own precedent with its fill-in fields left as visible placeholders,
+// so unlike issue_precedent this is a single-shot, no-confirmation action
+// (see lib/botEngine/handleMessage.ts's handleToolCall): nothing is written
+// anywhere, so there's nothing to confirm before doing it.
+const SEND_BLANK_TEMPLATE_TOOL = {
+  type: "function",
+  function: {
+    name: "send_blank_template",
+    description:
+      "Send a blank copy of one of the firm's precedent documents (a letter or deed template) -- the firm's own letterhead/deed template with every fill-in field left as a visible, highlighted placeholder instead of real data for a matter. For seeing what a document looks like or what details it needs, not for issuing a real one.",
+    parameters: {
+      type: "object",
+      properties: {
+        precedent_name: { type: "string", description: "Which precedent/document type to send blank, e.g. \"Letter of Demand\" -- only if actually stated." },
+      },
+      required: [],
+    },
+  },
+};
+
 // Books a fixed 1-hour slot on the firm's shared calendar (see
 // lib/ai/calendarBooking.ts) -- no duration property, that's not
 // user-configurable. address vs. notes are deliberately separate: address
@@ -384,6 +405,7 @@ export function buildActionTools(taskFields: FieldDef[], projectFields: FieldDef
     CREATE_FILE_TOOL,
     UPDATE_FILE_TOOL,
     ISSUE_PRECEDENT_TOOL,
+    SEND_BLANK_TEMPLATE_TOOL,
     CREATE_APPOINTMENT_TOOL,
   ];
 }
