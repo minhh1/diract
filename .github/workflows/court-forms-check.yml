@@ -1,0 +1,85 @@
+name: Court forms check
+
+# Court forms are versioned and republished, and a document filed on a
+# superseded form gets rejected at the registry. The copies in
+# lib/precedents/forms are pinned, so they never change on their own -- which
+# is the point, and also why drift is silent. This checks daily whether any of
+# them has been amended at the source and opens an issue when one has.
+#
+# Runs on GitHub rather than Vercel Cron so the result is a durable, assignable
+# issue rather than a log line someone has to go looking for.
+on:
+  schedule:
+    # 19:00 UTC = 05:00 or 06:00 Sydney depending on daylight saving, so the
+    # result is waiting at the start of the working day.
+    - cron: "0 19 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check published forms against the manifest
+        id: check
+        run: |
+          set +e
+          npx -y tsx scripts/checkCourtForms.ts > result.txt 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          cat result.txt
+          {
+            echo 'report<<REPORT_EOF'
+            cat result.txt
+            echo REPORT_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open an issue when a form has been amended
+        if: steps.check.outputs.exit != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = process.env.REPORT;
+            const title = "Court form amended at the source";
+            // Reuse the open issue if there is one, so a form that stays
+            // changed for a week doesn't produce seven identical issues.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "court-forms",
+            });
+            const body = [
+              "A court form shipped in `lib/precedents/forms` no longer matches what is published.",
+              "",
+              "```",
+              report,
+              "```",
+              "",
+              "A document filed on a superseded form can be rejected at the registry, so this needs",
+              "attention before the affected precedent is used again.",
+            ].join("\n");
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                labels: ["court-forms"],
+                body,
+              });
+            }
+        env:
+          REPORT: ${{ steps.check.outputs.report }}

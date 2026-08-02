@@ -1,0 +1,126 @@
+{
+  "_comment": "Provenance for every official court form stored here. sourceSha256 is the hash of the file AS PUBLISHED at sourceUrl, which is what scripts/checkCourtForms.ts compares against daily. storedSha256 is the file in this repo, which differs where the published file is .doc and we converted it.",
+  "checkedInto": "lib/precedents/forms",
+  "forms": [
+    {
+      "id": "nsw.ucpr.3a",
+      "name": "Statement of claim (legally represented)",
+      "form": "Form 3A (version 7)",
+      "rule": "UCPR 6.2",
+      "file": "nsw/ucpr_form_3a_v7.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_3a_v71.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "4ddd1e2bcbe6647e299024afc903527786462c2fb6248dc4a43d1e48343ed84f",
+      "sourceSha256": "bc8f1a4e95140e48cc145cf73e0d223e0c97cbcb0c793603079b7e72f8c55d1c",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.4a",
+      "name": "Summons (legally represented)",
+      "form": "Form 4A (version 4)",
+      "rule": "UCPR 6.4",
+      "file": "nsw/ucpr_form_4a_v4.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_4a_v41.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "5f929d36d41254ed9568d5ad3c65ceb075e2ef18555cd89289a765a8b409ece7",
+      "sourceSha256": "86c17d23dda47230d43cded6169557a9df7596128382b88c2590fedd9b4f2053",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.6a",
+      "name": "Appearance",
+      "form": "Form 6A (version 1)",
+      "rule": "UCPR 6.9, 6.11",
+      "file": "nsw/ucpr_form_6a_v1.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_6a_appearance.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "9fe16e9c1bc91ad53c23dedf256b3adc347991c4751fd06b9fbff0daab730fb9",
+      "sourceSha256": "c1124a7e8b85f005baa67e857b447e71c3e8d9c09e682cbbe07952ff1f1af4c8",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.7a",
+      "name": "Defence (legally represented)",
+      "form": "Form 7A (version 5)",
+      "rule": "UCPR 14.3",
+      "file": "nsw/ucpr_form_7a_v5.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_7a_v51.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "176821edee86d19641e49d1ede4a48eea4bb9fc58dd07054e46e7783f4f28056",
+      "sourceSha256": "c92fbb54b736303ef5cfe271dee1ce8617a4f09e850f949940efd26782e7f67e",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.9",
+      "name": "Statement of cross-claim",
+      "form": "Form 9 (version 6)",
+      "rule": "UCPR 9.1",
+      "file": "nsw/ucpr_form_9_v6.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_9_v61.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "b85aeaad1c1b73ccf4e19aaf341fd0699201122ce0a57c064b9f20dc8c166234",
+      "sourceSha256": "1cfd4ce101ef62444368feaaa4b70ab34f07945b661dd41aa1337f5c4459d9e5",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.11",
+      "name": "List of documents",
+      "form": "Form 11 (version 3)",
+      "rule": "UCPR 21.3",
+      "file": "nsw/ucpr_form_11_v3.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_11_v3.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "c2a537f8a786f66f85a86e5655e35be893a083dafc8a1654d0c5beae9eea497a",
+      "sourceSha256": "72ee5c1bd1c26d6d4648338ac66fecde25eb5366bea0d1dba1a63d702f2adb29",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.19",
+      "name": "Notice to produce for inspection",
+      "form": "Form 19 (version 2)",
+      "rule": "UCPR 21.10",
+      "file": "nsw/ucpr_form_19_v2.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_19_v2.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "3a6624bcfe4749879d511aa58e78eea9147d91d226a8a2f90f663adc29e95e85",
+      "sourceSha256": "8af37f619de01c5eb82a67bfec3e5af08e6ca77eeba9161cfd529999ed00b285",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.26a",
+      "name": "Subpoena to produce",
+      "form": "Form 26A (version 5)",
+      "rule": "UCPR 33.2",
+      "file": "nsw/ucpr_form_26a_v5.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_26a_v5.doc",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "8b050d6fc34e2a1352b421eb17d285bae389a7ba35e04dce3a73dbd29c8d9ec5",
+      "sourceSha256": "7223ddd653ab1e3620ab899bb2f3eab3b1dc4a7e87d1d2ac407709909af66580",
+      "convertedFromDoc": true
+    },
+    {
+      "id": "nsw.ucpr.40",
+      "name": "Affidavit",
+      "form": "Form 40 (version 8)",
+      "rule": "UCPR 35.1",
+      "file": "nsw/ucpr_form_40_v8.docx",
+      "sourceUrl": "https://www.dcj.nsw.gov.au/content/dam/dcj/ctsd/ucpr/documents/doc/ucpr_form_40_v8.docx",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "019d18efd102b2fc57c5692ec85bd0e2b357ddadc78851b6c9449347cf56ef17",
+      "sourceSha256": "019d18efd102b2fc57c5692ec85bd0e2b357ddadc78851b6c9449347cf56ef17",
+      "convertedFromDoc": false
+    },
+    {
+      "id": "fcfcoa.affidavit",
+      "name": "Affidavit - Family law and child support proceedings",
+      "form": "0625 v1a",
+      "rule": "FCFCOA (Family Law) Rules 2021 r 2.14, 5.08",
+      "file": "fcfcoa/affidavit_familylaw_0625v1a.docx",
+      "sourceUrl": "https://www.fcfcoa.gov.au/sites/default/files/2026-03/affidavit_familylaw_0625v1a.docx",
+      "obtainedOn": "2026-08-02",
+      "storedSha256": "216c376f26114fda4ca81275a8a59a10aec4e5f81be1bb33e5db60b0735b50b6",
+      "sourceSha256": "216c376f26114fda4ca81275a8a59a10aec4e5f81be1bb33e5db60b0735b50b6",
+      "convertedFromDoc": false
+    }
+  ]
+}
