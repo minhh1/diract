@@ -59,23 +59,55 @@ export default function AppLoader({ children }: { children: ReactNode }) {
   const doneRef = useRef(false);
 
   useEffect(() => {
-    // Clear stale localStorage cache BEFORE anything reads it. One shared
-    // version constant (lib/appCacheVersion.ts) -- also used as the
-    // persisted React Query cache's `buster` -- so there's a single place
-    // to bump when any cached shape changes, not two independently
-    // hand-maintained version strings that can drift out of sync.
+    // Clear stale localStorage cache BEFORE anything reads it -- two
+    // independent triggers feed the same wipe:
+    //
+    // 1. APP_CACHE_VERSION (lib/appCacheVersion.ts) -- a deliberately
+    //    hand-bumped signal for "this cached SHAPE is now unsafe to read"
+    //    (renamed/restructured fields etc). Kept manual since most deploys
+    //    don't touch what's cached at all.
+    //
+    // 2. The deployed build id, read from app/layout.tsx's own server-
+    //    rendered <meta name="app-build-id"> tag -- the same source
+    //    VersionCheckBanner.tsx already reads. Deliberately NOT
+    //    lib/buildId.ts's BUILD_ID export imported directly: that reads a
+    //    bare (non-NEXT_PUBLIC_) env var, which Next.js only inlines into
+    //    SERVER code -- importing it here, in a "use client" file, would
+    //    always resolve to the "local-dev" fallback in the browser
+    //    regardless of which deployment is actually running, silently
+    //    never changing and defeating the whole point. This trigger is
+    //    fully automatic (every real deployment gets a new git commit sha,
+    //    nothing to remember to bump) -- fixes what used to require an
+    //    incognito window just to see a just-shipped change: a normal
+    //    reload ran the new code fine, but that code immediately re-painted
+    //    from the SAME stale cached data as before, since only #1 above
+    //    ever cleared anything and it wasn't kept in sync with what was
+    //    actually shipping (confirmed: git log shows APP_CACHE_VERSION had
+    //    been bumped exactly once, ever, despite dozens of cache-relevant
+    //    changes landing since).
+    //
     // Runs once per real page load, not per client-side navigation.
-    const stored = localStorage.getItem("nk_app_cache_version");
-    if (stored !== APP_CACHE_VERSION) {
+    const storedVersion = localStorage.getItem("nk_app_cache_version");
+    const storedBuildId = localStorage.getItem("nk_app_build_id");
+    const currentBuildId = document.querySelector('meta[name="app-build-id"]')?.getAttribute("content") ?? null;
+    const versionChanged = storedVersion !== APP_CACHE_VERSION;
+    const buildChanged = !!currentBuildId && storedBuildId !== null && storedBuildId !== currentBuildId;
+    if (versionChanged || buildChanged) {
       const toRemove = Object.keys(localStorage).filter(k =>
         k.startsWith("nk_cache_") ||
         k.startsWith("nk_pref_") ||
         k.startsWith("nk_rows_") ||
-        k.startsWith("rows_")
+        k.startsWith("rows_") ||
+        // Dashboard/table schema+config shells (lib/shellCache.ts) --
+        // previously missing from this list entirely, so a stale field
+        // list/column config could survive a schema-changing deploy
+        // indefinitely even with #1 above correctly bumped.
+        k.startsWith("nk_shell:")
       );
       toRemove.forEach(k => localStorage.removeItem(k));
       localStorage.setItem("nk_app_cache_version", APP_CACHE_VERSION);
     }
+    if (currentBuildId) localStorage.setItem("nk_app_build_id", currentBuildId);
   }, []);
 
   useEffect(() => {
