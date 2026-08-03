@@ -1897,39 +1897,42 @@ function AskMatterPanel({ onAsk }: { onAsk: (question: string) => Promise<string
     }
   };
 
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors border-t border-slate-100 pt-3 w-full">
-        <MessageCircleQuestion size={12} /> Ask anything
-      </button>
-    );
-  }
-
   return (
     <div className="border-t border-slate-100 pt-3 space-y-2">
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ask anything</p>
-      <div className="flex items-center gap-2">
-        <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === "Enter") ask(); }}
-          placeholder="e.g. Did the vendor reply about our amendment requests?"
-          // text-[16px], not the usual text-[11px]/[12px] this board uses
-          // everywhere else -- iOS Safari auto-zooms the whole page on
-          // focus for any input under 16px, which reads exactly like an
-          // unwanted modal popping open instead of the input just
-          // appearing in place. No autoFocus either, for the same reason:
-          // it fires that same jump the instant the row opens rather than
-          // only when someone actually taps into the field.
-          className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-full text-[16px] outline-none focus:border-indigo-400" />
-        <button onClick={ask} disabled={asking || !question.trim()} title="Ask"
-          className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
-          {asking ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-        </button>
-      </div>
-      {error && <p className="text-[11px] text-red-500">{error}</p>}
-      {answer && (
-        <p className="flex items-start gap-1.5 px-3 py-2 bg-indigo-50 rounded-xl text-[11px] text-indigo-800">
-          <Sparkles size={11} className="text-indigo-400 shrink-0 mt-0.5" /> {answer}
-        </p>
+      {/* Same button stays mounted whether open or not -- toggling used to
+          swap this for a completely different element on click, which on
+          iOS Safari made the tap that opens it unreliable (the element
+          under your finger disappears mid-tap), needing a second tap
+          somewhere the new layout happened to land. Only the content below
+          is conditional now. */}
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors w-full text-left">
+        <MessageCircleQuestion size={12} /> Ask anything
+      </button>
+      {open && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === "Enter") ask(); }}
+              placeholder="e.g. Did the vendor reply about our amendment requests?"
+              // text-[16px], not the usual text-[11px]/[12px] this board
+              // uses everywhere else -- iOS Safari auto-zooms the whole
+              // page in on focus for any input under 16px, which read
+              // exactly like an unwanted modal popping open. No autoFocus
+              // either, for the same reason: it fired that same jump the
+              // instant the row opened rather than only on an actual tap.
+              className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-full text-[16px] outline-none focus:border-indigo-400" />
+            <button type="button" onClick={ask} disabled={asking || !question.trim()} title="Ask"
+              className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
+              {asking ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            </button>
+          </div>
+          {error && <p className="text-[11px] text-red-500">{error}</p>}
+          {answer && (
+            <p className="flex items-start gap-1.5 px-3 py-2 bg-indigo-50 rounded-xl text-[11px] text-indigo-800">
+              <Sparkles size={11} className="text-indigo-400 shrink-0 mt-0.5" /> {answer}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
