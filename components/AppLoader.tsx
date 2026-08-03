@@ -18,7 +18,12 @@ const PUBLIC_PATH_PREFIXES = ["/login", "/public", "/auth"];
 // one of the prefixes above.
 const PUBLIC_EXACT_PATHS = ["/", "/privacy", "/terms"];
 
-function isPublicPath(pathname: string): boolean {
+// Exported for SessionHealthBanner.tsx -- a genuinely anonymous /public/*
+// visitor never had a session to begin with, so it shouldn't run its
+// "you may have been signed out" check there at all. Single source of
+// truth for "which paths need none of what a signed-in session implies",
+// rather than a second hand-maintained copy of this same prefix list.
+export function isPublicPath(pathname: string): boolean {
   return PUBLIC_EXACT_PATHS.includes(pathname) || PUBLIC_PATH_PREFIXES.some(p => pathname.startsWith(p));
 }
 

@@ -1,0 +1,125 @@
+// components/SessionHealthBanner.tsx
+// "Left the site open for 15-20 minutes, came back, and it's not functional
+// at all" -- purely additive diagnostic + recovery layer, deliberately not
+// a change to any existing auth flow (too risky to guess-fix blind: an
+// over-aggressive forced-logout would be worse than the bug it's meant to
+// catch). Two things this app previously had NONE of anywhere:
+//
+// 1. Any supabase.auth.onAuthStateChange() listener at all -- so if the
+//    SDK's own background token-refresh silently failed (or the refresh
+//    token itself expired), nothing in the app would ever know; every
+//    subsequent request just starts 401ing with zero explanation, which
+//    is exactly what "not functional at all, no error, nothing" looks like
+//    from the outside.
+//
+// 2. Any check that runs specifically on RESUMING an idle tab. Supabase-js
+//    does register its own visibilitychange-driven refresh internally, but
+//    that's the SDK quietly doing its own thing -- there was nothing that
+//    actively VERIFIES the session is still good the moment focus returns
+//    and surfaces it if not. Browsers aggressively throttle timers in
+//    backgrounded tabs (this is exactly the kind of gap that produces "15
+//    minutes idle -> broken" specifically, rather than "broken while
+//    actively using it").
+//
+// This is deliberately a DIAGNOSTIC tool as much as a fix: the banner text
+// says what was actually detected, so the next time this happens, that's
+// enough to tell whether the culprit really is an expired/lost session or
+// something else entirely (in which case this banner simply won't appear,
+// which is itself a useful, ruled-out data point).
+"use client";
+
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { AlertTriangle, RefreshCw, X } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { isPublicPath } from "@/components/AppLoader";
+
+// How often to proactively re-check while the tab is visible and active --
+// separate from (and shorter than) VersionCheckBanner's own 10-minute poll,
+// since 15-20 minutes idle is the exact window being investigated.
+const ACTIVE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+export default function SessionHealthBanner() {
+  const pathname = usePathname();
+  const [problem, setProblem] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    // A genuinely anonymous /public/* (or /login) visitor never had a
+    // session at all -- "no active session" there is completely normal,
+    // not a bug to flag.
+    if (isPublicPath(pathname)) return;
+
+    let active = true;
+    let hiddenAt: number | null = null;
+
+    const checkSession = async (context: string) => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (!active) return;
+        if (error) { setProblem(`Session check failed (${context}): ${error.message}`); return; }
+        if (!session) { setProblem(`No active session detected (${context}) -- you may have been signed out.`); return; }
+        if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+          setProblem(`Session token expired (${context}) and didn't refresh in time.`);
+          return;
+        }
+        // Genuinely healthy -- clear any earlier flag rather than leaving a
+        // stale warning up once things recover on their own.
+        setProblem(null);
+      } catch (e: any) {
+        if (active) setProblem(`Session check threw (${context}): ${e?.message || "unknown error"}`);
+      }
+    };
+
+    // Fires on every SDK-internal auth event -- in particular, a failed
+    // background token refresh surfaces here even though nothing else in
+    // the app was listening for it before this component existed.
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") setProblem("Signed out (session ended).");
+      if (event === "TOKEN_REFRESHED") setProblem(null);
+    });
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      // Only worth checking on RESUMING after being away a meaningful
+      // while -- a routine alt-tab-and-back isn't the scenario reported.
+      if (hiddenAt !== null && Date.now() - hiddenAt > 2 * 60 * 1000) {
+        checkSession("resumed after being idle");
+      }
+      hiddenAt = null;
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const interval = setInterval(() => checkSession("periodic check"), ACTIVE_CHECK_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      authListener.subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clearInterval(interval);
+    };
+  }, [pathname]);
+
+  if (!problem || dismissed) return null;
+
+  return (
+    <div className="fixed bottom-20 inset-x-0 z-[200] flex justify-center px-4 pointer-events-none">
+      <div className="pointer-events-auto flex items-center gap-3 px-5 py-3 bg-red-600 text-white rounded-full shadow-2xl max-w-lg">
+        <AlertTriangle size={16} className="shrink-0" />
+        <p className="text-[12px] font-medium">{problem}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 text-[11px] font-bold rounded-full hover:bg-red-50 transition-colors shrink-0"
+        >
+          <RefreshCw size={12} /> Refresh
+        </button>
+        <button onClick={() => setDismissed(true)} title="Dismiss" className="p-1 text-red-200 hover:text-white transition-colors shrink-0">
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}

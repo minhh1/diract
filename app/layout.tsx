@@ -6,6 +6,7 @@ import AppLoader from "@/components/AppLoader";
 import ThemeProvider from "@/components/ThemeProvider";
 import VisitBeacon from "@/components/VisitBeacon";
 import VersionCheckBanner from "@/components/VersionCheckBanner";
+import SessionHealthBanner from "@/components/SessionHealthBanner";
 import { BUILD_ID } from "@/lib/buildId";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -35,6 +36,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <VisitBeacon />
         <VersionCheckBanner />
+        <SessionHealthBanner />
         <ThemeProvider>
           <AppLoader>
             {children}
