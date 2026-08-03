@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 
 interface Team { id: string; team_name: string; leader_id: string | null; }
 interface Page {
@@ -156,6 +157,17 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
   const [error, setError] = useState<string | null>(null);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
 
+  // "Matter number" is a per-company custom field on Projects (see
+  // supabase/template_law_firm_seed.sql's "Matter fields on projects"
+  // block) -- not every company has one (a non-Australian-law-firm
+  // template company has no such field at all), so it's only offered as a
+  // column choice when it actually exists, rather than showing it
+  // unconditionally as an option that would just render blank for
+  // everyone else.
+  const { fields: projectFields } = useCompanyCustomFields('projects');
+  const hasMatterNumberField = projectFields.some(f => f.field_key === 'matter_number');
+  const availableColumns = PUBLIC_TASK_COLUMNS.filter(c => c.key !== 'matter_number' || hasMatterNumberField);
+
   const toggleColumn = (key: string) => setColumns(prev => prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key]);
 
   const handleCreate = async () => {
@@ -251,7 +263,7 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Columns to show</p>
             <div className="flex flex-wrap gap-2">
-              {PUBLIC_TASK_COLUMNS.map(c => (
+              {availableColumns.map(c => (
                 <button key={c.key} type="button" onClick={() => toggleColumn(c.key)}
                   className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
                     columns.includes(c.key) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300"
@@ -301,6 +313,11 @@ function EditPageModal({ page, isAdmin, teamOptions, onClose, onSaved }: {
   const [expiresAt, setExpiresAt] = useState(page.expiresAt || defaultExpiry());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // See CreatePageModal's matching comment.
+  const { fields: projectFields } = useCompanyCustomFields('projects');
+  const hasMatterNumberField = projectFields.some(f => f.field_key === 'matter_number');
+  const availableColumns = PUBLIC_TASK_COLUMNS.filter(c => c.key !== 'matter_number' || hasMatterNumberField);
 
   const toggleColumn = (key: string) => setColumns(prev => prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key]);
 
@@ -376,7 +393,7 @@ function EditPageModal({ page, isAdmin, teamOptions, onClose, onSaved }: {
           <div>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Columns to show</p>
             <div className="flex flex-wrap gap-2">
-              {PUBLIC_TASK_COLUMNS.map(c => (
+              {availableColumns.map(c => (
                 <button key={c.key} type="button" onClick={() => toggleColumn(c.key)}
                   className={`px-3 py-1.5 rounded-full text-[11px] font-medium border transition-colors ${
                     columns.includes(c.key) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300"

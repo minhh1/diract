@@ -16,6 +16,7 @@ import { isRelationType, isNumericType, isDateType, operatorsForType, aggregates
 import { PILL_SIZE_LABELS, PILL_GAP_LABELS, type PillSize, type PillGap, type FieldWidth } from "@/lib/dashboardWidgets/pillSize";
 import { RELATIVE_DATE_RANGES, RELATIVE_DATE_LABELS } from "@/lib/dashboardWidgets/relativeDates";
 import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
+import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 
 // Grid columns store a raw pixel width (GridWidget.config.columnWidths),
 // unlike filter_bar/quick_add_form's category-based fieldLayout -- these
@@ -111,6 +112,13 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
   const [editExpiresAt, setEditExpiresAt] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // "Matter number" is a per-company custom field on Projects, not
+  // universal -- see components/settings/PublicTaskPagesTab.tsx's matching
+  // comment.
+  const { fields: projectFields } = useCompanyCustomFields('projects');
+  const hasMatterNumberField = projectFields.some(f => f.field_key === 'matter_number');
+  const availablePublicTaskColumns = PUBLIC_TASK_COLUMNS.filter(c => c.key !== 'matter_number' || hasMatterNumberField);
 
   useEffect(() => {
     let active = true;
@@ -296,7 +304,7 @@ function PublicTaskPageConfig({ pageId, onPageIdChange }: { pageId: string | nul
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Columns to show</label>
           <div className="flex flex-wrap gap-2">
-            {PUBLIC_TASK_COLUMNS.map(c => (
+            {availablePublicTaskColumns.map(c => (
               <button
                 key={c.key}
                 type="button"
