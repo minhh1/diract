@@ -16,7 +16,7 @@ const REQUIRED_FIELD_KEYS = ["matter", "staff", "date", "description", "duration
 
 interface SubmitEntry {
   key: string;
-  userId: string;
+  userId: string | null;
   matterId: string;
   description: string;
   hours: number;
@@ -48,6 +48,13 @@ export async function POST(req: NextRequest) {
   const staffEntityCache = new Map<string, { id: string; default_rate: number | null } | null>();
 
   for (const entry of entries) {
+    // Unattributed email suggestions arrive with userId: null until a
+    // human (the panel restricts this to an admin) picks who it actually
+    // belongs to -- see lib/ai/emailTimekeeperAttribution.ts's rule 4.
+    if (!entry.userId) {
+      results.push({ key: entry.key, ok: false, error: "Pick a timekeeper before submitting this entry" });
+      continue;
+    }
     if (entry.userId !== user.id && !isAdmin) {
       results.push({ key: entry.key, ok: false, error: "Only a company admin can submit another person's time entry" });
       continue;

@@ -23,9 +23,13 @@ import { useCompany } from "@/components/CompanyContext";
 
 interface DraftEntry {
   key: string;
-  userId: string;
+  // null for an email attribution couldn't resolve to anyone (see
+  // lib/ai/emailTimekeeperAttribution.ts) -- only ever appears in the admin
+  // "everyone's day" scope; the admin picks who it belongs to below before
+  // it can be checked/submitted.
+  userId: string | null;
   userInitials: string;
-  userName: string;
+  userName: string | null;
   matterId: string;
   matterLabel: string;
   description: string;
@@ -34,6 +38,8 @@ interface DraftEntry {
   sourceTaskIds: string[];
   sourceEmailIds: string[];
 }
+
+interface StaffOption { userId: string; name: string; initials: string; }
 
 const todayInputValue = () => new Date().toISOString().slice(0, 10);
 
@@ -51,6 +57,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Prop
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<DraftEntry[]>([]);
+  const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +76,10 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Prop
       if (!res.ok) throw new Error(json.error || "Could not generate time entries");
       const rows: DraftEntry[] = json.entries || [];
       setEntries(rows);
-      setChecked(new Set(rows.map(r => r.key)));
+      setStaffOptions(json.staffOptions || []);
+      // Rows with no timekeeper resolved yet start unchecked -- there's
+      // nothing valid to submit until one is assigned below.
+      setChecked(new Set(rows.filter(r => r.userId).map(r => r.key)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not generate time entries");
       setEntries([]);
@@ -85,11 +95,19 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Prop
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
-  const allChecked = entries.length > 0 && checked.size === entries.length;
-  const toggleAll = () => setChecked(allChecked ? new Set() : new Set(entries.map(e => e.key)));
+  const assignableEntries = entries.filter(e => e.userId);
+  const allChecked = assignableEntries.length > 0 && assignableEntries.every(e => checked.has(e.key));
+  const toggleAll = () => setChecked(allChecked ? new Set() : new Set(assignableEntries.map(e => e.key)));
 
   const updateEntry = (key: string, patch: Partial<DraftEntry>) =>
     setEntries(prev => prev.map(e => e.key === key ? { ...e, ...patch } : e));
+
+  // Picking a timekeeper for an unresolved email entry -- auto-checks it
+  // too, same "ready to go" default every other row starts with.
+  const assignTimekeeper = (key: string, option: StaffOption) => {
+    updateEntry(key, { userId: option.userId, userInitials: option.initials, userName: option.name });
+    setChecked(prev => new Set(prev).add(key));
+  };
 
   const handleSubmit = async () => {
     const toSubmit = entries.filter(e => checked.has(e.key));
@@ -161,16 +179,30 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Prop
             <div className="space-y-2">
               <label className="flex items-center gap-2 px-1 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest cursor-pointer">
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} className="w-3.5 h-3.5 rounded accent-indigo-600" />
-                Select all ({entries.length})
+                Select all ({assignableEntries.length}{assignableEntries.length !== entries.length ? ` of ${entries.length}` : ""})
               </label>
               {entries.map(e => (
-                <div key={e.key} className="border border-slate-200 rounded-2xl p-3 space-y-2">
+                <div key={e.key} className={`border rounded-2xl p-3 space-y-2 ${e.userId ? "border-slate-200" : "border-amber-200 bg-amber-50/30"}`}>
                   <div className="flex items-start gap-2.5">
-                    <input type="checkbox" checked={checked.has(e.key)} onChange={() => toggleOne(e.key)}
-                      className="mt-1 w-3.5 h-3.5 rounded accent-indigo-600 shrink-0" />
+                    <input type="checkbox" checked={checked.has(e.key)} onChange={() => toggleOne(e.key)} disabled={!e.userId}
+                      className="mt-1 w-3.5 h-3.5 rounded accent-indigo-600 shrink-0 disabled:opacity-30" />
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-bold flex items-center justify-center shrink-0" title={e.userName}>{e.userInitials}</span>
+                        {e.userId ? (
+                          <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-bold flex items-center justify-center shrink-0" title={e.userName || undefined}>{e.userInitials}</span>
+                        ) : (
+                          <select
+                            value=""
+                            onChange={ev => {
+                              const opt = staffOptions.find(s => s.userId === ev.target.value);
+                              if (opt) assignTimekeeper(e.key, opt);
+                            }}
+                            className="px-2.5 py-1 rounded-full text-[10px] font-bold border border-amber-300 bg-white text-amber-700 outline-none"
+                          >
+                            <option value="" disabled>Assign timekeeper…</option>
+                            {staffOptions.map(s => <option key={s.userId} value={s.userId}>{s.name}</option>)}
+                          </select>
+                        )}
                         <span className="text-[10px] text-slate-400 font-medium">{e.date}</span>
                         <span className="text-[10px] text-slate-400">·</span>
                         <span className="text-[10px] font-bold text-slate-500">{matterLabel}: {e.matterLabel}</span>

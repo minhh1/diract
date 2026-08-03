@@ -30,9 +30,11 @@
 //      most recent earlier message actually SENT by one of our staff, and
 //      attribute to them (whoever's been carrying the conversation on our
 //      side is the most likely owner of this reply).
-//   4. Still nothing -- skip the email entirely rather than guess. It's
-//      simply not suggested this run; a later run (once e.g. the thread
-//      has more history) may resolve it.
+//   4. Still nothing -- returned with timekeeperUserId: null rather than
+//      guessed OR dropped. The caller (app/api/time-entries/auto-generate)
+//      surfaces these in the admin "everyone's day" view only, letting a
+//      human pick who it actually belongs to instead of the system either
+//      inventing an answer or silently losing the email from view.
 export interface RawProjectEmail {
   id: string;
   subject: string | null;
@@ -61,7 +63,9 @@ export interface AttributedEmail {
   snippet: string | null;
   fromName: string | null;
   projectId: string;
-  timekeeperUserId: string;
+  // null when none of the 3 attribution rules resolved anyone -- see
+  // rule 4 in the header comment.
+  timekeeperUserId: string | null;
 }
 
 function fingerprint(e: RawProjectEmail): string {
@@ -138,8 +142,6 @@ export function dedupeAndAttributeEmails(
       }
     }
 
-    if (!timekeeper) continue;
-
     results.push({
       id: rep.id,
       duplicateIds,
@@ -147,7 +149,7 @@ export function dedupeAndAttributeEmails(
       snippet: rep.snippet,
       fromName: rep.from_name,
       projectId: rep.project_id,
-      timekeeperUserId: timekeeper.userId,
+      timekeeperUserId: timekeeper?.userId ?? null,
     });
   }
   return results;

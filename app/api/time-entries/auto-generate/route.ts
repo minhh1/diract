@@ -96,16 +96,25 @@ export async function POST(req: NextRequest) {
     }));
 
   const attributedEmails = dedupeAndAttributeEmails(rawEmails, staff, excludedEmailIds);
-  const scopedEmails = scope === "mine" ? attributedEmails.filter(e => e.timekeeperUserId === user.id) : attributedEmails;
   const emailDuplicatesByRepId = new Map(attributedEmails.map(e => [e.id, e.duplicateIds]));
+
+  // Emails attribution could resolve, scoped to who's asking. Emails it
+  // COULDN'T resolve (timekeeperUserId === null) only ever surface in the
+  // admin "everyone's day" view, never a regular user's own "my day" -- a
+  // non-admin has no business seeing an ambiguous email that might not even
+  // be theirs. The admin picks a timekeeper for these client-side (see
+  // AutoTimeRecordingPanel) rather than the system guessing.
+  const resolvedEmails = attributedEmails.filter(e => e.timekeeperUserId !== null);
+  const scopedResolvedEmails = scope === "mine" ? resolvedEmails.filter(e => e.timekeeperUserId === user.id) : resolvedEmails;
+  const unresolvedEmails = scope === "all" ? attributedEmails.filter(e => e.timekeeperUserId === null) : [];
 
   const tasks = (rawTasks || []).filter((t: any) => t.project_id && t.assignee_id && !excludedTaskIds.has(t.id));
 
-  if (!tasks.length && !scopedEmails.length) {
-    return NextResponse.json({ date, entries: [] });
+  if (!tasks.length && !scopedResolvedEmails.length && !unresolvedEmails.length) {
+    return NextResponse.json({ date, entries: [], staffOptions: [] });
   }
 
-  const projectIds = Array.from(new Set([...tasks.map((t: any) => t.project_id), ...scopedEmails.map(e => e.projectId)]));
+  const projectIds = Array.from(new Set([...tasks.map((t: any) => t.project_id), ...scopedResolvedEmails.map(e => e.projectId), ...unresolvedEmails.map(e => e.projectId)]));
   const { data: projects } = await admin.from("projects").select("id, name").in("id", projectIds);
   const projectNameById = new Map((projects || []).map((p: any) => [p.id, p.name]));
 
@@ -122,7 +131,7 @@ export async function POST(req: NextRequest) {
   }
   const matterLabel = (projectId: string) => matterNumberByProjectId.get(projectId) || projectNameById.get(projectId) || "Unknown matter";
 
-  const userIds = Array.from(new Set([...tasks.map((t: any) => t.assignee_id), ...scopedEmails.map(e => e.timekeeperUserId)]));
+  const userIds = Array.from(new Set([...tasks.map((t: any) => t.assignee_id), ...scopedResolvedEmails.map(e => e.timekeeperUserId as string)]));
 
   const { data: aiSettings } = await admin.from("ai_chat_settings").select("monthly_token_cap").eq("company_id", companyId).maybeSingle();
   const tokenCap = aiSettings?.monthly_token_cap ?? 2000000;
@@ -134,7 +143,7 @@ export async function POST(req: NextRequest) {
 
     const userTasks: AutoTimeEntryTaskInput[] = tasks.filter((t: any) => t.assignee_id === uid)
       .map((t: any) => ({ id: t.id, name: t.name, notes: t.notes, matterId: t.project_id, matterLabel: matterLabel(t.project_id) }));
-    const userEmails: AutoTimeEntryEmailInput[] = scopedEmails.filter(e => e.timekeeperUserId === uid)
+    const userEmails: AutoTimeEntryEmailInput[] = scopedResolvedEmails.filter(e => e.timekeeperUserId === uid)
       .map(e => ({ id: e.id, subject: e.subject, snippet: e.snippet, fromName: e.fromName, matterId: e.projectId, matterLabel: matterLabel(e.projectId) }));
     if (!userTasks.length && !userEmails.length) continue;
 
@@ -176,5 +185,44 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ date, entries });
+  // Emails attribution genuinely couldn't resolve -- one batch AI call (no
+  // tasks, so nothing to merge them with; matter-based grouping still
+  // applies) rather than one per email. userId stays null: the admin picks
+  // a timekeeper for each of these in the panel before it can be submitted
+  // (see AutoTimeRecordingPanel and the submit route's own userId check).
+  if (unresolvedEmails.length && !(await isTokenCapReached(admin, companyId, tokenCap))) {
+    const unresolvedInputs: AutoTimeEntryEmailInput[] = unresolvedEmails.map(e => ({
+      id: e.id, subject: e.subject, snippet: e.snippet, fromName: e.fromName, matterId: e.projectId, matterLabel: matterLabel(e.projectId),
+    }));
+    const result = await draftAutoTimeEntries(MODEL_ID, [], unresolvedInputs);
+    if (result) {
+      const cost = costUsd("hosted", MODEL_ID, result);
+      await admin.from("ai_usage_events").insert({
+        company_id: companyId, user_id: user.id, model_id: MODEL_ID, provider: "hosted",
+        input_tokens: result.inputTokens, output_tokens: result.outputTokens, cost_usd: cost,
+      });
+      for (const d of result.drafts) {
+        entrySeq += 1;
+        const sourceEmailIds = d.sourceEmailIds.flatMap(repId => emailDuplicatesByRepId.get(repId) || [repId]);
+        entries.push({
+          key: `unresolved-${entrySeq}`,
+          userId: null,
+          userInitials: "?",
+          userName: null,
+          staffEntityId: null,
+          defaultRate: null,
+          date,
+          matterId: d.matterId,
+          matterLabel: d.matterLabel,
+          description: d.description,
+          hours: d.hours,
+          sourceTaskIds: d.sourceTaskIds,
+          sourceEmailIds,
+        });
+      }
+    }
+  }
+
+  const staffOptions = staff.map(s => ({ userId: s.userId, name: s.fullName, initials: initialsFor(s.fullName) }));
+  return NextResponse.json({ date, entries, staffOptions });
 }
