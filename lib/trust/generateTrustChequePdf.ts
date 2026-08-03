@@ -84,12 +84,20 @@ export async function generateTrustChequePdf(input: GenerateTrustChequePdfInput)
   const chequeH = 220;
   box(MARGIN, chequeTop - chequeH, PAGE_W - MARGIN * 2, chequeH);
 
+  // Company name/ABN sit to the RIGHT of the logo, not stacked under it --
+  // both used to anchor at the exact same corner (MARGIN+16, chequeTop-16),
+  // so a logo anywhere near its height cap (45pt) drew straight through the
+  // name/ABN text. There's no per-document layout control on a cheque for
+  // a user to fix that themselves.
+  let nameX = MARGIN + 16;
   if (logoImage) {
     const scale = Math.min(120 / logoImage.width, 45 / logoImage.height, 1);
-    page.drawImage(logoImage, { x: MARGIN + 16, y: chequeTop - 16 - logoImage.height * scale, width: logoImage.width * scale, height: logoImage.height * scale });
+    const w = logoImage.width * scale, h = logoImage.height * scale;
+    page.drawImage(logoImage, { x: MARGIN + 16, y: chequeTop - 16 - h, width: w, height: h });
+    nameX = MARGIN + 16 + w + 12;
   }
-  text(input.company.name, MARGIN + 16, 13, { bold: true }, chequeTop - 24);
-  if (input.company.abn) text(`ABN ${input.company.abn}`, MARGIN + 16, 9, { color: [0.4, 0.4, 0.45] }, chequeTop - 38);
+  text(input.company.name, nameX, 13, { bold: true }, chequeTop - 24);
+  if (input.company.abn) text(`ABN ${input.company.abn}`, nameX, 9, { color: [0.4, 0.4, 0.45] }, chequeTop - 38);
 
   text(`No. ${input.cheque.chequeNumber}`, PAGE_W - MARGIN - 16, 12, { bold: true, align: 'right' }, chequeTop - 24);
   text(formatDate(input.cheque.date), PAGE_W - MARGIN - 16, 11, { align: 'right' }, chequeTop - 40);

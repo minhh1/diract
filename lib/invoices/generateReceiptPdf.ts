@@ -66,11 +66,14 @@ export async function generateReceiptPdf(input: GenerateReceiptPdfInput): Promis
   }
 
   // ── Letterhead ─────────────────────────────────────────────────────
+  let logoH = 0;
   if (logoImage) {
     const scale = Math.min(160 / logoImage.width, 60 / logoImage.height, 1);
     const w = logoImage.width * scale, h = logoImage.height * scale;
     page.drawImage(logoImage, { x: MARGIN, y: y - h, width: w, height: h });
+    logoH = h;
   }
+  let companyInfoH = 20;
   {
     let fy = y;
     text(input.company.name, PAGE_W - MARGIN, 16, { bold: true, align: 'right' }, fy);
@@ -78,15 +81,20 @@ export async function generateReceiptPdf(input: GenerateReceiptPdfInput): Promis
     if (input.company.abn) {
       text(`ABN ${input.company.abn}`, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy);
       fy -= 13;
+      companyInfoH += 13;
     }
     if (input.company.address) {
       text(input.company.address, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy);
       fy -= 13;
+      companyInfoH += 13;
     }
   }
 
   // ── Title + receipt meta ─────────────────────────────────────────────
-  y -= 66;
+  // Clearance driven by whichever block (logo or company name/ABN/address)
+  // actually turned out taller -- not a fixed guess. There's no per-
+  // document layout control here for a user to fix an overlap themselves.
+  y -= Math.max(logoH, companyInfoH) + 24;
   text('RECEIPT', MARGIN, 20, { bold: true }, y);
   y -= 26;
   text(`Receipt No. ${input.receipt.receiptNumber}`, MARGIN, 11, {}, y);

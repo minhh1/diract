@@ -4,6 +4,7 @@
 // Receipts table's "OA-" series) and able to list several matters under one
 // receipt number (DepositFundsModal.tsx's shared-receipt multi-matter split).
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { wrapPdfText } from "./pdfTextWrap";
 
 export interface GenerateTrustReceiptPdfInput {
   company: { name: string; abn: string | null; address: string | null; logoBytes: Uint8Array | null; logoIsPng: boolean };
@@ -55,20 +56,29 @@ export async function generateTrustReceiptPdf(input: GenerateTrustReceiptPdfInpu
     page.drawLine({ start: { x: MARGIN, y: atY }, end: { x: PAGE_W - MARGIN, y: atY }, thickness: 0.75, color: rgb(0.85, 0.85, 0.87) });
   }
 
+  let logoH = 0;
   if (logoImage) {
     const scale = Math.min(160 / logoImage.width, 60 / logoImage.height, 1);
     const w = logoImage.width * scale, h = logoImage.height * scale;
     page.drawImage(logoImage, { x: MARGIN, y: y - h, width: w, height: h });
+    logoH = h;
   }
+  let companyInfoH = 20;
   {
     let fy = y;
     text(input.company.name, PAGE_W - MARGIN, 16, { bold: true, align: 'right' }, fy);
     fy -= 20;
-    if (input.company.abn) { text(`ABN ${input.company.abn}`, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy); fy -= 13; }
-    if (input.company.address) { text(input.company.address, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy); fy -= 13; }
+    if (input.company.abn) { text(`ABN ${input.company.abn}`, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy); fy -= 13; companyInfoH += 13; }
+    if (input.company.address) { text(input.company.address, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy); fy -= 13; companyInfoH += 13; }
   }
 
-  y -= 66;
+  // Clearance below the letterhead is driven by whichever block (logo or
+  // company name/ABN/address) actually turned out taller, not a fixed
+  // guess -- a near-square/tall logo can use its full height cap (60pt)
+  // regardless of what a company sets it to, and there's no per-document
+  // layout control here (unlike the invoice PDFs' adjustable logo) for a
+  // user to fix an overlap themselves if it happened.
+  y -= Math.max(logoH, companyInfoH) + 24;
   text('TRUST RECEIPT', MARGIN, 20, { bold: true }, y);
   y -= 26;
   text(`Receipt No. ${input.receipt.receiptNumber}`, MARGIN, 11, {}, y);
@@ -96,10 +106,16 @@ export async function generateTrustReceiptPdf(input: GenerateTrustReceiptPdfInpu
   text('MATTER', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] }, y);
   text('AMOUNT', PAGE_W - MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6], align: 'right' }, y);
   y -= 16;
+  // Matter names are free text (project names) with no length limit -- a
+  // long one wraps within the space left of the amount column instead of
+  // running under/through it.
+  const AMOUNT_COL_W = 90;
+  const matterColW = PAGE_W - 2 * MARGIN - AMOUNT_COL_W;
   for (const line of input.lines) {
-    text(line.matterName, MARGIN, 11, {}, y);
+    const wrapped = wrapPdfText(line.matterName, regular, 11, matterColW);
+    wrapped.forEach((l, i) => text(l, MARGIN, 11, {}, y - i * 14));
     text(money(line.amount), PAGE_W - MARGIN, 11, { align: 'right' }, y);
-    y -= 16;
+    y -= wrapped.length * 14 + 2;
   }
 
   y -= 6;

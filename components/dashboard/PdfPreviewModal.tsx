@@ -41,8 +41,18 @@ export default function PdfPreviewModal({ src, downloadSrc, wordDownloadSrc, tit
           <button onClick={onClose} className="p-2 text-white/70 hover:text-white"><X size={18} /></button>
         </div>
       </div>
-      <div className="flex-1 bg-white rounded-2xl overflow-hidden">
-        <iframe src={src} className="w-full h-full border-0" title={title || 'PDF preview'} />
+      {/* Capped at a realistic single-page width (max-w-3xl) and centred --
+          without this, the iframe stretched edge-to-edge on a wide/landscape
+          viewport, and the browser's built-in PDF viewer rendered the
+          (correctly A4-sized) page at a fixed zoom pinned to one side,
+          leaving a huge block of blank space rather than looking like a
+          normal page. Landscape-orientation PDFs (the wide trust reports)
+          still get plenty of room within 3xl; this only stops portrait
+          documents from being stretched needlessly wide. */}
+      <div className="flex-1 flex justify-center overflow-hidden">
+        <div className="w-full max-w-3xl h-full bg-white rounded-2xl overflow-hidden">
+          <iframe src={src} className="w-full h-full border-0" title={title || 'PDF preview'} />
+        </div>
       </div>
     </div>
   );
