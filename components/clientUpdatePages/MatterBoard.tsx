@@ -1921,7 +1921,10 @@ function AskMatterPanel({ onAsk }: { onAsk: (question: string) => Promise<string
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === "Enter") ask(); }}
-              placeholder="e.g. Did the vendor reply about our amendment requests?"
+              // No placeholder -- the "Ask anything" label right above
+              // already says what this is for, and the placeholder text
+              // rendered at the larger 16px below looked visually heavier
+              // than everything else in this panel for no real benefit.
               // text-[16px], not the usual text-[11px]/[12px] this board
               // uses everywhere else -- iOS Safari auto-zooms the whole
               // page in on focus for any input under 16px, which read
