@@ -52,8 +52,15 @@ export async function POST(req: NextRequest) {
   if (scope === "mine") taskQuery = taskQuery.eq("assignee_id", user.id);
   const { data: rawTasks } = await taskQuery;
 
-  let emailQuery = admin.from("project_emails").select("id, subject, snippet, from_name, user_id, project_id, date")
-    .eq("company_id", companyId).gte("date", startIso).lt("date", endIso);
+  // `date` (the email's own sent/received timestamp) is nullable -- some
+  // rows land in project_emails with it unset (confirmed live: a batch of
+  // matter-linked emails all had date=null despite being genuinely from
+  // today). Falls back to created_at (when the row was linked to the
+  // matter) for exactly those rows, rather than silently excluding them
+  // from every day's range forever.
+  let emailQuery = admin.from("project_emails").select("id, subject, snippet, from_name, user_id, project_id, date, created_at")
+    .eq("company_id", companyId)
+    .or(`and(date.gte.${startIso},date.lt.${endIso}),and(date.is.null,created_at.gte.${startIso},created_at.lt.${endIso})`);
   if (scope === "mine") emailQuery = emailQuery.eq("user_id", user.id);
   const { data: rawEmails } = await emailQuery;
 
