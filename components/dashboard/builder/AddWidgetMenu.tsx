@@ -15,10 +15,15 @@ interface Props {
   // passed in by CanvasEditor for a tableless (sourceKind 'none') dashboard.
   // Undefined (the common case) shows every widget type.
   allowedTypes?: DashboardWidgetType[];
+  // Removes these types regardless of allowedTypes -- see
+  // lib/dashboardWidgets/defaults.ts's LAW_FIRM_ONLY_WIDGET_TYPES, passed in
+  // by CanvasEditor for a company without the Law Firm template installed.
+  excludedTypes?: DashboardWidgetType[];
 }
 
-export default function AddWidgetMenu({ onAdd, allowedTypes }: Props) {
-  const TYPES = allowedTypes ? ALL_TYPES.filter(t => allowedTypes.includes(t)) : ALL_TYPES;
+export default function AddWidgetMenu({ onAdd, allowedTypes, excludedTypes }: Props) {
+  const TYPES = (allowedTypes ? ALL_TYPES.filter(t => allowedTypes.includes(t)) : ALL_TYPES)
+    .filter(t => !excludedTypes?.includes(t));
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

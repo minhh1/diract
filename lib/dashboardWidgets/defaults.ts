@@ -64,6 +64,18 @@ export const TABLE_INDEPENDENT_WIDGET_TYPES: DashboardWidgetType[] = [
   'finance_model_search', 'residual_land_solver', 'auto_time_recording_button',
 ];
 
+// Trust accounting / time-and-fees widgets only mean anything on a company
+// that's installed the Australian Law Firm template (see
+// supabase/template_law_firm_seed.sql) -- every other company has no Trust
+// Transactions/Time & Fee Entries table for these to read, so AddWidgetMenu
+// hides them entirely rather than offering a widget that can only ever
+// render empty. Gated the same way Sidebar.tsx/AddTabModal.tsx already gate
+// their own Law-Firm-only UI: `customTables.some(t => t.slug === 'trust-accounts')`.
+export const LAW_FIRM_ONLY_WIDGET_TYPES: DashboardWidgetType[] = [
+  'trust_reconciliation', 'ledes_export', 'trust_ledger_statement', 'trust_cash_book', 'trust_aged_balances',
+  'auto_time_recording_button', 'time_fees_report', 'time_aging_report',
+];
+
 export function createWidget(type: DashboardWidgetType, existingWidgets: DashboardWidget[]): DashboardWidget {
   const y = existingWidgets.reduce((max, w) => Math.max(max, w.layout.y + w.layout.h), 0);
   const layout: WidgetLayout = { x: 0, y, ...DEFAULT_LAYOUT_BY_TYPE[type] };

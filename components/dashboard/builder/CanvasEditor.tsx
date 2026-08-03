@@ -21,10 +21,11 @@ import { GripVertical, Settings, Trash2 } from "lucide-react";
 import DashboardWidgetRenderer from "../DashboardWidgetRenderer";
 import AddWidgetMenu from "./AddWidgetMenu";
 import WidgetConfigPanel from "./WidgetConfigPanel";
-import { createWidget, TABLE_INDEPENDENT_WIDGET_TYPES } from "@/lib/dashboardWidgets/defaults";
+import { createWidget, TABLE_INDEPENDENT_WIDGET_TYPES, LAW_FIRM_ONLY_WIDGET_TYPES } from "@/lib/dashboardWidgets/defaults";
 import type { DashboardWidget, DashboardWidgetType } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
+import { useCustomTables } from "@/lib/hooks/useCustomTables";
 
 interface Props {
   widgets: DashboardWidget[];
@@ -41,6 +42,12 @@ interface Props {
 export default function CanvasEditor({ widgets, onChange, fields, fieldById, records, tableId, sourceKind, companyId, userId }: Props) {
   const { width, containerRef, mounted } = useContainerWidth();
   const [configuringId, setConfiguringId] = useState<string | null>(null);
+
+  // Same "has the Law Firm template" gate Sidebar.tsx/AddTabModal.tsx
+  // already use -- trust-accounts only exists for a company that's
+  // installed it, so its presence stands in for the template itself.
+  const { tables: customTables } = useCustomTables(userId);
+  const hasLawFirmTemplate = customTables.some(t => t.slug === 'trust-accounts');
 
   const layout: Layout = widgets.map(w => ({ i: w.id, x: w.layout.x, y: w.layout.y, w: w.layout.w, h: w.layout.h }));
 
@@ -66,7 +73,11 @@ export default function CanvasEditor({ widgets, onChange, fields, fieldById, rec
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <AddWidgetMenu onAdd={handleAdd} allowedTypes={sourceKind === 'none' ? TABLE_INDEPENDENT_WIDGET_TYPES : undefined} />
+        <AddWidgetMenu
+          onAdd={handleAdd}
+          allowedTypes={sourceKind === 'none' ? TABLE_INDEPENDENT_WIDGET_TYPES : undefined}
+          excludedTypes={hasLawFirmTemplate ? undefined : LAW_FIRM_ONLY_WIDGET_TYPES}
+        />
       </div>
 
       {widgets.length === 0 ? (
