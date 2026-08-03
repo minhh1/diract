@@ -4,9 +4,11 @@
 // when, and the reason staff gave for the edit. Same gate as the parent GET
 // route (active/unexpired/PIN); additionally verifies itemId and fieldId
 // actually belong to this page, so a valid PIN for page A can't be used to
-// read another page's cell history by guessing ids. Only value_changed rows
-// carry item_id/field_id (see the migration that added those columns), so
-// there's no need to filter action explicitly here.
+// read another page's cell history by guessing ids. Only rows that carry
+// item_id/field_id at all are 'value_changed' or 'settlement_status' (see
+// the migration that added those columns, and
+// lib/clientUpdatePageSettlementReview.ts for the latter) -- both are fine
+// to show a client, so there's no need to filter action explicitly here.
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { loadActivePageBySlug, codeMatches } from "@/lib/clientUpdatePageGate";
@@ -37,7 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
   const { data: logs, error } = await admin
     .from("client_update_page_logs")
-    .select("id, actor_name, old_value, new_value, reason, created_at")
+    .select("id, actor_name, action, old_value, new_value, reason, created_at")
     .eq("item_id", itemId).eq("field_id", fieldId)
     .order("created_at", { ascending: false })
     .limit(50);

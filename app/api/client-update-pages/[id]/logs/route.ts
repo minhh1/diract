@@ -26,7 +26,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .eq("page_id", id)
     .order("created_at", { ascending: false });
 
-  if (itemId && fieldId) query = query.eq("item_id", itemId).eq("field_id", fieldId).eq("action", "value_changed");
+  // 'settlement_status' alongside 'value_changed' -- the bulk AI status
+  // check (.../settlement-status-all/route.ts) logs a status note against
+  // the Settlement Date field even when nothing actually changed (extension
+  // requested, followed up, not yet agreed, no discussion), so it needs to
+  // show up here too, not just the page-wide activity log.
+  if (itemId && fieldId) query = query.eq("item_id", itemId).eq("field_id", fieldId).in("action", ["value_changed", "settlement_status"]);
   else query = query.limit(200);
 
   const { data: logs, error } = await query;

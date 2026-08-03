@@ -68,8 +68,14 @@ export async function runSettlementDateReview(
 
   if (!result.agreed || !result.newDate) {
     if (logStatusEvenIfNotAgreed) {
+      // cell (itemId/fieldId) attached even though nothing actually changed
+      // -- without it this only shows up in the page-wide activity log, not
+      // the Settlement Date field's own "See what changed" history, which
+      // is where staff actually go looking for it (see logs/route.ts and
+      // the public cell-logs route, both scoped by item_id+field_id).
       await logChange(admin, pageId, "AI review", "ai", "settlement_status",
-        `AI review: settlement date status for "${matterName}" -- ${result.reasoning}`);
+        `AI review: settlement date status for "${matterName}" -- ${result.reasoning}`,
+        { itemId, fieldId, oldValue: null, newValue: null, reason: result.reasoning });
     }
     return { ran: true, agreed: false, newDate: null, status: result.status, reasoning: result.reasoning };
   }

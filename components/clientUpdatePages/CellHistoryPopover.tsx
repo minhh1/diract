@@ -8,10 +8,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, Sparkles } from "lucide-react";
 import { formatDate } from "./dateFormat";
 
-export interface CellLogEntry { id: string; actor_name: string | null; old_value: string | null; new_value: string | null; reason: string | null; created_at: string; }
+export interface CellLogEntry { id: string; actor_name: string | null; action?: string; old_value: string | null; new_value: string | null; reason: string | null; created_at: string; }
 
 interface HistoryField { field_type?: string; field_key: string }
 
@@ -70,18 +70,34 @@ export default function CellHistoryPopover({ field, fieldLabel, dateFormat, onFe
             <div className="space-y-4">
               {logs.map(l => (
                 <div key={l.id} className="text-[12px] border-b border-slate-50 last:border-0 pb-4 last:pb-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-slate-700">
-                      <span className="text-slate-400">{displayValue(l.old_value, field, dateFormat)}</span>
-                      {" → "}
-                      <span className="font-bold">{displayValue(l.new_value, field, dateFormat)}</span>
-                    </span>
-                    <span className="text-slate-300 shrink-0">{timeAgo(l.created_at)}</span>
-                  </div>
-                  <p className="text-slate-400 mt-1">
-                    {l.actor_name || "Someone"}
-                    {l.reason && <span> (&ldquo;{l.reason}&rdquo;)</span>}
-                  </p>
+                  {l.action === "settlement_status" ? (
+                    // An AI status check (agreed/extension requested/followed
+                    // up/not yet agreed/no discussion) -- old_value/new_value
+                    // are both null since nothing on the cell actually
+                    // changed, so there's no real "X → Y" to show; the
+                    // reasoning itself IS the entry.
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="flex items-center gap-1.5 text-slate-600">
+                        <Sparkles size={11} className="text-purple-400 shrink-0" /> {l.reason}
+                      </p>
+                      <span className="text-slate-300 shrink-0">{timeAgo(l.created_at)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-700">
+                          <span className="text-slate-400">{displayValue(l.old_value, field, dateFormat)}</span>
+                          {" → "}
+                          <span className="font-bold">{displayValue(l.new_value, field, dateFormat)}</span>
+                        </span>
+                        <span className="text-slate-300 shrink-0">{timeAgo(l.created_at)}</span>
+                      </div>
+                      <p className="text-slate-400 mt-1">
+                        {l.actor_name || "Someone"}
+                        {l.reason && <span> (&ldquo;{l.reason}&rdquo;)</span>}
+                      </p>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
