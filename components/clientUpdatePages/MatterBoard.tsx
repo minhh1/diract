@@ -2156,7 +2156,16 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
             </tr>
             {expanded && (
               <tr className="border-b border-slate-50 last:border-0">
-                <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3">
+                {/* max-w-0 -- this table uses the default auto layout, which
+                    sizes the WHOLE table to fit its widest cell's natural
+                    content width. Without this, any long unbroken text in
+                    here (an AI summary or answer) grew the entire table
+                    wider instead of wrapping, pushing itself off the visible
+                    area and forcing a horizontal scroll to read it. max-w-0
+                    tells the layout algorithm to size the table off the
+                    other (narrow, single-line) columns instead, so this
+                    cell's own content wraps to fit whatever width results. */}
+                <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3 max-w-0">
                   {baseTable === "entities" && pageId && (
                     <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
                   )}
