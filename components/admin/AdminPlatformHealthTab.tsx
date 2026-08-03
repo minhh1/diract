@@ -12,17 +12,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  Loader2, KeyRound, Radio, DollarSign, BarChart3, HeartPulse,
-  CheckCircle2, XCircle, RotateCw, Plus, Trash2, Search, ChevronDown, ChevronUp,
+  Loader2, KeyRound, Radio, DollarSign, BarChart3, HeartPulse, Database,
+  CheckCircle2, XCircle, RotateCw, Plus, Trash2, Search, ChevronDown, ChevronUp, AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import HeartbeatStatusList, { type HeartbeatDef, type HeartbeatRow } from "@/components/admin/HeartbeatStatusList";
 import MiniLineChart from "@/components/admin/MiniLineChart";
 
-type Section = "secrets" | "services" | "costs" | "analytics" | "heartbeat";
+type Section = "secrets" | "services" | "costs" | "analytics" | "heartbeat" | "supabase";
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "heartbeat", label: "Heartbeat", icon: HeartPulse },
+  { id: "supabase", label: "Supabase", icon: Database },
   { id: "services", label: "Services", icon: Radio },
   { id: "secrets", label: "Secrets", icon: KeyRound },
   { id: "costs", label: "Costs", icon: DollarSign },
@@ -164,6 +165,23 @@ interface HeartbeatCheck {
   detail?: string;
 }
 
+// ── Supabase (connection + auth-session health) ─────────────────────
+interface ConnectionStats {
+  total: number; active: number; idle: number; idleInTransaction: number;
+  maxConnections: number; longestActiveQuerySeconds: number; longestIdleInTransactionSeconds: number;
+}
+interface AuthTokenStats {
+  totalActiveSessions: number; staleSessions: number; oldestUnrefreshedMinutes: number; sessionsCreatedLast24h: number;
+}
+interface SupabaseHealthAdvice { severity: "warning" | "critical"; message: string; }
+interface SupabaseHealthData { connection: ConnectionStats; auth: AuthTokenStats; advice: SupabaseHealthAdvice[]; }
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${Math.round(seconds / 3600)}h`;
+}
+
 export default function AdminPlatformHealthTab() {
   const [section, setSection] = useState<Section>("heartbeat");
 
@@ -193,6 +211,22 @@ export default function AdminPlatformHealthTab() {
     const interval = setInterval(runChecks, 30000);
     return () => clearInterval(interval);
   }, [section, runChecks]);
+
+  // Supabase (connection + auth-session health)
+  const [supabaseHealth, setSupabaseHealth] = useState<SupabaseHealthData | null>(null);
+  const [supabaseHealthLoading, setSupabaseHealthLoading] = useState(true);
+  const loadSupabaseHealth = useCallback(async () => {
+    const res = await fetch("/api/admin/supabase-health");
+    const json = await res.json();
+    if (res.ok) setSupabaseHealth(json);
+    setSupabaseHealthLoading(false);
+  }, []);
+  useEffect(() => {
+    if (section !== "supabase") return;
+    loadSupabaseHealth();
+    const interval = setInterval(loadSupabaseHealth, 20000);
+    return () => clearInterval(interval);
+  }, [section, loadSupabaseHealth]);
 
   // Services
   const [serviceHeartbeats, setServiceHeartbeats] = useState<HeartbeatRow[]>([]);
@@ -399,6 +433,55 @@ export default function AdminPlatformHealthTab() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Supabase (connection + auth-session health) ── */}
+      {section === "supabase" && (
+        supabaseHealthLoading || !supabaseHealth ? (
+          <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
+        ) : (
+          <div className="space-y-3">
+            {supabaseHealth.advice.map((a, i) => (
+              <div key={i} className={`flex items-start gap-2 px-4 py-3 rounded-2xl text-[12px] border ${
+                a.severity === "critical" ? "bg-red-50 border-red-100 text-red-700" : "bg-amber-50 border-amber-100 text-amber-800"
+              }`}>
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <span>{a.message}</span>
+              </div>
+            ))}
+            {supabaseHealth.advice.length === 0 && (
+              <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-100 rounded-2xl text-[12px] text-emerald-700">
+                <CheckCircle2 size={14} className="shrink-0" /> No connection or auth-token issues detected.
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-white border border-slate-100 rounded-[28px] p-5">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Connections</p>
+                <p className="text-xl font-light text-slate-800">
+                  {supabaseHealth.connection.total} <span className="text-[13px] text-slate-400">/ {supabaseHealth.connection.maxConnections} max</span>
+                </p>
+                <div className="mt-3 space-y-1.5 text-[11px] text-slate-500">
+                  <div className="flex justify-between"><span>Active</span><span className="font-bold text-slate-700">{supabaseHealth.connection.active}</span></div>
+                  <div className="flex justify-between"><span>Idle</span><span className="font-bold text-slate-700">{supabaseHealth.connection.idle}</span></div>
+                  <div className="flex justify-between"><span>Idle in transaction</span><span className="font-bold text-slate-700">{supabaseHealth.connection.idleInTransaction}</span></div>
+                  <div className="flex justify-between"><span>Longest active query</span><span className="font-bold text-slate-700">{formatDuration(supabaseHealth.connection.longestActiveQuerySeconds)}</span></div>
+                </div>
+              </div>
+              <div className="bg-white border border-slate-100 rounded-[28px] p-5">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Auth sessions</p>
+                <p className="text-xl font-light text-slate-800">
+                  {supabaseHealth.auth.totalActiveSessions} <span className="text-[13px] text-slate-400">active</span>
+                </p>
+                <div className="mt-3 space-y-1.5 text-[11px] text-slate-500">
+                  <div className="flex justify-between"><span>Not refreshed in 1h+</span><span className="font-bold text-slate-700">{supabaseHealth.auth.staleSessions}</span></div>
+                  <div className="flex justify-between"><span>Oldest unrefreshed</span><span className="font-bold text-slate-700">{formatDuration(supabaseHealth.auth.oldestUnrefreshedMinutes * 60)}</span></div>
+                  <div className="flex justify-between"><span>Created last 24h</span><span className="font-bold text-slate-700">{supabaseHealth.auth.sessionsCreatedLast24h}</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
       )}
 
       {/* ── Services (non-Gmail background jobs) ── */}
