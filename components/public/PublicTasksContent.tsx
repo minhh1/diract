@@ -249,16 +249,27 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   // ── Realtime — live-refresh when anyone (this page or the main app)
   // changes a task for this company, so multiple viewers stay in sync
-  // without a manual reload.
+  // without a manual reload. Also listens for `projects`/
+  // `company_custom_field_values` changes -- a row's displayed
+  // projectName/matterNumber comes from THOSE tables (see the API route's
+  // TASK_SELECT join + matterByProject lookup), not from any column on
+  // `tasks` itself, so renaming a Matter or editing its Matter Number
+  // elsewhere in the app would otherwise never reach an already-open Public
+  // Tasks tab (e.g. one left open on a shared screen for days) until a
+  // manual reload. Coarse company-wide filters, same granularity the tasks
+  // listener below already uses -- cheap enough given the debounce.
   const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!data?.companyId) return;
+    const scheduleRefresh = () => {
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = setTimeout(() => refresh(), 400);
+    };
     const channel = supabase
       .channel(`public-tasks-${pageId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `company_id=eq.${data.companyId}` }, () => {
-        if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
-        refreshDebounceRef.current = setTimeout(() => refresh(), 400);
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `company_id=eq.${data.companyId}` }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: `company_id=eq.${data.companyId}` }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "company_custom_field_values", filter: `company_id=eq.${data.companyId}` }, scheduleRefresh)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [data?.companyId, pageId, refresh]);
