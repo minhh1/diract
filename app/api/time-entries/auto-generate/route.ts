@@ -5,7 +5,20 @@
 // before POSTing the ones they actually want to .../submit. scope='mine' is
 // the signed-in user's own day (the "Auto Time Recording" button next to My
 // Tasks); scope='all' is every company member's day at once (admin-only --
-// see AdminAutoTimeRecordingPanel), used to "push everyone's" entries.
+// see AutoTimeRecordingPanel's toggle), used to "push everyone's" entries.
+//
+// Emails are fetched COMPANY-WIDE for the day regardless of scope, then run
+// through dedupeAndAttributeEmails (lib/ai/emailTimekeeperAttribution.ts)
+// BEFORE any per-scope filtering -- the same real email can land as a
+// separate project_emails row under several different staff members' own
+// synced mailboxes (confirmed live: 173 of 189 rows on one day were
+// duplicates of just 39 real emails), so figuring out who's actually
+// responsible for it requires seeing every copy across the whole company,
+// not just whichever one happens to be in the current user's own rows.
+// scope='mine' then keeps only the emails that attribution resolved to the
+// caller; naively pre-filtering project_emails by user_id first (as this
+// route used to) is exactly what caused entries to attribute to someone who
+// was never actually a party to the correspondence.
 //
 // Only ever drafts from a task/email that hasn't already been converted
 // (time_entry_ai_sources) -- re-running this for the same day never
@@ -19,6 +32,7 @@ import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 import { HOSTED_MODELS, costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { draftAutoTimeEntries, type AutoTimeEntryTaskInput, type AutoTimeEntryEmailInput } from "@/lib/ai/autoTimeEntryDraft";
+import { dedupeAndAttributeEmails, type RawProjectEmail, type StaffMember } from "@/lib/ai/emailTimekeeperAttribution";
 
 const MODEL_ID = HOSTED_MODELS[0].id;
 
@@ -44,7 +58,18 @@ export async function POST(req: NextRequest) {
 
   const { data: existingSources } = await admin.from("time_entry_ai_sources").select("source_type, source_id").eq("company_id", companyId);
   const excludedTaskIds = new Set((existingSources || []).filter((s: any) => s.source_type === "task").map((s: any) => s.source_id));
-  const excludedEmailIds = new Set((existingSources || []).filter((s: any) => s.source_type === "email").map((s: any) => s.source_id));
+  const excludedEmailIds = new Set<string>((existingSources || []).filter((s: any) => s.source_type === "email").map((s: any) => s.source_id));
+
+  // Every company member -- needed up front for email attribution (sender/
+  // salutation/thread-walk all match against this list), not just whoever
+  // already has a task or email today.
+  const { data: memberships } = await admin.from("company_memberships").select("user_id").eq("company_id", companyId);
+  const memberUserIds = (memberships || []).map((m: any) => m.user_id);
+  const { data: memberProfiles } = await admin.from("profiles").select("id, full_name, email").in("id", memberUserIds);
+  const profileById = new Map((memberProfiles || []).map((p: any) => [p.id, p]));
+  const staff: StaffMember[] = (memberProfiles || [])
+    .filter((p: any) => !!p.email && !!p.full_name)
+    .map((p: any) => ({ userId: p.id, email: p.email, firstName: p.full_name.trim().split(/\s+/)[0], fullName: p.full_name }));
 
   let taskQuery = admin.from("tasks").select("id, name, notes, assignee_id, project_id, completed_at")
     .eq("company_id", companyId).eq("is_completed", true).is("deleted_at", null)
@@ -53,29 +78,34 @@ export async function POST(req: NextRequest) {
   const { data: rawTasks } = await taskQuery;
 
   // `date` (the email's own sent/received timestamp) is nullable -- some
-  // rows land in project_emails with it unset (confirmed live: a batch of
-  // matter-linked emails all had date=null despite being genuinely from
-  // today). Falls back to created_at (when the row was linked to the
+  // rows land in project_emails with it unset even though they're genuinely
+  // from today. Falls back to created_at (when the row was linked to the
   // matter) for exactly those rows, rather than silently excluding them
-  // from every day's range forever.
-  let emailQuery = admin.from("project_emails").select("id, subject, snippet, from_name, user_id, project_id, date, created_at")
+  // from every day's range forever. Company-wide, not scoped by user_id --
+  // see header comment.
+  const { data: rawEmailRows } = await admin.from("project_emails")
+    .select("id, subject, snippet, from_address, from_name, project_id, gmail_thread_id, date, created_at")
     .eq("company_id", companyId)
     .or(`and(date.gte.${startIso},date.lt.${endIso}),and(date.is.null,created_at.gte.${startIso},created_at.lt.${endIso})`);
-  if (scope === "mine") emailQuery = emailQuery.eq("user_id", user.id);
-  const { data: rawEmails } = await emailQuery;
 
-  // Only items actually linked to a matter and a real user count -- there's
-  // nowhere to put an entry without both (Time & Fee Entries' Matter/Staff
-  // fields are effectively required for this flow, even though the schema
-  // itself doesn't enforce it).
+  const rawEmails: RawProjectEmail[] = (rawEmailRows || [])
+    .filter((e: any) => e.project_id)
+    .map((e: any) => ({
+      id: e.id, subject: e.subject, snippet: e.snippet, from_address: e.from_address, from_name: e.from_name,
+      project_id: e.project_id, gmail_thread_id: e.gmail_thread_id, created_at: e.created_at,
+    }));
+
+  const attributedEmails = dedupeAndAttributeEmails(rawEmails, staff, excludedEmailIds);
+  const scopedEmails = scope === "mine" ? attributedEmails.filter(e => e.timekeeperUserId === user.id) : attributedEmails;
+  const emailDuplicatesByRepId = new Map(attributedEmails.map(e => [e.id, e.duplicateIds]));
+
   const tasks = (rawTasks || []).filter((t: any) => t.project_id && t.assignee_id && !excludedTaskIds.has(t.id));
-  const emails = (rawEmails || []).filter((e: any) => e.project_id && e.user_id && !excludedEmailIds.has(e.id));
 
-  if (!tasks.length && !emails.length) {
+  if (!tasks.length && !scopedEmails.length) {
     return NextResponse.json({ date, entries: [] });
   }
 
-  const projectIds = Array.from(new Set([...tasks.map((t: any) => t.project_id), ...emails.map((e: any) => e.project_id)]));
+  const projectIds = Array.from(new Set([...tasks.map((t: any) => t.project_id), ...scopedEmails.map(e => e.projectId)]));
   const { data: projects } = await admin.from("projects").select("id, name").in("id", projectIds);
   const projectNameById = new Map((projects || []).map((p: any) => [p.id, p.name]));
 
@@ -92,9 +122,7 @@ export async function POST(req: NextRequest) {
   }
   const matterLabel = (projectId: string) => matterNumberByProjectId.get(projectId) || projectNameById.get(projectId) || "Unknown matter";
 
-  const userIds = Array.from(new Set([...tasks.map((t: any) => t.assignee_id), ...emails.map((e: any) => e.user_id)]));
-  const { data: profiles } = await admin.from("profiles").select("id, full_name").in("id", userIds);
-  const profileById = new Map((profiles || []).map((p: any) => [p.id, p]));
+  const userIds = Array.from(new Set([...tasks.map((t: any) => t.assignee_id), ...scopedEmails.map(e => e.timekeeperUserId)]));
 
   const { data: aiSettings } = await admin.from("ai_chat_settings").select("monthly_token_cap").eq("company_id", companyId).maybeSingle();
   const tokenCap = aiSettings?.monthly_token_cap ?? 2000000;
@@ -106,8 +134,8 @@ export async function POST(req: NextRequest) {
 
     const userTasks: AutoTimeEntryTaskInput[] = tasks.filter((t: any) => t.assignee_id === uid)
       .map((t: any) => ({ id: t.id, name: t.name, notes: t.notes, matterId: t.project_id, matterLabel: matterLabel(t.project_id) }));
-    const userEmails: AutoTimeEntryEmailInput[] = emails.filter((e: any) => e.user_id === uid)
-      .map((e: any) => ({ id: e.id, subject: e.subject, snippet: e.snippet, fromName: e.from_name, matterId: e.project_id, matterLabel: matterLabel(e.project_id) }));
+    const userEmails: AutoTimeEntryEmailInput[] = scopedEmails.filter(e => e.timekeeperUserId === uid)
+      .map(e => ({ id: e.id, subject: e.subject, snippet: e.snippet, fromName: e.fromName, matterId: e.projectId, matterLabel: matterLabel(e.projectId) }));
     if (!userTasks.length && !userEmails.length) continue;
 
     await ensureStaffEntity(admin, companyId, uid);
@@ -126,6 +154,10 @@ export async function POST(req: NextRequest) {
     const profile = profileById.get(uid);
     for (const d of result.drafts) {
       entrySeq += 1;
+      // Expand each representative email id back out to every duplicate
+      // copy it collapsed -- submit needs to claim ALL of them in
+      // time_entry_ai_sources so no copy can resurface later.
+      const sourceEmailIds = d.sourceEmailIds.flatMap(repId => emailDuplicatesByRepId.get(repId) || [repId]);
       entries.push({
         key: `${uid}-${entrySeq}`,
         userId: uid,
@@ -139,7 +171,7 @@ export async function POST(req: NextRequest) {
         description: d.description,
         hours: d.hours,
         sourceTaskIds: d.sourceTaskIds,
-        sourceEmailIds: d.sourceEmailIds,
+        sourceEmailIds,
       });
     }
   }
