@@ -29,18 +29,59 @@ export function readCache<T>(key: string): T | null {
   }
 }
 
+// Removes the single oldest nk_cache_ entry (by its stored timestamp) to
+// free room for a write that just failed with a quota error. Scans every
+// nk_cache_ key, not just ones for the current company -- this cache has NO
+// TTL/size cap of its own (readCache never checks TTL_MS despite it being
+// declared -- entries just accumulate, across every company ever visited on
+// this browser, forever), so once quota is hit the oldest entry is just as
+// likely to belong to a company nobody's opened in months as to the current
+// one. Returns false once nothing is left to evict.
+function evictOldestCacheEntry(): boolean {
+  if (typeof window === 'undefined') return false;
+  let oldestKey: string | null = null;
+  let oldestTimestamp = Infinity;
+  for (const k of Object.keys(localStorage)) {
+    if (!k.startsWith('nk_cache_')) continue;
+    let timestamp = 0;
+    try { timestamp = JSON.parse(localStorage.getItem(k) || '{}')?.timestamp ?? 0; } catch { /* unparseable entry -- treat as oldest */ }
+    if (timestamp < oldestTimestamp) { oldestTimestamp = timestamp; oldestKey = k; }
+  }
+  if (!oldestKey) return false;
+  localStorage.removeItem(oldestKey);
+  return true;
+}
+
 export function writeCache<T>(key: string, data: T): void {
   if (typeof window === 'undefined') return;
+  const entry: CacheEntry<T> = {
+    data,
+    timestamp: Date.now(),
+    version: CACHE_VERSION,
+  };
+  const serialized = JSON.stringify(entry);
+  const storageKey = cacheKey(key);
   try {
-    const entry: CacheEntry<T> = {
-      data,
-      timestamp: Date.now(),
-      version: CACHE_VERSION,
-    };
-    localStorage.setItem(cacheKey(key), JSON.stringify(entry));
+    localStorage.setItem(storageKey, serialized);
+    return;
   } catch {
-    // localStorage full or unavailable — silently ignore
+    // Quota exceeded -- fall through to eviction below rather than
+    // silently dropping this write. Without this, a company whose tables
+    // are large enough to push localStorage over quota (e.g. a wide custom
+    // table with hundreds of rows) would NEVER successfully cache again:
+    // every write for every key fails from that point on, since nothing
+    // was ever evicting old entries to begin with -- exactly the "cache
+    // never actually helps" symptom this was built to fix.
   }
+  const MAX_EVICTIONS = 50;
+  for (let i = 0; i < MAX_EVICTIONS; i++) {
+    if (!evictOldestCacheEntry()) break;
+    try {
+      localStorage.setItem(storageKey, serialized);
+      return;
+    } catch { /* keep evicting */ }
+  }
+  console.warn(`[cache] Failed to persist "${key}" even after evicting old entries -- localStorage full or unavailable`);
 }
 
 // Call this once on app startup to remove stale cross-company cached data
