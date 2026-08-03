@@ -21,9 +21,10 @@ Rules:
 - Vague discussion of "maybe extending" without a specific date, or emails that only reconfirm the CURRENT settlement date (given to you below), are "not_yet_agreed".
 - If the recent emails don't mention the settlement date at all, use "no_discussion".
 - Only use "agreed" if you can point to a specific new date both sides have accepted.
+- This matter may involve more than one property (e.g. a multi-lot subdivision), listed below. When more than one is listed, assume any agreement applies to ALL of them unless the emails clearly single out just one specific property (naming its address or lot number) -- in that case set "scope" to that property's address exactly as given below; otherwise set "scope" to "all". When only one property is listed, always use "scope": "all".
 
 Respond with ONLY a JSON object, nothing else -- no markdown fences, no prose:
-{"status": "agreed" | "extension_requested" | "followed_up" | "not_yet_agreed" | "no_discussion", "agreed": boolean, "newDate": "YYYY-MM-DD" or null, "reasoning": "one short sentence describing the status, naming the relevant date(s) and who requested/followed up where applicable"}
+{"status": "agreed" | "extension_requested" | "followed_up" | "not_yet_agreed" | "no_discussion", "agreed": boolean, "newDate": "YYYY-MM-DD" or null, "scope": "all" or one property's exact address from the list below, "reasoning": "one short sentence describing the status, naming the relevant date(s) and who requested/followed up where applicable"}
 
 "agreed" must be true only when status is "agreed"; "newDate" must be set only when status is "agreed".`;
 
@@ -33,6 +34,11 @@ export interface SettlementDateReview {
   agreed: boolean;
   newDate: string | null;
   status: SettlementStatus;
+  // "all" (the common case, including single-property matters) or one
+  // property's address from the `properties` list passed in, when the
+  // emails clearly singled that one out -- see runSettlementDateReview's
+  // fan-out logic, which is what actually applies this.
+  scope: string;
   reasoning: string;
   inputTokens: number;
   outputTokens: number;
@@ -40,17 +46,21 @@ export interface SettlementDateReview {
 
 export async function reviewSettlementDateAgreement(
   admin: any, companyId: string, modelId: string,
-  itemId: string, projectId: string, matterName: string, currentDate: string | null
+  itemId: string, projectId: string, matterName: string,
+  properties: { address: string | null; currentDate: string | null }[]
 ): Promise<SettlementDateReview | null> {
   const emails = await fetchCombinedMatterEmails(admin, companyId, itemId, projectId);
   if (!emails.length) return null;
 
   const emailBlock = formatMatterEmailBlock(emails);
+  const propertyBlock = properties.length > 1
+    ? `Properties on this matter:\n${properties.map(p => `- ${p.address || "(no address on file)"}: current settlement date ${p.currentDate || "not set"}`).join("\n")}`
+    : `Current settlement date: ${properties[0]?.currentDate || "not set"}`;
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "user",
-      content: `Matter: ${matterName}\nCurrent settlement date: ${currentDate || "not set"}\n\nRecent emails (most recent first):\n${emailBlock}`,
+      content: `Matter: ${matterName}\n${propertyBlock}\n\nRecent emails (most recent first):\n${emailBlock}`,
     },
   ];
 
@@ -65,7 +75,12 @@ export async function reviewSettlementDateAgreement(
   }
 
   const validDate = typeof parsed.newDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.newDate);
-  const agreed = !!parsed.agreed && validDate && parsed.newDate !== currentDate;
+  // Not a real change if every property already sits on that date -- the
+  // runner resolves exactly which property/ies this applies to, but "is
+  // this actually new anywhere" is decidable here without that.
+  const alreadyCurrentEverywhere = properties.length > 0 && properties.every(p => p.currentDate === parsed.newDate);
+  const agreed = !!parsed.agreed && validDate && !alreadyCurrentEverywhere;
+  const scope = typeof parsed.scope === "string" && parsed.scope.trim() ? parsed.scope.trim() : "all";
   const reasoning = typeof parsed.reasoning === "string" && parsed.reasoning.trim() ? parsed.reasoning.trim() : "No clear mutual agreement on a new date found.";
   const VALID_STATUSES: SettlementStatus[] = ["agreed", "extension_requested", "followed_up", "not_yet_agreed", "no_discussion"];
   // Falls back to inferring from `agreed` alone if the model's own `status`
@@ -78,6 +93,7 @@ export async function reviewSettlementDateAgreement(
     agreed,
     newDate: agreed ? parsed.newDate : null,
     status: agreed ? "agreed" : status,
+    scope,
     reasoning,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
