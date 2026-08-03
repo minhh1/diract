@@ -10,10 +10,10 @@
 // supabase/company_table_ledger.sql). On a table without those fields it
 // just renders an empty reconciliation, same as any widget bound to the
 // wrong shape of table.
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Landmark, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import { useRecordNames } from "@/lib/hooks/useRecordNames";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
@@ -35,7 +35,6 @@ function reconciliationDeadline(month: string): Date {
 export default function TrustReconciliationWidget({ records }: { records: CustomTableRecord[] }) {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [bankBalance, setBankBalance] = useState('');
-  const [matterNames, setMatterNames] = useState<Map<string, string>>(new Map());
 
   const monthEnd = `${month}-31`; // string compare on ISO dates -- safe upper bound
 
@@ -60,18 +59,11 @@ export default function TrustReconciliationWidget({ records }: { records: Custom
     return { receipts, payments, cashBookClosing, ledgers };
   }, [records, month, monthEnd]);
 
-  useEffect(() => {
-    const ids = [...ledgers.keys()].filter(id => !matterNames.has(id));
-    if (!ids.length) return;
-    supabase.from('projects').select('id, name').in('id', ids).then(({ data }) => {
-      if (!data?.length) return;
-      setMatterNames(prev => {
-        const next = new Map(prev);
-        data.forEach(p => next.set(p.id, p.name));
-        return next;
-      });
-    });
-  }, [ledgers, matterNames]);
+  // useRecordNames already handles its own localStorage caching -- this
+  // used to be its own inline, uncached fetch (blank Map on every mount),
+  // same "matter" flicker bug already fixed elsewhere for this hook.
+  const matterIds = useMemo(() => [...ledgers.keys()], [ledgers]);
+  const matterNames = useRecordNames('projects', matterIds);
 
   const trialBalanceTotal = [...ledgers.values()].reduce((s, l) => s + l.balance, 0);
   const ledgersReconcile = Math.abs(trialBalanceTotal - cashBookClosing) < 0.005;

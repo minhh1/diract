@@ -602,6 +602,42 @@ async function warmGmailConnections(companyId: string): Promise<void> {
   } catch {}
 }
 
+// Company-wide "Matter Number"/"Matter Type" per-project lookups (see
+// lib/hooks/useMatterNumbers.ts/useMatterTypes.ts) -- those hooks already
+// cache what they resolve, but that only helps a REPEAT visit; the FIRST
+// visit each session (which is how testing right after a fresh deploy/
+// cache-clear always starts -- see AppLoader.tsx's own automatic wipe on a
+// new build) still showed the blank-then-jump flash with nothing to seed
+// from yet. Warmed here the same way, so every trust widget/report that
+// resolves a matter number/type already has it before the splash dismisses.
+async function warmMatterFields(companyId: string): Promise<void> {
+  const numbersKey = `matter_numbers_${companyId}`;
+  const typesKey = `matter_types_${companyId}`;
+  if (readCache(numbersKey) && readCache(typesKey)) return;
+  try {
+    const { data: fields } = await supabase
+      .from("company_custom_fields").select("id, field_key")
+      .eq("company_id", companyId).eq("table_name", "projects")
+      .in("field_key", ["matter_number", "matter_type"]).is("deleted_at", null);
+    const numberFieldId = fields?.find(f => f.field_key === "matter_number")?.id;
+    const typeFieldId = fields?.find(f => f.field_key === "matter_type")?.id;
+    const fieldIds = [numberFieldId, typeFieldId].filter((id): id is string => !!id);
+    if (!fieldIds.length) return;
+    const { data: values } = await supabase
+      .from("company_custom_field_values").select("record_id, field_id, value_text")
+      .in("field_id", fieldIds);
+    const numbers: Record<string, string> = {};
+    const types: Record<string, string> = {};
+    (values || []).forEach(v => {
+      if (!v.value_text) return;
+      if (v.field_id === numberFieldId) numbers[v.record_id] = v.value_text;
+      if (v.field_id === typeFieldId) types[v.record_id] = v.value_text;
+    });
+    writeCache(numbersKey, numbers);
+    writeCache(typesKey, types);
+  } catch {}
+}
+
 // Every client_update_page / public_task_page this viewer can see, straight
 // from the same list routes Settings > Public pages itself calls -- not
 // just the ones a dashboard happens to embed as a widget (see
@@ -683,6 +719,7 @@ async function prefetchAllShells(
 
   await Promise.all([
     warmGmailConnections(companyId).catch(() => {}),
+    warmMatterFields(companyId).catch(() => {}),
     ...tableList.map(tbl => prefetchTableFields(tbl, companyId).catch(() => {})),
     // Rows + column/sort config + default filters -- same "nothing left to
     // load once the main screen appears" guarantee warmSystemTableShells/
