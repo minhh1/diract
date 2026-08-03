@@ -1430,7 +1430,7 @@ export default function Sidebar() {
                     <TableVisibilityPanel
                       visible={visibleTables}
                       systemTables={systemTables}
-                      customTables={customTables}
+                      customTables={customTables.filter(t => !TRUST_PAGE_MANAGED_SLUGS.has(t.slug))}
                       onChange={handleVisibilityChange}
                       onClose={() => setShowTableSettings(false)}
                     />
@@ -1513,6 +1513,29 @@ export default function Sidebar() {
                   >
                     <Landmark size={16} className="shrink-0" />
                     <span className="truncate">Trust Account</span>
+                  </button>
+                )}
+
+                {/* Time & Fees Report — fixed shortcut to the "Time Entry"
+                    dashboard (same page listed under Dashboards, see
+                    template_law_firm_seed.sql's 'time-entry' slug), gated on
+                    the company having the Time & Fee Entries table. The raw
+                    table itself is deliberately hidden from Tables (see
+                    TRUST_PAGE_MANAGED_SLUGS), so this is the entry point
+                    that replaces it here -- same fixed-bespoke-page pattern
+                    as Trust Account above. */}
+                {customTables.some(t => t.slug === 'time-fee-entries') && (
+                  <button
+                    onClick={() => { if (!pathname.startsWith('/dashboard/time-entry')) { startNavigation(); router.push('/dashboard/time-entry'); } }}
+                    aria-label="Time & Fees Report"
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                      pathname.startsWith('/dashboard/time-entry')
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Clock size={16} className="shrink-0" />
+                    <span className="truncate">Time & Fees Report</span>
                   </button>
                 )}
 
