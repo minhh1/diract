@@ -12,9 +12,14 @@ import AutoTimeRecordingPanel from "./AutoTimeRecordingPanel";
 interface Props {
   label: string;
   isAdmin: boolean;
+  // Refetches the dashboard's own records -- see DashboardWidgetRenderer's
+  // onChanged, threaded straight through so the Time & Fee Entries grid
+  // shows a newly-submitted entry immediately instead of needing a page
+  // refresh.
+  onDataChanged?: () => void;
 }
 
-export default function AutoTimeRecordingButtonWidget({ label, isAdmin }: Props) {
+export default function AutoTimeRecordingButtonWidget({ label, isAdmin, onDataChanged }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -25,7 +30,7 @@ export default function AutoTimeRecordingButtonWidget({ label, isAdmin }: Props)
       >
         <Sparkles size={16} /> {label}
       </button>
-      {open && <AutoTimeRecordingPanel label={label} isAdmin={isAdmin} onClose={() => setOpen(false)} />}
+      {open && <AutoTimeRecordingPanel label={label} isAdmin={isAdmin} onClose={() => setOpen(false)} onDataChanged={onDataChanged} />}
     </>
   );
 }

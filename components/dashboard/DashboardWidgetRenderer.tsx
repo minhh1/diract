@@ -304,7 +304,7 @@ export default function DashboardWidgetRenderer({
           </div>
         );
       }
-      return <AutoTimeRecordingButtonWidget label={widget.config.label || 'Auto Time Recording'} isAdmin={!!isAdmin} />;
+      return <AutoTimeRecordingButtonWidget label={widget.config.label || 'Auto Time Recording'} isAdmin={!!isAdmin} onDataChanged={onChanged} />;
     }
 
     case 'finance_model_search':

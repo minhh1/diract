@@ -97,6 +97,10 @@ export async function POST(req: NextRequest) {
 
   const attributedEmails = dedupeAndAttributeEmails(rawEmails, staff, excludedEmailIds);
   const emailDuplicatesByRepId = new Map(attributedEmails.map(e => [e.id, e.duplicateIds]));
+  // For the panel's inline "show source email(s)" expand -- keyed by the
+  // representative id an AutoTimeEntryDraft actually references (before
+  // it's expanded out to every duplicate copy below).
+  const attributedEmailById = new Map(attributedEmails.map(e => [e.id, e]));
 
   // Emails attribution could resolve, scoped to who's asking. Emails it
   // COULDN'T resolve (timekeeperUserId === null) only ever surface in the
@@ -167,6 +171,10 @@ export async function POST(req: NextRequest) {
       // copy it collapsed -- submit needs to claim ALL of them in
       // time_entry_ai_sources so no copy can resurface later.
       const sourceEmailIds = d.sourceEmailIds.flatMap(repId => emailDuplicatesByRepId.get(repId) || [repId]);
+      const emailPreviews = d.sourceEmailIds
+        .map(repId => attributedEmailById.get(repId))
+        .filter((e): e is NonNullable<typeof e> => !!e)
+        .map(e => ({ subject: e.subject, snippet: e.snippet, fromName: e.fromName }));
       entries.push({
         key: `${uid}-${entrySeq}`,
         userId: uid,
@@ -181,6 +189,7 @@ export async function POST(req: NextRequest) {
         hours: d.hours,
         sourceTaskIds: d.sourceTaskIds,
         sourceEmailIds,
+        emailPreviews,
       });
     }
   }
@@ -204,6 +213,10 @@ export async function POST(req: NextRequest) {
       for (const d of result.drafts) {
         entrySeq += 1;
         const sourceEmailIds = d.sourceEmailIds.flatMap(repId => emailDuplicatesByRepId.get(repId) || [repId]);
+        const emailPreviews = d.sourceEmailIds
+          .map(repId => attributedEmailById.get(repId))
+          .filter((e): e is NonNullable<typeof e> => !!e)
+          .map(e => ({ subject: e.subject, snippet: e.snippet, fromName: e.fromName }));
         entries.push({
           key: `unresolved-${entrySeq}`,
           userId: null,
@@ -218,6 +231,7 @@ export async function POST(req: NextRequest) {
           hours: d.hours,
           sourceTaskIds: d.sourceTaskIds,
           sourceEmailIds,
+          emailPreviews,
         });
       }
     }

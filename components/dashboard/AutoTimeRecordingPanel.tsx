@@ -18,7 +18,7 @@
 // its next generate, since both read the same time_entry_ai_sources
 // tracking table server-side (see the submit route's header comment).
 import { useState, useEffect, useCallback } from "react";
-import { X, Loader2, Sparkles, Check, RefreshCw } from "lucide-react";
+import { X, Loader2, Sparkles, Check, RefreshCw, ChevronDown, ChevronUp, Mail } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 
 interface DraftEntry {
@@ -37,6 +37,10 @@ interface DraftEntry {
   date: string;
   sourceTaskIds: string[];
   sourceEmailIds: string[];
+  // The actual email(s) this entry's description was drafted from -- shown
+  // via an inline expand (see expandedKeys below) so the viewer can check
+  // the AI's read of the correspondence without leaving this drawer.
+  emailPreviews: { subject: string | null; snippet: string | null; fromName: string | null }[];
 }
 
 interface StaffOption { userId: string; name: string; initials: string; }
@@ -47,9 +51,11 @@ interface Props {
   label: string;
   isAdmin: boolean;
   onClose: () => void;
+  // See AutoTimeRecordingButtonWidget's own doc comment.
+  onDataChanged?: () => void;
 }
 
-export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Props) {
+export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onDataChanged }: Props) {
   const { tableLabelOverrides } = useCompany();
   const matterLabel = tableLabelOverrides.projects?.singular || "Matter";
 
@@ -62,6 +68,15 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Prop
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedNotes, setFailedNotes] = useState<Record<string, string>>({});
+  // Which entries currently have their source email(s) expanded open --
+  // purely a display toggle, inline within this same drawer (never
+  // navigates anywhere).
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const toggleExpanded = (key: string) => setExpandedKeys(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   const generate = useCallback(async () => {
     setLoading(true);
@@ -133,6 +148,10 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Prop
       setEntries(prev => prev.filter(e => !succeededOrDuplicate.has(e.key)));
       setChecked(prev => { const next = new Set(prev); for (const k of succeededOrDuplicate) next.delete(k); return next; });
       setFailedNotes(notes);
+      // At least one real entry was created -- refetch the dashboard's own
+      // records (see AutoTimeRecordingButtonWidget's onDataChanged) so the
+      // Time & Fee Entries grid shows it without a page refresh.
+      if (results.some(r => r.ok)) onDataChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not submit time entries");
     } finally {
@@ -214,7 +233,26 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose }: Prop
                           onChange={ev => updateEntry(e.key, { hours: Math.max(0.1, Number(ev.target.value) || 0.1) })}
                           className="w-20 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1 text-[11px] font-bold outline-none" />
                         <span className="text-[10px] text-slate-400 font-medium">hours</span>
+                        {e.emailPreviews.length > 0 && (
+                          <button onClick={() => toggleExpanded(e.key)}
+                            className="ml-auto flex items-center gap-1 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
+                            <Mail size={11} />
+                            {e.emailPreviews.length} email{e.emailPreviews.length !== 1 ? "s" : ""}
+                            {expandedKeys.has(e.key) ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                          </button>
+                        )}
                       </div>
+                      {expandedKeys.has(e.key) && (
+                        <div className="space-y-1.5 pt-1">
+                          {e.emailPreviews.map((p, i) => (
+                            <div key={i} className="bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-2 text-[10px] text-slate-600">
+                              <p className="font-bold text-slate-700 truncate">{p.subject || "(no subject)"}</p>
+                              {p.fromName && <p className="text-slate-400">From: {p.fromName}</p>}
+                              {p.snippet && <p className="mt-0.5 text-slate-500">{p.snippet}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {failedNotes[e.key] && <p className="text-[10px] text-red-500 font-medium">{failedNotes[e.key]}</p>}
                     </div>
                   </div>
