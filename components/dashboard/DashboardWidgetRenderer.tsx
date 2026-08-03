@@ -30,6 +30,7 @@ const PublicTaskPageWidget = dynamic(() => import("./PublicTaskPageWidget"));
 const DocumentPublicPageWidget = dynamic(() => import("./DocumentPublicPageWidget"));
 const ClientUpdatePageWidget = dynamic(() => import("./ClientUpdatePageWidget"));
 const MyTasksButtonWidget = dynamic(() => import("./MyTasksButtonWidget"));
+const AutoTimeRecordingButtonWidget = dynamic(() => import("./AutoTimeRecordingButtonWidget"));
 const FinanceModelSearchWidget = dynamic(() => import("./FinanceModelSearchWidget"));
 const ResidualLandSolverContent = dynamic(() => import("@/components/public/ResidualLandSolverContent"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
@@ -293,6 +294,17 @@ export default function DashboardWidgetRenderer({
           onConvert={values => onQuickAddPrefill?.(values)}
         />
       );
+    }
+
+    case 'auto_time_recording_button': {
+      if (mode === 'preview') {
+        return (
+          <div className="w-full h-full min-h-[56px] flex items-center justify-center px-4 py-3 bg-white border border-dashed border-slate-200 rounded-2xl text-[11px] text-slate-300 italic text-center">
+            Auto Time Recording button preview (disabled while editing)
+          </div>
+        );
+      }
+      return <AutoTimeRecordingButtonWidget label={widget.config.label || 'Auto Time Recording'} isAdmin={!!isAdmin} />;
     }
 
     case 'finance_model_search':

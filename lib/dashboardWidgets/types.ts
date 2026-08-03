@@ -349,12 +349,27 @@ export interface ResidualLandSolverWidget extends BaseWidget {
   config: Record<string, never>;
 }
 
+// A button that opens a panel drafting Time & Fee Entries from the viewer's
+// own completed tasks + matter-linked emails for a chosen day (see
+// app/api/time-entries/auto-generate, .../submit) -- an AI-assisted
+// alternative to MyTasksButtonWidget's manual one-at-a-time convert flow,
+// purpose-built for the Time & Fee Entries table specifically (hardcoded
+// field_keys server-side, not configurable per-table like MyTasksButtonWidget
+// is), so there's no field-mapping config here at all. A company admin gets
+// an extra in-panel toggle to draft/push every staff member's day at once;
+// no separate widget type or config needed for that -- see
+// components/dashboard/AutoTimeRecordingPanel.tsx.
+export interface AutoTimeRecordingButtonWidget extends BaseWidget {
+  type: 'auto_time_recording_button';
+  config: { label?: string }; // undefined/empty means "Auto Time Recording"
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
   | TrustReconciliationWidget | LedesExportWidget
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
   | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget
-  | FinanceModelWidget | ResidualLandSolverWidget;
+  | FinanceModelWidget | ResidualLandSolverWidget | AutoTimeRecordingButtonWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];
