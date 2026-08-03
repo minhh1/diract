@@ -1928,9 +1928,15 @@ function AskMatterPanel({ onAsk }: { onAsk: (question: string) => Promise<string
           </div>
           {error && <p className="text-[11px] text-red-500">{error}</p>}
           {answer && (
-            <p className="flex items-start gap-1.5 px-3 py-2 bg-indigo-50 rounded-xl text-[11px] text-indigo-800">
-              <Sparkles size={11} className="text-indigo-400 shrink-0 mt-0.5" /> {answer}
-            </p>
+            <div className="flex items-start gap-1.5 px-3 py-2 bg-indigo-50 rounded-xl">
+              <Sparkles size={11} className="text-indigo-400 shrink-0 mt-0.5" />
+              {/* min-w-0 lets this flex child actually shrink to the row's
+                  width and wrap -- without it the bare text otherwise sizes
+                  to its own single-line width, which inside this table's
+                  unconstrained colSpan cell meant the answer ran off the
+                  right edge instead of flowing downward. */}
+              <p className="flex-1 min-w-0 text-[11px] text-indigo-800">{answer}</p>
+            </div>
           )}
         </div>
       )}
