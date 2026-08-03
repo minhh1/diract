@@ -1526,11 +1526,11 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
 }
 
 // A cell the settlement-date AI review feature just set, still awaiting a
-// human look (see client_update_page_ai_field_flags) -- underlined and a
-// distinct colour so it reads as "AI touched this" at a glance, to BOTH
-// staff and whoever's viewing the public page (this shows regardless of
-// canConfirm, which just gates whether the Confirm/Edit actions render --
-// a client sees the same underline with only the reasoning, no controls).
+// human look (see client_update_page_ai_field_flags) -- a distinct colour
+// so it reads as "AI touched this" at a glance, to BOTH staff and whoever's
+// viewing the public page (this shows regardless of canConfirm, which just
+// gates whether the Confirm/Edit actions render -- a client sees the same
+// colour with only the reasoning, no controls).
 // Click toggles a small popover rather than the row's own click-to-edit,
 // which this replaces while a flag is present -- "Edit instead" inside the
 // popover is the way back to the normal edit path for staff who disagree
@@ -1553,7 +1553,7 @@ function AiFlagValue({ displayText, reasoning, canConfirm, onConfirm, onEditInst
   return (
     <span ref={ref} className="relative inline-block">
       <button type="button" onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
-        className="underline decoration-2 decoration-purple-400 text-purple-700 hover:text-purple-900 transition-colors text-left">
+        className="text-purple-700 hover:text-purple-900 transition-colors text-left">
         {displayText}
       </button>
       {open && (
