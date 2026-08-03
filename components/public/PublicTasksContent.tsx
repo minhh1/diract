@@ -871,7 +871,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
         <TaskModal
           pageId={pageId}
           formOptions={data.formOptions}
-          defaultAssigneeId={activeTab === "unallocated" ? null : activeTab}
+          defaultAssigneeId={activeTab === "unallocated" || activeTab === "deleted" ? null : activeTab}
           saving={saving}
           setSaving={setSaving}
           onClose={() => { setShowAddForm(false); setPendingDependencyOn(null); }}
@@ -886,7 +886,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
         <TaskModal
           pageId={pageId}
           formOptions={data.formOptions}
-          defaultAssigneeId={activeTab === "unallocated" ? null : activeTab}
+          defaultAssigneeId={activeTab === "unallocated" || activeTab === "deleted" ? null : activeTab}
           task={editingTask}
           saving={saving}
           setSaving={setSaving}

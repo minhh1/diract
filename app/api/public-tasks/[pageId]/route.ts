@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       source_email_subject, source_email_body, sync_to_company_calendar,
       assignee:assignee_id(id, full_name, email),
       creator:created_by(id, full_name, email),
-      project:project_id(id, name),
+      project:project_id(id, name, deleted_at),
       task_statuses:status_id(label, color_hex),
       teams:assigned_team_id(team_name)
     `;
@@ -151,9 +151,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   }
   const applyAccess = (list: any[]) => allowedTaskIds ? list.filter((t: any) => allowedTaskIds!.has(t.id)) : list;
 
-  const assignedTasks = applyAccess(rawTasks || []);
-  const unallocatedTasks = applyAccess(rawUnallocated || []);
-  const watchedTasks = applyAccess(rawWatched || []);
+  // A task whose linked matter has been soft-deleted (e.g. a duplicate
+  // matter cleaned up after the task was created) doesn't belong in any
+  // normal assignee/Unallocated tab -- its projectName/matterNumber would
+  // just be whatever the matter last looked like before deletion, easy to
+  // mistake for current data. Pulled out into its own "Deleted tasks"
+  // pseudo-tab instead (pushed below, next to Unallocated), same
+  // fell-through-into-its-own-tab treatment Unallocated tasks already get.
+  const isOrphaned = (t: any) => !!t.project_id && !!t.project?.deleted_at;
+
+  const assignedTasksAll = applyAccess(rawTasks || []);
+  const unallocatedTasksAll = applyAccess(rawUnallocated || []);
+  const watchedTasksAll = applyAccess(rawWatched || []);
+  const assignedTasks = assignedTasksAll.filter((t: any) => !isOrphaned(t));
+  const unallocatedTasks = unallocatedTasksAll.filter((t: any) => !isOrphaned(t));
+  const watchedTasks = watchedTasksAll.filter((t: any) => !isOrphaned(t));
+  const deletedMatterTasks = [...assignedTasksAll, ...unallocatedTasksAll, ...watchedTasksAll]
+    .filter(isOrphaned)
+    .filter((t: any, i: number, arr: any[]) => arr.findIndex(x => x.id === t.id) === i);
 
   // Merging three separately-queried groups (assigned/watched/unallocated)
   // would otherwise leave each block sorted internally but not against each
@@ -168,14 +183,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     .sort((a, b) => dueSortKey(a).localeCompare(dueSortKey(b)));
 
   // Both depend on the final merged `tasks` list, but not on each other.
-  const [{ data: followUps }, { data: overrides }] = tasks?.length
+  // Includes deletedMatterTasks too (they're pulled out of `tasks`, but
+  // still need their own follow-ups/overrides resolved for the Deleted
+  // tasks tab).
+  const followUpTaskIds = [...tasks, ...deletedMatterTasks].map((t: any) => t.id);
+  const [{ data: followUps }, { data: overrides }] = followUpTaskIds.length
     ? await Promise.all([
-        admin.from("task_follow_ups").select("id, task_id, followed_up_at, is_done").in("task_id", tasks.map((t: any) => t.id)),
+        admin.from("task_follow_ups").select("id, task_id, followed_up_at, is_done").in("task_id", followUpTaskIds),
         // ── Organised-view classification, per (task, whose tab it's in) ──
         // The same task can be "Action" in the assignee's tab and
         // "Watching" in a watcher's tab, so this isn't a single value on
         // the task itself.
-        admin.from("task_group_overrides").select("task_id, profile_id, task_group").in("task_id", tasks.map((t: any) => t.id)),
+        admin.from("task_group_overrides").select("task_id, profile_id, task_group").in("task_id", followUpTaskIds),
       ])
     : [{ data: [] }, { data: [] }];
 
@@ -233,6 +252,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       userId: "unallocated",
       userName: "Unallocated",
       tasks: unallocatedTasks.map((t: any) => mapTask(t, false, "unallocated")),
+    });
+  }
+  // Next to Unallocated -- only shown when there's actually one of these,
+  // unlike Unallocated (which always appears on a non-self page even at 0)
+  // since an orphaned-matter task is an edge case worth flagging, not a
+  // routine state every page should always show a tab for.
+  if (deletedMatterTasks.length) {
+    tabs.push({
+      userId: "deleted",
+      userName: "Deleted tasks",
+      tasks: deletedMatterTasks.map((t: any) => mapTask(t, false, "deleted")),
     });
   }
 
