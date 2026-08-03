@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
   date_format: "D MMMM YYYY",
   salutation_style: "generic" as const,
   signers: [] as string[], // staff_signoffs.user_id, up to 4
+  default_signer_id: null as string | null,
   include_firm_reference: false,
 };
 
@@ -194,13 +195,22 @@ export async function issuePrecedentDocument(admin: any, input: IssuePrecedentIn
   const settings = projectSettings || companySettings || DEFAULT_SETTINGS;
 
   const needsMatterReference = settings.include_firm_reference || detectedRoles.has("our_ref");
+  // A per-issuance signer selection overrides the matter/company default
+  // list -- lets a firm pick who signs THIS document instead of always using
+  // the same fixed signers for every letter. default_signer_id is different:
+  // unlike the up-to-4 list, it's never overridden or dropped by a per-
+  // issuance selection -- appended whenever it isn't already among the
+  // resolved signers, so that person's signature is on every document
+  // regardless of what anyone picks for a given issuance.
+  const explicitSignerIds = signerIdsOverride ?? settings.signers ?? [];
+  const defaultSignerId = settings.default_signer_id?.trim() || null;
+  const signerIdsToResolve = defaultSignerId && !explicitSignerIds.includes(defaultSignerId)
+    ? [...explicitSignerIds, defaultSignerId]
+    : explicitSignerIds;
   const [{ clientFirstName, clientFullName }, matterReference, signoffs] = await Promise.all([
     resolveClientNames(admin, companyId, projectId),
     needsMatterReference ? resolveMatterReference(admin, companyId, projectId) : Promise.resolve(null),
-    // A per-issuance signer selection overrides the matter/company default
-    // list -- lets a firm pick who signs THIS document instead of always
-    // using the same fixed signers for every letter.
-    resolveSignoffs(admin, companyId, signerIdsOverride ?? settings.signers ?? []),
+    resolveSignoffs(admin, companyId, signerIdsToResolve),
   ]);
 
   const formattedSubject = formatSubjectLine(subjectInput, settings.subject_line_style);

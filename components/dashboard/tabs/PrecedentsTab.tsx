@@ -324,6 +324,11 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
   // defaults -- who signs THIS document, and how it addresses the recipient.
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [signerIds, setSignerIds] = useState<string[]>([]);
+  // Read-only here -- unlike signerIds above, this isn't something THIS
+  // issuance can turn off (see supabase/migrations/
+  // 20260803010000_precedent_settings_default_signer.sql), just shown so
+  // whoever's issuing isn't surprised by a signature they never picked.
+  const [defaultSignerId, setDefaultSignerId] = useState<string | null>(null);
   const [salutation, setSalutation] = useState("");
 
   // Optional AI drafting assist -- collapsed by default.
@@ -350,7 +355,11 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
     fetch("/api/precedents/letterhead").then(res => res.json())
       .then(json => setDetectedFields(json.letterhead?.detected_fields || []));
     fetch(`/api/precedents/settings?projectId=${recordId}`).then(res => res.json())
-      .then(json => setSignerIds((json.projectOverride || json.companyDefault)?.signers || []));
+      .then(json => {
+        const settings = json.projectOverride || json.companyDefault;
+        setSignerIds(settings?.signers || []);
+        setDefaultSignerId(settings?.default_signer_id || null);
+      });
     fetch("/api/precedents/staff-signoffs").then(res => res.json())
       .then(json => setStaff(json.staff || []));
     fetch(`/api/precedents/${precedent.id}/body-template?recordId=${recordId}`).then(res => res.json())
@@ -572,6 +581,11 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
               Sign off <span className="text-slate-300 normal-case font-normal">(up to 4, defaults to this matter's usual signers)</span>
             </p>
+            {defaultSignerId && (
+              <p className="text-[11px] text-slate-400 mb-2">
+                + {staff.find(s => s.userId === defaultSignerId)?.name || staff.find(s => s.userId === defaultSignerId)?.accountName || "The default signer"}&apos;s signature is always included, whatever&apos;s picked below.
+              </p>
+            )}
             {staff.length === 0 ? (
               <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet. Add one in your profile</p>
             ) : (
@@ -621,6 +635,10 @@ interface SettingsRow {
   date_format: string;
   salutation_style: typeof SALUTATION_OPTIONS[number]["value"];
   signers: string[]; // staff_signoffs user_ids, up to 4
+  // Unlike signers, always included on every issued document for this
+  // matter regardless of what's picked at issue time -- see
+  // supabase/migrations/20260803010000_precedent_settings_default_signer.sql.
+  default_signer_id: string | null;
   include_firm_reference: boolean;
 }
 
@@ -647,7 +665,7 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
   useEffect(() => { load(); }, [load]);
 
   const effective: SettingsRow = override || companyDefault || {
-    subject_line_style: "sentence_case", date_format: "D MMMM YYYY", salutation_style: "generic", signers: [], include_firm_reference: false,
+    subject_line_style: "sentence_case", date_format: "D MMMM YYYY", salutation_style: "generic", signers: [], default_signer_id: null, include_firm_reference: false,
   };
 
   const save = async (next: SettingsRow) => {
@@ -662,6 +680,7 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
         dateFormat: next.date_format,
         salutationStyle: next.salutation_style,
         signers: next.signers,
+        defaultSignerId: next.default_signer_id,
         includeFirmReference: next.include_firm_reference,
       }),
     });
@@ -728,6 +747,24 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                Default signature for this matter <span className="text-slate-300 normal-case font-normal">(always included, whatever's picked at issue time)</span>
+              </p>
+              {staff.length === 0 ? (
+                <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet</p>
+              ) : (
+                <select value={effective.default_signer_id ?? ""}
+                  onChange={e => save({ ...effective, default_signer_id: e.target.value || null })}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 bg-white">
+                  <option value="">None</option>
+                  {staff.map(s => (
+                    <option key={s.userId} value={s.userId}>{s.name || s.accountName}{s.position ? ` (${s.position})` : ""}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>

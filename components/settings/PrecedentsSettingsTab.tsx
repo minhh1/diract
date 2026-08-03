@@ -46,6 +46,11 @@ interface Settings {
   date_format: string;
   salutation_style: "generic" | "client_first_name" | "client_full_name";
   signers: string[]; // staff_signoffs user_ids, up to 4
+  // Unlike signers (freely picked/unpicked per issuance in the Issue modal),
+  // this one person's signature is added to every issued document
+  // regardless of what's selected for that issuance -- see
+  // supabase/migrations/20260803010000_precedent_settings_default_signer.sql.
+  default_signer_id: string | null;
   include_firm_reference: boolean;
 }
 
@@ -54,6 +59,7 @@ const DEFAULT_SETTINGS: Settings = {
   date_format: "D MMMM YYYY",
   salutation_style: "generic",
   signers: [],
+  default_signer_id: null,
   include_firm_reference: false,
 };
 
@@ -456,6 +462,7 @@ function SettingsSection({ isAdmin, staff, staffLoading }: { isAdmin: boolean; s
         date_format: json.companyDefault.date_format,
         salutation_style: json.companyDefault.salutation_style,
         signers: json.companyDefault.signers || [],
+        default_signer_id: json.companyDefault.default_signer_id || null,
         include_firm_reference: json.companyDefault.include_firm_reference,
       });
     }
@@ -477,6 +484,7 @@ function SettingsSection({ isAdmin, staff, staffLoading }: { isAdmin: boolean; s
         dateFormat: next.date_format,
         salutationStyle: next.salutation_style,
         signers: next.signers,
+        defaultSignerId: next.default_signer_id,
         includeFirmReference: next.include_firm_reference,
       }),
     });
@@ -547,6 +555,26 @@ function SettingsSection({ isAdmin, staff, staffLoading }: { isAdmin: boolean; s
             onChange={e => save({ ...settings, include_firm_reference: e.target.checked })} />
           <span className="text-[12px] text-slate-600">Include the matter&apos;s reference number (&quot;Our Ref&quot;) when available</span>
         </label>
+
+        <div>
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+            Default signature <span className="text-slate-300 normal-case font-normal">(always included on every issued document, whatever's picked below or at issue time)</span>
+          </p>
+          {staffLoading ? (
+            <Loader2 size={14} className="animate-spin text-slate-300" />
+          ) : staff.length === 0 ? (
+            <p className="text-[11px] text-slate-300 italic">No staff signoffs set up yet</p>
+          ) : (
+            <select value={settings.default_signer_id ?? ""} disabled={!isAdmin}
+              onChange={e => save({ ...settings, default_signer_id: e.target.value || null })}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 bg-white disabled:opacity-60">
+              <option value="">None</option>
+              {staff.map(s => (
+                <option key={s.userId} value={s.userId}>{s.name || s.accountName}{s.position ? ` (${s.position})` : ""}{!s.hasSignoff ? " -- no signoff details yet" : ""}</option>
+              ))}
+            </select>
+          )}
+        </div>
 
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">

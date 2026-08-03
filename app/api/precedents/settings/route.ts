@@ -13,7 +13,7 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 
 const SUBJECT_STYLES = ["all_caps", "sentence_case", "with_re"];
 const SALUTATION_STYLES = ["generic", "client_first_name", "client_full_name"];
-const SETTINGS_COLUMNS = "id, project_id, subject_line_style, date_format, salutation_style, signers, include_firm_reference, updated_at";
+const SETTINGS_COLUMNS = "id, project_id, subject_line_style, date_format, salutation_style, signers, default_signer_id, include_firm_reference, updated_at";
 
 // signers is an array of staff_signoffs.user_id strings (up to 4), picked
 // from the staff picker -- not the free-text {name, position} shape this
@@ -91,6 +91,9 @@ export async function PATCH(req: NextRequest) {
   if (body?.dateFormat) update.date_format = String(body.dateFormat);
   if (body?.salutationStyle) update.salutation_style = body.salutationStyle;
   if (signers !== undefined) update.signers = signers;
+  // Explicit null clears it back to "no default signature" -- distinct from
+  // the key being absent, which leaves whatever was already set untouched.
+  if ("defaultSignerId" in body) update.default_signer_id = body.defaultSignerId ? String(body.defaultSignerId).trim() || null : null;
   if ("includeFirmReference" in body) update.include_firm_reference = !!body.includeFirmReference;
 
   // Not a single .upsert(..., {onConflict}) call: the company-default row
