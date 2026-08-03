@@ -31,6 +31,8 @@ const DocumentPublicPageWidget = dynamic(() => import("./DocumentPublicPageWidge
 const ClientUpdatePageWidget = dynamic(() => import("./ClientUpdatePageWidget"));
 const MyTasksButtonWidget = dynamic(() => import("./MyTasksButtonWidget"));
 const AutoTimeRecordingButtonWidget = dynamic(() => import("./AutoTimeRecordingButtonWidget"));
+const TimeFeesReportWidget = dynamic(() => import("./TimeFeesReportWidget"));
+const TimeAgingReportWidget = dynamic(() => import("./TimeAgingReportWidget"));
 const FinanceModelSearchWidget = dynamic(() => import("./FinanceModelSearchWidget"));
 const ResidualLandSolverContent = dynamic(() => import("@/components/public/ResidualLandSolverContent"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
@@ -264,6 +266,12 @@ export default function DashboardWidgetRenderer({
 
     case 'trust_aged_balances':
       return <TrustAgedBalancesWidget records={allRecords} dormantDays={widget.config.dormantDays} />;
+
+    case 'time_fees_report':
+      return <TimeFeesReportWidget records={allRecords} />;
+
+    case 'time_aging_report':
+      return <TimeAgingReportWidget records={allRecords} agingDays={widget.config.agingDays} />;
 
     case 'public_task_page':
       return <PublicTaskPageWidget pageId={widget.config.pageId} />;

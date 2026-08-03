@@ -20,6 +20,8 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   finance_model_search: { label: 'Finance Model search', icon: 'TrendingUp' },
   residual_land_solver: { label: 'Residual Land Solver', icon: 'Landmark' },
   auto_time_recording_button: { label: 'Auto Time Recording button', icon: 'Sparkles' },
+  time_fees_report: { label: 'Time & Fees report', icon: 'Clock' },
+  time_aging_report: { label: 'Old Time (unbilled) report', icon: 'AlertTriangle' },
 };
 
 // Sensible default size (grid units) for a freshly-added widget of each type;
@@ -47,6 +49,8 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   finance_model_search: { w: 12, h: 12 },
   residual_land_solver: { w: 12, h: 12 },
   auto_time_recording_button: { w: 3, h: 2 },
+  time_fees_report: { w: 12, h: 8 },
+  time_aging_report: { w: 12, h: 8 },
 };
 
 // The only widget types that render meaningfully with no bound source table
@@ -84,5 +88,7 @@ export function createWidget(type: DashboardWidgetType, existingWidgets: Dashboa
     case 'finance_model_search': return { ...base, type, config: {} };
     case 'residual_land_solver': return { ...base, type, config: {} };
     case 'auto_time_recording_button': return { ...base, type, config: { label: '' } };
+    case 'time_fees_report': return { ...base, type, config: {} };
+    case 'time_aging_report': return { ...base, type, config: { agingDays: 30 } };
   }
 }

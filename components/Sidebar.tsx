@@ -53,7 +53,13 @@ const ALL_SYSTEM_TABLES = [
 
 // See visibleCustomTables' own comment -- these back /dashboard/trust-account
 // and the Credit Ledger tab exclusively, not the generic table browser.
-const TRUST_PAGE_MANAGED_SLUGS = new Set(['trust-accounts', 'trust-protected-funds', 'bank-reconciliations', 'client-credits']);
+// time-fee-entries is here for a different reason: it's meaningfully edited
+// only via the "Time Entry" dashboard's own quick-add form (manual) and the
+// Auto Time Recording panel (AI-drafted), and reported on via that same
+// dashboard's Time & Fees / Old Time report widgets -- the raw grid bypasses
+// both the guided entry flow and the per-viewer admin/staff scoping those
+// reports rely on, so there's deliberately no second raw-grid path to it.
+const TRUST_PAGE_MANAGED_SLUGS = new Set(['trust-accounts', 'trust-protected-funds', 'bank-reconciliations', 'client-credits', 'time-fee-entries']);
 
 const SYSTEM_TABLE_FIELDS: Record<string, { key: string; label: string }[]> = {
   projects: [

@@ -364,12 +364,34 @@ export interface AutoTimeRecordingButtonWidget extends BaseWidget {
   config: { label?: string }; // undefined/empty means "Auto Time Recording"
 }
 
+// Time recorded per staff member over a chosen period (this month/this
+// week/all time/custom, picked in the widget itself) -- see
+// components/dashboard/TimeFeesReportWidget.tsx. Fed `allRecords` like the
+// trust_* report widgets above (ignores the dashboard's own filter bar),
+// which is already RLS-scoped per viewer (see that file's header comment),
+// so there's no separate admin/user config here either.
+export interface TimeFeesReportWidget extends BaseWidget {
+  type: 'time_fees_report';
+  config: Record<string, never>;
+}
+
+// Time & Fee Entries with no Invoice link (unbilled) whose own date is more
+// than config.agingDays old -- see components/dashboard/
+// TimeAgingReportWidget.tsx. Same RLS-scoped `allRecords` shape as
+// TimeFeesReportWidget above; agingDays mirrors TrustAgedBalancesWidget's
+// own dormantDays config.
+export interface TimeAgingReportWidget extends BaseWidget {
+  type: 'time_aging_report';
+  config: { agingDays: number };
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
   | TrustReconciliationWidget | LedesExportWidget
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
   | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget
-  | FinanceModelWidget | ResidualLandSolverWidget | AutoTimeRecordingButtonWidget;
+  | FinanceModelWidget | ResidualLandSolverWidget | AutoTimeRecordingButtonWidget
+  | TimeFeesReportWidget | TimeAgingReportWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];
