@@ -1911,8 +1911,15 @@ function AskMatterPanel({ onAsk }: { onAsk: (question: string) => Promise<string
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ask anything</p>
       <div className="flex items-center gap-2">
         <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === "Enter") ask(); }}
-          placeholder="e.g. Did the vendor reply about our amendment requests?" autoFocus
-          className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400" />
+          placeholder="e.g. Did the vendor reply about our amendment requests?"
+          // text-[16px], not the usual text-[11px]/[12px] this board uses
+          // everywhere else -- iOS Safari auto-zooms the whole page on
+          // focus for any input under 16px, which reads exactly like an
+          // unwanted modal popping open instead of the input just
+          // appearing in place. No autoFocus either, for the same reason:
+          // it fires that same jump the instant the row opens rather than
+          // only when someone actually taps into the field.
+          className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-full text-[16px] outline-none focus:border-indigo-400" />
         <button onClick={ask} disabled={asking || !question.trim()} title="Ask"
           className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
           {asking ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
