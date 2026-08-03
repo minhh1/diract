@@ -1,7 +1,7 @@
 // components/clientUpdatePages/IrregularityFixPanel.tsx
 // One-click "fix this field" for an Irregularities board row -- shown in
-// the expanded row area instead of NotesPanel/EmailsPanel (custom_table
-// pages don't have those). Talks to
+// the expanded row area instead of NotesPanel (custom_table pages don't
+// have that). Talks to
 // app/api/client-update-pages/[id]/items/[itemId]/fix/route.ts, which
 // resolves the exact flagged entity + field from the row's own
 // entity/target_field_key columns (see the migration this backs) and

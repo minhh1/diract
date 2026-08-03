@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { convertDocToDocx } from "@/lib/gotenberg";
+import { detectAutoFill } from "@/lib/documentTemplateAutoFillRelated";
 import PizZip from "pizzip";
 import { randomUUID } from "crypto";
 
@@ -112,6 +113,7 @@ export async function POST(req: NextRequest) {
 
   let fields: any[] = [];
   if (tags.length) {
+    const autoFillGuesses = await Promise.all(tags.map(tag => detectAutoFill(admin, companyId, tag)));
     const { data: inserted } = await admin.from("document_template_fields").insert(
       tags.map((tag, i) => ({
         template_id: template.id,
@@ -120,8 +122,9 @@ export async function POST(req: NextRequest) {
         field_type: "text",
         is_required: false,
         display_order: i,
+        ...(autoFillGuesses[i] || {}),
       }))
-    ).select("id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, display_order");
+    ).select("id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, auto_fill_relation_column, auto_fill_related_table, auto_fill_related_field, auto_fill_composite, display_order");
     fields = inserted || [];
   }
 

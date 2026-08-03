@@ -1,7 +1,7 @@
 // components/clientUpdatePages/EntityOfficeholdersPanel.tsx
 // Directors/Secretaries + (for a Corporate Trustee) its Trust link, shown
 // inline in an expanded entities-based Client Update Page row -- the
-// equivalent of NotesPanel/EmailsPanel for a matter, but for entity-native
+// equivalent of NotesPanel for a matter, but for entity-native
 // data (entity_officeholders/entity_relationships) rather than page-owned
 // data. Talks to app/api/client-update-pages/[id]/items/[itemId]/officeholders
 // and .../trust directly rather than going through onSaveValue/values --

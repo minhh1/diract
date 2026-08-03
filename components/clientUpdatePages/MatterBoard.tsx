@@ -36,7 +36,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, CalendarCheck, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Mail, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, CalendarCheck, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -63,14 +63,13 @@ function isRelationField(field: MatterBoardField): boolean {
   return !!field.field_type && RELATION_FIELD_TYPES.has(field.field_type) && (!!field.linkedSystemTable || !!field.linkedTableId);
 }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
-export interface MatterBoardEmail { id: string; subject: string | null; from_name: string | null; from_address: string | null; snippet: string | null; email_date: string; added_by_name: string | null; created_at?: string | null; }
 // Set on a project_property field's client_update_page_fields.id once the
 // AI settlement-date review feature has written a new value there that a
 // staff member hasn't confirmed yet (see client_update_page_ai_field_flags)
 // -- drives the underline/AiFlagValue treatment in ValueCell/SpreadsheetCell.
 export type MatterBoardAiFlags = Record<string, { reasoning: string; appliedValue: string }>;
 export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; aiFlags?: MatterBoardAiFlags; }
-export interface MatterBoardItem { id: string; record_id?: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; emails: MatterBoardEmail[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; aiFlags?: MatterBoardAiFlags; }
+export interface MatterBoardItem { id: string; record_id?: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; aiFlags?: MatterBoardAiFlags; }
 export interface MatterBoardGroup { id: string; name: string; parent_group_id: string | null; condition_field_id?: string | null; condition_value?: string | null; default_status_names?: string[] | null; }
 export interface MatterBoardFormatRule { id: string; field_id: string; value: string; color: string; }
 
@@ -85,7 +84,7 @@ interface Props {
   // 'auto_fed' (see client_update_pages.page_kind) -- items are entirely
   // system-generated (e.g. Irregularities rows, from the auto_fed rule
   // engine), so Add/Remove are hidden and the row-expand area shows the
-  // fix-this-field panel instead of Officeholders/Notes/Emails. Undefined/
+  // fix-this-field panel instead of Officeholders/Notes. Undefined/
   // 'user_dependent' means today's staff-managed board, unchanged. Distinct
   // from baseTable -- baseTable picks WHERE an item's data lives, pageKind
   // picks whether staff or the system owns adding/removing items.
@@ -141,8 +140,6 @@ interface Props {
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string, propertyId?: string) => void;
-  onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
-  onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onSummarizeOpenMatters?: () => Promise<{ generated: number; skipped: number; failed: string[] }>;
   onClearSummaries?: () => Promise<number>;
@@ -182,10 +179,8 @@ function isCurrencyField(field: MatterBoardField): boolean {
 
 // The "Review emails for a settlement date change" button belongs on the
 // Settlement Date field specifically, not every project_property field --
-// matches the exact label check the automatic trigger uses server-side
-// (app/api/client-update-pages/[id]/items/[itemId]/emails/route.ts's
-// autoReviewSettlementDates) so the manual button and the automatic
-// trigger can never target a different field from each other.
+// matches the exact label check runSettlementDateReview
+// (lib/clientUpdatePageSettlementReview.ts) uses server-side.
 function isSettlementDateField(field: MatterBoardField): boolean {
   return field.field_source === "project_property" && field.label.trim().toLowerCase() === "settlement date";
 }
@@ -314,7 +309,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, maskCurrency = false, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
-  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewSettlement, onConfirmAiFlag, onReviewAllSettlementStatus,
+  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewSettlement, onConfirmAiFlag, onReviewAllSettlementStatus,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [deepLinkFixItemId, setDeepLinkFixItemId] = useState<string | null>(initialFixItemId ?? null);
@@ -1104,7 +1099,7 @@ export default function MatterBoard({
               {expandByProperty(visibleItems, propertyFieldIdsOf(visibleFields)).map(({ key, item, propertyId }) => (
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
                   expanded={expandedCardKey === key} onToggleExpand={() => setExpandedCardKey(expandedCardKey === key ? null : key)}
-                  onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged}
+                  onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged}
                   onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} />
               ))}
               {visibleItems.length === 0 && (
@@ -1113,7 +1108,7 @@ export default function MatterBoard({
             </div>
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
-              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onAddEmail={onAddEmail} onRemoveEmail={onRemoveEmail} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged}
+              onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged}
               onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} />
           )}
         </div>
@@ -1383,7 +1378,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onRenameMatter, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
+function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   expanded: boolean; onToggleExpand: () => void;
@@ -1392,8 +1387,6 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
   onMoveItem?: (itemId: string, groupId: string | null) => void;
   onRemoveItem?: (itemId: string) => void;
   onAddNote: (itemId: string, note: string, propertyId?: string) => void;
-  onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
-  onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onRenameMatter?: (itemId: string, name: string) => void;
   onDataChanged?: () => void;
@@ -1516,9 +1509,6 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
             <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} onResolved={onDataChanged} />
           )}
           <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
-          {baseTable !== "entities" && pageKind !== "auto_fed" && (
-            <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
-          )}
         </div>
       )}
     </div>
@@ -1759,85 +1749,6 @@ function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoa
   );
 }
 
-// Distinct from NotesPanel -- this is a structured, staff-only log of real
-// email correspondence (subject/sender/date/summary) that also feeds
-// lib/ai/matterEmailSummary.ts, not free-text commentary. The list itself
-// is shown to everyone (same as staff-authored notes already are, on this
-// client-facing page), but only staff (canEdit) can log or remove an entry
-// -- there's no public API route for this, see the emails route's header.
-function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
-  emails: MatterBoardEmail[]; dateFormat: string; canEdit: boolean;
-  onAdd?: (email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
-  onRemove?: (emailId: string) => void;
-}) {
-  const [adding, setAdding] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [fromName, setFromName] = useState("");
-  const [snippet, setSnippet] = useState("");
-  const [emailDate, setEmailDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async () => {
-    if (!onAdd || (!subject.trim() && !snippet.trim())) return;
-    setSubmitting(true);
-    await onAdd({ subject: subject.trim(), fromName: fromName.trim(), snippet: snippet.trim(), emailDate });
-    setSubject(""); setFromName(""); setSnippet(""); setEmailDate(new Date().toISOString().slice(0, 10));
-    setSubmitting(false);
-    setAdding(false);
-  };
-
-  return (
-    <div className="border-t border-slate-100 pt-3 space-y-2">
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Emails</p>
-      {emails.length === 0 && <p className="text-[11px] text-slate-300 italic">No emails logged yet</p>}
-      <div className="space-y-1.5 max-h-40 overflow-y-auto">
-        {emails.map(e => (
-          <div key={e.id} className="group/email text-[11px] flex items-start gap-2">
-            <span className="text-slate-400 w-24 shrink-0">{formatDate(e.email_date, dateFormat)}</span>
-            <span className="flex-1 min-w-0 text-slate-600">
-              {e.subject && <span className="font-medium">{e.subject}</span>}
-              {e.from_name ? ` (${e.from_name})` : ""}
-              {e.snippet ? <span className="block text-slate-400 truncate">{e.snippet}</span> : null}
-            </span>
-            {canEdit && onRemove && (
-              <button onClick={() => onRemove(e.id)} title="Remove this email" className="shrink-0 p-0.5 text-slate-300 opacity-0 group-hover/email:opacity-100 hover:text-red-500 transition-colors">
-                <X size={11} />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-      {canEdit && onAdd && (
-        adding ? (
-          <div className="space-y-1.5 border border-slate-200 rounded-xl p-2.5">
-            <div className="flex items-center gap-1.5">
-              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" autoFocus
-                className="flex-1 min-w-0 px-2.5 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none" />
-              <input type="date" value={emailDate} onChange={e => setEmailDate(e.target.value)}
-                className="px-2.5 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none shrink-0" />
-            </div>
-            <input value={fromName} onChange={e => setFromName(e.target.value)} placeholder="From"
-              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none" />
-            <textarea value={snippet} onChange={e => setSnippet(e.target.value)} placeholder="Summary..." rows={2}
-              className="w-full px-2.5 py-1.5 border border-slate-200 rounded-2xl text-[11px] outline-none resize-none" />
-            <div className="flex items-center justify-end gap-2">
-              <button onClick={() => setAdding(false)} className="text-[10px] font-bold text-slate-400">Cancel</button>
-              <button onClick={submit} disabled={submitting || (!subject.trim() && !snippet.trim())}
-                className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full disabled:opacity-40 transition-colors">
-                {submitting && <Loader2 size={11} className="animate-spin" />} Log email
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors">
-            <Mail size={12} /> Log an email
-          </button>
-        )
-      )}
-    </div>
-  );
-}
-
 // ── Spreadsheet mode -- styled like app/public/tasks/[pageId]/page.tsx's
 // task table (rounded white card, horizontal-only row separators, uppercase
 // gray headers, row hover). No column is pinned by default -- "Matter" is
@@ -1861,7 +1772,7 @@ function EmailsPanel({ emails, dateFormat, canEdit, onAdd, onRemove }: {
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onAddEmail, onRemoveEmail, onGenerateSummary, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
+function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onGenerateSummary, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
@@ -1871,8 +1782,6 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
   onRemoveItem?: (itemId: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
   onAddNote: (itemId: string, note: string, propertyId?: string) => void;
-  onAddEmail?: (itemId: string, email: { subject: string; fromName: string; snippet: string; emailDate: string }) => void;
-  onRemoveEmail?: (itemId: string, emailId: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onDataChanged?: () => void;
   onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
@@ -2057,9 +1966,6 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
                   {(item.ai_summary || (canEdit && onGenerateSummary)) && (
                     <SummaryPanel summary={item.ai_summary} generatedAt={item.ai_summary_generated_at} dateFormat={dateFormat} canEdit={canEdit}
                       generating={generatingSummaryId === item.id} onGenerate={onGenerateSummary ? () => handleGenerateSummary(item.id) : undefined} />
-                  )}
-                  {baseTable !== "entities" && pageKind !== "auto_fed" && (
-                    <EmailsPanel emails={item.emails} dateFormat={dateFormat} canEdit={canEdit} onAdd={onAddEmail ? email => onAddEmail(item.id, email) : undefined} onRemove={onRemoveEmail ? emailId => onRemoveEmail(item.id, emailId) : undefined} />
                   )}
                 </td>
               </tr>

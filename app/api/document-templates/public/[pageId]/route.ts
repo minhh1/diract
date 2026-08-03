@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { loadActiveFillPage, codeMatches } from "@/lib/documentFillPageGate";
+import { resolveRelatedAutoFillValues, relatedAutoFillKey, resolveCompositeAutoFillValue, type CompositeAutoFillType } from "@/lib/documentTemplateAutoFillRelated";
 
 function computeHeading(clientName: string | null): string {
   return clientName ? `Documents Template - ${clientName}` : "Documents Template";
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   const [{ data: templateRows }, { data: fieldRows }] = await Promise.all([
     admin.from("document_templates").select("id, name, description").in("id", templateIds),
     admin.from("document_template_fields")
-      .select("id, template_id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, default_value, joined_to_field_id, trigger_field_id, trigger_value, display_order")
+      .select("id, template_id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, auto_fill_relation_column, auto_fill_related_table, auto_fill_related_field, auto_fill_composite, default_value, joined_to_field_id, trigger_field_id, trigger_value, display_order")
       .in("template_id", templateIds)
       .order("display_order"),
   ]);
@@ -92,6 +93,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       autoFillValues[v.field_id] = v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
     }
   }
+  // ── Resolve one-hop related-field auto-fill (the matter's linked
+  // Property, parent Matter, or a custom relation field) ──
+  const relatedAutoFillValues = await resolveRelatedAutoFillValues(admin, page.project_id, fieldRows || []);
+  // ── Resolve computed composites (full property address, Client v Other
+  // Side) -- one lookup per distinct composite type used on this page. ──
+  const compositeTypes = [...new Set((fieldRows || []).map((f: any) => f.auto_fill_composite).filter(Boolean))] as CompositeAutoFillType[];
+  const compositeValues: Record<string, string | null> = {};
+  await Promise.all(compositeTypes.map(async (t) => {
+    compositeValues[t] = await resolveCompositeAutoFillValue(admin, page.company_id, page.project_id, t);
+  }));
+  const autoFillValueFor = (f: any): any => {
+    if (f.auto_fill_field_id) return autoFillValues[f.auto_fill_field_id];
+    if (f.auto_fill_composite) return compositeValues[f.auto_fill_composite];
+    return relatedAutoFillValues[relatedAutoFillKey(f)];
+  };
 
   // ── De-duplicate by (join-resolved) tag_key — a tag shared by two
   // templates by exact text, OR explicitly joined despite different text,
@@ -108,7 +124,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     const root = pageLocalRoot(f);
     if (seen.has(root.tag_key)) continue;
     seen.add(root.tag_key);
-    const autoVal = root.auto_fill_field_id ? autoFillValues[root.auto_fill_field_id] ?? null : null;
+    const autoVal = autoFillValueFor(root) ?? null;
     const autoFilled = autoVal !== null && autoVal !== undefined && autoVal !== "";
     const isNa = draftNaFields.has(root.tag_key);
     const hasDraft = !isNa && Object.prototype.hasOwnProperty.call(draftValues, root.tag_key) && draftValues[root.tag_key] !== "" && draftValues[root.tag_key] != null;

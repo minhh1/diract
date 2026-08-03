@@ -10,6 +10,7 @@ import {
   ChevronUp, ChevronDown, Combine,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import AutoFillFieldPicker, { type AutoFillSelection } from "@/components/AutoFillFieldPicker";
 
 interface TemplateField {
   id: string;
@@ -19,6 +20,16 @@ interface TemplateField {
   select_options: string[] | null;
   is_required: boolean;
   auto_fill_field_id: string | null;
+  // One-hop related-field auto-fill (e.g. the matter's linked Property) --
+  // set together, never alongside auto_fill_field_id. See
+  // supabase/document_template_fields_related_autofill.sql.
+  auto_fill_relation_column: string | null;
+  auto_fill_related_table: string | null;
+  auto_fill_related_field: string | null;
+  // A small fixed set of computed values (full property address, Client v
+  // Other Side) -- set together, never alongside the two auto-fill modes
+  // above. See supabase/document_template_fields_composite_autofill.sql.
+  auto_fill_composite: string | null;
   default_value: string | null;
   joined_to_field_id: string | null;
   trigger_field_id: string | null;
@@ -52,7 +63,12 @@ function randomCode(): string {
   for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
-interface CustomField { id: string; field_key: string; label: string; field_type: string; }
+interface CustomField {
+  id: string; field_key: string; label: string; field_type: string;
+  // Set only for relation-typed fields (entity/property/project/table_relation)
+  // -- which table/column the field's stored value points at.
+  linked_table: string | null; linked_display_column: string | null;
+}
 
 interface Props { recordId: string; companyId: string; }
 
@@ -405,6 +421,8 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
       id, tag_key: `_branch_${id.slice(0, 8)}`, label: label.trim() || "Question", field_type: fieldType,
       select_options: isChoice ? optionsText.split(",").map(s => s.trim()).filter(Boolean) : null,
       is_required: false, auto_fill_field_id: null, default_value: null, joined_to_field_id: null,
+      auto_fill_relation_column: null, auto_fill_related_table: null, auto_fill_related_field: null,
+      auto_fill_composite: null,
       trigger_field_id: null, trigger_value: null, is_branch_only: true, display_order: 0,
     };
     setFields(prev => [...prev, newField]);
@@ -599,6 +617,10 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
               ? (Array.isArray(f.select_options) ? f.select_options : String(f.select_options || "").split(",").map(s => s.trim()).filter(Boolean))
               : null,
             is_required: f.is_required, auto_fill_field_id: f.auto_fill_field_id, default_value: f.default_value,
+            auto_fill_relation_column: f.auto_fill_relation_column,
+            auto_fill_related_table: f.auto_fill_related_table,
+            auto_fill_related_field: f.auto_fill_related_field,
+            auto_fill_composite: f.auto_fill_composite,
             trigger_field_id: f.trigger_field_id, trigger_value: f.trigger_value, is_branch_only: f.is_branch_only,
           })),
         }),
@@ -716,11 +738,24 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                     className="w-44 shrink-0 px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none bg-white">
                     {FIELD_TYPES.map(t => <option key={t} value={t}>{FIELD_TYPE_LABELS[t]}</option>)}
                   </select>
-                  <select value={f.auto_fill_field_id || ""} onChange={e => update(f.id, { auto_fill_field_id: e.target.value || null })}
-                    className="w-40 shrink-0 px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none bg-white">
-                    <option value="">No auto-fill</option>
-                    {customFields.map(cf => <option key={cf.id} value={cf.id}>Auto: {cf.label}</option>)}
-                  </select>
+                  <AutoFillFieldPicker
+                    baseTable="projects"
+                    customFields={customFields}
+                    value={{
+                      autoFillFieldId: f.auto_fill_field_id,
+                      relationColumn: f.auto_fill_relation_column,
+                      relatedTable: f.auto_fill_related_table,
+                      relatedField: f.auto_fill_related_field,
+                      composite: f.auto_fill_composite,
+                    }}
+                    onChange={(selection: AutoFillSelection) => update(f.id, {
+                      auto_fill_field_id: selection.autoFillFieldId,
+                      auto_fill_relation_column: selection.relationColumn,
+                      auto_fill_related_table: selection.relatedTable,
+                      auto_fill_related_field: selection.relatedField,
+                      auto_fill_composite: selection.composite,
+                    })}
+                  />
                   <label className="shrink-0 flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
                     <input type="checkbox" checked={f.is_required} onChange={e => update(f.id, { is_required: e.target.checked })} />
                     Required

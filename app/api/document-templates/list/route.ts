@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const { data: templates } = await admin
     .from("document_templates")
-    .select("id, name, description, download_filename, storage_path, created_at, fields:document_template_fields(id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, default_value, joined_to_field_id, trigger_field_id, trigger_value, is_branch_only, display_order)")
+    .select("id, name, description, download_filename, storage_path, created_at, fields:document_template_fields(id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, auto_fill_relation_column, auto_fill_related_table, auto_fill_related_field, auto_fill_composite, default_value, joined_to_field_id, trigger_field_id, trigger_value, is_branch_only, display_order)")
     .eq("company_id", companyId)
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   const { data: customFields } = await admin
     .from("company_custom_fields")
-    .select("id, field_key, label, field_type")
+    .select("id, field_key, label, field_type, linked_table, linked_display_column")
     .eq("company_id", companyId)
     .eq("table_name", "projects")
     .is("deleted_at", null)

@@ -2,7 +2,7 @@
 // Directors/Secretaries (entity_officeholders) for the entity behind an
 // entities-based Client Update Page item -- entities-only feature (see
 // client_update_pages.base_table), the row-expand equivalent of a matter's
-// NotesPanel/EmailsPanel. Writes go straight onto entity_officeholders (the
+// NotesPanel. Writes go straight onto entity_officeholders (the
 // same table components/dashboard/FieldLayoutEditor.tsx's Officeholders
 // related-table editor uses), so a director added/removed here shows up on
 // the entity's own record too, and vice versa. Every change is logged (see

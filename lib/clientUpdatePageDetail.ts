@@ -127,7 +127,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     { data: linkValues },
     { data: adhocValues },
     { data: notes },
-    { data: appendedEmails },
     { data: customTableFieldDefs },
     customTableValueByKey,
     displayNameById,
@@ -159,10 +158,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
     itemIds.length
       ? admin.from("client_update_page_notes").select("id, item_id, note_date, body, author_name, source, created_at, property_id")
           .in("item_id", itemIds).order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] as any[] }),
-    itemIds.length
-      ? admin.from("client_update_page_emails").select("id, item_id, subject, from_name, from_address, snippet, email_date, added_by_name, created_at")
-          .in("item_id", itemIds).order("email_date", { ascending: false })
       : Promise.resolve({ data: [] as any[] }),
     customTableFieldIds.length
       ? admin.from("company_table_fields").select("id, field_key, field_type").in("id", customTableFieldIds)
@@ -273,12 +268,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
   for (const n of notes || []) {
     if (!notesByItem.has(n.item_id)) notesByItem.set(n.item_id, []);
     notesByItem.get(n.item_id)!.push(n);
-  }
-
-  const emailsByItem = new Map<string, any[]>();
-  for (const e of appendedEmails || []) {
-    if (!emailsByItem.has(e.item_id)) emailsByItem.set(e.item_id, []);
-    emailsByItem.get(e.item_id)!.push(e);
   }
 
   // A 'property' field's field_key packs "base:<column>" or
@@ -644,7 +633,6 @@ export async function loadPageDetail(admin: any, pageId: string, opts: { clientV
           .filter(([, flag]: any) => flag)
       ),
       notes: notesByItem.get(i.id) || [],
-      emails: emailsByItem.get(i.id) || [],
       properties: baseTable === "projects"
         ? propIds.map((pid: string) => ({
             id: pid,

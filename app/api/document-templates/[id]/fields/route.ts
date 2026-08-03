@@ -86,12 +86,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const f = fields[i];
     const fieldType = VALID_TYPES.has(f.field_type) ? f.field_type : "text";
     const triggerFieldId = proposedTrigger.get(f.id) ?? null;
+    // A field auto-fills from EXACTLY ONE of: a direct matter field, a
+    // one-hop related field, or a computed composite (see
+    // AutoFillFieldPicker.tsx) -- whichever the client actually set wins,
+    // in that priority order; the others are cleared so a stale value from
+    // before the admin changed their pick can't linger.
+    const autoFillFieldId = f.auto_fill_field_id || null;
+    const relationColumn = autoFillFieldId ? null : (String(f.auto_fill_relation_column || "").trim() || null);
+    const composite = (autoFillFieldId || relationColumn) ? null : (String(f.auto_fill_composite || "").trim() || null);
     const payload = {
       label: String(f.label || "").trim() || f.tag_key || "Field",
       field_type: fieldType,
       select_options: (fieldType === "select" || fieldType === "multiselect") ? (f.select_options ?? null) : null,
       is_required: !!f.is_required,
-      auto_fill_field_id: f.auto_fill_field_id || null,
+      auto_fill_field_id: autoFillFieldId,
+      auto_fill_relation_column: relationColumn,
+      auto_fill_related_table: relationColumn ? (String(f.auto_fill_related_table || "").trim() || null) : null,
+      auto_fill_related_field: relationColumn ? (String(f.auto_fill_related_field || "").trim() || null) : null,
+      auto_fill_composite: composite,
       default_value: String(f.default_value || "").trim() || null,
       trigger_field_id: triggerFieldId,
       trigger_value: triggerFieldId ? (String(f.trigger_value || "").trim() || null) : null,
@@ -114,7 +126,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: updated } = await admin
     .from("document_template_fields")
-    .select("id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, default_value, joined_to_field_id, trigger_field_id, trigger_value, is_branch_only, display_order")
+    .select("id, tag_key, label, field_type, select_options, is_required, auto_fill_field_id, auto_fill_relation_column, auto_fill_related_table, auto_fill_related_field, auto_fill_composite, default_value, joined_to_field_id, trigger_field_id, trigger_value, is_branch_only, display_order")
     .eq("template_id", templateId)
     .order("display_order");
 

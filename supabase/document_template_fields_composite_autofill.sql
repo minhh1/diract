@@ -1,0 +1,19 @@
+-- A small, FIXED set of computed auto-fill values that don't fit the
+-- single-field (direct or one-hop related) model in
+-- document_template_fields_related_autofill.sql -- e.g. a property's full
+-- address (properties has separate street_address/suburb/state/postcode
+-- columns, no single full-address column) or a "Client v Other Side" style
+-- caption (two different entities' names joined with a literal " v ").
+--
+-- Deliberately an enum-style string, not a general formula engine -- only
+-- the values lib/documentTemplateAutoFillRelated.ts's
+-- resolveCompositeAutoFillValue() actually knows how to compute are valid:
+-- 'full_property_address' | 'client_v_other_side'. Both resolve dynamically
+-- at fill time (label-matching the company's own Client/Other Side/Property
+-- fields fresh each time), so no extra columns are needed to record which
+-- source fields feed them.
+--
+-- A field uses exactly one of auto_fill_field_id / auto_fill_relation_column
+-- / auto_fill_composite, never more than one -- enforced in the save
+-- handler, matching this table's existing lightweight-validation style.
+ALTER TABLE document_template_fields ADD COLUMN IF NOT EXISTS auto_fill_composite text;

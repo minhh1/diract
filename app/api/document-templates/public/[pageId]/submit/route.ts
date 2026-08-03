@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { loadActiveFillPage, codeMatches } from "@/lib/documentFillPageGate";
+import { resolveRelatedAutoFillValues, relatedAutoFillKey, resolveCompositeAutoFillValue, type CompositeAutoFillType } from "@/lib/documentTemplateAutoFillRelated";
 import { findSoleTagParagraphs, cleanupDocxBuffer } from "@/lib/docxCleanup";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
 
   const { data: fieldRows } = await admin
     .from("document_template_fields")
-    .select("id, template_id, tag_key, label, is_required, auto_fill_field_id, joined_to_field_id, trigger_field_id, trigger_value")
+    .select("id, template_id, tag_key, label, is_required, auto_fill_field_id, auto_fill_relation_column, auto_fill_related_table, auto_fill_related_field, auto_fill_composite, joined_to_field_id, trigger_field_id, trigger_value")
     .in("template_id", templateIds);
 
   // Resolve each field to its join-root — mirrors the GET route (see
@@ -107,6 +108,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
       autoFillValues[v.field_id] = v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
     }
   }
+  // One-hop related-field auto-fill (the matter's linked Property, parent
+  // Matter, or a custom relation field) — see the GET route for the same.
+  const relatedAutoFillValues = await resolveRelatedAutoFillValues(admin, page.project_id, fieldRows || []);
+  // Computed composites (full property address, Client v Other Side) — see
+  // the GET route for the same.
+  const compositeTypes = [...new Set((fieldRows || []).map((f: any) => f.auto_fill_composite).filter(Boolean))] as CompositeAutoFillType[];
+  const compositeValues: Record<string, string | null> = {};
+  await Promise.all(compositeTypes.map(async (t) => {
+    compositeValues[t] = await resolveCompositeAutoFillValue(admin, page.company_id, page.project_id, t);
+  }));
+  const autoFillValueFor = (f: any): any => {
+    if (f.auto_fill_field_id) return autoFillValues[f.auto_fill_field_id];
+    if (f.auto_fill_composite) return compositeValues[f.auto_fill_composite];
+    return relatedAutoFillValues[relatedAutoFillKey(f)];
+  };
 
   // Effective value for a tag: "Not applicable" always wins (forces blank
   // even over stale submitted text), then whatever the client actually
@@ -117,11 +133,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   // reapplied here — they only ever pre-fill the input once; if the client
   // deletes that text without marking "Not applicable", it must stay blank
   // rather than silently reappearing in the generated document.
-  const effective = (tagKey: string, autoFillFieldId: string | null): string => {
-    if (naFields.has(tagKey)) return "";
-    const s = submitted[tagKey];
+  const effective = (root: any): string => {
+    if (naFields.has(root.tag_key)) return "";
+    const s = submitted[root.tag_key];
     if (s !== undefined && s !== null) return String(s);
-    if (autoFillFieldId && autoFillValues[autoFillFieldId] != null) return String(autoFillValues[autoFillFieldId]);
+    const autoVal = autoFillValueFor(root);
+    if (autoVal != null) return String(autoVal);
     return "";
   };
 
@@ -138,7 +155,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     if (!triggerField) return true;
     const triggerRoot = pageLocalRoot(triggerField);
     if (!isTriggerSatisfied(triggerRoot, seen)) return false;
-    const val = effective(triggerRoot.tag_key, triggerRoot.auto_fill_field_id);
+    const val = effective(triggerRoot);
     if (!val && !naFields.has(triggerRoot.tag_key)) return false;
     if (f.trigger_value) {
       const allowed: string[] = f.trigger_value.split("||");
@@ -162,7 +179,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     seenReq.add(root.tag_key);
     if (naFields.has(root.tag_key)) continue;
     if (!isTriggerSatisfied(root)) continue;
-    if (!effective(root.tag_key, root.auto_fill_field_id)) {
+    if (!effective(root)) {
       return NextResponse.json({ error: `"${root.label}" is required` }, { status: 400 });
     }
   }
@@ -192,7 +209,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     const data: Record<string, string> = {};
     for (const f of (fieldRows || []).filter((f: any) => f.template_id === tpl.id)) {
       const root = pageLocalRoot(f);
-      data[f.tag_key] = effective(root.tag_key, root.auto_fill_field_id);
+      data[f.tag_key] = effective(root);
     }
 
     let out: Buffer;

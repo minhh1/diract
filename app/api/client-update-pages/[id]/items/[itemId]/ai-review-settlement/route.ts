@@ -1,7 +1,7 @@
 // app/api/client-update-pages/[id]/items/[itemId]/ai-review-settlement/route.ts
 // Staff-triggered "review emails for a settlement date change" -- the
-// automatic counterpart (fired right after a new email is logged) lives in
-// .../items/[itemId]/emails/route.ts, both calling the same
+// per-page bulk counterpart lives in
+// .../[id]/settlement-status-all/route.ts, both calling the same
 // runSettlementDateReview so they can't behave differently. Projects pages
 // only -- Settlement Date is a project_property field, which only exists
 // on a projects-based Detailed Table Page (see values/route.ts's own
