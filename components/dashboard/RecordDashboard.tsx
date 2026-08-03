@@ -13,6 +13,7 @@ import ProjectAccessPanel from "@/components/projects/ProjectAccessPanel";
 import ProjectDeletedTasksPanel from "@/components/projects/ProjectDeletedTasksPanel";
 import TabBar, { type RecordTab } from "./TabBar";
 import AddTabModal from "./AddTabModal";
+import { DEFAULT_PROJECT_DASHBOARD_TAB_SPECS, buildDefaultTabWidgetsForSpec } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
 import FieldLayoutEditor, { type FieldLayout } from "./FieldLayoutEditor";
 import type { AutoNumberConfigValue } from "@/lib/schema/autoNumberPresets";
 import SubProjectsTab from "./tabs/SubProjectsTab";
@@ -849,6 +850,18 @@ export default function RecordDashboard({
       : linkedTable?.slug === 'invoices' ? 'invoices'
       : null;
 
+    // Manually re-adding Time & Fees/Disbursements (e.g. it was removed, or
+    // this record type doesn't get it automatically) used to insert a bare
+    // record_tabs row with no widgets at all -- billing_role tagging worked,
+    // but the tab itself rendered nothing, confirmed live. Seed it with the
+    // exact same quick-add-form + totals grid the automatic default tab
+    // gets (see buildMissingDefaultProjectDashboardTabs), scoped to THIS
+    // record the same way -- RecordDashboardTab.tsx's own fixedValues
+    // locking applies to any grid/quick_add_form widget regardless of how
+    // the tab was created.
+    const spec = linkedTable ? DEFAULT_PROJECT_DASHBOARD_TAB_SPECS.find(s => s.slug === linkedTable.slug) : null;
+    const widgets = spec && linkedTable ? await buildDefaultTabWidgetsForSpec(linkedTable.id, spec) : null;
+
     const { data } = await supabase
       .from('record_tabs')
       .insert({
@@ -866,6 +879,10 @@ export default function RecordDashboard({
       .single();
 
     if (data) {
+      // record_tabs itself has no widgets column -- that lives in the
+      // separate record_tab_dashboard_widgets table, see
+      // seedDefaultDashboardWidgets above.
+      if (widgets) await seedDefaultDashboardWidgets([data], new Map([[data.linked_table_id, widgets]]));
       setTabs(prev => [...prev, data]);
       setActiveTabId(data.id);
     }

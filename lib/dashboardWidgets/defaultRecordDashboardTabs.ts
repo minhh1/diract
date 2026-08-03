@@ -164,6 +164,35 @@ export async function buildMissingDefaultTabsFromCompanyDefaults(
 // already has this exact list sitting in memory from useCustomTables().
 // Looking it up locally instead means the common case (all default tabs
 // already exist) costs zero network calls here.
+// Quick-add form + totals-row grid for one spec's table -- shared by the
+// automatic default-tab creation below AND RecordDashboard.tsx's
+// handleAddTab (manually adding a "Time & Fees"/"Disbursements" tab used to
+// insert a record_tabs row with NO widgets at all, a real blank-tab dead
+// end confirmed live: the tab appeared, billing_role tagging worked, but
+// nothing ever rendered in it since a bare custom_dashboard tab has no
+// default content of its own). Exported so both paths can never drift into
+// seeding different widgets for the exact same table.
+export async function buildDefaultTabWidgetsForSpec(tableId: string, spec: DefaultDashboardTabSpec): Promise<DashboardWidget[]> {
+  const { data: fields } = await supabase
+    .from('company_table_fields').select('id, field_key').eq('table_id', tableId).is('deleted_at', null);
+  const idByKey = new Map((fields || []).map(f => [f.field_key, f.id]));
+  const resolve = (keys: string[]) => keys.map(k => idByKey.get(k)).filter((id): id is string => !!id);
+
+  // A spec with no quickAddFieldKeys (Trust) gets NO quick_add_form widget
+  // at all -- view/print-only, see its own doc comment above.
+  const widgets: DashboardWidget[] = [];
+  if (spec.quickAddFieldKeys.length) {
+    const quickAdd = createWidget('quick_add_form', []) as QuickAddFormWidget;
+    quickAdd.config.fieldIds = resolve(spec.quickAddFieldKeys);
+    widgets.push(quickAdd);
+  }
+  const grid = createWidget('grid', widgets) as GridWidget;
+  grid.config.fieldIds = resolve(spec.gridFieldKeys);
+  grid.config.showTotalsRow = true;
+  widgets.push(grid);
+  return widgets;
+}
+
 export async function buildMissingDefaultProjectDashboardTabs(
   companyId: string,
   recordId: string,
@@ -180,23 +209,7 @@ export async function buildMissingDefaultProjectDashboardTabs(
     const table = findTable(spec.slug);
     if (!table || existingLinkedTableIds.has(table.id)) continue;
 
-    const { data: fields } = await supabase
-      .from('company_table_fields').select('id, field_key').eq('table_id', table.id).is('deleted_at', null);
-    const idByKey = new Map((fields || []).map(f => [f.field_key, f.id]));
-    const resolve = (keys: string[]) => keys.map(k => idByKey.get(k)).filter((id): id is string => !!id);
-
-    // A spec with no quickAddFieldKeys (Trust) gets NO quick_add_form widget
-    // at all -- view/print-only, see its own doc comment above.
-    const widgets: DashboardWidget[] = [];
-    if (spec.quickAddFieldKeys.length) {
-      const quickAdd = createWidget('quick_add_form', []) as QuickAddFormWidget;
-      quickAdd.config.fieldIds = resolve(spec.quickAddFieldKeys);
-      widgets.push(quickAdd);
-    }
-    const grid = createWidget('grid', widgets) as GridWidget;
-    grid.config.fieldIds = resolve(spec.gridFieldKeys);
-    grid.config.showTotalsRow = true;
-    widgets.push(grid);
+    const widgets = await buildDefaultTabWidgetsForSpec(table.id, spec);
 
     tabs.push({
       company_id: companyId, record_id: recordId, record_table: 'projects',
