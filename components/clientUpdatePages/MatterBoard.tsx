@@ -1807,7 +1807,15 @@ function SummaryPanel({ summary, generatedAt, dateFormat, canEdit, generating, o
       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Summary</p>
       {summary ? (
         <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
-          <span className="italic flex-1">{summary}</span>
+          {/* max-w-xl, a real length rather than 0/% -- this row's table
+              cell spans every column (colSpan), and this board's table uses
+              the default auto layout, which sizes the table off whichever
+              cell needs the most space; capping THIS text's own max-width
+              (min-w-0 lets the flex child actually shrink to it) keeps a
+              long summary wrapping at a readable column width instead of
+              running out as one line across the table's full, often much
+              wider, auto-computed width. */}
+          <span className="italic flex-1 min-w-0 max-w-xl">{summary}</span>
           {canEdit && onGenerate && (
             <button onClick={onGenerate} disabled={generating} title="Regenerate summary"
               className="shrink-0 text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
@@ -1930,12 +1938,18 @@ function AskMatterPanel({ onAsk }: { onAsk: (question: string) => Promise<string
           {answer && (
             <div className="flex items-start gap-1.5 px-3 py-2 bg-indigo-50 rounded-xl">
               <Sparkles size={11} className="text-indigo-400 shrink-0 mt-0.5" />
-              {/* min-w-0 lets this flex child actually shrink to the row's
-                  width and wrap -- without it the bare text otherwise sizes
-                  to its own single-line width, which inside this table's
-                  unconstrained colSpan cell meant the answer ran off the
-                  right edge instead of flowing downward. */}
-              <p className="flex-1 min-w-0 text-[11px] text-indigo-800">{answer}</p>
+              {/* max-w-xl, a real length rather than 0/% -- this row's table
+                  cell spans every column (colSpan), and this board's table
+                  uses the default auto layout, which sizes the table off
+                  whichever cell needs the most space. A plain max-width: 0
+                  on the colSpan cell itself does NOT reliably suppress that
+                  (verified live -- browsers don't apply it consistently to
+                  spanned table cells under auto layout), so the cap has to
+                  go directly on this text instead: min-w-0 lets the flex
+                  child actually shrink, and max-w-xl gives it a real width
+                  to wrap within, rather than running out as one line across
+                  the table's full, often much wider, auto-computed width. */}
+              <p className="flex-1 min-w-0 max-w-xl text-[11px] text-indigo-800">{answer}</p>
             </div>
           )}
         </div>
@@ -2156,16 +2170,7 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
             </tr>
             {expanded && (
               <tr className="border-b border-slate-50 last:border-0">
-                {/* max-w-0 -- this table uses the default auto layout, which
-                    sizes the WHOLE table to fit its widest cell's natural
-                    content width. Without this, any long unbroken text in
-                    here (an AI summary or answer) grew the entire table
-                    wider instead of wrapping, pushing itself off the visible
-                    area and forcing a horizontal scroll to read it. max-w-0
-                    tells the layout algorithm to size the table off the
-                    other (narrow, single-line) columns instead, so this
-                    cell's own content wraps to fit whatever width results. */}
-                <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3 max-w-0">
+                <td colSpan={totalCols} className="px-6 pb-4 pt-1 bg-slate-50/50 space-y-3">
                   {baseTable === "entities" && pageId && (
                     <EntityOfficeholdersPanel pageId={pageId} itemId={item.id} canEdit={canEdit} />
                   )}
