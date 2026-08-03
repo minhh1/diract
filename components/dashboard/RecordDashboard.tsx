@@ -14,6 +14,7 @@ import ProjectDeletedTasksPanel from "@/components/projects/ProjectDeletedTasksP
 import TabBar, { type RecordTab } from "./TabBar";
 import AddTabModal from "./AddTabModal";
 import { DEFAULT_PROJECT_DASHBOARD_TAB_SPECS, buildDefaultTabWidgetsForSpec } from "@/lib/dashboardWidgets/defaultRecordDashboardTabs";
+import { TRUST_PAGE_MANAGED_SLUGS } from "@/components/Sidebar";
 import FieldLayoutEditor, { type FieldLayout } from "./FieldLayoutEditor";
 import type { AutoNumberConfigValue } from "@/lib/schema/autoNumberPresets";
 import SubProjectsTab from "./tabs/SubProjectsTab";
@@ -1542,7 +1543,7 @@ export default function RecordDashboard({
     <>
       {showAddTab && (
         <AddTabModal
-          customTables={customTables}
+          customTables={customTables.filter(t => !TRUST_PAGE_MANAGED_SLUGS.has(t.slug))}
           systemTable={systemTable}
           onAdd={handleAddTab}
           onClose={() => setShowAddTab(false)}

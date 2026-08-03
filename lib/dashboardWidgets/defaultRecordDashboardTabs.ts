@@ -36,16 +36,26 @@ interface DefaultDashboardTabSpec {
   // (billing_role stays null) -- tagging them would let trust movements or
   // client credit entries leak onto a client invoice.
   isFeeSource?: boolean;
+  // Time & Fees only: the raw entries grid isn't useful on its own (same
+  // reasoning as hiding the table from Sidebar/AddTabModal -- see
+  // TRUST_PAGE_MANAGED_SLUGS) -- report widgets replace it instead. Both
+  // reports read `allRecords` with zero awareness of "matter"; what makes
+  // them work here is that RecordDashboardTab.tsx pre-filters `allRecords`
+  // to just this matter's rows before either widget ever sees them, so this
+  // becomes "who worked this matter and how many hours" / "this matter's
+  // oldest unbilled time" for free, no widget code changes needed.
+  reportWidgetsInsteadOfGrid?: boolean;
 }
 
 export const DEFAULT_PROJECT_DASHBOARD_TAB_SPECS: DefaultDashboardTabSpec[] = [
   {
     slug: 'time-fee-entries',
-    title: 'Time & Fees',
+    title: 'Time & Fees Report',
     icon: 'Clock',
     gridFieldKeys: ['date', 'staff', 'type', 'description', 'rate', 'duration_hours', 'billable', 'gst_status', 'amount'],
     quickAddFieldKeys: ['date', 'staff', 'type', 'task_code', 'description', 'activity_code', 'rate', 'duration_hours', 'billable', 'gst_status'],
     isFeeSource: true,
+    reportWidgetsInsteadOfGrid: true,
   },
   {
     slug: 'disbursements',
@@ -186,10 +196,15 @@ export async function buildDefaultTabWidgetsForSpec(tableId: string, spec: Defau
     quickAdd.config.fieldIds = resolve(spec.quickAddFieldKeys);
     widgets.push(quickAdd);
   }
-  const grid = createWidget('grid', widgets) as GridWidget;
-  grid.config.fieldIds = resolve(spec.gridFieldKeys);
-  grid.config.showTotalsRow = true;
-  widgets.push(grid);
+  if (spec.reportWidgetsInsteadOfGrid) {
+    widgets.push(createWidget('time_fees_report', widgets));
+    widgets.push(createWidget('time_aging_report', widgets));
+  } else {
+    const grid = createWidget('grid', widgets) as GridWidget;
+    grid.config.fieldIds = resolve(spec.gridFieldKeys);
+    grid.config.showTotalsRow = true;
+    widgets.push(grid);
+  }
   return widgets;
 }
 

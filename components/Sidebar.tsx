@@ -51,15 +51,20 @@ const ALL_SYSTEM_TABLES = [
   { slug: 'tasks',      label: 'Tasks',      icon: CheckSquare },
 ];
 
-// See visibleCustomTables' own comment -- these back /dashboard/trust-account
-// and the Credit Ledger tab exclusively, not the generic table browser.
-// time-fee-entries is here for a different reason: it's meaningfully edited
-// only via the "Time Entry" dashboard's own quick-add form (manual) and the
-// Auto Time Recording panel (AI-drafted), and reported on via that same
-// dashboard's Time & Fees / Old Time report widgets -- the raw grid bypasses
-// both the guided entry flow and the per-viewer admin/staff scoping those
-// reports rely on, so there's deliberately no second raw-grid path to it.
-const TRUST_PAGE_MANAGED_SLUGS = new Set(['trust-accounts', 'trust-protected-funds', 'bank-reconciliations', 'client-credits', 'time-fee-entries']);
+// See visibleCustomTables' own comment -- trust-transactions/trust-accounts/
+// trust-protected-funds/bank-reconciliations back /dashboard/trust-account
+// exclusively, client-credits backs the Credit Ledger tab, and
+// time-fee-entries is meaningfully edited only via the "Time Entry"
+// dashboard's own quick-add form (manual) / Auto Time Recording panel
+// (AI-drafted) and reported on via that dashboard's + each matter's Time &
+// Fees Report tab's report widgets. None of these need a second raw-grid
+// path that bypasses their guided entry flow and per-viewer scoping, so
+// this same set is also used by AddTabModal.tsx to hide them from its
+// "Custom dashboards" manual-add picker. Hardcoded rather than a
+// per-company setting on purpose -- nothing in the product lets an admin
+// edit this list, so it can't drift company to company the way a
+// DB-stored setting could.
+export const TRUST_PAGE_MANAGED_SLUGS = new Set(['trust-transactions', 'trust-accounts', 'trust-protected-funds', 'bank-reconciliations', 'client-credits', 'time-fee-entries']);
 
 const SYSTEM_TABLE_FIELDS: Record<string, { key: string; label: string }[]> = {
   projects: [
