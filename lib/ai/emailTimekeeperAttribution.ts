@@ -68,8 +68,19 @@ export interface AttributedEmail {
   timekeeperUserId: string | null;
 }
 
+// project_id is part of the fingerprint deliberately -- confirmed live, the
+// exact same subject/sender/snippet can legitimately be linked to two
+// DIFFERENT matters at once (e.g. one email discussing two lots of the same
+// development, assigned to both). Without this, that case would collapse
+// into one entry and, worse, submitting it would mark the OTHER matter's
+// copy as already-converted too (time_entry_ai_sources is keyed on the raw
+// row id, not the matter) -- silently losing that matter's own time entry.
+// Duplicate SYNC COPIES of one real email (the actual problem this dedupe
+// exists for) always share the same project_id, since they're all the
+// result of the same assign-to-a-matter action; this only ever splits
+// apart genuinely distinct correspondence, never re-merges a true duplicate.
 function fingerprint(e: RawProjectEmail): string {
-  return `${(e.subject || "").trim()}|||${(e.from_address || "").trim().toLowerCase()}|||${(e.snippet || "").trim()}`;
+  return `${(e.subject || "").trim()}|||${(e.from_address || "").trim().toLowerCase()}|||${(e.snippet || "").trim()}|||${e.project_id}`;
 }
 
 // Only a literal " and " joins a second addressee -- a comma is far too

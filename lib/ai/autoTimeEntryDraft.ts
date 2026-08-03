@@ -25,6 +25,15 @@ export interface AutoTimeEntryDraft {
   sourceEmailIds: string[];
 }
 
+// Every entry reads like a line on an actual bill -- ending with a full
+// stop, same as the worked examples in SYSTEM_PROMPT below (which the model
+// doesn't reliably follow on its own, confirmed live), and the leftover-item
+// fallback descriptions (a bare task name/email subject) below.
+function ensureTrailingPeriod(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 const SYSTEM_PROMPT = `You are a timekeeper assistant for a professional services firm (mostly legal). Given one person's completed tasks and matter-linked emails for a single day, produce a list of billable time entries as they would appear on a timesheet.
 
 Rules:
@@ -32,7 +41,7 @@ Rules:
 - Within the SAME matter, if a task and one or more emails clearly describe the same underlying piece of work (e.g. a task "Draft settlement letter" and an email actually sending that settlement letter), merge them into ONE entry rather than creating a separate entry for each -- list every task/email reference (e.g. T1, E2) that contributed to that entry.
 - Distinct, unrelated pieces of work on the same matter should stay as separate entries.
 - Every task and every email must be accounted for by exactly one entry -- never drop one, never include the same reference in two entries.
-- Write each entry's description the way a professional would phrase it on an actual bill (e.g. "Draft and send settlement letter to purchaser's solicitor", "Review title search and update file notes") -- concise, past tense, no filler.
+- Write each entry's description the way a professional would phrase it on an actual bill (e.g. "Draft and send settlement letter to purchaser's solicitor.", "Review title search and update file notes.") -- concise, past tense, no filler, ending with a full stop.
 - Estimate a realistic duration in hours for each entry given what it actually involved -- a short email is often 0.1-0.2h (6-12 minutes), a substantive email or short call note might be 0.2-0.4h, drafting or reviewing a document is usually 0.3-1.5h depending on what the task/notes describe. Round to the nearest 0.1.
 
 Respond with ONLY a JSON array, nothing else -- no markdown fences, no prose:
@@ -93,7 +102,7 @@ export async function draftAutoTimeEntries(
       .map((ref: string) => emails.find(e => emailRefById.get(e.id) === ref)?.id)
       .filter((id: string | undefined): id is string => !!id);
     if (!sourceTaskIds.length && !sourceEmailIds.length) continue;
-    drafts.push({ matterId, matterLabel: matterLabelByRef.get(matterRefById.get(matterId)!) || "", description, hours, sourceTaskIds, sourceEmailIds });
+    drafts.push({ matterId, matterLabel: matterLabelByRef.get(matterRefById.get(matterId)!) || "", description: ensureTrailingPeriod(description), hours, sourceTaskIds, sourceEmailIds });
   }
 
   // Anything the model dropped entirely (missed a ref) still becomes its
@@ -103,11 +112,11 @@ export async function draftAutoTimeEntries(
   const coveredEmailIds = new Set(drafts.flatMap(d => d.sourceEmailIds));
   for (const t of tasks) {
     if (coveredTaskIds.has(t.id)) continue;
-    drafts.push({ matterId: t.matterId, matterLabel: t.matterLabel, description: t.name, hours: 0.2, sourceTaskIds: [t.id], sourceEmailIds: [] });
+    drafts.push({ matterId: t.matterId, matterLabel: t.matterLabel, description: ensureTrailingPeriod(t.name), hours: 0.2, sourceTaskIds: [t.id], sourceEmailIds: [] });
   }
   for (const e of emails) {
     if (coveredEmailIds.has(e.id)) continue;
-    drafts.push({ matterId: e.matterId, matterLabel: e.matterLabel, description: e.subject || "Email correspondence", hours: 0.1, sourceTaskIds: [], sourceEmailIds: [e.id] });
+    drafts.push({ matterId: e.matterId, matterLabel: e.matterLabel, description: ensureTrailingPeriod(e.subject || "Email correspondence"), hours: 0.1, sourceTaskIds: [], sourceEmailIds: [e.id] });
   }
 
   return { drafts, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
