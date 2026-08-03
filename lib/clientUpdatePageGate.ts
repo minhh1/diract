@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 export async function loadActivePageBySlug(admin: any, slug: string) {
   const { data: page } = await admin
     .from("client_update_pages")
-    .select("id, company_id, title, client_label, slug, expires_at, is_active, access_code, date_format, freeze_first_column, base_table, page_kind, visibility, redact_figures")
+    .select("id, company_id, title, client_label, slug, expires_at, is_active, access_code, date_format, freeze_first_column, base_table, page_kind, visibility, redact_figures, ai_ask_enabled, ai_ask_scope")
     .eq("slug", slug).maybeSingle();
 
   const notFound = { error: NextResponse.json({ error: "This page is not available" }, { status: 404 }), page: null };

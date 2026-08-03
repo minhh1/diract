@@ -286,6 +286,7 @@ export function useSystemTableAsCustomTable(
     is_default: true,
     effectiveDefault: true,
     owner_user_id: null,
+    is_from_template: false,
   } : null;
 
   const addRecordOptimistic = useCallback((id: string, values: Record<string, any>) => {

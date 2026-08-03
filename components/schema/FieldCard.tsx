@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical, Link2 } from "lucide-react";
+import { GripVertical, Link2, Lock } from "lucide-react";
 import type { CustomField } from "./types";
 import { getFieldTypeConfig } from "./types";
 import { isRelationType } from "@/lib/schema/fieldCapabilities";
@@ -72,6 +72,11 @@ export default function FieldCard({
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {field.is_from_template && (
+            <span title="Installed from a template -- can never be edited or deleted">
+              <Lock size={10} className="text-slate-300" />
+            </span>
+          )}
           {field.is_required && (
             <span className="w-1.5 h-1.5 rounded-full bg-red-400" title="Required" />
           )}

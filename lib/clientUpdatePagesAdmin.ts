@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 
 export async function loadPageForCompany(admin: any, pageId: string, companyId: string) {
   const { data: page } = await admin
-    .from("client_update_pages").select("id, company_id, title, slug, date_format, base_table, source_table_id, page_kind, log_cell_changes").eq("id", pageId).maybeSingle();
+    .from("client_update_pages").select("id, company_id, title, slug, date_format, base_table, source_table_id, page_kind, log_cell_changes, ai_ask_enabled, ai_ask_scope").eq("id", pageId).maybeSingle();
   if (!page || page.company_id !== companyId) {
     return { error: NextResponse.json({ error: "Page not found" }, { status: 404 }), page: null };
   }

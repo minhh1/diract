@@ -39,6 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     freezeFirstColumn: page.freeze_first_column,
     baseTable: page.base_table,
     pageKind: page.page_kind,
+    askEnabled: !!page.ai_ask_enabled,
     requiresCode: false,
     ...detail,
   });

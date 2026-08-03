@@ -39,6 +39,12 @@ export interface CustomTable {
   // is_default, to decide what's pinned/mandatory -- AdminDefaultTablesTab
   // still reads the raw is_default for its own company-wide toggle.
   effectiveDefault: boolean;
+  // Set once by install_company_template and never again -- see supabase/
+  // migrations/20260803030000_lock_template_schema.sql. RLS itself already
+  // refuses any UPDATE/DELETE on a row with this true (for anyone, admin
+  // included); CustomTableBuilder.tsx uses this to grey the same actions
+  // out client-side instead of surfacing a raw Postgres error.
+  is_from_template: boolean;
 }
 
 // Module-level cache, not per-component -- app/dashboard/[tableSlug]/page.tsx

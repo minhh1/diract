@@ -41,7 +41,7 @@ interface Board {
   // Set by the server when it stripped currency values before sending.
   figuresRedacted?: boolean;
 }
-interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; logCellChanges: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed" }
+interface PageMeta { title: string; dateFormat: string; freezeFirstColumn: boolean; logCellChanges: boolean; baseTable?: "projects" | "entities" | "custom_table"; pageKind?: "user_dependent" | "auto_fed"; askEnabled: boolean; askScope: "emails" | "emails_notes" | "all" }
 
 const boardCacheKey = (slug: string) => `client_update_board_${slug}`;
 // Separate from boardCacheKey above, which is the PIN-gated CLIENT path's
@@ -141,7 +141,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
       if (attempt.ok && !attempt.json.requiresCode) {
         // logCellChanges is a staff-only editing preference -- a client PIN
         // visitor never edits cells, so it's always true here (unused).
-        const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, logCellChanges: true, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind };
+        const meta: PageMeta = { title: attempt.json.title, dateFormat: attempt.json.dateFormat, freezeFirstColumn: !!attempt.json.freezeFirstColumn, logCellChanges: true, baseTable: attempt.json.baseTable, pageKind: attempt.json.pageKind, askEnabled: !!attempt.json.askEnabled, askScope: "emails" };
         const board: Board = { groups: attempt.json.groups, items: attempt.json.items, fields: attempt.json.fields, formatRules: attempt.json.formatRules || [], viewDefaults: attempt.json.viewDefaults || [], figuresRedacted: !!attempt.json.figuresRedacted };
         setMode("client");
         // Bail out to the same object reference when this revalidate just
@@ -167,7 +167,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     const { ok, json } = await fetchPublic();
     if (!ok) { setError(json.error || "This page is not available"); setLoading(false); return; }
     setMode("client");
-    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, logCellChanges: true, baseTable: json.baseTable, pageKind: json.pageKind });
+    setMeta({ title: json.title, dateFormat: json.dateFormat, freezeFirstColumn: !!json.freezeFirstColumn, logCellChanges: true, baseTable: json.baseTable, pageKind: json.pageKind, askEnabled: !!json.askEnabled, askScope: "emails" });
     if (json.requiresCode) { setNeedsCode(true); setLoading(false); return; }
     const board: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [], figuresRedacted: !!json.figuresRedacted };
     setBoard(board);
@@ -180,7 +180,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
   const applyStaffJson = useCallback((json: any) => {
     setMode("staff");
     setStaffPageId(json.page.id);
-    const nextMeta: PageMeta = { title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind };
+    const nextMeta: PageMeta = { title: json.page.title, dateFormat: json.page.date_format, freezeFirstColumn: !!json.page.freeze_first_column, logCellChanges: json.page.log_cell_changes !== false, baseTable: json.page.base_table, pageKind: json.page.page_kind, askEnabled: !!json.page.ai_ask_enabled, askScope: (json.page.ai_ask_scope || "emails") };
     const nextBoard: Board = { groups: json.groups, items: json.items, fields: json.fields, formatRules: json.formatRules || [], viewDefaults: json.viewDefaults || [], figuresRedacted: !!json.figuresRedacted };
     // Bail out to the same object reference when this call (the cache-warm
     // paint, the live by-slug revalidate right after it, or a background
@@ -514,6 +514,40 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     return json;
   };
 
+  // "Ask anything about this matter" -- staff always get this (same as the
+  // rest of the AI toolset); a client/public viewer only when meta.askEnabled
+  // is on for the page (see the ternary that wires onAskQuestion into
+  // <MatterBoard> below) -- this function itself doesn't need to re-check
+  // that, since MatterBoard never renders the feature without the prop.
+  const askQuestion = async (itemId: string, question: string, fields: { label: string; value: string }[]) => {
+    const res = mode === "staff" && staffPageId
+      ? await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/ask`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, fields }),
+        })
+      : await fetch(`/api/client-update-pages/public/${slug}/ask`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itemId, question, fields, code: getCachedCode(slug) }),
+        });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Couldn't get an answer");
+    return json.answer as string;
+  };
+
+  const changeAskEnabled = (enabled: boolean) => {
+    if (mode !== "staff" || !staffPageId) return;
+    setMeta(prev => prev && { ...prev, askEnabled: enabled });
+    fetch(`/api/client-update-pages/${staffPageId}/ask-settings`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }),
+    });
+  };
+
+  const changeAskScope = (scope: "emails" | "emails_notes" | "all") => {
+    if (mode !== "staff" || !staffPageId) return;
+    setMeta(prev => prev && { ...prev, askScope: scope });
+    fetch(`/api/client-update-pages/${staffPageId}/ask-settings`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope }),
+    });
+  };
+
   const addNote = (itemId: string, note: string, propertyId?: string) => {
     if (!note.trim()) return;
     const tempId = `temp-${Date.now()}`;
@@ -749,6 +783,11 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
           onReviewSettlement={mode === "staff" && meta.baseTable === "projects" ? reviewSettlement : undefined}
           onConfirmAiFlag={mode === "staff" && meta.baseTable === "projects" ? confirmAiFlag : undefined}
           onReviewAllSettlementStatus={mode === "staff" && meta.baseTable === "projects" ? reviewAllSettlementStatus : undefined}
+          onAskQuestion={meta.baseTable === "projects" && (mode === "staff" || meta.askEnabled) ? askQuestion : undefined}
+          askEnabled={meta.askEnabled}
+          askScope={meta.askScope}
+          onAskEnabledChanged={mode === "staff" && meta.baseTable === "projects" ? changeAskEnabled : undefined}
+          onAskScopeChanged={mode === "staff" && meta.baseTable === "projects" ? changeAskScope : undefined}
           onDataChanged={reloadStaffBoard}
           onDateFormatChanged={changeDateFormat}
           onFreezeFirstColumnChanged={mode === "staff" ? changeFreezeColumn : undefined}

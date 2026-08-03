@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, Store, RotateCcw, MapPin, Building2, LayoutGrid, CheckSquare } from "lucide-react";
+import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, Store, RotateCcw, MapPin, Building2, LayoutGrid, CheckSquare, Lock } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
@@ -58,7 +58,7 @@ export default function CustomTableBuilder() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [limit, setLimit] = useState<number | null>(null);
-  const [editingTable, setEditingTable] = useState<{ id: string; name: string; icon: string; color: string } | null>(null);
+  const [editingTable, setEditingTable] = useState<{ id: string; name: string; icon: string; color: string; owner_user_id: string | null; is_from_template: boolean } | null>(null);
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('Table2');
   const [editColor, setEditColor] = useState('#6366f1');
@@ -169,6 +169,10 @@ export default function CustomTableBuilder() {
       .from('profiles').select('active_company_id').eq('id', user?.id).single();
     const companyId = prof?.active_company_id;
 
+    // A non-admin can only ever create a private table (RLS agrees, see
+    // ct_insert) -- force it here too rather than trusting newIsPrivate,
+    // since that checkbox is hidden/disabled for a non-admin in the modal
+    // below, not removed from state.
     const { data: created, error: err } = await supabase.from('company_tables').insert({
       company_id: companyId,
       name: newName.trim(),
@@ -176,7 +180,7 @@ export default function CustomTableBuilder() {
       icon: newIcon,
       color: newColor,
       display_order: tables.length,
-      owner_user_id: newIsPrivate ? user?.id : null,
+      owner_user_id: (newIsPrivate || !isAdmin) ? user?.id : null,
     }).select().single();
 
     setSaving(false);
@@ -199,7 +203,14 @@ export default function CustomTableBuilder() {
     refetch();
   };
 
-  const handleDelete = async (tableId: string, tableName: string, ownerUserId: string | null) => {
+  const handleDelete = async (tableId: string, tableName: string, ownerUserId: string | null, isFromTemplate: boolean) => {
+    // Installed-from-template tables are permanently locked (RLS + a
+    // trigger both refuse this, for anyone including an admin -- see
+    // supabase/migrations/20260803030000_lock_template_schema.sql) -- the
+    // Trash2 button is hidden for these already, this is just a defensive
+    // backstop against a stale render.
+    if (isFromTemplate) { window.alert(`"${tableName}" was installed from a template and can never be deleted.`); return; }
+
     // A private table is fully this user's own -- no need to route through
     // admin approval just because they aren't a company admin (RLS's own
     // delete policy agrees: owner_user_id = auth.uid() is enough on its own).
@@ -243,7 +254,9 @@ export default function CustomTableBuilder() {
     refetch();
   };
 
-  const openEdit = (table: { id: string; name: string; icon: string; color: string }) => {
+  const openEdit = (table: { id: string; name: string; icon: string; color: string; owner_user_id: string | null; is_from_template: boolean }) => {
+    if (table.is_from_template) { window.alert(`"${table.name}" was installed from a template and can never be edited.`); return; }
+    if (!isAdmin && table.owner_user_id !== userId) { window.alert(`Only a company admin can edit "${table.name}".`); return; }
     setEditingTable(table);
     setEditName(table.name);
     setEditIcon(table.icon);
@@ -437,6 +450,11 @@ export default function CustomTableBuilder() {
                 <p className="text-[13px] font-bold text-slate-800">{table.name}</p>
                 <p className="text-[10px] text-slate-400">/dashboard/{table.slug}</p>
               </div>
+              {table.is_from_template && (
+                <span title="Installed from a template -- can never be edited or deleted" className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold uppercase bg-slate-100 text-slate-500 whitespace-nowrap">
+                  <Lock size={9} /> Template
+                </span>
+              )}
               {pendingArchiveIds.has(table.id) && (
                 <span className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase bg-amber-50 text-amber-600 whitespace-nowrap">
                   Deletion requested
@@ -449,19 +467,27 @@ export default function CustomTableBuilder() {
               >
                 <Store size={14} />
               </button>
-              <button
-                onClick={() => openEdit(table)}
-                className="p-1.5 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all"
-                title="Rename / re-icon"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                onClick={() => handleDelete(table.id, table.name, table.owner_user_id)}
-                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-              >
-                <Trash2 size={14} />
-              </button>
+              {/* Editing a shared table (not one you privately own) is
+                  admin-only -- see ct_update in supabase/migrations/
+                  20260803030000_lock_template_schema.sql, which also
+                  refuses ANY edit once is_from_template. */}
+              {!table.is_from_template && (isAdmin || table.owner_user_id === userId) && (
+                <button
+                  onClick={() => openEdit(table)}
+                  className="p-1.5 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all"
+                  title="Rename / re-icon"
+                >
+                  <Pencil size={14} />
+                </button>
+              )}
+              {!table.is_from_template && (
+                <button
+                  onClick={() => handleDelete(table.id, table.name, table.owner_user_id, table.is_from_template)}
+                  className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           );
         })}
@@ -535,17 +561,23 @@ export default function CustomTableBuilder() {
                 </div>
               </div>
 
+              {/* Only a company admin can create a SHARED table (see
+                  ct_insert in supabase/migrations/20260803030000_lock_
+                  template_schema.sql) -- a non-admin can only ever create
+                  one that's private to themselves, so the toggle is locked
+                  on for them instead of hidden, so it's clear why. */}
               <button
-                onClick={() => setNewIsPrivate(p => !p)}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all text-left"
+                onClick={() => { if (isAdmin) setNewIsPrivate(p => !p); }}
+                disabled={!isAdmin}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all text-left disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                  newIsPrivate ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
+                  (newIsPrivate || !isAdmin) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
                 }`}>
-                  {newIsPrivate && <Check size={11} className="text-white" strokeWidth={3} />}
+                  {(newIsPrivate || !isAdmin) && <Check size={11} className="text-white" strokeWidth={3} />}
                 </div>
                 <span className="text-[12px] font-medium text-slate-600">
-                  Private -- only visible to me
+                  {isAdmin ? 'Private -- only visible to me' : 'Private -- only visible to me (only a company admin can add a shared table)'}
                 </span>
               </button>
 

@@ -94,9 +94,20 @@ interface Props {
   onSave: (updates: Partial<CustomField>) => Promise<void>;
   onDelete: () => Promise<void>;
   onClose: () => void;
+  // Set (non-null) to disable Save and show why instead -- a non-admin has
+  // no "request an edit" fallback the way delete has, so this fully blocks
+  // Save for either "not a company admin" or "installed from a template".
+  saveDisabledReason?: string | null;
+  // Set (non-null) to fully disable Delete too, instead of leaving it to
+  // onDelete's own admin-vs-archive-request branching -- only for a
+  // template-sourced field, since that can never be deleted by anyone (no
+  // approval flow could ever succeed, see supabase/migrations/
+  // 20260803030000_lock_template_schema.sql), unlike a plain non-admin
+  // click, which onDelete still turns into a real archive request.
+  deleteDisabledReason?: string | null;
 }
 
-export default function FieldConfigPanel({ field, siblingFields = [], onSave, onDelete, onClose }: Props) {
+export default function FieldConfigPanel({ field, siblingFields = [], onSave, onDelete, onClose, saveDisabledReason, deleteDisabledReason }: Props) {
   const { tables: customTables } = useCustomTables();
   const [draft, setDraft] = useState<CustomField>({ ...field });
   const [saving, setSaving] = useState(false);
@@ -952,6 +963,9 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
 
       {/* Footer */}
       <div className="p-5 border-t border-slate-100 space-y-2">
+      {(saveDisabledReason || deleteDisabledReason) && (
+        <p className="text-[10px] font-medium text-slate-400 px-1">{saveDisabledReason || deleteDisabledReason}</p>
+      )}
       {saveErrors.length > 0 && (
         <div className="bg-red-50 border border-red-100 rounded-2xl py-2.5 px-3.5 space-y-1">
           {saveErrors.map((err, i) => (
@@ -962,7 +976,8 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
       <div className="flex gap-3">
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !!saveDisabledReason}
+          title={saveDisabledReason || undefined}
           className="flex-1 py-3 bg-slate-900 text-white rounded-full text-[11px] font-bold disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {saving ? <Loader2 size={12} className="animate-spin" /> : 'Save field'}
@@ -981,8 +996,9 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
               setDeleting(false);
             }
           }}
-          disabled={deleting}
-          className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+          disabled={deleting || !!deleteDisabledReason}
+          title={deleteDisabledReason || undefined}
+          className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all disabled:opacity-40"
         >
           {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
         </button>

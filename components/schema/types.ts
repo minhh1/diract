@@ -82,6 +82,14 @@ export interface CustomField {
   // supabase/company_table_field_allow_multiple.sql). Undefined/false means
   // the normal single-linked-record behavior.
   allow_multiple?: boolean;
+  // Set once by install_company_template and never again -- see supabase/
+  // migrations/20260803030000_lock_template_schema.sql. RLS itself already
+  // refuses any UPDATE/DELETE on a row with this true (for anyone, admin
+  // included); SchemaVisualisation.tsx/FieldConfigPanel use this to grey the
+  // same actions out client-side instead of surfacing a raw Postgres error.
+  // Undefined on a freshly-added-but-not-yet-selected field (see
+  // handleAddField's optimistic `mapped` object) -- treated as false.
+  is_from_template?: boolean;
 }
 
 export const FIELD_TYPES: {

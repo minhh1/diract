@@ -175,6 +175,10 @@ export default function SchemaVisualisation() {
 
   const handleAddField = async (fieldType: FieldType) => {
     if (!companyId) return;
+    // Defensive -- the palette button is hidden for a non-admin already
+    // (RLS enforces this regardless, see ctf_insert/ccf_insert in
+    // supabase/migrations/20260803030000_lock_template_schema.sql).
+    if (!isAdmin) { window.alert('Only a company admin can add a field.'); return; }
     const errors = validateFieldCompatibility(fields, { id: 'new', field_type: fieldType, is_unique: false });
     if (errors.length) { window.alert(errors[0]); return; }
     setAdding(true);
@@ -236,6 +240,7 @@ export default function SchemaVisualisation() {
           formula_field_a_id: null,
           formula_field_b_id: null,
           formula_percent: null,
+          is_from_template: false,
         };
         setFields(prev => [...prev, mapped]);
         setSelectedFieldId(data.id);
@@ -282,6 +287,11 @@ export default function SchemaVisualisation() {
 const handleSaveField = async (updates: Partial<CustomField>) => {
   if (!selectedFieldId) return;
   const before = fields.find(f => f.id === selectedFieldId);
+  // Defensive -- FieldConfigPanel's Save button is disabled for these
+  // already (RLS enforces this regardless, see ctf_update/ccf_update in
+  // supabase/migrations/20260803030000_lock_template_schema.sql).
+  if (!isAdmin) { window.alert('Only a company admin can edit a field.'); return; }
+  if (before?.is_from_template) { window.alert(`"${before.label}" was installed from a template and can never be edited.`); return; }
   const { data: { user } } = await supabase.auth.getUser();
 
   if (isCustomTable && customTableId) {
@@ -386,6 +396,12 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
     if (!selectedFieldId) return;
     const before = fields.find(f => f.id === selectedFieldId);
     if (!before) return;
+
+    // Installed-from-template fields are permanently locked (RLS + a
+    // trigger both refuse this, for anyone including an admin -- see
+    // supabase/migrations/20260803030000_lock_template_schema.sql) -- no
+    // archive-request fallback either, since it could never be approved.
+    if (before.is_from_template) { window.alert(`"${before.label}" was installed from a template and can never be deleted.`); return; }
 
     if (!isAdmin) {
       if (!window.confirm(`Request deleting the "${before.label}" field? A company admin will need to approve it.`)) return;
@@ -559,6 +575,10 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
                   <Store size={13} /> Publish to marketplace
                 </button>
               )}
+              {/* Only a company admin can add a field -- see ctf_insert/
+                  ccf_insert in supabase/migrations/20260803030000_lock_
+                  template_schema.sql. */}
+              {isAdmin && (
               <div className="relative">
               <button
                 onClick={() => setShowPalette(p => !p)}
@@ -594,6 +614,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
                 </div>
               )}
               </div>
+              )}
             </div>
           </div>
 
@@ -601,12 +622,12 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
           <div className="flex-1 overflow-y-auto">
             {loading ? null : fields.length === 0 ? (
               <div
-                className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer hover:border-indigo-300 transition-colors"
-                onClick={() => setShowPalette(true)}
+                className={`flex flex-col items-center justify-center py-20 border-2 border-dashed border-slate-200 rounded-3xl transition-colors ${isAdmin ? "cursor-pointer hover:border-indigo-300" : ""}`}
+                onClick={() => { if (isAdmin) setShowPalette(true); }}
               >
                 <Plus size={32} className="text-slate-300 mb-3" />
-                <p className="text-[13px] font-bold text-slate-400">Add your first field</p>
-                <p className="text-[11px] text-slate-300 mt-1">Click to choose a field type</p>
+                <p className="text-[13px] font-bold text-slate-400">{isAdmin ? "Add your first field" : "No fields yet"}</p>
+                <p className="text-[11px] text-slate-300 mt-1">{isAdmin ? "Click to choose a field type" : "Only a company admin can add one"}</p>
               </div>
             ) : (
               <div className="space-y-6">
@@ -678,6 +699,12 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
               onSave={handleSaveField}
               onDelete={handleDeleteField}
               onClose={() => setSelectedFieldId(null)}
+              saveDisabledReason={
+                selectedField.is_from_template ? "Installed from a template -- can never be edited."
+                : !isAdmin ? "Only a company admin can edit a field."
+                : null
+              }
+              deleteDisabledReason={selectedField.is_from_template ? "Installed from a template -- can never be deleted." : null}
             />
           </div>
         )}

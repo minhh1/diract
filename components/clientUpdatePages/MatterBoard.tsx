@@ -36,7 +36,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, CalendarCheck, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, CalendarCheck, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check, Settings as SettingsIcon, MessageCircleQuestion, Send } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -167,6 +167,25 @@ interface Props {
   onAddFormatRule?: (fieldId: string, value: string, color: string) => void;
   onUpdateFormatRule?: (ruleId: string, patch: { fieldId?: string; value?: string; color?: string }) => void;
   onRemoveFormatRule?: (ruleId: string) => void;
+  // "Ask anything about this matter" (projects pages only, see
+  // lib/clientUpdatePageAskQuestion.ts) -- undefined hides the feature
+  // entirely, same convention as every other optional handler here. Staff
+  // always get onAskQuestion (same as the rest of the AI toolset); a
+  // client/public viewer only does when the page's own ai_ask_enabled is on
+  // -- that decision is made by the caller (PublicClientUpdateContent),
+  // not here, so this component only needs "is it available at all".
+  // fields is the board's own currently-rendered {label, value} pairs for
+  // that matter, forwarded straight through to the AI at the "all" scope --
+  // see askScope's own comment for why re-resolving them server-side would
+  // just duplicate what's already on screen.
+  onAskQuestion?: (itemId: string, question: string, fields: { label: string; value: string }[]) => Promise<string>;
+  // Staff-only page settings for the above -- undefined hides the controls
+  // in the settings panel, same "value + change handler" convention as
+  // dateFormat/freezeFirstColumn/logCellChanges.
+  askEnabled?: boolean;
+  askScope?: "emails" | "emails_notes" | "all";
+  onAskEnabledChanged?: (enabled: boolean) => void;
+  onAskScopeChanged?: (scope: "emails" | "emails_notes" | "all") => void;
 }
 
 function isDateField(field: MatterBoardField): boolean {
@@ -310,6 +329,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 export default function MatterBoard({
   pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, maskCurrency = false, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
   onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewSettlement, onConfirmAiFlag, onReviewAllSettlementStatus,
+  onAskQuestion, askEnabled, askScope, onAskEnabledChanged, onAskScopeChanged,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
   const [deepLinkFixItemId, setDeepLinkFixItemId] = useState<string | null>(initialFixItemId ?? null);
@@ -330,7 +350,7 @@ export default function MatterBoard({
   const [showAddMatter, setShowAddMatter] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [showAutoAddRules, setShowAutoAddRules] = useState(false);
-  const [showDateFormat, setShowDateFormat] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [conditionGroupId, setConditionGroupId] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -804,64 +824,26 @@ export default function MatterBoard({
                 className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                 <Columns3 size={14} />
               </button>
-              {pageKind !== "auto_fed" && (
-                <button onClick={() => setShowAutoAddRules(true)} title="Auto-add rules"
-                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
-                  <Zap size={14} />
-                </button>
-              )}
-              {onSummarizeOpenMatters && (
-                <button onClick={summarizeOpenMatters} disabled={summarizingAll} title="Generate AI summaries for open matters with emails, that don't have one yet"
-                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
-                  {summarizingAll ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                </button>
-              )}
-              {onClearSummaries && (
-                <button onClick={clearSummaries} disabled={clearingAll} title="Clear all AI summaries on this page"
-                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-red-300 hover:text-red-600 disabled:opacity-40 transition-colors">
-                  {clearingAll ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
-                </button>
-              )}
-              {onReviewAllSettlementStatus && (
-                <button onClick={reviewAllSettlementStatus} disabled={checkingAllStatus} title="AI confirm settlement date status for every matter (logs a status entry for each)"
-                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-purple-300 hover:text-purple-600 disabled:opacity-40 transition-colors">
-                  {checkingAllStatus ? <Loader2 size={14} className="animate-spin" /> : <CalendarCheck size={14} />}
-                </button>
-              )}
               <button onClick={() => setShowLogs(true)} title="Activity log"
                 className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
                 <History size={14} />
               </button>
-              {onLogCellChangesChanged && (
-                <button onClick={() => onLogCellChangesChanged(!logCellChanges)}
-                  title={logCellChanges ? "Cell change logging is on -- click to turn off (skips the reason prompt and pauses recording new history; past history is kept)" : "Cell change logging is off -- click to turn back on"}
-                  className={`p-2 border rounded-full transition-colors ${logCellChanges ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
-                  <FileText size={14} />
-                </button>
-              )}
               <div className="relative">
-                <button onClick={() => setShowDateFormat(v => !v)} title="Date format"
+                <button onClick={() => setShowSettings(v => !v)} title="Board settings"
                   className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:border-indigo-300 hover:text-indigo-600 transition-colors">
-                  <Calendar size={14} />
+                  <SettingsIcon size={14} />
                 </button>
-                {showDateFormat && (
-                  <div className="absolute right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-1.5 z-20 w-40">
-                    {DATE_FORMATS.map(f => (
-                      <button key={f.value} onClick={() => { onDateFormatChanged?.(f.value); setShowDateFormat(false); }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-[11px] transition-colors ${dateFormat === f.value ? "bg-indigo-50 text-indigo-700 font-bold" : "text-slate-600 hover:bg-slate-50"}`}>
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
+                {showSettings && (
+                  <BoardSettingsPanel
+                    dateFormat={dateFormat} onDateFormatChanged={onDateFormatChanged}
+                    freezeFirstColumn={freezeFirstColumn} onFreezeFirstColumnChanged={mode === "spreadsheet" ? onFreezeFirstColumnChanged : undefined}
+                    logCellChanges={logCellChanges} onLogCellChangesChanged={onLogCellChangesChanged}
+                    onOpenAutoAddRules={pageKind !== "auto_fed" ? () => { setShowAutoAddRules(true); setShowSettings(false); } : undefined}
+                    askEnabled={askEnabled} askScope={askScope} onAskEnabledChanged={onAskEnabledChanged} onAskScopeChanged={onAskScopeChanged}
+                    onClose={() => setShowSettings(false)} />
                 )}
               </div>
             </>
-          )}
-          {mode === "spreadsheet" && onFreezeFirstColumnChanged && (
-            <button onClick={() => onFreezeFirstColumnChanged(!freezeFirstColumn)} title="Freeze the first column"
-              className={`p-2 transition-colors ${freezeFirstColumn ? "text-indigo-600" : "text-slate-400 hover:text-indigo-600"}`}>
-              <Pin size={14} />
-            </button>
           )}
           <div className="flex items-center gap-1 bg-slate-100 rounded-full p-1">
             <button onClick={() => setMode("cards")}
@@ -879,11 +861,29 @@ export default function MatterBoard({
               <MoreHorizontal size={14} />
             </button>
             {showMoreMenu && (
-              <div className="absolute right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-1.5 z-20 w-44">
+              <div className="absolute right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-1.5 z-20 w-56">
                 <button onClick={exportToCsv}
                   className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
                   <Download size={12} /> Export to CSV
                 </button>
+                {onSummarizeOpenMatters && (
+                  <button onClick={() => { summarizeOpenMatters(); setShowMoreMenu(false); }} disabled={summarizingAll}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors">
+                    {summarizingAll ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Generate AI summaries for open matters
+                  </button>
+                )}
+                {onClearSummaries && (
+                  <button onClick={() => { clearSummaries(); setShowMoreMenu(false); }} disabled={clearingAll}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 transition-colors">
+                    {clearingAll ? <Loader2 size={12} className="animate-spin" /> : <Eraser size={12} />} Clear all AI summaries
+                  </button>
+                )}
+                {onReviewAllSettlementStatus && (
+                  <button onClick={() => { reviewAllSettlementStatus(); setShowMoreMenu(false); }} disabled={checkingAllStatus}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-purple-50 hover:text-purple-600 disabled:opacity-40 transition-colors">
+                    {checkingAllStatus ? <Loader2 size={12} className="animate-spin" /> : <CalendarCheck size={12} />} AI confirm settlement status (all matters)
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1100,7 +1100,7 @@ export default function MatterBoard({
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
                   expanded={expandedCardKey === key} onToggleExpand={() => setExpandedCardKey(expandedCardKey === key ? null : key)}
                   onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged}
-                  onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} />
+                  onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} onAskQuestion={onAskQuestion} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</p>
@@ -1109,7 +1109,7 @@ export default function MatterBoard({
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
               onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged}
-              onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} />
+              onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} onAskQuestion={onAskQuestion} />
           )}
         </div>
       </div>
@@ -1256,6 +1256,115 @@ function expandByProperty(items: MatterBoardItem[], propertyFieldIds: string[]):
   });
 }
 
+// Consolidates what used to be five separate toolbar icon buttons (auto-add
+// rules, date format, freeze column, cell-change logging, and now the
+// ask-anything settings below) into one panel behind a single gear icon --
+// the toolbar row was getting crowded enough that every one of these,
+// individually rare to touch, was competing for space with the handful of
+// buttons actually used every day (Add matters, Manage columns, Activity
+// log). One-off bulk AI actions moved into the existing "More" menu instead
+// of here, since those are actions to run, not settings to leave set.
+function BoardSettingsPanel({
+  dateFormat, onDateFormatChanged, freezeFirstColumn, onFreezeFirstColumnChanged,
+  logCellChanges, onLogCellChangesChanged, onOpenAutoAddRules,
+  askEnabled, askScope, onAskEnabledChanged, onAskScopeChanged, onClose,
+}: {
+  dateFormat: string; onDateFormatChanged?: (format: string) => void;
+  freezeFirstColumn?: boolean; onFreezeFirstColumnChanged?: (freeze: boolean) => void;
+  logCellChanges?: boolean; onLogCellChangesChanged?: (log: boolean) => void;
+  onOpenAutoAddRules?: () => void;
+  askEnabled?: boolean; askScope?: "emails" | "emails_notes" | "all";
+  onAskEnabledChanged?: (enabled: boolean) => void; onAskScopeChanged?: (scope: "emails" | "emails_notes" | "all") => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  const askScopeOptions: { value: "emails" | "emails_notes" | "all"; label: string }[] = [
+    { value: "emails", label: "Emails only" },
+    { value: "emails_notes", label: "Emails + notes" },
+    { value: "all", label: "Everything on the matter" },
+  ];
+
+  return (
+    <div ref={ref} className="absolute right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-4 z-20 w-72 space-y-4">
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Board settings</p>
+
+      {onOpenAutoAddRules && (
+        <button onClick={onOpenAutoAddRules}
+          className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors">
+          <Zap size={12} /> Auto-add rules
+        </button>
+      )}
+
+      {onDateFormatChanged && (
+        <div>
+          <p className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 mb-1.5"><Calendar size={11} /> Date format</p>
+          <div className="space-y-1">
+            {DATE_FORMATS.map(f => (
+              <button key={f.value} onClick={() => onDateFormatChanged(f.value)}
+                className={`w-full text-left px-3 py-1.5 rounded-xl text-[11px] transition-colors ${dateFormat === f.value ? "bg-indigo-50 text-indigo-700 font-bold" : "text-slate-600 hover:bg-slate-50"}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {onFreezeFirstColumnChanged && (
+        <button onClick={() => onFreezeFirstColumnChanged(!freezeFirstColumn)}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+          <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600"><Pin size={12} /> Freeze first column</span>
+          <span className={`w-8 h-4.5 rounded-full transition-colors relative shrink-0 ${freezeFirstColumn ? "bg-indigo-600" : "bg-slate-200"}`}>
+            <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform ${freezeFirstColumn ? "translate-x-4" : "translate-x-0.5"}`} />
+          </span>
+        </button>
+      )}
+
+      {onLogCellChangesChanged && (
+        <button onClick={() => onLogCellChangesChanged(!logCellChanges)}
+          title="When on, editing a cell asks for a reason and records it in the change history a client can see"
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+          <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600"><FileText size={12} /> Log cell changes</span>
+          <span className={`w-8 h-4.5 rounded-full transition-colors relative shrink-0 ${logCellChanges ? "bg-indigo-600" : "bg-slate-200"}`}>
+            <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform ${logCellChanges ? "translate-x-4" : "translate-x-0.5"}`} />
+          </span>
+        </button>
+      )}
+
+      {onAskEnabledChanged && (
+        <div className="pt-2 border-t border-slate-100 space-y-2">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500"><MessageCircleQuestion size={11} /> Ask anything (client Q&A)</p>
+          <button onClick={() => onAskEnabledChanged(!askEnabled)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+            <span className="text-[11px] font-medium text-slate-600">Let clients ask questions about their matter</span>
+            <span className={`w-8 h-4.5 rounded-full transition-colors relative shrink-0 ${askEnabled ? "bg-indigo-600" : "bg-slate-200"}`}>
+              <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform ${askEnabled ? "translate-x-4" : "translate-x-0.5"}`} />
+            </span>
+          </button>
+          {onAskScopeChanged && (
+            <div>
+              <p className="text-[10px] text-slate-400 px-3 mb-1">What can the AI see when answering?</p>
+              <div className="space-y-1">
+                {askScopeOptions.map(o => (
+                  <button key={o.value} onClick={() => onAskScopeChanged(o.value)}
+                    className={`w-full text-left px-3 py-1.5 rounded-xl text-[11px] transition-colors ${askScope === o.value ? "bg-indigo-50 text-indigo-700 font-bold" : "text-slate-600 hover:bg-slate-50"}`}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Sidebar (Group / Status / Sort) ─────────────────────────────────────
 
 function SidebarSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1378,7 +1487,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
+function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter, onDataChanged, onReviewSettlement, onConfirmAiFlag, onAskQuestion }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   expanded: boolean; onToggleExpand: () => void;
@@ -1392,6 +1501,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
   onDataChanged?: () => void;
   onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
   onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
+  onAskQuestion?: (itemId: string, question: string, fields: { label: string; value: string }[]) => Promise<string>;
 }) {
   const [generating, setGenerating] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -1423,6 +1533,15 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
     if (!onGenerateSummary || generating) return;
     setGenerating(true);
     try { await onGenerateSummary(item.id); } finally { setGenerating(false); }
+  };
+
+  // Exactly what's rendered in the grid below, at the 'all' AI scope --
+  // see onAskQuestion's own comment for why this is built here rather than
+  // re-resolved server-side.
+  const askQuestion = (question: string) => {
+    if (!onAskQuestion) return Promise.reject(new Error("Not available"));
+    const fieldsForAi = fields.map(f => ({ label: f.label, value: formatValue(item.values[f.id], f, dateFormat, maskCurrency) }));
+    return onAskQuestion(item.id, question, fieldsForAi);
   };
 
   const commitTitle = () => {
@@ -1509,6 +1628,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
             <IrregularityFixPanel pageId={pageId} itemId={item.id} canEdit={canEdit} onResolved={onDataChanged} />
           )}
           <NotesPanel notes={item.notes} dateFormat={dateFormat} canComment={canComment} onAdd={note => onAddNote(item.id, note, propertyId)} />
+          {onAskQuestion && <AskMatterPanel onAsk={askQuestion} />}
         </div>
       )}
     </div>
@@ -1749,6 +1869,65 @@ function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoa
   );
 }
 
+// "Ask anything about this matter" -- e.g. "did the vendor reply about our
+// amendment requests?" -- collapsed to a single link until clicked, since
+// most rows are just being glanced at, not interrogated. onAsk is supplied
+// by the caller (MatterCard/SpreadsheetView) already bound to this specific
+// item; visibility of the whole feature is gated one level up by whether
+// onAskQuestion exists at all (undefined for a client viewer unless staff
+// have turned ai_ask_enabled on for the page -- see PublicClientUpdateContent).
+function AskMatterPanel({ onAsk }: { onAsk: (question: string) => Promise<string> }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const ask = async () => {
+    if (!question.trim() || asking) return;
+    setAsking(true);
+    setError(null);
+    setAnswer(null);
+    try {
+      setAnswer(await onAsk(question.trim()));
+    } catch (e: any) {
+      setError(e?.message || "Couldn't get an answer.");
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors border-t border-slate-100 pt-3 w-full">
+        <MessageCircleQuestion size={12} /> Ask anything
+      </button>
+    );
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3 space-y-2">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ask anything</p>
+      <div className="flex items-center gap-2">
+        <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === "Enter") ask(); }}
+          placeholder="e.g. Did the vendor reply about our amendment requests?" autoFocus
+          className="flex-1 min-w-0 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-400" />
+        <button onClick={ask} disabled={asking || !question.trim()} title="Ask"
+          className="p-1.5 text-indigo-600 hover:text-indigo-800 disabled:opacity-30 transition-colors shrink-0">
+          {asking ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-red-500">{error}</p>}
+      {answer && (
+        <p className="flex items-start gap-1.5 px-3 py-2 bg-indigo-50 rounded-xl text-[11px] text-indigo-800">
+          <Sparkles size={11} className="text-indigo-400 shrink-0 mt-0.5" /> {answer}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Spreadsheet mode -- styled like app/public/tasks/[pageId]/page.tsx's
 // task table (rounded white card, horizontal-only row separators, uppercase
 // gray headers, row hover). No column is pinned by default -- "Matter" is
@@ -1772,7 +1951,7 @@ function NotesPanel({ notes, dateFormat, canComment, onAdd }: { notes: MatterBoa
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onGenerateSummary, onDataChanged, onReviewSettlement, onConfirmAiFlag }: {
+function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onGenerateSummary, onDataChanged, onReviewSettlement, onConfirmAiFlag, onAskQuestion }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
@@ -1786,6 +1965,7 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
   onDataChanged?: () => void;
   onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
   onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
+  onAskQuestion?: (itemId: string, question: string, fields: { label: string; value: string }[]) => Promise<string>;
 }) {
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
@@ -1811,6 +1991,14 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
     if (!onConfirmAiFlag) return;
     await onConfirmAiFlag(itemId, fieldId, propertyId);
     onDataChanged?.();
+  };
+  // Exactly what's rendered in this row's own cells, at the 'all' AI scope
+  // -- see onAskQuestion's own comment for why this is built here rather
+  // than re-resolved server-side.
+  const askQuestionFor = (item: MatterBoardItem, question: string) => {
+    if (!onAskQuestion) return Promise.reject(new Error("Not available"));
+    const fieldsForAi = fields.map(f => ({ label: f.label, value: formatValue(item.values[f.id], f, dateFormat, maskCurrency) }));
+    return onAskQuestion(item.id, question, fieldsForAi);
   };
   // Unlike MatterCard (one instance per item, so its own local `generating`
   // state is naturally scoped to that item), this is one component for the
@@ -1967,6 +2155,7 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
                     <SummaryPanel summary={item.ai_summary} generatedAt={item.ai_summary_generated_at} dateFormat={dateFormat} canEdit={canEdit}
                       generating={generatingSummaryId === item.id} onGenerate={onGenerateSummary ? () => handleGenerateSummary(item.id) : undefined} />
                   )}
+                  {onAskQuestion && <AskMatterPanel onAsk={question => askQuestionFor(item, question)} />}
                 </td>
               </tr>
             )}
