@@ -33,6 +33,7 @@ import { HOSTED_MODELS, costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { draftAutoTimeEntries, type AutoTimeEntryTaskInput, type AutoTimeEntryEmailInput, type DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
 import { dedupeAndAttributeEmails, type RawProjectEmail, type StaffMember } from "@/lib/ai/emailTimekeeperAttribution";
+import { refreshTokenIfNeeded } from "@/lib/gmail/client";
 
 const MODEL_ID = HOSTED_MODELS[0].id;
 const VALID_LEVELS: DescriptionDetailLevel[] = ["brief", "standard", "detailed"];
@@ -41,6 +42,58 @@ function initialsFor(name: string | null): string {
   const trimmed = (name || "").trim();
   if (!trimmed) return "?";
   return trimmed.split(/\s+/).map(p => p[0]).join("").toUpperCase().slice(0, 3);
+}
+
+// A project_emails row can still have a null `date` despite the sync-time
+// fixes upstream (see the commit fixing internalDate capture) -- either it
+// was synced before that fix, or by a path that hasn't caught up yet. Such
+// a row only ever reaches this route via the created_at fallback below,
+// which is exactly wrong for a late sync: an old email that happened to be
+// synced/labelled today would otherwise look like today's work. Rather than
+// bulk-backfilling every historical null-date row (a much bigger, separate
+// job), this resolves the real date live, on demand, but ONLY for the small
+// set of null-date rows actually being considered as candidates for the
+// requested day -- persisting the result so this never has to be redone for
+// the same row again.
+async function resolveTrueEmailDates(admin: any, rows: { id: string; user_id: string | null; gmail_message_id: string | null }[]): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>();
+  const candidates = rows.filter(r => r.user_id && r.gmail_message_id);
+  if (!candidates.length) return resolved;
+
+  const tokenByUserId = new Map<string, string | null>();
+  await Promise.all(candidates.map(async (r) => {
+    const userId = r.user_id as string;
+    if (!tokenByUserId.has(userId)) {
+      tokenByUserId.set(userId, await refreshTokenIfNeeded(userId, admin).catch(() => null));
+    }
+    const token = tokenByUserId.get(userId);
+    if (!token) return;
+    try {
+      const res = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${r.gmail_message_id}?format=metadata&metadataHeaders=Date`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) return;
+      const md = await res.json();
+      let date: string | null = null;
+      if (md?.internalDate) {
+        const ms = Number(md.internalDate);
+        if (!Number.isNaN(ms)) date = new Date(ms).toISOString();
+      }
+      if (!date) {
+        const dateRaw = (md?.payload?.headers || []).find((h: any) => h.name === "Date")?.value;
+        if (dateRaw) { try { date = new Date(dateRaw).toISOString(); } catch { date = null; } }
+      }
+      if (date) resolved.set(r.id, date);
+    } catch { /* leave unresolved -- falls back to created_at-based inclusion below */ }
+  }));
+
+  if (resolved.size) {
+    await Promise.all(Array.from(resolved.entries()).map(([id, date]) =>
+      admin.from("project_emails").update({ date }).eq("id", id)
+    ));
+  }
+  return resolved;
 }
 
 export async function POST(req: NextRequest) {
@@ -86,12 +139,24 @@ export async function POST(req: NextRequest) {
   // from every day's range forever. Company-wide, not scoped by user_id --
   // see header comment.
   const { data: rawEmailRows } = await admin.from("project_emails")
-    .select("id, content_id, subject, snippet, from_address, from_name, project_id, gmail_thread_id, date, created_at")
+    .select("id, content_id, subject, snippet, from_address, from_name, project_id, gmail_thread_id, date, created_at, user_id, gmail_message_id")
     .eq("company_id", companyId)
     .or(`and(date.gte.${startIso},date.lt.${endIso}),and(date.is.null,created_at.gte.${startIso},created_at.lt.${endIso})`);
 
+  // The created_at fallback above is a proxy for "we don't know the real
+  // date" -- resolve it live for exactly those rows (see
+  // resolveTrueEmailDates' own comment) so a stale email that merely
+  // synced today doesn't get counted as today's work.
+  const resolvedDates = await resolveTrueEmailDates(admin, (rawEmailRows || []).filter((e: any) => !e.date));
+
   const rawEmails: RawProjectEmail[] = (rawEmailRows || [])
     .filter((e: any) => e.project_id)
+    .filter((e: any) => {
+      if (e.date) return true; // already had a real date within range
+      const resolved = resolvedDates.get(e.id);
+      if (!resolved) return true; // couldn't resolve -- keep the created_at-fallback inclusion
+      return resolved >= startIso && resolved < endIso; // now-known real date -- only keep if it's actually today
+    })
     .map((e: any) => ({
       id: e.id, contentId: e.content_id, subject: e.subject, snippet: e.snippet, from_address: e.from_address, from_name: e.from_name,
       project_id: e.project_id, gmail_thread_id: e.gmail_thread_id, created_at: e.created_at,

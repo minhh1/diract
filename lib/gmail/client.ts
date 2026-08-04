@@ -18,7 +18,7 @@ export interface GmailMessage {
 
 // ── Token management ───────────────────────────────────────────────
 
-async function refreshTokenIfNeeded(userId: string, supabase: any): Promise<string> {
+export async function refreshTokenIfNeeded(userId: string, supabase: any): Promise<string> {
   const { data: tokenRow } = await supabase
     .from('user_gmail_tokens')
     .select('*')
@@ -112,6 +112,39 @@ export async function fetchEmails(
 
 // ── Fetch email body ───────────────────────────────────────────────
 
+// Gmail returns body parts base64url-encoded (RFC 4648 §5, no padding) --
+// atob() alone only understands standard base64 and mangles anything
+// containing '-'/'_', and even after normalizing those it still returns a
+// Latin1-ish binary string, not decoded UTF-8, so accented/non-ASCII
+// characters come out as mojibake. Decode properly via TextDecoder.
+function decodeGmailBase64Url(data: string): string {
+  const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '==='.slice((base64.length + 3) % 4);
+  try {
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+function extractBody(payload: any): string {
+  if (!payload) return '';
+  if (payload.body?.data) return decodeGmailBase64Url(payload.body.data);
+  if (payload.parts?.length) {
+    const htmlPart = payload.parts.find((p: any) => p.mimeType === 'text/html');
+    const textPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
+    const preferred = htmlPart || textPart;
+    if (preferred?.body?.data) return decodeGmailBase64Url(preferred.body.data);
+    for (const part of payload.parts) {
+      const body = extractBody(part);
+      if (body) return body;
+    }
+  }
+  return '';
+}
+
 export async function fetchEmailBody(
   messageId: string,
   userId: string,
@@ -124,28 +157,6 @@ export async function fetchEmailBody(
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const msg = await res.json();
-
-  const extractBody = (payload: any): string => {
-    if (!payload) return '';
-    if (payload.body?.data) {
-      const base64 = payload.body.data.replace(/-/g, '+').replace(/_/g, '/');
-      try { return atob(base64); } catch { return ''; }
-    }
-    if (payload.parts?.length) {
-      const htmlPart = payload.parts.find((p: any) => p.mimeType === 'text/html');
-      const textPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
-      const preferred = htmlPart || textPart;
-      if (preferred?.body?.data) {
-        const base64 = preferred.body.data.replace(/-/g, '+').replace(/_/g, '/');
-        try { return atob(base64); } catch { return ''; }
-      }
-      for (const part of payload.parts) {
-        const body = extractBody(part);
-        if (body) return body;
-      }
-    }
-    return '';
-  };
 
   return extractBody(msg.payload);
 }
