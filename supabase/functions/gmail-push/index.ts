@@ -688,11 +688,32 @@ Deno.serve(async (req) => {
         if (!subjectMatch) {
           console.log(`[push] Auto-label check: "${normSubject}"`);
 
+          // Deliberately no small .limit() here -- this used to cap at 5,
+          // which meant the ambiguity check below only ever saw a SAMPLE,
+          // not the true set of projects this subject has matched. Once one
+          // project accumulates a majority of a subject's rows (exactly
+          // what happens when the loop below keeps re-matching an already-
+          // wrong subject, importing a copy, and re-triggering itself), an
+          // unordered 5-row sample overwhelmingly favours the majority and
+          // silently stops seeing the ambiguity at all. Confirmed live: a
+          // subject with rows split da680985 (majority, wrong) / 2102e1d2
+          // (correct) / 64f1442a (wrong) kept auto-labeling to da680985 for
+          // weeks because a 5-row sample essentially never included a
+          // second project. 500 is comfortably above every real subject's
+          // row count seen in production (worst case so far: 129, a
+          // templated PEXA notification legitimately spanning 19 projects).
           const { data: candidates } = await db.from("project_email_subjects")
             .select("project_id, company_id")
             .in("company_id", allCompanyIds)
             .eq("subject_normalised", normSubject)
-            .limit(5);
+            .limit(500);
+
+          // If this ever fires, the 500 cap above is no longer a safe
+          // stand-in for "all rows" -- surfaces in logs/heartbeat instead
+          // of silently regressing to the exact bug this replaced.
+          if ((candidates || []).length >= 500) {
+            console.error(`[push] WARNING: subject "${normSubject}" hit the 500-row candidate cap -- ambiguity check may be sampling again`);
+          }
 
           const distinctSubjectProjects = new Set((candidates || []).map(c => `${c.company_id}:${c.project_id}`));
           if (distinctSubjectProjects.size > 1) {
