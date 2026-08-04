@@ -34,9 +34,22 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient> {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // cookies().set() throws when called from a Server Component
+            // (only Server Actions/Route Handlers may set cookies) -- every
+            // current caller of this function is a Route Handler, so this
+            // has never fired in practice. Matches the try/catch Supabase's
+            // own Next.js template wraps this in, for the same reason: proxy.ts
+            // already refreshes the session cookie on every request before any
+            // Server Component renders, so this function seeing a stale/
+            // expired cookie is the rarer path, not the load-bearing one --
+            // but a future caller from a Server Component shouldn't crash the
+            // page over it.
+          }
         },
       },
     }
