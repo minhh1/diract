@@ -523,8 +523,21 @@ Deno.serve(async (req) => {
           const dbLabel = dbLabelsByCode.get(codeMatch[1]);
           if (!dbLabel) continue;
 
-          if (await isCompanyAdmin(companyId, userId)) {
-            console.log(`[push] Admin removed label "${gmailLabel.name}" from ${msgId} — leaving it removed`);
+          // Escape hatch for a one-off admin cleanup script removing a
+          // WRONGLY-applied label across many mailboxes at once (see
+          // 20260804 mis-filing incident) -- calling the Gmail API with
+          // each mailbox owner's own token looks IDENTICAL to that person
+          // removing it themselves, so without this, this exact restore
+          // logic undoes the cleanup for every non-admin mailbox the
+          // instant Gmail delivers the push notification for it. Comma-
+          // separated label codes in MAINTENANCE_SKIP_LABEL_RESTORE_CODES
+          // are treated as "leave it removed" regardless of who owns the
+          // mailbox -- unset (the default) means this block never fires.
+          const maintenanceSkipCodes = (Deno.env.get("MAINTENANCE_SKIP_LABEL_RESTORE_CODES") || "")
+            .split(",").map(c => c.trim()).filter(Boolean);
+          const isAdmin = await isCompanyAdmin(companyId, userId);
+          if (isAdmin || maintenanceSkipCodes.includes(codeMatch[1])) {
+            console.log(`[push] ${isAdmin ? "Admin" : "Maintenance bypass"} removed label "${gmailLabel.name}" from ${msgId} — leaving it removed`);
             // Delete this user's project_emails row for this message so it's
             // permanently excluded from future resyncs for them — not just
             // skipped this once. Without this, a later trigger unrelated to
