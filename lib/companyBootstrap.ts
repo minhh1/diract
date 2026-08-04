@@ -17,6 +17,7 @@ import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker"
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 import { warmCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 import { warmCustomTableShells, startSystemTableRowPrefetch, warmSystemTableShells, warmSystemTableViewConfig } from "@/lib/hooks/prefetchShells";
+import { warmQuickGlanceProjects } from "@/lib/hooks/prefetchQuickGlance";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 import type { TableLabelOverrides, DisabledSystemTables } from "@/components/CompanyContext";
 
@@ -153,6 +154,12 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
     warmSystemTableViewConfig(cid, user.id, result.myTeamIds).catch(() => {}),
     startSystemTableRowPrefetch(cid).catch(() => {}),
     warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {}),
+    // Property Developer Quick Glance's own bespoke join -- see that
+    // warmer's own doc comment for why the generic warmers above don't
+    // already cover it. No-op for any other company type.
+    cid && result.companyType === 'Property Developer'
+      ? warmQuickGlanceProjects(cid).catch(() => {})
+      : Promise.resolve(),
   ]);
   notifyStep("shells");
 

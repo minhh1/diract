@@ -12,6 +12,11 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
+import { readCache, writeCache } from "@/lib/queryCache";
+import {
+  fetchQuickGlanceProjects, quickGlanceProjectsCacheKey,
+  type QuickGlanceProjectRow, type QuickGlancePropertyRow,
+} from "@/lib/hooks/prefetchQuickGlance";
 import ProjectTaskProgressBars from "./ProjectTaskProgressBars";
 import type { MapPin } from "./ProjectsMapWidget";
 
@@ -19,22 +24,6 @@ import type { MapPin } from "./ProjectsMapWidget";
 const ProjectsMapWidget = dynamic(() => import("./ProjectsMapWidget"), { ssr: false });
 
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
-
-interface PropertyRow {
-  id: string;
-  street_address: string | null;
-  suburb: string | null;
-  state: string | null;
-  postcode: string | null;
-  lat: number | null;
-  lng: number | null;
-}
-
-interface ProjectRow {
-  id: string;
-  name: string;
-  properties: PropertyRow[];
-}
 
 const pillClass = (active: boolean) =>
   `px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all ${
@@ -45,66 +34,32 @@ export default function PropertyDeveloperQuickGlance() {
   const { companyId } = useCompany();
   // finance-model-loans -- see supabase/migrations/20260731310000_niksen_finance_model_v2_tables.sql
   // (project relation field_key 'project') and .../20260801300000_niksen_loans_is_discharged.sql
-  // (boolean field_key 'is_discharged').
+  // (boolean field_key 'is_discharged'). Already covered by
+  // prefetchShells.ts's generic per-company-table warmer, so `loans.records`
+  // is warm by the time this mounts -- no separate cache needed here.
   const loans = useCustomTable('finance-model-loans');
 
-  const [projects, setProjects] = useState<ProjectRow[] | null>(null);
-  const [soldByPropertyId, setSoldByPropertyId] = useState<Map<string, boolean>>(new Map());
+  // Cache-seeded so a repeat visit (or a first visit after the "shells"
+  // bootstrap step warmed it -- see lib/hooks/prefetchQuickGlance.ts) paints
+  // the real project count immediately instead of 0-then-jump. `companyId`
+  // is guaranteed resolved here: QuickGlanceDashboard.tsx only ever mounts
+  // this component once useCompany().loading is false.
+  const [projects, setProjects] = useState<QuickGlanceProjectRow[] | null>(
+    () => companyId ? readCache<QuickGlanceProjectRow[]>(quickGlanceProjectsCacheKey(companyId)) : null
+  );
   const [stateFilter, setStateFilter] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
-  // Projects + their linked properties (project_properties junction, the
-  // many-to-many source of truth -- see
-  // supabase/migrations/20260727035000_project_properties_multi.sql) + each
-  // property's "Sold" custom field value.
+  // Revalidate in the background -- same shape whether this painted from
+  // cache or not, same "stale-while-revalidate" pattern as useCustomTable.ts.
   useEffect(() => {
     if (!companyId) return;
     let cancelled = false;
-    (async () => {
-      const [{ data: projectRows }, { data: junctionRows }] = await Promise.all([
-        supabase.from('projects').select('id, name').eq('company_id', companyId).is('deleted_at', null),
-        supabase.from('project_properties').select('project_id, property_id').eq('company_id', companyId),
-      ]);
-
-      const propertyIds = [...new Set((junctionRows || []).map((j: any) => j.property_id as string))];
-      const { data: propertyRows } = propertyIds.length
-        ? await supabase.from('properties').select('id, street_address, suburb, state, postcode, lat, lng').in('id', propertyIds)
-        : { data: [] as any[] };
-      const propertyById = new Map((propertyRows || []).map((p: any) => [p.id, p as PropertyRow]));
-
-      const propertiesByProject = new Map<string, PropertyRow[]>();
-      (junctionRows || []).forEach((j: any) => {
-        const prop = propertyById.get(j.property_id);
-        if (!prop) return;
-        if (!propertiesByProject.has(j.project_id)) propertiesByProject.set(j.project_id, []);
-        propertiesByProject.get(j.project_id)!.push(prop);
-      });
-
-      // "Sold" custom field -- supabase/migrations/20260805020000_properties_sold_custom_field.sql
-      const { data: soldField } = await supabase
-        .from('company_custom_fields')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('table_name', 'properties')
-        .eq('field_key', 'sold')
-        .is('deleted_at', null)
-        .maybeSingle();
-      const soldMap = new Map<string, boolean>();
-      if (soldField && propertyIds.length) {
-        const { data: soldValues } = await supabase
-          .from('company_custom_field_values')
-          .select('record_id, value_boolean')
-          .eq('field_id', soldField.id)
-          .in('record_id', propertyIds);
-        (soldValues || []).forEach((v: any) => soldMap.set(v.record_id, !!v.value_boolean));
-      }
-
+    fetchQuickGlanceProjects(companyId).then(fresh => {
       if (cancelled) return;
-      setProjects((projectRows || []).map((p: any) => ({
-        id: p.id, name: p.name, properties: propertiesByProject.get(p.id) || [],
-      })));
-      setSoldByPropertyId(soldMap);
-    })();
+      setProjects(fresh);
+      writeCache(quickGlanceProjectsCacheKey(companyId), fresh);
+    });
     return () => { cancelled = true; };
   }, [companyId]);
 
@@ -125,22 +80,22 @@ export default function PropertyDeveloperQuickGlance() {
   const currentProjects = useMemo(() => {
     if (!projects) return [];
     return projects.filter(p => {
-      const allSold = p.properties.length > 0 && p.properties.every(prop => soldByPropertyId.get(prop.id) === true);
+      const allSold = p.properties.length > 0 && p.properties.every(prop => prop.sold === true);
       const dischargedFlags = loansByProject.get(p.id) || [];
       const allDischarged = dischargedFlags.length === 0 || dischargedFlags.every(Boolean);
       return !allSold || !allDischarged;
     });
-  }, [projects, soldByPropertyId, loansByProject]);
+  }, [projects, loansByProject]);
 
   // Geocode any current project's property missing lat/lng, one at a time
-  // (Nominatim's usage policy caps at ~1 req/sec), persisting the result so
-  // it's never re-geocoded.
+  // (Nominatim's usage policy caps at ~1 req/sec), persisting the result
+  // (both to properties.lat/lng and this cache) so it's never re-geocoded.
   useEffect(() => {
     const seen = new Set<string>();
     const toGeocode = currentProjects
       .flatMap(p => p.properties)
       .filter(prop => prop.lat == null && prop.street_address && !seen.has(prop.id) && seen.add(prop.id));
-    if (!toGeocode.length) return;
+    if (!toGeocode.length || !companyId) return;
     let cancelled = false;
     (async () => {
       for (const prop of toGeocode) {
@@ -151,10 +106,15 @@ export default function PropertyDeveloperQuickGlance() {
           const { lat, lng } = await res.json();
           if (!cancelled && lat != null && lng != null) {
             await supabase.from('properties').update({ lat, lng }).eq('id', prop.id);
-            setProjects(prev => prev && prev.map(pr => ({
-              ...pr,
-              properties: pr.properties.map(pp => pp.id === prop.id ? { ...pp, lat, lng } : pp),
-            })));
+            setProjects(prev => {
+              if (!prev) return prev;
+              const next = prev.map(pr => ({
+                ...pr,
+                properties: pr.properties.map(pp => pp.id === prop.id ? { ...pp, lat, lng } : pp),
+              }));
+              writeCache(quickGlanceProjectsCacheKey(companyId), next);
+              return next;
+            });
           }
         } catch {
           // Best-effort -- a failed geocode just leaves that property pin-less.
@@ -163,7 +123,7 @@ export default function PropertyDeveloperQuickGlance() {
       }
     })();
     return () => { cancelled = true; };
-  }, [currentProjects]);
+  }, [currentProjects, companyId]);
 
   const availableStates = useMemo(() => {
     const set = new Set<string>();
@@ -178,7 +138,7 @@ export default function PropertyDeveloperQuickGlance() {
 
   const pins: MapPin[] = useMemo(() => filteredProjects.flatMap(p =>
     p.properties
-      .filter((prop): prop is PropertyRow & { lat: number; lng: number } => prop.lat != null && prop.lng != null)
+      .filter((prop): prop is QuickGlancePropertyRow & { lat: number; lng: number } => prop.lat != null && prop.lng != null)
       .map(prop => ({ id: p.id, name: p.name, lat: prop.lat, lng: prop.lng, isSelected: p.id === selectedProjectId }))
   ), [filteredProjects, selectedProjectId]);
 
@@ -205,11 +165,17 @@ export default function PropertyDeveloperQuickGlance() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-[540px]">
-        <div className="lg:col-span-2 h-full">
+      {/* flex, not grid -- with grid-cols-1 on mobile each panel's row
+          auto-sizes to content, so the map's h-full resolved against a
+          0-height row and Leaflet rendered into a collapsed container
+          (invisible, not just small). A fixed height on mobile, handed off
+          to flex-stretch once side-by-side on lg+, keeps both panels
+          reliably non-zero at every width. */}
+      <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-[540px]">
+        <div className="h-[360px] lg:h-auto lg:flex-[2] lg:min-w-0">
           <ProjectsMapWidget pins={pins} onSelect={setSelectedProjectId} />
         </div>
-        <div className="lg:col-span-1 h-full overflow-y-auto bg-white border border-slate-200 rounded-2xl divide-y divide-slate-50">
+        <div className="h-[360px] lg:h-auto lg:flex-1 lg:min-w-0 overflow-y-auto bg-white border border-slate-200 rounded-2xl divide-y divide-slate-50">
           {filteredProjects.map(p => (
             <div key={p.id}>
               <button
