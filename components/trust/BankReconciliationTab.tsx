@@ -302,7 +302,6 @@ export default function BankReconciliationTab({
           <PdfPreviewModal
             src={`/api/bank-reconciliations/${previewId}/pdf`}
             downloadSrc={`/api/bank-reconciliations/${previewId}/pdf?download=1`}
-            orientation="landscape"
             title="Bank Reconciliation"
             onClose={() => setPreviewId(null)}
           />

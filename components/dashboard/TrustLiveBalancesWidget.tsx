@@ -118,7 +118,6 @@ export default function TrustLiveBalancesWidget({ records, trustAccountName }: {
         <PdfPreviewModal
           src={previewUrl}
           downloadSrc={previewUrl}
-          orientation="landscape"
           title="Matters Holding Trust Money"
           onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
         />

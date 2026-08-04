@@ -172,7 +172,6 @@ export default function TrustReceiptsCashBookWidget({ records, trustAccountName 
         <PdfPreviewModal
           src={previewUrl}
           downloadSrc={previewUrl}
-          orientation="landscape"
           title="Receipts Cash Book"
           onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
         />

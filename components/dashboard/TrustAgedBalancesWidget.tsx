@@ -150,7 +150,6 @@ export default function TrustAgedBalancesWidget({ records, dormantDays, trustAcc
         <PdfPreviewModal
           src={previewUrl}
           downloadSrc={previewUrl}
-          orientation="landscape"
           title="Dormant Trust Balances"
           onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
         />

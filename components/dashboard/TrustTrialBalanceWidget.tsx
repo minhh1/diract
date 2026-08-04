@@ -213,7 +213,6 @@ export default function TrustTrialBalanceWidget({ records, trustAccountName }: {
         <PdfPreviewModal
           src={previewUrl}
           downloadSrc={previewUrl}
-          orientation="landscape"
           title="Trial Balance"
           onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
         />

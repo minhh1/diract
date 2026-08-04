@@ -162,7 +162,6 @@ export default function TrustJournalTransfersWidget({ records, trustAccountName 
         <PdfPreviewModal
           src={previewUrl}
           downloadSrc={previewUrl}
-          orientation="landscape"
           title="Trust Journal Transfers"
           onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
         />
