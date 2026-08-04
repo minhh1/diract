@@ -638,6 +638,36 @@ async function warmMatterFields(companyId: string): Promise<void> {
   } catch {}
 }
 
+// lib/hooks/useRecordNames.ts's cache key format, verbatim -- MUST match
+// exactly or the seed this writes is invisible to that hook. Root cause of
+// the "matter number"/"client name" flicker recurring in trust
+// transactions/reports even after warmMatterFields above: every trust
+// widget/report resolves matter+client display names via useRecordNames on
+// the 'projects'/'entities' tables (grep confirms those are the ONLY two
+// tables it's ever called with), but nothing warmed those two cache entries
+// -- so the FIRST trust widget/report viewed each session was always cold,
+// no matter how warm everything else was, and as more trust
+// widgets/reports shipped this session, more surfaces started hitting this
+// exact same never-warmed gap, which is why it read as "happening more
+// often" rather than one bug in one place.
+async function warmRecordNames(companyId: string): Promise<void> {
+  const projectsKey = `record_names_${companyId}_projects`;
+  const entitiesKey = `record_names_${companyId}_entities`;
+  const needProjects = !readCache(projectsKey);
+  const needEntities = !readCache(entitiesKey);
+  if (!needProjects && !needEntities) return;
+  try {
+    await Promise.all([
+      needProjects ? supabase.from("projects").select("id, name").then(({ data }) => {
+        writeCache(projectsKey, Object.fromEntries((data || []).map((r: any) => [r.id, r.name])));
+      }) : Promise.resolve(),
+      needEntities ? supabase.from("entities").select("id, name").then(({ data }) => {
+        writeCache(entitiesKey, Object.fromEntries((data || []).map((r: any) => [r.id, r.name])));
+      }) : Promise.resolve(),
+    ]);
+  } catch {}
+}
+
 // Every client_update_page / public_task_page this viewer can see, straight
 // from the same list routes Settings > Public pages itself calls -- not
 // just the ones a dashboard happens to embed as a widget (see
@@ -720,6 +750,7 @@ async function prefetchAllShells(
   await Promise.all([
     warmGmailConnections(companyId).catch(() => {}),
     warmMatterFields(companyId).catch(() => {}),
+    warmRecordNames(companyId).catch(() => {}),
     ...tableList.map(tbl => prefetchTableFields(tbl, companyId).catch(() => {})),
     // Rows + column/sort config + default filters -- same "nothing left to
     // load once the main screen appears" guarantee warmSystemTableShells/
