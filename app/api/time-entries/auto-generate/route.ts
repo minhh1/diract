@@ -31,10 +31,11 @@ import { dayRangeInTimezone } from "@/lib/dayRangeInTimezone";
 import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 import { HOSTED_MODELS, costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
-import { draftAutoTimeEntries, type AutoTimeEntryTaskInput, type AutoTimeEntryEmailInput } from "@/lib/ai/autoTimeEntryDraft";
+import { draftAutoTimeEntries, type AutoTimeEntryTaskInput, type AutoTimeEntryEmailInput, type DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
 import { dedupeAndAttributeEmails, type RawProjectEmail, type StaffMember } from "@/lib/ai/emailTimekeeperAttribution";
 
 const MODEL_ID = HOSTED_MODELS[0].id;
+const VALID_LEVELS: DescriptionDetailLevel[] = ["brief", "standard", "detailed"];
 
 function initialsFor(name: string | null): string {
   const trimmed = (name || "").trim();
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const date = typeof body.date === "string" ? body.date : null;
   const scope: "mine" | "all" = body.scope === "all" ? "all" : "mine";
+  const detailLevel: DescriptionDetailLevel = VALID_LEVELS.includes(body.detailLevel) ? body.detailLevel : "standard";
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "A valid date is required" }, { status: 400 });
   if (scope === "all" && !isAdmin) return NextResponse.json({ error: "Only a company admin can view everyone's day" }, { status: 403 });
 
@@ -155,7 +157,7 @@ export async function POST(req: NextRequest) {
     const { data: staffEntity } = await admin.from("entities")
       .select("id, default_rate").eq("company_id", companyId).eq("linked_profile_id", uid).is("deleted_at", null).maybeSingle();
 
-    const result = await draftAutoTimeEntries(MODEL_ID, userTasks, userEmails);
+    const result = await draftAutoTimeEntries(MODEL_ID, userTasks, userEmails, detailLevel);
     if (!result) continue;
 
     const cost = costUsd("hosted", MODEL_ID, result);
@@ -190,6 +192,7 @@ export async function POST(req: NextRequest) {
         sourceTaskIds: d.sourceTaskIds,
         sourceEmailIds,
         emailPreviews,
+        detailLevel,
       });
     }
   }
@@ -203,7 +206,7 @@ export async function POST(req: NextRequest) {
     const unresolvedInputs: AutoTimeEntryEmailInput[] = unresolvedEmails.map(e => ({
       id: e.id, subject: e.subject, snippet: e.snippet, fromName: e.fromName, matterId: e.projectId, matterLabel: matterLabel(e.projectId),
     }));
-    const result = await draftAutoTimeEntries(MODEL_ID, [], unresolvedInputs);
+    const result = await draftAutoTimeEntries(MODEL_ID, [], unresolvedInputs, detailLevel);
     if (result) {
       const cost = costUsd("hosted", MODEL_ID, result);
       await admin.from("ai_usage_events").insert({
@@ -232,6 +235,7 @@ export async function POST(req: NextRequest) {
           sourceTaskIds: d.sourceTaskIds,
           sourceEmailIds,
           emailPreviews,
+          detailLevel,
         });
       }
     }

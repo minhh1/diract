@@ -18,8 +18,12 @@
 // its next generate, since both read the same time_entry_ai_sources
 // tracking table server-side (see the submit route's header comment).
 import { useState, useEffect, useCallback } from "react";
-import { X, Loader2, Sparkles, Check, RefreshCw, ChevronDown, ChevronUp, Mail } from "lucide-react";
+import { X, Loader2, Sparkles, Check, RefreshCw, ChevronDown, ChevronUp, Mail, Star } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
+import { supabase } from "@/lib/supabase";
+import type { DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
+
+const DETAIL_LEVELS: DescriptionDetailLevel[] = ["brief", "standard", "detailed"];
 
 interface DraftEntry {
   key: string;
@@ -41,6 +45,12 @@ interface DraftEntry {
   // via an inline expand (see expandedKeys below) so the viewer can check
   // the AI's read of the correspondence without leaving this drawer.
   emailPreviews: { subject: string | null; snippet: string | null; fromName: string | null }[];
+  // How much this entry's description currently says -- starts at whatever
+  // level the batch generate() call used (see defaultDetailLevel below),
+  // changed per-entry via the Brief/Standard/Detailed control, which
+  // re-drafts just this entry's description (never its matter/hours/
+  // attribution) from the same sourceTaskIds/sourceEmailIds.
+  detailLevel: DescriptionDetailLevel;
 }
 
 interface StaffOption { userId: string; name: string; initials: string; }
@@ -56,7 +66,7 @@ interface Props {
 }
 
 export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onDataChanged }: Props) {
-  const { tableLabelOverrides } = useCompany();
+  const { tableLabelOverrides, userId } = useCompany();
   const matterLabel = tableLabelOverrides.projects?.singular || "Matter";
 
   const [date, setDate] = useState(todayInputValue());
@@ -68,6 +78,19 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedNotes, setFailedNotes] = useState<Record<string, string>>({});
+  // null until the user's persisted preference loads -- generate() waits
+  // for it rather than firing once with a hardcoded 'standard' and again a
+  // moment later once the real default is known.
+  const [defaultDetailLevel, setDefaultDetailLevel] = useState<DescriptionDetailLevel | null>(null);
+  // Per-entry description regenerate in flight -- disables that entry's
+  // detail-level buttons so a second click can't fire while one's pending.
+  const [regeneratingKeys, setRegeneratingKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!userId) return;
+    supabase.from("profiles").select("auto_time_entry_detail_level").eq("id", userId).single()
+      .then(({ data }) => setDefaultDetailLevel((data?.auto_time_entry_detail_level as DescriptionDetailLevel) || "standard"));
+  }, [userId]);
   // Which entries currently have their source email(s) expanded open --
   // purely a display toggle, inline within this same drawer (never
   // navigates anywhere).
@@ -79,13 +102,14 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
   });
 
   const generate = useCallback(async () => {
+    if (!defaultDetailLevel) return; // still waiting on the profile fetch above
     setLoading(true);
     setError(null);
     setFailedNotes({});
     try {
       const res = await fetch("/api/time-entries/auto-generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, scope }),
+        body: JSON.stringify({ date, scope, detailLevel: defaultDetailLevel }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Could not generate time entries");
@@ -101,7 +125,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
     } finally {
       setLoading(false);
     }
-  }, [date, scope]);
+  }, [date, scope, defaultDetailLevel]);
 
   useEffect(() => { generate(); }, [generate]);
 
@@ -116,6 +140,39 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
 
   const updateEntry = (key: string, patch: Partial<DraftEntry>) =>
     setEntries(prev => prev.map(e => e.key === key ? { ...e, ...patch } : e));
+
+  // Re-drafts just this one entry's description at a different detail
+  // level -- matter/hours/sources/attribution are untouched, only the
+  // description text changes (see the regenerate-description route's own
+  // header comment for why this is a separate endpoint from the batch
+  // generate above).
+  const regenerateDescription = async (key: string, level: DescriptionDetailLevel) => {
+    const entry = entries.find(e => e.key === key);
+    if (!entry || regeneratingKeys.has(key)) return;
+    updateEntry(key, { detailLevel: level });
+    setRegeneratingKeys(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch("/api/time-entries/auto-generate/regenerate-description", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceTaskIds: entry.sourceTaskIds, sourceEmailIds: entry.sourceEmailIds, detailLevel: level }),
+      });
+      const json = await res.json();
+      if (res.ok && json.description) updateEntry(key, { description: json.description });
+    } catch {
+      // Leave the existing description in place on failure -- the level
+      // toggle already reflects the attempted choice either way.
+    } finally {
+      setRegeneratingKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+    }
+  };
+
+  // Persists this level as the viewer's own default for future "Generate"
+  // runs -- doesn't touch any other entry already on screen.
+  const setAsDefaultDetailLevel = async (level: DescriptionDetailLevel) => {
+    setDefaultDetailLevel(level);
+    if (!userId) return;
+    await supabase.from("profiles").update({ auto_time_entry_detail_level: level }).eq("id", userId);
+  };
 
   // Picking a timekeeper for an unresolved email entry -- auto-checks it
   // too, same "ready to go" default every other row starts with.
@@ -188,7 +245,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
         )}
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {loading ? (
+          {loading || !defaultDetailLevel ? (
             <div className="flex items-center justify-center py-16 text-slate-300"><Loader2 size={20} className="animate-spin" /></div>
           ) : entries.length === 0 ? (
             <p className="text-center text-[11px] text-slate-300 italic py-10">
@@ -228,6 +285,23 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
                       </div>
                       <textarea value={e.description} onChange={ev => updateEntry(e.key, { description: ev.target.value })} rows={2}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] font-medium outline-none focus:ring-2 focus:ring-indigo-100 resize-none" />
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[9px] font-bold">
+                          {DETAIL_LEVELS.map(level => (
+                            <button key={level} onClick={() => regenerateDescription(e.key, level)} disabled={regeneratingKeys.has(e.key)}
+                              className={`px-2 py-1 rounded-full capitalize transition-all disabled:opacity-40 ${e.detailLevel === level ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+                              {level}
+                            </button>
+                          ))}
+                        </div>
+                        {regeneratingKeys.has(e.key) && <Loader2 size={11} className="animate-spin text-indigo-400" />}
+                        <button onClick={() => setAsDefaultDetailLevel(e.detailLevel)}
+                          title="Use this detail level by default for future generates"
+                          className="flex items-center gap-1 text-[9px] font-bold text-slate-300 hover:text-indigo-600 transition-colors">
+                          <Star size={10} className={defaultDetailLevel === e.detailLevel ? "fill-indigo-500 text-indigo-500" : ""} />
+                          {defaultDetailLevel === e.detailLevel ? "Default" : "Set as default"}
+                        </button>
+                      </div>
                       <div className="flex items-center gap-1.5">
                         <input type="number" step="0.1" min="0.1" value={e.hours}
                           onChange={ev => updateEntry(e.key, { hours: Math.max(0.1, Number(ev.target.value) || 0.1) })}

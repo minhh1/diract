@@ -16,6 +16,17 @@ import { callHostedModel } from "./modelCall";
 export interface AutoTimeEntryTaskInput { id: string; name: string; notes: string | null; matterId: string; matterLabel: string; }
 export interface AutoTimeEntryEmailInput { id: string; subject: string | null; snippet: string | null; matterId: string; matterLabel: string; fromName: string | null; }
 
+// How much a generated description says beyond the bare minimum -- user-
+// adjustable per entry (and settable as a personal default) in
+// AutoTimeRecordingPanel.tsx, persisted at profiles.auto_time_entry_detail_level.
+export type DescriptionDetailLevel = 'brief' | 'standard' | 'detailed';
+
+const DETAIL_INSTRUCTIONS: Record<DescriptionDetailLevel, string> = {
+  brief: 'Keep each description as short as possible -- a bare few words, the minimum a biller would write (e.g. "Review contract.", "Correspondence with purchaser\'s solicitor.").',
+  standard: 'Write each description the way a professional would phrase it on an actual bill -- concise, past tense, no filler, ending with a full stop (e.g. "Draft and send settlement letter to purchaser\'s solicitor.", "Review title search and update file notes.").',
+  detailed: 'Write each description with more specificity than a typical bill line -- name the actual document, party, or next step drawn from the task notes or email content where it\'s available, while staying one line and professional (e.g. "Draft and send settlement letter to purchaser\'s solicitor confirming extension of settlement date to 14 March and deposit release conditions.").',
+};
+
 export interface AutoTimeEntryDraft {
   matterId: string;
   matterLabel: string;
@@ -34,23 +45,26 @@ function ensureTrailingPeriod(text: string): string {
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
-const SYSTEM_PROMPT = `You are a timekeeper assistant for a professional services firm (mostly legal). Given one person's completed tasks and matter-linked emails for a single day, produce a list of billable time entries as they would appear on a timesheet.
+function buildSystemPrompt(detailLevel: DescriptionDetailLevel): string {
+  return `You are a timekeeper assistant for a professional services firm (mostly legal). Given one person's completed tasks and matter-linked emails for a single day, produce a list of billable time entries as they would appear on a timesheet.
 
 Rules:
 - Group items by matter (the "Matter" shown against each item) -- never combine items from different matters into one entry.
 - Within the SAME matter, if a task and one or more emails clearly describe the same underlying piece of work (e.g. a task "Draft settlement letter" and an email actually sending that settlement letter), merge them into ONE entry rather than creating a separate entry for each -- list every task/email reference (e.g. T1, E2) that contributed to that entry.
 - Distinct, unrelated pieces of work on the same matter should stay as separate entries.
 - Every task and every email must be accounted for by exactly one entry -- never drop one, never include the same reference in two entries.
-- Write each entry's description the way a professional would phrase it on an actual bill (e.g. "Draft and send settlement letter to purchaser's solicitor.", "Review title search and update file notes.") -- concise, past tense, no filler, ending with a full stop.
+- ${DETAIL_INSTRUCTIONS[detailLevel]}
 - Estimate a realistic duration in hours for each entry given what it actually involved -- a short email is often 0.1-0.2h (6-12 minutes), a substantive email or short call note might be 0.2-0.4h, drafting or reviewing a document is usually 0.3-1.5h depending on what the task/notes describe. Round to the nearest 0.1.
 
 Respond with ONLY a JSON array, nothing else -- no markdown fences, no prose:
 [{"matterRef": "M1", "description": "...", "hours": 0.5, "taskRefs": ["T1"], "emailRefs": ["E1","E2"]}]`;
+}
 
 export async function draftAutoTimeEntries(
   modelId: string,
   tasks: AutoTimeEntryTaskInput[],
-  emails: AutoTimeEntryEmailInput[]
+  emails: AutoTimeEntryEmailInput[],
+  detailLevel: DescriptionDetailLevel = 'standard'
 ): Promise<{ drafts: AutoTimeEntryDraft[]; inputTokens: number; outputTokens: number } | null> {
   if (!tasks.length && !emails.length) return null;
 
@@ -74,7 +88,7 @@ export async function draftAutoTimeEntries(
   }
 
   const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: buildSystemPrompt(detailLevel) },
     { role: "user", content: lines.join("\n") },
   ];
 
@@ -120,4 +134,41 @@ export async function draftAutoTimeEntries(
   }
 
   return { drafts, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
+}
+
+// Rephrases ONE already-drafted entry's description at a different detail
+// level -- the task(s)/email(s) it's built from, the matter it's on, and its
+// hours are all already fixed (see AutoTimeRecordingPanel's per-entry detail
+// control); this never re-groups or re-attributes, it only asks the model to
+// re-describe the exact same source material. Kept separate from
+// draftAutoTimeEntries above rather than routed through it with a
+// single-item list, since that function's whole prompt is built around
+// grouping/merging across a full day's worth of items.
+export async function redraftEntryDescription(
+  modelId: string,
+  tasks: { name: string; notes: string | null }[],
+  emails: { subject: string | null; snippet: string | null; fromName: string | null }[],
+  detailLevel: DescriptionDetailLevel
+): Promise<{ description: string; inputTokens: number; outputTokens: number } | null> {
+  if (!tasks.length && !emails.length) return null;
+
+  const lines: string[] = [];
+  for (const t of tasks) lines.push(`Task: ${t.name}${t.notes ? ` -- ${t.notes}` : ""}`);
+  for (const e of emails) lines.push(`Email${e.fromName ? ` from ${e.fromName}` : ""}: ${e.subject || "(no subject)"}${e.snippet ? ` -- ${e.snippet}` : ""}`);
+
+  const systemPrompt = `You are a timekeeper assistant for a professional services firm (mostly legal). The task(s)/email(s) below all describe ONE existing time entry -- rewrite its description as it would appear on a bill.
+
+${DETAIL_INSTRUCTIONS[detailLevel]}
+
+Respond with ONLY the description text, nothing else -- no quotes, no markdown, no explanation.`;
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: lines.join("\n") },
+  ];
+
+  const usage = await callHostedModel(modelId, messages);
+  const description = ensureTrailingPeriod(usage.content.trim().replace(/^["']|["']$/g, ""));
+  if (!description) return null;
+  return { description, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
 }
