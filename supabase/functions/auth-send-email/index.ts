@@ -5,7 +5,15 @@
 // via Resend, same as notify-task-assigned. Must be enabled manually in
 // Supabase Dashboard -> Authentication -> Hooks -> "Send Email hook",
 // pointed at this function, with SEND_EMAIL_HOOK_SECRET set to the secret
-// the dashboard generates there.
+// the dashboard generates there. Also MUST be deployed with
+// --no-verify-jwt (confirmed live: this function was deployed with the
+// default verify_jwt=true, which made the edge gateway reject every call
+// from GoTrue before it ever reached this code -- GoTrue's hook calls
+// carry a signed webhook payload, not a Supabase JWT, in the Authorization
+// header). Every Response returned here also needs an explicit
+// Content-Type: application/json header -- Deno's Response defaults to
+// text/plain, and GoTrue rejects a hook response with any other
+// content-type as `hook_payload_invalid_content_type`, confirmed live too.
 //
 // Unlike every other function in this repo (see notify-task-assigned,
 // gmail-push, etc. -- none verify their caller), this one DOES verify the
@@ -84,7 +92,10 @@ Deno.serve(async (req) => {
   try {
     verified = new Webhook(hookSecret).verify(payload, headers) as typeof verified;
   } catch {
-    return new Response(JSON.stringify({ error: { http_code: 401, message: "Invalid webhook signature" } }), { status: 401 });
+    return new Response(JSON.stringify({ error: { http_code: 401, message: "Invalid webhook signature" } }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const { user, email_data } = verified;
@@ -134,7 +145,10 @@ Deno.serve(async (req) => {
   });
 
   if (status === "failed") {
-    return new Response(JSON.stringify({ error: { http_code: 500, message: "Failed to send email" } }), { status: 500 });
+    return new Response(JSON.stringify({ error: { http_code: 500, message: "Failed to send email" } }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
-  return new Response(JSON.stringify({}), { status: 200 });
+  return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
 });
