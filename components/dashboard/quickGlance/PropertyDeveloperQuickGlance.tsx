@@ -187,7 +187,12 @@ export default function PropertyDeveloperQuickGlance() {
           to flex-stretch once side-by-side on lg+, keeps both panels
           reliably non-zero at every width. */}
       <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-[540px]">
-        <div className="h-[360px] lg:h-auto lg:flex-[2] lg:min-w-0">
+        {/* isolate -- Leaflet's own panes (markers/popups) use z-index up to
+            700 internally. Without a containing stacking context here, that
+            escapes this div and competes directly with the mobile sidebar's
+            z-40/z-50 in the page's root stacking context -- the map was
+            rendering on top of the sidebar instead of under it. */}
+        <div className="h-[360px] lg:h-auto lg:flex-[2] lg:min-w-0 isolate">
           <ProjectsMapWidget pins={pins} onSelect={setSelectedProjectId} />
         </div>
         <div className="h-[360px] lg:h-auto lg:flex-1 lg:min-w-0 overflow-y-auto bg-white border border-slate-200 rounded-2xl divide-y divide-slate-50">
