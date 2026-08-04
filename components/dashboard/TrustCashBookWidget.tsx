@@ -179,6 +179,7 @@ export default function TrustCashBookWidget({ records, trustAccountName }: { rec
         <PdfPreviewModal
           src={previewUrl}
           downloadSrc={previewUrl}
+          orientation="landscape"
           title="Trust Cash Book"
           onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
         />

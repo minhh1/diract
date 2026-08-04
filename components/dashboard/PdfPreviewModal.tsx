@@ -13,10 +13,16 @@ interface Props {
   // other caller of this generic PDF-preview modal is unaffected.
   wordDownloadSrc?: string;
   title?: string;
+  // Every PDF generator in this app is a fixed single A4 orientation (see
+  // each lib/*/generate*.ts's own PAGE_W/PAGE_H) -- the caller already
+  // knows which, so it's passed in rather than guessed. Defaults to
+  // portrait, the shape of a standalone document (receipt/cheque/invoice);
+  // most trust *reports* are landscape and pass that explicitly.
+  orientation?: 'portrait' | 'landscape';
   onClose: () => void;
 }
 
-export default function PdfPreviewModal({ src, downloadSrc, wordDownloadSrc, title, onClose }: Props) {
+export default function PdfPreviewModal({ src, downloadSrc, wordDownloadSrc, title, orientation = 'portrait', onClose }: Props) {
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-slate-900/70 backdrop-blur-sm p-6">
       <div className="flex items-center justify-between mb-3 shrink-0">
@@ -41,18 +47,25 @@ export default function PdfPreviewModal({ src, downloadSrc, wordDownloadSrc, tit
           <button onClick={onClose} className="p-2 text-white/70 hover:text-white"><X size={18} /></button>
         </div>
       </div>
-      {/* Capped at a realistic single-page width (max-w-3xl) and centred --
-          without this, the iframe stretched edge-to-edge on a wide/landscape
-          viewport, and the browser's built-in PDF viewer rendered the
-          (correctly A4-sized) page at a fixed zoom pinned to one side,
-          leaving a huge block of blank space rather than looking like a
-          normal page. Landscape-orientation PDFs (the wide trust reports)
-          still get plenty of room within 3xl; this only stops portrait
-          documents from being stretched needlessly wide. */}
-      <div className="flex-1 flex justify-center overflow-hidden">
-        <div className="w-full max-w-3xl h-full bg-white rounded-2xl overflow-hidden">
-          <iframe src={src} className="w-full h-full border-0" title={title || 'PDF preview'} />
-        </div>
+      {/* Sized to the ACTUAL A4 aspect ratio of the PDF being shown, not a
+          generic box -- a fixed max-width cap (the previous approach) has
+          no idea whether the page is portrait or landscape, so the
+          browser's built-in PDF viewer would render the correctly-sized
+          page at a fixed zoom pinned to one side, leaving a mismatched
+          block of blank space rather than looking like a normal page.
+          <iframe> is a replaced element (same CSS sizing category as
+          img/video), so aspect-ratio + max-w-full max-h-full + w-auto
+          h-auto here is the standard "shrink to fit both constraints while
+          preserving ratio" technique -- it settles on whichever of the
+          modal's width or height is the binding constraint, unlike setting
+          height:100% outright (which doesn't reduce to match once width
+          gets clamped). */}
+      <div className="flex-1 flex items-center justify-center overflow-hidden">
+        <iframe
+          src={src}
+          title={title || 'PDF preview'}
+          className={`bg-white rounded-2xl shadow-2xl border-0 w-auto h-auto max-w-full max-h-full ${orientation === 'landscape' ? 'aspect-[841.89/595.28]' : 'aspect-[595.28/841.89]'}`}
+        />
       </div>
     </div>
   );

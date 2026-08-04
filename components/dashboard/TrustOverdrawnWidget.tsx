@@ -121,6 +121,7 @@ export default function TrustOverdrawnWidget({ records, trustAccountName }: { re
         <PdfPreviewModal
           src={previewUrl}
           downloadSrc={previewUrl}
+          orientation="landscape"
           title="Trust Ledger Overdrawn"
           onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }}
         />
