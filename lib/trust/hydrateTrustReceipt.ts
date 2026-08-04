@@ -6,6 +6,7 @@
 // shared-receipt-number deposit split).
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GenerateTrustReceiptPdfInput } from "./generateTrustReceiptPdf";
+import { resolveMatterNumbers } from "./resolveMatterNumbers";
 
 type ValueRow = { record_id: string; field_id: string; value_text: string | null; value_number: number | null; value_date: string | null; value_boolean: boolean | null; value_record_id: string | null };
 
@@ -66,6 +67,7 @@ export async function hydrateTrustReceiptForRender(
     ? await admin.from('projects').select('id, name').in('id', matterIds)
     : { data: [] as { id: string; name: string }[] };
   const matterNameById = new Map((matterRows || []).map(m => [m.id, m.name]));
+  const matterNumberById = await resolveMatterNumbers(admin, companyId, matterIds);
 
   const trustAccountId = first.trust_account;
   let trustAccountName: string | null = null;
@@ -100,6 +102,7 @@ export async function hydrateTrustReceiptForRender(
       trustAccountName, isDeposit,
     },
     lines: rows.map(r => ({
+      matterNumber: r.matter ? (matterNumberById.get(r.matter) || null) : null,
       matterName: r.matter ? (matterNameById.get(r.matter) || 'Unknown matter') : '—',
       amount: Number(r.amount_in) || Number(r.amount_out) || 0,
     })),

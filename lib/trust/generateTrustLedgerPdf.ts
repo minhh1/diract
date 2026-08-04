@@ -27,6 +27,7 @@ export interface TrustLedgerSection {
 }
 
 export interface GenerateTrustLedgerPdfInput {
+  matterNumber?: string | null;
   matterName: string;
   sections: TrustLedgerSection[];
   company?: { name: string; abn: string | null; logoBytes: Uint8Array | null; logoIsPng: boolean };
@@ -83,7 +84,7 @@ export async function generateTrustLedgerPdf(input: GenerateTrustLedgerPdfInput)
   text('Trust Account Ledger', PAGE_W / 2, 18, { bold: true, center: true }, y);
   y -= 24;
   if (input.company?.name) { text(input.company.name, PAGE_W / 2, 12, { bold: true, center: true }, y); y -= 18; }
-  text(input.matterName, PAGE_W / 2, 13, { bold: true, center: true }, y);
+  text(input.matterNumber ? `${input.matterNumber} - ${input.matterName}` : input.matterName, PAGE_W / 2, 13, { bold: true, center: true }, y);
   y -= 30;
 
   for (const section of input.sections) {

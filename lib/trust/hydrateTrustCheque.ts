@@ -5,6 +5,7 @@
 // amount_out instead of the operating-account Receipts fields.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GenerateTrustChequePdfInput } from "./generateTrustChequePdf";
+import { resolveMatterNumbers } from "./resolveMatterNumbers";
 
 type ValueRow = { record_id: string; field_id: string; value_text: string | null; value_number: number | null; value_date: string | null; value_boolean: boolean | null; value_record_id: string | null };
 
@@ -43,6 +44,7 @@ export async function hydrateTrustChequeForRender(
   const { data: matter } = values.matter
     ? await admin.from('projects').select('name').eq('id', values.matter).maybeSingle()
     : { data: null };
+  const matterNumberById = values.matter ? await resolveMatterNumbers(admin, companyId, [values.matter]) : new Map<string, string>();
 
   const { data: company } = await admin.from('companies').select('name, abn, invoice_settings, logo_url').eq('id', companyId).maybeSingle();
   const invoiceSettings = (company?.invoice_settings as any) || {};
@@ -61,6 +63,7 @@ export async function hydrateTrustChequeForRender(
     cheque: {
       chequeNumber, date: values.date || null, payTo: values.payor_payee || null,
       amount: Number(values.amount_out) || 0, memo: values.purpose || null,
+      matterNumber: values.matter ? (matterNumberById.get(values.matter) || null) : null,
       matterName: (matter as any)?.name || null,
     },
   };

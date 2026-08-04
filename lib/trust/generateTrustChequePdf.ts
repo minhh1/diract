@@ -10,6 +10,7 @@ export interface GenerateTrustChequePdfInput {
     payTo: string | null;
     amount: number;
     memo: string | null;
+    matterNumber: string | null;
     matterName: string | null;
   };
 }
@@ -57,6 +58,9 @@ function amountInWords(amount: number): string {
 }
 
 export async function generateTrustChequePdf(input: GenerateTrustChequePdfInput): Promise<Uint8Array> {
+  const matterText = input.cheque.matterName
+    ? (input.cheque.matterNumber ? `${input.cheque.matterNumber} - ${input.cheque.matterName}` : input.cheque.matterName)
+    : null;
   const pdfDoc = await PDFDocument.create();
   const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -112,7 +116,7 @@ export async function generateTrustChequePdf(input: GenerateTrustChequePdfInput)
   box(PAGE_W - MARGIN - 130, chequeTop - 148, 114, 20);
   text(money(input.cheque.amount), PAGE_W - MARGIN - 24, 13, { bold: true, align: 'right' }, chequeTop - 142);
 
-  if (input.cheque.matterName) text(`Matter: ${input.cheque.matterName}`, MARGIN + 16, 10, { color: [0.4, 0.4, 0.45] }, chequeTop - 172);
+  if (matterText) text(`Matter: ${matterText}`, MARGIN + 16, 10, { color: [0.4, 0.4, 0.45] }, chequeTop - 172);
   if (input.cheque.memo) text(`Memo: ${input.cheque.memo}`, MARGIN + 16, 10, { color: [0.4, 0.4, 0.45] }, chequeTop - 186);
 
   page.drawLine({ start: { x: PAGE_W - MARGIN - 200, y: chequeTop - chequeH + 30 }, end: { x: PAGE_W - MARGIN - 16, y: chequeTop - chequeH + 30 }, thickness: 0.75, color: rgb(0.7, 0.7, 0.74) });
@@ -127,7 +131,7 @@ export async function generateTrustChequePdf(input: GenerateTrustChequePdfInput)
   y -= 16;
   text(`Pay to: ${input.cheque.payTo || '—'}`, MARGIN, 10, {}, y);
   y -= 16;
-  if (input.cheque.matterName) { text(`Matter: ${input.cheque.matterName}`, MARGIN, 10, {}, y); y -= 16; }
+  if (matterText) { text(`Matter: ${matterText}`, MARGIN, 10, {}, y); y -= 16; }
   if (input.cheque.memo) { text(`Memo: ${input.cheque.memo}`, MARGIN, 10, {}, y); y -= 16; }
   y -= 8;
   text('Amount', MARGIN, 10, { bold: true }, y);

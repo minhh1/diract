@@ -5,6 +5,7 @@
 // Direct Debit/Trust Cheque as well as Bank Cheque.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GenerateTrustPaymentPdfInput } from "./generateTrustPaymentPdf";
+import { resolveMatterNumbers } from "./resolveMatterNumbers";
 
 type ValueRow = { record_id: string; field_id: string; value_text: string | null; value_number: number | null; value_date: string | null; value_boolean: boolean | null; value_record_id: string | null };
 
@@ -43,6 +44,7 @@ export async function hydrateTrustPaymentForRender(
   const { data: matter } = values.matter
     ? await admin.from('projects').select('name').eq('id', values.matter).maybeSingle()
     : { data: null };
+  const matterNumberById = values.matter ? await resolveMatterNumbers(admin, companyId, [values.matter]) : new Map<string, string>();
 
   let trustAccountName: string | null = null;
   if (values.trust_account) {
@@ -76,6 +78,7 @@ export async function hydrateTrustPaymentForRender(
       transferType: values.transfer_type || null, accountName: values.account_name || null,
       bsb: values.payee_bsb || null, accountNumber: values.account_number || null,
       reason: values.purpose || null, matterName: (matter as any)?.name || null,
+      matterNumber: values.matter ? (matterNumberById.get(values.matter) || null) : null,
       trustAccountName,
     },
   };

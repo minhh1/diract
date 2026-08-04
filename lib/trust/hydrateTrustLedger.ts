@@ -7,6 +7,7 @@
 // across other matters (DepositFundsModal.tsx's multi-matter split).
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GenerateTrustLedgerPdfInput, TrustLedgerSection, TrustLedgerRow } from "./generateTrustLedgerPdf";
+import { resolveMatterNumbers } from "./resolveMatterNumbers";
 
 type ValueRow = { record_id: string; field_id: string; value_text: string | null; value_number: number | null; value_date: string | null; value_boolean: boolean | null; value_record_id: string | null };
 
@@ -29,6 +30,7 @@ export async function hydrateTrustLedgerForRender(
 ): Promise<HydratedTrustLedger | null> {
   const { data: matter } = await admin.from('projects').select('id, name').eq('id', matterId).maybeSingle();
   if (!matter) return null;
+  const matterNumber = (await resolveMatterNumbers(admin, companyId, [matterId])).get(matterId) || null;
 
   const { data: companyRow } = await admin.from('companies').select('name, abn, logo_url').eq('id', companyId).maybeSingle();
   let logoBytes: Uint8Array | null = null;
@@ -49,15 +51,15 @@ export async function hydrateTrustLedgerForRender(
     .from('company_table_fields').select('id, field_key').eq('table_id', table.id).is('deleted_at', null);
   const fieldKeyById = new Map((fields || []).map(f => [f.id, f.field_key]));
   const matterFieldId = (fields || []).find(f => f.field_key === 'matter')?.id;
-  if (!matterFieldId) return { matterName: matter.name, input: { matterName: matter.name, sections: [], company } };
+  if (!matterFieldId) return { matterName: matter.name, input: { matterNumber, matterName: matter.name, sections: [], company } };
 
   const { data: matterValues } = await admin.from('company_table_values').select('record_id').eq('field_id', matterFieldId).eq('value_record_id', matterId);
   const recordIds = [...new Set((matterValues || []).map(v => v.record_id))];
-  if (!recordIds.length) return { matterName: matter.name, input: { matterName: matter.name, sections: [], company } };
+  if (!recordIds.length) return { matterName: matter.name, input: { matterNumber, matterName: matter.name, sections: [], company } };
 
   const { data: liveRecords } = await admin.from('company_table_records').select('id').eq('table_id', table.id).in('id', recordIds).is('deleted_at', null);
   const liveIds = (liveRecords || []).map(r => r.id);
-  if (!liveIds.length) return { matterName: matter.name, input: { matterName: matter.name, sections: [], company } };
+  if (!liveIds.length) return { matterName: matter.name, input: { matterNumber, matterName: matter.name, sections: [], company } };
 
   const { data: allValueRows } = await admin
     .from('company_table_values')
@@ -144,5 +146,5 @@ export async function hydrateTrustLedgerForRender(
     rows: sectionRows.sort((a, b) => String(a.transactionDate || '').localeCompare(String(b.transactionDate || ''))),
   }));
 
-  return { matterName: matter.name, input: { matterName: matter.name, sections, company } };
+  return { matterName: matter.name, input: { matterNumber, matterName: matter.name, sections, company } };
 }

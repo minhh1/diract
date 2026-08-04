@@ -17,7 +17,7 @@ export interface GenerateTrustReceiptPdfInput {
     trustAccountName: string | null;
     isDeposit: boolean;
   };
-  lines: { matterName: string; amount: number }[];
+  lines: { matterNumber: string | null; matterName: string; amount: number }[];
   total: number;
 }
 
@@ -112,7 +112,8 @@ export async function generateTrustReceiptPdf(input: GenerateTrustReceiptPdfInpu
   const AMOUNT_COL_W = 90;
   const matterColW = PAGE_W - 2 * MARGIN - AMOUNT_COL_W;
   for (const line of input.lines) {
-    const wrapped = wrapPdfText(line.matterName, regular, 11, matterColW);
+    const matterText = line.matterNumber ? `${line.matterNumber} - ${line.matterName}` : line.matterName;
+    const wrapped = wrapPdfText(matterText, regular, 11, matterColW);
     wrapped.forEach((l, i) => text(l, MARGIN, 11, {}, y - i * 14));
     text(money(line.amount), PAGE_W - MARGIN, 11, { align: 'right' }, y);
     y -= wrapped.length * 14 + 2;

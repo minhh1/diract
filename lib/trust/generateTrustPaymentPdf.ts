@@ -27,6 +27,7 @@ export interface GenerateTrustPaymentPdfInput {
     bsb: string | null;
     accountNumber: string | null;
     reason: string | null;
+    matterNumber: string | null;
     matterName: string | null;
     trustAccountName: string | null;
   };
@@ -88,7 +89,10 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
   line(`Payment No. ${input.payment.paymentNumber}`, { bold: true });
   line(formatDate(input.payment.date));
   if (input.payment.trustAccountName) line(`Trust Account: ${input.payment.trustAccountName}`, { color: [0.4, 0.4, 0.45] });
-  if (input.payment.matterName) line(`Matter: ${input.payment.matterName}`, { color: [0.4, 0.4, 0.45] });
+  if (input.payment.matterName) {
+    const matterText = input.payment.matterNumber ? `${input.payment.matterNumber} - ${input.payment.matterName}` : input.payment.matterName;
+    line(`Matter: ${matterText}`, { color: [0.4, 0.4, 0.45] });
+  }
   y -= 10;
 
   label('PAID TO');
