@@ -59,12 +59,22 @@ export default function PdfPreviewModal({ src, downloadSrc, wordDownloadSrc, tit
           preserving ratio" technique -- it settles on whichever of the
           modal's width or height is the binding constraint, unlike setting
           height:100% outright (which doesn't reduce to match once width
-          gets clamped). */}
+          gets clamped). Inline style, not a Tailwind aspect-[…] class --
+          Tailwind's arbitrary-value class detection is unreliable with a
+          decimal ratio like 841.89/595.28, and silently not generating the
+          rule left the iframe with no intrinsic size at all, collapsing to
+          the browser's ~300x150 default (confirmed live: the preview
+          showed visibly smaller than the actual page, not just a mismatched
+          shape). The #view=Fit fragment additionally asks the browser's
+          own PDF viewer to open at "fit whole page in view" zoom instead of
+          its own default (often 100%-literal or fit-width), matching what
+          a user sees in a real print preview. */}
       <div className="flex-1 flex items-center justify-center overflow-hidden">
         <iframe
-          src={src}
+          src={`${src}#view=Fit`}
           title={title || 'PDF preview'}
-          className={`bg-white rounded-2xl shadow-2xl border-0 w-auto h-auto max-w-full max-h-full ${orientation === 'landscape' ? 'aspect-[841.89/595.28]' : 'aspect-[595.28/841.89]'}`}
+          className="bg-white rounded-2xl shadow-2xl border-0 w-auto h-auto max-w-full max-h-full"
+          style={{ aspectRatio: orientation === 'landscape' ? '841.89 / 595.28' : '595.28 / 841.89' }}
         />
       </div>
     </div>

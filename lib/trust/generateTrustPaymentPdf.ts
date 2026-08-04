@@ -6,12 +6,10 @@
 // details (when EFT), matter/reason. internal_note is deliberately NOT
 // included -- it's an office-only note, not client-facing.
 //
-// Layout is deliberately plain: everything left-aligned in a single column
-// (no tab stops/second column for values), one consistent 10pt body size
-// throughout, with only the firm name and the "TRUST PAYMENT ADVICE" title
-// set larger. "Arial" isn't one of pdf-lib's embeddable standard fonts (no
-// font file to embed) -- Helvetica is the metrically-compatible standard
-// substitute and what every other trust PDF in this app already uses.
+// Same letterhead/layout conventions as generateTrustReceiptPdf.ts
+// (logo + right-aligned company block, left-aligned title, two-column meta
+// rows, a MATTER/AMOUNT table) so the two documents read as a matched
+// pair -- this is the withdrawal-side counterpart of that deposit receipt.
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
 
 export interface GenerateTrustPaymentPdfInput {
@@ -33,9 +31,8 @@ export interface GenerateTrustPaymentPdfInput {
   };
 }
 
-const PAGE_W = 595.28, PAGE_H = 841.89; // A4 portrait -- a fixed-format payment advice, same as the cheque/receipt
+const PAGE_W = 595.28, PAGE_H = 841.89; // A4, points
 const MARGIN = 50;
-const BODY_SIZE = 10; // every line except the firm name and title
 
 function money(n: number): string {
   return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
@@ -57,72 +54,91 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
   const page: PDFPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
   let y = PAGE_H - MARGIN;
 
-  // Always drawn from x -- no align option, since nothing on this page is
-  // ever right-aligned or tabbed to a second column.
-  function text(str: string, size: number, opts: { bold?: boolean; color?: [number, number, number] } = {}, atY?: number) {
+  function text(str: string, x: number, size: number, opts: { bold?: boolean; color?: [number, number, number]; align?: 'left' | 'right' } = {}, atY?: number) {
     const font = opts.bold ? bold : regular;
     const color = rgb(...(opts.color ?? [0.1, 0.1, 0.12]));
-    page.drawText(str, { x: MARGIN, y: atY ?? y, size, font, color });
-  }
-  function line(str: string, opts: { bold?: boolean; color?: [number, number, number] } = {}) {
-    text(str, BODY_SIZE, opts, y);
-    y -= 16;
-  }
-  function label(str: string) {
-    line(str, { bold: true, color: [0.55, 0.55, 0.6] });
+    const drawX = opts.align === 'right' ? x - font.widthOfTextAtSize(str, size) : x;
+    page.drawText(str, { x: drawX, y: atY ?? y, size, font, color });
   }
 
+  function hr(atY: number) {
+    page.drawLine({ start: { x: MARGIN, y: atY }, end: { x: PAGE_W - MARGIN, y: atY }, thickness: 0.75, color: rgb(0.85, 0.85, 0.87) });
+  }
+
+  let logoH = 0;
   if (logoImage) {
-    const scale = Math.min(120 / logoImage.width, 45 / logoImage.height, 1);
-    page.drawImage(logoImage, { x: MARGIN, y: y - logoImage.height * scale, width: logoImage.width * scale, height: logoImage.height * scale });
-    y -= (logoImage.height * scale) + 14;
+    const scale = Math.min(160 / logoImage.width, 60 / logoImage.height, 1);
+    const w = logoImage.width * scale, h = logoImage.height * scale;
+    page.drawImage(logoImage, { x: MARGIN, y: y - h, width: w, height: h });
+    logoH = h;
   }
-  text(input.company.name, 14, { bold: true }, y); y -= 16;
-  if (input.company.abn) { text(`ABN ${input.company.abn}`, BODY_SIZE, { color: [0.4, 0.4, 0.45] }, y); y -= 14; }
-  if (input.company.address) { text(input.company.address, BODY_SIZE, { color: [0.4, 0.4, 0.45] }, y); y -= 14; }
-  y -= 10;
-
-  text('TRUST PAYMENT ADVICE', 16, { bold: true }, y);
-  page.drawLine({ start: { x: MARGIN, y: y - 8 }, end: { x: PAGE_W - MARGIN, y: y - 8 }, thickness: 1, color: rgb(0.15, 0.45, 0.4) });
-  y -= 34;
-
-  line(`Payment No. ${input.payment.paymentNumber}`, { bold: true });
-  line(formatDate(input.payment.date));
-  if (input.payment.trustAccountName) line(`Trust Account: ${input.payment.trustAccountName}`, { color: [0.4, 0.4, 0.45] });
-  if (input.payment.matterName) {
-    const matterText = input.payment.matterNumber ? `${input.payment.matterNumber} - ${input.payment.matterName}` : input.payment.matterName;
-    line(`Matter: ${matterText}`, { color: [0.4, 0.4, 0.45] });
+  let companyInfoH = 20;
+  {
+    let fy = y;
+    text(input.company.name, PAGE_W - MARGIN, 16, { bold: true, align: 'right' }, fy);
+    fy -= 20;
+    if (input.company.abn) { text(`ABN ${input.company.abn}`, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy); fy -= 13; companyInfoH += 13; }
+    if (input.company.address) { text(input.company.address, PAGE_W - MARGIN, 10, { align: 'right', color: [0.4, 0.4, 0.45] }, fy); fy -= 13; companyInfoH += 13; }
   }
-  y -= 10;
 
-  label('PAID TO');
-  line(input.payment.payTo || '—', { bold: true });
-  y -= 10;
+  // Clearance below the letterhead driven by whichever block (logo or
+  // company name/ABN/address) actually turned out taller -- see
+  // generateTrustReceiptPdf.ts's identical comment.
+  y -= Math.max(logoH, companyInfoH) + 24;
+  text('TRUST PAYMENT ADVICE', MARGIN, 20, { bold: true }, y);
+  y -= 26;
+  text(`Payment No. ${input.payment.paymentNumber}`, MARGIN, 11, {}, y);
+  text(`Date: ${formatDate(input.payment.date)}`, MARGIN + 260, 11, {}, y);
+  y -= 16;
+  if (input.payment.trustAccountName) text(`Trust: ${input.payment.trustAccountName}`, MARGIN, 11, {}, y);
+  if (input.payment.paymentType) text(`Method: ${input.payment.paymentType}${input.payment.transferType ? ` (${input.payment.transferType})` : ''}`, MARGIN + 260, 11, {}, y);
 
-  label('AMOUNT');
-  line(money(input.payment.amount), { bold: true });
-  y -= 10;
-
-  label('PAYMENT TYPE');
-  line(input.payment.paymentType || '—');
-  if (input.payment.transferType) {
-    label('TRANSFER TYPE');
-    line(input.payment.transferType);
-  }
-  y -= 6;
-
-  if (input.payment.accountName || input.payment.bsb || input.payment.accountNumber) {
-    label('PAYEE BANK DETAILS');
-    if (input.payment.accountName) line(`Account Name: ${input.payment.accountName}`);
-    if (input.payment.bsb) line(`BSB: ${input.payment.bsb}`);
-    if (input.payment.accountNumber) line(`Account Number: ${input.payment.accountNumber}`);
-    y -= 6;
-  }
+  y -= 40;
+  text('PAID TO', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] }, y);
+  y -= 14;
+  text(input.payment.payTo || '—', MARGIN, 12, { bold: true }, y);
+  y -= 14;
 
   if (input.payment.reason) {
-    label('REASON');
-    line(input.payment.reason);
+    y -= 8;
+    text(`Reason: ${input.payment.reason}`, MARGIN, 10, { color: [0.4, 0.4, 0.45] }, y);
+    y -= 14;
   }
+
+  y -= 10;
+  hr(y);
+  y -= 20;
+
+  text('MATTER', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] }, y);
+  text('AMOUNT', PAGE_W - MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6], align: 'right' }, y);
+  y -= 16;
+  const matterText = input.payment.matterName
+    ? (input.payment.matterNumber ? `${input.payment.matterNumber} - ${input.payment.matterName}` : input.payment.matterName)
+    : '—';
+  text(matterText, MARGIN, 11, {}, y);
+  text(money(input.payment.amount), PAGE_W - MARGIN, 11, { align: 'right' }, y);
+  y -= 16;
+
+  y -= 6;
+  hr(y);
+  y -= 20;
+  text('Total', MARGIN, 12, { bold: true }, y);
+  text(money(input.payment.amount), PAGE_W - MARGIN, 12, { bold: true, align: 'right' }, y);
+  y -= 40;
+
+  if (input.payment.accountName || input.payment.bsb || input.payment.accountNumber) {
+    text('PAYEE BANK DETAILS', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] }, y);
+    y -= 14;
+    const details = [
+      input.payment.accountName ? `Account Name: ${input.payment.accountName}` : null,
+      input.payment.bsb ? `BSB: ${input.payment.bsb}` : null,
+      input.payment.accountNumber ? `Account Number: ${input.payment.accountNumber}` : null,
+    ].filter(Boolean).join('   ');
+    text(details, MARGIN, 10, { color: [0.4, 0.4, 0.45] }, y);
+    y -= 24;
+  }
+
+  text('Computer-generated payment advice. No signature required.', MARGIN, 9, { color: [0.6, 0.6, 0.64] }, y);
 
   return pdfDoc.save();
 }
