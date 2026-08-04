@@ -7,9 +7,9 @@ import {
   Settings, Shield, ChevronsUpDown, Loader2, Mail, Menu,
   Table2, Eye, EyeOff, X, Check, SlidersHorizontal, Network, PenSquare, Monitor, CreditCard,
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
-  Users, Activity, MessageCircle, Users2, Gauge, Clock, Database, Copy, Share2,
+  Users, Activity, MessageCircle, MessageSquare, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark, Sun, Moon, FlaskConical, UserPlus,
+  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -64,7 +64,7 @@ const ALL_SYSTEM_TABLES = [
 // per-company setting on purpose -- nothing in the product lets an admin
 // edit this list, so it can't drift company to company the way a
 // DB-stored setting could.
-export const TRUST_PAGE_MANAGED_SLUGS = new Set(['trust-transactions', 'trust-accounts', 'trust-protected-funds', 'bank-reconciliations', 'client-credits', 'time-fee-entries']);
+export const TRUST_PAGE_MANAGED_SLUGS = new Set(['trust-transactions', 'trust-accounts', 'trust-protected-funds', 'bank-reconciliations', 'client-credits', 'time-fee-entries', 'pay-runs', 'payslips']);
 
 const SYSTEM_TABLE_FIELDS: Record<string, { key: string; label: string }[]> = {
   projects: [
@@ -110,6 +110,7 @@ type RailSection = 'tables' | 'tools' | 'settings' | 'admin';
 const TOOLS_LINKS = [
   { href: '/dashboard/ai', icon: Sparkles, label: 'Ask AI' },
   { href: '/dashboard/gmail', icon: Mail, label: 'Gmail' },
+  { href: '/dashboard/sms', icon: MessageSquare, label: 'Send SMS' },
   { href: '/dashboard/pdf-editor', icon: PenSquare, label: 'PDF editor' },
   { href: '/dashboard/virtual-computers', icon: Monitor, label: 'Virtual computers' },
   { href: '/dashboard/schema', icon: Network, label: 'Schema map' },
@@ -1531,6 +1532,26 @@ export default function Sidebar() {
                   >
                     <Landmark size={16} className="shrink-0" />
                     <span className="truncate">Trust Account</span>
+                  </button>
+                )}
+
+                {/* Run Pay — fixed, bespoke page (not a company_dashboards
+                    row), gated on the company having the Pay Runs table
+                    (see supabase/migrations/20260805090000_niksen_payroll_tables.sql).
+                    Same "table-list row, not its own section" pattern as
+                    Trust Account above. See app/dashboard/pay-run/page.tsx. */}
+                {customTables.some(t => t.slug === 'pay-runs') && (
+                  <button
+                    onClick={() => { if (!pathname.startsWith('/dashboard/pay-run')) { startNavigation(); router.push('/dashboard/pay-run'); } }}
+                    aria-label="Run Pay"
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                      pathname.startsWith('/dashboard/pay-run')
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Wallet size={16} className="shrink-0" />
+                    <span className="truncate">Run Pay</span>
                   </button>
                 )}
 
