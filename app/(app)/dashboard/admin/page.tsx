@@ -1154,9 +1154,10 @@ function AdminPageInner() {
                 >
                   <option value="">General business</option>
                   <option value="Law Firm">Law Firm</option>
+                  <option value="Property Developer">Property Developer</option>
                 </select>
                 <p className="text-[10px] text-slate-400 mt-1.5">
-                  Unlocks industry-specific features, like the detailed law-firm invoice template.
+                  Unlocks industry-specific features, like the detailed law-firm invoice template and the Quick Glance landing dashboard.
                 </p>
               </div>
 

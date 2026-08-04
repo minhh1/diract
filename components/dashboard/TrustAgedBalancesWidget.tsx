@@ -16,6 +16,7 @@ import { useRecordNames } from "@/lib/hooks/useRecordNames";
 import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import { formatDateAU } from "@/lib/formatDate";
 import { generateDormantTrustBalancesPdf } from "@/lib/trust/generateDormantTrustBalancesPdf";
+import { computeTrustBalancesByMatter } from "@/lib/trust/trustBalances";
 import PdfPreviewModal from "./PdfPreviewModal";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 
@@ -28,24 +29,11 @@ export default function TrustAgedBalancesWidget({ records, dormantDays, trustAcc
   const [printing, setPrinting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const balances = useMemo(() => {
-    const byMatter = new Map<string, { balance: number; lastDate: string }>();
-    for (const r of records) {
-      const matterId = String(r.values.matter || '');
-      if (!matterId) continue;
-      const date = String(r.values.date || '').slice(0, 10);
-      const inAmt = Number(r.values.amount_in) || 0;
-      const outAmt = Number(r.values.amount_out) || 0;
-      const entry = byMatter.get(matterId) || { balance: 0, lastDate: '' };
-      entry.balance += inAmt - outAmt;
-      if (date > entry.lastDate) entry.lastDate = date;
-      byMatter.set(matterId, entry);
-    }
-
     const now = Date.now();
-    return [...byMatter.entries()]
-      .filter(([, v]) => Math.abs(v.balance) >= 0.005)
-      .map(([matterId, v]) => ({
-        matterId,
+    return computeTrustBalancesByMatter(records)
+      .filter(v => Math.abs(v.balance) >= 0.005)
+      .map(v => ({
+        matterId: v.matterId,
         balance: v.balance,
         lastDate: v.lastDate,
         daysDormant: v.lastDate ? Math.floor((now - new Date(v.lastDate).getTime()) / MS_PER_DAY) : Infinity,

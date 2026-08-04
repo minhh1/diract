@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import VisitBeacon from "@/components/VisitBeacon";
-import VersionCheckBanner from "@/components/VersionCheckBanner";
 import SessionHealthBanner from "@/components/SessionHealthBanner";
 import { BUILD_ID } from "@/lib/buildId";
 
@@ -33,7 +32,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <VisitBeacon />
-        <VersionCheckBanner />
         <SessionHealthBanner />
         {children}
       </body>

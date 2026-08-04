@@ -49,7 +49,7 @@ function LoginPageInner() {
   const redirectParam = searchParams.get('redirect');
   const postLoginPath = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')
     ? redirectParam
-    : '/dashboard/properties';
+    : '/dashboard/quick-glance';
 
   const [mode, setMode] = useState<AuthMode>(inviteToken ? "register" : "login");
   const [email, setEmail] = useState("");

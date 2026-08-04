@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     ? nextParam
     : postLoginRedirect && postLoginRedirect.startsWith('/') && !postLoginRedirect.startsWith('//')
     ? postLoginRedirect
-    : '/dashboard/projects'
+    : '/dashboard/quick-glance'
 
   if (code) {
     const response = NextResponse.redirect(`${origin}${destination}`)

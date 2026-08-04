@@ -61,9 +61,13 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const { data: { session } } = await supabase.auth.getSession()
   const user = session?.user
 
-  // Logged-in user on homepage → redirect to dashboard immediately
+  // Logged-in user on homepage → redirect to dashboard immediately.
+  // Quick Glance itself bounces on to /dashboard/properties for any company
+  // whose type doesn't have a widget set built for it (see
+  // QuickGlanceDashboard.tsx) -- Proxy doesn't need to know company_type,
+  // it always sends a logged-in user through Quick Glance first.
   if (user && pathname === '/') {
-    return NextResponse.redirect(new URL('/dashboard/projects', request.url))
+    return NextResponse.redirect(new URL('/dashboard/quick-glance', request.url))
   }
 
   // Unauthenticated user on dashboard → redirect to login

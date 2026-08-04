@@ -663,7 +663,7 @@ export default function Sidebar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Use shared company context — avoids duplicate auth call with GenericMasterTable
-  const { companyId: ctxCompanyId, companyName: ctxCompanyName, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, ledTeamIds: ctxLedTeamIds, loading: ctxLoading, tableLabelOverrides, disabledSystemTables } = useCompany();
+  const { companyId: ctxCompanyId, companyName: ctxCompanyName, companyType: ctxCompanyType, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, ledTeamIds: ctxLedTeamIds, loading: ctxLoading, tableLabelOverrides, disabledSystemTables } = useCompany();
 
   // Per-company display-name overrides (e.g. a law firm renaming "Projects"
   // to "Matters") layered over the hardcoded defaults. A "deleted" built-in
@@ -1133,7 +1133,7 @@ export default function Sidebar() {
     clearActiveIdentityCache();
     setSwitchingCompany(false);
     setShowCompanySwitcher(false);
-    window.location.replace('/dashboard/properties');
+    window.location.replace('/dashboard/quick-glance');
   };
 
   // ── Derived ────────────────────────────────────────────────────
@@ -1410,6 +1410,24 @@ export default function Sidebar() {
 
           {activeRailSection === 'tables' && (
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+              {/* Quick Glance -- the landing page for company types that have
+                  a widget set built for them (see QuickGlanceDashboard.tsx);
+                  nothing to show/land on for any other company type. */}
+              {(ctxCompanyType === 'Law Firm' || ctxCompanyType === 'Property Developer') && (
+                <button
+                  onClick={() => { startNavigation(); router.push('/dashboard/quick-glance'); }}
+                  aria-label="Quick Glance"
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 mb-3 rounded-2xl text-[13px] font-medium transition-all ${
+                    pathname === '/dashboard/quick-glance'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <Gauge size={16} className="shrink-0" />
+                  <span className="truncate">Quick Glance</span>
+                </button>
+              )}
+
               {/* Tables */}
               <div className="mb-2">
                 <div className="relative" onClick={e => e.stopPropagation()}>
