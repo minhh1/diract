@@ -24,6 +24,15 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const PROCESSOR_URL = `${SUPABASE_URL}/functions/v1/gmail-label-sync-processor`;
 
 const MAX_ATTEMPTS = 3;
+// A (job, user) pair needing more than this many messages labelled is
+// routed straight to gmail-migration-worker's dedicated lane instead of
+// ever being attempted here -- see 20260804040000_gmail_migration_lane.sql
+// for the incident (Huynh Lawyers, every connected staff member stuck)
+// this threshold exists to prevent. Not applied to a REMOVED label (see
+// isRemoved below) -- removing a label is cheap per-message (one modify
+// call, not a raw-fetch-then-import round trip) and was never what caused
+// the incident.
+const MIGRATION_THRESHOLD = 50;
 // Dispatcher-side work per job is cheap (DB only), but the real ceiling is
 // DISPATCH_CONCURRENCY (kept low to respect Supabase's own function-gateway
 // rate limit) — so total (job,user) units per tick still has to stay
@@ -270,6 +279,27 @@ async function runDispatch(t0: number): Promise<Response> {
   // complete, but too close for comfort).
   const MAX_UNITS_PER_TICK = 18;
 
+  // Batched once for the whole tick's job set, not once per job -- see the
+  // matching fix/comment in gmail-email-sync-worker (a per-job round trip
+  // here pushed a heavy tick, 137 pending jobs during the incident this
+  // lane exists to fix, over the platform's execution ceiling with no
+  // heartbeat written).
+  const jobIds = jobs.map((j: any) => j.id);
+  const { data: quarantinedRows } = await db.from("gmail_sync_failures")
+    .select("job_id, user_id").in("job_id", jobIds).in("status", ["pending_retry", "persistent_failure"]);
+  const quarantinedByJob = new Map<string, Set<string>>();
+  for (const q of (quarantinedRows || [])) {
+    if (!quarantinedByJob.has(q.job_id)) quarantinedByJob.set(q.job_id, new Set());
+    quarantinedByJob.get(q.job_id)!.add(q.user_id);
+  }
+  const { data: migratingRows } = await db.from("gmail_migration_jobs")
+    .select("source_job_id, user_id").in("source_job_id", jobIds).in("status", ["pending", "processing"]);
+  const migratingByJob = new Map<string, Set<string>>();
+  for (const m of (migratingRows || [])) {
+    if (!migratingByJob.has(m.source_job_id)) migratingByJob.set(m.source_job_id, new Set());
+    migratingByJob.get(m.source_job_id)!.add(m.user_id);
+  }
+
   for (const job of jobs) {
     if (units.length >= MAX_UNITS_PER_TICK) break;
     const { id: jobId, company_id: companyId, project_id: projectId, label_code: labelCode, gmail_label_name: rawLabelName, completed_users, total_users } = job;
@@ -289,10 +319,9 @@ async function runDispatch(t0: number): Promise<Response> {
       continue;
     }
 
-    const { data: quarantined } = await db.from("gmail_sync_failures")
-      .select("user_id").eq("job_id", jobId).in("status", ["pending_retry", "persistent_failure"]);
-    const quarantinedSet = new Set((quarantined || []).map((q: any) => q.user_id));
-    const pendingUsers = stillNeeded.filter(id => !quarantinedSet.has(id));
+    const quarantinedSet = quarantinedByJob.get(jobId) || new Set();
+    const migratingSet = migratingByJob.get(jobId) || new Set();
+    const pendingUsers = stillNeeded.filter(id => !quarantinedSet.has(id) && !migratingSet.has(id));
     if (!pendingUsers.length) continue;
 
     const { data: dbLabel } = await db.from("project_gmail_labels")
@@ -303,6 +332,34 @@ async function runDispatch(t0: number): Promise<Response> {
       .select("gmail_message_id").eq("project_id", projectId).eq("company_id", companyId);
     const dbMsgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
     const fastPath = !isRemoved && dbMsgIds.length === 0;
+
+    // Large backlog on an active (non-removed) label -- hand every
+    // still-pending user for this job to the migration lane instead.
+    if (!isRemoved && dbMsgIds.length > MIGRATION_THRESHOLD) {
+      const rows = pendingUsers.map(userId => ({
+        company_id: companyId, source_job_id: jobId, job_type: "label_sync",
+        project_id: projectId, user_id: userId, label_code: labelCode,
+        gmail_label_name: gmailLabelName, total_users: total_users || allUserIds.length,
+        message_count: dbMsgIds.length, status: "pending",
+      }));
+      const { error: migrationInsertErr } = await db.from("gmail_migration_jobs")
+        .upsert(rows, { onConflict: "source_job_id,user_id", ignoreDuplicates: true });
+      if (migrationInsertErr) console.error(`[label-sync-worker] migration route error for job ${jobId}:`, migrationInsertErr.message);
+      // Deliberately NOT bumping updated_at here (unlike the matching fix in
+      // gmail-email-sync-worker) -- this job has completed_users still "[]"
+      // (none of its pending users made it through the fast lane), so it
+      // stays classified under the "newJobs" tier above, which sorts
+      // updated_at DESCENDING. Bumping to now() would make it the NEWEST
+      // and keep winning that tier's 3 slots every tick -- the opposite of
+      // what's needed. Left untouched, it naturally ages out of newJobs'
+      // top-3 within a cron cycle or two as genuinely new jobs land with
+      // more recent timestamps; the bounded cost of an occasional re-pick
+      // (a few cheap DB reads, no Gmail calls) is acceptable at this tier's
+      // small limit, unlike email-sync-worker's single 20-slot query where
+      // oversized jobs could crowd out the entire batch.
+      console.log(`[label-sync-worker] Job ${jobId}: routed ${rows.length} user(s) to migration lane (${dbMsgIds.length} messages)`);
+      continue;
+    }
 
     for (const userId of pendingUsers) {
       units.push({

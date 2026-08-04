@@ -18,6 +18,14 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const PROCESSOR_URL = `${SUPABASE_URL}/functions/v1/gmail-email-sync-processor`;
 
 const MAX_ATTEMPTS = 3;
+// A (job, user) pair needing more than this many messages catching up is
+// routed straight to gmail-migration-worker's dedicated lane instead of
+// ever being attempted here -- see 20260804040000_gmail_migration_lane.sql
+// for the incident (Huynh Lawyers, every connected staff member stuck)
+// this threshold exists to prevent: letting a large backlog run here first
+// just means it times out and quarantines into gmail_sync_failures, the
+// SAME slow queue genuinely transient failures depend on staying fast.
+const MIGRATION_THRESHOLD = 50;
 // Per-job work here also includes a Gmail metadata backfill for NULL-subject
 // rows, so this dispatcher is heavier than the label-sync one — same
 // DISPATCH_CONCURRENCY ceiling applies, so keep the per-tick job count modest.
@@ -212,11 +220,19 @@ async function runDispatch(t0: number): Promise<Response> {
   // created label, per gmail-push/gmail-addon) sort first, ahead of the
   // ordinary FIFO backlog — otherwise a brand-new action just competes on
   // equal footing with the rest of the queue.
+  // Sorted by updated_at, not created_at -- a job fully routed to the
+  // migration lane below gets its updated_at bumped specifically so it
+  // sorts to the BACK next tick, instead of this same query re-selecting
+  // the identical oversized jobs forever (they never change status, so
+  // created_at-order would keep re-picking them every tick, crowding out
+  // every smaller job stuck behind them in the queue -- confirmed live:
+  // 104 of 137 pending Huynh Lawyers jobs were oversized and dispatched=0
+  // for two consecutive ticks before this fix).
   const { data: jobs } = await db.from("gmail_sync_jobs")
     .select("*").eq("job_type", "email_sync").in("status", ["pending", "processing"])
     .lt("attempts", MAX_ATTEMPTS)
     .order("is_realtime", { ascending: false })
-    .order("created_at", { ascending: true })
+    .order("updated_at", { ascending: true })
     .limit(BATCH_SIZE);
 
   if (!jobs?.length) {
@@ -227,6 +243,37 @@ async function runDispatch(t0: number): Promise<Response> {
 
   console.log(`[email-sync-worker] ${jobs.length} jobs to inspect`);
   const units: DispatchUnit[] = [];
+
+  // Batched once for the whole tick's job set, not once per job -- this
+  // dispatcher was already a per-job N+1 (members, tokens, quarantine,
+  // emails all fetched inside the loop below); adding the migration check
+  // as a 5th per-job round trip pushed a heavy tick (137 pending jobs, most
+  // of them oversized during the incident this lane exists to fix) over
+  // the platform's execution ceiling with NO heartbeat written and no
+  // progress logged -- confirmed live: a tick starting 10:20:16 never
+  // completed, its dispatcher_locks row only clearing at its 170s TTL.
+  // Both quarantine and migration-scope checks are batched here instead.
+  const jobIds = jobs.map((j: any) => j.id);
+  const { data: quarantinedRows } = await db.from("gmail_sync_failures")
+    .select("job_id, user_id").in("job_id", jobIds).in("status", ["pending_retry", "persistent_failure"]);
+  const quarantinedByJob = new Map<string, Set<string>>();
+  for (const q of (quarantinedRows || [])) {
+    if (!quarantinedByJob.has(q.job_id)) quarantinedByJob.set(q.job_id, new Set());
+    quarantinedByJob.get(q.job_id)!.add(q.user_id);
+  }
+  // Also exclude anyone already routed to the migration lane for a job
+  // (status pending/processing there) -- needed independently of the
+  // quarantine check above since a migration item's own SOURCE failure row
+  // gets marked "resolved" once migrated (see the migration SQL's
+  // backfill), which would otherwise make them look fast-lane-eligible
+  // again here.
+  const { data: migratingRows } = await db.from("gmail_migration_jobs")
+    .select("source_job_id, user_id").in("source_job_id", jobIds).in("status", ["pending", "processing"]);
+  const migratingByJob = new Map<string, Set<string>>();
+  for (const m of (migratingRows || [])) {
+    if (!migratingByJob.has(m.source_job_id)) migratingByJob.set(m.source_job_id, new Set());
+    migratingByJob.get(m.source_job_id)!.add(m.user_id);
+  }
 
   for (const job of jobs) {
     const { id: jobId, company_id: companyId, project_id: projectId, label_code: labelCode, gmail_label_name: rawName, completed_users, total_users } = job;
@@ -246,15 +293,43 @@ async function runDispatch(t0: number): Promise<Response> {
       continue;
     }
 
-    const { data: quarantined } = await db.from("gmail_sync_failures")
-      .select("user_id").eq("job_id", jobId).in("status", ["pending_retry", "persistent_failure"]);
-    const quarantinedSet = new Set((quarantined || []).map((q: any) => q.user_id));
-    const pendingUsers = stillNeeded.filter(id => !quarantinedSet.has(id));
+    const quarantinedSet = quarantinedByJob.get(jobId) || new Set();
+    const migratingSet = migratingByJob.get(jobId) || new Set();
+    const pendingUsers = stillNeeded.filter(id => !quarantinedSet.has(id) && !migratingSet.has(id));
     if (!pendingUsers.length) continue;
 
     const { data: dbEmails } = await db.from("project_emails")
       .select("gmail_message_id, subject, user_id").eq("project_id", projectId).eq("company_id", companyId);
     const msgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
+    if (!msgIds.length) {
+      await db.from("gmail_sync_jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", jobId);
+      continue;
+    }
+
+    // Large backlog -- hand every still-pending user for this job straight
+    // to the migration lane rather than dispatching them here at all. Cost
+    // of this check is free: msgIds.length is already the dbEmails fetch
+    // above, no extra Gmail API call.
+    if (msgIds.length > MIGRATION_THRESHOLD) {
+      const rows = pendingUsers.map(userId => ({
+        company_id: companyId, source_job_id: jobId, job_type: "email_sync",
+        project_id: projectId, user_id: userId, label_code: labelCode,
+        gmail_label_name: gmailLabelName, total_users: total_users || allUserIds.length,
+        message_count: msgIds.length, status: "pending",
+      }));
+      const { error: migrationInsertErr } = await db.from("gmail_migration_jobs")
+        .upsert(rows, { onConflict: "source_job_id,user_id", ignoreDuplicates: true });
+      if (migrationInsertErr) console.error(`[email-sync-worker] migration route error for job ${jobId}:`, migrationInsertErr.message);
+      // Bump updated_at so this job sorts to the back of next tick's query
+      // (see the ORDER BY comment above) instead of being re-selected
+      // every tick with nothing new to do -- it'll naturally flip to "done"
+      // once gmail-migration-worker finishes its users (markUserComplete,
+      // same helper the fast lane uses), no further fast-lane action needed.
+      await db.from("gmail_sync_jobs").update({ updated_at: new Date().toISOString() }).eq("id", jobId);
+      console.log(`[email-sync-worker] Job ${jobId}: routed ${rows.length} user(s) to migration lane (${msgIds.length} messages)`);
+      continue;
+    }
+
     const subjectByMsgId: Record<string, string | null> = {};
     const filerByMsgId: Record<string, string> = {};
     for (const e of (dbEmails || [])) {
@@ -262,10 +337,6 @@ async function runDispatch(t0: number): Promise<Response> {
       filerByMsgId[e.gmail_message_id] = e.user_id;
     }
     const nullSubjectIds = new Set((dbEmails || []).filter((e: any) => !e.subject).map((e: any) => e.gmail_message_id));
-    if (!msgIds.length) {
-      await db.from("gmail_sync_jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", jobId);
-      continue;
-    }
 
     // Resolve a token for every DISTINCT filer of this project's emails, not
     // one arbitrary connected member picked as a blanket "source" — a
