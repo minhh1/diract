@@ -91,7 +91,7 @@ export default function PrintChequesModal({
             <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00"
               className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />

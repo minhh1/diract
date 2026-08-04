@@ -127,12 +127,18 @@ export default function TrustPaymentModal({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
+          {/* min-w-0 on both -- a grid item's default min-width is auto, not
+              0, so it can't shrink below its content's intrinsic size. A
+              native date input's own intrinsic width (enough for
+              "DD/MM/YYYY" + the calendar icon) can exceed half the modal
+              width, which pushed this column wider than its 50% share and
+              overlapped the label/field next to it. */}
+          <div className="min-w-0">
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Date processed</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Matter</label>
             {fixedMatterId ? (
               <div className="w-full bg-slate-100 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium text-slate-500">{fixedMatterLabel}</div>

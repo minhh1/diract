@@ -111,7 +111,12 @@ export default function DepositFundsModal({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
+          {/* min-w-0 -- a native date input's intrinsic width (room for
+              "DD/MM/YYYY" + the calendar icon) can exceed half the modal
+              width and push this grid column wider than its 50% share,
+              overlapping the field next to it, unless it's allowed to
+              shrink below that. */}
+          <div className="min-w-0">
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Date deposited</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />

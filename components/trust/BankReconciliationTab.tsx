@@ -321,12 +321,12 @@ export default function BankReconciliationTab({
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2 space-y-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-4 grid grid-cols-3 gap-3">
-            <div>
+            <div className="min-w-0">
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Period start</label>
               <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none" />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Period end</label>
               <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium outline-none" />
