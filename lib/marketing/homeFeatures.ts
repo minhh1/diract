@@ -57,8 +57,8 @@ export const HOME_FEATURES: SpotlightFeature[] = [
   {
     slug: "ai-safety",
     icon: "Lock",
-    title: "AI safety controls",
-    body: "Turn AI off entirely with one company-wide switch, and know your conversation history won't sit around forever. These are real controls built into the product, not just a line in a privacy policy.",
+    title: "AI doesn't retain your data",
+    body: "Conversations with the assistant are deleted automatically after 90 days, not kept forever, and nothing you send it is used to train a model. That's enforced in the product itself, not just a line in a privacy policy.",
     accent: "indigo",
     visual: "aiSafety",
   },

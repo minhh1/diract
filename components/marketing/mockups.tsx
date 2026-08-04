@@ -861,25 +861,19 @@ export function MockDisbursementsImport() {
   );
 }
 
-// Recreates the real "Turn off all AI features" toggle
-// (components/admin/AdminAiAssistantTab.tsx) and the real conversation
-// retention window (app/api/ai/conversations/sweep/route.ts's
-// RETENTION_DAYS constant).
+// Recreates the real conversation retention window
+// (app/api/ai/conversations/sweep/route.ts's RETENTION_DAYS constant) and
+// the Privacy Policy's no-training commitment for third-party providers.
 export function MockAiSafety() {
   return (
     <WidgetCard label="AI safety">
       <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 mb-2.5">
-        <div className="min-w-0">
-          <p className="text-[12px] font-medium text-slate-700">Turn off all AI features</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Blocks every AI call company-wide</p>
-        </div>
-        <span className="w-9 h-5 rounded-full bg-slate-200 relative shrink-0">
-          <span className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow" />
-        </span>
-      </div>
-      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
         <span className="text-[12px] font-medium text-slate-700">Conversation history</span>
         <span className="text-[10px] font-bold text-slate-500 shrink-0">Deleted after 90 days</span>
+      </div>
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+        <span className="text-[12px] font-medium text-slate-700">Model training</span>
+        <span className="text-[10px] font-bold text-slate-500 shrink-0">Never used</span>
       </div>
     </WidgetCard>
   );
