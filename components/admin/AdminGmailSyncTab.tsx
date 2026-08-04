@@ -879,8 +879,12 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
                           <span className="text-[11px] font-bold text-slate-500 truncate">{row.project_name}</span>
                         )}
                         {row.gmail_label_name && (
+                          // gmail_label_name already ends in "[CODE]" by
+                          // convention (see sanitiseLabelName/findLabelId in
+                          // the sync workers) -- appending label_code again
+                          // here duplicated it, e.g. "...[X2GUK] [X2GUK]".
                           <span className="text-[11px] text-slate-400 truncate">
-                            {row.gmail_label_name}{row.label_code && ` [${row.label_code}]`}
+                            {row.gmail_label_name}
                           </span>
                         )}
                       </div>
