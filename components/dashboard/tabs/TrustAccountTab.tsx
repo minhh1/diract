@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { Landmark, ExternalLink, Plus, Send } from "lucide-react";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
+import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import { formatDateAU } from "@/lib/formatDate";
 import DepositFundsModal from "@/components/trust/DepositFundsModal";
 import TrustPaymentModal from "@/components/trust/TrustPaymentModal";
@@ -41,7 +42,14 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
   }, [records, recordId, activeAccounts]);
 
   const matterNames = useRecordNames('projects', [recordId]);
-  const matterLabel = matterNames.get(recordId);
+  const matterNumbers = useMatterNumbers([recordId]);
+  const matterName = matterNames.get(recordId);
+  const matterNumber = matterNumbers.get(recordId);
+  // "Matter Number - Matter Name", matching how a matter is referenced
+  // everywhere else in trust paperwork (cheque/ledger PDFs, the Trust
+  // Transactions "Matter No." column) -- a bare name is ambiguous once a
+  // firm has more than a handful of matters.
+  const matterLabel = matterName ? (matterNumber ? `${matterNumber} - ${matterName}` : matterName) : undefined;
 
   const entries = useMemo(() => {
     return records

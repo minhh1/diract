@@ -57,17 +57,24 @@ export default function TrustPaymentModal({
 
   const isEft = paymentType === 'Bank Transfer' || paymentType === 'Direct Debit';
 
-  // Matter's current balance in this trust account -- same running-balance
-  // math insert_ledger_record itself does server-side (sum of amount_in -
-  // amount_out scoped by matter + trust_account), not a read of the last
-  // row's stored running_balance, since ledger rows aren't guaranteed to be
-  // in date order (a backdated entry would make "last by date" wrong).
+  // Matter's current balance -- same running-balance math
+  // insert_ledger_record() does server-side (sum of amount_in - amount_out
+  // for the matter, across the WHOLE ledger table, not scoped by
+  // trust_account -- see that function's current body), not a read of the
+  // last row's stored running_balance, since ledger rows aren't guaranteed
+  // to be in date order (a backdated entry would make "last by date"
+  // wrong). Confirmed live: filtering by trust_account here (matching the
+  // server's OLDER, no-longer-live behavior) showed a matter with a real
+  // $2,449.71 balance as -$2,449.71 available, because that deposit
+  // predates the trust_account field and has no value for it -- excluding
+  // it here while the server counts it made the preview wrong in exactly
+  // the case that matters (a real, spendable balance).
   const matterBalance = useMemo(() => {
     if (!matterId) return null;
     return trustTable.records
-      .filter(r => String(r.values.matter || '') === matterId && (r.values.trust_account || null) === accountId)
+      .filter(r => String(r.values.matter || '') === matterId)
       .reduce((s, r) => s + (Number(r.values.amount_in) || 0) - (Number(r.values.amount_out) || 0), 0);
-  }, [trustTable.records, matterId, accountId]);
+  }, [trustTable.records, matterId]);
 
   const amt = parseFloat(amount) || 0;
   const availableAfter = matterBalance != null ? matterBalance - amt : null;
