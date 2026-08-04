@@ -299,7 +299,7 @@ async function runDispatch(t0: number): Promise<Response> {
     if (!pendingUsers.length) continue;
 
     const { data: dbEmails } = await db.from("project_emails")
-      .select("gmail_message_id, subject, user_id").eq("project_id", projectId).eq("company_id", companyId);
+      .select("gmail_message_id, subject, date, user_id").eq("project_id", projectId).eq("company_id", companyId);
     const msgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
     if (!msgIds.length) {
       await db.from("gmail_sync_jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", jobId);
@@ -336,7 +336,14 @@ async function runDispatch(t0: number): Promise<Response> {
       subjectByMsgId[e.gmail_message_id] = e.subject;
       filerByMsgId[e.gmail_message_id] = e.user_id;
     }
-    const nullSubjectIds = new Set((dbEmails || []).filter((e: any) => !e.subject).map((e: any) => e.gmail_message_id));
+    // Backfill on missing `date`, not just missing `subject` -- a row can
+    // get `subject` set by a different write path (e.g.
+    // app/api/gmail/sync/route.ts's background label sync, which upserts
+    // subject/gmail_label_applied only and never touches date) while `date`
+    // stays permanently null, and the old `!e.subject`-only check would
+    // then never select that row again. Confirmed live: 95.7% of
+    // project_emails rows synced in the last 30 days had a null date.
+    const nullSubjectIds = new Set((dbEmails || []).filter((e: any) => !e.subject || !e.date).map((e: any) => e.gmail_message_id));
 
     // Resolve a token for every DISTINCT filer of this project's emails, not
     // one arbitrary connected member picked as a blanket "source" — a
@@ -383,9 +390,19 @@ async function runDispatch(t0: number): Promise<Response> {
             if (m) { from_name = m[1].replace(/^"|"$/g, "").trim(); from_address = m[2].trim(); }
             else { from_address = fromRaw.trim(); }
           }
-          const dateRaw = get("Date");
-          let date = null;
-          try { if (dateRaw) date = new Date(dateRaw).toISOString(); } catch {}
+          // internalDate is Gmail's own reliable sent/received timestamp
+          // (epoch ms, always present regardless of metadataHeaders) --
+          // preferred over parsing the Date: header, which can be
+          // malformed or missing on some messages.
+          let date: string | null = null;
+          if (md?.internalDate) {
+            const ms = Number(md.internalDate);
+            if (!Number.isNaN(ms)) date = new Date(ms).toISOString();
+          }
+          if (!date) {
+            const dateRaw = get("Date");
+            try { if (dateRaw) date = new Date(dateRaw).toISOString(); } catch {}
+          }
           await db.from("project_emails").update({
             subject: get("Subject"), from_address, from_name,
             date, snippet: md?.snippet || null, gmail_thread_id: md?.threadId || msgId,

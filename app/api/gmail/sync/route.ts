@@ -105,6 +105,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
       // Get raw message + subject from source
       let rawMessage: string | null = null;
       let subject = '';
+      let date: string | null = null;
 
       try {
         const rawRes = await fetch(
@@ -116,11 +117,27 @@ export async function runSync(companyId: string, triggeredBy: string) {
         rawMessage = rawData.raw || null;
 
         const metaRes = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=Subject`,
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=Subject&metadataHeaders=Date`,
           { headers: { Authorization: `Bearer ${sourceUser.accessToken}` } }
         );
         const metaData = await metaRes.json();
         subject = metaData.payload?.headers?.find((h: any) => h.name === 'Subject')?.value || '';
+        // internalDate is Gmail's own reliable sent/received timestamp
+        // (epoch ms, always present regardless of metadataHeaders) --
+        // preferred over parsing the Date: header, which can be malformed
+        // or missing on some messages. Without this, every row this path
+        // upserts left `date` unset (confirmed live: this was the single
+        // biggest source of project_emails rows with a null date, since
+        // Auto Time Recording's day bucketing then fell back to
+        // created_at/sync time instead of the email's real date).
+        if (metaData.internalDate) {
+          const ms = Number(metaData.internalDate);
+          if (!Number.isNaN(ms)) date = new Date(ms).toISOString();
+        }
+        if (!date) {
+          const dateRaw = metaData.payload?.headers?.find((h: any) => h.name === 'Date')?.value;
+          if (dateRaw) { try { date = new Date(dateRaw).toISOString(); } catch { date = null; } }
+        }
       } catch { continue; }
 
       if (!rawMessage) continue;
@@ -196,6 +213,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
             project_id: pl.project_id,
             gmail_message_id: finalMsgId,
             subject,
+            date,
             gmail_label_applied: true,
           }, { onConflict: 'user_id,gmail_message_id' });
 

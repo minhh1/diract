@@ -122,7 +122,7 @@ async function getMessageHistory(token: string, startHistoryId: string): Promise
 
 async function getMessage(token: string, msgId: string): Promise<any | null> {
   const res = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return res.ok ? await res.json() : null;
@@ -151,10 +151,22 @@ function extractEmailMeta(msgData: any): {
       from_address = fromRaw.trim();
     }
   }
-  const dateRaw = get("Date");
+  // internalDate is Gmail's own reliable sent/received timestamp (epoch ms,
+  // a top-level field on every message resource regardless of which
+  // metadataHeaders were requested) -- preferred over parsing the Date:
+  // header, which can be malformed or missing on some messages. Falls back
+  // to the header only on the rare message where internalDate itself is
+  // absent.
   let date: string | null = null;
-  if (dateRaw) {
-    try { date = new Date(dateRaw).toISOString(); } catch { date = null; }
+  if (msgData?.internalDate) {
+    const ms = Number(msgData.internalDate);
+    if (!Number.isNaN(ms)) date = new Date(ms).toISOString();
+  }
+  if (!date) {
+    const dateRaw = get("Date");
+    if (dateRaw) {
+      try { date = new Date(dateRaw).toISOString(); } catch { date = null; }
+    }
   }
   return {
     subject: get("Subject"),
