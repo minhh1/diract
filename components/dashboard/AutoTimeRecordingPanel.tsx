@@ -315,20 +315,25 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
                       className="mt-1 w-3.5 h-3.5 rounded accent-indigo-600 shrink-0 disabled:opacity-30" />
                     <div className="flex-1 min-w-0 space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {e.userId ? (
-                          <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-bold flex items-center justify-center shrink-0" title={e.userName || undefined}>{e.userInitials}</span>
-                        ) : (
+                        {isAdmin ? (
+                          // Admin can reassign any entry's timekeeper, not
+                          // just fill in one that attribution couldn't
+                          // resolve -- same assignTimekeeper path either
+                          // way, just pre-selected to the current owner
+                          // when there already is one.
                           <select
-                            value=""
+                            value={e.userId || ""}
                             onChange={ev => {
                               const opt = staffOptions.find(s => s.userId === ev.target.value);
                               if (opt) assignTimekeeper(e.key, opt);
                             }}
-                            className="px-2.5 py-1 rounded-full text-[10px] font-bold border border-amber-300 bg-white text-amber-700 outline-none"
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold border outline-none ${e.userId ? "border-slate-200 bg-white text-slate-600" : "border-amber-300 bg-white text-amber-700"}`}
                           >
-                            <option value="" disabled>Assign timekeeper…</option>
+                            {!e.userId && <option value="" disabled>Assign timekeeper…</option>}
                             {staffOptions.map(s => <option key={s.userId} value={s.userId}>{s.name}</option>)}
                           </select>
+                        ) : (
+                          <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-bold flex items-center justify-center shrink-0" title={e.userName || undefined}>{e.userInitials}</span>
                         )}
                         <span className="text-[10px] text-slate-400 font-medium">{e.date}</span>
                         <span className="text-[10px] text-slate-400">·</span>
