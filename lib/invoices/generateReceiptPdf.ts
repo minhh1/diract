@@ -148,7 +148,6 @@ export async function generateReceiptPdf(input: GenerateReceiptPdfInput): Promis
     text(`Received by: ${input.receipt.receivedBy}`, MARGIN, 10, { color: [0.4, 0.4, 0.45] });
     y -= 16;
   }
-  text('Computer-generated receipt. No signature required.', MARGIN, 9, { color: [0.6, 0.6, 0.64] });
 
   return pdfDoc.save();
 }

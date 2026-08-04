@@ -135,10 +135,7 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
       input.payment.accountNumber ? `Account Number: ${input.payment.accountNumber}` : null,
     ].filter(Boolean).join('   ');
     text(details, MARGIN, 10, { color: [0.4, 0.4, 0.45] }, y);
-    y -= 24;
   }
-
-  text('Computer-generated payment advice. No signature required.', MARGIN, 9, { color: [0.6, 0.6, 0.64] }, y);
 
   return pdfDoc.save();
 }

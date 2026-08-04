@@ -125,8 +125,5 @@ export async function generateTrustReceiptPdf(input: GenerateTrustReceiptPdfInpu
   text('Total', MARGIN, 12, { bold: true }, y);
   text(money(input.total), PAGE_W - MARGIN, 12, { bold: true, align: 'right' }, y);
 
-  y -= 40;
-  text('Computer-generated receipt. No signature required.', MARGIN, 9, { color: [0.6, 0.6, 0.64] }, y);
-
   return pdfDoc.save();
 }
