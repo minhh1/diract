@@ -139,7 +139,7 @@ export default function TrustPaymentModal({
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Account</label>
             <select value={accountId} onChange={e => setAccountId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none">
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 pl-4 pr-8 text-sm font-medium outline-none appearance-none truncate">
               {trustAccounts.map(a => <option key={a.id} value={a.id}>{a.values.account_name}</option>)}
             </select>
           </div>
