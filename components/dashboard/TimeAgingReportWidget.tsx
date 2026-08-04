@@ -21,6 +21,10 @@ import { formatDateAU } from "@/lib/formatDate";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+// No "show all" option -- an unbilled list with no floor at all tends
+// toward "every entry ever," which is what made this widget too long to
+// live in a compact space like Quick Glance in the first place.
+const AGING_OPTIONS = [5, 10, 15, 30];
 
 interface AgedItem {
   recordId: string;
@@ -32,8 +36,15 @@ interface AgedItem {
   daysUnbilled: number;
 }
 
+// `agingDays` seeds the initial selection (e.g. a dashboard-builder widget's
+// admin-configured default) -- the quick-filter buttons below then own it,
+// same "prop as initial state" shape as anything else in this app with a
+// user-adjustable control.
 export default function TimeAgingReportWidget({ records, agingDays }: { records: CustomTableRecord[]; agingDays: number }) {
   const [view, setView] = useState<"times" | "matters">("times");
+  const [selectedAgingDays, setSelectedAgingDays] = useState(
+    () => AGING_OPTIONS.includes(agingDays) ? agingDays : AGING_OPTIONS[AGING_OPTIONS.length - 1]
+  );
 
   const items = useMemo(() => {
     const now = Date.now();
@@ -45,14 +56,14 @@ export default function TimeAgingReportWidget({ records, agingDays }: { records:
       const date = String(r.values.date || "").slice(0, 10);
       if (!matterId || !date) continue;
       const daysUnbilled = Math.floor((now - new Date(date).getTime()) / MS_PER_DAY);
-      if (daysUnbilled < agingDays) continue;
+      if (daysUnbilled < selectedAgingDays) continue;
       out.push({
         recordId: r.id, matterId, staffId: String(r.values.staff || ""), date,
         description: String(r.values.description || ""), hours: Number(r.values.duration_hours) || 0, daysUnbilled,
       });
     }
     return out.sort((a, b) => a.date.localeCompare(b.date)); // oldest first
-  }, [records, agingDays]);
+  }, [records, selectedAgingDays]);
 
   // items is already oldest-first, so the FIRST time a matter is seen while
   // walking it IS that matter's oldest unbilled entry -- count/hours still
@@ -86,7 +97,7 @@ export default function TimeAgingReportWidget({ records, agingDays }: { records:
             <AlertTriangle size={18} className="text-amber-700" />
           </div>
           <div>
-            <p className="text-[13px] font-bold text-slate-800">Old Time ({agingDays}+ days unbilled)</p>
+            <p className="text-[13px] font-bold text-slate-800">Old Time ({selectedAgingDays}+ days unbilled)</p>
             <p className="text-[11px] text-slate-400">Time not yet invoiced, oldest first</p>
           </div>
         </div>
@@ -96,10 +107,30 @@ export default function TimeAgingReportWidget({ records, agingDays }: { records:
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Older than</span>
+        {AGING_OPTIONS.map(days => (
+          <button
+            key={days}
+            onClick={() => setSelectedAgingDays(days)}
+            className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
+              selectedAgingDays === days ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            }`}
+          >
+            {days}d
+          </button>
+        ))}
+      </div>
+
+      {/* Capped height + its own scroll -- this list previously grew to fit
+          every unbilled entry ever, which made it the tallest thing on
+          Quick Glance by far. Sticky thead so the column labels stay put
+          while scrolling. */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="max-h-72 overflow-auto">
         {view === "times" ? (
           <table className="w-full text-[12px] min-w-[720px]">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-slate-50">
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Matter</th>
                 <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Staff</th>
@@ -121,13 +152,13 @@ export default function TimeAgingReportWidget({ records, agingDays }: { records:
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-8 text-[11px] text-slate-300 italic">Nothing unbilled past {agingDays} days</td></tr>
+                <tr><td colSpan={6} className="text-center py-8 text-[11px] text-slate-300 italic">Nothing unbilled past {selectedAgingDays} days</td></tr>
               )}
             </tbody>
           </table>
         ) : (
           <table className="w-full text-[12px] min-w-[640px]">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-slate-50">
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Matter</th>
                 <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Oldest unbilled date</th>
@@ -147,11 +178,12 @@ export default function TimeAgingReportWidget({ records, agingDays }: { records:
                 </tr>
               ))}
               {matterRows.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-[11px] text-slate-300 italic">Nothing unbilled past {agingDays} days</td></tr>
+                <tr><td colSpan={5} className="text-center py-8 text-[11px] text-slate-300 italic">Nothing unbilled past {selectedAgingDays} days</td></tr>
               )}
             </tbody>
           </table>
         )}
+        </div>
       </div>
     </div>
   );

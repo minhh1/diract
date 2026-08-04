@@ -72,7 +72,7 @@ export default function LawFirmQuickGlance() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {!timeFees.loading && (
             <div className="bg-white border border-slate-200 rounded-2xl p-4">
-              <TimeAgingReportWidget records={timeFees.records} agingDays={0} />
+              <TimeAgingReportWidget records={timeFees.records} agingDays={30} />
             </div>
           )}
           {!invoices.loading && <UnpaidInvoicesWidget records={invoices.records} />}
