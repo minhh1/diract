@@ -60,6 +60,31 @@ export default function TrustTransactionsTab({
   const matterIds = useMemo(() => [...new Set(sorted.map(r => String(r.values.matter || '')).filter(Boolean))], [sorted]);
   const matterNumbers = useMatterNumbers(matterIds);
 
+  // This table is a passbook/cash-book view of the WHOLE trust account, so
+  // its own Balance column needs the account's running balance -- NOT
+  // r.values.running_balance, which is deliberately each MATTER's own
+  // sub-ledger balance (Legal Profession Uniform General Rules r47
+  // requires every matter's trust money tracked separately; that figure is
+  // what the per-matter Trust Account tab shows instead). Walked oldest
+  // first (this table displays newest first) across every matter combined,
+  // same-day ties broken by entered time as a best-effort approximation of
+  // true insertion order (only the server's advisory-lock-serialised
+  // insert order is authoritative, which isn't available client-side).
+  const accountBalanceByRecordId = useMemo(() => {
+    const chronological = [...records].sort((a, b) => {
+      const dateCmp = String(a.values.date || '').localeCompare(String(b.values.date || ''));
+      if (dateCmp !== 0) return dateCmp;
+      return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    const map = new Map<string, number>();
+    let running = 0;
+    for (const r of chronological) {
+      running += (Number(r.values.amount_in) || 0) - (Number(r.values.amount_out) || 0);
+      map.set(r.id, running);
+    }
+    return map;
+  }, [records]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
@@ -126,7 +151,7 @@ export default function TrustTransactionsTab({
                 </td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_out ? money(Number(r.values.amount_out)) : ''}</td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_in ? money(Number(r.values.amount_in)) : ''}</td>
-                <td className="px-4 py-2.5 text-right font-bold text-slate-800">{r.values.running_balance != null ? money(Number(r.values.running_balance)) : '—'}</td>
+                <td className="px-4 py-2.5 text-right font-bold text-slate-800">{money(accountBalanceByRecordId.get(r.id) ?? 0)}</td>
                 <td className="px-2 py-2.5">
                   {r.values.receipt_number ? (
                     <button onClick={() => setPreview({ kind: 'receipt', key: r.values.receipt_number, label: `Receipt ${r.values.receipt_number}` })} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
