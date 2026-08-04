@@ -24,7 +24,7 @@ export default function HomePage() {
       <Hero
         badge="A CRM that adapts to your business"
         headlineLines={["Built around your process,", "not the other way around."]}
-        subheadline="Diract is a configurable CRM platform — plug in the tables, fields, and workflows your business actually runs on, then manage everything from one place."
+        subheadline="Diract is a configurable CRM platform. You plug in the tables, fields, and workflows your business actually runs on, and manage everything from one place."
         primaryCta={{ href: "/login", label: "Get started" }}
         visual="customTable"
       />
@@ -63,7 +63,7 @@ export default function HomePage() {
           <div className="pointer-events-none absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-white/10 blur-2xl" />
           <h2 className="relative text-3xl font-light text-white tracking-tight mb-4">Also works right inside Gmail</h2>
           <p className="relative text-indigo-200 text-base leading-relaxed mb-8 max-w-lg mx-auto">
-            Assign emails to records, create records, and manage labels without leaving your inbox — with labels syncing across your whole team in minutes.
+            Assign emails to records, create records, and manage labels without ever leaving your inbox. Labels sync across your whole team within minutes.
           </p>
           <a href="https://workspace.google.com/marketplace" target="_blank" rel="noopener noreferrer"
             className="relative inline-flex items-center gap-2 px-7 py-3.5 bg-white text-indigo-600 text-sm font-medium rounded-full hover:bg-indigo-50 transition-colors">

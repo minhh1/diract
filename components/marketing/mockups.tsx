@@ -13,7 +13,8 @@
 import type { ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
-  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, type LucideIcon,
+  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, Landmark, Building2, Store,
+  type LucideIcon,
 } from "lucide-react";
 
 type TagColor = "indigo" | "sky" | "violet" | "emerald" | "amber" | "rose" | "slate";
@@ -884,6 +885,37 @@ export function MockAiSafety() {
   );
 }
 
+// Recreates the real Template marketplace (app/(app)/dashboard/marketplace/
+// page.tsx): the same icon-chip card, industry tag, and Install button as
+// the live "browse" list. The three templates shown here are meant to make
+// the point that the marketplace spans industries, not just the Law Firm
+// and Property Development templates that exist today.
+export function MockMarketplace() {
+  const templates: { icon: LucideIcon; color: string; name: string; industry: string }[] = [
+    { icon: Landmark, color: "#6366f1", name: "Law Firm", industry: "Legal" },
+    { icon: Building2, color: "#0ea5e9", name: "Property Development", industry: "Property" },
+    { icon: Store, color: "#10b981", name: "Sales Pipeline", industry: "General" },
+  ];
+  return (
+    <WidgetCard label="Marketplace">
+      <div className="space-y-2.5">
+        {templates.map((t) => (
+          <div key={t.name} className="flex items-center gap-3 rounded-2xl bg-slate-50 px-3.5 py-2.5">
+            <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${t.color}20` }}>
+              <t.icon size={15} style={{ color: t.color }} />
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+              <span className="text-[12px] font-bold text-slate-700 truncate">{t.name}</span>
+              <span className="text-[8px] font-bold text-slate-400 uppercase px-1.5 py-0.5 bg-white rounded-full shrink-0">{t.industry}</span>
+            </div>
+            <span className="px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full shrink-0">Install</span>
+          </div>
+        ))}
+      </div>
+    </WidgetCard>
+  );
+}
+
 export const MOCKUPS = {
   customTable: MockCustomTable,
   automation: MockAutomation,
@@ -891,6 +923,7 @@ export const MOCKUPS = {
   roleAccess: MockRoleAccess,
   reporting: MockReporting,
   aiSafety: MockAiSafety,
+  marketplace: MockMarketplace,
   matterBoard: MockMatterBoard,
   timeEntries: MockTimeEntries,
   autoTimeEntries: MockAutoTimeEntries,

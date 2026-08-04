@@ -49,7 +49,7 @@ export default function Hero({ badge, headlineLines, subheadline, primaryCta, se
             </Link>
             {secondaryCta && (
               <Link href={secondaryCta.href} className="px-7 py-3.5 text-slate-500 text-sm hover:text-slate-800 transition-colors">
-                {secondaryCta.label} →
+                {secondaryCta.label}
               </Link>
             )}
           </div>

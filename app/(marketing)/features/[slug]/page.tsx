@@ -28,6 +28,7 @@ import ResidualLandSolverDetail from "@/components/marketing/details/ResidualLan
 import EntityValidationDetail from "@/components/marketing/details/EntityValidationDetail";
 import DisbursementsImportDetail from "@/components/marketing/details/DisbursementsImportDetail";
 import AiSafetyDetail from "@/components/marketing/details/AiSafetyDetail";
+import MarketplaceDetail from "@/components/marketing/details/MarketplaceDetail";
 
 // Every slug with bespoke deep-dive content lives here -- every feature
 // across every landing page now has one. Add an entry here the same way
@@ -42,6 +43,7 @@ const RICH_DETAILS: Record<string, React.ComponentType> = {
   "reporting-dashboards": ReportingDashboardsDetail,
   "shared-gmail-labels": GmailLabelsDetail,
   "ai-safety": AiSafetyDetail,
+  "marketplace": MarketplaceDetail,
   "time-entries": TimeEntriesDetail,
   "ai-time-entries": AiTimeEntriesDetail,
   "trust-compliance": TrustComplianceDetail,
