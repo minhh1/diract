@@ -6,7 +6,14 @@
 // -- a visual drag/resize canvas, or a text-based DSL for the same widget
 // array. Purpose-built widgets (trust ledger, LEDES export, residual land
 // solver, etc.) are real, not generic placeholders.
-import { BarChart3, LayoutGrid, Code2 } from "lucide-react";
+//
+// Industry-templates section grounded in app/(app)/dashboard/marketplace/page.tsx
+// and app/api/templates/[slug]/install/route.ts -- two real published
+// templates (law-firm, property-developer) a company installs from the
+// Marketplace, each with dashboards it can bring in as part of that install
+// rather than a fixed set every company gets automatically at signup.
+import { BarChart3, LayoutGrid, Code2, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { MOCKUPS } from "@/components/marketing/mockups";
 import { DetailHero, Section } from "./Section";
@@ -57,6 +64,18 @@ export default function ReportingDashboardsDetail() {
               <span className="text-[12px] font-medium text-slate-700">Code</span>
             </div>
           </div>
+        </Section>
+
+        <Section eyebrow="Industry templates" eyebrowClass="text-emerald-500" title="Start from a real firm's own dashboards">
+          <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
+            The Marketplace has ready-made templates ported straight from a real, live company&apos;s own tables and
+            dashboards — one for Australian law firms, one for Australian property developers — so you&apos;re customising a
+            working setup, not staring at a blank canvas. Installing one is opt-in per table and per dashboard, so it
+            never overwrites something you&apos;ve already built your own way.
+          </p>
+          <Link href="/features/custom-tables-fields" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-indigo-600 hover:gap-2.5 transition-all">
+            See how the tables underneath are built <ArrowRight size={14} />
+          </Link>
         </Section>
       </div>
     </section>
