@@ -25,6 +25,10 @@ export interface AudienceContent {
   eyebrow: string;
   heading: string;
   primaryCtaLabel: string;
+  // Where the primary CTA goes -- defaults to /login (app/(marketing)/for/
+  // [audience]/page.tsx falls back to that) when an audience has no
+  // dedicated onboarding flow of its own.
+  primaryCtaHref?: string;
   features: AudienceFeature[];
 }
 
@@ -39,6 +43,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
     eyebrow: "For law firms",
     heading: "Everything your practice needs, nothing it doesn't",
     primaryCtaLabel: "Start your firm's workspace",
+    primaryCtaHref: "/for/law-firm-au/get-started",
     features: [
       {
         slug: "time-entries",

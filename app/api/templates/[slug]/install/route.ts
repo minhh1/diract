@@ -8,47 +8,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { installPrecedentLibrary, TEMPLATES_WITH_PRECEDENT_LIBRARY } from "@/lib/precedents/installLibrary";
+import { installTemplateForCompany } from "@/lib/templates/installTemplateForCompany";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, companyId } = auth;
+  const { admin, companyId, user } = auth;
   const { slug } = await params;
-
-  const { data: template } = await admin
-    .from("template_definitions").select("id, is_published, owner_company_id").eq("slug", slug).maybeSingle();
-  if (!template || (!template.is_published && template.owner_company_id !== companyId)) {
-    return NextResponse.json({ error: "Template not found" }, { status: 404 });
-  }
-
   const body = await req.json().catch(() => ({}));
-  const resolutions = body.resolutions || {};
-
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("install_company_template", {
-    p_company_id: companyId,
-    p_template_id: template.id,
-    p_resolutions: resolutions,
-    p_install_dashboards: body.installDashboards === true,
+
+  const result = await installTemplateForCompany({
+    supabase, admin, companyId, userId: user.id, slug,
+    resolutions: body.resolutions || {},
+    installDashboards: body.installDashboards === true,
   });
 
-  if (error) {
-    const status = error.message.includes("limit") ? 409 : 400;
-    return NextResponse.json({ error: error.message }, { status });
+  if (result.error) {
+    const status = result.error === "Template not found" ? 404 : result.error.includes("limit") ? 409 : 400;
+    return NextResponse.json({ error: result.error }, { status });
   }
 
-  // Seed the precedent library for templates that ship one. Runs after the
-  // RPC so the matter_type custom field exists and fill-in fields can bind
-  // to it. Deliberately non-fatal: the template itself installed fine, and
-  // failing the whole install over the precedent library would be a worse
-  // outcome than a firm having to top it up from Settings afterwards.
-  let precedents;
-  if (TEMPLATES_WITH_PRECEDENT_LIBRARY.has(slug)) {
-    const { result, error: precedentError } = await installPrecedentLibrary(admin, companyId, auth.user.id);
-    if (precedentError) console.error("[template-install] precedent library failed:", precedentError);
-    else precedents = result;
-  }
-
-  return NextResponse.json({ ...data, precedents });
+  return NextResponse.json({ ...result.data, precedents: result.precedents });
 }

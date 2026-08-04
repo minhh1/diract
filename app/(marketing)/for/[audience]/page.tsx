@@ -25,7 +25,7 @@ export default async function AudienceLandingPage({ params }: { params: Promise<
         badge={content.badge}
         headlineLines={content.headlineLines}
         subheadline={content.subheadline}
-        primaryCta={{ href: "/login", label: content.primaryCtaLabel }}
+        primaryCta={{ href: content.primaryCtaHref ?? "/login", label: content.primaryCtaLabel }}
         visual={content.heroVisual}
       />
 

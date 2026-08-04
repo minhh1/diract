@@ -2,6 +2,8 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { ensureStaffEntity } from '@/lib/services/staffEntityService'
+import { adminClient } from '@/lib/documentTemplateAuth'
+import { installTemplateForCompany } from '@/lib/templates/installTemplateForCompany'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -63,6 +65,35 @@ export async function GET(request: NextRequest) {
       full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
       is_active: true,
     }, { onConflict: 'id' })
+
+    // The law-firm-au onboarding wizard (app/(marketing)/for/law-firm-au/
+    // get-started/page.tsx) creates the company and user in the same
+    // request as sign-up, but can only install the Law Firm template
+    // client-side if a session comes back immediately. When email
+    // confirmation is required instead, there's no session to call the
+    // install API with until the user clicks the confirmation link -- which
+    // lands here. installTemplate is carried through emailRedirectTo's
+    // query string (same pattern this route already uses for `next`), and
+    // is a no-op for every other sign-in path since the param is absent.
+    const installTemplateSlug = searchParams.get('install_template')
+    if (installTemplateSlug) {
+      try {
+        const { data: profile } = await supabase.from('profiles').select('active_company_id').eq('id', user.id).maybeSingle()
+        if (profile?.active_company_id) {
+          await installTemplateForCompany({
+            supabase,
+            admin: adminClient(),
+            companyId: profile.active_company_id,
+            userId: user.id,
+            slug: installTemplateSlug,
+            resolutions: {},
+            installDashboards: true,
+          })
+        }
+      } catch (err) {
+        console.error('[auth/callback] template install failed:', err)
+      }
+    }
 
     // Handle invite token — add user to company
     if (inviteToken) {
