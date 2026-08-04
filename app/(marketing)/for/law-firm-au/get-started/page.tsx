@@ -110,6 +110,10 @@ export default function LawFirmGetStartedPage() {
       markDone(0);
 
       const userId = authData.user.id;
+      // No p_invite_token here -- the real function (confirmed against the
+      // live database; it isn't tracked in any migration in this repo)
+      // never accepted one. See the matching fix in
+      // app/(marketing)/login/page.tsx's own call site.
       const { data: result, error: rpcError } = await supabase.rpc("register_company_and_profile", {
         p_user_id: userId,
         p_full_name: fullName,
@@ -117,7 +121,6 @@ export default function LawFirmGetStartedPage() {
         p_company_name: firmName.trim(),
         p_abn: abn.trim() || null,
         p_acn: acn.trim() || null,
-        p_invite_token: null,
       });
       if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
       if (result && !result.success) throw new Error(result.error || "Registration failed");
@@ -133,12 +136,21 @@ export default function LawFirmGetStartedPage() {
       const { data: newProfile } = await supabase.from("profiles").select("active_company_id").eq("id", userId).maybeSingle();
       if (newProfile?.active_company_id) {
         await ensureStaffEntity(supabase, newProfile.active_company_id, userId);
+        // register_company_and_profile never sets company_type -- without
+        // this, QuickGlanceDashboard.tsx bounces a brand-new law firm
+        // straight to /dashboard/properties (it only renders for 'Law Firm'
+        // or 'Property Developer'), confirmed live during testing.
+        await supabase.from("companies").update({ company_type: "Law Firm" }).eq("id", newProfile.active_company_id);
         try {
-          await fetch("/api/templates/law-firm/install", {
+          const installRes = await fetch("/api/templates/law-firm/install", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ resolutions: {}, installDashboards: true }),
           });
+          if (!installRes.ok) {
+            const body = await installRes.json().catch(() => ({}));
+            console.error("Law Firm template install failed:", body.error || installRes.status);
+          }
         } catch (err) {
           console.error("Law Firm template install failed:", err);
         }

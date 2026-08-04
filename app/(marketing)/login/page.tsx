@@ -366,6 +366,12 @@ function LoginPageInner() {
 
       } else {
         // ── Create new company (original flow) ─────────────────
+        // register_company_and_profile's real signature (confirmed against
+        // the live database, it isn't tracked in any migration in this repo)
+        // never accepted a p_invite_token param -- passing one made
+        // PostgREST unable to match any function overload at all, silently
+        // breaking every fresh self-signup with "Could not find the
+        // function ... in the schema cache".
         const { data: result, error: rpcError } = await supabase.rpc(
           'register_company_and_profile',
           {
@@ -375,7 +381,6 @@ function LoginPageInner() {
             p_company_name: companyName.trim(),
             p_abn: abn.trim() || null,
             p_acn: acn.trim() || null,
-            p_invite_token: inviteToken || null,
           }
         );
 
