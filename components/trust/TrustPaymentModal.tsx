@@ -59,22 +59,24 @@ export default function TrustPaymentModal({
 
   // Matter's current balance -- same running-balance math
   // insert_ledger_record() does server-side (sum of amount_in - amount_out
-  // for the matter, across the WHOLE ledger table, not scoped by
-  // trust_account -- see that function's current body), not a read of the
-  // last row's stored running_balance, since ledger rows aren't guaranteed
-  // to be in date order (a backdated entry would make "last by date"
-  // wrong). Confirmed live: filtering by trust_account here (matching the
-  // server's OLDER, no-longer-live behavior) showed a matter with a real
-  // $2,449.71 balance as -$2,449.71 available, because that deposit
-  // predates the trust_account field and has no value for it -- excluding
-  // it here while the server counts it made the preview wrong in exactly
-  // the case that matters (a real, spendable balance).
+  // for the matter, scoped by trust_account -- see
+  // supabase/migrations/20260804020000_restore_trust_account_balance_scoping.sql),
+  // not a read of the last row's stored running_balance, since ledger rows
+  // aren't guaranteed to be in date order (a backdated entry would make
+  // "last by date" wrong). An unattributed row (no trust_account value at
+  // all, e.g. one predating that field) still counts as long as this
+  // company only has one active trust account -- the common case, and
+  // exactly how a matter's pre-trust_account-field opening balance keeps
+  // counting instead of vanishing the moment a real account is selected
+  // here (confirmed live: without this fallback, a matter with a real
+  // $2,449.71 balance showed as -$2,449.71 available).
   const matterBalance = useMemo(() => {
     if (!matterId) return null;
     return trustTable.records
-      .filter(r => String(r.values.matter || '') === matterId)
+      .filter(r => String(r.values.matter || '') === matterId &&
+        ((r.values.trust_account || null) === accountId || (trustAccounts.length <= 1 && !r.values.trust_account)))
       .reduce((s, r) => s + (Number(r.values.amount_in) || 0) - (Number(r.values.amount_out) || 0), 0);
-  }, [trustTable.records, matterId]);
+  }, [trustTable.records, matterId, accountId, trustAccounts.length]);
 
   const amt = parseFloat(amount) || 0;
   const availableAfter = matterBalance != null ? matterBalance - amt : null;

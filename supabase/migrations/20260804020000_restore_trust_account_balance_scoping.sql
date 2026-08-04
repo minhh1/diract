@@ -1,93 +1,28 @@
--- Ledger tables: append-only custom tables for statutory records (the Law
--- Firm template's Trust Transactions -- see template_law_firm_seed.sql).
--- Uniform General Rules 2015 r 40 requires trust records be kept in a form
--- that cannot be easily altered, so the guarantees live in DB triggers, not
--- just the UI:
---   - rows and values can never be UPDATEd or DELETEd (soft or hard) --
---     corrections are made by entering a reversing journal entry;
---   - rows can only be INSERTed through insert_ledger_record(), which
---     atomically assigns the consecutive receipt number (r 36), computes the
---     per-matter running balance (r 47), refuses inserts that would overdraw
---     a matter's ledger, and writes an audit row to company_table_record_log.
--- Depends on company_table_field_sequences.sql (auto_number_prefix + counter).
-
-ALTER TABLE company_tables ADD COLUMN IF NOT EXISTS is_ledger boolean NOT NULL DEFAULT false;
-
--- Audit trail (shape follows task_activity_log.sql). Insert-only: RLS gives
--- members SELECT; there are no INSERT/UPDATE/DELETE policies, so clients
--- cannot write or tamper -- rows are written by the SECURITY DEFINER
--- insert_ledger_record() only. record_id has no FK on purpose: the log must
--- outlive anything that might ever remove the record row.
-CREATE TABLE IF NOT EXISTS company_table_record_log (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  table_id uuid NOT NULL,
-  record_id uuid NOT NULL,
-  actor_id uuid REFERENCES profiles(id) ON DELETE SET NULL,
-  action text NOT NULL,
-  after jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS company_table_record_log_table_idx ON company_table_record_log (table_id, created_at);
-
-ALTER TABLE company_table_record_log ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS company_table_record_log_read ON company_table_record_log;
-CREATE POLICY company_table_record_log_read ON company_table_record_log
-  FOR SELECT
-  USING (company_id IN (SELECT company_id FROM company_memberships WHERE user_id = auth.uid()));
-
--- ── Guards ───────────────────────────────────────────────────────────────
-
-CREATE OR REPLACE FUNCTION is_ledger_table(p_table_id uuid)
-RETURNS boolean LANGUAGE sql STABLE AS
-$$ SELECT COALESCE((SELECT is_ledger FROM company_tables WHERE id = p_table_id), false) $$;
-
--- Inserts are only allowed from inside insert_ledger_record(), which sets a
--- transaction-local flag; direct client inserts (or the ordinary
--- createRecord path) are refused so nothing can bypass numbering/balance/audit.
-CREATE OR REPLACE FUNCTION guard_ledger_records()
-RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF is_ledger_table(NEW.table_id)
-       AND current_setting('app.ledger_write', true) IS DISTINCT FROM 'on' THEN
-      RAISE EXCEPTION 'LEDGER_RPC_ONLY: ledger rows must be created via insert_ledger_record()';
-    END IF;
-    RETURN NEW;
-  END IF;
-  IF is_ledger_table(OLD.table_id) THEN
-    RAISE EXCEPTION 'LEDGER_APPEND_ONLY: ledger entries cannot be changed or deleted -- enter a reversing journal entry instead';
-  END IF;
-  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS guard_ledger_records_trg ON company_table_records;
-CREATE TRIGGER guard_ledger_records_trg
-  BEFORE INSERT OR UPDATE OR DELETE ON company_table_records
-  FOR EACH ROW EXECUTE FUNCTION guard_ledger_records();
-
-DROP TRIGGER IF EXISTS guard_ledger_values_trg ON company_table_values;
-CREATE TRIGGER guard_ledger_values_trg
-  BEFORE INSERT OR UPDATE OR DELETE ON company_table_values
-  FOR EACH ROW EXECUTE FUNCTION guard_ledger_records();
-
--- ── Insert ───────────────────────────────────────────────────────────────
+-- Restores per-matter balance scoping by trust_account in
+-- insert_ledger_record(), which supabase/migrations/20260731100000_trust_account_page.sql
+-- originally added (two trust accounts posting against the same matter
+-- would otherwise pool into one balance -- a real correctness bug once
+-- multi-account support exists) but
+-- supabase/migrations/20260802160000_trust_split_payment_journal_numbers.sql
+-- silently dropped when it replaced the function to add type-based
+-- auto-number field selection (payment_number/journal_number), reverting
+-- the balance query to its pre-multi-account shape without saying so.
+-- Harmless today (every live company has exactly one trust account) but
+-- would resurface as a real bug the moment a firm adds a second one --
+-- caught while investigating a wrong "Available After Payment" figure in
+-- the Trust Payment modal (unrelated to this regression, but discovered
+-- alongside it).
 --
--- p_values is a field_key -> value jsonb map (same shape createRecord takes).
--- Ledger conventions, resolved by field_key when present on the table:
---   amount_in / amount_out  -- currency movements (both optional per row)
---   matter                  -- the sub-ledger key; running balance and the
---                              overdraw check are scoped to this value
---   running_balance         -- written by this function, never by the caller
---   auto_number_prefix field(s) -- assigned by this function (r 36). Trust
---     Transactions has three parallel sequences (receipt_number/
---     payment_number/journal_number) selected by the row's `type`; every
---     other ledger table has exactly one auto-number field, selected
---     unconditionally via the CASE's ELSE branch below.
+-- Restoring the scoping naively would reintroduce that Available-After-
+-- Payment bug from the other direction: a matter's opening-balance rows
+-- created before the trust_account field existed have no value for it, so
+-- a literal account match would exclude them the moment a real account id
+-- is supplied. Mirrors the fallback the company-wide trust account page
+-- (app/dashboard/trust-account/page.tsx) already uses for exactly this:
+-- an unattributed row still counts as long as the company only has ONE
+-- active trust account (the common case) -- only a company with a genuine
+-- second account needs the strict match, and by then any earlier
+-- unattributed rows belong to whichever account existed at the time.
 CREATE OR REPLACE FUNCTION insert_ledger_record(
   p_table_id uuid,
   p_values jsonb
@@ -153,10 +88,6 @@ BEGIN
   v_matter_id := NULLIF(p_values->>'matter', '')::uuid;
   v_account_id := NULLIF(p_values->>'trust_account', '')::uuid;
 
-  -- How many active trust accounts this company has -- governs whether an
-  -- unattributed row (no trust_account value, e.g. one predating that
-  -- field) still counts toward the balance below. See that condition's own
-  -- comment for why.
   IF v_account_field_id IS NOT NULL THEN
     SELECT count(*) INTO v_active_account_count
     FROM company_table_records acc
@@ -167,16 +98,7 @@ BEGIN
   END IF;
 
   -- Running balance for this matter's sub-ledger (r 47): prior movements
-  -- plus this entry; a matter ledger must never go into deficit. Scoped by
-  -- trust_account when the table has that field (Trust Transactions does,
-  -- plain ledger tables like Client Credits don't) -- two trust accounts
-  -- posting against the same matter must NOT pool into one balance. An
-  -- unattributed row (no trust_account value at all) still counts as long
-  -- as the company only has one active account -- the common case, and
-  -- exactly how a matter's pre-trust_account-field opening balance
-  -- (imported before multi-account support existed) keeps counting instead
-  -- of silently vanishing from every balance check the moment a real
-  -- account id is supplied.
+  -- plus this entry; a matter ledger must never go into deficit.
   IF v_balance_field_id IS NOT NULL AND v_matter_field_id IS NOT NULL AND v_matter_id IS NOT NULL THEN
     SELECT COALESCE(SUM(COALESCE(vin.value_number, 0) - COALESCE(vout.value_number, 0)), 0) INTO v_prior
     FROM company_table_records r
