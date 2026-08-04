@@ -1,6 +1,7 @@
 import AppLoader from "@/components/AppLoader";
 import ThemeProvider from "@/components/ThemeProvider";
 import VersionCheckBanner from "@/components/VersionCheckBanner";
+import AppServiceWorker from "@/components/AppServiceWorker";
 
 // Everything that needs the real signed-in app shell (dashboard, /public/*
 // staff previews, the Teams/WhatsApp link-account pages) lives under this
@@ -14,6 +15,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
     <ThemeProvider>
       <AppLoader>{children}</AppLoader>
       <VersionCheckBanner />
+      <AppServiceWorker />
     </ThemeProvider>
   );
 }

@@ -56,23 +56,11 @@ function FitBounds({ pins }: { pins: MapPin[] }) {
 
 const AUSTRALIA_CENTER: [number, number] = [-25.2744, 133.7751];
 
-// public/sw-map-tiles.js -- cache-first for CARTO tile requests only, every
-// other request passes through untouched. This is the first service worker
-// in this app; registering it only here (not app-wide) means it only ever
-// loads for a session that actually views this map. Registration failing
-// (unsupported browser, blocked, etc.) just means tiles fall back to the
-// browser's normal HTTP cache -- CARTO already sends a 180-day
-// Cache-Control header, so there's no broken state either way.
-function useMapTileServiceWorker() {
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-map-tiles.js').catch(() => {});
-    }
-  }, []);
-}
-
+// Tile requests are cache-first via public/sw-map-tiles.js, registered app-
+// wide from components/AppServiceWorker.tsx (not here) -- see that file's
+// own comment for why it's mounted at the app-shell layout instead of just
+// this one page.
 export default function ProjectsMapWidget({ pins, onSelect }: { pins: MapPin[]; onSelect: (id: string) => void }) {
-  useMapTileServiceWorker();
   return (
     <MapContainer center={AUSTRALIA_CENTER} zoom={4} scrollWheelZoom style={{ height: "100%", width: "100%", borderRadius: 16 }}>
       <TileLayer
