@@ -12,6 +12,14 @@
 // correspondence (a duplicate copy landing in their own synced mailbox is
 // not the same thing as them being the sender or the addressee).
 //
+// Grouping is by content_id (project_email_content.id, see migration
+// 20260804050000_project_email_content_dedup.sql), not a locally
+// recomputed subject+from_address+snippet+project_id fingerprint -- that
+// used to be duplicated logic living only here; now it's resolved once,
+// server-side, by a trigger every project_emails write already goes
+// through, so this file and the DB can't quietly drift apart on what
+// counts as "the same real email".
+//
 // Attribution order (deliberately never falls back to "whoever's mailbox
 // happened to sync this row" -- that's the exact bug this replaces):
 //   1. Sender is one of our own staff (from_address matches a company
@@ -37,6 +45,11 @@
 //      inventing an answer or silently losing the email from view.
 export interface RawProjectEmail {
   id: string;
+  // project_email_content.id -- groups this row with every other copy of
+  // the same real email. Falls back to `id` itself (never grouped with
+  // anything else) if a row somehow predates the backfill/trigger and has
+  // none, rather than throwing away rows with a missing key.
+  contentId: string | null;
   subject: string | null;
   snippet: string | null;
   from_address: string | null;
@@ -68,21 +81,6 @@ export interface AttributedEmail {
   timekeeperUserId: string | null;
 }
 
-// project_id is part of the fingerprint deliberately -- confirmed live, the
-// exact same subject/sender/snippet can legitimately be linked to two
-// DIFFERENT matters at once (e.g. one email discussing two lots of the same
-// development, assigned to both). Without this, that case would collapse
-// into one entry and, worse, submitting it would mark the OTHER matter's
-// copy as already-converted too (time_entry_ai_sources is keyed on the raw
-// row id, not the matter) -- silently losing that matter's own time entry.
-// Duplicate SYNC COPIES of one real email (the actual problem this dedupe
-// exists for) always share the same project_id, since they're all the
-// result of the same assign-to-a-matter action; this only ever splits
-// apart genuinely distinct correspondence, never re-merges a true duplicate.
-function fingerprint(e: RawProjectEmail): string {
-  return `${(e.subject || "").trim()}|||${(e.from_address || "").trim().toLowerCase()}|||${(e.snippet || "").trim()}|||${e.project_id}`;
-}
-
 // Only a literal " and " joins a second addressee -- a comma is far too
 // common in ordinary email prose right after the greeting name (see header
 // comment) to treat as "there's a second person being addressed" on its own.
@@ -110,9 +108,9 @@ export function dedupeAndAttributeEmails(
 
   const groups = new Map<string, RawProjectEmail[]>();
   for (const e of rawEmails) {
-    const fp = fingerprint(e);
-    if (!groups.has(fp)) groups.set(fp, []);
-    groups.get(fp)!.push(e);
+    const key = e.contentId || e.id;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(e);
   }
 
   // Every email in the fetched batch, per thread, oldest first -- used by

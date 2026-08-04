@@ -18,7 +18,21 @@ export default function EmailsTab({ recordId }: { recordId: string }) {
       .select('*')
       .eq('project_id', recordId)
       .order('created_at', { ascending: false })
-      .then(({ data }) => { setEmails(data || []); setLoading(false); });
+      .then(({ data }) => {
+        // One row per staff member's own mailbox copy of the same real
+        // email (see migration 20260804050000_project_email_content_dedup.sql)
+        // -- without this a matter's real correspondence shows up
+        // repeated once per connected staff member who received a copy.
+        const seen = new Set<string>();
+        const deduped = (data || []).filter((e: any) => {
+          const key = e.content_id || e.id;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setEmails(deduped);
+        setLoading(false);
+      });
   }, [recordId]);
 
   if (loading) return null;

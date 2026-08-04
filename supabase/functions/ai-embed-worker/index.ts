@@ -141,21 +141,36 @@ async function collectCrmCandidates(companyId: string, since: string): Promise<E
 async function collectGmailCandidates(companyId: string, since: string): Promise<EmbedCandidate[]> {
   const { data, error } = await db
     .from("project_emails")
-    .select("id, project_id, subject, snippet, from_name, created_at")
+    .select("id, content_id, project_id, subject, snippet, from_name, created_at")
     .eq("company_id", companyId)
     .gt("created_at", since)
     .order("created_at", { ascending: true })
     .limit(BATCH_SIZE);
   if (error || !data) return [];
 
-  return data
-    .filter((row) => row.subject || row.snippet)
-    .map((row) => ({
-      sourceId: row.id,
-      sourceUrl: row.project_id ? `/dashboard/projects?id=${row.project_id}` : null,
-      content: [row.from_name ? `From: ${row.from_name}` : null, row.subject, row.snippet].filter(Boolean).join("\n"),
-      createdAt: row.created_at,
-    }));
+  // One row per staff member's own mailbox copy of the same real email
+  // (see migration 20260804050000_project_email_content_dedup.sql) --
+  // embedding every copy separately wasted ~7x the embedding API calls on
+  // identical content and surfaced duplicate hits in semantic search.
+  // source_id becomes content_id (not the row id), so ai_document_chunks'
+  // own (company_id, source_type, source_id) unique constraint naturally
+  // keeps exactly one chunk per real email even across separate runs.
+  const seenContentIds = new Set<string>();
+  const deduped = [];
+  for (const row of data) {
+    if (!row.subject && !row.snippet) continue;
+    const key = row.content_id || row.id;
+    if (seenContentIds.has(key)) continue;
+    seenContentIds.add(key);
+    deduped.push(row);
+  }
+
+  return deduped.map((row) => ({
+    sourceId: row.content_id || row.id,
+    sourceUrl: row.project_id ? `/dashboard/projects?id=${row.project_id}` : null,
+    content: [row.from_name ? `From: ${row.from_name}` : null, row.subject, row.snippet].filter(Boolean).join("\n"),
+    createdAt: row.created_at,
+  }));
 }
 
 async function collectWhatsAppCandidates(companyId: string, since: string): Promise<EmbedCandidate[]> {

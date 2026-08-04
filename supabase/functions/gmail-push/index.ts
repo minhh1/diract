@@ -615,6 +615,18 @@ Deno.serve(async (req) => {
         // use that project directly and skip subject matching entirely.
         let subjectMatch: { project_id: string; company_id: string } | null = null;
 
+        // Deliberately project_emails, NOT project_email_content -- unlike
+        // subject/from_address/snippet (copied byte-for-byte from the
+        // original message on import, genuinely shared content),
+        // gmail_thread_id is assigned by Gmail PER MAILBOX: an imported
+        // copy starts a new thread in the target mailbox with no reply
+        // history to link to, so the same real email's copies routinely
+        // have DIFFERENT thread ids across different users' mailboxes
+        // (confirmed live: 2,926 of 5,503 content groups had at least one
+        // copy whose thread id didn't match the group's single stored
+        // value -- an early version of this migration wrongly treated
+        // thread id as shared content, which would have silently broken
+        // thread-continuity matching here).
         const { data: threadMatches } = await db.from("project_emails")
           .select("project_id, company_id")
           .in("company_id", allCompanyIds)
@@ -641,6 +653,9 @@ Deno.serve(async (req) => {
           // as templated/non-matter-specific and refuse to auto-label from
           // it at all, regardless of how many (or few) projects it's matched
           // to so far.
+          // project_emails, not project_email_content -- same reasoning as
+          // the thread-match query above (gmail_thread_id is per-mailbox,
+          // not shared content).
           const { data: senderSubjectRows } = await db.from("project_emails")
             .select("gmail_thread_id, subject")
             .in("company_id", allCompanyIds)

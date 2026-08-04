@@ -86,14 +86,14 @@ export async function POST(req: NextRequest) {
   // from every day's range forever. Company-wide, not scoped by user_id --
   // see header comment.
   const { data: rawEmailRows } = await admin.from("project_emails")
-    .select("id, subject, snippet, from_address, from_name, project_id, gmail_thread_id, date, created_at")
+    .select("id, content_id, subject, snippet, from_address, from_name, project_id, gmail_thread_id, date, created_at")
     .eq("company_id", companyId)
     .or(`and(date.gte.${startIso},date.lt.${endIso}),and(date.is.null,created_at.gte.${startIso},created_at.lt.${endIso})`);
 
   const rawEmails: RawProjectEmail[] = (rawEmailRows || [])
     .filter((e: any) => e.project_id)
     .map((e: any) => ({
-      id: e.id, subject: e.subject, snippet: e.snippet, from_address: e.from_address, from_name: e.from_name,
+      id: e.id, contentId: e.content_id, subject: e.subject, snippet: e.snippet, from_address: e.from_address, from_name: e.from_name,
       project_id: e.project_id, gmail_thread_id: e.gmail_thread_id, created_at: e.created_at,
     }));
 
