@@ -3,7 +3,8 @@ import MarketingNav from "@/components/marketing/MarketingNav";
 import MarketingFooter from "@/components/marketing/MarketingFooter";
 import Hero from "@/components/marketing/Hero";
 import FeatureSpotlight from "@/components/marketing/FeatureSpotlight";
-import { AUDIENCES, getAudience } from "@/lib/marketing/audiences";
+import { AUDIENCES, getAudience, audienceNavLinks } from "@/lib/marketing/audiences";
+import { MockupThemeProvider, MockupThemeToggle } from "@/components/marketing/MockupThemeProvider";
 
 export function generateStaticParams() {
   return Object.keys(AUDIENCES).map((audience) => ({ audience }));
@@ -15,14 +16,17 @@ export default async function AudienceLandingPage({ params }: { params: Promise<
   if (!content) notFound();
 
   return (
+    <MockupThemeProvider>
     <div className="min-h-screen bg-white text-slate-900 antialiased select-text">
-      <MarketingNav />
+      <MarketingNav audienceLinks={audienceNavLinks()} />
+      <MockupThemeToggle />
 
       <Hero
         badge={content.badge}
         headlineLines={content.headlineLines}
         subheadline={content.subheadline}
         primaryCta={{ href: "/login", label: content.primaryCtaLabel }}
+        visual={content.heroVisual}
       />
 
       <FeatureSpotlight
@@ -33,5 +37,6 @@ export default async function AudienceLandingPage({ params }: { params: Promise<
 
       <MarketingFooter />
     </div>
+    </MockupThemeProvider>
   );
 }

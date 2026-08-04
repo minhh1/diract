@@ -2,9 +2,12 @@
 
 import { motion } from "framer-motion";
 import {
-  FolderKanban, Mail, RefreshCw, Building2, ShieldCheck, Puzzle,
-  Users, ShieldAlert, BadgeCheck, LayoutPanelLeft, type LucideIcon,
+  Table2, Workflow, Building2, ShieldCheck, BarChart3, Clock, Sparkles, Landmark,
+  FileText, Users, LayoutPanelLeft, ListChecks, TrendingUp, CalendarClock, Calculator,
+  BadgeCheck, type LucideIcon,
 } from "lucide-react";
+import { MOCKUPS, type MockupName } from "./mockups";
+import { useMockupTheme } from "./MockupThemeProvider";
 
 export type SpotlightAccent = "indigo" | "violet" | "sky" | "emerald" | "amber";
 
@@ -13,8 +16,9 @@ export type SpotlightAccent = "indigo" | "violet" | "sky" | "emerald" | "amber";
 // RSC boundary. Pages pass a plain string key instead; the actual component
 // is looked up here, entirely client-side.
 const ICONS: Record<string, LucideIcon> = {
-  FolderKanban, Mail, RefreshCw, Building2, ShieldCheck, Puzzle,
-  Users, ShieldAlert, BadgeCheck, LayoutPanelLeft,
+  Table2, Workflow, Building2, ShieldCheck, BarChart3, Clock, Sparkles, Landmark,
+  FileText, Users, LayoutPanelLeft, ListChecks, TrendingUp, CalendarClock, Calculator,
+  BadgeCheck,
 };
 export type SpotlightIconName = keyof typeof ICONS;
 
@@ -23,28 +27,28 @@ export interface SpotlightFeature {
   title: string;
   body: string;
   accent: SpotlightAccent;
+  visual: MockupName;
 }
 
 // Tailwind v4 needs literal class strings to keep them in the build --
 // this is why it's a lookup object instead of `bg-${accent}-100` template
 // interpolation.
-const ACCENTS: Record<SpotlightAccent, { bg: string; text: string; ring: string; gradient: string }> = {
-  indigo: { bg: "bg-indigo-100", text: "text-indigo-600", ring: "ring-indigo-200", gradient: "from-indigo-200/60 to-indigo-50" },
-  violet: { bg: "bg-violet-100", text: "text-violet-600", ring: "ring-violet-200", gradient: "from-violet-200/60 to-violet-50" },
-  sky: { bg: "bg-sky-100", text: "text-sky-600", ring: "ring-sky-200", gradient: "from-sky-200/60 to-sky-50" },
-  emerald: { bg: "bg-emerald-100", text: "text-emerald-600", ring: "ring-emerald-200", gradient: "from-emerald-200/60 to-emerald-50" },
-  amber: { bg: "bg-amber-100", text: "text-amber-600", ring: "ring-amber-200", gradient: "from-amber-200/60 to-amber-50" },
+const ACCENTS: Record<SpotlightAccent, { bg: string; text: string }> = {
+  indigo: { bg: "bg-indigo-100", text: "text-indigo-600" },
+  violet: { bg: "bg-violet-100", text: "text-violet-600" },
+  sky: { bg: "bg-sky-100", text: "text-sky-600" },
+  emerald: { bg: "bg-emerald-100", text: "text-emerald-600" },
+  amber: { bg: "bg-amber-100", text: "text-amber-600" },
 };
 
 function FeatureVisual({ feature }: { feature: SpotlightFeature }) {
   const a = ACCENTS[feature.accent];
-  const Icon = ICONS[feature.icon];
+  const Mockup = MOCKUPS[feature.visual];
+  const isDark = useMockupTheme();
   return (
-    <div className={`relative aspect-[4/3] w-full rounded-[28px] bg-gradient-to-br ${a.gradient} border border-white/60 flex items-center justify-center overflow-hidden`}>
-      <div className={`absolute -bottom-10 -right-10 w-40 h-40 rounded-full ${a.bg} opacity-70 blur-2xl`} />
-      <div className={`relative w-20 h-20 rounded-[24px] bg-white shadow-xl flex items-center justify-center ring-4 ${a.ring}`}>
-        <Icon className={a.text} size={32} strokeWidth={1.75} />
-      </div>
+    <div className={`relative flex items-center justify-center py-4 ${isDark ? "dark" : ""}`}>
+      <div className={`absolute -bottom-6 -right-6 w-40 h-40 rounded-full ${a.bg} opacity-60 blur-2xl -z-10`} />
+      <Mockup />
     </div>
   );
 }

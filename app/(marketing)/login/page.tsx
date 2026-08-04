@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 
 const VALUE_PROPS = [
-  "Assign emails to matters directly from Gmail",
-  "Labels sync across your whole team in minutes",
+  "Build the tables and workflow your business runs on",
+  "Automate the repetitive parts of your process",
   "Manage multiple companies under one login",
 ];
 
@@ -427,7 +427,7 @@ function LoginPageInner() {
 
         <div className="relative">
           <h2 className="text-3xl font-light tracking-tight leading-tight mb-8">
-            Your firm's matters,<br />finally in sync.
+            Your process,<br />your CRM.
           </h2>
           <ul className="space-y-4">
             {VALUE_PROPS.map((v) => (
@@ -440,7 +440,7 @@ function LoginPageInner() {
         </div>
 
         <p className="relative text-[11px] text-indigo-200 uppercase tracking-[0.25em] font-medium">
-          Diract • Asset Management
+          Diract • Configurable CRM
         </p>
       </div>
 

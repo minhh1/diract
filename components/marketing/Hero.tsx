@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { MOCKUPS, type MockupName } from "./mockups";
+import { useMockupTheme } from "./MockupThemeProvider";
 
 interface HeroProps {
   badge: string;
@@ -9,42 +11,12 @@ interface HeroProps {
   subheadline: string;
   primaryCta: { href: string; label: string };
   secondaryCta?: { href: string; label: string };
+  visual?: MockupName;
 }
 
-// A stylized, abstract stand-in for a product screenshot -- built entirely
-// from CSS/SVG since there are no real screenshots checked into the repo
-// to use. Loosely evokes the matter board (status chips + rows) rather
-// than any one real screen, so it doesn't go stale as the UI changes.
-function MockMatterBoard() {
-  const rows = [
-    { label: "123 Collins St — Sale", tag: "In progress", color: "bg-indigo-100 text-indigo-600" },
-    { label: "Nguyen Family Trust", tag: "Awaiting docs", color: "bg-amber-100 text-amber-600" },
-    { label: "Harbord Property Co.", tag: "Settled", color: "bg-emerald-100 text-emerald-600" },
-    { label: "45 Bourke St — Lease", tag: "In progress", color: "bg-indigo-100 text-indigo-600" },
-  ];
-  return (
-    <div className="relative rounded-[28px] bg-white border border-slate-100 shadow-[0_32px_64px_-24px_rgba(79,70,229,0.35)] p-5 w-full max-w-md">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-300" />
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-300" />
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-300" />
-        </div>
-        <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">Matters</span>
-      </div>
-      <div className="space-y-2.5">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
-            <span className="text-[12px] font-medium text-slate-700 truncate">{r.label}</span>
-            <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${r.color}`}>{r.tag}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export default function Hero({ badge, headlineLines, subheadline, primaryCta, secondaryCta }: HeroProps) {
+export default function Hero({ badge, headlineLines, subheadline, primaryCta, secondaryCta, visual = "customTable" }: HeroProps) {
+  const Mockup = MOCKUPS[visual];
+  const isDark = useMockupTheme();
   return (
     <section className="relative pt-40 pb-28 px-6 overflow-hidden">
       {/* Soft gradient blobs -- pure CSS, no assets */}
@@ -87,9 +59,9 @@ export default function Hero({ badge, headlineLines, subheadline, primaryCta, se
           initial={{ opacity: 0, y: 24, rotate: -2 }}
           animate={{ opacity: 1, y: 0, rotate: -2 }}
           transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }}
-          className="flex justify-center lg:justify-end"
+          className={`flex justify-center lg:justify-end ${isDark ? "dark" : ""}`}
         >
-          <MockMatterBoard />
+          <Mockup />
         </motion.div>
       </div>
     </section>

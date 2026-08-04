@@ -11,7 +11,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Diract",
-  description: "Property & legal ERP",
+  description: "The configurable CRM platform for your tables and processes",
   // Read by VersionCheckBanner.tsx as "the build this page was actually
   // served with" -- a plain <meta>, not next/head, so it's present in the
   // initial HTML before any client JS runs.
