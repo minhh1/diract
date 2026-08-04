@@ -120,8 +120,5 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
     line(input.payment.reason);
   }
 
-  page.drawLine({ start: { x: MARGIN, y: MARGIN + 60 }, end: { x: PAGE_W - MARGIN, y: MARGIN + 60 }, thickness: 0.75, color: rgb(0.85, 0.85, 0.87) });
-  text('This is a payment advice for trust accounting records -- not a negotiable instrument.', BODY_SIZE, { color: [0.55, 0.55, 0.6] }, MARGIN + 40);
-
   return pdfDoc.save();
 }
