@@ -85,11 +85,22 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
   // Per-entry description regenerate in flight -- disables that entry's
   // detail-level buttons so a second click can't fire while one's pending.
   const [regeneratingKeys, setRegeneratingKeys] = useState<Set<string>>(new Set());
+  // Which level the toolbar's own Brief/Standard/Detailed control last
+  // applied to every entry at once -- purely a UI highlight, separate from
+  // defaultDetailLevel (the persisted per-user preference future Generate
+  // runs start from). Clicking here doesn't change that preference; only
+  // an entry's own "Set as default" does.
+  const [bulkLevel, setBulkLevel] = useState<DescriptionDetailLevel>("standard");
+  const [bulkRegenerating, setBulkRegenerating] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
     supabase.from("profiles").select("auto_time_entry_detail_level").eq("id", userId).single()
-      .then(({ data }) => setDefaultDetailLevel((data?.auto_time_entry_detail_level as DescriptionDetailLevel) || "standard"));
+      .then(({ data }) => {
+        const level = (data?.auto_time_entry_detail_level as DescriptionDetailLevel) || "standard";
+        setDefaultDetailLevel(level);
+        setBulkLevel(level);
+      });
   }, [userId]);
   // Which entries currently have their source email(s) expanded open --
   // purely a display toggle, inline within this same drawer (never
@@ -119,6 +130,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
       // Rows with no timekeeper resolved yet start unchecked -- there's
       // nothing valid to submit until one is assigned below.
       setChecked(new Set(rows.filter(r => r.userId).map(r => r.key)));
+      setBulkLevel(defaultDetailLevel);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not generate time entries");
       setEntries([]);
@@ -163,6 +175,23 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
       // toggle already reflects the attempted choice either way.
     } finally {
       setRegeneratingKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
+    }
+  };
+
+  // Toolbar version of the same control -- applies one level to every
+  // entry currently on screen at once (each via the same per-entry
+  // regenerateDescription above, so matter/hours/attribution/checked state
+  // all stay untouched), rather than clicking through them one at a time.
+  // Ephemeral like the per-entry control: doesn't change
+  // defaultDetailLevel, only an entry's own "Set as default" does that.
+  const regenerateAllDescriptions = async (level: DescriptionDetailLevel) => {
+    if (bulkRegenerating || !entries.length) return;
+    setBulkLevel(level);
+    setBulkRegenerating(true);
+    try {
+      await Promise.all(entries.map(e => regenerateDescription(e.key, level)));
+    } finally {
+      setBulkRegenerating(false);
     }
   };
 
@@ -239,6 +268,22 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           </button>
         </div>
+
+        {entries.length > 0 && (
+          <div className="flex items-center gap-2 px-6 pt-2.5 shrink-0">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Descriptions</span>
+            <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[10px] font-bold">
+              {DETAIL_LEVELS.map(level => (
+                <button key={level} onClick={() => regenerateAllDescriptions(level)} disabled={bulkRegenerating}
+                  title={`Set every entry's description to ${level}`}
+                  className={`px-3 py-1 rounded-full capitalize transition-all disabled:opacity-40 ${bulkLevel === level ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+                  {level}
+                </button>
+              ))}
+            </div>
+            {bulkRegenerating && <Loader2 size={12} className="animate-spin text-indigo-400" />}
+          </div>
+        )}
 
         {error && (
           <div className="mx-6 mt-3 px-3 py-2.5 bg-red-50 border border-red-100 rounded-2xl text-[11px] text-red-600 font-medium">{error}</div>
