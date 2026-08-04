@@ -20,6 +20,14 @@ CREATE TABLE IF NOT EXISTS ai_chat_settings (
   source_teams boolean NOT NULL DEFAULT true,
   self_hosted_ollama_url text,
   monthly_token_cap integer NOT NULL DEFAULT 2000000,
+  -- Company-wide kill switch, added in
+  -- supabase/migrations/20260804173714_ai_safety_controls.sql -- checked
+  -- before any AI provider call (chat, Teams/WhatsApp bot, disbursement
+  -- invoice parsing). Note: source_onedrive also exists on the real table
+  -- (added by a later migration than this reference file otherwise
+  -- reflects) -- see app/api/ai/chat/route.ts's own select list for the
+  -- authoritative current column set.
+  ai_enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );

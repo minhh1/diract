@@ -6,7 +6,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, ShieldOff } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Props {
@@ -21,6 +21,7 @@ interface Settings {
   source_onedrive: boolean;
   self_hosted_ollama_url: string | null;
   monthly_token_cap: number;
+  ai_enabled: boolean;
 }
 
 const SOURCE_TOGGLES: { key: keyof Settings; label: string }[] = [
@@ -70,6 +71,28 @@ export default function AdminAiAssistantTab({ companyId }: Props) {
 
   return (
     <div className="space-y-6">
+      <div className="bg-white border border-slate-200 rounded-[32px] p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <ShieldOff size={14} className="text-slate-500" />
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">AI safety</p>
+        </div>
+        <label className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 rounded-2xl cursor-pointer">
+          <span>
+            <span className="block text-[12px] font-medium text-slate-700">Turn off all AI features</span>
+            <span className="block text-[11px] text-slate-400 mt-0.5">
+              Blocks every AI call company-wide -- chat, Teams/WhatsApp, disbursement invoice reading -- before it ever
+              reaches a model provider. Nothing new gets sent or processed while this is on.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={!settings.ai_enabled}
+            onChange={(e) => save({ ...settings, ai_enabled: !e.target.checked })}
+            className="accent-indigo-600 shrink-0"
+          />
+        </label>
+      </div>
+
       <div className="bg-white border border-slate-200 rounded-[32px] p-6">
         <div className="flex items-center gap-2 mb-4">
           <Sparkles size={14} className="text-indigo-500" />

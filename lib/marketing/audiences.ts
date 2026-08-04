@@ -73,6 +73,14 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "feesReport",
       },
       {
+        slug: "disbursements-import",
+        icon: "Upload",
+        title: "Mass import disbursements",
+        body: "Upload a supplier's tax invoice PDF and every disbursement it covers — across as many matters as it bills — gets extracted, grouped, and ready to add in one review screen.",
+        accent: "amber",
+        visual: "disbursementsImport",
+      },
+      {
         slug: "precedents",
         icon: "FileText",
         title: "Precedents",

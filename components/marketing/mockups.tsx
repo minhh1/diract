@@ -13,7 +13,7 @@
 import type { ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
-  FileOutput, Users, Crown, Calendar, Printer, Lock, type LucideIcon,
+  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, type LucideIcon,
 } from "lucide-react";
 
 type TagColor = "indigo" | "sky" | "violet" | "emerald" | "amber" | "rose" | "slate";
@@ -808,17 +808,95 @@ export function MockGmailLabels() {
   );
 }
 
+// Recreates components/dashboard/DisbursementInvoiceImportModal.tsx's real
+// review screen: line items grouped by the matter number found on the
+// invoice, a matched group defaulting to included, a likely-duplicate
+// line (same dealing number, or same date+description+amount already on
+// this matter) defaulting to EXCLUDED and flagged rather than hidden, and
+// an unmatched matter number shown but disabled -- never guessed or
+// auto-created.
+export function MockDisbursementsImport() {
+  return (
+    <div className="w-full max-w-sm rounded-[20px] border border-slate-200 bg-white shadow-xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
+        <h3 className="text-[12px] font-bold text-slate-800 uppercase tracking-wide">Import from invoice</h3>
+        <X size={16} className="text-slate-300" />
+      </div>
+      <div className="px-5 py-4 space-y-3">
+        <div className="border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50/60">
+            <Check size={12} className="text-indigo-600 shrink-0" />
+            <span className="text-[11px] font-bold text-slate-700 truncate">2024/0187 — Smith Family Trust</span>
+          </div>
+          <div className="divide-y divide-slate-50">
+            <div className="flex items-center gap-2 px-4 py-2.5 text-[11px] text-slate-700">
+              <span className="w-3.5 h-3.5 rounded border-2 border-indigo-500 bg-indigo-500 shrink-0" />
+              <span className="flex-1 truncate">Title search fee</span>
+              <span className="text-slate-500 shrink-0">$45.00</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50/60 text-[11px] text-slate-700">
+              <span className="w-3.5 h-3.5 rounded border-2 border-slate-300 shrink-0" />
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[8px] font-bold uppercase shrink-0">
+                <CopyX size={9} /> Duplicate
+              </span>
+              <span className="flex-1 truncate">VOI check</span>
+              <span className="text-slate-500 shrink-0">$12.00</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 border border-amber-200 bg-amber-50/40 rounded-2xl">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle size={12} className="text-amber-500 shrink-0" />
+            <span className="text-[11px] font-bold text-slate-700 truncate">2024/9942</span>
+          </div>
+          <span className="text-[9px] font-bold text-amber-600 shrink-0">No matching matter</span>
+        </div>
+      </div>
+      <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
+        <span className="text-[10px] text-slate-400">1 line · $45.00 ex GST</span>
+        <span className="px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full whitespace-nowrap">Add 1 disbursement</span>
+      </div>
+    </div>
+  );
+}
+
+// Recreates the real "Turn off all AI features" toggle
+// (components/admin/AdminAiAssistantTab.tsx) and the real conversation
+// retention window (app/api/ai/conversations/sweep/route.ts's
+// RETENTION_DAYS constant).
+export function MockAiSafety() {
+  return (
+    <WidgetCard label="AI safety">
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 mb-2.5">
+        <div className="min-w-0">
+          <p className="text-[12px] font-medium text-slate-700">Turn off all AI features</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Blocks every AI call company-wide</p>
+        </div>
+        <span className="w-9 h-5 rounded-full bg-slate-200 relative shrink-0">
+          <span className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow" />
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+        <span className="text-[12px] font-medium text-slate-700">Conversation history</span>
+        <span className="text-[10px] font-bold text-slate-500 shrink-0">Deleted after 90 days</span>
+      </div>
+    </WidgetCard>
+  );
+}
+
 export const MOCKUPS = {
   customTable: MockCustomTable,
   automation: MockAutomation,
   multiCompany: MockMultiCompany,
   roleAccess: MockRoleAccess,
   reporting: MockReporting,
+  aiSafety: MockAiSafety,
   matterBoard: MockMatterBoard,
   timeEntries: MockTimeEntries,
   autoTimeEntries: MockAutoTimeEntries,
   trustAccount: MockTrustAccount,
   feesReport: MockFeesReport,
+  disbursementsImport: MockDisbursementsImport,
   precedents: MockPrecedents,
   teamsManagement: MockTeamsManagement,
   clientUpdates: MockClientUpdates,

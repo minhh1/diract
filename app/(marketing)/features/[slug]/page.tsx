@@ -26,6 +26,8 @@ import FinanceModelDetail from "@/components/marketing/details/FinanceModelDetai
 import LoanScheduleDetail from "@/components/marketing/details/LoanScheduleDetail";
 import ResidualLandSolverDetail from "@/components/marketing/details/ResidualLandSolverDetail";
 import EntityValidationDetail from "@/components/marketing/details/EntityValidationDetail";
+import DisbursementsImportDetail from "@/components/marketing/details/DisbursementsImportDetail";
+import AiSafetyDetail from "@/components/marketing/details/AiSafetyDetail";
 
 // Every slug with bespoke deep-dive content lives here -- every feature
 // across every landing page now has one. Add an entry here the same way
@@ -39,10 +41,12 @@ const RICH_DETAILS: Record<string, React.ComponentType> = {
   "role-based-access": RoleAccessDetail,
   "reporting-dashboards": ReportingDashboardsDetail,
   "shared-gmail-labels": GmailLabelsDetail,
+  "ai-safety": AiSafetyDetail,
   "time-entries": TimeEntriesDetail,
   "ai-time-entries": AiTimeEntriesDetail,
   "trust-compliance": TrustComplianceDetail,
   "fees-reports": FeesReportsDetail,
+  "disbursements-import": DisbursementsImportDetail,
   "precedents": PrecedentsDetail,
   "teams-management": TeamsManagementDetail,
   "client-updates": ClientUpdatesDetail,

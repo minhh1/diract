@@ -16,6 +16,11 @@ export async function POST(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const { admin, companyId } = auth;
 
+  const { data: aiSettings } = await admin.from("ai_chat_settings").select("ai_enabled").eq("company_id", companyId).maybeSingle();
+  if (aiSettings?.ai_enabled === false) {
+    return NextResponse.json({ error: "AI features are disabled for this company" }, { status: 403 });
+  }
+
   const formData = await req.formData().catch(() => null);
   const file = formData?.get("file");
   if (!file || !(file instanceof File)) {

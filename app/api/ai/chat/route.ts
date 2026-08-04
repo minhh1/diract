@@ -70,9 +70,13 @@ export async function POST(req: NextRequest) {
 
   const { data: settings } = await admin
     .from("ai_chat_settings")
-    .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap")
+    .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap, ai_enabled")
     .eq("company_id", companyId)
     .maybeSingle();
+
+  if (settings?.ai_enabled === false) {
+    return new Response(JSON.stringify({ error: "AI features are disabled for this company" }), { status: 403 });
+  }
 
   const ollamaUrl = settings?.self_hosted_ollama_url ?? null;
   if (provider === "self_hosted" && !ollamaUrl) {

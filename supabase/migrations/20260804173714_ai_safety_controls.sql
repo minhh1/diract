@@ -1,0 +1,17 @@
+-- Two real AI-safety controls, both enforced in app code (not just
+-- described in the Privacy Policy):
+--
+-- 1. ai_enabled -- a company-wide kill switch. Checked in
+--    app/api/ai/chat/route.ts, lib/botEngine/handleMessage.ts (Teams +
+--    WhatsApp), and app/api/disbursements/parse-invoice/route.ts before any
+--    AI provider is ever called. Defaults to true so this is opt-out, not a
+--    breaking change for existing companies.
+--
+-- 2. Conversation retention -- see app/api/ai/conversations/sweep/route.ts,
+--    a new cron-only route (same CRON_SECRET pattern as
+--    app/api/ai/usage/sweep/route.ts) that deletes ai_conversations older
+--    than a fixed retention window; ai_messages cascades with it
+--    (ai_messages.conversation_id references ai_conversations
+--    ON DELETE CASCADE, see supabase/ai_messages.sql). No schema change
+--    needed for that part -- it's a new scheduled DELETE, not a new column.
+ALTER TABLE ai_chat_settings ADD COLUMN IF NOT EXISTS ai_enabled boolean NOT NULL DEFAULT true;

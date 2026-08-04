@@ -258,11 +258,15 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
   const [{ data: settings }, timezone] = await Promise.all([
     admin
       .from("ai_chat_settings")
-      .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap")
+      .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap, ai_enabled")
       .eq("company_id", companyId)
       .maybeSingle(),
     getCompanyTimezone(admin, companyId),
   ]);
+  if (settings?.ai_enabled === false) {
+    await reply("AI features are disabled for this company -- ask a company admin to re-enable them in Admin -> AI Assistant.");
+    return;
+  }
   const sourceTypes = resolveSourceTypes(settings);
 
   // A pending create/update-task/project/file/issue_precedent action takes

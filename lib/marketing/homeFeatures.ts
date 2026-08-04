@@ -54,4 +54,12 @@ export const HOME_FEATURES: SpotlightFeature[] = [
     accent: "sky",
     visual: "gmailLabels",
   },
+  {
+    slug: "ai-safety",
+    icon: "Lock",
+    title: "AI safety controls",
+    body: "A company-wide switch to turn AI off entirely, and conversation history that doesn't sit around forever — real controls, not just a line in the Privacy Policy.",
+    accent: "indigo",
+    visual: "aiSafety",
+  },
 ];
