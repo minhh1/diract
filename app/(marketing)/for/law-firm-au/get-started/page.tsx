@@ -14,6 +14,16 @@
 // empty company. If email confirmation is required, the install happens
 // server-side in app/auth/callback/route.ts once the confirmation link is
 // clicked, via the install_template param on emailRedirectTo.
+//
+// A third step asks whether the firm uses Gmail or Outlook. There's no
+// company-level "which provider" field anywhere in this app (both are
+// always-available, independently-connected per-user integrations -- see
+// app/(app)/dashboard/gmail/page.tsx and .../outlook/page.tsx), so the
+// honest use of that answer is routing: once the workspace exists, send
+// the user straight into the real OAuth-start route for whichever they
+// picked (/api/gmail/auth or /api/outlook/auth, the same ones those
+// pages' own "Connect" buttons use) instead of inventing a preference to
+// persist.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -23,7 +33,7 @@ import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 import BrandMark from "@/components/marketing/BrandMark";
 import Link from "next/link";
 import {
-  Building2, Landmark, FileText, Mail, Lock, Loader2, Eye, EyeOff,
+  Building2, Landmark, FileText, Mail, Inbox, Lock, Loader2, Eye, EyeOff,
   CheckCircle2, AlertCircle, ArrowRight, ArrowLeft, Check, Circle,
 } from "lucide-react";
 
@@ -31,9 +41,12 @@ const VALUE_PROPS = [
   "Matters, time entries, and trust accounting in one place",
   "The Law Firm template installed automatically, precedent library included",
   "ABN and ACN checked with a real checksum as you type",
+  "Connect Gmail or Outlook as the last step, no separate setup later",
 ];
 
-type Step = "firm" | "account" | "working" | "confirm-email";
+type Step = "firm" | "account" | "email" | "working" | "confirm-email";
+type EmailProvider = "gmail" | "outlook" | "skip";
+const STEPS: Step[] = ["firm", "account", "email"];
 
 interface WorkStep { label: string; done: boolean }
 
@@ -51,6 +64,7 @@ export default function LawFirmGetStartedPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [emailProvider, setEmailProvider] = useState<EmailProvider | null>(null);
 
   const [workSteps, setWorkSteps] = useState<WorkStep[]>([
     { label: "Creating your account", done: false },
@@ -70,12 +84,16 @@ export default function LawFirmGetStartedPage() {
     setStep("account");
   };
 
-  const createWorkspace = async () => {
+  const continueFromAccount = () => {
     setError(null);
     if (!fullName.trim()) { setError("Your name is required."); return; }
     if (password !== confirmPassword) { setError("Passwords don't match."); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    setStep("email");
+  };
 
+  const createWorkspace = async () => {
+    setError(null);
     setLoading(true);
     setStep("working");
 
@@ -129,7 +147,18 @@ export default function LawFirmGetStartedPage() {
       markDone(2);
 
       document.cookie = "nk_just_logged_in=1; path=/; max-age=60; SameSite=Lax";
-      router.replace("/dashboard/quick-glance");
+      // /api/gmail/auth and /api/outlook/auth are the same OAuth-start
+      // routes app/(app)/dashboard/gmail/page.tsx and .../outlook/page.tsx
+      // link their own "Connect" buttons to -- a full navigation (not
+      // router.replace) since they redirect straight to Google/Microsoft's
+      // consent screen, not to another page in this app's route tree.
+      if (emailProvider === "gmail") {
+        window.location.href = "/api/gmail/auth";
+      } else if (emailProvider === "outlook") {
+        window.location.href = "/api/outlook/auth";
+      } else {
+        router.replace("/dashboard/quick-glance");
+      }
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");
       setLoading(false);
@@ -185,17 +214,17 @@ export default function LawFirmGetStartedPage() {
             <h1 className="text-2xl font-medium tracking-tight text-slate-900">Diract</h1>
           </div>
 
-          {(step === "firm" || step === "account") && (
+          {(step === "firm" || step === "account" || step === "email") && (
             <>
               <div className="flex items-center gap-2 mb-8">
-                {["firm", "account"].map((s, i) => (
+                {STEPS.map((s, i) => (
                   <div key={s} className={`h-1.5 flex-1 rounded-full ${
-                    (step === "firm" && i === 0) || step === "account" ? "bg-indigo-600" : "bg-slate-100"
+                    i <= STEPS.indexOf(step) ? "bg-indigo-600" : "bg-slate-100"
                   }`} />
                 ))}
               </div>
               <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-widest mb-2">
-                Step {step === "firm" ? "1" : "2"} of 2
+                Step {STEPS.indexOf(step) + 1} of {STEPS.length}
               </p>
             </>
           )}
@@ -322,11 +351,10 @@ export default function LawFirmGetStartedPage() {
                 </div>
 
                 <button
-                  onClick={createWorkspace}
-                  disabled={loading}
-                  className="w-full mt-8 bg-indigo-600 text-white py-4 rounded-full font-medium text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  onClick={continueFromAccount}
+                  className="w-full mt-8 bg-indigo-600 text-white py-4 rounded-full font-medium text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                 >
-                  {loading ? <Loader2 className="animate-spin" size={18} /> : <>Create workspace <ArrowRight size={16} /></>}
+                  Continue <ArrowRight size={16} />
                 </button>
 
                 <button onClick={() => setStep("firm")} className="w-full mt-6 text-[13px] font-medium text-slate-400 hover:text-indigo-600 transition-colors text-center flex items-center justify-center gap-1.5">
@@ -336,6 +364,57 @@ export default function LawFirmGetStartedPage() {
                 <p className="text-center text-[12px] text-slate-400 mt-8">
                   Already have an account? <Link href="/login" className="font-medium text-indigo-600">Sign in</Link>
                 </p>
+              </motion.div>
+            )}
+
+            {step === "email" && (
+              <motion.div key="email" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: 0.25 }}>
+                <h1 className="text-2xl font-medium tracking-tight text-slate-900 mb-2">Do you use Gmail or Outlook?</h1>
+                <p className="text-slate-400 text-[13px] mb-8">
+                  We'll take you straight to connect it once your workspace is ready. You can always do this later from Settings instead.
+                </p>
+
+                <div className="space-y-3">
+                  {([
+                    { value: "gmail" as const, icon: Mail, label: "Gmail", body: "Connect with Google after setup" },
+                    { value: "outlook" as const, icon: Inbox, label: "Outlook", body: "Connect with Microsoft after setup" },
+                    { value: "skip" as const, icon: ArrowRight, label: "I'll connect later", body: "Skip this for now" },
+                  ]).map((opt) => {
+                    const selected = emailProvider === opt.value;
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setEmailProvider(opt.value)}
+                        className={`w-full flex items-center gap-4 p-4 rounded-[24px] border text-left transition-all ${
+                          selected ? "border-indigo-300 bg-indigo-50/60 ring-4 ring-indigo-100" : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${selected ? "bg-indigo-600 text-white" : "bg-white text-slate-400"}`}>
+                          <Icon size={17} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-semibold text-slate-800">{opt.label}</p>
+                          <p className="text-[11px] text-slate-400">{opt.body}</p>
+                        </div>
+                        {selected && <Check size={16} className="text-indigo-600 ml-auto shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={createWorkspace}
+                  disabled={loading || !emailProvider}
+                  className="w-full mt-8 bg-indigo-600 text-white py-4 rounded-full font-medium text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="animate-spin" size={18} /> : <>Create workspace <ArrowRight size={16} /></>}
+                </button>
+
+                <button onClick={() => setStep("account")} className="w-full mt-6 text-[13px] font-medium text-slate-400 hover:text-indigo-600 transition-colors text-center flex items-center justify-center gap-1.5">
+                  <ArrowLeft size={13} /> Back
+                </button>
               </motion.div>
             )}
 
@@ -362,7 +441,7 @@ export default function LawFirmGetStartedPage() {
                 <p className="text-slate-500 text-[14px] leading-relaxed mb-6">
                   We sent a confirmation link to <span className="font-medium text-slate-700">{email}</span>. Once you confirm,
                   {" "}{firmName || "your firm"}'s workspace will already have matters, trust accounting, and the precedent
-                  library set up and waiting.
+                  library set up and waiting. You can connect {emailProvider === "outlook" ? "Outlook" : emailProvider === "gmail" ? "Gmail" : "Gmail or Outlook"} from Settings once you're signed in.
                 </p>
                 <Link href="/login" className="text-[13px] font-medium text-indigo-600 inline-flex items-center gap-1.5">
                   Back to sign in <ArrowRight size={14} />
