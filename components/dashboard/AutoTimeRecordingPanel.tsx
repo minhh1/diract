@@ -282,6 +282,12 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
               ))}
             </div>
             {bulkRegenerating && <Loader2 size={12} className="animate-spin text-indigo-400" />}
+            <button onClick={() => setAsDefaultDetailLevel(bulkLevel)}
+              title="Use this detail level by default for future generates"
+              className="flex items-center gap-1 text-[9px] font-bold text-slate-300 hover:text-indigo-600 transition-colors">
+              <Star size={10} className={defaultDetailLevel === bulkLevel ? "fill-indigo-500 text-indigo-500" : ""} />
+              {defaultDetailLevel === bulkLevel ? "Default" : "Set as default"}
+            </button>
           </div>
         )}
 
@@ -340,12 +346,6 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
                           ))}
                         </div>
                         {regeneratingKeys.has(e.key) && <Loader2 size={11} className="animate-spin text-indigo-400" />}
-                        <button onClick={() => setAsDefaultDetailLevel(e.detailLevel)}
-                          title="Use this detail level by default for future generates"
-                          className="flex items-center gap-1 text-[9px] font-bold text-slate-300 hover:text-indigo-600 transition-colors">
-                          <Star size={10} className={defaultDetailLevel === e.detailLevel ? "fill-indigo-500 text-indigo-500" : ""} />
-                          {defaultDetailLevel === e.detailLevel ? "Default" : "Set as default"}
-                        </button>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <input type="number" step="0.1" min="0.1" value={e.hours}
