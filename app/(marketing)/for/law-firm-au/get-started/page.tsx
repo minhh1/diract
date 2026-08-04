@@ -5,8 +5,8 @@
 // straight to the generic /login form (defaulting to sign-IN mode, no
 // less -- the worst possible landing spot for a brand-new prospect).
 // Collects the same real fields app/(marketing)/login/page.tsx's register
-// mode does (company name, ABN, ACN, full name, email, password) across two
-// short steps, then creates the account through the same
+// mode does (company name, ABN, ACN, full name, email, password), then
+// creates the account through the same
 // register_company_and_profile RPC, and additionally installs the real
 // Law Firm marketplace template (supabase/template_law_firm_seed.sql,
 // slug "law-firm") so the new workspace arrives with matters, trust
@@ -40,7 +40,6 @@ import {
 const VALUE_PROPS = [
   "Matters, time entries, and trust accounting in one place",
   "The Law Firm template installed automatically, precedent library included",
-  "ABN and ACN checked with a real checksum as you type",
   "Connect Gmail or Outlook as the last step, no separate setup later",
 ];
 
@@ -239,7 +238,7 @@ export default function LawFirmGetStartedPage() {
             {step === "firm" && (
               <motion.div key="firm" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: 0.25 }}>
                 <h1 className="text-2xl font-medium tracking-tight text-slate-900 mb-2">Tell us about your firm</h1>
-                <p className="text-slate-400 text-[13px] mb-8">Your ABN or ACN are optional here, but validated the same way they'll be checked throughout the app.</p>
+                <p className="text-slate-400 text-[13px] mb-8">ABN and ACN are optional.</p>
 
                 <div className="space-y-4">
                   <div className="relative">
