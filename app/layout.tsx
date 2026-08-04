@@ -2,8 +2,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import AppLoader from "@/components/AppLoader";
-import ThemeProvider from "@/components/ThemeProvider";
 import VisitBeacon from "@/components/VisitBeacon";
 import VersionCheckBanner from "@/components/VersionCheckBanner";
 import SessionHealthBanner from "@/components/SessionHealthBanner";
@@ -26,22 +24,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // suppressHydrationWarning -- next-themes sets the `dark`/`light` class
-    // on this element via an inline script that runs before React hydrates
-    // (so there's no flash of the wrong theme), which means the server-
-    // rendered class attribute never matches the client's on first paint.
-    // That specific, expected mismatch is exactly what this prop exists to
-    // silence; it doesn't suppress any OTHER hydration warning.
+    // suppressHydrationWarning -- next-themes (mounted only inside
+    // app/(app)/layout.tsx now, not here) sets the `dark`/`light` class on
+    // this element via an inline script that runs before React hydrates,
+    // which means the server-rendered class attribute never matches the
+    // client's on first paint for THAT route group. Kept here too since
+    // this element is shared by every route regardless of group.
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <VisitBeacon />
         <VersionCheckBanner />
         <SessionHealthBanner />
-        <ThemeProvider>
-          <AppLoader>
-            {children}
-          </AppLoader>
-        </ThemeProvider>
+        {children}
       </body>
     </html>
   );

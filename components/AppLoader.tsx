@@ -10,7 +10,7 @@ import { APP_CACHE_VERSION } from "@/lib/appCacheVersion";
 
 // Routes that need none of what this warms -- never gated, not even for a
 // moment.
-const PUBLIC_PATH_PREFIXES = ["/login", "/public", "/auth"];
+const PUBLIC_PATH_PREFIXES = ["/login", "/public", "/auth", "/for"];
 // Standalone marketing/legal pages -- exact match, not prefixes ("/" as a
 // prefix would match every route in the app). None of these read any
 // company data, so they used to get pulled behind the full bootstrap gate

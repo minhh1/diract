@@ -3,12 +3,20 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { ensureStaffEntity } from "@/lib/services/staffEntityService";
+import BrandMark from "@/components/marketing/BrandMark";
 import {
-  Lock, Mail, Loader2, Globe, Fingerprint, ArrowRight,
+  Lock, Mail, Loader2, Globe, ArrowRight,
   Eye, EyeOff, CheckCircle2, Building2, AlertCircle
 } from "lucide-react";
+
+const VALUE_PROPS = [
+  "Assign emails to matters directly from Gmail",
+  "Labels sync across your whole team in minutes",
+  "Manage multiple companies under one login",
+];
 
 type AuthMode = "login" | "register";
 
@@ -403,19 +411,64 @@ function LoginPageInner() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 font-sans antialiased selection:bg-black selection:text-white">
-      <div className="w-full max-w-[480px] bg-white rounded-[48px] p-10 md:p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] border border-slate-100">
+    <div className="flex min-h-screen bg-white font-sans antialiased select-text">
 
-        {/* Branding */}
-        <div className="text-center mb-10">
-          <div className="mx-auto w-14 h-14 bg-black rounded-[22px] flex items-center justify-center mb-5 shadow-2xl shadow-black/20">
-            <Fingerprint className="text-white" size={28} />
+      {/* Brand panel — hidden below lg, this is the Canva-style split login */}
+      <div className="hidden lg:flex lg:w-[44%] relative bg-gradient-to-br from-indigo-600 to-violet-700 text-white flex-col justify-between p-14 overflow-hidden">
+        <div className="pointer-events-none absolute -top-24 -right-16 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-16 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
+
+        <div className="relative flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center">
+            <BrandMark size={22} />
           </div>
-          <h1 className="text-3xl font-black italic tracking-tighter text-slate-900">Diract</h1>
-          <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mt-3">
+          <span className="font-medium tracking-tight text-lg">Diract</span>
+        </div>
+
+        <div className="relative">
+          <h2 className="text-3xl font-light tracking-tight leading-tight mb-8">
+            Your firm's matters,<br />finally in sync.
+          </h2>
+          <ul className="space-y-4">
+            {VALUE_PROPS.map((v) => (
+              <li key={v} className="flex items-start gap-3 text-[14px] text-indigo-100">
+                <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-white" />
+                {v}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-[11px] text-indigo-200 uppercase tracking-[0.25em] font-medium">
+          Diract • Asset Management
+        </p>
+      </div>
+
+      {/* Form panel */}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="w-full max-w-[420px]"
+      >
+
+        {/* Branding (mobile only — the split panel above covers this on lg+) */}
+        <div className="text-center mb-10 lg:hidden">
+          <div className="mx-auto w-12 h-12 flex items-center justify-center mb-4">
+            <BrandMark size={40} />
+          </div>
+          <h1 className="text-2xl font-medium tracking-tight text-slate-900">Diract</h1>
+        </div>
+
+        <div className="hidden lg:block mb-10">
+          <h1 className="text-2xl font-medium tracking-tight text-slate-900">
+            {mode === 'register' ? 'Create your account' : 'Welcome back'}
+          </h1>
+          <p className="text-slate-400 text-[13px] mt-2">
             {mode === 'register'
-              ? isJoinInvite ? `Join ${tokenData?.company_name || 'Company'}` : 'New Company Enrolment'
-              : isJoinInvite ? `Sign in to join ${tokenData?.company_name || 'Company'}` : 'Enterprise Secure Access'
+              ? isJoinInvite ? `Join ${tokenData?.company_name || 'Company'}` : 'Set up your firm’s workspace'
+              : isJoinInvite ? `Sign in to join ${tokenData?.company_name || 'Company'}` : 'Sign in to your workspace'
             }
           </p>
         </div>
@@ -469,7 +522,7 @@ function LoginPageInner() {
         <button
           onClick={handleGoogleLogin}
           disabled={googleLoading || loading || tokenValid === false}
-          className="w-full flex items-center justify-center gap-3 py-4 rounded-full border border-slate-200 font-bold text-sm hover:bg-slate-50 transition-all mb-8 group disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-3 py-4 rounded-full border border-slate-200 font-medium text-sm hover:bg-slate-50 transition-all mb-8 group disabled:opacity-50"
         >
           {googleLoading
             ? <Loader2 size={18} className="animate-spin text-slate-400" />
@@ -483,7 +536,7 @@ function LoginPageInner() {
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-slate-100" />
           </div>
-          <span className="relative bg-white px-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+          <span className="relative bg-white px-4 text-[11px] font-medium text-slate-400 uppercase tracking-widest">
             Or continue with email
           </span>
         </div>
@@ -497,13 +550,13 @@ function LoginPageInner() {
                 placeholder="Full name"
                 value={fullName}
                 onChange={e => { setFullName(e.target.value); clearMessages(); }}
-                className="w-full p-4 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                className="w-full p-4 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
               />
 
               {/* Only show company fields if creating a new company */}
               {!isJoinInvite && (
                 <div className="rounded-[28px] border border-slate-100 bg-slate-50/50 p-4 space-y-3">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-1">
                     Company details
                   </p>
                   <div className="relative">
@@ -514,7 +567,7 @@ function LoginPageInner() {
                       placeholder="Company name"
                       value={companyName}
                       onChange={e => { setCompanyName(e.target.value); clearMessages(); }}
-                      className="w-full p-4 pl-12 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                      className="w-full p-4 pl-12 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -523,14 +576,14 @@ function LoginPageInner() {
                       placeholder="ABN (optional)"
                       value={abn}
                       onChange={e => { setAbn(e.target.value); clearMessages(); }}
-                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
                     />
                     <input
                       type="text"
                       placeholder="ACN (optional)"
                       value={acn}
                       onChange={e => { setAcn(e.target.value); clearMessages(); }}
-                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
                     />
                   </div>
                 </div>
@@ -546,7 +599,7 @@ function LoginPageInner() {
               placeholder="Corporate email"
               value={email}
               onChange={e => { setEmail(e.target.value); clearMessages(); }}
-              className="w-full p-4 pl-14 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+              className="w-full p-4 pl-14 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
             />
           </div>
 
@@ -558,7 +611,7 @@ function LoginPageInner() {
               placeholder="Password"
               value={password}
               onChange={e => { setPassword(e.target.value); clearMessages(); }}
-              className="w-full p-4 pl-14 pr-14 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+              className="w-full p-4 pl-14 pr-14 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
             />
             <button
               type="button"
@@ -578,7 +631,7 @@ function LoginPageInner() {
                 placeholder="Confirm password"
                 value={confirmPassword}
                 onChange={e => { setConfirmPassword(e.target.value); clearMessages(); }}
-                className="w-full p-4 pl-14 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-black/5 font-bold text-sm"
+                className="w-full p-4 pl-14 rounded-full border border-slate-200 bg-slate-50 outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
               />
             </div>
           )}
@@ -587,7 +640,7 @@ function LoginPageInner() {
             <div className="flex justify-end -mt-1">
               <a
                 href="/login/forgot-password"
-                className="text-[10px] font-black uppercase text-slate-400 hover:text-indigo-600 transition-colors tracking-widest"
+                className="text-[12px] font-medium text-slate-400 hover:text-indigo-600 transition-colors"
               >
                 Forgot password?
               </a>
@@ -597,7 +650,7 @@ function LoginPageInner() {
           <button
             type="submit"
             disabled={loading || googleLoading || tokenValid === false}
-            className="w-full bg-black text-white py-4 rounded-full font-black uppercase text-xs tracking-widest shadow-xl shadow-black/10 hover:bg-slate-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full bg-indigo-600 text-white py-4 rounded-full font-medium text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {loading
               ? <Loader2 className="animate-spin" size={18} />
@@ -615,7 +668,7 @@ function LoginPageInner() {
         {/* Toggle — for invite links, allow switching between sign in and register */}
         <button
           onClick={switchMode}
-          className="w-full mt-8 text-[10px] font-black uppercase text-slate-400 hover:text-indigo-600 transition-colors tracking-widest text-center"
+          className="w-full mt-8 text-[13px] font-medium text-slate-400 hover:text-indigo-600 transition-colors text-center"
         >
           {mode === 'login'
             ? isJoinInvite
@@ -626,10 +679,7 @@ function LoginPageInner() {
               : "Already have an account? Sign in"
           }
         </button>
-      </div>
-
-      <div className="fixed bottom-8 text-[10px] font-black text-slate-300 uppercase tracking-[0.5em] pointer-events-none">
-        Diract • Asset Management
+      </motion.div>
       </div>
     </div>
   );

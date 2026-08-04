@@ -23,6 +23,7 @@
     "@tanstack/react-query-persist-client": "^5.101.2",
     "docx": "^9.7.1",
     "docxtemplater": "^3.69.0",
+    "framer-motion": "^12.43.0",
     "isomorphic-dompurify": "^3.18.0",
     "jose": "^6.2.3",
     "jszip": "^3.10.1",
