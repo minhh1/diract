@@ -10,21 +10,33 @@
 // (see supabase/migrations/20260802170000_trust_account_tab.sql, which
 // migrated any matter that already had that grid over to this tab_type).
 import { useMemo, useState } from "react";
-import { Landmark, ExternalLink, Plus, Send } from "lucide-react";
+import { Landmark, ExternalLink, Plus, Send, Eye } from "lucide-react";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
 import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import { formatDateAU } from "@/lib/formatDate";
 import DepositFundsModal from "@/components/trust/DepositFundsModal";
 import TrustPaymentModal from "@/components/trust/TrustPaymentModal";
+import PdfPreviewModal from "@/components/dashboard/PdfPreviewModal";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
+
+// "Withdrawal - Cheque"/"Withdrawal - EFT" are the ledger's own internal
+// type taxonomy (also what insert_ledger_record's auto-numbering CASE and
+// the balance-scoping SQL key off) -- shown to a user as "Payment" instead,
+// matching how the company-wide Transactions tab already describes these
+// rows ("Payment to X"), not the raw internal value.
+function displayType(rawType: string | null | undefined): string {
+  if (!rawType) return '—';
+  return rawType.startsWith('Withdrawal') ? 'Payment' : rawType;
+}
 
 export default function TrustAccountTab({ recordId, companyId, userId }: { recordId: string; companyId: string; userId: string }) {
   const trustTable = useCustomTable('trust-transactions');
   const accountsTable = useCustomTable('trust-accounts');
   const { records, recordsLoading } = trustTable;
   const [modal, setModal] = useState<'deposit' | 'payment' | null>(null);
+  const [preview, setPreview] = useState<{ kind: 'receipt' | 'payment'; key: string; label: string } | null>(null);
 
   const activeAccounts = useMemo(
     () => accountsTable.records.filter(r => r.values.is_active !== false),
@@ -40,6 +52,18 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
       .sort((a, b) => String(a.values.date || '').localeCompare(String(b.values.date || '')));
     return sorted[sorted.length - 1]?.values.trust_account || activeAccounts[0]?.id || null;
   }, [records, recordId, activeAccounts]);
+
+  // The whole trust account's balance (every matter, not just this one) --
+  // shown next to Deposit Trust/Trust Payment so a user can see what's
+  // actually available in the account before acting, same "unattributed
+  // row still counts when there's only one active account" fallback as
+  // insert_ledger_record() and app/dashboard/trust-account/page.tsx use.
+  const trustAccountBalance = useMemo(() => {
+    if (!defaultAccountId) return 0;
+    return records
+      .filter(r => (r.values.trust_account || null) === defaultAccountId || (activeAccounts.length <= 1 && !r.values.trust_account))
+      .reduce((s, r) => s + (Number(r.values.amount_in) || 0) - (Number(r.values.amount_out) || 0), 0);
+  }, [records, defaultAccountId, activeAccounts.length]);
 
   const matterNames = useRecordNames('projects', [recordId]);
   const matterNumbers = useMatterNumbers([recordId]);
@@ -80,9 +104,9 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {entries.length > 0 && (
+          {defaultAccountId && (
             <span className="text-[10px] font-bold text-teal-700 bg-teal-50 rounded-full px-3 py-1.5 uppercase tracking-wider">
-              Balance {aud.format(closingBalance)}
+              Trust Account Balance {aud.format(trustAccountBalance)}
             </span>
           )}
           {defaultAccountId && (
@@ -121,6 +145,7 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
               <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">In</th>
               <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Out</th>
               <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Balance</th>
+              <th className="px-2 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -130,16 +155,27 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
                 <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">
                   {r.values.receipt_number || r.values.payment_number || r.values.journal_number || '—'}
                 </td>
-                <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{r.values.type || '—'}</td>
+                <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{displayType(r.values.type)}</td>
                 <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || r.values.purpose || '—'}</td>
                 <td className="px-4 py-2 text-right text-slate-700 whitespace-nowrap">{r.values.amount_in ? aud.format(Number(r.values.amount_in)) : ''}</td>
                 <td className="px-4 py-2 text-right text-slate-700 whitespace-nowrap">{r.values.amount_out ? aud.format(Number(r.values.amount_out)) : ''}</td>
                 <td className="px-4 py-2 text-right font-semibold text-slate-900 whitespace-nowrap">{aud.format(Number(r.values.running_balance) || 0)}</td>
+                <td className="px-2 py-2">
+                  {r.values.receipt_number ? (
+                    <button onClick={() => setPreview({ kind: 'receipt', key: r.values.receipt_number, label: `Receipt ${r.values.receipt_number}` })} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
+                      <Eye size={13} />
+                    </button>
+                  ) : r.values.payment_number ? (
+                    <button onClick={() => setPreview({ kind: 'payment', key: r.id, label: `Payment ${r.values.payment_number}` })} title="View payment" className="p-1.5 text-slate-300 hover:text-teal-600">
+                      <Eye size={13} />
+                    </button>
+                  ) : null}
+                </td>
               </tr>
             ))}
             {entries.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center py-10 text-[11px] text-slate-300 italic">
+                <td colSpan={8} className="text-center py-10 text-[11px] text-slate-300 italic">
                   {recordsLoading ? '' : 'No trust transactions for this matter'}
                 </td>
               </tr>
@@ -152,6 +188,7 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
                 <td className="px-4 py-2.5 text-right font-bold text-slate-900 whitespace-nowrap">{aud.format(totals.in)}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-slate-900 whitespace-nowrap">{aud.format(totals.out)}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-slate-900 whitespace-nowrap">{aud.format(closingBalance)}</td>
+                <td />
               </tr>
             </tfoot>
           )}
@@ -164,7 +201,7 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
           trustTable={trustTable}
           fixedMatterId={recordId} fixedMatterLabel={matterLabel || undefined}
           onClose={() => setModal(null)}
-          onDeposited={() => { setModal(null); trustTable.refetch(); }}
+          onDeposited={(receiptNumber) => { setModal(null); trustTable.refetch(); setPreview({ kind: 'receipt', key: receiptNumber, label: `Receipt ${receiptNumber}` }); }}
         />
       )}
       {modal === 'payment' && defaultAccountId && (
@@ -174,6 +211,14 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
           fixedMatterId={recordId} fixedMatterLabel={matterLabel || undefined}
           onClose={() => setModal(null)}
           onProcessed={() => { setModal(null); trustTable.refetch(); }}
+        />
+      )}
+      {preview && (
+        <PdfPreviewModal
+          src={preview.kind === 'receipt' ? `/api/trust-receipts/${encodeURIComponent(preview.key)}/pdf` : `/api/trust-payments/${preview.key}/pdf`}
+          downloadSrc={preview.kind === 'receipt' ? `/api/trust-receipts/${encodeURIComponent(preview.key)}/pdf?download=1` : `/api/trust-payments/${preview.key}/pdf?download=1`}
+          title={preview.label}
+          onClose={() => setPreview(null)}
         />
       )}
     </div>

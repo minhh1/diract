@@ -54,7 +54,7 @@ export default function TrustTransactionsTab({
 }) {
   const router = useRouter();
   const [modal, setModal] = useState<'deposit' | 'transfer' | 'protect' | 'cheque' | 'payment' | null>(null);
-  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ kind: 'receipt' | 'payment'; key: string; label: string } | null>(null);
 
   const sorted = [...records].sort((a, b) => String(b.values.date || '').localeCompare(String(a.values.date || '')));
   const matterIds = useMemo(() => [...new Set(sorted.map(r => String(r.values.matter || '')).filter(Boolean))], [sorted]);
@@ -128,11 +128,15 @@ export default function TrustTransactionsTab({
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_in ? money(Number(r.values.amount_in)) : ''}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-slate-800">{r.values.running_balance != null ? money(Number(r.values.running_balance)) : '—'}</td>
                 <td className="px-2 py-2.5">
-                  {r.values.receipt_number && (
-                    <button onClick={() => setReceiptPreview(r.values.receipt_number)} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
+                  {r.values.receipt_number ? (
+                    <button onClick={() => setPreview({ kind: 'receipt', key: r.values.receipt_number, label: `Receipt ${r.values.receipt_number}` })} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
                       <Eye size={13} />
                     </button>
-                  )}
+                  ) : r.values.payment_number ? (
+                    <button onClick={() => setPreview({ kind: 'payment', key: r.id, label: `Payment ${r.values.payment_number}` })} title="View payment" className="p-1.5 text-slate-300 hover:text-teal-600">
+                      <Eye size={13} />
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -145,7 +149,7 @@ export default function TrustTransactionsTab({
           companyId={companyId} userId={userId} trustAccountId={trustAccountId} trustAccounts={trustAccounts}
           trustTable={trustTable}
           onClose={() => setModal(null)}
-          onDeposited={(receiptNumber) => { setModal(null); trustTable.refetch(); setReceiptPreview(receiptNumber); }}
+          onDeposited={(receiptNumber) => { setModal(null); trustTable.refetch(); setPreview({ kind: 'receipt', key: receiptNumber, label: `Receipt ${receiptNumber}` }); }}
         />
       )}
       {modal === 'transfer' && (
@@ -180,12 +184,12 @@ export default function TrustTransactionsTab({
           onPrinted={() => { setModal(null); trustTable.refetch(); }}
         />
       )}
-      {receiptPreview && (
+      {preview && (
         <PdfPreviewModal
-          src={`/api/trust-receipts/${encodeURIComponent(receiptPreview)}/pdf`}
-          downloadSrc={`/api/trust-receipts/${encodeURIComponent(receiptPreview)}/pdf?download=1`}
-          title={`Receipt ${receiptPreview}`}
-          onClose={() => setReceiptPreview(null)}
+          src={preview.kind === 'receipt' ? `/api/trust-receipts/${encodeURIComponent(preview.key)}/pdf` : `/api/trust-payments/${preview.key}/pdf`}
+          downloadSrc={preview.kind === 'receipt' ? `/api/trust-receipts/${encodeURIComponent(preview.key)}/pdf?download=1` : `/api/trust-payments/${preview.key}/pdf?download=1`}
+          title={preview.label}
+          onClose={() => setPreview(null)}
         />
       )}
     </div>
