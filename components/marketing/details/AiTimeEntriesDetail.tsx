@@ -12,34 +12,21 @@
 // project mapping in supabase/functions/gmail-push/index.ts (matching).
 import { Sparkles, ListChecks, ChevronDown } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
-
-function Section({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
-  return (
-    <div className="grid md:grid-cols-[280px_1fr] gap-8 py-14 border-t border-slate-100">
-      <div>
-        <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-widest mb-2">{eyebrow}</p>
-        <h2 className="text-2xl font-medium text-slate-900">{title}</h2>
-      </div>
-      <div>{children}</div>
-    </div>
-  );
-}
+import { DetailHero, Section } from "./Section";
 
 export default function AiTimeEntriesDetail() {
   const isDark = useMockupTheme();
   return (
     <section className="px-6 pb-28">
       <div className="max-w-4xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-full text-[11px] font-medium text-indigo-600 mb-8">
-          <Sparkles size={12} /> Auto time entries
-        </div>
-        <h1 className="text-4xl md:text-5xl font-light tracking-tight text-slate-900 mb-6 leading-[1.05]">
-          Time entries drafted for you,<br /><span className="text-indigo-600">not invented for you.</span>
-        </h1>
-        <p className="text-lg text-slate-500 font-light max-w-2xl leading-relaxed">
-          Every draft is built from work you actually did — a task you completed, an email you sent — attributed to a specific
-          matter and person by real signals, never guessed. Nothing gets submitted until you review and approve it.
-        </p>
+        <DetailHero
+          badgeIcon={Sparkles}
+          badgeText="Auto time entries"
+          badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
+          headlineLines={["Time entries drafted for you,", "not invented for you."]}
+          accentClass="text-indigo-600"
+          subheadline="Every draft is built from work you actually did — a task you completed, an email you sent — attributed to a specific matter and person by real signals, never guessed. Nothing gets submitted until you review and approve it."
+        />
 
         <Section eyebrow="Where to find it" title="One click from your Time Entry dashboard">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">

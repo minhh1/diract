@@ -13,36 +13,23 @@
 import { Landmark, FileText, Printer } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { IconHeader, DetailedTable, FieldRow, TRUST_LEDGER_COLUMNS, TRUST_LEDGER_EXAMPLES, TRUST_LEDGER_FOOTER } from "@/components/marketing/mockups";
-
-function Section({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
-  return (
-    <div className="grid md:grid-cols-[280px_1fr] gap-8 py-14 border-t border-slate-100">
-      <div>
-        <p className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest mb-2">{eyebrow}</p>
-        <h2 className="text-2xl font-medium text-slate-900">{title}</h2>
-      </div>
-      <div>{children}</div>
-    </div>
-  );
-}
+import { DetailHero, Section } from "./Section";
 
 export default function TrustComplianceDetail() {
   const isDark = useMockupTheme();
   return (
     <section className="px-6 pb-28">
       <div className="max-w-4xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-full text-[11px] font-medium text-emerald-700 mb-8">
-          <Landmark size={12} /> Trust account
-        </div>
-        <h1 className="text-4xl md:text-5xl font-light tracking-tight text-slate-900 mb-6 leading-[1.05]">
-          Built around compliance,<br /><span className="text-emerald-600">not bolted on after.</span>
-        </h1>
-        <p className="text-lg text-slate-500 font-light max-w-2xl leading-relaxed">
-          A live trust ledger per matter, a full report whenever you need one, a PDF in one click, and cleaner data going in
-          — so there's less to catch at audit time, not more to reconcile.
-        </p>
+        <DetailHero
+          badgeIcon={Landmark}
+          badgeText="Trust account"
+          badgeClass="bg-emerald-50 border-emerald-100 text-emerald-700"
+          headlineLines={["Built around compliance,", "not bolted on after."]}
+          accentClass="text-emerald-600"
+          subheadline="A live trust ledger per matter, a full report whenever you need one, a PDF in one click, and cleaner data going in — so there's less to catch at audit time, not more to reconcile."
+        />
 
-        <Section eyebrow="Reporting" title="Compliance reports show everything, not a summary">
+        <Section eyebrow="Reporting" eyebrowClass="text-emerald-500" title="Compliance reports show everything, not a summary">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             Every transaction for a matter, in date order, with a running balance on every row — not a rolled-up total that
             hides how it got there.
@@ -55,7 +42,7 @@ export default function TrustComplianceDetail() {
           </div>
         </Section>
 
-        <Section eyebrow="Export" title="Generate a PDF in one click">
+        <Section eyebrow="Export" eyebrowClass="text-emerald-500" title="Generate a PDF in one click">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             Print any statement straight to PDF, formatted for the file — no separate export tool, no reformatting a
             spreadsheet before it's fit to hand over.

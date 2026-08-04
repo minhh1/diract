@@ -649,44 +649,68 @@ export function MockTasks() {
 
 // ── Property developers (AU) ────────────────────────────────────────────
 
+// Recreates the real Niksen Loans board's own fields (components/public/
+// financeModel/LoansSubtab.tsx) -- name, lender type (Senior/Mezzanine/
+// Private Lender/Money Partner/Internal/Other), and principal amount.
+// Earlier drafts of this mockup showed a "Limit"/"Drawn %" pair that isn't
+// a real field on the loan record -- drawdown is tracked through the
+// repayment-phase schedule (see loanSchedule below), not a single percent.
 export function MockLoanTable() {
   return (
     <TableFrame
-      label="Loan facilities"
-      columns={["Facility", "Limit", "Drawn"]}
+      label="Loans"
+      columns={["Facility", "Type", "Principal"]}
       rows={[
-        ["Westpac — Construction", "$4.2M", { text: "60%", badge: "indigo" }],
-        ["ANZ — Land facility", "$1.8M", { text: "100%", badge: "sky" }],
-        ["Private — Mezzanine", "$650k", { text: "Undrawn", badge: "amber" }],
-        ["NAB — Working capital", "$500k", { text: "40%", badge: "indigo" }],
-        ["CBA — Bank guarantee", "$300k", { text: "Undrawn", badge: "amber" }],
+        ["Westpac — Construction", { text: "Senior", badge: "indigo" }, "$4.2M"],
+        ["ANZ — Land Facility", { text: "Senior", badge: "indigo" }, "$1.8M"],
+        ["Riverside Capital", { text: "Mezzanine", badge: "violet" }, "$650k"],
+        ["NAB — Working Capital", { text: "Senior", badge: "indigo" }, "$500k"],
+        ["Private Lender Group", { text: "Private Lender", badge: "amber" }, "$300k"],
       ]}
     />
   );
 }
 
+// Recreates the real Budget vs Actual table on a Finance Model's Overview
+// tab (components/public/financeModel/BudgetVsActualTable.tsx), reconciled
+// against a live Xero sync (app/api/finance-model/sync-xero) -- not a
+// generic bar chart, which is what this mockup showed before.
 export function MockFinanceModel() {
   return (
-    <WidgetCard label="Finance model">
-      <Bars values={[80, 62, 45, 38, 30]} />
-      <div className="mt-4">
-        <Stat label="Projected margin" value="18.4%" />
+    <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+      <IconHeader icon={FileText} tint="bg-indigo-50" iconColor="text-indigo-700" title="Budget vs Actual" subtitle="Reconciled against Xero" />
+      <div className="rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
+        <DetailedTable
+          columns={[{ label: "Category" }, { label: "Budgeted", align: "right" }, { label: "Actual", align: "right" }, { label: "Variance", align: "right" }]}
+          rows={[
+            ["Acquisition", "$2,400,000", "$2,380,000", { text: "-$20,000", badge: "emerald" }],
+            ["Construction", "$4,900,000", "$5,120,000", { text: "+$220,000", badge: "rose" }],
+            ["Professional fees", "$620,000", "$598,000", { text: "-$22,000", badge: "emerald" }],
+            ["Finance costs", "$310,000", "$295,000", { text: "-$15,000", badge: "emerald" }],
+            ["Marketing & selling", "$340,000", "$310,000", { text: "-$30,000", badge: "emerald" }],
+          ]}
+        />
       </div>
-    </WidgetCard>
+    </div>
   );
 }
 
+// Recreates the real computed repayment schedule inside a loan's Loans-
+// subtab detail view (lib/loanCalculator.ts's calculateLoanSchedule,
+// rendered at components/public/financeModel/LoansSubtab.tsx:537-561) --
+// Period/Opening/Interest/Principal/Payment/Closing, not the simplified
+// 3-column version this mockup showed before.
 export function MockLoanSchedule() {
   return (
     <TableFrame
       label="Loan schedule"
-      columns={["Period", "Drawdown", "Interest"]}
+      columns={["Period", "Opening", "Interest", "Principal", "Closing"]}
       rows={[
-        ["Q1", "$1.2M", "$18k"],
-        ["Q2", "$0.9M", "$32k"],
-        ["Q3", "$0.6M", "$41k"],
-        ["Q4", "$0.4M", "$46k"],
-        ["Q5", "$0.2M", "$48k"],
+        ["Q1", "$1.2M", "$18k", "—", "$1.2M"],
+        ["Q2", "$1.2M", "$18k", "—", "$1.2M"],
+        ["Q3", "$1.2M", "$18k", "$200k", "$1.0M"],
+        ["Q4", "$1.0M", "$15k", "$300k", "$700k"],
+        ["Q5", "$700k", "$10.5k", "$700k", "$0"],
       ]}
     />
   );
@@ -740,6 +764,29 @@ export function MockEntityValidation() {
   );
 }
 
+// Recreates the real effect of app/api/gmail/assign's teammate fan-out:
+// assigning an email applies an actual Gmail label to the assigning user's
+// own mailbox, then does the same in every other connected teammate's
+// mailbox in the same request -- not just a database record.
+export function MockGmailLabels() {
+  const team = ["Sarah Lee", "Jono Ferreira", "Priya Shah", "Tom Walsh", "Aisha Khan"];
+  return (
+    <WidgetCard label="Gmail label sync">
+      <div className="mb-3 px-3 py-2.5 bg-slate-50 rounded-xl text-[11px] font-mono text-slate-600 truncate">
+        Shared Emails/2024/0212 — 88 Riverside Ave
+      </div>
+      <div className="space-y-2">
+        {team.map((name) => (
+          <div key={name} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2.5">
+            <span className="text-[12px] font-medium text-slate-700">{name}</span>
+            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600"><Check size={12} /> Synced</span>
+          </div>
+        ))}
+      </div>
+    </WidgetCard>
+  );
+}
+
 export const MOCKUPS = {
   customTable: MockCustomTable,
   automation: MockAutomation,
@@ -760,6 +807,7 @@ export const MOCKUPS = {
   loanSchedule: MockLoanSchedule,
   residualLand: MockResidualLand,
   entityValidation: MockEntityValidation,
+  gmailLabels: MockGmailLabels,
 } as const;
 
 export type MockupName = keyof typeof MOCKUPS;

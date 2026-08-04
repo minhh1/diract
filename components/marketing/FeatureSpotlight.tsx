@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import {
   Table2, Workflow, Building2, ShieldCheck, BarChart3, Clock, Sparkles, Landmark,
   FileText, Users, LayoutPanelLeft, ListChecks, TrendingUp, CalendarClock, Calculator,
-  BadgeCheck, ArrowRight, type LucideIcon,
+  BadgeCheck, Mail, ArrowRight, type LucideIcon,
 } from "lucide-react";
 import { MOCKUPS, type MockupName } from "./mockups";
 import { useMockupTheme } from "./MockupThemeProvider";
@@ -19,7 +19,7 @@ export type SpotlightAccent = "indigo" | "violet" | "sky" | "emerald" | "amber";
 const ICONS: Record<string, LucideIcon> = {
   Table2, Workflow, Building2, ShieldCheck, BarChart3, Clock, Sparkles, Landmark,
   FileText, Users, LayoutPanelLeft, ListChecks, TrendingUp, CalendarClock, Calculator,
-  BadgeCheck,
+  BadgeCheck, Mail,
 };
 export type SpotlightIconName = keyof typeof ICONS;
 
