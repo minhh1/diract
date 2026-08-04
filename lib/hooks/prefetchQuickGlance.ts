@@ -36,7 +36,13 @@ export const quickGlanceProjectsCacheKey = (companyId: string) => `quick_glance_
 
 export async function fetchQuickGlanceProjects(companyId: string): Promise<QuickGlanceProjectRow[]> {
   const [{ data: projectRows }, { data: junctionRows }] = await Promise.all([
-    supabase.from('projects').select('id, name').eq('company_id', companyId).is('deleted_at', null),
+    // parent_project_id IS NULL -- a sub-project (components/dashboard/
+    // tabs/SubProjectsTab.tsx) is just a projects row with this set, and
+    // it's already represented under its parent in the internal master
+    // table (GenericMasterTable.tsx's baby-icon expand). Quick Glance's map
+    // is one pin per development, so a sub-project showing up here as its
+    // own separate "current project" would double-count/clutter it.
+    supabase.from('projects').select('id, name').eq('company_id', companyId).is('deleted_at', null).is('parent_project_id', null),
     supabase.from('project_properties').select('project_id, property_id').eq('company_id', companyId),
   ]);
 
