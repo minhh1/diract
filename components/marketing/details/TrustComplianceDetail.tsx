@@ -10,6 +10,13 @@
 // components/RecordEditModal.tsx) -- BSB and account number are real
 // captured fields, but the app does not format-validate them today, and
 // this page says so rather than implying it does.
+// ABN/ACN use a real checksum (lib/validation/entityValidation.ts's
+// isValidABN/isValidACN); BSB and account number use a real format check
+// (isValidBSB/isValidAccountNumber, added alongside them) -- 6 digits and
+// 4-10 digits respectively. Neither BSB nor account number has a public
+// check-digit algorithm the way ABN/ACN do, so this catches a mistyped
+// digit count, not a wrong-but-plausible number -- described honestly as
+// a format check, not a bank-directory lookup.
 import { Landmark, FileText, Printer } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { IconHeader, DetailedTable, FieldRow, TRUST_LEDGER_COLUMNS, TRUST_LEDGER_EXAMPLES, TRUST_LEDGER_FOOTER } from "@/components/marketing/mockups";
@@ -54,16 +61,16 @@ export default function TrustComplianceDetail() {
 
         <Section eyebrow="Data entry" title="Field validation, so there's less room for a mistake">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            ABN and ACN are checked against the real ATO/ASIC checksum as they're typed — not just a length check — and
-            flagged immediately if they don't add up. Company name, BSB, and account number are captured cleanly right
-            alongside them; we're not going to claim we validate a bank account format we don't actually check yet.
+            ABN and ACN are checked against the real ATO/ASIC checksum as they're typed, not just a length check. BSB and
+            account number are checked too — 6 digits, and 4 to 10 digits — catching a mistyped digit count on the spot,
+            even though neither carries a public check-digit the way ABN/ACN do.
           </p>
           <div className={`space-y-2 max-w-sm ${isDark ? "dark" : ""}`}>
             <FieldRow label="Company" value="Anchor Developments Pty Ltd" />
             <FieldRow label="ABN" value="51 824 753 556" valid />
             <FieldRow label="ACN" value="824 753 556" valid />
-            <FieldRow label="BSB" value="062-000" />
-            <FieldRow label="Account no." value="1234 5678" />
+            <FieldRow label="BSB" value="062-000" valid />
+            <FieldRow label="Account no." value="1234 5678" valid />
           </div>
         </Section>
       </div>

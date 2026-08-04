@@ -13,7 +13,7 @@
 import type { ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
-  FileOutput, Users, Crown, Calendar, Printer, type LucideIcon,
+  FileOutput, Users, Crown, Calendar, Printer, Lock, type LucideIcon,
 } from "lucide-react";
 
 type TagColor = "indigo" | "sky" | "violet" | "emerald" | "amber" | "rose" | "slate";
@@ -316,11 +316,11 @@ export function MockTimeEntries() {
       label="Time entries"
       columns={["Matter", "Date", "Hours"]}
       rows={[
-        ["2024/0187 — Smith Family Trust", "22 Jul", "2.4h"],
-        ["2024/0201 — Nguyen Trust Deed", "22 Jul", "1.0h"],
-        ["2024/0164 — Harbord Property Co.", "21 Jul", "0.5h"],
-        ["2024/0212 — 88 Riverside Ave", "21 Jul", "1.8h"],
-        ["2024/0225 — Walsh Discretionary Trust", "20 Jul", "0.6h"],
+        ["2024/0187 — Smith Family Trust", "22 Jul", "0.4h"],
+        ["2024/0201 — Nguyen Trust Deed", "22 Jul", "0.2h"],
+        ["2024/0164 — Harbord Property Co.", "21 Jul", "0.1h"],
+        ["2024/0212 — 88 Riverside Ave", "21 Jul", "0.3h"],
+        ["2024/0225 — Walsh Discretionary Trust", "20 Jul", "0.2h"],
       ]}
     />
   );
@@ -330,11 +330,11 @@ export function MockTimeEntries() {
 // AI Time Entries deep-dive page (app/(marketing)/features/[slug]) -- kept
 // as one shared array so both stay in sync.
 export const AUTO_TIME_ENTRY_EXAMPLES = [
-  { initials: "SL", date: "22 Jul", matter: "2024/0187 — Smith Family Trust", description: "Reviewed and finalised Deed of Variation; drafted correspondence to trustee regarding execution requirements.", hours: "1.4", emails: 3 },
-  { initials: "JF", date: "22 Jul", matter: "2024/0212 — 88 Riverside Ave", description: "Prepared Section 32 disclosure statement; liaised with vendor's conveyancer regarding special conditions.", hours: "0.8", emails: 1 },
-  { initials: "PS", date: "21 Jul", matter: "2024/0201 — Nguyen Trust Deed", description: "Drafted discretionary trust deed and covering letter to settlor for execution.", hours: "1.1", emails: 2 },
-  { initials: "TW", date: "21 Jul", matter: "2024/0164 — Harbord Property Co.", description: "Attended to settlement figures and confirmed adjustments with purchaser's solicitor.", hours: "0.6", emails: 4 },
-  { initials: "AK", date: "20 Jul", matter: "2024/0225 — Walsh Discretionary Trust", description: "Reviewed trustee resolution and updated register of beneficiaries.", hours: "0.5", emails: 1 },
+  { initials: "SL", date: "22 Jul", matter: "2024/0187 — Smith Family Trust", description: "Reviewed Deed of Variation and drafted a short covering note to the trustee.", hours: "0.3", emails: 3 },
+  { initials: "JF", date: "22 Jul", matter: "2024/0212 — 88 Riverside Ave", description: "Reviewed Section 32 disclosure statement ahead of exchange.", hours: "0.2", emails: 1 },
+  { initials: "PS", date: "21 Jul", matter: "2024/0201 — Nguyen Trust Deed", description: "Drafted covering letter to settlor for execution.", hours: "0.2", emails: 2 },
+  { initials: "TW", date: "21 Jul", matter: "2024/0164 — Harbord Property Co.", description: "Confirmed settlement figure adjustments with purchaser's solicitor.", hours: "0.1", emails: 4 },
+  { initials: "AK", date: "20 Jul", matter: "2024/0225 — Walsh Discretionary Trust", description: "Reviewed trustee resolution ahead of registration.", hours: "0.1", emails: 1 },
 ];
 
 // A faithful, near-1:1 recreation of the real drawer
@@ -625,25 +625,46 @@ export function MockClientUpdates() {
   );
 }
 
-// Tasks has no kanban/board in the real app -- app/(app)/dashboard/tasks
-// just renders the same GenericMasterTable every other table does, so this
-// reuses TableFrame rather than inventing a drag-drop board that doesn't
-// exist in the product. Matter refs shortened to just the matter number
-// (no name) -- the full "task + matter name + status" combination doesn't
-// fit a max-w-sm card without the last column clipping.
+// Recreates the real per-task row from components/public/PublicTasksContent.tsx
+// (the "public tasks" page -- a shareable, scoped task view a signed-in
+// user opens, not an anonymous page): a completion toggle that's genuinely
+// disabled with a lock icon while task_dependencies are still open,
+// real status badges (Watching, Follow-up scheduled, Blocked by N tasks),
+// and a due-date column -- not the plain 3-column table this mockup used
+// to show, which was closer to the separate internal admin tasks table.
 export function MockTasks() {
+  const rows: { done: boolean; locked: boolean; name: string; badge?: string; matter: string; due: string; dueColor: TagColor }[] = [
+    { done: false, locked: false, name: "Order title search", matter: "2024/0212", due: "Today", dueColor: "amber" },
+    { done: false, locked: true, name: "Draft contract", badge: "Blocked by 2 tasks", matter: "2024/0187", due: "23 Jul", dueColor: "indigo" },
+    { done: true, locked: false, name: "Send engagement letter", badge: "Watching", matter: "2024/0201", due: "Done", dueColor: "emerald" },
+    { done: false, locked: false, name: "Review PPSR", badge: "Follow-up scheduled", matter: "2024/0164", due: "24 Jul", dueColor: "indigo" },
+    { done: false, locked: false, name: "Prepare trustee resolution", matter: "2024/0225", due: "25 Jul", dueColor: "indigo" },
+  ];
   return (
-    <TableFrame
-      label="Tasks"
-      columns={["Task", "Matter", "Due"]}
-      rows={[
-        ["Order title search", "2024/0212", { text: "Today", badge: "amber" }],
-        ["Draft contract", "2024/0187", { text: "23 Jul", badge: "indigo" }],
-        ["Send engagement letter", "2024/0201", { text: "Done", badge: "emerald" }],
-        ["Review PPSR", "2024/0164", { text: "24 Jul", badge: "indigo" }],
-        ["Prepare trustee resolution", "2024/0225", { text: "25 Jul", badge: "indigo" }],
-      ]}
-    />
+    <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-slate-100">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tasks — My tasks</span>
+      </div>
+      <div>
+        {rows.map((r, i) => (
+          <div key={r.name} className={`flex items-center gap-3 px-4 py-3 ${i < rows.length - 1 ? "border-b border-slate-50" : ""}`}>
+            {r.locked ? (
+              <Lock size={14} className="text-slate-300 shrink-0" />
+            ) : (
+              <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${r.done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`} />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className={`text-[12px] font-medium ${r.done ? "line-through text-slate-400" : "text-slate-700"}`}>{r.name}</span>
+                {r.badge && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 whitespace-nowrap">{r.badge}</span>}
+              </div>
+              <span className="text-[10px] text-slate-400">{r.matter}</span>
+            </div>
+            <span className={`text-[10px] font-bold shrink-0 px-2 py-0.5 rounded-full ${TAG[r.dueColor]}`}>{r.due}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -757,8 +778,8 @@ export function MockEntityValidation() {
         <FieldRow label="Company" value="Anchor Developments Pty Ltd" />
         <FieldRow label="ABN" value="51 824 753 556" valid />
         <FieldRow label="ACN" value="824 753 556" valid />
-        <FieldRow label="BSB" value="062-000" />
-        <FieldRow label="Account no." value="1234 5678" />
+        <FieldRow label="BSB" value="062-000" valid />
+        <FieldRow label="Account no." value="1234 5678" valid />
       </div>
     </WidgetCard>
   );

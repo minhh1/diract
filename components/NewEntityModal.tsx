@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Check, ShieldCheck, AlertCircle, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
+import { isValidABN, isValidACN, isValidBSB, isValidAccountNumber } from "@/lib/validation/entityValidation";
 import { writeEntityCustomFieldValues } from "@/lib/entityCustomFieldWrite";
 import { ENTITY_TYPES } from "@/lib/entityTypes";
 import RelationPicker from "@/components/dashboard/RelationPicker";
@@ -209,6 +209,8 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
     if (!isTrust && acn.trim() && !isValidACN(acn)) { alert('ACN is not valid (must be 9 digits and pass the ACN checksum)'); return; }
     if (isTrust && trusteeAbn.trim() && !isValidABN(trusteeAbn)) { alert('Trustee ABN is not valid (must be 11 digits and pass the ABN checksum)'); return; }
     if (isTrust && trusteeType === 'Company' && trusteeAcn.trim() && !isValidACN(trusteeAcn)) { alert('Trustee ACN is not valid (must be 9 digits and pass the ACN checksum)'); return; }
+    if (bsb.trim() && !isValidBSB(bsb)) { alert('BSB is not valid (must be 6 digits)'); return; }
+    if (accountNumber.trim() && !isValidAccountNumber(accountNumber)) { alert('Account number is not valid (must be 4-10 digits)'); return; }
     const missingRequired = customFields.filter(f => f.is_required && !customValues[f.id]?.trim());
     if (missingRequired.length > 0) {
       alert(`Please fill in required field${missingRequired.length > 1 ? 's' : ''}: ${missingRequired.map(f => f.label).join(', ')}`);
@@ -519,10 +521,20 @@ export default function NewEntityModal({ isOpen, onClose, onRefresh }: Props) {
               <input value={bankName} onChange={e => setBankName(e.target.value)} placeholder="Bank name"
                 className="w-full bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
               <div className="grid grid-cols-2 gap-3">
-                <input value={bsb} onChange={e => setBsb(e.target.value)} placeholder="BSB"
-                  className="bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
-                <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} placeholder="Account number"
-                  className="bg-slate-50 border border-slate-200 rounded-full py-3 px-5 text-[13px] font-medium outline-none" />
+                <div>
+                  <input value={bsb} onChange={e => setBsb(e.target.value)} placeholder="BSB"
+                    className={`w-full bg-slate-50 border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${bsb.trim() && !isValidBSB(bsb) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-slate-200'}`} />
+                  {bsb.trim() && !isValidBSB(bsb) && (
+                    <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid BSB</p>
+                  )}
+                </div>
+                <div>
+                  <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} placeholder="Account number"
+                    className={`w-full bg-slate-50 border rounded-full py-3 px-5 text-[13px] font-medium outline-none ${accountNumber.trim() && !isValidAccountNumber(accountNumber) ? 'border-red-300 focus:ring-4 focus:ring-red-100' : 'border-slate-200'}`} />
+                  {accountNumber.trim() && !isValidAccountNumber(accountNumber) && (
+                    <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1 px-2"><AlertCircle size={11} /> Not a valid account number</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>

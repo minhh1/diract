@@ -35,6 +35,31 @@ export function isValidACN(acn: string): boolean {
   return expectedCheck === checkDigit;
 }
 
+/**
+ * Validates the FORMAT of an Australian BSB (6 digits, optionally written
+ * as XXX-XXX). Unlike ABN/ACN, a BSB has no public check-digit algorithm
+ * -- it's just an assigned identifier, not a self-validating number -- so
+ * this catches the typos a format check actually can (too few/many
+ * digits, letters, stray characters), not a wrong-but-plausible BSB. A
+ * true correctness check would need matching against the real APCA BSB
+ * directory, which isn't bundled here.
+ */
+export function isValidBSB(bsb: string): boolean {
+  const cleaned = bsb.replace(/[\s-]/g, '');
+  return /^\d{6}$/.test(cleaned);
+}
+
+/**
+ * Validates the FORMAT of an Australian bank account number -- digits
+ * only, 4 to 10 of them (the real range across Australian institutions).
+ * Like isValidBSB, this is a format check, not a checksum -- account
+ * numbers don't carry a public check digit the way ABN/ACN do.
+ */
+export function isValidAccountNumber(accountNumber: string): boolean {
+  const cleaned = accountNumber.replace(/\s/g, '');
+  return /^\d{4,10}$/.test(cleaned);
+}
+
 export interface FieldValidationRule {
   validate: (value: string) => string | null; // returns an error message, or null if valid
 }
@@ -56,6 +81,18 @@ export const ENTITY_FIELD_VALIDATORS: Record<string, FieldValidationRule> = {
     validate: (v) => {
       if (!v || !v.trim()) return null; // optional
       return isValidACN(v) ? null : "Not a valid ACN (must be 9 digits and pass the ACN checksum)";
+    },
+  },
+  bsb: {
+    validate: (v) => {
+      if (!v || !v.trim()) return null; // optional
+      return isValidBSB(v) ? null : "Not a valid BSB (must be 6 digits)";
+    },
+  },
+  account_number: {
+    validate: (v) => {
+      if (!v || !v.trim()) return null; // optional
+      return isValidAccountNumber(v) ? null : "Not a valid account number (must be 4-10 digits)";
     },
   },
 };

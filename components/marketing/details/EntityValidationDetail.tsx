@@ -27,15 +27,15 @@ export default function EntityValidationDetail() {
         <Section eyebrow="Validation" eyebrowClass="text-emerald-500" title="A real checksum, not a length check">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             ABN runs the actual ATO modulus-89 checksum; ACN runs ASIC's weighted check-digit formula — both flagged
-            immediately if they don't add up, on creation and on every later edit. BSB and account number are captured
-            cleanly alongside them, though not format-validated today.
+            immediately if they don't add up, on creation and on every later edit. BSB and account number are checked too —
+            6 digits, and 4 to 10 digits — catching a mistyped digit count on the spot.
           </p>
           <div className={`space-y-2 max-w-sm ${isDark ? "dark" : ""}`}>
             <FieldRow label="Entity" value="Riverside Development Pty Ltd" />
             <FieldRow label="ABN" value="51 824 753 556" valid />
             <FieldRow label="ACN" value="824 753 556" valid />
-            <FieldRow label="BSB" value="062-000" />
-            <FieldRow label="Account no." value="1234 5678" />
+            <FieldRow label="BSB" value="062-000" valid />
+            <FieldRow label="Account no." value="1234 5678" valid />
           </div>
         </Section>
       </div>
