@@ -16,8 +16,8 @@ const features: SpotlightFeature[] = [
   },
   {
     icon: "Workflow",
-    title: "Workflow automation",
-    body: "Automate the repetitive parts of your process, from assignments to status changes, so your team can focus on the work that matters.",
+    title: "Auto-add rules",
+    body: "Set a rule once — a status, a type, any field value — and matching records get added to the right board automatically. No manual sorting.",
     accent: "violet",
     visual: "automation",
   },
