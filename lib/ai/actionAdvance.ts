@@ -23,6 +23,7 @@ import {
   type CustomFieldValueInput,
 } from "./actions";
 import { parseRelativeDate } from "./parseRelativeDate";
+import { getCompanyTimezone } from "@/lib/companyTimezone";
 
 export interface CollectingResult {
   status: "collecting";
@@ -62,7 +63,10 @@ export async function advanceAction(
   actionType: ActionType,
   collectedIn: Record<string, string>
 ): Promise<AdvanceResult> {
-  const fields = await loadFieldConfig(admin, companyId, actionType);
+  const [fields, timezone] = await Promise.all([
+    loadFieldConfig(admin, companyId, actionType),
+    getCompanyTimezone(admin, companyId),
+  ]);
   const collected: Record<string, string> = { ...collectedIn };
 
   // Step 1: anything required with no value at all yet?
@@ -161,7 +165,7 @@ export async function advanceAction(
       // sometimes doesn't (compound phrasing like "today 3pm", non-
       // compliance, ...), which Date.parse alone just rejects outright.
       // See parseRelativeDate's own comment.
-      const relative = parseRelativeDate(raw);
+      const relative = parseRelativeDate(raw, timezone);
       if (relative) {
         collected[field.key] = relative;
         continue;

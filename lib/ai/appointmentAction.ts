@@ -9,6 +9,7 @@
 // calendar sync already works: create the event, don't gatekeep on
 // availability).
 import { parseRelativeDate } from "./parseRelativeDate";
+import { getCompanyTimezone } from "@/lib/companyTimezone";
 
 export interface AppointmentCollectingResult {
   status: "collecting";
@@ -72,7 +73,7 @@ export function buildAppointmentMissingFieldsTool(missingFieldKeys: string[]) {
   ];
 }
 
-export async function advanceAppointmentAction(collectedIn: Record<string, string>): Promise<AppointmentAdvanceResult> {
+export async function advanceAppointmentAction(admin: any, companyId: string, collectedIn: Record<string, string>): Promise<AppointmentAdvanceResult> {
   const collected = { ...collectedIn };
   const conflictNotes: string[] = [];
 
@@ -80,7 +81,8 @@ export async function advanceAppointmentAction(collectedIn: Record<string, strin
   // "time" field kinds -- an invalid value is treated the same as a
   // missing one, re-asked together with anything else outstanding.
   if (collected.date?.trim()) {
-    const relative = parseRelativeDate(collected.date.trim());
+    const timezone = await getCompanyTimezone(admin, companyId);
+    const relative = parseRelativeDate(collected.date.trim(), timezone);
     if (relative) {
       collected.date = relative;
     } else {

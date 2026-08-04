@@ -579,7 +579,7 @@ async function handleToolCall(
     for (const [key, value] of Object.entries(args)) {
       if (value !== undefined && value !== null && String(value).trim() !== "") collected[key] = String(value);
     }
-    const result = await advanceAppointmentAction(collected);
+    const result = await advanceAppointmentAction(admin, companyId, collected);
     return applyAppointmentAdvanceResult(admin, linked, msg, adapter, "create_appointment", result);
   }
 
@@ -938,7 +938,7 @@ async function continueCollecting(
     for (const [key, value] of Object.entries(extracted)) {
       if (value !== undefined && value !== null && String(value).trim() !== "") merged[key] = String(value);
     }
-    const result = await advanceAppointmentAction(merged);
+    const result = await advanceAppointmentAction(admin, companyId, merged);
     await applyAppointmentAdvanceResult(admin, linked, msg, adapter, actionType, result);
     return;
   }

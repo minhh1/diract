@@ -8,18 +8,32 @@
 // there had no fallback at all, just an error telling the user to re-type
 // it as YYYY-MM-DD even for something as plain as "today".
 //
-// "Today" is always the UTC calendar date (matches
-// `new Date().toISOString().slice(0, 10)`, the exact same definition
-// todayContextMessage itself uses, so both paths always agree on what day
-// it is). Weekday semantics mirror that same system prompt's documented
-// convention: a bare weekday name is the closest upcoming occurrence
-// (today itself if today already is that day); "next <weekday>" or
-// "<weekday> next week" always means the following calendar week's
-// occurrence, even if this week's hasn't happened yet.
+// `timezone` (the company's own, see lib/companyTimezone.ts) is required,
+// not optional -- this used to hardcode "today" as the UTC calendar date,
+// which is the WRONG calendar day for an Australian company for several
+// hours every morning (UTC is still "yesterday" until mid-morning AEST).
+// Observed live (2026-08-04): todayContextMessage was fixed to use the
+// company's timezone, but this parallel deterministic path -- which kicks
+// in whenever the model doesn't convert a relative phrase itself -- was
+// missed, so "today"/"tomorrow" etc. could still silently resolve to the
+// wrong day depending on which path handled a given reply. Both now agree,
+// via the same "format now() in the company's own timezone" technique
+// todayContextMessage uses. Once that one calendar date is resolved, the
+// day-arithmetic below (setUTCDate) stays in UTC-space on purpose -- adding
+// whole days never needs to re-cross the timezone boundary, only the
+// INITIAL "what day is it" resolution does. Weekday semantics: a bare
+// weekday name is the closest upcoming occurrence (today itself if today
+// already is that day); "next <weekday>" or "<weekday> next week" always
+// means the following calendar week's occurrence, even if this week's
+// hasn't happened yet.
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
-function todayUtc(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+// en-CA formats as YYYY-MM-DD -- the same trick todayContextMessage uses --
+// resolved in the company's own local date, then re-anchored to UTC
+// midnight of that date so the day-arithmetic below has a stable base.
+function todayInTimezone(now: Date, timezone: string): Date {
+  const localDateStr = now.toLocaleDateString("en-CA", { timeZone: timezone });
+  return new Date(`${localDateStr}T00:00:00Z`);
 }
 
 function addDays(d: Date, days: number): Date {
@@ -32,10 +46,10 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function parseRelativeDate(raw: string, now: Date = new Date()): string | null {
+export function parseRelativeDate(raw: string, timezone: string, now: Date = new Date()): string | null {
   const s = raw.trim().toLowerCase().replace(/\s+/g, " ");
   if (!s) return null;
-  const today = todayUtc(now);
+  const today = todayInTimezone(now, timezone);
 
   if (s === "today") return ymd(today);
   if (s === "tomorrow") return ymd(addDays(today, 1));
