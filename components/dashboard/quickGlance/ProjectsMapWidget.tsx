@@ -3,9 +3,17 @@
 // Leaflet + OpenStreetMap map of current projects -- always loaded via
 // next/dynamic with ssr:false from PropertyDeveloperQuickGlance.tsx (Leaflet
 // touches `window`/`document` at import time, which breaks server rendering).
-// No API key/billing, unlike Google Maps -- OSM tiles are free to use under
-// their tile usage policy (this is a low-traffic internal dashboard, well
-// within it).
+// No API key/billing, unlike Google Maps.
+//
+// Tiles come from CARTO's free Voyager basemap, not tile.openstreetmap.org
+// directly -- OSM's own tile usage policy explicitly discourages hotlinking
+// it from a production app (no bulk/commercial use, low and unpredictable
+// rate limits) and it started returning 404s for this app's tile requests
+// once real traffic hit it (confirmed live: switching the state filter
+// pans/zooms the map, which requests a new batch of tiles). CARTO's
+// basemaps are free for this kind of moderate web-app use with attribution,
+// same underlying OSM data, just served from an endpoint meant for exactly
+// this.
 import { useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -52,8 +60,10 @@ export default function ProjectsMapWidget({ pins, onSelect }: { pins: MapPin[]; 
   return (
     <MapContainer center={AUSTRALIA_CENTER} zoom={4} scrollWheelZoom style={{ height: "100%", width: "100%", borderRadius: 16 }}>
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        subdomains="abcd"
+        maxZoom={20}
       />
       <FitBounds pins={pins} />
       {pins.map(pin => (

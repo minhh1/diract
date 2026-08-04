@@ -100,7 +100,7 @@ export default function PropertyDeveloperQuickGlance() {
     (async () => {
       for (const prop of toGeocode) {
         if (cancelled) return;
-        const address = [prop.street_address, prop.suburb, prop.state, prop.postcode].filter(Boolean).join(', ');
+        const address = [prop.street_address, prop.suburb, prop.state, prop.postcode, 'Australia'].filter(Boolean).join(', ');
         try {
           const res = await fetch(`/api/geocode?address=${encodeURIComponent(address)}`);
           const { lat, lng } = await res.json();
@@ -142,6 +142,15 @@ export default function PropertyDeveloperQuickGlance() {
       .map(prop => ({ id: p.id, name: p.name, lat: prop.lat, lng: prop.lng, isSelected: p.id === selectedProjectId }))
   ), [filteredProjects, selectedProjectId]);
 
+  // Surfaced so a property missing a pin reads as "still being located"
+  // (Nominatim's usage policy caps geocoding at ~1 req/sec, so a project
+  // with several properties can take a few seconds to fully populate) --
+  // not as a silently broken/missing pin.
+  const pendingGeocodeCount = useMemo(() => currentProjects
+    .flatMap(p => p.properties)
+    .filter(prop => prop.lat == null && prop.street_address).length,
+  [currentProjects]);
+
   if (projects === null) {
     return (
       <div className="flex items-center gap-2 text-[11px] text-slate-400">
@@ -152,8 +161,14 @@ export default function PropertyDeveloperQuickGlance() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+      <p className="flex items-center gap-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
         {currentProjects.length} current project{currentProjects.length === 1 ? '' : 's'}
+        {pendingGeocodeCount > 0 && (
+          <span className="flex items-center gap-1 normal-case font-medium text-slate-300">
+            <Loader2 size={10} className="animate-spin" />
+            locating {pendingGeocodeCount} more propert{pendingGeocodeCount === 1 ? 'y' : 'ies'}…
+          </span>
+        )}
       </p>
 
       {availableStates.length > 0 && (

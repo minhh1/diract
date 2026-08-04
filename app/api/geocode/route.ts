@@ -18,7 +18,13 @@ export async function GET(req: NextRequest) {
   const address = req.nextUrl.searchParams.get("address")?.trim();
   if (!address) return NextResponse.json({ error: "address is required" }, { status: 400 });
 
-  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(address)}`;
+  // countrycodes=au -- every caller today geocodes an Australian property
+  // address (street/suburb/state/postcode, no country in the string), which
+  // Nominatim's free-text search can otherwise mis-match against a
+  // same-named street/suburb in another country, or fail to match at all
+  // when the address alone is too ambiguous. Restricting the search space
+  // measurably improved match rate, not just correctness.
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=au&q=${encodeURIComponent(address)}`;
   const res = await fetch(url, {
     headers: { "User-Agent": "niksen-flow/1.0 (property developer Quick Glance map)" },
   });
