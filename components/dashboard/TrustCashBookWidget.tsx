@@ -148,7 +148,7 @@ export default function TrustCashBookWidget({ records, trustAccountName }: { rec
                   <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{matterNumbers.get(matterId) || '—'}</td>
                   <td className="px-4 py-2 text-slate-600">
                     {matterId ? (
-                      <button onClick={() => router.push(`/dashboard/projects?id=${matterId}`)} className="text-teal-700 hover:underline text-left">
+                      <button onClick={() => router.push(`/dashboard/projects?id=${matterId}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
                         {matterNames.get(matterId) || '—'}
                       </button>
                     ) : '—'}

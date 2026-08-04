@@ -99,6 +99,14 @@ export default function RecordDashboard({
   const [initialPrecedentId] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('precedent')
   );
+  // Deep link from a matter reference elsewhere (e.g. a trust ledger row's
+  // "Matter" cell) straight onto a specific tab_type -- ?tab=trust_account
+  // etc. Same read-once-on-mount shape as initialPrecedentId above, and the
+  // same reason: a plain query param, not useSearchParams, so it doesn't
+  // re-fire on every render.
+  const [initialTabType] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('tab')
+  );
   const [tabFieldLayouts, setTabFieldLayouts] = useState<Record<string, FieldLayout[]>>({});
   const [loading, setLoading] = useState(!initialRecord); // skip spinner if we have initial data
   const [isEditingTabs, setIsEditingTabs] = useState(false);
@@ -711,8 +719,13 @@ export default function RecordDashboard({
       // Arriving from the precedent library with ?precedent=<id>: open the
       // Precedents tab rather than the first one, so the hand-off from
       // PrecedentLibraryBrowser's "Use on a matter" lands where it promised.
+      // Same idea for ?tab=<tab_type> (e.g. a trust ledger row's "Matter"
+      // link landing straight on that matter's Trust Account tab) -- checked
+      // second so an explicit ?precedent= link still wins if somehow both
+      // are present.
       const precedentTab = initialPrecedentId && finalTabs.find(t => t.tab_type === 'precedents');
-      setActiveTabId(precedentTab ? precedentTab.id : finalTabs[0].id);
+      const deepLinkTab = !precedentTab && initialTabType && finalTabs.find(t => t.tab_type === initialTabType);
+      setActiveTabId(precedentTab ? precedentTab.id : deepLinkTab ? deepLinkTab.id : finalTabs[0].id);
 
       const { data: layouts } = await fieldLayoutsPromise;
       if (layouts?.length) {
@@ -800,7 +813,10 @@ export default function RecordDashboard({
       if (newTabs?.length) {
         await seedDefaultDashboardWidgets(newTabs, widgetsByLinkedTableId);
         setTabs(newTabs);
-        setActiveTabId(newTabs[0].id);
+        // Same ?tab=<tab_type> deep link as the existing-tabs branch above,
+        // for a matter opened this way for the very first time.
+        const deepLinkTab = initialTabType && newTabs.find(t => t.tab_type === initialTabType);
+        setActiveTabId(deepLinkTab ? deepLinkTab.id : newTabs[0].id);
       }
     }
   };

@@ -125,7 +125,7 @@ export default function TrustAgedBalancesWidget({ records, dormantDays, trustAcc
                 <tr key={b.matterId} className={`border-b border-slate-50 ${isDormant ? 'bg-rose-50/50' : ''}`}>
                   <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{matterNumbers.get(b.matterId) || '—'}</td>
                   <td className="px-4 py-2 font-medium text-slate-700">
-                    <button onClick={() => router.push(`/dashboard/projects?id=${b.matterId}`)} className="text-teal-700 hover:underline text-left">
+                    <button onClick={() => router.push(`/dashboard/projects?id=${b.matterId}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
                       {matterNames.get(b.matterId) || b.matterId.slice(0, 8)}
                     </button>
                   </td>

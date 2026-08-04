@@ -137,7 +137,7 @@ export default function TrustTrialBalanceWidget({ records, trustAccountName }: {
               <tr key={m.matterId} className="border-b border-slate-50">
                 <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">{matterNumbers.get(m.matterId) || '—'}</td>
                 <td className="px-4 py-2 text-slate-600">
-                  <button onClick={() => router.push(`/dashboard/projects?id=${m.matterId}`)} className="text-teal-700 hover:underline text-left">
+                  <button onClick={() => router.push(`/dashboard/projects?id=${m.matterId}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
                     {matterNames.get(m.matterId) || '—'}
                   </button>
                 </td>

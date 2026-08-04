@@ -7,6 +7,7 @@
 // the same insert_ledger_record()/createRecord() mechanics every other
 // ledger table in this app uses -- nothing here is a new data structure.
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, ArrowLeftRight, ShieldPlus, Printer, Send, Eye } from "lucide-react";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
@@ -51,6 +52,7 @@ export default function TrustTransactionsTab({
   records: CustomTableRecord[];
   availableBalance: number;
 }) {
+  const router = useRouter();
   const [modal, setModal] = useState<'deposit' | 'transfer' | 'protect' | 'cheque' | 'payment' | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
 
@@ -113,9 +115,15 @@ export default function TrustTransactionsTab({
                 <td className="px-4 py-2.5 text-slate-600">{formatDate(r.values.date)}</td>
                 <td className="px-4 py-2.5 text-slate-400">{formatDate(r.created_at)}</td>
                 <td className="px-4 py-2.5 text-slate-700 font-medium">{describe(r)}</td>
-                <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.cheque_number || '—'}</td>
+                <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.payment_number || r.values.journal_number || r.values.cheque_number || '—'}</td>
                 <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{matterNumbers.get(String(r.values.matter || '')) || '—'}</td>
-                <td className="px-4 py-2.5 text-slate-600">{r.displayValues?.matter || '—'}</td>
+                <td className="px-4 py-2.5 text-slate-600">
+                  {r.values.matter ? (
+                    <button onClick={() => router.push(`/dashboard/projects?id=${r.values.matter}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
+                      {r.displayValues?.matter || '—'}
+                    </button>
+                  ) : (r.displayValues?.matter || '—')}
+                </td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_out ? money(Number(r.values.amount_out)) : ''}</td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_in ? money(Number(r.values.amount_in)) : ''}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-slate-800">{r.values.running_balance != null ? money(Number(r.values.running_balance)) : '—'}</td>

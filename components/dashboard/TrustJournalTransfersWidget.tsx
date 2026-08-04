@@ -133,7 +133,7 @@ export default function TrustJournalTransfersWidget({ records, trustAccountName 
                   <td className="px-4 py-2 text-slate-600">{clientNames.get(clientId) || '—'}</td>
                   <td className="px-4 py-2 text-slate-600">
                     {matterId ? (
-                      <button onClick={() => router.push(`/dashboard/projects?id=${matterId}`)} className="text-teal-700 hover:underline text-left">
+                      <button onClick={() => router.push(`/dashboard/projects?id=${matterId}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
                         {matterNames.get(matterId) || '—'}
                       </button>
                     ) : '—'}
