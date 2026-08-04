@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProfile } from "@/lib/hooks/useProfile";
 import {
-  ArrowLeft, Loader2, Camera, Trash2, CheckCircle2, AlertCircle, User, PenSquare, Bell,
+  ArrowLeft, Loader2, Camera, Trash2, CheckCircle2, AlertCircle, User, PenSquare, Bell, KeyRound,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { NOTIFICATION_EVENT_TYPES } from "@/lib/notifications/eventTypes";
@@ -44,6 +44,7 @@ export default function ProfilePage() {
                 initialAvatarUrl={profile?.avatar_url || null}
                 email={email}
               />
+              {profile?.id && <SecuritySection key={profile.id} userId={profile.id} />}
               {profile?.id && <SignoffSection key={profile.id} userId={profile.id} />}
               {profile?.id && <NotificationPreferencesSection key={profile.id} userId={profile.id} />}
             </>
@@ -275,6 +276,123 @@ function ProfileForm({ initialFullName, initialAvatarUrl, email }: {
         {passwordMessage && <MessageRow message={passwordMessage} />}
       </div>
     </>
+  );
+}
+
+// ── TWO-FACTOR AUTHENTICATION ───────────────────────────────────
+// A real TOTP enrollment flow against Supabase Auth's own MFA API
+// (supabase.auth.mfa.enroll/challengeAndVerify/unenroll) -- nothing here is
+// simulated. qr_code comes back as a bare SVG document, not a data URI, so
+// it needs the data:image/svg+xml;utf-8, prefix prepended before it'll
+// render in an <img>, per @supabase/auth-js's own type comment. The
+// dashboard/quick-glance setup checklist (components/dashboard/quickGlance/
+// SetupChecklist.tsx) links back here for the "set up" action; this is
+// where enrolling and later turning it off both actually happen.
+function SecuritySection({ userId }: { userId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [factor, setFactor] = useState<{ id: string } | null>(null);
+  const [enrolling, setEnrolling] = useState<{ factorId: string; qrCode: string; secret: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+
+  const refresh = async () => {
+    const { data } = await supabase.auth.mfa.listFactors();
+    setFactor(data?.totp?.[0] ? { id: data.totp[0].id } : null);
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, [userId]);
+
+  const startEnroll = async () => {
+    setMessage(null);
+    setBusy(true);
+    const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "Diract" });
+    setBusy(false);
+    if (error || !data) { setMessage({ type: "error", text: error?.message || "Could not start enrollment" }); return; }
+    setEnrolling({ factorId: data.id, qrCode: `data:image/svg+xml;utf-8,${data.totp.qr_code}`, secret: data.totp.secret });
+  };
+
+  const verifyEnroll = async () => {
+    if (!enrolling) return;
+    setMessage(null);
+    if (!/^\d{6}$/.test(code.trim())) { setMessage({ type: "error", text: "Enter the 6-digit code from your app" }); return; }
+    setBusy(true);
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: enrolling.factorId, code: code.trim() });
+    setBusy(false);
+    if (error) { setMessage({ type: "error", text: error.message }); return; }
+    setEnrolling(null);
+    setCode("");
+    setMessage({ type: "ok", text: "Two-factor authentication is on" });
+    refresh();
+  };
+
+  const cancelEnroll = async () => {
+    if (enrolling) await supabase.auth.mfa.unenroll({ factorId: enrolling.factorId });
+    setEnrolling(null);
+    setCode("");
+    setMessage(null);
+  };
+
+  const remove = async () => {
+    if (!factor) return;
+    setBusy(true);
+    const { error } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+    setBusy(false);
+    if (error) { setMessage({ type: "error", text: error.message }); return; }
+    setMessage({ type: "ok", text: "Two-factor authentication turned off" });
+    refresh();
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-[32px] p-8 shadow-sm">
+      <div className="flex items-center gap-2">
+        <KeyRound size={16} className="text-emerald-600" />
+        <h2 className="text-[15px] font-medium text-slate-900">Two-factor authentication</h2>
+      </div>
+      <p className="text-[12px] text-slate-400 mt-1">
+        Add a code from an authenticator app, like Google Authenticator or 1Password, on top of your password.
+      </p>
+
+      {loading ? (
+        <div className="mt-4 flex justify-center"><Loader2 size={16} className="animate-spin text-slate-300" /></div>
+      ) : enrolling ? (
+        <div className="mt-4 space-y-4">
+          <div className="flex items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={enrolling.qrCode} alt="Scan with your authenticator app" className="h-32 w-32 rounded-2xl border border-slate-200 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-400">Scan this in your authenticator app, or enter the code manually.</p>
+              <p className="mt-1 text-[12px] font-mono text-slate-700 break-all">{enrolling.secret}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              value={code}
+              onChange={e => setCode(e.target.value)}
+              placeholder="6-digit code"
+              className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-[14px] text-slate-900 focus:outline-none focus:border-indigo-500 transition-all"
+            />
+            <button onClick={verifyEnroll} disabled={busy} className="px-5 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all disabled:opacity-40 disabled:cursor-default shrink-0">
+              {busy ? <Loader2 size={14} className="animate-spin" /> : "Verify"}
+            </button>
+          </div>
+          <button onClick={cancelEnroll} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
+        </div>
+      ) : factor ? (
+        <div className="mt-4 flex items-center justify-between gap-3 px-4 py-3 bg-emerald-50 rounded-2xl">
+          <span className="flex items-center gap-2 text-[12px] font-medium text-emerald-700"><CheckCircle2 size={14} /> Turned on</span>
+          <button onClick={remove} disabled={busy} className="px-4 py-2 bg-white text-slate-500 rounded-full text-[11px] font-bold hover:bg-red-50 hover:text-red-500 transition-all disabled:opacity-40 disabled:cursor-default">
+            {busy ? <Loader2 size={12} className="animate-spin" /> : "Turn off"}
+          </button>
+        </div>
+      ) : (
+        <button onClick={startEnroll} disabled={busy} className="mt-4 px-5 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all disabled:opacity-40 disabled:cursor-default">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : "Set up"}
+        </button>
+      )}
+      {message && <MessageRow message={message} />}
+    </div>
   );
 }
 

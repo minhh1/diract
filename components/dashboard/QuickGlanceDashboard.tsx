@@ -16,6 +16,7 @@ import { useCompany } from "@/components/CompanyContext";
 
 const LawFirmQuickGlance = dynamic(() => import("./quickGlance/LawFirmQuickGlance"));
 const PropertyDeveloperQuickGlance = dynamic(() => import("./quickGlance/PropertyDeveloperQuickGlance"));
+const SetupChecklist = dynamic(() => import("./quickGlance/SetupChecklist"));
 
 const KNOWN_TYPES = ['Law Firm', 'Property Developer'];
 
@@ -46,6 +47,7 @@ export default function QuickGlanceDashboard() {
         </div>
       </header>
       <main className="flex-1 overflow-y-auto p-8">
+        <SetupChecklist />
         {companyType === 'Law Firm' ? <LawFirmQuickGlance /> : <PropertyDeveloperQuickGlance />}
       </main>
     </div>
