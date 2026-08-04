@@ -7,6 +7,7 @@ import type { SpotlightAccent, SpotlightIconName } from "@/components/marketing/
 import type { MockupName } from "@/components/marketing/mockups";
 
 export interface AudienceFeature {
+  slug: string;
   icon: SpotlightIconName;
   title: string;
   body: string;
@@ -40,6 +41,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
     primaryCtaLabel: "Start your firm's workspace",
     features: [
       {
+        slug: "time-entries",
         icon: "Clock",
         title: "Time entries",
         body: "Log billable time against matters as you work, captured directly from tasks and correspondence, not reconstructed at month-end.",
@@ -47,6 +49,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "timeEntries",
       },
       {
+        slug: "ai-time-entries",
         icon: "Sparkles",
         title: "Auto time entries",
         body: "Time entries generated automatically from your day's activity — review and approve in seconds instead of guessing at what you did.",
@@ -54,6 +57,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "autoTimeEntries",
       },
       {
+        slug: "trust-compliance",
         icon: "Landmark",
         title: "Trust account",
         body: "A live trust ledger for every matter, with automatic irregularity checks so nothing slips through before settlement.",
@@ -61,6 +65,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "trustAccount",
       },
       {
+        slug: "fees-reports",
         icon: "BarChart3",
         title: "Fees reports",
         body: "See fees billed, WIP, and recovery by matter, fee earner, or practice area — no month-end spreadsheet required.",
@@ -68,6 +73,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "feesReport",
       },
       {
+        slug: "precedents",
         icon: "FileText",
         title: "Precedents",
         body: "A shared library of precedent documents your team can issue straight into a matter, fully tracked from draft to execution.",
@@ -75,6 +81,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "precedents",
       },
       {
+        slug: "teams-management",
         icon: "Users",
         title: "Teams management",
         body: "Organise fee earners into teams, assign matters, and control who sees what across your practice.",
@@ -82,6 +89,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "teamsManagement",
       },
       {
+        slug: "client-updates",
         icon: "LayoutPanelLeft",
         title: "Client updates",
         body: "Give clients a branded, always-current view of their matter's progress — no more \"just checking in\" phone calls.",
@@ -89,6 +97,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "clientUpdates",
       },
       {
+        slug: "tasks",
         icon: "ListChecks",
         title: "Tasks",
         body: "Track every to-do against its matter, assigned to the right person, with due dates that actually get followed up.",
@@ -109,6 +118,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
     primaryCtaLabel: "Start your development workspace",
     features: [
       {
+        slug: "loan-facilities",
         icon: "Landmark",
         title: "Loan tables",
         body: "Track every facility in one dashboard — lender, limit, drawn balance, rate, and maturity, kept current as your capital stack evolves.",
@@ -116,6 +126,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "loanTable",
       },
       {
+        slug: "finance-model",
         icon: "TrendingUp",
         title: "Finance model",
         body: "Build a full development feasibility straight into the platform — revenue, costs, and margin, always in sync with the deal.",
@@ -123,6 +134,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "financeModel",
       },
       {
+        slug: "loan-schedule",
         icon: "CalendarClock",
         title: "Loan tab in finance models",
         body: "Model drawdowns and interest against your finance model in the same place, so funding and feasibility never drift apart.",
@@ -130,6 +142,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "loanSchedule",
       },
       {
+        slug: "residual-land-solver",
         icon: "Calculator",
         title: "Residual land solver",
         body: "Solve for the land value your numbers can actually support, straight from your GRV and cost inputs — no separate spreadsheet.",
@@ -137,9 +150,10 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         visual: "residualLand",
       },
       {
+        slug: "entity-validation",
         icon: "BadgeCheck",
         title: "Entity data validation",
-        body: "ABN, ACN, and trust structure validated as you enter them, so bad entity data never makes it into a deal.",
+        body: "ABN and ACN are checked with a real checksum as you type, and BSB, account, and company details are captured cleanly alongside them — so bad entity data never makes it into a deal.",
         accent: "emerald",
         visual: "entityValidation",
       },

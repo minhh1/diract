@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   Table2, Workflow, Building2, ShieldCheck, BarChart3, Clock, Sparkles, Landmark,
   FileText, Users, LayoutPanelLeft, ListChecks, TrendingUp, CalendarClock, Calculator,
-  BadgeCheck, type LucideIcon,
+  BadgeCheck, ArrowRight, type LucideIcon,
 } from "lucide-react";
 import { MOCKUPS, type MockupName } from "./mockups";
 import { useMockupTheme } from "./MockupThemeProvider";
@@ -23,6 +24,7 @@ const ICONS: Record<string, LucideIcon> = {
 export type SpotlightIconName = keyof typeof ICONS;
 
 export interface SpotlightFeature {
+  slug: string;
   icon: SpotlightIconName;
   title: string;
   body: string;
@@ -82,16 +84,23 @@ export default function FeatureSpotlight({
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-80px" }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
-                className={`grid md:grid-cols-2 gap-10 items-center ${reversed ? "md:[&>*:first-child]:order-2" : ""}`}
               >
-                <div>
-                  <div className={`w-11 h-11 rounded-2xl ${a.bg} flex items-center justify-center mb-5`}>
-                    <Icon className={a.text} size={20} strokeWidth={2} />
+                <Link
+                  href={`/features/${f.slug}`}
+                  className={`group grid md:grid-cols-2 gap-10 items-center ${reversed ? "md:[&>*:first-child]:order-2" : ""}`}
+                >
+                  <div>
+                    <div className={`w-11 h-11 rounded-2xl ${a.bg} flex items-center justify-center mb-5`}>
+                      <Icon className={a.text} size={20} strokeWidth={2} />
+                    </div>
+                    <h3 className="text-xl font-medium text-slate-900 mb-3">{f.title}</h3>
+                    <p className="text-[15px] text-slate-500 leading-relaxed max-w-md mb-4">{f.body}</p>
+                    <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-indigo-600 group-hover:gap-2.5 transition-all">
+                      See how it works <ArrowRight size={14} />
+                    </span>
                   </div>
-                  <h3 className="text-xl font-medium text-slate-900 mb-3">{f.title}</h3>
-                  <p className="text-[15px] text-slate-500 leading-relaxed max-w-md">{f.body}</p>
-                </div>
-                <FeatureVisual feature={f} />
+                  <FeatureVisual feature={f} />
+                </Link>
               </motion.div>
             );
           })}

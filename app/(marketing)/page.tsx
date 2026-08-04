@@ -2,47 +2,11 @@ import { ArrowRight } from "lucide-react";
 import MarketingNav from "@/components/marketing/MarketingNav";
 import MarketingFooter from "@/components/marketing/MarketingFooter";
 import Hero from "@/components/marketing/Hero";
-import FeatureSpotlight, { type SpotlightFeature } from "@/components/marketing/FeatureSpotlight";
+import FeatureSpotlight from "@/components/marketing/FeatureSpotlight";
 import { audienceNavLinks } from "@/lib/marketing/audiences";
+import { HOME_FEATURES } from "@/lib/marketing/homeFeatures";
 import { MockupThemeProvider, MockupThemeToggle } from "@/components/marketing/MockupThemeProvider";
 
-const features: SpotlightFeature[] = [
-  {
-    icon: "Table2",
-    title: "Custom tables & fields",
-    body: "Build the exact tables your business needs — custom fields, statuses, and record types, with no rigid template to work around.",
-    accent: "indigo",
-    visual: "customTable",
-  },
-  {
-    icon: "Workflow",
-    title: "Auto-add rules",
-    body: "Set a rule once — a status, a type, any field value — and matching records get added to the right board automatically. No manual sorting.",
-    accent: "violet",
-    visual: "automation",
-  },
-  {
-    icon: "Building2",
-    title: "Multi-company",
-    body: "Manage multiple entities under one login, and switch between companies instantly without signing out and back in.",
-    accent: "sky",
-    visual: "multiCompany",
-  },
-  {
-    icon: "ShieldCheck",
-    title: "Role-based access",
-    body: "Admins control settings and sensitive data while the rest of the team collaborates freely, without stepping on each other's changes.",
-    accent: "amber",
-    visual: "roleAccess",
-  },
-  {
-    icon: "BarChart3",
-    title: "Reporting & dashboards",
-    body: "See where every record stands with dashboards built around your own data, not someone else's idea of what matters.",
-    accent: "emerald",
-    visual: "reporting",
-  },
-];
 
 const steps = [
   { n: "01", title: "Model your process", body: "Define the tables, fields, and statuses that match how your business actually runs." },
@@ -68,7 +32,7 @@ export default function HomePage() {
       <FeatureSpotlight
         eyebrow="Everything your business needs"
         heading="A CRM built around your tables, not a template"
-        features={features}
+        features={HOME_FEATURES}
       />
 
       {/* How it works */}
