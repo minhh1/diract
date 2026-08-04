@@ -8,7 +8,7 @@
 // ledger table in this app uses -- nothing here is a new data structure.
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ArrowLeftRight, ShieldPlus, Printer, Send, Eye } from "lucide-react";
+import { Plus, ArrowLeftRight, ShieldPlus, Printer, Send, Eye, Ban } from "lucide-react";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import DepositFundsModal from "./DepositFundsModal";
@@ -16,6 +16,7 @@ import TransferFundsModal from "./TransferFundsModal";
 import ProtectFundsModal from "./ProtectFundsModal";
 import PrintChequesModal from "./PrintChequesModal";
 import TrustPaymentModal from "./TrustPaymentModal";
+import VoidTransactionModal from "./VoidTransactionModal";
 import PdfPreviewModal from "../dashboard/PdfPreviewModal";
 
 function money(n: number): string {
@@ -41,7 +42,7 @@ function describe(r: CustomTableRecord): string {
 }
 
 export default function TrustTransactionsTab({
-  companyId, userId, trustAccountId, trustAccounts, trustTable, protectedTable, records, availableBalance,
+  companyId, userId, trustAccountId, trustAccounts, trustTable, protectedTable, records, availableBalance, isAdmin,
 }: {
   companyId: string;
   userId: string;
@@ -51,10 +52,12 @@ export default function TrustTransactionsTab({
   protectedTable: ReturnType<typeof useCustomTable>;
   records: CustomTableRecord[];
   availableBalance: number;
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const [modal, setModal] = useState<'deposit' | 'transfer' | 'protect' | 'cheque' | 'payment' | null>(null);
   const [preview, setPreview] = useState<{ kind: 'receipt' | 'payment'; key: string; label: string } | null>(null);
+  const [voidingRecord, setVoidingRecord] = useState<CustomTableRecord | null>(null);
 
   const sorted = [...records].sort((a, b) => String(b.values.date || '').localeCompare(String(a.values.date || '')));
   const matterIds = useMemo(() => [...new Set(sorted.map(r => String(r.values.matter || '')).filter(Boolean))], [sorted]);
@@ -139,7 +142,11 @@ export default function TrustTransactionsTab({
               <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                 <td className="px-4 py-2.5 text-slate-600">{formatDate(r.values.date)}</td>
                 <td className="px-4 py-2.5 text-slate-400">{formatDate(r.created_at)}</td>
-                <td className="px-4 py-2.5 text-slate-700 font-medium">{describe(r)}</td>
+                <td className="px-4 py-2.5 text-slate-700 font-medium">
+                  {r.values.voided_at ? <span className="line-through text-slate-400">{describe(r)}</span> : describe(r)}
+                  {r.values.voided_at && <span className="ml-2 text-[9px] font-bold text-rose-500 uppercase tracking-wider">Voided</span>}
+                  {r.values.reversal_of && <span className="ml-2 text-[9px] font-bold text-amber-500 uppercase tracking-wider">Reversal</span>}
+                </td>
                 <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.payment_number || r.values.journal_number || r.values.cheque_number || '—'}</td>
                 <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{matterNumbers.get(String(r.values.matter || '')) || '—'}</td>
                 <td className="px-4 py-2.5 text-slate-600">
@@ -153,15 +160,22 @@ export default function TrustTransactionsTab({
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_in ? money(Number(r.values.amount_in)) : ''}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-slate-800">{money(accountBalanceByRecordId.get(r.id) ?? 0)}</td>
                 <td className="px-2 py-2.5">
-                  {r.values.receipt_number ? (
-                    <button onClick={() => setPreview({ kind: 'receipt', key: r.values.receipt_number, label: `Receipt ${r.values.receipt_number}` })} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
-                      <Eye size={13} />
-                    </button>
-                  ) : r.values.payment_number ? (
-                    <button onClick={() => setPreview({ kind: 'payment', key: r.id, label: `Payment ${r.values.payment_number}` })} title="View payment" className="p-1.5 text-slate-300 hover:text-teal-600">
-                      <Eye size={13} />
-                    </button>
-                  ) : null}
+                  <div className="flex items-center justify-end gap-0.5">
+                    {r.values.receipt_number ? (
+                      <button onClick={() => setPreview({ kind: 'receipt', key: r.values.receipt_number, label: `Receipt ${r.values.receipt_number}` })} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
+                        <Eye size={13} />
+                      </button>
+                    ) : r.values.payment_number ? (
+                      <button onClick={() => setPreview({ kind: 'payment', key: r.id, label: `Payment ${r.values.payment_number}` })} title="View payment" className="p-1.5 text-slate-300 hover:text-teal-600">
+                        <Eye size={13} />
+                      </button>
+                    ) : null}
+                    {isAdmin && !r.values.voided_at && (
+                      <button onClick={() => setVoidingRecord(r)} title="Void transaction" className="p-1.5 text-slate-300 hover:text-rose-600">
+                        <Ban size={13} />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -215,6 +229,13 @@ export default function TrustTransactionsTab({
           downloadSrc={preview.kind === 'receipt' ? `/api/trust-receipts/${encodeURIComponent(preview.key)}/pdf?download=1` : `/api/trust-payments/${preview.key}/pdf?download=1`}
           title={preview.label}
           onClose={() => setPreview(null)}
+        />
+      )}
+      {voidingRecord && (
+        <VoidTransactionModal
+          tableId={trustTable.tableDef!.id} recordId={voidingRecord.id} description={describe(voidingRecord)}
+          onClose={() => setVoidingRecord(null)}
+          onVoided={() => { setVoidingRecord(null); trustTable.refetch(); }}
         />
       )}
     </div>

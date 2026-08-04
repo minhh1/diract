@@ -10,13 +10,14 @@
 // (see supabase/migrations/20260802170000_trust_account_tab.sql, which
 // migrated any matter that already had that grid over to this tab_type).
 import { useMemo, useState } from "react";
-import { Landmark, ExternalLink, Plus, Send, Eye } from "lucide-react";
-import { useCustomTable } from "@/lib/hooks/useCustomTable";
+import { Landmark, ExternalLink, Plus, Send, Eye, Ban } from "lucide-react";
+import { useCustomTable, type CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
 import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import { formatDateAU } from "@/lib/formatDate";
 import DepositFundsModal from "@/components/trust/DepositFundsModal";
 import TrustPaymentModal from "@/components/trust/TrustPaymentModal";
+import VoidTransactionModal from "@/components/trust/VoidTransactionModal";
 import PdfPreviewModal from "@/components/dashboard/PdfPreviewModal";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
@@ -31,12 +32,13 @@ function displayType(rawType: string | null | undefined): string {
   return rawType.startsWith('Withdrawal') ? 'Payment' : rawType;
 }
 
-export default function TrustAccountTab({ recordId, companyId, userId }: { recordId: string; companyId: string; userId: string }) {
+export default function TrustAccountTab({ recordId, companyId, userId, isAdmin }: { recordId: string; companyId: string; userId: string; isAdmin: boolean }) {
   const trustTable = useCustomTable('trust-transactions');
   const accountsTable = useCustomTable('trust-accounts');
   const { records, recordsLoading } = trustTable;
   const [modal, setModal] = useState<'deposit' | 'payment' | null>(null);
   const [preview, setPreview] = useState<{ kind: 'receipt' | 'payment'; key: string; label: string } | null>(null);
+  const [voidingRecord, setVoidingRecord] = useState<CustomTableRecord | null>(null);
 
   const activeAccounts = useMemo(
     () => accountsTable.records.filter(r => r.values.is_active !== false),
@@ -156,20 +158,31 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
                   {r.values.receipt_number || r.values.payment_number || r.values.journal_number || '—'}
                 </td>
                 <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{displayType(r.values.type)}</td>
-                <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || r.values.purpose || '—'}</td>
+                <td className="px-4 py-2 text-slate-600">
+                  {r.values.voided_at ? <span className="line-through text-slate-400">{r.values.payor_payee || r.values.purpose || '—'}</span> : (r.values.payor_payee || r.values.purpose || '—')}
+                  {r.values.voided_at && <span className="ml-2 text-[9px] font-bold text-rose-500 uppercase tracking-wider">Voided</span>}
+                  {r.values.reversal_of && <span className="ml-2 text-[9px] font-bold text-amber-500 uppercase tracking-wider">Reversal</span>}
+                </td>
                 <td className="px-4 py-2 text-right text-slate-700 whitespace-nowrap">{r.values.amount_in ? aud.format(Number(r.values.amount_in)) : ''}</td>
                 <td className="px-4 py-2 text-right text-slate-700 whitespace-nowrap">{r.values.amount_out ? aud.format(Number(r.values.amount_out)) : ''}</td>
                 <td className="px-4 py-2 text-right font-semibold text-slate-900 whitespace-nowrap">{aud.format(Number(r.values.running_balance) || 0)}</td>
                 <td className="px-2 py-2">
-                  {r.values.receipt_number ? (
-                    <button onClick={() => setPreview({ kind: 'receipt', key: r.values.receipt_number, label: `Receipt ${r.values.receipt_number}` })} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
-                      <Eye size={13} />
-                    </button>
-                  ) : r.values.payment_number ? (
-                    <button onClick={() => setPreview({ kind: 'payment', key: r.id, label: `Payment ${r.values.payment_number}` })} title="View payment" className="p-1.5 text-slate-300 hover:text-teal-600">
-                      <Eye size={13} />
-                    </button>
-                  ) : null}
+                  <div className="flex items-center justify-end gap-0.5">
+                    {r.values.receipt_number ? (
+                      <button onClick={() => setPreview({ kind: 'receipt', key: r.values.receipt_number, label: `Receipt ${r.values.receipt_number}` })} title="View receipt" className="p-1.5 text-slate-300 hover:text-teal-600">
+                        <Eye size={13} />
+                      </button>
+                    ) : r.values.payment_number ? (
+                      <button onClick={() => setPreview({ kind: 'payment', key: r.id, label: `Payment ${r.values.payment_number}` })} title="View payment" className="p-1.5 text-slate-300 hover:text-teal-600">
+                        <Eye size={13} />
+                      </button>
+                    ) : null}
+                    {isAdmin && !r.values.voided_at && (
+                      <button onClick={() => setVoidingRecord(r)} title="Void transaction" className="p-1.5 text-slate-300 hover:text-rose-600">
+                        <Ban size={13} />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -219,6 +232,14 @@ export default function TrustAccountTab({ recordId, companyId, userId }: { recor
           downloadSrc={preview.kind === 'receipt' ? `/api/trust-receipts/${encodeURIComponent(preview.key)}/pdf?download=1` : `/api/trust-payments/${preview.key}/pdf?download=1`}
           title={preview.label}
           onClose={() => setPreview(null)}
+        />
+      )}
+      {voidingRecord && (
+        <VoidTransactionModal
+          tableId={trustTable.tableDef!.id} recordId={voidingRecord.id}
+          description={voidingRecord.values.payor_payee || voidingRecord.values.purpose || displayType(voidingRecord.values.type)}
+          onClose={() => setVoidingRecord(null)}
+          onVoided={() => { setVoidingRecord(null); trustTable.refetch(); }}
         />
       )}
     </div>

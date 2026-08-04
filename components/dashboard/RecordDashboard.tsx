@@ -1510,7 +1510,7 @@ export default function RecordDashboard({
         <FinanceModelTab recordId={recordId} />
       )}
       {activeTab?.tab_type === 'trust_account' && (
-        <TrustAccountTab recordId={recordId} companyId={companyId} userId={ctxUserId!} />
+        <TrustAccountTab recordId={recordId} companyId={companyId} userId={ctxUserId!} isAdmin={isAdmin} />
       )}
       {activeTab?.tab_type === 'residual_land_solver' && (
         <ResidualLandSolverTab recordId={recordId} isProject={systemTable === 'projects'} />

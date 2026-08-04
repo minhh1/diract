@@ -223,6 +223,7 @@ export default function TrustAccountPage() {
             protectedTable={protectedTable}
             records={accountRecords}
             availableBalance={available}
+            isAdmin={isAdmin}
           />
         ) : activeTab === 'protected' ? (
           <ProtectedFundsTab

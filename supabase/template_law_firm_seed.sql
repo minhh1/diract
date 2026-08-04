@@ -430,6 +430,23 @@ BEGIN
     SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
   );
 
+  -- Void-a-transaction fields -- see
+  -- supabase/migrations/20260804030000_void_trust_transaction.sql for the
+  -- full rationale (append-only, so "void" means a reversing entry, not an
+  -- edit) and void_trust_transaction()'s definition.
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, linked_template_table_id, linked_display_field, display_order, help_text)
+  SELECT v_trust_table_id, v.field_key, v.label, v.field_type, v.linked_template_table_id, v.linked_display_field, v.display_order, v.help_text
+  FROM (VALUES
+    ('voided_at',    'Voided',            'date',           NULL::uuid, NULL::text, 22, NULL::text),
+    ('void_reason',  'Void Reason',       'text',           NULL::uuid, NULL::text, 23, NULL::text),
+    ('voided_by',    'Voided By',         'text',           NULL::uuid, NULL::text, 24, NULL::text),
+    ('reversal_of',  'Reversal Of',       'table_relation', v_trust_table_id, 'receipt_number'::text, 25, 'Set automatically when this row is a voiding reversal of another'::text)
+  ) AS v(field_key, label, field_type, linked_template_table_id, linked_display_field, display_order, help_text)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
+  );
+
   -- ── Client Credits (operating-side ledger -- NOT trust; client credit
   -- balances / overpayments against invoices, entirely separate account) ──
   INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order, is_ledger)
