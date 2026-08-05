@@ -72,20 +72,21 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
   },
   {
     name: "create_table",
-    description: "Create a new custom table for this company (e.g. Invoices, Employees, Payroll). Returns the new table's id, needed for create_field/create_dashboard.",
+    description: "Create a new custom table for this company (e.g. Invoices, Employees, Payroll). Returns the new table's id, needed for create_field/create_dashboard. Requires confirm=true -- only set this after you've laid out the full plan (this table, its fields, and the dashboard/widgets you'll add) and the user has explicitly agreed to it in chat.",
     input_schema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Table name, e.g. 'Invoices'." },
         icon: { type: "string", description: "A Lucide icon name, e.g. 'FileText', 'Users', 'Truck', 'CreditCard', 'Briefcase', 'Package'." },
         color: { type: "string", description: "A hex color, e.g. '#6366f1'." },
+        confirm: { type: "boolean", description: "Must be true, and only after you've presented the full plan and the user has explicitly agreed to it in this conversation." },
       },
-      required: ["name", "icon", "color"],
+      required: ["name", "icon", "color", "confirm"],
     },
   },
   {
     name: "create_field",
-    description: "Add a field/column to a table (from create_table or list_existing_tables).",
+    description: "Add a field/column to a table (from create_table or list_existing_tables). Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this field.",
     input_schema: {
       type: "object",
       properties: {
@@ -95,13 +96,14 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         select_options: { type: "array", items: { type: "string" }, description: "Only for field_type 'select' -- the list of choices, e.g. ['Draft','Sent','Paid']." },
         is_required: { type: "boolean" },
         help_text: { type: "string" },
+        confirm: { type: "boolean", description: "Must be true, and only after you've presented the full plan and the user has explicitly agreed to it in this conversation." },
       },
-      required: ["table_id", "label", "field_type"],
+      required: ["table_id", "label", "field_type", "confirm"],
     },
   },
   {
     name: "create_dashboard",
-    description: "Create a new dashboard bound to a table, so its records can be viewed/entered/summarized. It starts empty -- call add_widget afterward to populate it.",
+    description: "Create a new dashboard bound to a table, so its records can be viewed/entered/summarized. It starts empty -- call add_widget afterward to populate it. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this dashboard.",
     input_schema: {
       type: "object",
       properties: {
@@ -109,13 +111,14 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         icon: { type: "string", description: "A Lucide icon name, e.g. 'LayoutDashboard'." },
         color: { type: "string", description: "A hex color, e.g. '#6366f1'." },
         source_table_id: { type: "string", description: "The id of a custom table (from create_table/list_existing_tables) this dashboard shows records from." },
+        confirm: { type: "boolean", description: "Must be true, and only after you've presented the full plan and the user has explicitly agreed to it in this conversation." },
       },
-      required: ["name", "icon", "color", "source_table_id"],
+      required: ["name", "icon", "color", "source_table_id", "confirm"],
     },
   },
   {
     name: "add_widget",
-    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers.",
+    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this widget.",
     input_schema: {
       type: "object",
       properties: {
@@ -128,8 +131,9 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         summary_field_label: { type: "string", description: "summary_tile/chart widgets: the field to aggregate (omit for a plain record-count tile)." },
         summary_aggregate: { type: "string", enum: ["sum", "count", "net", "count-distinct"], description: "summary_tile/chart widgets, defaults to 'count'." },
         chart_date_field_label: { type: "string", description: "chart widgets (required): the date field for the x-axis." },
+        confirm: { type: "boolean", description: "Must be true, and only after you've presented the full plan and the user has explicitly agreed to it in this conversation." },
       },
-      required: ["dashboard_id", "widget_type"],
+      required: ["dashboard_id", "widget_type", "confirm"],
     },
   },
   {
@@ -221,6 +225,7 @@ async function listExistingDashboards(admin: any, companyId: string): Promise<To
 }
 
 async function createTable(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  if (input.confirm !== true) return { content: "Creating a table requires confirm=true. First present the full plan (this table, its fields, and the dashboard/widgets) and get the user's explicit agreement, then call this tool again.", isError: true };
   const name = String(input.name || "").trim();
   if (!name) return { content: "name is required", isError: true };
   const icon = String(input.icon || "Table2");
@@ -255,6 +260,7 @@ async function createTable(admin: any, companyId: string, userId: string, input:
 }
 
 async function createField(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  if (input.confirm !== true) return { content: "Adding a field requires confirm=true. First present the full plan and get the user's explicit agreement, then call this tool again.", isError: true };
   const tableId = String(input.table_id || "");
   const label = String(input.label || "").trim();
   const fieldType = String(input.field_type || "") as FieldType;
@@ -294,6 +300,7 @@ async function createField(admin: any, companyId: string, userId: string, input:
 }
 
 async function createDashboard(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  if (input.confirm !== true) return { content: "Creating a dashboard requires confirm=true. First present the full plan and get the user's explicit agreement, then call this tool again.", isError: true };
   const name = String(input.name || "").trim();
   if (!name) return { content: "name is required", isError: true };
   const icon = String(input.icon || "LayoutDashboard");
@@ -335,6 +342,7 @@ async function createDashboard(admin: any, companyId: string, userId: string, in
 }
 
 async function addWidget(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  if (input.confirm !== true) return { content: "Adding a widget requires confirm=true. First present the full plan and get the user's explicit agreement, then call this tool again.", isError: true };
   const dashboardId = String(input.dashboard_id || "");
   const widgetType = String(input.widget_type || "") as DashboardWidgetType;
   if (!GENERAL_WIDGET_TYPES.includes(widgetType)) {
