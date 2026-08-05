@@ -36,7 +36,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
-import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, CalendarCheck, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check, Settings as SettingsIcon, MessageCircleQuestion, Send } from "lucide-react";
+import { LayoutGrid, Table2, Trash2, X, MessageSquarePlus, Loader2, Plus, Pencil, Columns3, Calendar, UserPlus, Filter, GripVertical, History, Search, ArrowUp, ArrowDown, Sparkles, RotateCw, Eraser, ChevronUp, ChevronDown, ChevronRight, Pin, Wrench, Zap, FileText, Maximize2, Minimize2, MoreHorizontal, Download, Check, Settings as SettingsIcon, MessageCircleQuestion, Send } from "lucide-react";
 import { DATE_FORMATS, formatDate } from "./dateFormat";
 import AddMatterModal from "./AddMatterModal";
 import ColumnManagerModal from "./ColumnManagerModal";
@@ -354,7 +354,6 @@ export default function MatterBoard({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [conditionGroupId, setConditionGroupId] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
-  const [summarizingAll, setSummarizingAll] = useState(false);
   // A staff value edit doesn't hit onSaveValue directly -- see
   // requestSaveValue below -- it stops here first so staff must give a
   // reason before the change actually saves and lands in the per-cell log
@@ -363,38 +362,41 @@ export default function MatterBoard({
   const [reasonInput, setReasonInput] = useState("");
   const [historyTarget, setHistoryTarget] = useState<{ itemId: string; fieldId: string; fieldLabel: string; field: MatterBoardField } | null>(null);
   const [clearingAll, setClearingAll] = useState(false);
-  const [checkingAllStatus, setCheckingAllStatus] = useState(false);
+  const [runningBulkUpdate, setRunningBulkUpdate] = useState(false);
 
-  const reviewAllSettlementStatus = async () => {
-    if (!onReviewAllSettlementStatus || checkingAllStatus) return;
-    setCheckingAllStatus(true);
+  // Combines what used to be two separate buttons (generate summaries /
+  // confirm settlement status, both "for every open matter on this page")
+  // into one -- they're both a "catch this page up" bulk action a staff
+  // member reaches for at the same moment, so one click doing both is less
+  // friction than two. Runs whichever of the two the page actually supports
+  // (a custom-table page has summaries but not settlement review, which is
+  // projects-only -- see the prop comments below) and reports both results
+  // together.
+  const runBulkUpdate = async () => {
+    if ((!onSummarizeOpenMatters && !onReviewAllSettlementStatus) || runningBulkUpdate) return;
+    setRunningBulkUpdate(true);
     try {
-      const result = await onReviewAllSettlementStatus();
-      const parts = [`Checked ${result.reviewed} matter${result.reviewed === 1 ? "" : "s"}`, `${result.agreed} agreed to a new date`];
-      if (result.failed.length) parts.push(`${result.failed.length} failed: ${result.failed.join(", ")}`);
+      const parts: string[] = [];
+      if (onSummarizeOpenMatters) {
+        const result = await onSummarizeOpenMatters();
+        parts.push(`Generated ${result.generated} summar${result.generated === 1 ? "y" : "ies"}`);
+        if (result.failed.length) parts.push(`${result.failed.length} summary failure${result.failed.length === 1 ? "" : "s"}`);
+      }
+      if (onReviewAllSettlementStatus) {
+        const result = await onReviewAllSettlementStatus();
+        parts.push(`checked ${result.reviewed} settlement date${result.reviewed === 1 ? "" : "s"} (${result.agreed} agreed to a new date)`);
+        if (result.failed.length) parts.push(`${result.failed.length} settlement-check failure${result.failed.length === 1 ? "" : "s"}: ${result.failed.join(", ")}`);
+      }
       window.alert(parts.join("; "));
       onDataChanged?.();
     } finally {
-      setCheckingAllStatus(false);
-    }
-  };
-
-  const summarizeOpenMatters = async () => {
-    if (!onSummarizeOpenMatters || summarizingAll) return;
-    setSummarizingAll(true);
-    try {
-      const result = await onSummarizeOpenMatters();
-      const parts = [`Generated ${result.generated} summar${result.generated === 1 ? "y" : "ies"}`];
-      if (result.failed.length) parts.push(`${result.failed.length} failed: ${result.failed.join(", ")}`);
-      window.alert(parts.join("; "));
-    } finally {
-      setSummarizingAll(false);
+      setRunningBulkUpdate(false);
     }
   };
 
   const clearSummaries = async () => {
     if (!onClearSummaries || clearingAll) return;
-    if (!window.confirm("Clear the AI summary from every matter on this page? This can't be undone, but they can be regenerated.")) return;
+    if (!window.confirm("Clear the summary from every matter on this page? This can't be undone, but they can be regenerated.")) return;
     setClearingAll(true);
     try {
       const cleared = await onClearSummaries();
@@ -866,22 +868,17 @@ export default function MatterBoard({
                   className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
                   <Download size={12} /> Export to CSV
                 </button>
-                {onSummarizeOpenMatters && (
-                  <button onClick={() => { summarizeOpenMatters(); setShowMoreMenu(false); }} disabled={summarizingAll}
+                {(onSummarizeOpenMatters || onReviewAllSettlementStatus) && (
+                  <button onClick={() => { runBulkUpdate(); setShowMoreMenu(false); }} disabled={runningBulkUpdate}
                     className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors">
-                    {summarizingAll ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Generate AI summaries for open matters
+                    {runningBulkUpdate ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                    {onReviewAllSettlementStatus ? "Update summaries & settlement dates" : "Generate summaries for open matters"}
                   </button>
                 )}
                 {onClearSummaries && (
                   <button onClick={() => { clearSummaries(); setShowMoreMenu(false); }} disabled={clearingAll}
                     className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 transition-colors">
-                    {clearingAll ? <Loader2 size={12} className="animate-spin" /> : <Eraser size={12} />} Clear all AI summaries
-                  </button>
-                )}
-                {onReviewAllSettlementStatus && (
-                  <button onClick={() => { reviewAllSettlementStatus(); setShowMoreMenu(false); }} disabled={checkingAllStatus}
-                    className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-purple-50 hover:text-purple-600 disabled:opacity-40 transition-colors">
-                    {checkingAllStatus ? <Loader2 size={12} className="animate-spin" /> : <CalendarCheck size={12} />} AI confirm settlement status (all matters)
+                    {clearingAll ? <Loader2 size={12} className="animate-spin" /> : <Eraser size={12} />} Clear all summaries
                   </button>
                 )}
               </div>
