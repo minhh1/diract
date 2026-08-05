@@ -289,8 +289,10 @@ function ProfileForm({ initialFullName, initialAvatarUrl, email }: {
 // fill="#..." colors and other reserved characters otherwise corrupt the
 // data URI. Without that encoding this renders as a broken image in
 // Safari/iOS (silently "worked" in some other browsers, which is how it
-// shipped unnoticed). This is where enrolling and later turning it off
-// both actually happen.
+// shipped unnoticed). The
+// dashboard/quick-glance setup checklist (components/dashboard/quickGlance/
+// SetupChecklist.tsx) links back here for the "set up" action; this is
+// where enrolling and later turning it off both actually happen.
 function SecuritySection({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true);
   const [factor, setFactor] = useState<{ id: string } | null>(null);
