@@ -15,7 +15,7 @@
 import { useState, type ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
-  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge,
+  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge, Flag,
   type LucideIcon,
 } from "lucide-react";
 
@@ -764,22 +764,115 @@ export function MockClientUpdates() {
 // Recreates the real per-task row from components/public/PublicTasksContent.tsx
 // (the "public tasks" page -- a shareable, scoped task view a signed-in
 // user opens, not an anonymous page): a completion toggle that's genuinely
-// disabled with a lock icon while task_dependencies are still open,
-// real status badges (Watching, Follow-up scheduled, Blocked by N tasks),
-// and a due-date column -- not the plain 3-column table this mockup used
-// to show, which was closer to the separate internal admin tasks table.
-// Unlocked rows genuinely toggle done/not-done on click; the locked row
-// stays locked no matter what's clicked -- that's the real point of the
-// dependency lock, not a bug in this mockup.
+// disabled with a lock icon while task_dependencies are still open, a real
+// follow-up flag button (see components/FollowUpToggle.tsx -- click to log
+// or schedule a follow-up, mark one done, or remove it, exactly like the
+// real row), real status badges (Watching, Blocked by N tasks), and a
+// due-date column. Unlocked rows genuinely toggle done/not-done on click;
+// the locked row stays locked no matter what's clicked -- that's the real
+// point of the dependency lock, not a bug in this mockup.
+interface MockFollowUp { id: string; date: string; isDone: boolean; }
+
+function mockTodayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function TaskFollowUpButton({ entries, onAdd, onMarkDone, onRemove }: {
+  entries: MockFollowUp[];
+  onAdd: (date: string) => void;
+  onMarkDone: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState(mockTodayStr());
+  const doneEntries = entries.filter((e) => e.isDone);
+  const scheduledEntries = entries.filter((e) => !e.isDone);
+  const hasScheduled = scheduledEntries.length > 0;
+  const isFuture = date > mockTodayStr();
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        title={hasScheduled ? `${scheduledEntries.length} follow-up(s) scheduled, click to manage` : doneEntries.length > 0 ? `Followed up ${doneEntries.length}x, click to manage` : "Log a follow-up"}
+        className={`h-5 min-w-[20px] px-1 rounded-full border-2 flex items-center justify-center gap-0.5 transition-all ${
+          hasScheduled ? "bg-sky-400 border-sky-400" : doneEntries.length > 0 ? "bg-amber-400 border-amber-400" : "border-slate-300 hover:border-amber-400"
+        }`}
+      >
+        <Flag size={9} className={hasScheduled || doneEntries.length > 0 ? "text-white" : "text-slate-300"} />
+        {(doneEntries.length > 1 || hasScheduled) && (
+          <span className="text-[8px] font-bold text-white leading-none">{hasScheduled ? scheduledEntries.length : doneEntries.length}</span>
+        )}
+      </button>
+      {open && (
+        <div onClick={(e) => e.stopPropagation()} className="absolute z-20 top-6 left-0 w-64 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 space-y-2.5">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+            Follow-ups {hasScheduled ? `(${doneEntries.length} done, ${scheduledEntries.length} scheduled)` : `(${doneEntries.length})`}
+          </p>
+          {entries.length > 0 && (
+            <div className="space-y-1 max-h-28 overflow-y-auto">
+              {entries.map((e) => (
+                <div key={e.id} className={`flex items-center justify-between px-2.5 py-1 rounded-full ${e.isDone ? "bg-slate-50" : "bg-sky-50"}`}>
+                  <span className={`text-[10px] ${e.isDone ? "text-slate-500" : "text-sky-700 font-medium"}`}>
+                    {new Date(e.date + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short" })}{!e.isDone && " · scheduled"}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {!e.isDone && (
+                      <button onClick={() => onMarkDone(e.id)} title="Mark as followed up" className="text-sky-400 hover:text-emerald-500 transition-colors">
+                        <Check size={11} />
+                      </button>
+                    )}
+                    <button onClick={() => onRemove(e.id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                      <X size={10} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="space-y-1.5 pt-1.5 border-t border-slate-100">
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{isFuture ? "Schedule for" : "Date followed up"}</p>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className={`w-full px-2.5 py-1.5 border rounded-full text-[10px] outline-none ${isFuture ? "border-sky-200 focus:border-sky-400" : "border-slate-200 focus:border-amber-400"}`}
+            />
+            <button
+              onClick={() => onAdd(date)}
+              className={`w-full py-1.5 text-white text-[10px] font-bold rounded-full transition-colors ${isFuture ? "bg-sky-500 hover:bg-sky-600" : "bg-amber-500 hover:bg-amber-600"}`}
+            >
+              {isFuture ? "Schedule follow-up" : "Log follow-up"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TASK_ROWS: { key: string; locked: boolean; name: string; badge?: string; matter: string; due: string; dueColor: TagColor }[] = [
   { key: "title-search", locked: false, name: "Order title search", matter: "2024/0212", due: "Today", dueColor: "amber" },
   { key: "draft-contract", locked: true, name: "Draft contract", badge: "Blocked by 2 tasks", matter: "2024/0187", due: "23 Jul", dueColor: "indigo" },
   { key: "engagement-letter", locked: false, name: "Send engagement letter", badge: "Watching", matter: "2024/0201", due: "Done", dueColor: "emerald" },
-  { key: "ppsr", locked: false, name: "Review PPSR", badge: "Follow-up scheduled", matter: "2024/0164", due: "24 Jul", dueColor: "indigo" },
+  { key: "ppsr", locked: false, name: "Review PPSR", matter: "2024/0164", due: "24 Jul", dueColor: "indigo" },
   { key: "trustee-resolution", locked: false, name: "Prepare trustee resolution", matter: "2024/0225", due: "25 Jul", dueColor: "indigo" },
 ];
 export function MockTasks() {
   const [done, setDone] = useState<Record<string, boolean>>({ "engagement-letter": true });
+  const [followUps, setFollowUps] = useState<Record<string, MockFollowUp[]>>({
+    ppsr: [{ id: "fu-seed", date: "2026-08-10", isDone: false }],
+  });
+
+  const addFollowUp = (key: string, date: string) => {
+    setFollowUps((prev) => ({ ...prev, [key]: [...(prev[key] || []), { id: `fu-${Date.now()}`, date, isDone: date <= mockTodayStr() }] }));
+  };
+  const markFollowUpDone = (key: string, id: string) => {
+    setFollowUps((prev) => ({ ...prev, [key]: (prev[key] || []).map((e) => (e.id === id ? { ...e, isDone: true } : e)) }));
+  };
+  const removeFollowUp = (key: string, id: string) => {
+    setFollowUps((prev) => ({ ...prev, [key]: (prev[key] || []).filter((e) => e.id !== id) }));
+  };
+
   return (
     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="px-4 py-2.5 border-b border-slate-100">
@@ -788,18 +881,28 @@ export function MockTasks() {
       <div>
         {TASK_ROWS.map((r, i) => {
           const isDone = !!done[r.key];
+          const entries = followUps[r.key] || [];
           return (
-            <button
+            <div
               key={r.key}
-              disabled={r.locked}
-              onClick={() => setDone((d) => ({ ...d, [r.key]: !d[r.key] }))}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${i < TASK_ROWS.length - 1 ? "border-b border-slate-50" : ""} ${r.locked ? "cursor-not-allowed" : "hover:bg-slate-50"}`}
+              className={`w-full flex items-center gap-2 px-4 py-3 transition-colors ${i < TASK_ROWS.length - 1 ? "border-b border-slate-50" : ""}`}
             >
-              {r.locked ? (
-                <Lock size={14} className="text-slate-300 shrink-0" />
-              ) : (
-                <span className={`w-4 h-4 rounded-full border-2 shrink-0 transition-colors ${isDone ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`} />
-              )}
+              <button
+                disabled={r.locked}
+                onClick={() => setDone((d) => ({ ...d, [r.key]: !d[r.key] }))}
+                className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
+                  isDone ? "bg-emerald-500 border-emerald-500" : r.locked ? "border-slate-200 cursor-not-allowed" : "border-slate-300 hover:border-indigo-400"
+                }`}
+              >
+                {isDone && <Check size={10} className="text-white" />}
+                {!isDone && r.locked && <Lock size={8} className="text-slate-300" />}
+              </button>
+              <TaskFollowUpButton
+                entries={entries}
+                onAdd={(date) => addFollowUp(r.key, date)}
+                onMarkDone={(id) => markFollowUpDone(r.key, id)}
+                onRemove={(id) => removeFollowUp(r.key, id)}
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className={`text-[12px] font-medium ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>{r.name}</span>
@@ -808,7 +911,7 @@ export function MockTasks() {
                 <span className="text-[10px] text-slate-400">{r.matter}</span>
               </div>
               <span className={`text-[10px] font-bold shrink-0 px-2 py-0.5 rounded-full ${TAG[isDone ? "emerald" : r.dueColor]}`}>{isDone ? "Done" : r.due}</span>
-            </button>
+            </div>
           );
         })}
       </div>
