@@ -284,7 +284,12 @@ function ProfileForm({ initialFullName, initialAvatarUrl, email }: {
 // (supabase.auth.mfa.enroll/challengeAndVerify/unenroll) -- nothing here is
 // simulated. qr_code comes back as a bare SVG document, not a data URI, so
 // it needs the data:image/svg+xml;utf-8, prefix prepended before it'll
-// render in an <img>, per @supabase/auth-js's own type comment. The
+// render in an <img>, per @supabase/auth-js's own type comment -- and the
+// SVG itself must be percent-encoded first (encodeURIComponent), since its
+// fill="#..." colors and other reserved characters otherwise corrupt the
+// data URI. Without that encoding this renders as a broken image in
+// Safari/iOS (silently "worked" in some other browsers, which is how it
+// shipped unnoticed). The
 // dashboard/quick-glance setup checklist (components/dashboard/quickGlance/
 // SetupChecklist.tsx) links back here for the "set up" action; this is
 // where enrolling and later turning it off both actually happen.
@@ -310,7 +315,7 @@ function SecuritySection({ userId }: { userId: string }) {
     const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "Diract" });
     setBusy(false);
     if (error || !data) { setMessage({ type: "error", text: error?.message || "Could not start enrollment" }); return; }
-    setEnrolling({ factorId: data.id, qrCode: `data:image/svg+xml;utf-8,${data.totp.qr_code}`, secret: data.totp.secret });
+    setEnrolling({ factorId: data.id, qrCode: `data:image/svg+xml;utf-8,${encodeURIComponent(data.totp.qr_code)}`, secret: data.totp.secret });
   };
 
   const verifyEnroll = async () => {
