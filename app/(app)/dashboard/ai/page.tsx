@@ -72,14 +72,24 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   delete_dashboard: Trash2,
 };
 
+// Spelled out with the actual specifics the model passed (field type,
+// which fields a widget shows, ...), not just the tool name -- the point of
+// showing these live is telling the user exactly what's being created, not
+// just that "something" is happening.
 function toolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case "list_existing_tables": return "Checking existing tables";
     case "list_existing_dashboards": return "Checking existing dashboards";
     case "create_table": return `Creating table "${input.name ?? ""}"`;
-    case "create_field": return `Adding field "${input.label ?? ""}"`;
+    case "create_field": {
+      const type = typeof input.field_type === "string" ? ` (${input.field_type})` : "";
+      return `Adding field "${input.label ?? ""}"${type}`;
+    }
     case "create_dashboard": return `Creating dashboard "${input.name ?? ""}"`;
-    case "add_widget": return `Adding a ${input.widget_type ?? "widget"} widget`;
+    case "add_widget": {
+      const labels = Array.isArray(input.field_labels) && input.field_labels.length ? `: ${input.field_labels.join(", ")}` : "";
+      return `Adding a ${input.widget_type ?? "widget"} widget${labels}`;
+    }
     case "delete_table": return "Deleting table";
     case "delete_field": return "Removing field";
     case "remove_widget": return "Removing widget";
@@ -118,13 +128,14 @@ function ToolCallChip({ call }: { call: ToolCallEvent }) {
   );
 }
 
-// Animated "thinking" indicator shown while the assistant has produced
-// neither text nor a tool call yet for this turn -- a pulsing sparkle plus
-// three sequentially-bouncing dots, i.e. real motion rather than a static
-// "...".
+// Shown while the assistant has produced neither text nor a tool call yet
+// for this turn -- deliberately NOT inside the bordered message-bubble
+// chrome (that's for actual content), just a pulsing sparkle, three
+// sequentially-bouncing dots, and a label naming what's actually happening,
+// so it reads as "in progress" rather than "here's an empty reply".
 function ThinkingIndicator() {
   return (
-    <div className="flex items-center gap-2.5 py-0.5">
+    <div className="flex items-center gap-2.5 py-1 pl-1">
       <motion.div
         className="flex items-center justify-center h-6 w-6 rounded-full bg-indigo-50 shrink-0"
         animate={{ rotate: [0, 12, -12, 0] }}
@@ -132,6 +143,7 @@ function ThinkingIndicator() {
       >
         <Sparkles size={12} className="text-indigo-500" />
       </motion.div>
+      <span className="text-[12px] font-medium text-slate-400">Reading your request and deciding what to build</span>
       <div className="flex items-center gap-1">
         {[0, 1, 2].map((i) => (
           <motion.span
@@ -378,9 +390,18 @@ export default function AiAssistantPage() {
             <AnimatePresence initial={false}>
               {messages.map((m, i) => {
                 const isLast = i === messages.length - 1;
+                const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
                 const toolsInFlight = (m.toolCalls ?? []).some((t) => t.phase === "start");
                 const showThinking = m.role === "assistant" && !m.content && sending && isLast && !toolsInFlight;
                 const showCursor = m.role === "assistant" && !!m.content && sending && isLast;
+
+                // An assistant turn that ended up with nothing at all
+                // (no text, no tool calls, no longer sending -- e.g. the
+                // request errored before producing anything) has nothing
+                // worth showing; the error banner below already explains
+                // why.
+                if (m.role === "assistant" && !m.content && !hasToolCalls && !sending) return null;
+
                 return (
                   <motion.div
                     key={i}
@@ -390,32 +411,37 @@ export default function AiAssistantPage() {
                     transition={{ duration: 0.25, ease: "easeOut" }}
                     className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    <div
-                      className={`max-w-[80%] rounded-[24px] px-5 py-3 text-[13px] ${
-                        m.role === "user" ? "bg-indigo-600 text-white whitespace-pre-wrap" : "bg-white border border-slate-200 text-slate-700"
-                      }`}
-                    >
-                      {m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0 && (
-                        <div className="flex flex-col gap-1.5 mb-2.5">
-                          <AnimatePresence initial={false}>
-                            {m.toolCalls.map((call, ci) => (
-                              <ToolCallChip key={ci} call={call} />
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      )}
+                    {m.role === "user" ? (
+                      <div className="max-w-[80%] rounded-[24px] px-5 py-3 text-[13px] bg-indigo-600 text-white whitespace-pre-wrap">
+                        {m.content}
+                      </div>
+                    ) : (
+                      // No card/bubble on the assistant side -- tool
+                      // activity and the reply itself sit directly on the
+                      // page, distinguished from the user's messages by
+                      // alignment alone (ChatGPT-style), not a boxed
+                      // container.
+                      <div className="max-w-[80%] text-[13px] text-slate-700 py-1">
+                        {hasToolCalls && (
+                          <div className="flex flex-col gap-1.5 mb-2.5">
+                            <AnimatePresence initial={false}>
+                              {m.toolCalls!.map((call, ci) => (
+                                <ToolCallChip key={ci} call={call} />
+                              ))}
+                            </AnimatePresence>
+                          </div>
+                        )}
 
-                      {m.role === "user" ? (
-                        m.content
-                      ) : showThinking ? (
-                        <ThinkingIndicator />
-                      ) : m.content ? (
-                        <>
-                          <div className="ai-chat-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />
-                          {showCursor && <span className="inline-block w-[2px] h-[13px] bg-indigo-400 mt-0.5 animate-pulse" />}
-                        </>
-                      ) : null}
-                    </div>
+                        {showThinking ? (
+                          <ThinkingIndicator />
+                        ) : m.content ? (
+                          <>
+                            <div className="ai-chat-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />
+                            {showCursor && <span className="inline-block w-[2px] h-[13px] bg-indigo-400 mt-0.5 animate-pulse" />}
+                          </>
+                        ) : null}
+                      </div>
+                    )}
                   </motion.div>
                 );
               })}
