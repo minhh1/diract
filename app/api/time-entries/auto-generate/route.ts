@@ -55,7 +55,16 @@ import { draftAutoTimeEntries, type AutoTimeEntryTaskInput, type AutoTimeEntryEm
 import { dedupeAndAttributeEmails, type RawProjectEmail, type StaffMember } from "@/lib/ai/emailTimekeeperAttribution";
 import { refreshTokenIfNeeded } from "@/lib/gmail/client";
 
-const MODEL_ID = HOSTED_MODELS[0].id;
+// Pinned, not HOSTED_MODELS[0] -- draftAutoTimeEntries requires the model to
+// return a bare JSON array with no prose/markdown fences, and index 0 now
+// means "confirmed function-calling support" (picked for the table/
+// dashboard-builder chat, see aiModels.ts), not "reliable strict-JSON-only
+// output." When DeepSeek V4 Pro briefly became index 0, its looser JSON
+// compliance made every task/email fail to match a drafted entry and fall
+// through to the leftover-item fallback, which just echoes the email
+// subject as the description instead of a real one -- Llama 3.3 70B is the
+// model this feature was actually built and tested against.
+const MODEL_ID = HOSTED_MODELS.find(m => m.id === "meta-llama/Llama-3.3-70B-Instruct-Turbo")!.id;
 const VALID_LEVELS: DescriptionDetailLevel[] = ["brief", "standard", "detailed"];
 
 function initialsFor(name: string | null): string {

@@ -11,7 +11,10 @@ import { HOSTED_MODELS, costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 import { redraftEntryDescription, type DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
 
-const MODEL_ID = HOSTED_MODELS[0].id;
+// Pinned -- see the matching comment in ../route.ts for why this can't be
+// HOSTED_MODELS[0] (redraftEntryDescription has the same strict-JSON
+// requirement as draftAutoTimeEntries).
+const MODEL_ID = HOSTED_MODELS.find(m => m.id === "meta-llama/Llama-3.3-70B-Instruct-Turbo")!.id;
 const VALID_LEVELS: DescriptionDetailLevel[] = ["brief", "standard", "detailed"];
 
 export async function POST(req: NextRequest) {
