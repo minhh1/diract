@@ -17,12 +17,22 @@
 // entry from first wins it -- the OTHER view simply won't offer it again on
 // its next generate, since both read the same time_entry_ai_sources
 // tracking table server-side (see the submit route's header comment).
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { X, Loader2, Sparkles, Check, RefreshCw, ChevronDown, ChevronUp, Mail, Star } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { supabase } from "@/lib/supabase";
+import { useTableRealtime } from "@/lib/hooks/useTableRealtime";
 import type { DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
 import { auTodayStr } from "@/lib/companyLocalDate";
+
+// A job is considered stalled (not just slow) once this long passes with no
+// progress write -- Vercel caps how long a single invocation can run even
+// with after()/waitUntil (see the route's own header comment), so an
+// unusually large day could in principle get killed mid-way with the job
+// stuck at status='running' forever. Surfacing that as an error rather than
+// spinning forever at least tells the user to try again instead of leaving
+// them stuck watching a bar that will never move.
+const STALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 const DETAIL_LEVELS: DescriptionDetailLevel[] = ["brief", "standard", "detailed"];
 
@@ -72,14 +82,13 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
 
   const [date, setDate] = useState(todayInputValue());
   const [scope, setScope] = useState<"mine" | "all">("mine");
-  const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<DraftEntry[]>([]);
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failedNotes, setFailedNotes] = useState<Record<string, string>>({});
-  // null until the user's persisted preference loads -- generate() waits
+  // null until the user's persisted preference loads -- startOrAttach waits
   // for it rather than firing once with a hardcoded 'standard' and again a
   // moment later once the real default is known.
   const [defaultDetailLevel, setDefaultDetailLevel] = useState<DescriptionDetailLevel | null>(null);
@@ -93,10 +102,16 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
   // an entry's own "Set as default" does.
   const [bulkLevel, setBulkLevel] = useState<DescriptionDetailLevel>("standard");
   const [bulkRegenerating, setBulkRegenerating] = useState(false);
-  // Streamed while generate() is in flight -- null until the route's first
-  // progress line arrives (the empty-day fast path never streams any, so
-  // this just stays null and the loading spinner shows with no bar).
+
+  // The job actually driving this date/scope -- persisted server-side (see
+  // app/api/time-entries/auto-generate's header comment), so closing this
+  // drawer (or the whole tab) and coming back later just re-attaches to
+  // whatever's already there instead of losing progress or re-running.
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [progress, setProgress] = useState<{ processed: number; total: number } | null>(null);
+  const jobUpdatedAtRef = useRef<number>(0);
+  const loading = jobStatus === "running" || jobStatus === "idle";
 
   useEffect(() => {
     if (!userId) return;
@@ -117,76 +132,98 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
     return next;
   });
 
-  const generate = useCallback(async () => {
-    if (!defaultDetailLevel) return; // still waiting on the profile fetch above
-    setLoading(true);
+  // Applies one job row (from the initial lookup query or a realtime
+  // update) to this drawer's local state -- entries/staffOptions only ever
+  // land here once, when status flips to 'done' (the job writes them once
+  // at the end, not progressively, same as the old streamed 'done' line).
+  const applyJobRow = useCallback((row: any) => {
+    jobUpdatedAtRef.current = row.updated_at ? new Date(row.updated_at).getTime() : Date.now();
+    setJobStatus(row.status);
+    setProgress({ processed: row.processed ?? 0, total: row.total ?? 0 });
+    if (row.status === "done") {
+      const rows: DraftEntry[] = row.entries || [];
+      setEntries(rows);
+      setStaffOptions(row.staff_options || []);
+      // Rows with no timekeeper resolved yet start unchecked -- there's
+      // nothing valid to submit until one is assigned below.
+      setChecked(new Set(rows.filter(r => r.userId).map(r => r.key)));
+      if (defaultDetailLevel) setBulkLevel(defaultDetailLevel);
+    } else if (row.status === "error") {
+      setError(row.error || "Could not generate time entries");
+    }
+  }, [defaultDetailLevel]);
+
+  // Looks for an already-running or already-finished job for this exact
+  // (date, scope) first -- reopening the drawer (or the whole tab) for a
+  // day already generated today just re-attaches instead of burning AI
+  // tokens re-running it. `forceNew` (the refresh button) skips straight to
+  // starting a fresh one regardless of what's there.
+  const startOrAttach = useCallback(async (forceNew = false) => {
+    if (!defaultDetailLevel || !userId) return;
     setError(null);
     setFailedNotes({});
+    setEntries([]);
+    setJobId(null);
+    setJobStatus("idle");
     setProgress(null);
+
+    if (!forceNew) {
+      const { data: existing } = await supabase.from("auto_time_entry_generation_jobs")
+        .select("id, status, processed, total, entries, staff_options, error, updated_at")
+        .eq("requested_by_user_id", userId).eq("date", date).eq("scope", scope)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (existing) {
+        setJobId(existing.id);
+        applyJobRow(existing);
+        return;
+      }
+    }
+
+    setJobStatus("running");
     try {
       const res = await fetch("/api/time-entries/auto-generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, scope, detailLevel: defaultDetailLevel }),
       });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Could not generate time entries");
-      }
-
-      // The route streams newline-delimited JSON when there's real work to
-      // do (a 'progress' line per user/batch as its draft call finishes,
-      // then one 'done' line) so this drawer can show live progress instead
-      // of one long silent spinner -- see that route's own header comment
-      // for why the per-user drafting used to be the slow part. The
-      // nothing-to-do fast path still returns a single plain JSON object
-      // (no stream), so both shapes are handled here.
-      let payload: { entries: DraftEntry[]; staffOptions: StaffOption[] } | null = null;
-      let streamError: string | null = null;
-      if (res.headers.get("content-type")?.includes("x-ndjson") && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let newlineIndex: number;
-          while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, newlineIndex).trim();
-            buffer = buffer.slice(newlineIndex + 1);
-            if (!line) continue;
-            const evt = JSON.parse(line);
-            if (evt.type === "progress") setProgress({ processed: evt.processed, total: evt.total });
-            else if (evt.type === "done") payload = evt;
-            else if (evt.type === "error") streamError = evt.error;
-          }
-        }
-      } else {
-        payload = await res.json();
-      }
-      // A mid-stream failure (e.g. the AI provider erroring on one batch)
-      // still sends a 'done' line first with whatever entries did complete
-      // -- only surface streamError as a hard failure when nothing at all
-      // came through.
-      if (!payload) throw new Error(streamError || "Could not generate time entries");
-
-      const rows: DraftEntry[] = payload.entries || [];
-      setEntries(rows);
-      setStaffOptions(payload.staffOptions || []);
-      // Rows with no timekeeper resolved yet start unchecked -- there's
-      // nothing valid to submit until one is assigned below.
-      setChecked(new Set(rows.filter(r => r.userId).map(r => r.key)));
-      setBulkLevel(defaultDetailLevel);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not start generation");
+      jobUpdatedAtRef.current = Date.now();
+      setJobId(json.jobId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not generate time entries");
-      setEntries([]);
-    } finally {
-      setLoading(false);
-      setProgress(null);
+      setJobStatus("error");
+      setError(err instanceof Error ? err.message : "Could not start generation");
     }
-  }, [date, scope, defaultDetailLevel]);
+  }, [date, scope, defaultDetailLevel, userId, applyJobRow]);
 
-  useEffect(() => { generate(); }, [generate]);
+  useEffect(() => { startOrAttach(); }, [startOrAttach]);
+
+  // Live progress/results for the job this drawer is currently attached to
+  // -- filtered to that one row (not the whole table) so this stays cheap
+  // regardless of how many jobs pile up over time.
+  useTableRealtime({
+    tableName: "auto_time_entry_generation_jobs",
+    companyId: null,
+    filterColumn: "id",
+    filterValue: jobId,
+    onInsert: () => {},
+    onUpdate: applyJobRow,
+    onDelete: () => {},
+  });
+
+  // A job whose progress hasn't moved in a while is presumed stalled (see
+  // this file's STALL_TIMEOUT_MS comment) -- checked on an interval rather
+  // than a single timeout so it re-arms correctly if the job keeps
+  // reporting progress right up to the edge of the window.
+  useEffect(() => {
+    if (jobStatus !== "running") return;
+    const interval = setInterval(() => {
+      if (Date.now() - jobUpdatedAtRef.current > STALL_TIMEOUT_MS) {
+        setJobStatus("error");
+        setError("This is taking much longer than expected and may have stalled -- try Regenerate.");
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [jobStatus, jobId]);
 
   const toggleOne = (key: string) => setChecked(prev => {
     const next = new Set(prev);
@@ -311,7 +348,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
               <button onClick={() => setScope("all")} className={`px-3 py-1 rounded-full transition-all ${scope === "all" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>Everyone's day (Admin)</button>
             </div>
           )}
-          <button onClick={generate} disabled={loading} title="Regenerate" className="ml-auto p-1.5 text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
+          <button onClick={() => startOrAttach(true)} disabled={loading} title="Regenerate" className="ml-auto p-1.5 text-slate-300 hover:text-indigo-600 disabled:opacity-40 transition-colors">
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           </button>
         </div>
@@ -360,6 +397,8 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
                 </div>
               )}
             </div>
+          ) : jobStatus === "error" ? (
+            <p className="text-center text-[11px] text-slate-300 italic py-10">Use Regenerate above to try again.</p>
           ) : entries.length === 0 ? (
             <p className="text-center text-[11px] text-slate-300 italic py-10">
               {scope === "all" ? "No completed tasks or emails found for anyone that day" : "No completed tasks or emails found for that day"}
