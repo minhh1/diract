@@ -10,9 +10,11 @@
 // this component ever runs. No admin/user branching needed in this file.
 //
 // Editing individual entries (fields/tableId/companyId/onChanged below) is
-// optional and only wired up by DashboardWidgetRenderer's record-scoped
-// (per-matter) dashboards -- LawFirmQuickGlance's company-wide usage omits
-// them, so a staff row still expands to show entries there, just read-only.
+// optional -- wired up by both DashboardWidgetRenderer's record-scoped
+// (per-matter) dashboards and LawFirmQuickGlance's company-wide usage.
+// Any caller that can't supply a real tableId/companyId (e.g. a
+// builder-preview context) just gets a read-only widget; staff rows still
+// expand there, just without the edit affordance.
 import { Fragment, useMemo, useState } from "react";
 import { Clock, ChevronDown, ChevronRight, Pencil, X } from "lucide-react";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
@@ -26,6 +28,16 @@ const aud = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" 
 type RangePreset = "this_month" | "this_week" | "all_time" | "custom";
 const PRESET_LABELS: Record<RangePreset, string> = {
   this_month: "This month", this_week: "This week", all_time: "All time", custom: "Custom",
+};
+
+// How the table below is grouped -- 'timekeeper' (the original/default
+// behaviour) rolls every entry up per staff member; 'time' rolls up per
+// date instead; 'entries' skips grouping entirely and shows one row per
+// entry, which is also the fastest way to reach the edit pencil (no
+// expand click first).
+type GroupBy = "timekeeper" | "time" | "entries";
+const GROUP_LABELS: Record<GroupBy, string> = {
+  timekeeper: "By timekeeper", time: "By time", entries: "By entries",
 };
 
 function startOfWeek(d: Date): Date {
@@ -43,8 +55,8 @@ interface Props {
   records: CustomTableRecord[];
   // Everything below is optional -- editing an individual entry only makes
   // sense with a real tableId/companyId to write through, so any caller
-  // that can't supply them (e.g. LawFirmQuickGlance) just gets a read-only
-  // widget; staff rows still expand there, just without the edit affordance.
+  // that can't supply them just gets a read-only widget; staff rows still
+  // expand there, just without the edit affordance.
   fields?: CustomTableField[];
   tableId?: string;
   companyId?: string;
@@ -54,10 +66,11 @@ interface Props {
 
 export default function TimeFeesReportWidget({ records, fields, tableId, companyId, onChanged }: Props) {
   const [preset, setPreset] = useState<RangePreset>("this_month");
+  const [groupBy, setGroupBy] = useState<GroupBy>("timekeeper");
   const now = useMemo(() => new Date(), []);
   const [customStart, setCustomStart] = useState(() => toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)));
   const [customEnd, setCustomEnd] = useState(() => toDateInput(now));
-  const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [editingEntry, setEditingEntry] = useState<CustomTableRecord | null>(null);
   // Matches DashboardGrid.tsx's convention: isAdmin gates layout/admin-only
   // actions, not basic record editing, which is open to any company member
@@ -71,31 +84,48 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
     return { start: customStart, end: customEnd };
   }, [preset, now, customStart, customEnd]);
 
-  const { rows, entriesByStaff } = useMemo(() => {
-    const byStaff = new Map<string, { hours: number; billableHours: number; amount: number; count: number }>();
+  const periodEntries = useMemo(() => records.filter(r => {
+    const staffId = String(r.values.staff || "");
+    if (!staffId) return false;
+    const date = String(r.values.date || "").slice(0, 10);
+    if (start && date < start) return false;
+    if (end && date > end) return false;
+    return true;
+  }), [records, start, end]);
+
+  // 'timekeeper' groups by staff, 'time' groups by date -- same shape
+  // either way (a group key + its own entries + rolled-up totals), so both
+  // reuse the same expandable-group table below; only how the key is
+  // derived and displayed differs.
+  const { rows, entriesByGroup } = useMemo(() => {
+    const byGroup = new Map<string, { hours: number; billableHours: number; amount: number; count: number }>();
     const entries = new Map<string, CustomTableRecord[]>();
-    for (const r of records) {
-      const staffId = String(r.values.staff || "");
-      if (!staffId) continue;
-      const date = String(r.values.date || "").slice(0, 10);
-      if (start && date < start) continue;
-      if (end && date > end) continue;
+    for (const r of periodEntries) {
+      const key = groupBy === "time" ? String(r.values.date || "").slice(0, 10) : String(r.values.staff || "");
       const hours = Number(r.values.duration_hours) || 0;
       const amount = Number(r.values.amount) || 0;
-      const entry = byStaff.get(staffId) || { hours: 0, billableHours: 0, amount: 0, count: 0 };
+      const entry = byGroup.get(key) || { hours: 0, billableHours: 0, amount: 0, count: 0 };
       entry.hours += hours;
       if (r.values.billable) entry.billableHours += hours;
       entry.amount += amount;
       entry.count += 1;
-      byStaff.set(staffId, entry);
-      const list = entries.get(staffId) || [];
+      byGroup.set(key, entry);
+      const list = entries.get(key) || [];
       list.push(r);
-      entries.set(staffId, list);
+      entries.set(key, list);
     }
     for (const list of entries.values()) list.sort((a, b) => String(b.values.date || "").localeCompare(String(a.values.date || "")));
-    const rows = [...byStaff.entries()].map(([staffId, v]) => ({ staffId, ...v })).sort((a, b) => b.hours - a.hours);
-    return { rows, entriesByStaff: entries };
-  }, [records, start, end]);
+    const rows = [...byGroup.entries()].map(([key, v]) => ({ key, ...v }))
+      .sort((a, b) => groupBy === "time" ? b.key.localeCompare(a.key) : b.hours - a.hours);
+    return { rows, entriesByGroup: entries };
+  }, [periodEntries, groupBy]);
+
+  // 'entries' mode: no grouping at all, just every entry in the period as
+  // its own row, newest first -- the quickest path to the edit pencil.
+  const flatEntries = useMemo(
+    () => [...periodEntries].sort((a, b) => String(b.values.date || "").localeCompare(String(a.values.date || ""))),
+    [periodEntries]
+  );
 
   // Keep the modal showing live values -- e.g. after one field's onCommit
   // triggers onChanged()'s refetch, the next field rendered should reflect
@@ -105,12 +135,23 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
     [editingEntry, records]
   );
 
-  const staffIds = useMemo(() => rows.map(r => r.staffId), [rows]);
+  // Every staff id appearing anywhere in the period, not just the group
+  // keys -- 'time' mode's groups are dates, and 'entries' mode has no
+  // groups at all, so individual entry rows in both need to show their own
+  // staff name directly (implied by the group header in 'timekeeper' mode,
+  // where this is a superset that still resolves fine).
+  const staffIds = useMemo(() => [...new Set(periodEntries.map(r => String(r.values.staff || "")))], [periodEntries]);
   const staffNames = useRecordNames("entities", staffIds);
 
-  const totals = useMemo(() => rows.reduce((acc, r) => ({
-    hours: acc.hours + r.hours, billableHours: acc.billableHours + r.billableHours, amount: acc.amount + r.amount, count: acc.count + r.count,
-  }), { hours: 0, billableHours: 0, amount: 0, count: 0 }), [rows]);
+  const totals = useMemo(() => periodEntries.reduce((acc, r) => {
+    const hours = Number(r.values.duration_hours) || 0;
+    return {
+      hours: acc.hours + hours,
+      billableHours: acc.billableHours + (r.values.billable ? hours : 0),
+      amount: acc.amount + (Number(r.values.amount) || 0),
+      count: acc.count + 1,
+    };
+  }, { hours: 0, billableHours: 0, amount: 0, count: 0 }), [periodEntries]);
 
   // Same immediate-commit-per-field convention as DashboardGrid's cell
   // editing -- there's no separate "Save" button, each field writes through
@@ -122,6 +163,42 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
     onChanged?.();
   };
 
+  const groupLabel = (key: string) =>
+    groupBy === "time"
+      ? new Date(key + "T00:00:00").toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })
+      : staffNames.get(key) || key.slice(0, 8);
+
+  // Shared row markup for one entry -- used both inside an expanded group
+  // ('timekeeper'/'time' modes) and directly in the flat 'entries' table.
+  // showStaff is false in 'timekeeper' mode, where the group header above
+  // it already names the staff member.
+  const EntryRow = ({ entry, showStaff }: { entry: CustomTableRecord; showStaff: boolean }) => (
+    <div className="flex items-center gap-3 px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-[11px]">
+      <span className="text-slate-400 w-20 shrink-0">{String(entry.values.date || "").slice(0, 10)}</span>
+      {showStaff && (
+        <span className="text-slate-600 font-medium w-24 shrink-0 truncate">
+          {staffNames.get(String(entry.values.staff || "")) || "—"}
+        </span>
+      )}
+      <span className="flex-1 min-w-0 truncate text-slate-600">{entry.values.description || <span className="italic text-slate-300">No description</span>}</span>
+      <span className="text-slate-500 shrink-0">{Number(entry.values.duration_hours) || 0}h</span>
+      <span className="text-slate-500 shrink-0">${Number(entry.values.rate) || 0}/hr</span>
+      <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${entry.values.billable ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+        {entry.values.billable ? 'Billable' : 'Non-billable'}
+      </span>
+      <span className="font-semibold text-slate-900 w-16 text-right shrink-0">{aud.format(Number(entry.values.amount) || 0)}</span>
+      {canEdit && (
+        <button
+          onClick={e => { e.stopPropagation(); setEditingEntry(entry); }}
+          className="p-1 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all shrink-0"
+          title="Adjust this entry"
+        >
+          <Pencil size={11} />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -131,10 +208,21 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
           </div>
           <div>
             <p className="text-[13px] font-bold text-slate-800">Time & Fees Report</p>
-            <p className="text-[11px] text-slate-400">Time recorded per staff member{start ? ` · ${start}${end && end !== start ? ` to ${end}` : ""}` : ""}</p>
+            <p className="text-[11px] text-slate-400">
+              {groupBy === "time" ? "Time recorded per day" : groupBy === "entries" ? "Every entry recorded" : "Time recorded per staff member"}
+              {start ? ` · ${start}${end && end !== start ? ` to ${end}` : ""}` : ""}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[10px] font-bold">
+            {(Object.keys(GROUP_LABELS) as GroupBy[]).map(g => (
+              <button key={g} onClick={() => { setGroupBy(g); setExpandedGroupKey(null); }}
+                className={`px-3 py-1.5 rounded-full transition-all ${groupBy === g ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+                {GROUP_LABELS[g]}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[10px] font-bold">
             {(Object.keys(PRESET_LABELS) as RangePreset[]).map(p => (
               <button key={p} onClick={() => setPreset(p)}
@@ -155,89 +243,87 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
-        <table className="w-full text-[12px] table-fixed min-w-[560px]">
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50">
-              <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[34%]">Staff</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[14%]">Entries</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[14%]">Hours</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[18%]">Billable hours</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[20%]">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => {
-              const isExpanded = expandedStaffId === r.staffId;
-              return (
-                <Fragment key={r.staffId}>
-                  <tr
-                    onClick={() => setExpandedStaffId(isExpanded ? null : r.staffId)}
-                    className="border-b border-slate-50 cursor-pointer hover:bg-slate-50/60 transition-colors"
-                  >
-                    <td className="px-4 py-2 font-medium text-slate-700">
-                      <span className="flex items-center gap-1.5">
-                        {isExpanded ? <ChevronDown size={12} className="text-slate-300 shrink-0" /> : <ChevronRight size={12} className="text-slate-300 shrink-0" />}
-                        {staffNames.get(r.staffId) || r.staffId.slice(0, 8)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right text-slate-500">{r.count}</td>
-                    <td className="px-4 py-2 text-right font-semibold text-slate-900">{r.hours.toFixed(1)}</td>
-                    <td className="px-4 py-2 text-right text-slate-500">{r.billableHours.toFixed(1)}</td>
-                    <td className="px-4 py-2 text-right font-semibold text-slate-900">{aud.format(r.amount)}</td>
-                  </tr>
-                  {isExpanded && (
-                    <tr className="border-b border-slate-100 bg-slate-50/50">
-                      <td colSpan={5} className="px-4 py-3">
-                        <div className="space-y-1">
-                          {(entriesByStaff.get(r.staffId) || []).map(entry => (
-                            <div key={entry.id} className="flex items-center gap-3 px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-[11px]">
-                              <span className="text-slate-400 w-20 shrink-0">{String(entry.values.date || "").slice(0, 10)}</span>
-                              <span className="flex-1 min-w-0 truncate text-slate-600">{entry.values.description || <span className="italic text-slate-300">No description</span>}</span>
-                              <span className="text-slate-500 shrink-0">{Number(entry.values.duration_hours) || 0}h</span>
-                              <span className="text-slate-500 shrink-0">${Number(entry.values.rate) || 0}/hr</span>
-                              <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${entry.values.billable ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                {entry.values.billable ? 'Billable' : 'Non-billable'}
-                              </span>
-                              <span className="font-semibold text-slate-900 w-16 text-right shrink-0">{aud.format(Number(entry.values.amount) || 0)}</span>
-                              {canEdit && (
-                                <button
-                                  onClick={e => { e.stopPropagation(); setEditingEntry(entry); }}
-                                  className="p-1 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all shrink-0"
-                                  title="Adjust this entry"
-                                >
-                                  <Pencil size={11} />
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                          {(entriesByStaff.get(r.staffId) || []).length === 0 && (
-                            <p className="text-[11px] text-slate-300 italic px-3 py-1.5">No individual entries in this period</p>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-            {rows.length === 0 && (
-              <tr><td colSpan={5} className="text-center py-8 text-[11px] text-slate-300 italic">No time recorded in this period</td></tr>
-            )}
-          </tbody>
-          {rows.length > 0 && (
-            <tfoot>
-              <tr className="bg-slate-50 font-bold">
-                <td className="px-4 py-2 text-slate-700">Total</td>
-                <td className="px-4 py-2 text-right text-slate-700">{totals.count}</td>
-                <td className="px-4 py-2 text-right text-slate-900">{totals.hours.toFixed(1)}</td>
-                <td className="px-4 py-2 text-right text-slate-700">{totals.billableHours.toFixed(1)}</td>
-                <td className="px-4 py-2 text-right text-slate-900">{aud.format(totals.amount)}</td>
-              </tr>
-            </tfoot>
+      {groupBy === "entries" ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 space-y-1">
+          {flatEntries.map(entry => <EntryRow key={entry.id} entry={entry} showStaff />)}
+          {flatEntries.length === 0 && (
+            <p className="text-center py-8 text-[11px] text-slate-300 italic">No time recorded in this period</p>
           )}
-        </table>
-      </div>
+          {flatEntries.length > 0 && (
+            <div className="flex items-center gap-3 px-3 py-2 border-t border-slate-100 mt-2 font-bold text-[11px]">
+              <span className="flex-1">Total ({totals.count})</span>
+              <span className="text-slate-700">{totals.hours.toFixed(1)}h</span>
+              <span className="text-slate-900">{aud.format(totals.amount)}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
+          <table className="w-full text-[12px] table-fixed min-w-[560px]">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[34%]">{groupBy === "time" ? "Date" : "Staff"}</th>
+                <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[14%]">Entries</th>
+                <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[14%]">Hours</th>
+                <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[18%]">Billable hours</th>
+                <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[20%]">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const isExpanded = expandedGroupKey === r.key;
+                return (
+                  <Fragment key={r.key}>
+                    <tr
+                      onClick={() => setExpandedGroupKey(isExpanded ? null : r.key)}
+                      className="border-b border-slate-50 cursor-pointer hover:bg-slate-50/60 transition-colors"
+                    >
+                      <td className="px-4 py-2 font-medium text-slate-700">
+                        <span className="flex items-center gap-1.5">
+                          {isExpanded ? <ChevronDown size={12} className="text-slate-300 shrink-0" /> : <ChevronRight size={12} className="text-slate-300 shrink-0" />}
+                          {groupLabel(r.key)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-right text-slate-500">{r.count}</td>
+                      <td className="px-4 py-2 text-right font-semibold text-slate-900">{r.hours.toFixed(1)}</td>
+                      <td className="px-4 py-2 text-right text-slate-500">{r.billableHours.toFixed(1)}</td>
+                      <td className="px-4 py-2 text-right font-semibold text-slate-900">{aud.format(r.amount)}</td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="border-b border-slate-100 bg-slate-50/50">
+                        <td colSpan={5} className="px-4 py-3">
+                          <div className="space-y-1">
+                            {(entriesByGroup.get(r.key) || []).map(entry => (
+                              <EntryRow key={entry.id} entry={entry} showStaff={groupBy === "time"} />
+                            ))}
+                            {(entriesByGroup.get(r.key) || []).length === 0 && (
+                              <p className="text-[11px] text-slate-300 italic px-3 py-1.5">No individual entries in this period</p>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {rows.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-8 text-[11px] text-slate-300 italic">No time recorded in this period</td></tr>
+              )}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot>
+                <tr className="bg-slate-50 font-bold">
+                  <td className="px-4 py-2 text-slate-700">Total</td>
+                  <td className="px-4 py-2 text-right text-slate-700">{totals.count}</td>
+                  <td className="px-4 py-2 text-right text-slate-900">{totals.hours.toFixed(1)}</td>
+                  <td className="px-4 py-2 text-right text-slate-700">{totals.billableHours.toFixed(1)}</td>
+                  <td className="px-4 py-2 text-right text-slate-900">{aud.format(totals.amount)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
 
       {editingEntry && liveEditingEntry && fields && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">

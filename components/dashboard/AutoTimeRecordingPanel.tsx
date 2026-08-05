@@ -93,6 +93,10 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
   // an entry's own "Set as default" does.
   const [bulkLevel, setBulkLevel] = useState<DescriptionDetailLevel>("standard");
   const [bulkRegenerating, setBulkRegenerating] = useState(false);
+  // Streamed while generate() is in flight -- null until the route's first
+  // progress line arrives (the empty-day fast path never streams any, so
+  // this just stays null and the loading spinner shows with no bar).
+  const [progress, setProgress] = useState<{ processed: number; total: number } | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -118,16 +122,57 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
     setLoading(true);
     setError(null);
     setFailedNotes({});
+    setProgress(null);
     try {
       const res = await fetch("/api/time-entries/auto-generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date, scope, detailLevel: defaultDetailLevel }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Could not generate time entries");
-      const rows: DraftEntry[] = json.entries || [];
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Could not generate time entries");
+      }
+
+      // The route streams newline-delimited JSON when there's real work to
+      // do (a 'progress' line per user/batch as its draft call finishes,
+      // then one 'done' line) so this drawer can show live progress instead
+      // of one long silent spinner -- see that route's own header comment
+      // for why the per-user drafting used to be the slow part. The
+      // nothing-to-do fast path still returns a single plain JSON object
+      // (no stream), so both shapes are handled here.
+      let payload: { entries: DraftEntry[]; staffOptions: StaffOption[] } | null = null;
+      let streamError: string | null = null;
+      if (res.headers.get("content-type")?.includes("x-ndjson") && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newlineIndex: number;
+          while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, newlineIndex).trim();
+            buffer = buffer.slice(newlineIndex + 1);
+            if (!line) continue;
+            const evt = JSON.parse(line);
+            if (evt.type === "progress") setProgress({ processed: evt.processed, total: evt.total });
+            else if (evt.type === "done") payload = evt;
+            else if (evt.type === "error") streamError = evt.error;
+          }
+        }
+      } else {
+        payload = await res.json();
+      }
+      // A mid-stream failure (e.g. the AI provider erroring on one batch)
+      // still sends a 'done' line first with whatever entries did complete
+      // -- only surface streamError as a hard failure when nothing at all
+      // came through.
+      if (!payload) throw new Error(streamError || "Could not generate time entries");
+
+      const rows: DraftEntry[] = payload.entries || [];
       setEntries(rows);
-      setStaffOptions(json.staffOptions || []);
+      setStaffOptions(payload.staffOptions || []);
       // Rows with no timekeeper resolved yet start unchecked -- there's
       // nothing valid to submit until one is assigned below.
       setChecked(new Set(rows.filter(r => r.userId).map(r => r.key)));
@@ -137,6 +182,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
       setEntries([]);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }, [date, scope, defaultDetailLevel]);
 
@@ -298,7 +344,22 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading || !defaultDetailLevel ? (
-            <div className="flex items-center justify-center py-16 text-slate-300"><Loader2 size={20} className="animate-spin" /></div>
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-300">
+              <Loader2 size={20} className="animate-spin" />
+              {progress && progress.total > 0 && (
+                <div className="w-full max-w-[220px] space-y-1.5">
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, Math.round((progress.processed / progress.total) * 100))}%` }}
+                    />
+                  </div>
+                  <p className="text-center text-[10px] font-bold text-slate-400">
+                    {progress.processed}/{progress.total} email{progress.total !== 1 ? "s" : ""} processed
+                  </p>
+                </div>
+              )}
+            </div>
           ) : entries.length === 0 ? (
             <p className="text-center text-[11px] text-slate-300 italic py-10">
               {scope === "all" ? "No completed tasks or emails found for anyone that day" : "No completed tasks or emails found for that day"}

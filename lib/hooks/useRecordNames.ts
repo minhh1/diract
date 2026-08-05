@@ -31,11 +31,18 @@ export function useRecordNames(table: string, ids: string[]): Map<string, string
     if (!companyId) return;
     const missing = ids.filter(id => id && !names.has(id));
     if (!missing.length) return;
-    supabase.from(table).select('id, name').in('id', missing).then(({ data }) => {
+    // No .is('deleted_at', null) filter -- unlike a picker's option list,
+    // this hook exists specifically to label ids already stored on a past
+    // record (a trust ledger row, a time entry), which must keep resolving
+    // even after the matter/client/staff member it names gets removed. The
+    // " (Removed)" suffix is what actually surfaces that instead of
+    // silently showing a since-deleted person/matter's name as if nothing
+    // happened.
+    supabase.from(table).select('id, name, deleted_at').in('id', missing).then(({ data }) => {
       if (!data?.length) return;
       setNames(prev => {
         const next = new Map(prev);
-        data.forEach((r: any) => next.set(r.id, r.name));
+        data.forEach((r: any) => next.set(r.id, r.deleted_at ? `${r.name} (Removed)` : r.name));
         writeCache(cacheKey(companyId, table), Object.fromEntries(next));
         return next;
       });

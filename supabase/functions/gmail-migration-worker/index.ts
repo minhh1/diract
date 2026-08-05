@@ -30,13 +30,26 @@ const db = createClient(
 const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
 const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
 const MAX_ATTEMPTS = 3;
-// Bigger than recovery's 10 — this lane isn't shared with quick fixes
-// anymore, so there's no reason to hold it back to the same size.
-const BATCH_SIZE = 15;
-// Bigger than recovery's 100s too — same reasoning: this worker exists
-// specifically to make a dedicated dent in large backlogs, not to leave
-// headroom for something else sharing the tick.
+// Same chunk size deleteGmailLabel already parallelises removeLabelFromMessage
+// calls in below -- applying labels in chunks like this instead of one at a
+// time is what actually lets a fair-share slice make a real dent.
+const APPLY_CHUNK_SIZE = 25;
+// Bigger than recovery's 100s — this worker exists specifically to make a
+// dedicated dent in large backlogs, not to leave headroom for something
+// else sharing the tick.
 const TIME_BUDGET_MS = 130_000;
+// Floor on each item's fair-share slice (see runMigration) so a batch full
+// of items doesn't divide the budget down to a sliver too small to get any
+// real work done in.
+const MIN_ITEM_BUDGET_MS = 10_000;
+// Must satisfy BATCH_SIZE * MIN_ITEM_BUDGET_MS <= TIME_BUDGET_MS -- fetching
+// more items than the guaranteed-minimum floor can actually fit in one tick
+// means the tail of every batch gets fetched but never even attempted (the
+// outer per-iteration time check breaks before reaching them), silently
+// starving them every single tick regardless of how fast they'd finish.
+// Derived rather than a separate literal so a future change to either
+// budget constant can't reintroduce that gap by accident.
+const BATCH_SIZE = Math.floor(TIME_BUDGET_MS / MIN_ITEM_BUDGET_MS);
 
 const FETCH_TIMEOUT_MS = 15_000;
 function withTimeout(): AbortSignal { return AbortSignal.timeout(FETCH_TIMEOUT_MS); }
@@ -86,7 +99,11 @@ async function getGmailLabels(token: string): Promise<{ id: string; name: string
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
     headers: { Authorization: `Bearer ${token}` }, signal: withTimeout(),
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const error = await res.text().catch(() => "");
+    console.error(`[migration-worker] getGmailLabels failed: ${res.status} ${error.slice(0, 300)}`);
+    return [];
+  }
   return (await res.json()).labels || [];
 }
 
@@ -131,29 +148,50 @@ async function createLabelHierarchy(
   return lastId;
 }
 
-async function getMessagesWithLabel(token: string, labelId: string): Promise<string[]> {
+// `complete: false` means a page failed to load -- the caller MUST treat
+// that as "this list can't be trusted", not "these are the only messages
+// currently carrying the label". A silently-truncated/empty result here
+// used to make toApply (dbMsgIds minus this set) look bigger than it
+// really was -- messages that already had the label would get redundantly
+// re-applied, and worse, the "remaining" count reported in last_error could
+// go UP between ticks purely because this call failed partway through, with
+// nothing anywhere to say so.
+async function getMessagesWithLabel(token: string, labelId: string): Promise<{ ids: string[]; complete: boolean }> {
   const ids: string[] = [];
   let pageToken: string | undefined;
+  let complete = true;
   do {
     const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
     url.searchParams.set("labelIds", labelId);
     url.searchParams.set("maxResults", "500");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` }, signal: withTimeout() });
-    if (!res.ok) break;
+    if (!res.ok) {
+      const error = await res.text().catch(() => "");
+      console.error(`[migration-worker] getMessagesWithLabel failed mid-page (label=${labelId}, ${ids.length} collected so far): ${res.status} ${error.slice(0, 300)}`);
+      complete = false;
+      break;
+    }
     const data = await res.json();
     (data.messages || []).forEach((m: any) => ids.push(m.id));
     pageToken = data.nextPageToken;
   } while (pageToken);
-  return ids;
+  return { ids, complete };
 }
 
-async function applyLabel(token: string, msgId: string, labelId: string): Promise<boolean> {
+// Return shape carries the failure reason, not just ok/not-ok -- the
+// label_sync branch below logs it when a chunk has failures, since a
+// silently-failing applyLabel call was previously indistinguishable from a
+// slow-but-succeeding one: both just leave the message out of next tick's
+// gmailMsgSet, so `toApply` never shrinks for that message either way.
+async function applyLabel(token: string, msgId: string, labelId: string): Promise<{ ok: boolean; msgId: string; status?: number; error?: string }> {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/modify`, {
     method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ addLabelIds: [labelId] }), signal: withTimeout(),
   });
-  return res.ok;
+  if (res.ok) return { ok: true, msgId };
+  const error = await res.text().catch(() => "");
+  return { ok: false, msgId, status: res.status, error: error.slice(0, 300) };
 }
 
 async function removeLabelFromMessage(token: string, msgId: string, labelId: string): Promise<boolean> {
@@ -165,7 +203,11 @@ async function removeLabelFromMessage(token: string, msgId: string, labelId: str
 }
 
 async function deleteGmailLabel(token: string, labelId: string): Promise<void> {
-  const msgs = await getMessagesWithLabel(token, labelId);
+  // Doesn't need `complete` -- deleting the label object below removes it
+  // from every message that had it regardless of how many this per-message
+  // pass got to first, so an incomplete list here just means slightly more
+  // of the work happens via the label delete than via individual removes.
+  const { ids: msgs } = await getMessagesWithLabel(token, labelId);
   if (msgs.length) {
     for (let i = 0; i < msgs.length; i += 50) {
       await Promise.all(msgs.slice(i, i + 50).map(id => removeLabelFromMessage(token, id, labelId)));
@@ -308,17 +350,32 @@ async function runMigration(t0: number): Promise<Response> {
 
   let processed = 0, done = 0, escalated = 0, deferred = 0;
 
-  for (const item of pending) {
-    if (Date.now() - t0 > TIME_BUDGET_MS) {
+  for (let i = 0; i < pending.length; i++) {
+    const item = pending[i];
+    const elapsed = Date.now() - t0;
+    if (elapsed > TIME_BUDGET_MS) {
       console.log(`[migration-worker] Time budget reached — ${pending.length - processed} untouched, deferring to next tick`);
       break;
     }
+    // Fair-share pacing: split whatever's left of the tick budget across
+    // however many items in this batch haven't been attempted yet, instead
+    // of letting one mailbox run against the FULL remaining budget. A
+    // deferral doesn't count against MAX_ATTEMPTS (see BudgetDeferredError
+    // below), so an item that never quite finishes within its slice keeps
+    // re-sorting to the front of next tick's smallest-first batch — without
+    // this, that one item can burn the entire tick every time and starve
+    // every other item behind it indefinitely. Recomputed each iteration
+    // (not fixed once upfront) so an item that finishes early hands its
+    // unused time back to whatever's left in the pool.
+    const itemsRemaining = pending.length - i;
+    const itemBudgetMs = Math.max((TIME_BUDGET_MS - elapsed) / itemsRemaining, MIN_ITEM_BUDGET_MS);
+    const itemDeadline = Date.now() + itemBudgetMs;
     const {
       id: itemId, company_id: companyId, source_job_id: sourceJobId, job_type: jobType,
       project_id: projectId, user_id: userId, label_code: labelCode, total_users: totalUsers, attempts,
     } = item;
     processed++;
-    console.log(`[migration-worker] Processing item=${itemId} job=${sourceJobId} user=${userId} type=${jobType} messages=${item.message_count} attempt=${attempts + 1}/${MAX_ATTEMPTS}`);
+    console.log(`[migration-worker] Processing item=${itemId} job=${sourceJobId} user=${userId} type=${jobType} messages=${item.message_count} attempt=${attempts + 1}/${MAX_ATTEMPTS} budget=${Math.round(itemBudgetMs / 1000)}s`);
 
     await db.from("gmail_migration_jobs").update({ status: "processing", updated_at: new Date().toISOString() }).eq("id", itemId);
 
@@ -354,11 +411,35 @@ async function runMigration(t0: number): Promise<Response> {
           if (!labelId) labelId = await createLabelHierarchy(token, gmailLabelName, gmailLabels);
           if (!labelId) throw new Error("Could not find or create label");
           if (dbMsgIds.length) {
-            const gmailMsgSet = new Set(await getMessagesWithLabel(token, labelId));
+            const { ids: currentlyLabelled, complete } = await getMessagesWithLabel(token, labelId);
+            // A failed/incomplete list here must NOT be treated as "nothing
+            // has the label yet" -- that would make toApply balloon to
+            // include messages that are already correctly labelled, and the
+            // "remaining" count in last_error would visibly regress between
+            // ticks for no real reason. Defer instead, same non-punishing
+            // retry as a budget timeout -- this genuinely isn't this item's
+            // fault.
+            if (!complete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) — will retry next tick`);
+            const gmailMsgSet = new Set(currentlyLabelled);
             const toApply = dbMsgIds.filter((id: string) => !gmailMsgSet.has(id));
-            for (const msgId of toApply) {
-              if (Date.now() - t0 > TIME_BUDGET_MS) throw new BudgetDeferredError(`Time budget reached mid-mailbox (${toApply.length} messages) — will resume next tick`);
-              await applyLabel(token, msgId, labelId);
+            // Chunked + parallel, same pattern deleteGmailLabel already uses
+            // below -- applying one at a time sequentially meant a mailbox
+            // with real per-call latency (large/archive mailboxes especially)
+            // could exhaust an entire fair-share slice on only a handful of
+            // messages, never converging even across many ticks.
+            const applyFailures: { msgId: string; status?: number; error?: string }[] = [];
+            for (let c = 0; c < toApply.length; c += APPLY_CHUNK_SIZE) {
+              if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${toApply.length - c} of ${toApply.length} messages remaining) — will resume next tick`);
+              const results = await Promise.all(toApply.slice(c, c + APPLY_CHUNK_SIZE).map(msgId => applyLabel(token, msgId, labelId)));
+              for (const r of results) if (!r.ok) applyFailures.push(r);
+            }
+            if (applyFailures.length) {
+              console.error(`[migration-worker] applyLabel failed for ${applyFailures.length}/${toApply.length} messages on item=${itemId}:`, JSON.stringify(applyFailures.slice(0, 5)));
+              await logActivity({
+                company_id: companyId, triggered_by: null, action: "apply_label_failed",
+                project_id: projectId, gmail_label_name: gmailLabelName, target_user_id: userId,
+                details: { job_type: jobType, failed_count: applyFailures.length, total: toApply.length, samples: applyFailures.slice(0, 5) },
+              });
             }
             if (toApply.length) {
               await db.from("project_emails").update({ gmail_label_applied: true })
@@ -386,10 +467,14 @@ async function runMigration(t0: number): Promise<Response> {
           if (!labelId) labelId = await createLabelHierarchy(token, gmailLabelName, gmailLabels);
           if (!labelId) throw new Error("Could not find or create label");
 
-          const labelled = new Set(await getMessagesWithLabel(token, labelId));
+          const { ids: currentlyLabelled, complete: labelListComplete } = await getMessagesWithLabel(token, labelId);
+          // Same reasoning as the label_sync branch above -- an incomplete
+          // list must not be read as "none of these have the label yet".
+          if (!labelListComplete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) — will retry next tick`);
+          const labelled = new Set(currentlyLabelled);
           for (const msgId of msgIds) {
             if (labelled.has(msgId)) continue;
-            if (Date.now() - t0 > TIME_BUDGET_MS) throw new BudgetDeferredError(`Time budget reached mid-mailbox (${msgIds.length} messages) — will resume next tick`);
+            if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${msgIds.length} messages) — will resume next tick`);
             const hasMsg = await userHasMessage(token, msgId);
             if (hasMsg) {
               await applyLabel(token, msgId, labelId);

@@ -288,11 +288,23 @@ export async function resolveRelationLabels(fieldList: CustomTableField[], recor
           const label = v.value_text ?? v.value_number ?? v.value_date ?? (v.value_boolean !== null ? String(v.value_boolean) : null);
           if (label !== null && label !== undefined) labelById.set(v.record_id, String(label));
         });
+        // No .is('deleted_at', null) filter above -- a row this field still
+        // points at must keep resolving even once the target's been
+        // removed (same reasoning as useRecordNames.ts). Flag it instead of
+        // silently showing a since-deleted record's name/label as current.
+        const { data: targetRecords } = await supabase
+          .from('company_table_records').select('id, deleted_at').in('id', targetIds).not('deleted_at', 'is', null);
+        (targetRecords || []).forEach(r => {
+          const label = labelById.get(r.id);
+          if (label) labelById.set(r.id, `${label} (Removed)`);
+        });
       }
     } else if (field.linked_system_table) {
       const col = field.linked_display_field || 'name';
-      const { data: rows } = await supabase.from(field.linked_system_table).select(`id, ${col}`).in('id', targetIds);
-      (rows || []).forEach((r: any) => { if (r[col] != null) labelById.set(r.id, String(r[col])); });
+      const { data: rows } = await supabase.from(field.linked_system_table).select(`id, ${col}, deleted_at`).in('id', targetIds);
+      (rows || []).forEach((r: any) => {
+        if (r[col] != null) labelById.set(r.id, r.deleted_at ? `${r[col]} (Removed)` : String(r[col]));
+      });
     }
 
     records.forEach(rec => {

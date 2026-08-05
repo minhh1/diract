@@ -451,6 +451,17 @@ function AdminPageInner() {
       .delete()
       .eq('user_id', member.id)
       .eq('company_id', company!.id);
+    // This used to leave the member's linked Staff entity (see
+    // staffEntityService.ts) fully active -- removing someone from the
+    // company didn't stop them from still appearing in every Staff picker
+    // for new time entries/task assignments, or in the raw Entities list,
+    // indistinguishable from a current member. Soft-delete so they drop out
+    // of every .is('deleted_at', null)-filtered picker/list going forward;
+    // past records that already reference them keep resolving (see
+    // useRecordNames' " (Removed)" suffix) rather than breaking.
+    if (member.entityId) {
+      await supabase.from('entities').update({ deleted_at: new Date().toISOString() }).eq('id', member.entityId);
+    }
     queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
       ...old,
       members: old.members.filter(m => m.id !== member.id),

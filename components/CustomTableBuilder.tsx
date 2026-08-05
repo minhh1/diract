@@ -42,6 +42,7 @@ export default function CustomTableBuilder() {
   const { isAdmin, companyId, userId, tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables } = useCompany();
   const { tables, loading, refetch } = useCustomTables(userId);
   const [deletingSystemSlug, setDeletingSystemSlug] = useState<string | null>(null);
+  const [restoringSystemSlug, setRestoringSystemSlug] = useState<string | null>(null);
   const { pendingIds: pendingArchiveIds, refreshPendingArchiveRequests } = usePendingArchiveRequests("company_tables", companyId);
   const [editingSystemSlug, setEditingSystemSlug] = useState<string | null>(null);
   const [systemDraft, setSystemDraft] = useState<TableLabelOverride>({ singular: "", plural: "" });
@@ -151,6 +152,30 @@ export default function CustomTableBuilder() {
       logSchemaChange({ companyId, actorId: user?.id ?? null, entityType: 'company_custom_field', entityId: id, entityLabel: label, action: 'delete' })
     ));
 
+    await refreshDisabledSystemTables();
+  };
+
+  // Bringing a hidden built-in table back -- same operation as the restore
+  // button in Settings > Trash (see app/(app)/dashboard/settings/trash/
+  // page.tsx), just reachable from the "New table" flow too so a company
+  // that starts with all 4 hidden (see supabase/migrations/
+  // 20260805070000_hide_system_tables_for_templateless_companies.sql)
+  // doesn't have to already know Trash exists to get one back. Un-deletes
+  // whichever fields the earlier delete recorded against this slug (empty
+  // for a table that was only ever hidden by default, never actually used).
+  const restoreSystemTable = async (slug: string) => {
+    if (!companyId) return;
+    const entry = disabledSystemTables[slug];
+    if (!entry) return;
+    setRestoringSystemSlug(slug);
+    if (entry.field_ids.length > 0) {
+      await supabase.from('company_custom_fields').update({ deleted_at: null }).in('id', entry.field_ids);
+    }
+    const next = { ...disabledSystemTables };
+    delete next[slug];
+    const { error } = await supabase.from('companies').update({ disabled_system_tables: next }).eq('id', companyId);
+    setRestoringSystemSlug(null);
+    if (error) { alert(error.message); return; }
     await refreshDisabledSystemTables();
   };
 
@@ -334,6 +359,10 @@ export default function CustomTableBuilder() {
   };
 
   const visibleSystemTableDefs = SYSTEM_TABLE_DEFS.filter(t => !disabledSystemTables[t.slug]);
+  // Only an admin can bring one back -- restoring is company-wide, same
+  // level of impact as handleDeleteSystemTable hiding it in the first
+  // place (also admin-only above).
+  const hiddenSystemTableDefs = isAdmin ? SYSTEM_TABLE_DEFS.filter(t => disabledSystemTables[t.slug]) : [];
 
   return (
     <div className="space-y-4">
@@ -505,6 +534,39 @@ export default function CustomTableBuilder() {
             </div>
 
             <div className="space-y-5">
+              {hiddenSystemTableDefs.length > 0 && (
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
+                    Add a built-in table
+                  </label>
+                  <div className="space-y-1.5">
+                    {hiddenSystemTableDefs.map(({ slug, icon: Icon, color }) => {
+                      const label = (tableLabelOverrides[slug] || DEFAULT_LABELS[slug]).plural;
+                      const isRestoring = restoringSystemSlug === slug;
+                      return (
+                        <button
+                          key={slug}
+                          onClick={async () => { await restoreSystemTable(slug); setCreating(false); }}
+                          disabled={isRestoring}
+                          className="w-full flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-2xl hover:border-indigo-300 transition-all text-left disabled:opacity-50"
+                        >
+                          <div className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}20` }}>
+                            <Icon size={15} style={{ color }} />
+                          </div>
+                          <span className="flex-1 text-[12px] font-bold text-slate-700">{label}</span>
+                          {isRestoring ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <Plus size={14} className="text-slate-300" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-3 mt-4 mb-1">
+                    <div className="flex-1 h-px bg-slate-100" />
+                    <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Or create a custom table</span>
+                    <div className="flex-1 h-px bg-slate-100" />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
                   Table name

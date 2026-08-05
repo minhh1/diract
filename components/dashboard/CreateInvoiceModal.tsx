@@ -423,16 +423,23 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     // amount as before; for GST Inclusive it's the amount with GST backed
     // out, with gst_amount carrying the difference separately (what
     // InvoiceTemplateDisplay.showAmountAndGstPerLine is for).
+    // Building lineItemRows and firing every source record's own update are
+    // independent per row (different record ids, no shared state between
+    // them) -- this used to await each updateCustomRecord one at a time in
+    // the same loop, so an invoice with many entries took visibly longer to
+    // create the more fees/disbursements it billed. Now every update fires
+    // together and the loop only does synchronous work.
     const lineItemRows: any[] = [];
+    const updatePromises: Promise<{ error: string } | void | null>[] = [];
     for (const line of apportionedFees) {
       const row = feeRows.find(r => r.id === line.id);
       if (!row) continue;
       const fields = sourceFieldsByTable.get(row.tableId) || [];
       const originalSplit = splitGst(line.originalAmount, row.gstStatus);
       const billedSplit = splitGst(line.billedAmount, row.gstStatus);
-      await updateCustomRecord(row.id, row.tableId, companyId, {
+      updatePromises.push(updateCustomRecord(row.id, row.tableId, companyId, {
         invoice: record.id, invoiced_amount: billedSplit.exGst, invoiced_gst_amount: billedSplit.gst,
-      }, fields);
+      }, fields));
       lineItemRows.push({
         company_id: companyId, invoice_record_id: record.id, source_type: 'fee', source_record_id: row.id,
         description: row.description, original_amount: originalSplit.exGst, billed_amount: billedSplit.exGst,
@@ -443,9 +450,9 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     for (const row of disbRows.filter(r => selectedDisbIds.has(r.id))) {
       const fields = sourceFieldsByTable.get(row.tableId) || [];
       const split = splitGst(row.amount, row.gstStatus);
-      await updateCustomRecord(row.id, row.tableId, companyId, {
+      updatePromises.push(updateCustomRecord(row.id, row.tableId, companyId, {
         invoice: record.id, invoiced_amount: split.exGst, invoiced_gst_amount: split.gst,
-      }, fields);
+      }, fields));
       lineItemRows.push({
         company_id: companyId, invoice_record_id: record.id, source_type: 'disbursement', source_record_id: row.id,
         description: row.description, original_amount: split.exGst, billed_amount: split.exGst,
@@ -453,6 +460,9 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
         gst_status: row.gstStatus, gst_amount: split.gst,
       });
     }
+    const updateResults = await Promise.all(updatePromises);
+    const updateError = updateResults.find(r => r && 'error' in r) as { error: string } | undefined;
+    if (updateError) { setError(updateError.error); setSaving(false); return; }
     if (lineItemRows.length) {
       const { error: liError } = await supabase.from('invoice_line_items').insert(lineItemRows);
       if (liError) { setError(liError.message); setSaving(false); return; }

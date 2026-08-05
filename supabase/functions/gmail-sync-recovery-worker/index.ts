@@ -19,20 +19,32 @@ const db = createClient(
 const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
 const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
 const RECOVERY_MAX_ATTEMPTS = 3;
-// Kept small — same 150s platform execution ceiling as the fast workers;
-// retrying a quarantined user does real Gmail API round-trips, and this
-// worker is exactly what drains a large backlog after an incident, so it's
-// the most likely of the three to hit a big batch right when it matters.
-const BATCH_SIZE = 10;
-// Failures are processed fully sequentially (one Gmail account at a time,
-// on purpose — this is the slow/safe lane), so one large mailbox or one
-// account still tripping Gmail's own rate limit can eat the whole 150s
-// platform ceiling by itself. Without a budget check, the platform kills
-// the isolate mid-loop with no chance to persist progress — and since the
-// query always orders by last_attempted_at ascending, the next tick just
-// re-picks the exact same stuck item first, forever. Bail out with time to
-// spare so every tick always finishes and writes its heartbeat.
+// Same chunk size deleteGmailLabel already parallelises removeLabelFromMessage
+// calls in below -- applying labels in chunks like this instead of one at a
+// time is what actually lets a fair-share slice make a real dent.
+const APPLY_CHUNK_SIZE = 25;
+// A large mailbox or an account still tripping Gmail's own rate limit can
+// eat the whole 150s platform ceiling by itself. Without a budget check,
+// the platform kills the isolate mid-loop with no chance to persist
+// progress — and since the query always orders by last_attempted_at
+// ascending, the next tick just re-picks the exact same stuck item first,
+// forever. Bail out with time to spare so every tick always finishes and
+// writes its heartbeat.
 const TIME_BUDGET_MS = 100_000;
+// Floor on each item's fair-share slice (see runRecovery) so a full batch
+// doesn't divide the budget down to a sliver too small to get real work
+// done in.
+const MIN_ITEM_BUDGET_MS = 8_000;
+// Must satisfy BATCH_SIZE * MIN_ITEM_BUDGET_MS <= TIME_BUDGET_MS -- fetching
+// more items than the guaranteed-minimum floor can actually fit in one tick
+// means the tail of every batch gets fetched but never even attempted (the
+// outer per-iteration time check breaks before reaching them), silently
+// starving them every single tick regardless of how fast they'd finish.
+// Derived rather than a separate literal so a future change to either
+// budget constant can't reintroduce that gap by accident. (Also raises the
+// old hardcoded 10 to 12 -- still comfortably inside the same 150s platform
+// ceiling that motivated keeping this "small" in the first place.)
+const BATCH_SIZE = Math.floor(TIME_BUDGET_MS / MIN_ITEM_BUDGET_MS);
 
 const FETCH_TIMEOUT_MS = 15_000;
 function withTimeout(): AbortSignal { return AbortSignal.timeout(FETCH_TIMEOUT_MS); }
@@ -305,14 +317,18 @@ async function runRecovery(t0: number): Promise<Response> {
     return respond({ ok: true, retried: 0, resolved: 0, escalated: 0, deferred: 0, skipped: 0 });
   }
 
-  // A single large mailbox can eat the whole tick's time budget by itself
-  // (see BudgetDeferredError above) — if it happens to be oldest, it blocks
-  // every other item in the batch from even being attempted, every tick.
-  // Small/fast items (which is most real failures — rate limits, transient
-  // errors) should get their shot first; large mailboxes are safe to push
-  // to the back since deferrals don't burn RECOVERY_MAX_ATTEMPTS and make
-  // real incremental progress (Gmail's label state is the checkpoint) once
-  // they do get a turn.
+  // A single large mailbox can eat a lot of the tick's time budget by
+  // itself (see BudgetDeferredError above), so small/fast items (which is
+  // most real failures — rate limits, transient errors) should get their
+  // shot first; large mailboxes are safe to push to the back since
+  // deferrals don't burn RECOVERY_MAX_ATTEMPTS and make real incremental
+  // progress (Gmail's label state is the checkpoint) once they do get a
+  // turn. This sort alone isn't enough, though -- an item that's merely
+  // "not the biggest" can still fail to finish within a full tick's budget
+  // and keep re-winning the front slot forever, starving everything behind
+  // it. The per-item fair-share deadline below (itemBudgetMs) is the actual
+  // fix for that: it caps how much of the tick ANY one item can consume,
+  // so the rest of the batch always gets a turn too.
   const projectIds = [...new Set(failures.map((f: any) => f.project_id))];
   const sizeByProject = new Map<string, number>();
   await Promise.all(projectIds.map(async (pid) => {
@@ -323,18 +339,33 @@ async function runRecovery(t0: number): Promise<Response> {
 
   let retried = 0, resolved = 0, escalated = 0, deferred = 0, skipped = 0;
 
-  for (const failure of failures) {
-    if (Date.now() - t0 > TIME_BUDGET_MS) {
+  for (let i = 0; i < failures.length; i++) {
+    const failure = failures[i];
+    const elapsed = Date.now() - t0;
+    if (elapsed > TIME_BUDGET_MS) {
       skipped = failures.length - retried;
       console.log(`[sync-recovery-worker] Time budget reached — skipping ${skipped} untouched, deferring to next tick`);
       break;
     }
+    // Fair-share pacing (same fix as gmail-migration-worker's runMigration):
+    // split whatever's left of the tick budget across however many items
+    // haven't been attempted yet, recomputed every iteration, instead of
+    // letting the oldest/smallest item run against the FULL remaining
+    // budget. Closes exactly the gap this file's own header comment above
+    // (sizeByProject sort) already flagged as a residual risk — sorting
+    // smallest-first helps, but a mailbox that's merely "not the biggest"
+    // can still fail to finish within budget and, since deferrals don't
+    // burn RECOVERY_MAX_ATTEMPTS, keep re-winning the front slot and
+    // starving everything behind it forever.
+    const itemsRemaining = failures.length - i;
+    const itemBudgetMs = Math.max((TIME_BUDGET_MS - elapsed) / itemsRemaining, MIN_ITEM_BUDGET_MS);
+    const itemDeadline = Date.now() + itemBudgetMs;
     const {
       id: failureId, company_id: companyId, job_id: jobId, job_type: jobType,
       project_id: projectId, user_id: userId, attempts,
     } = failure;
     retried++;
-    console.log(`[sync-recovery-worker] Retrying failure=${failureId} job=${jobId} user=${userId} type=${jobType} attempt=${attempts + 1}/${RECOVERY_MAX_ATTEMPTS}`);
+    console.log(`[sync-recovery-worker] Retrying failure=${failureId} job=${jobId} user=${userId} type=${jobType} attempt=${attempts + 1}/${RECOVERY_MAX_ATTEMPTS} budget=${Math.round(itemBudgetMs / 1000)}s`);
 
     let job: any = null;
     try {
@@ -372,9 +403,14 @@ async function runRecovery(t0: number): Promise<Response> {
           if (dbMsgIds.length) {
             const gmailMsgSet = new Set(await getMessagesWithLabel(token, labelId));
             const toApply = dbMsgIds.filter((id: string) => !gmailMsgSet.has(id));
-            for (const msgId of toApply) {
-              if (Date.now() - t0 > TIME_BUDGET_MS) throw new BudgetDeferredError(`Time budget reached mid-mailbox (${toApply.length} messages, one large mailbox alone can exceed the tick budget) — will resume next tick`);
-              await applyLabel(token, msgId, labelId);
+            // Chunked + parallel, same pattern deleteGmailLabel already uses
+            // below -- applying one at a time sequentially meant a mailbox
+            // with real per-call latency (large/archive mailboxes especially)
+            // could exhaust an entire fair-share slice on only a handful of
+            // messages, never converging even across many ticks.
+            for (let c = 0; c < toApply.length; c += APPLY_CHUNK_SIZE) {
+              if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${toApply.length - c} of ${toApply.length} messages remaining) — will resume next tick`);
+              await Promise.all(toApply.slice(c, c + APPLY_CHUNK_SIZE).map(msgId => applyLabel(token, msgId, labelId)));
             }
             if (toApply.length) {
               await db.from("project_emails").update({ gmail_label_applied: true })
@@ -410,7 +446,7 @@ async function runRecovery(t0: number): Promise<Response> {
           const labelled = new Set(await getMessagesWithLabel(token, labelId));
           for (const msgId of msgIds) {
             if (labelled.has(msgId)) continue;
-            if (Date.now() - t0 > TIME_BUDGET_MS) throw new BudgetDeferredError(`Time budget reached mid-mailbox (${msgIds.length} messages, one large mailbox alone can exceed the tick budget) — will resume next tick`);
+            if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${msgIds.length} messages) — will resume next tick`);
             const hasMsg = await userHasMessage(token, msgId);
             if (hasMsg) {
               await applyLabel(token, msgId, labelId);

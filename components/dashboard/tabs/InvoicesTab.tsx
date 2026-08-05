@@ -195,13 +195,34 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
 
     const { data: lineItems } = await supabase
       .from('invoice_line_items').select('source_record_id').eq('invoice_record_id', invoiceId);
+    const sourceRecordIds = [...new Set((lineItems || []).map(li => li.source_record_id))];
+
     let firstError: string | null = null;
-    for (const li of lineItems || []) {
-      const { data: rec } = await supabase.from('company_table_records').select('table_id').eq('id', li.source_record_id).maybeSingle();
-      if (!rec) continue;
-      const { data: sourceFields } = await supabase.from('company_table_fields').select('*').eq('table_id', rec.table_id).is('deleted_at', null);
-      const result = await updateCustomRecord(li.source_record_id, rec.table_id, companyId, { invoice: null, invoiced_amount: null, invoiced_gst_amount: null }, (sourceFields || []) as CustomTableField[]);
-      if (result && 'error' in result && !firstError) firstError = result.error;
+    if (sourceRecordIds.length) {
+      // Batched + parallel -- this used to do 2-3 sequential round trips PER
+      // line item (one to look up its table_id, one to re-fetch that
+      // table's fields from scratch even when every fee entry shares the
+      // same table, one to actually update it), which is exactly why
+      // voiding an invoice with several entries visibly took "a bit" before
+      // they showed back up as unbilled. Now: one query for every source
+      // record's table_id, one company_table_fields query per DISTINCT
+      // table_id (fees and disbursements are at most 2), and every record's
+      // own update running concurrently instead of one at a time.
+      const { data: recs } = await supabase.from('company_table_records').select('id, table_id').in('id', sourceRecordIds);
+      const tableIdByRecordId = new Map((recs || []).map(r => [r.id, r.table_id]));
+      const distinctTableIds = [...new Set((recs || []).map(r => r.table_id))];
+      const fieldsByTableId = new Map<string, CustomTableField[]>();
+      await Promise.all(distinctTableIds.map(async tableId => {
+        const { data: sourceFields } = await supabase.from('company_table_fields').select('*').eq('table_id', tableId).is('deleted_at', null);
+        fieldsByTableId.set(tableId, (sourceFields || []) as CustomTableField[]);
+      }));
+
+      const results = await Promise.all(sourceRecordIds.map(recordId => {
+        const tableId = tableIdByRecordId.get(recordId);
+        if (!tableId) return Promise.resolve(null);
+        return updateCustomRecord(recordId, tableId, companyId, { invoice: null, invoiced_amount: null, invoiced_gst_amount: null }, fieldsByTableId.get(tableId) || []);
+      }));
+      firstError = (results.find(r => r && 'error' in r) as { error: string } | undefined)?.error || null;
     }
     const statusResult = await updateCustomRecord(invoiceId, linkedTableId, companyId, { status: 'Void' }, invoiceFields);
     if (statusResult && 'error' in statusResult && !firstError) firstError = statusResult.error;
@@ -394,21 +415,28 @@ function EditInvoiceModal({
   const [trustApplied, setTrustApplied] = useState(String(invoice.trustApplied || ''));
   const [waived, setWaived] = useState(String(invoice.waivedAmount || ''));
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaving(true);
+    setError(null);
     // amount_due isn't a formula field -- recompute it here from the
     // invoice's own (formula-computed, so already-current) total_inc_gst
     // minus whatever payments/trust applied/waived are being saved.
     const paymentsNum = parseFloat(payments) || 0;
     const trustAppliedNum = parseFloat(trustApplied) || 0;
     const waivedNum = parseFloat(waived) || 0;
-    await updateCustomRecord(invoice.id, invoiceTableId, companyId, {
+    // This used to ignore updateCustomRecord's result entirely -- a failed
+    // save (a required/unique-field validation error, a ledger refusal,
+    // any DB error) still closed the modal via onSaved() below with no
+    // indication anything went wrong, silently discarding the edit.
+    const result = await updateCustomRecord(invoice.id, invoiceTableId, companyId, {
       status, due_date: dueDate || null,
       payments: paymentsNum, trust_applied: trustAppliedNum, waived_amount: waivedNum,
       amount_due: invoice.totalIncGst - trustAppliedNum - paymentsNum - waivedNum,
     }, invoiceFields);
     setSaving(false);
+    if (result && 'error' in result) { setError(result.error); return; }
     onSaved();
   };
 
@@ -454,6 +482,9 @@ function EditInvoiceModal({
               className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" />
           </div>
         </div>
+        {error && (
+          <div className="text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>
+        )}
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-full text-[11px] font-bold disabled:opacity-50 flex items-center justify-center gap-2">

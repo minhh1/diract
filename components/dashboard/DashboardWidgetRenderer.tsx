@@ -268,7 +268,16 @@ export default function DashboardWidgetRenderer({
       return <TrustAgedBalancesWidget records={allRecords} dormantDays={widget.config.dormantDays} />;
 
     case 'time_fees_report':
-      return <TimeFeesReportWidget records={allRecords} />;
+      return (
+        <TimeFeesReportWidget
+          records={allRecords}
+          fields={sourceKind === 'custom' ? fields : undefined}
+          tableId={sourceKind === 'custom' ? tableId : undefined}
+          companyId={companyId}
+          isAdmin={isAdmin}
+          onChanged={onChanged}
+        />
+      );
 
     case 'time_aging_report':
       return <TimeAgingReportWidget records={allRecords} agingDays={widget.config.agingDays} />;

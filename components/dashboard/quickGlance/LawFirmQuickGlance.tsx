@@ -13,6 +13,7 @@
 import { useMemo } from "react";
 import { Landmark, AlertTriangle, Users } from "lucide-react";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
+import { useCompany } from "@/components/CompanyContext";
 import { computeTrustBalancesByMatter } from "@/lib/trust/trustBalances";
 import TimeFeesReportWidget from "../TimeFeesReportWidget";
 import TimeAgingReportWidget from "../TimeAgingReportWidget";
@@ -40,6 +41,7 @@ function StatCard({ icon, label, value, tone }: { icon: React.ReactNode; label: 
 }
 
 export default function LawFirmQuickGlance() {
+  const { companyId, isAdmin } = useCompany();
   const trust = useCustomTable('trust-transactions');
   const timeFees = useCustomTable('time-fee-entries');
   const invoices = useCustomTable('invoices');
@@ -66,7 +68,14 @@ export default function LawFirmQuickGlance() {
       <div className="lg:col-span-3 flex flex-col gap-4">
         {!timeFees.loading && timeFees.records.length > 0 && (
           <div className="bg-white border border-slate-200 rounded-2xl p-4">
-            <TimeFeesReportWidget records={timeFees.records} />
+            <TimeFeesReportWidget
+              records={timeFees.records}
+              fields={timeFees.fields}
+              tableId={timeFees.tableDef?.id}
+              companyId={companyId || undefined}
+              isAdmin={isAdmin}
+              onChanged={timeFees.refetch}
+            />
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

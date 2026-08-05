@@ -16,6 +16,36 @@ import type { InvoiceTemplateConfig } from "./types";
 
 type ValueRow = { record_id: string; field_id: string; value_text: string | null; value_number: number | null; value_date: string | null; value_boolean: boolean | null; value_record_id: string | null };
 
+// A company's logo changes rarely (Settings > uploaded once, basically
+// never re-uploaded), but every PDF/docx generation used to re-fetch it
+// over the network from scratch -- a real, synchronous cost added to every
+// single invoice download on top of the actual PDF rendering. Cached
+// in-process per server instance, keyed by URL (so a genuine re-upload,
+// which gets a new storage path, isn't served stale); TTL is generous
+// since a wrong cached logo is at worst wrong for LOGO_CACHE_TTL_MS after a
+// same-URL overwrite, which this storage convention doesn't do anyway.
+const LOGO_CACHE_TTL_MS = 30 * 60 * 1000;
+const logoCache = new Map<string, { bytes: Uint8Array; isPng: boolean; fetchedAt: number }>();
+
+async function fetchLogoCached(logoUrl: string): Promise<{ bytes: Uint8Array; isPng: boolean } | null> {
+  const cached = logoCache.get(logoUrl);
+  if (cached && Date.now() - cached.fetchedAt < LOGO_CACHE_TTL_MS) return cached;
+  try {
+    const res = await fetch(logoUrl);
+    if (!res.ok) return cached ?? null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const isPng = !/\.jpe?g(\?|$)/i.test(logoUrl);
+    const entry = { bytes, isPng, fetchedAt: Date.now() };
+    logoCache.set(logoUrl, entry);
+    return entry;
+  } catch {
+    // Logo fetch failing shouldn't block generating the rest of the
+    // invoice -- fall back to a still-usable stale cache entry if there is
+    // one, otherwise no logo.
+    return cached ?? null;
+  }
+}
+
 function hydrateValues(valueRows: ValueRow[], fieldKeyById: Map<string, string>): Record<string, any> {
   const row: Record<string, any> = {};
   for (const v of valueRows) {
@@ -46,15 +76,19 @@ export async function hydrateInvoiceForRender(
     .eq('id', invoiceId).eq('company_id', companyId).is('deleted_at', null).maybeSingle();
   if (!invoiceRecord) return null;
 
-  const { data: invoiceFields } = await admin
-    .from('company_table_fields').select('id, field_key')
-    .eq('table_id', invoiceRecord.table_id).is('deleted_at', null);
+  // invoiceValueRows only needs invoiceId (already known), not
+  // invoiceRecord.table_id -- these two used to run sequentially even
+  // though nothing here actually depends on the other's result, adding a
+  // full extra round trip to every single PDF/docx generation for no
+  // reason.
+  const [{ data: invoiceFields }, { data: invoiceValueRows }] = await Promise.all([
+    admin.from('company_table_fields').select('id, field_key')
+      .eq('table_id', invoiceRecord.table_id).is('deleted_at', null),
+    admin.from('company_table_values')
+      .select('record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id')
+      .eq('record_id', invoiceId),
+  ]);
   const invoiceKeyById = new Map((invoiceFields || []).map(f => [f.id, f.field_key]));
-
-  const { data: invoiceValueRows } = await admin
-    .from('company_table_values')
-    .select('record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id')
-    .eq('record_id', invoiceId);
   const invoice = hydrateValues((invoiceValueRows || []) as ValueRow[], invoiceKeyById);
 
   // Debtor allows more than one entity (see supabase/invoices_debtor_multi.sql
@@ -98,15 +132,8 @@ export async function hydrateInvoiceForRender(
   let logoBytes: Uint8Array | null = null;
   let logoIsPng = true;
   if (company?.logo_url) {
-    try {
-      const res = await fetch(company.logo_url);
-      if (res.ok) {
-        logoBytes = new Uint8Array(await res.arrayBuffer());
-        logoIsPng = !/\.jpe?g(\?|$)/i.test(company.logo_url);
-      }
-    } catch {
-      // Logo fetch failing shouldn't block generating the rest of the invoice.
-    }
+    const logo = await fetchLogoCached(company.logo_url);
+    if (logo) { logoBytes = logo.bytes; logoIsPng = logo.isPng; }
   }
 
   const feeLines = (lineItems || []).filter(l => l.source_type === 'fee').map(l => ({
