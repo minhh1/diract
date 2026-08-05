@@ -1,9 +1,13 @@
 "use client";
 
-// Unpaid invoices -- every Invoices record whose status isn't Paid (see
-// supabase/invoice_status_options_update.sql for the fixed option set:
-// Under Review, Sent, Paid, Overdue, Void), sorted oldest first so the
-// longest-outstanding invoice surfaces at the top. Same self-contained
+// Unpaid invoices -- every Invoices record actually issued to the client
+// (status Sent or Overdue -- see supabase/invoice_status_options_update.sql
+// for the fixed option set: Under Review, Sent, Paid, Overdue, Void) and
+// still outstanding. Under Review is deliberately excluded even though it
+// isn't Paid/Void -- it's the pre-issue internal state, so surfacing it
+// here would show the firm's own drafts as if they were amounts owed by a
+// client. Sorted oldest first so the longest-outstanding invoice surfaces
+// at the top. Same self-contained
 // "reads records, computes its own list" shape as
 // components/dashboard/TimeAgingReportWidget.tsx -- part of Quick Glance's
 // Law Firm widget set (components/dashboard/quickGlance/LawFirmQuickGlance.tsx).
@@ -22,7 +26,7 @@ export default function UnpaidInvoicesWidget({ records }: { records: CustomTable
 
   const unpaid = useMemo(() => {
     return records
-      .filter(r => String(r.values.status || '') !== 'Paid' && String(r.values.status || '') !== 'Void')
+      .filter(r => ['Sent', 'Overdue'].includes(String(r.values.status || '')))
       .map(r => ({
         id: r.id,
         matterId: String(r.values.matter || ''),
