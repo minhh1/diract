@@ -10,7 +10,7 @@
 // instance instead of Property Developer Quick Glance's only content.
 // "Current" = not (all linked properties sold) OR not (all linked loans
 // discharged) -- see the per-field comments below for where each lives.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -51,6 +51,9 @@ export default function PropertyProjectsPanelWidget() {
   );
   const [stateFilter, setStateFilter] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  // Bumped only by a genuine server refetch (never by the geocode effect's
+  // own setProjects calls below) -- see that effect's dependency array.
+  const [revalidateVersion, setRevalidateVersion] = useState(0);
 
   // Revalidate in the background -- same shape whether this painted from
   // cache or not, same "stale-while-revalidate" pattern as useCustomTable.ts.
@@ -61,6 +64,10 @@ export default function PropertyProjectsPanelWidget() {
       if (cancelled) return;
       setProjects(fresh);
       writeCache(quickGlanceProjectsCacheKey(companyId), fresh);
+      // Only a genuine server refetch should re-trigger the geocode effect
+      // below -- see that effect's own comment for why it doesn't depend
+      // on `projects`/`currentProjects` directly.
+      setRevalidateVersion(v => v + 1);
     });
     return () => { cancelled = true; };
   }, [companyId]);
@@ -89,19 +96,50 @@ export default function PropertyProjectsPanelWidget() {
     });
   }, [projects, loansByProject]);
 
+  // Always holds the latest currentProjects without being a reactive
+  // dependency anywhere -- see the geocode effect below for why.
+  const currentProjectsRef = useRef(currentProjects);
+  useEffect(() => { currentProjectsRef.current = currentProjects; }, [currentProjects]);
+
   // Geocode any current project's property missing lat/lng, one at a time
   // (Nominatim's usage policy caps at ~1 req/sec), persisting the result
   // (both to properties.lat/lng and this cache) so it's never re-geocoded.
+  //
+  // Deliberately NOT keyed on `currentProjects` (only on companyId +
+  // revalidateVersion, a counter bumped exclusively by a genuine server
+  // refetch above): every successful geocode below calls setProjects,
+  // which gives `projects` -- and therefore `currentProjects`, a useMemo
+  // over it -- a new identity. With `currentProjects` in this effect's own
+  // dependency array, that self-triggered update tore this effect down and
+  // restarted it after EVERY SINGLE property, and the fresh instance fired
+  // its first request immediately (the throttle delay only ran at the END
+  // of each loop iteration, not before it) -- defeating the intended ~1
+  // req/sec throttle and getting the whole batch rate-limited by Nominatim
+  // after the first few properties, so most of a large batch (e.g. 75
+  // properties) silently never got pins. Reading the live property list via
+  // currentProjectsRef instead means this effect only starts a fresh batch
+  // when the project list is genuinely refetched from the server, and its
+  // own internal progress no longer restarts itself.
   useEffect(() => {
-    const seen = new Set<string>();
-    const toGeocode = currentProjects
-      .flatMap(p => p.properties)
-      .filter(prop => prop.lat == null && prop.street_address && !seen.has(prop.id) && seen.add(prop.id));
-    if (!toGeocode.length || !companyId) return;
+    if (!companyId) return;
     let cancelled = false;
     (async () => {
+      // The candidate list is snapshotted once here; each item is then
+      // re-checked against the live ref just before its own request (below)
+      // so a property that resolves via another path mid-batch (another
+      // open tab, a concurrent revalidate) is skipped rather than re-fetched.
+      const seen = new Set<string>();
+      const toGeocode = currentProjectsRef.current
+        .flatMap(p => p.properties)
+        .filter(prop => prop.lat == null && prop.street_address && !seen.has(prop.id) && seen.add(prop.id));
       for (const prop of toGeocode) {
         if (cancelled) return;
+        // Wait BEFORE each request, not after -- guarantees the throttle is
+        // honored even for the very first request for this run.
+        await new Promise(r => setTimeout(r, 1100));
+        if (cancelled) return;
+        const live = currentProjectsRef.current.flatMap(p => p.properties).find(pp => pp.id === prop.id);
+        if (!live || live.lat != null) continue; // already resolved since toGeocode was built
         const address = [prop.street_address, prop.suburb, prop.state, prop.postcode, 'Australia'].filter(Boolean).join(', ');
         try {
           const res = await fetch(`/api/geocode?address=${encodeURIComponent(address)}`);
@@ -121,11 +159,10 @@ export default function PropertyProjectsPanelWidget() {
         } catch {
           // Best-effort -- a failed geocode just leaves that property pin-less.
         }
-        await new Promise(r => setTimeout(r, 1100));
       }
     })();
     return () => { cancelled = true; };
-  }, [currentProjects, companyId]);
+  }, [companyId, revalidateVersion]);
 
   const availableStates = useMemo(() => {
     const set = new Set<string>();
