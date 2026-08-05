@@ -1,7 +1,7 @@
 // components/dashboard/RecordDashboard.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   AlertCircle, Trash2,
@@ -144,12 +144,37 @@ export default function RecordDashboard({
   const [linkedItems, setLinkedItems] = useState<Record<string, { id: string; name: string }[]>>({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasPendingArchiveRequest, setHasPendingArchiveRequest] = useState(false);
+  // Every tab_type's own component (RecordDashboardTab, InvoicesTab,
+  // TrustAccountTab, ...) fetches its own data on mount -- previously
+  // renderTabContent only ever rendered whichever tab was CURRENTLY active,
+  // so switching back to a tab you'd already visited unmounted and
+  // remounted it from scratch every time, paying the full fetch again.
+  // Tracking which tabs have been opened at least once lets renderTabContent
+  // keep every visited tab mounted (hidden via CSS, not unmounted) below --
+  // first visit still pays the real fetch, every revisit after that is
+  // instant. Cleared implicitly on remount (new recordId), same as every
+  // other piece of state here.
+  const [visitedTabIds, setVisitedTabIds] = useState<Set<string>>(new Set());
 
   const recordTable = systemTable || tableId || '';
 
   // ── Effects ────────────────────────────────────────────────────
 
   useEffect(() => { loadAll(); }, [recordId]);
+
+  // useLayoutEffect, not useEffect -- runs synchronously before the browser
+  // paints, so a newly-selected not-yet-visited tab is already in
+  // visitedTabIds by the time renderTabContent's filter below actually
+  // paints, instead of flashing one blank frame first.
+  useLayoutEffect(() => {
+    if (!activeTabId) return;
+    // Layout-editing is a single shared flag, not per-tab -- without
+    // clearing it here, leaving a custom_dashboard tab mid-edit and
+    // switching to another one (now kept mounted below) would carry
+    // isEditing=true straight into a tab the user never asked to edit.
+    setIsEditingLayout(false);
+    setVisitedTabIds(prev => (prev.has(activeTabId) ? prev : new Set(prev).add(activeTabId)));
+  }, [activeTabId]);
 
   useEffect(() => {
     const entityTable = systemTable || 'company_table_records';
@@ -1438,83 +1463,91 @@ export default function RecordDashboard({
     ? { ...fieldSections, trust_link: fieldSections['entity_type'] }
     : fieldSections;
 
+  // One visited tab's content -- pulled out of renderTabContent so it can
+  // be called once per VISITED tab (not just the active one) below, keyed
+  // off that tab specifically rather than the activeTab closure.
+  const renderTabFor = (tab: RecordTab) => {
+    switch (tab.tab_type) {
+      case 'fields':
+        return (
+          <FieldLayoutEditor
+            fieldSections={fieldSectionsWithTrust}
+            fields={withTrustField(getTabFieldLayout(tab.id))}
+            recordValues={systemTable === 'entities' && record ? { ...record, entity_type: record.roles ?? [] } : record || {}}
+            linkedItems={linkedItems}
+            isEditing={tab.id === activeTabId && isEditingLayout}
+            onSave={handleFieldSave}
+            onAddLinked={handleAddLinked}
+            onRemoveLinked={handleRemoveLinked}
+            onLayoutChange={layout => {
+              handleLayoutChange(tab.id, layout);
+              saveTabFieldLayout(tab.id, layout);
+            }}
+            onAddField={() => handleAddFieldToTab(tab.id)}
+            onRemoveField={fieldKey =>
+              handleRemoveFieldFromTab(tab.id, fieldKey)
+            }
+            onSaveAutoNumber={isAdmin ? handleSaveAutoNumber : undefined}
+            autoNumberParentTable={systemTable ? { kind: 'system', table: systemTable } : { kind: 'custom', tableId: tableId! }}
+          />
+        );
+      case 'sub_projects':
+        return <SubProjectsTab recordId={recordId} />;
+      case 'related_matters':
+        return <RelatedMattersTab recordId={recordId} />;
+      case 'checklist':
+        return <ChecklistTab recordId={recordId} companyId={companyId} />;
+      case 'calendar':
+        return <CalendarTab recordId={recordId} />;
+      case 'emails':
+        return <EmailsTab recordId={recordId} />;
+      case 'document_templates':
+        return <DocumentTemplatesTab recordId={recordId} companyId={companyId} />;
+      case 'precedents':
+        return <PrecedentsTab recordId={recordId} companyId={companyId} initialPrecedentId={initialPrecedentId} />;
+      case 'custom_dashboard':
+        return tab.linked_table_id ? (
+          <RecordDashboardTab
+            tabId={tab.id}
+            linkedTableId={tab.linked_table_id}
+            recordId={recordId}
+            companyId={companyId}
+            isEditing={tab.id === activeTabId && isEditingLayout}
+            // Tasks aren't a relation *target* other tables link back to (no
+            // 'task' field type exists), unlike properties/entities/projects
+            // -- so there's no ParentSystemTable value for it; leave the
+            // auto-detection unset for a task record, same as a custom-table-
+            // backed one (computeRelationCandidates already handles "unknown
+            // parent" by falling back to the broad candidate set).
+            recordSystemTable={systemTable !== 'tasks' ? systemTable : undefined}
+          />
+        ) : null;
+      case 'invoice_dashboard':
+        return tab.linked_table_id ? (
+          <InvoicesTab
+            linkedTableId={tab.linked_table_id}
+            recordId={recordId}
+            companyId={companyId}
+          />
+        ) : null;
+      case 'finance_model':
+        return <FinanceModelTab recordId={recordId} />;
+      case 'trust_account':
+        return <TrustAccountTab recordId={recordId} companyId={companyId} userId={ctxUserId!} isAdmin={isAdmin} />;
+      case 'residual_land_solver':
+        return <ResidualLandSolverTab recordId={recordId} isProject={systemTable === 'projects'} />;
+      default:
+        return null;
+    }
+  };
+
   const renderTabContent = () => (
     <>
-      {activeTab?.tab_type === 'fields' && (
-        <FieldLayoutEditor
-          fieldSections={fieldSectionsWithTrust}
-          fields={withTrustField(getTabFieldLayout(activeTab.id))}
-          recordValues={systemTable === 'entities' && record ? { ...record, entity_type: record.roles ?? [] } : record || {}}
-          linkedItems={linkedItems}
-          isEditing={isEditingLayout}
-          onSave={handleFieldSave}
-          onAddLinked={handleAddLinked}
-          onRemoveLinked={handleRemoveLinked}
-          onLayoutChange={layout => {
-            handleLayoutChange(activeTab.id, layout);
-            saveTabFieldLayout(activeTab.id, layout);
-          }}
-          onAddField={() => handleAddFieldToTab(activeTab.id)}
-          onRemoveField={fieldKey =>
-            handleRemoveFieldFromTab(activeTab.id, fieldKey)
-          }
-          onSaveAutoNumber={isAdmin ? handleSaveAutoNumber : undefined}
-          autoNumberParentTable={systemTable ? { kind: 'system', table: systemTable } : { kind: 'custom', tableId: tableId! }}
-        />
-      )}
-      {activeTab?.tab_type === 'sub_projects' && (
-        <SubProjectsTab recordId={recordId} />
-      )}
-      {activeTab?.tab_type === 'related_matters' && (
-        <RelatedMattersTab recordId={recordId} />
-      )}
-      {activeTab?.tab_type === 'checklist' && (
-        <ChecklistTab recordId={recordId} companyId={companyId} />
-      )}
-      {activeTab?.tab_type === 'calendar' && (
-        <CalendarTab recordId={recordId} />
-      )}
-      {activeTab?.tab_type === 'emails' && (
-        <EmailsTab recordId={recordId} />
-      )}
-      {activeTab?.tab_type === 'document_templates' && (
-        <DocumentTemplatesTab recordId={recordId} companyId={companyId} />
-      )}
-      {activeTab?.tab_type === 'precedents' && (
-        <PrecedentsTab recordId={recordId} companyId={companyId} initialPrecedentId={initialPrecedentId} />
-      )}
-      {activeTab?.tab_type === 'custom_dashboard' && activeTab.linked_table_id && (
-        <RecordDashboardTab
-          tabId={activeTab.id}
-          linkedTableId={activeTab.linked_table_id}
-          recordId={recordId}
-          companyId={companyId}
-          isEditing={isEditingLayout}
-          // Tasks aren't a relation *target* other tables link back to (no
-          // 'task' field type exists), unlike properties/entities/projects
-          // -- so there's no ParentSystemTable value for it; leave the
-          // auto-detection unset for a task record, same as a custom-table-
-          // backed one (computeRelationCandidates already handles "unknown
-          // parent" by falling back to the broad candidate set).
-          recordSystemTable={systemTable !== 'tasks' ? systemTable : undefined}
-        />
-      )}
-      {activeTab?.tab_type === 'invoice_dashboard' && activeTab.linked_table_id && (
-        <InvoicesTab
-          linkedTableId={activeTab.linked_table_id}
-          recordId={recordId}
-          companyId={companyId}
-        />
-      )}
-      {activeTab?.tab_type === 'finance_model' && (
-        <FinanceModelTab recordId={recordId} />
-      )}
-      {activeTab?.tab_type === 'trust_account' && (
-        <TrustAccountTab recordId={recordId} companyId={companyId} userId={ctxUserId!} isAdmin={isAdmin} />
-      )}
-      {activeTab?.tab_type === 'residual_land_solver' && (
-        <ResidualLandSolverTab recordId={recordId} isProject={systemTable === 'projects'} />
-      )}
+      {tabs.filter(t => visitedTabIds.has(t.id)).map(t => (
+        <div key={t.id} className={t.id === activeTabId ? '' : 'hidden'}>
+          {renderTabFor(t)}
+        </div>
+      ))}
       {activeTabId === '__access__' && systemTable === 'projects' && (
         <ProjectAccessPanel
           projectId={recordId}
