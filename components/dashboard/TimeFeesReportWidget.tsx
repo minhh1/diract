@@ -41,12 +41,10 @@ const toDateInput = (d: Date) => ymdInSydney(d);
 
 interface Props {
   records: CustomTableRecord[];
-  // Everything below is optional -- only DashboardWidgetRenderer's
-  // record-scoped (per-matter) dashboards wire these up, since editing an
-  // individual entry only makes sense with a real tableId/companyId to
-  // write through and an isAdmin flag to gate it. LawFirmQuickGlance's
-  // company-wide usage omits them; staff rows still expand there, just
-  // without the edit affordance.
+  // Everything below is optional -- editing an individual entry only makes
+  // sense with a real tableId/companyId to write through, so any caller
+  // that can't supply them (e.g. LawFirmQuickGlance) just gets a read-only
+  // widget; staff rows still expand there, just without the edit affordance.
   fields?: CustomTableField[];
   tableId?: string;
   companyId?: string;
@@ -54,14 +52,17 @@ interface Props {
   onChanged?: () => void;
 }
 
-export default function TimeFeesReportWidget({ records, fields, tableId, companyId, isAdmin, onChanged }: Props) {
+export default function TimeFeesReportWidget({ records, fields, tableId, companyId, onChanged }: Props) {
   const [preset, setPreset] = useState<RangePreset>("this_month");
   const now = useMemo(() => new Date(), []);
   const [customStart, setCustomStart] = useState(() => toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)));
   const [customEnd, setCustomEnd] = useState(() => toDateInput(now));
   const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
   const [editingEntry, setEditingEntry] = useState<CustomTableRecord | null>(null);
-  const canEdit = !!(isAdmin && fields && tableId && companyId && onChanged);
+  // Matches DashboardGrid.tsx's convention: isAdmin gates layout/admin-only
+  // actions, not basic record editing, which is open to any company member
+  // (the underlying RLS policies on company_table_values are the real gate).
+  const canEdit = !!(fields && tableId && companyId && onChanged);
 
   const { start, end } = useMemo(() => {
     if (preset === "this_month") return { start: toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)), end: toDateInput(now) };
@@ -154,15 +155,15 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-        <table className="w-full text-[12px]">
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
+        <table className="w-full text-[12px] table-fixed min-w-[560px]">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50">
-              <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Staff</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Entries</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Hours</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Billable hours</th>
-              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Amount</th>
+              <th className="text-left px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[34%]">Staff</th>
+              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[14%]">Entries</th>
+              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[14%]">Hours</th>
+              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[18%]">Billable hours</th>
+              <th className="text-right px-4 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest w-[20%]">Amount</th>
             </tr>
           </thead>
           <tbody>
