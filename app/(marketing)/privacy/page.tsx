@@ -30,7 +30,7 @@ export default async function PrivacyPage() {
           choices and rights available to you. It applies to the organisations that hold an account with us (
           <strong>Customers</strong>), the individuals they authorise to use the Service (<strong>Users</strong>),
           and, where a Customer&rsquo;s own client or counterparty data passes through the Service, those
-          individuals (<strong>Client Data subjects</strong>) — though for Client Data, the Customer is generally
+          individuals (<strong>Client Data subjects</strong>). For Client Data, though, the Customer is generally
           the party responsible for that data, and we act as its service provider. See clause 5 for how that
           split works.
         </p>
@@ -51,9 +51,9 @@ export default async function PrivacyPage() {
         <SubSection title="Integration data">
           <p>
             Where a Customer or User connects a third-party account (Gmail, Microsoft Outlook/Teams, WhatsApp
-            Business), we access the data needed to provide that Integration — for example, email metadata and
+            Business), we access the data needed to provide that Integration. For example, that includes email metadata and
             content for messages a User assigns to a matter, calendar events, or messages sent through a
-            connected WhatsApp Business number — limited to what the Integration is described as doing at the
+            connected WhatsApp Business number, limited to what the Integration is described as doing at the
             time it is enabled.
           </p>
         </SubSection>
@@ -108,7 +108,7 @@ export default async function PrivacyPage() {
           <p>
             We do not use AI Features to make a decision about an individual that produces legal or similarly
             significant effects without a human involved. AI Feature output is a drafting or analysis aid for a
-            User, who remains responsible for reviewing it before it is relied on or acted on — see clause 5 of
+            User, who remains responsible for reviewing it before it is relied on or acted on. See clause 5 of
             our <a href="/terms" className="text-indigo-600 hover:underline">Terms of Service</a>.
           </p>
         </SubSection>
@@ -121,7 +121,7 @@ export default async function PrivacyPage() {
           it only as the Customer&rsquo;s service provider (processor), on the Customer&rsquo;s instructions as
           reflected in how it configures and uses the Service. If you are a client or counterparty of one of our
           Customers and have a question about your own data held in the Service, please contact that
-          organisation directly rather than Diract — we are not able to action a request from someone we cannot
+          organisation directly rather than Diract, since we are not able to action a request from someone we cannot
           verify is authorised on the relevant account.
         </p>
       </Section>
@@ -143,8 +143,8 @@ export default async function PrivacyPage() {
           outside your own country, including in the United States. Where personal information is transferred
           internationally, we take steps required by applicable law to protect it in transit and at the
           destination (for example, standard contractual clauses for transfers subject to GDPR/UK GDPR). We use
-          technical and organisational measures — including encryption in transit, access controls scoped per
-          Customer, and authentication safeguards — appropriate to the sensitivity of the information involved,
+          technical and organisational measures, including encryption in transit, access controls scoped per
+          Customer, and authentication safeguards, appropriate to the sensitivity of the information involved,
           but no method of transmission or storage is completely secure, and we cannot guarantee absolute
           security.
         </p>
@@ -170,7 +170,7 @@ export default async function PrivacyPage() {
       <Section title="10. Your Rights">
         <p>
           Depending on where you are, you have certain rights over your personal information. Select your region
-          below — this doesn&rsquo;t change which rights you have, only which section is shown first.
+          below. This doesn&rsquo;t change which rights you have, only which section is shown first.
         </p>
         <JurisdictionTabs
           defaultJurisdiction={defaultJurisdiction}
@@ -206,7 +206,7 @@ export default async function PrivacyPage() {
                   If you are a California resident, the CCPA/CPRA and similar state privacy laws (where
                   applicable) give you the right to know what personal information we have collected about you,
                   to request its deletion, to correct inaccurate information, and to opt out of the
-                  &ldquo;sale&rdquo; or &ldquo;sharing&rdquo; of personal information — we do not sell or share
+                  &ldquo;sale&rdquo; or &ldquo;sharing&rdquo; of personal information. We do not sell or share
                   personal information as those terms are defined in applicable law. You will not be
                   discriminated against for exercising these rights.
                 </p>

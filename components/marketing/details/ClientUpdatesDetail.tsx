@@ -21,12 +21,12 @@ export default function ClientUpdatesDetail() {
           badgeClass="bg-sky-50 border-sky-100 text-sky-700"
           headlineLines={["A branded page,", "not a status-check phone call."]}
           accentClass="text-sky-600"
-          subheadline="A live, always-current view of a matter's progress that you control what a client sees — colour-coded by status, with an AI-written summary line so they don't have to read a full file note."
+          subheadline="A live, always-current view of a matter's progress that you control what a client sees. It's colour-coded by status, with an AI-written summary line so they don't have to read a full file note."
         />
 
         <Section eyebrow="Client view" eyebrowClass="text-sky-500" title="Colour by status, summarised in one line">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Each matter shows as its own card, tinted by whatever status colour you've set up — expand any one of them for the
+            Each matter shows as its own card, tinted by whatever status colour you've set up. Expand any one of them for the
             fields you've chosen the client should see.
           </p>
           <div className={isDark ? "dark" : ""}><ClientUpdatesMockup /></div>

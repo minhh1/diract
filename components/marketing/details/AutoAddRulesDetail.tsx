@@ -22,7 +22,7 @@ export default function AutoAddRulesDetail() {
           badgeClass="bg-violet-50 border-violet-100 text-violet-600"
           headlineLines={["A rule in plain English,", "not a workflow diagram."]}
           accentClass="text-violet-600"
-          subheadline="A field, a condition, a value — set once and every new record that matches gets added to the right board on its own."
+          subheadline="A field, a condition, a value. Set it once and every new record that matches gets added to the right board on its own."
         />
 
         <Section eyebrow="Rules" eyebrowClass="text-violet-500" title="Read exactly like you'd say it out loud">
@@ -31,7 +31,7 @@ export default function AutoAddRulesDetail() {
 
         <Section eyebrow="Scope" eyebrowClass="text-violet-500" title="Forward-looking, on purpose">
           <p className="text-[15px] text-slate-500 leading-relaxed">
-            A rule only ever applies to records created after it's set — it never silently reshuffles what's already on the
+            A rule only ever applies to records created after it's set. It never silently reshuffles what's already on the
             board when you add or change one.
           </p>
         </Section>

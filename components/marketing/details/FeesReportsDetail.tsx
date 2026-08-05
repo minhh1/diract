@@ -22,10 +22,10 @@ export default function FeesReportsDetail() {
           badgeClass="bg-sky-50 border-sky-100 text-sky-700"
           headlineLines={["Every fee earner's numbers,", "not a month-end guess."]}
           accentClass="text-sky-600"
-          subheadline="Built directly from the same time entries your team logs every day — no separate spreadsheet to keep in sync, no reconciling two sources of truth at month-end."
+          subheadline="Built directly from the same time entries your team logs every day. There's no separate spreadsheet to keep in sync, no reconciling two sources of truth at month-end."
         />
 
-        <Section eyebrow="Report" eyebrowClass="text-sky-500" title="Entries, hours, billable hours, and amount — per person">
+        <Section eyebrow="Report" eyebrowClass="text-sky-500" title="Entries, hours, billable hours, and amount, per person">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             Switch between this week, this month, or all time. Every row totals automatically, so the bottom line is always
             right there.

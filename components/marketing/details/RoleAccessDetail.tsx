@@ -25,10 +25,10 @@ export default function RoleAccessDetail() {
           badgeClass="bg-amber-50 border-amber-100 text-amber-700"
           headlineLines={["Two company-wide roles,", "not a permissions matrix to configure."]}
           accentClass="text-amber-600"
-          subheadline="A company admin and everyone else — with a finer per-table, per-dashboard layer on top for when a specific resource needs tighter control than that."
+          subheadline="A company admin and everyone else, with a finer per-table, per-dashboard layer on top for when a specific resource needs tighter control than that."
         />
 
-        <Section eyebrow="Team" eyebrowClass="text-amber-500" title="Admin, or member — clear at a glance">
+        <Section eyebrow="Team" eyebrowClass="text-amber-500" title="Admin, or member: clear at a glance">
           <div className={isDark ? "dark" : ""}><RoleAccessMockup /></div>
         </Section>
 
@@ -36,7 +36,7 @@ export default function RoleAccessDetail() {
           <div className="space-y-2 max-w-lg">
             {[
               "Creating a table the whole company can see (everyone else gets a private one)",
-              "Deleting a shared table — anyone else has to submit a request instead",
+              "Deleting a shared table, which anyone else has to submit a request for instead",
               "Company-wide admin settings and secrets",
             ].map((item) => (
               <div key={item} className="rounded-xl bg-slate-50 px-4 py-2.5 text-[12px] text-slate-600">{item}</div>
@@ -47,7 +47,7 @@ export default function RoleAccessDetail() {
         <Section eyebrow="Finer control" eyebrowClass="text-amber-500" title="Per-table and per-dashboard, when you need it">
           <p className="text-[15px] text-slate-500 leading-relaxed">
             Beyond the two company-wide roles, an individual table or dashboard can carry its own admin/editor/viewer
-            permissions — for the one board that genuinely needs to be locked down tighter than everything else.
+            permissions, for the one board that genuinely needs to be locked down tighter than everything else.
           </p>
         </Section>
       </div>

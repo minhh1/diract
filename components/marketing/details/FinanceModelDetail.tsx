@@ -25,12 +25,12 @@ export default function FinanceModelDetail() {
           badgeClass="bg-violet-50 border-violet-100 text-violet-600"
           headlineLines={["A real budget,", "reconciled against real transactions."]}
           accentClass="text-violet-600"
-          subheadline="One record per deal, seven real tabs deep — from a live budget-vs-actual synced to Xero, through to a full feasibility calculator, without ever leaving the platform."
+          subheadline="One record per deal, seven real tabs deep. It goes from a live budget-vs-actual synced to Xero, through to a full feasibility calculator, without ever leaving the platform."
         />
 
         <Section eyebrow="Overview" eyebrowClass="text-violet-500" title="Budget vs Actual, synced to Xero">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Every cost category shows budgeted against actual, reconciled straight from your Xero transactions — not a
+            Every cost category shows budgeted against actual, reconciled straight from your Xero transactions. It's not a
             spreadsheet someone has to update by hand after the fact.
           </p>
           <div className={isDark ? "dark" : ""}><FinanceModelMockup /></div>
@@ -44,7 +44,7 @@ export default function FinanceModelDetail() {
           </div>
         </Section>
 
-        <Section eyebrow="Feasibility" eyebrowClass="text-violet-500" title="Margin, equity, and return — calculated for you">
+        <Section eyebrow="Feasibility" eyebrowClass="text-violet-500" title="Margin, equity, and return, calculated for you">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             Revenue, acquisition, construction, professional fees, contingency, holding costs, and GST all roll up into the
             numbers that actually decide whether a deal stacks up.

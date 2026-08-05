@@ -21,14 +21,14 @@ export default function EntityValidationDetail() {
           badgeClass="bg-emerald-50 border-emerald-100 text-emerald-700"
           headlineLines={["Bad entity data caught", "before it's in a deal."]}
           accentClass="text-emerald-600"
-          subheadline="Development deals run through special purpose vehicles, trusts, and joint ventures — a wrong digit in an ABN is a real problem. It's checked the moment it's typed, on every entity, not just at signup."
+          subheadline="Development deals run through special purpose vehicles, trusts, and joint ventures, so a wrong digit in an ABN is a real problem. It's checked the moment it's typed, on every entity, not just at signup."
         />
 
         <Section eyebrow="Validation" eyebrowClass="text-emerald-500" title="A real checksum, not a length check">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            ABN runs the actual ATO modulus-89 checksum; ACN runs ASIC's weighted check-digit formula — both flagged
-            immediately if they don't add up, on creation and on every later edit. BSB and account number are checked too —
-            6 digits, and 4 to 10 digits — catching a mistyped digit count on the spot.
+            ABN runs the actual ATO modulus-89 checksum, and ACN runs ASIC's weighted check-digit formula. Both are flagged
+            immediately if they don't add up, on creation and on every later edit. BSB and account number are checked too,
+            at 6 digits and 4 to 10 digits respectively, catching a mistyped digit count on the spot.
           </p>
           <div className={`space-y-2 max-w-sm ${isDark ? "dark" : ""}`}>
             <FieldRow label="Entity" value="Riverside Development Pty Ltd" />

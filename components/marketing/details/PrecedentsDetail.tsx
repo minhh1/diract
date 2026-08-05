@@ -24,7 +24,7 @@ export default function PrecedentsDetail() {
           badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
           headlineLines={["A library your team trusts,", "not a folder of old Word docs."]}
           accentClass="text-indigo-600"
-          subheadline="Grouped by practice area, flagged when they need a second look, and issued straight into a matter — fully tracked from draft to execution."
+          subheadline="Grouped by practice area, flagged when they need a second look, and issued straight into a matter, fully tracked from draft to execution."
         />
 
         <Section eyebrow="Library" title="Grouped, flagged, and one click to issue">
@@ -33,7 +33,7 @@ export default function PrecedentsDetail() {
 
         <Section eyebrow="AI assist" title="A drafted starting point, never the final word">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Give the AI a short brief and it drafts a subject and body to fill the issue form — entirely optional, and it
+            Give the AI a short brief and it drafts a subject and body to fill the issue form. It's entirely optional, and it
             never issues anything on its own. You review and edit before anything goes out, every time.
           </p>
           <div className={`flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 max-w-md ${isDark ? "dark" : ""}`}>
@@ -44,7 +44,7 @@ export default function PrecedentsDetail() {
 
         <Section eyebrow="Quality check" title="Catch a broken cross-reference before it goes out">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Upload any Word document — not just from the library — and it's checked for cross-references that point nowhere
+            Upload any Word document, not just from the library, and it's checked for cross-references that point nowhere
             (a clause, schedule, or annexure number that doesn't exist) and defined terms that are declared but never used, or
             used without ever being defined. Issues come back as real comments in a marked-up copy of your own document.
           </p>

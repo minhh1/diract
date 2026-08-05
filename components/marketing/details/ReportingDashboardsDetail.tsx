@@ -38,7 +38,7 @@ export default function ReportingDashboardsDetail() {
           badgeClass="bg-emerald-50 border-emerald-100 text-emerald-700"
           headlineLines={["Built from real widgets,", "not a fixed set of charts."]}
           accentClass="text-emerald-600"
-          subheadline="A dashboard here is genuinely custom-built — pick a table, then arrange from a real catalogue of widgets, some as general as a chart, some as specific as a trust reconciliation."
+          subheadline="A dashboard here is genuinely custom-built. Pick a table, then arrange from a real catalogue of widgets, some as general as a chart, some as specific as a trust reconciliation."
         />
 
         <Section eyebrow="Dashboard" eyebrowClass="text-emerald-500" title="Your data, your layout">
@@ -69,7 +69,7 @@ export default function ReportingDashboardsDetail() {
         <Section eyebrow="Industry templates" eyebrowClass="text-emerald-500" title="Start from a real firm's own dashboards">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             The Marketplace has ready-made templates ported straight from a real, live company&apos;s own tables and
-            dashboards — one for Australian law firms, one for Australian property developers — so you&apos;re customising a
+            dashboards, one for Australian law firms and one for Australian property developers, so you&apos;re customising a
             working setup, not staring at a blank canvas. Installing one is opt-in per table and per dashboard, so it
             never overwrites something you&apos;ve already built your own way.
           </p>

@@ -24,7 +24,7 @@ export default function MultiCompanyDetail() {
           badgeClass="bg-sky-50 border-sky-100 text-sky-700"
           headlineLines={["One login,", "every company you belong to."]}
           accentClass="text-sky-600"
-          subheadline="Every company you're a member of, listed from your own account menu — pick one, and you land straight in that company's own dashboard, its own data, its own settings."
+          subheadline="Every company you're a member of, listed from your own account menu. Pick one, and you land straight in that company's own dashboard, its own data, its own settings."
         />
 
         <Section eyebrow="Switching" eyebrowClass="text-sky-500" title="Every company you belong to, one click away">

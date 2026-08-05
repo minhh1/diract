@@ -24,19 +24,19 @@ export default function LoanFacilitiesDetail() {
           badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
           headlineLines={["Every facility on one board,", "not scattered across lenders."]}
           accentClass="text-indigo-600"
-          subheadline="A portfolio-wide view of every loan across every deal — name, lender type, and principal — with the messy detail of repayment phases fixable right from the same board."
+          subheadline="A portfolio-wide view of every loan across every deal, with name, lender type, and principal, and the messy detail of repayment phases fixable right from the same board."
         />
 
         <Section eyebrow="Portfolio" title="One board, every facility">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Senior debt, mezzanine, private lenders — all in one place, not a separate spreadsheet per lender relationship.
+            Senior debt, mezzanine, private lenders: all in one place, not a separate spreadsheet per lender relationship.
           </p>
           <div className={isDark ? "dark" : ""}><LoanTableMockup /></div>
         </Section>
 
         <Section eyebrow="Phases" title="Fix a messy repayment structure in place">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Each loan is a sequence of repayment phases — interest-only or amortising, on a monthly, quarterly, six-monthly, or
+            Each loan is a sequence of repayment phases: interest-only or amortising, on a monthly, quarterly, six-monthly, or
             at-maturity schedule. Edit the sequence directly from the portfolio board, useful when phases come in messy from an
             import and need correcting without opening every loan individually.
           </p>

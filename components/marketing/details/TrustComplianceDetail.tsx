@@ -33,12 +33,12 @@ export default function TrustComplianceDetail() {
           badgeClass="bg-emerald-50 border-emerald-100 text-emerald-700"
           headlineLines={["Built around compliance,", "not bolted on after."]}
           accentClass="text-emerald-600"
-          subheadline="A live trust ledger per matter, a full report whenever you need one, a PDF in one click, and cleaner data going in — so there's less to catch at audit time, not more to reconcile."
+          subheadline="A live trust ledger per matter, a full report whenever you need one, a PDF in one click, and cleaner data going in, so there's less to catch at audit time, not more to reconcile."
         />
 
         <Section eyebrow="Reporting" eyebrowClass="text-emerald-500" title="Compliance reports show everything, not a summary">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Every transaction for a matter, in date order, with a running balance on every row — not a rolled-up total that
+            Every transaction for a matter, in date order, with a running balance on every row. It's not a rolled-up total that
             hides how it got there.
           </p>
           <div className={`rounded-2xl border border-slate-200 bg-white p-4 max-w-3xl ${isDark ? "dark" : ""}`}>
@@ -51,7 +51,7 @@ export default function TrustComplianceDetail() {
 
         <Section eyebrow="Export" eyebrowClass="text-emerald-500" title="Generate a PDF in one click">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Print any statement straight to PDF, formatted for the file — no separate export tool, no reformatting a
+            Print any statement straight to PDF, formatted for the file. There's no separate export tool, no reformatting a
             spreadsheet before it's fit to hand over.
           </p>
           <button className={`flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white rounded-full text-[11px] font-bold ${isDark ? "dark" : ""}`}>
@@ -62,7 +62,7 @@ export default function TrustComplianceDetail() {
         <Section eyebrow="Data entry" title="Field validation, so there's less room for a mistake">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             ABN and ACN are checked against the real ATO/ASIC checksum as they're typed, not just a length check. BSB and
-            account number are checked too — 6 digits, and 4 to 10 digits — catching a mistyped digit count on the spot,
+            account number are checked too, at 6 digits and 4 to 10 digits respectively, catching a mistyped digit count on the spot,
             even though neither carries a public check-digit the way ABN/ACN do.
           </p>
           <div className={`space-y-2 max-w-sm ${isDark ? "dark" : ""}`}>

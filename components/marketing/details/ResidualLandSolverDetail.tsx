@@ -33,7 +33,7 @@ export default function ResidualLandSolverDetail() {
           badgeClass="bg-amber-50 border-amber-100 text-amber-700"
           headlineLines={["Solved backward from your margin,", "not forced forward from a guess."]}
           accentClass="text-amber-600"
-          subheadline="Set the margin you need, and the solver works backward to the land price that actually supports it — re-checking stamp duty and title fees at every price it tests, not just once at the end."
+          subheadline="Set the margin you need, and the solver works backward to the land price that actually supports it. It re-checks stamp duty and title fees at every price it tests, not just once at the end."
         />
 
         <Section eyebrow="Output" eyebrowClass="text-amber-500" title="A land price, and everything it's built on">
@@ -50,7 +50,7 @@ export default function ResidualLandSolverDetail() {
 
         <Section eyebrow="Honestly" eyebrowClass="text-amber-500" title="Two simplifications, stated plainly">
           <p className="text-[15px] text-slate-500 leading-relaxed">
-            Finance cost uses the standard feasibility shorthand — a progressively-drawn loan's average balance treated as
+            Finance cost uses the standard feasibility shorthand: a progressively-drawn loan's average balance treated as
             roughly half of peak debt, not a dated drawdown schedule. Duty rates are general figures, without PPR concessions or
             foreign-buyer surcharges. Both are disclosed right in the tool, not hidden in a footnote.
           </p>

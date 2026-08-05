@@ -98,8 +98,8 @@ export default async function TermsPage() {
         </p>
         <SubSection title="5.1 Not professional advice">
           <p>
-            Output produced by an AI Feature — including drafted or assembled documents, precedent content,
-            summaries, extracted data, suggested classifications, and answers to questions — is generated
+            Output produced by an AI Feature, including drafted or assembled documents, precedent content,
+            summaries, extracted data, suggested classifications, and answers to questions, is generated
             algorithmically from patterns in training data and the inputs provided. It is <strong>not</strong>{" "}
             legal, financial, tax, valuation or other professional advice, does not create a solicitor&ndash;client
             or other professional relationship with Diract, and must not be relied upon, filed, sent to a third
@@ -112,7 +112,7 @@ export default async function TermsPage() {
             appropriate for the jurisdiction, court, or matter it is used for (a property of generative AI
             models generally, sometimes referred to as &ldquo;hallucination&rdquo;). Where the Service flags
             content as requiring review, or a precedent notes it is based on a prescribed or official form, that
-            flag is not exhaustive — the Customer remains responsible for verifying every AI-assisted output
+            flag is not exhaustive: the Customer remains responsible for verifying every AI-assisted output
             before use, in the same way it would review a first draft prepared by a junior team member.
           </p>
         </SubSection>
@@ -273,7 +273,7 @@ export default async function TermsPage() {
       <Section title="17. Governing Law and Regional Terms">
         <p>
           The governing law, and certain rights and obligations, differ depending on where you or your
-          organisation are located. Select your region below — this doesn&rsquo;t change which section applies to
+          organisation are located. Select your region below. This doesn&rsquo;t change which section applies to
           you, only which one is shown first.
         </p>
         <JurisdictionTabs

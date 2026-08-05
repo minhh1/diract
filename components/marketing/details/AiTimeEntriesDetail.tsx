@@ -25,12 +25,12 @@ export default function AiTimeEntriesDetail() {
           badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
           headlineLines={["Time entries drafted for you,", "not invented for you."]}
           accentClass="text-indigo-600"
-          subheadline="Every draft is built from work you actually did — a task you completed, an email you sent — attributed to a specific matter and person by real signals, never guessed. Nothing gets submitted until you review and approve it."
+          subheadline="Every draft is built from work you actually did, whether a task you completed or an email you sent, attributed to a specific matter and person by real signals, never guessed. Nothing gets submitted until you review and approve it."
         />
 
         <Section eyebrow="Where to find it" title="One click from your Time Entry dashboard">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            "Auto Time Recording" sits as a button right on the Time Entry dashboard, next to "My Tasks" — the same dashboard
+            "Auto Time Recording" sits as a button right on the Time Entry dashboard, next to "My Tasks," the same dashboard
             you already open to log time. No separate tool, no extra tab.
           </p>
           <div className={`flex gap-3 max-w-sm ${isDark ? "dark" : ""}`}>
@@ -43,15 +43,15 @@ export default function AiTimeEntriesDetail() {
           </div>
         </Section>
 
-        <Section eyebrow="Descriptions" title="Brief or Detailed — your call, per entry or for all of them">
+        <Section eyebrow="Descriptions" title="Brief or Detailed: your call, per entry or for all of them">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Same underlying work, three ways to describe it (Brief, Standard, Detailed) — switch any single entry, or set every
+            Same underlying work, three ways to describe it (Brief, Standard, Detailed). Switch any single entry, or set every
             draft to the same level in one click. Here's the same matter at each end of that range:
           </p>
           <div className={`grid sm:grid-cols-2 gap-4 ${isDark ? "dark" : ""}`}>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Brief</p>
-              <p className="text-[12px] font-medium text-slate-700 leading-relaxed">Trust deed review — Smith Family Trust.</p>
+              <p className="text-[12px] font-medium text-slate-700 leading-relaxed">Trust deed review for the Smith Family Trust.</p>
             </div>
             <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4">
               <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Detailed</p>
@@ -65,18 +65,18 @@ export default function AiTimeEntriesDetail() {
 
         <Section eyebrow="Admin controls" title="Reassign the timekeeper on any entry">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Admins reviewing "Everyone's day" can reassign any draft to a different staff member from a dropdown — including
+            Admins reviewing "Everyone's day" can reassign any draft to a different staff member from a dropdown, including
             entries the matching couldn't confidently attribute to anyone, flagged so they don't get missed.
           </p>
           <div className="space-y-2.5 max-w-sm">
             <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white p-3">
-              <span className="text-[11px] text-slate-500 flex-1">Deed of Variation — Smith Family Trust</span>
+              <span className="text-[11px] text-slate-500 flex-1">Deed of Variation, Smith Family Trust</span>
               <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border border-slate-200 bg-white text-slate-600">
                 Sarah Lee <ChevronDown size={11} />
               </span>
             </div>
             <div className="flex items-center gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/30 p-3">
-              <span className="text-[11px] text-slate-500 flex-1">Section 32 disclosure — 88 Riverside Ave</span>
+              <span className="text-[11px] text-slate-500 flex-1">Section 32 disclosure, 88 Riverside Ave</span>
               <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border border-amber-300 bg-white text-amber-700">
                 Assign timekeeper… <ChevronDown size={11} />
               </span>
@@ -86,14 +86,14 @@ export default function AiTimeEntriesDetail() {
 
         <Section eyebrow="How it works" title="How an email gets matched to a matter and a person">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Two separate, deterministic steps — nothing here is a guess, and an email that doesn't confidently match just stays
+            Two separate, deterministic steps. Nothing here is a guess, and an email that doesn't confidently match just stays
             unassigned for a human to sort (see the admin control above).
           </p>
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <p className="text-[12px] font-bold text-slate-800 mb-1.5">Which matter</p>
               <p className="text-[13px] text-slate-500 leading-relaxed">
-                Determined by the Gmail label already on the email — whichever matter that label is linked to is the matter the
+                Determined by the Gmail label already on the email. Whichever matter that label is linked to is the matter the
                 email (and the time entry drafted from it) belongs to.
               </p>
             </div>
@@ -102,7 +102,7 @@ export default function AiTimeEntriesDetail() {
               <p className="text-[13px] text-slate-500 leading-relaxed">
                 Checked in order, stopping at the first match: the sender's address against a staff profile; failing that, a name
                 addressed in the email's own greeting ("Hi Sarah") against staff first names; failing that, who most recently sent
-                a message earlier in the same email thread. No match at any step means no guess — it's left for an admin to assign.
+                a message earlier in the same email thread. No match at any step means no guess: it's left for an admin to assign.
               </p>
             </div>
           </div>

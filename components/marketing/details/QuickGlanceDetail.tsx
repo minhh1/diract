@@ -32,7 +32,7 @@ export default function QuickGlanceDetail() {
         <Section eyebrow="Trust health" eyebrowClass="text-emerald-500" title="Balance, dormant matters, and coverage in three numbers">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             Total trust balance across every matter, how many matters have gone dormant for 90 days or more, and how many
-            matters are holding trust money at all — computed live from the same ledger the Trust account feature keeps.
+            matters are holding trust money at all, computed live from the same ledger the Trust account feature keeps.
           </p>
           <div className={`flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 max-w-md ${isDark ? "dark" : ""}`}>
             <Landmark size={14} className="text-emerald-600 shrink-0" />
@@ -43,7 +43,7 @@ export default function QuickGlanceDetail() {
         <Section eyebrow="Unbilled time" eyebrowClass="text-emerald-500" title="Old time doesn't hide until you go looking for it">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             Every entry not yet invoiced, oldest first. Switch between every individual entry and a per-matter rollup, and
-            narrow to only what's older than 5, 10, 15, or 30 days — the same real filter on the live widget, not a static
+            narrow to only what's older than 5, 10, 15, or 30 days, the same real filter on the live widget, not a static
             screenshot of one setting.
           </p>
           <div className={isDark ? "dark" : ""}><QuickGlanceMockup /></div>
@@ -51,7 +51,7 @@ export default function QuickGlanceDetail() {
 
         <Section eyebrow="Billing" title="Unpaid invoices, sorted oldest first">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Every issued invoice still sitting unpaid, with how much is outstanding in total — a draft under review isn't
+            Every issued invoice still sitting unpaid, with how much is outstanding in total. A draft under review isn't
             counted here, since that's your own work in progress, not money a client actually owes yet.
           </p>
           <div className={`flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 max-w-md ${isDark ? "dark" : ""}`}>

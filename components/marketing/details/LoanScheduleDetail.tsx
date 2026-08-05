@@ -24,12 +24,12 @@ export default function LoanScheduleDetail() {
           badgeClass="bg-sky-50 border-sky-100 text-sky-700"
           headlineLines={["A computed schedule,", "checked against what actually happened."]}
           accentClass="text-sky-600"
-          subheadline="Interest and principal, period by period, calculated from the loan's own rate history and repayment phases — then compared against the real repayments matched from Xero."
+          subheadline="Interest and principal, period by period, calculated from the loan's own rate history and repayment phases, then compared against the real repayments matched from Xero."
         />
 
         <Section eyebrow="Schedule" eyebrowClass="text-sky-500" title="Opening balance to closing balance, every period">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Interest is calculated on the real per-period rate history, not one flat number for the life of the loan — and
+            Interest is calculated on the real per-period rate history, not one flat number for the life of the loan, and
             "costed" interest (what actually hits your budget) is automatically capped at the project's completion date, distinct
             from the full contractual interest.
           </p>
@@ -38,7 +38,7 @@ export default function LoanScheduleDetail() {
 
         <Section eyebrow="Reconciliation" eyebrowClass="text-sky-500" title="Calculated vs actual, matched from Xero">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            The schedule this produces is compared directly against real repayment transactions synced from Xero — so a gap
+            The schedule this produces is compared directly against real repayment transactions synced from Xero, so a gap
             between what should have happened and what actually did shows up on its own, not months later at reconciliation.
           </p>
         </Section>

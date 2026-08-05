@@ -47,7 +47,7 @@ export default function TeamsManagementDetail() {
 
         <Section eyebrow="Categories" eyebrowClass="text-amber-500" title="The right team, suggested automatically">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Tag a team with the categories it owns — "Construction", "Fixing Stage" — and typing that same category into a
+            Tag a team with the categories it owns, like "Construction" or "Fixing Stage," and typing that same category into a
             timeline task auto-suggests that team, without removing anyone you've already assigned by hand.
           </p>
           <div className={`flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 max-w-md ${isDark ? "dark" : ""}`}>

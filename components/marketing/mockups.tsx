@@ -783,7 +783,7 @@ export function MockTasks() {
   return (
     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="px-4 py-2.5 border-b border-slate-100">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tasks — My tasks</span>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tasks - My tasks</span>
       </div>
       <div>
         {TASK_ROWS.map((r, i) => {

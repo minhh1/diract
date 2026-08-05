@@ -21,12 +21,12 @@ export default function GmailLabelsDetail() {
           badgeClass="bg-sky-50 border-sky-100 text-sky-700"
           headlineLines={["A label in your inbox,", "not a note in a database."]}
           accentClass="text-sky-600"
-          subheadline="When an email gets assigned to a record, it's a real Gmail label applied through the Gmail API — and it shows up the same way in every teammate's own Gmail, not just inside Diract."
+          subheadline="When an email gets assigned to a record, it's a real Gmail label applied through the Gmail API. It shows up the same way in every teammate's own Gmail, not just inside Diract."
         />
 
         <Section eyebrow="Setup" eyebrowClass="text-sky-500" title="One label per record, created automatically">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Creating a project creates its Gmail label at the same time — nested under a parent label you control (defaults to
+            Creating a project creates its Gmail label at the same time, nested under a parent label you control (defaults to
             "Shared Emails"), built from whatever fields you choose (matter number, name, year). A short code stays on the end
             so the link survives if the record is later renamed.
           </p>
@@ -38,7 +38,7 @@ export default function GmailLabelsDetail() {
         <Section eyebrow="Assigning" eyebrowClass="text-sky-500" title="Assign once, it's already in their inbox">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
             Assigning an email labels it in your own Gmail immediately, then does the same for every other connected teammate
-            in that same request — before the page even finishes loading, not on some later sync.
+            in that same request, before the page even finishes loading, not on some later sync.
           </p>
           <div className={`space-y-2 max-w-sm ${isDark ? "dark" : ""}`}>
             {["Sarah Lee", "Jono Ferreira", "Priya Shah"].map((name) => (
@@ -52,7 +52,7 @@ export default function GmailLabelsDetail() {
 
         <Section eyebrow="Reliability" eyebrowClass="text-sky-500" title="Self-healing, every 15 minutes">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            The instant fan-out handles the normal case. A background pass every 15 minutes reconciles the rest — a teammate
+            The instant fan-out handles the normal case. A background pass every 15 minutes reconciles the rest: a teammate
             who joined after the label existed, a rename that needs to propagate, or a sync that failed the first time.
           </p>
           <div className="flex items-center gap-2 text-[12px] font-medium text-slate-500">

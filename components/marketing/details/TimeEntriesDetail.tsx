@@ -35,7 +35,7 @@ export default function TimeEntriesDetail() {
           badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
           headlineLines={["Every field a fee earner", "actually needs, nothing more."]}
           accentClass="text-indigo-600"
-          subheadline="Time entries are a real table like any other in Diract — matter, staff, date, activity code, description, rate and hours — so it reports, filters, and exports exactly like the rest of your data."
+          subheadline="Time entries are a real table like any other in Diract, with matter, staff, date, activity code, description, rate and hours, so it reports, filters, and exports exactly like the rest of your data."
         />
 
         <Section eyebrow="Fields" title="What a time entry actually captures">
@@ -54,7 +54,7 @@ export default function TimeEntriesDetail() {
 
         <Section eyebrow="No manual maths" title="Amount is computed, not typed">
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Rate × hours is a real formula field, calculated the moment either number changes — no separate step to multiply
+            Rate × hours is a real formula field, calculated the moment either number changes. There's no separate step to multiply
             it out, and no risk of the two numbers silently drifting apart.
           </p>
         </Section>
@@ -64,7 +64,7 @@ export default function TimeEntriesDetail() {
             Three real techniques, not a marketing line about "keyboard friendly": arrow keys highlight an option in the
             Matter or Staff picker, and Enter or Tab confirms it. A select field like Type picks itself the instant you press
             its first letter, then jumps you straight to the next field. And the entry grid's blank rows quietly become real
-            records the moment their required fields are filled — keep typing, keep getting new rows underneath.
+            records the moment their required fields are filled. Keep typing, and keep getting new rows underneath.
           </p>
           <div className={`space-y-2.5 max-w-sm ${isDark ? "dark" : ""}`}>
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
