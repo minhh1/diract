@@ -282,17 +282,26 @@ function ProfileForm({ initialFullName, initialAvatarUrl, email }: {
 // ── TWO-FACTOR AUTHENTICATION ───────────────────────────────────
 // A real TOTP enrollment flow against Supabase Auth's own MFA API
 // (supabase.auth.mfa.enroll/challengeAndVerify/unenroll) -- nothing here is
-// simulated. qr_code comes back as a bare SVG document, not a data URI, so
-// it needs the data:image/svg+xml;utf-8, prefix prepended before it'll
-// render in an <img>, per @supabase/auth-js's own type comment -- and the
-// SVG itself must be percent-encoded first (encodeURIComponent), since its
-// fill="#..." colors and other reserved characters otherwise corrupt the
-// data URI. Without that encoding this renders as a broken image in
-// Safari/iOS (silently "worked" in some other browsers, which is how it
-// shipped unnoticed). The
-// dashboard/quick-glance setup checklist (components/dashboard/quickGlance/
-// SetupChecklist.tsx) links back here for the "set up" action; this is
-// where enrolling and later turning it off both actually happen.
+// simulated. The installed @supabase/auth-js (2.108.2, see GoTrueClient.js's
+// own mfa().enroll()) already prepends `data:image/svg+xml;utf-8,` to
+// data.totp.qr_code itself -- UNENCODED -- before handing it back, unlike
+// older versions/its own doc comments, which describe a bare SVG document.
+// Blindly re-prepending that same prefix here (an earlier version of this
+// fix) double-wrapped it into garbage ("data:image/svg+xml;utf-8,data%3A...")
+// that never renders. toQrDataUri() below strips the SDK's own prefix if
+// present before percent-encoding the actual SVG and rebuilding the URI
+// itself, so this keeps working whichever shape a future SDK version
+// returns. The percent-encoding itself is still required regardless -- the
+// SVG's fill="#..." colors and other reserved characters corrupt an
+// unencoded data URI, which renders as a broken image in Safari/iOS in
+// particular (other browsers are more forgiving, which is how the original,
+// pre-SDK-change bug shipped unnoticed). This is where enrolling and later
+// turning it off both actually happen.
+const SVG_DATA_URI_PREFIX = "data:image/svg+xml;utf-8,";
+function toQrDataUri(qrCode: string): string {
+  const svg = qrCode.startsWith(SVG_DATA_URI_PREFIX) ? qrCode.slice(SVG_DATA_URI_PREFIX.length) : qrCode;
+  return `${SVG_DATA_URI_PREFIX}${encodeURIComponent(svg)}`;
+}
 function SecuritySection({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true);
   const [factor, setFactor] = useState<{ id: string } | null>(null);
@@ -315,7 +324,7 @@ function SecuritySection({ userId }: { userId: string }) {
     const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", issuer: "Diract" });
     setBusy(false);
     if (error || !data) { setMessage({ type: "error", text: error?.message || "Could not start enrollment" }); return; }
-    setEnrolling({ factorId: data.id, qrCode: `data:image/svg+xml;utf-8,${encodeURIComponent(data.totp.qr_code)}`, secret: data.totp.secret });
+    setEnrolling({ factorId: data.id, qrCode: toQrDataUri(data.totp.qr_code), secret: data.totp.secret });
   };
 
   const verifyEnroll = async () => {
