@@ -5,11 +5,11 @@
 //
 // Key Graph-specific differences from the Gmail processor:
 //   - there is no "list every message with this label" call to compare
-//     against (Gmail's getMessagesWithLabel) — each known message has to be
+//     against (Gmail's getMessagesWithLabel) -- each known message has to be
 //     looked up individually by internetMessageId, since Graph's own `id`
 //     is opaque and different per mailbox for the same email.
 //   - moving a message to a folder (POST /messages/{id}/move) returns a
-//     NEW message with a new id — every write path below applies the
+//     NEW message with a new id -- every write path below applies the
 //     category first, then moves, then uses the post-move id.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -28,7 +28,7 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const FETCH_TIMEOUT_MS = 15_000;
 function withTimeout(): AbortSignal { return AbortSignal.timeout(FETCH_TIMEOUT_MS); }
 
-// A fixed preset color for every matter category — Graph only accepts
+// A fixed preset color for every matter category -- Graph only accepts
 // colors from a closed preset0..preset24 palette, and reuse across
 // categories is fine (only the display name has to be unique).
 const CATEGORY_COLOR = "preset9";
@@ -224,7 +224,7 @@ Deno.serve(async (req) => {
   try {
     const token = await getAccessToken(userId);
     if (!token) {
-      console.log(`[outlook-label-sync-processor] No token for ${userId} — marking complete (nothing to do)`);
+      console.log(`[outlook-label-sync-processor] No token for ${userId} -- marking complete (nothing to do)`);
       await markUserComplete(jobId, userId, totalUsers);
       return respond({ ok: true, userId, skipped: "no_token" });
     }
@@ -232,7 +232,7 @@ Deno.serve(async (req) => {
     const { data: memberCheck } = await db.from("company_memberships")
       .select("user_id").eq("user_id", userId).eq("company_id", companyId).maybeSingle();
     if (!memberCheck) {
-      console.log(`[outlook-label-sync-processor] ${userId} is not a member of ${companyId} — skipping without marking complete`);
+      console.log(`[outlook-label-sync-processor] ${userId} is not a member of ${companyId} -- skipping without marking complete`);
       return respond({ ok: true, userId, skipped: "not_member" });
     }
 
@@ -274,7 +274,7 @@ Deno.serve(async (req) => {
         }
         console.log(`[outlook-label-sync-processor] Applied ${applied}/${knownMessages.length} messages for ${userId}`);
       } else {
-        console.log(`[outlook-label-sync-processor] Fast path — folder/category ensured, nothing to backfill`);
+        console.log(`[outlook-label-sync-processor] Fast path -- folder/category ensured, nothing to backfill`);
       }
 
       await logActivity({

@@ -1,8 +1,8 @@
 // app/api/precedents/letterhead/preview/route.ts
 // Renders the company's currently-saved letterhead (with its auto-inserted
 // {{address}}/{{content}} tags still literally visible as text) to PDF, so an
-// admin can visually confirm the tags landed in the right spot — below any
-// logo/header art, above the footer — before relying on it for real
+// admin can visually confirm the tags landed in the right spot -- below any
+// logo/header art, above the footer -- before relying on it for real
 // issuances. Streamed back directly rather than stored, since it's a
 // throwaway render of the source file, not a generated document.
 import { NextResponse } from "next/server";

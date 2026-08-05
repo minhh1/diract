@@ -1,9 +1,9 @@
 // supabase/functions/outlook-watch-renewal/index.ts
-// Runs every 6 hours (vs. gmail-watch-renewal's daily) — Graph subscriptions
+// Runs every 6 hours (vs. gmail-watch-renewal's daily) -- Graph subscriptions
 // on mail resources expire in ~3 days max, so this needs a much tighter
 // cadence than Gmail's ~7-day watch to avoid a gap. Renews subscriptions
 // expiring within 24h and flags stalled sync (no delta activity in 24h).
-// Admin email alerting (which gmail-watch-renewal has) is deferred —
+// Admin email alerting (which gmail-watch-renewal has) is deferred -
 // out of scope for this pass, same as the admin dashboard.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -70,9 +70,9 @@ async function renewOrCreateSubscription(
       }).eq("user_id", userId);
       return { ok: true, expiry: data.expirationDateTime, subscriptionId: existingSubscriptionId };
     }
-    // Renewal can 404 if the subscription already lapsed — fall through and
+    // Renewal can 404 if the subscription already lapsed -- fall through and
     // create a fresh one instead of giving up.
-    console.log(`[outlook-watch-renewal] Renew failed (${res.status}) for subscription ${existingSubscriptionId} — recreating`);
+    console.log(`[outlook-watch-renewal] Renew failed (${res.status}) for subscription ${existingSubscriptionId} -- recreating`);
   }
 
   const createRes = await fetch(`${GRAPH_BASE}/subscriptions`, {
@@ -135,12 +135,12 @@ Deno.serve(async (_req) => {
     let stalledReason = "";
     if (!subscription_id) stalledReason = "No subscription configured";
     else if (subExpiry < now) stalledReason = `Subscription expired ${new Date(subExpiry).toLocaleString("en-AU")}`;
-    else if (!delta_link) stalledReason = "No delta cursor — never completed an initial sync";
+    else if (!delta_link) stalledReason = "No delta cursor -- never completed an initial sync";
     else if (lastUpdate < stalledThreshold && lastUpdate > 0) {
       stalledReason = `No activity for ${Math.round((now - lastUpdate) / 3600000)}h`;
     }
     if (stalledReason) {
-      console.log(`[outlook-watch-renewal] STALLED: ${email} — ${stalledReason}`);
+      console.log(`[outlook-watch-renewal] STALLED: ${email} -- ${stalledReason}`);
       stalled.push({ email, reason: stalledReason });
     }
 
@@ -154,7 +154,7 @@ Deno.serve(async (_req) => {
       }
       const result = await renewOrCreateSubscription(userId, token, subscription_id);
       if (result.ok) {
-        console.log(`[outlook-watch-renewal] ✓ Renewed ${email} — expires ${result.expiry}`);
+        console.log(`[outlook-watch-renewal] ✓ Renewed ${email} -- expires ${result.expiry}`);
         renewed.push(email);
       } else {
         console.error(`[outlook-watch-renewal] ✗ Failed to renew ${email}: ${result.error}`);
@@ -162,12 +162,12 @@ Deno.serve(async (_req) => {
       }
     } else {
       const hoursLeft = Math.round((subExpiry - now) / 3600000);
-      console.log(`[outlook-watch-renewal] ✓ ${email} subscription OK — ${hoursLeft}h remaining`);
+      console.log(`[outlook-watch-renewal] ✓ ${email} subscription OK -- ${hoursLeft}h remaining`);
     }
   }
 
   const result = { renewed, stalled, failed };
-  console.log(`[outlook-watch-renewal] DONE in ${Date.now() - t0}ms —`, JSON.stringify(result));
+  console.log(`[outlook-watch-renewal] DONE in ${Date.now() - t0}ms -`, JSON.stringify(result));
   await heartbeat("outlook-watch-renewal", Date.now() - t0, result);
   return new Response(JSON.stringify({ ok: true, ...result }), {
     headers: { "Content-Type": "application/json" },

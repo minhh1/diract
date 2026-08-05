@@ -4,7 +4,7 @@ import type { ImportSection } from "./buildTemplate";
 
 /**
  * Given a file's raw header line and the list of available sections,
- * returns the section whose header set best matches — or null if no
+ * returns the section whose header set best matches -- or null if no
  * section matches well enough to auto-select with confidence.
  */
 export function detectSectionFromHeaders(
@@ -18,7 +18,7 @@ export function detectSectionFromHeaders(
   let best: { section: ImportSection; confidence: number } | null = null;
 
   for (const section of sections) {
-    // Child sections also expect property_street_address prepended —
+    // Child sections also expect property_street_address prepended -
     // include it in the comparison set so it counts toward the match.
     const expected = new Set(
       section.targetTable === section.key
@@ -35,7 +35,7 @@ export function detectSectionFromHeaders(
   }
 
   // Require a strong majority match (at least 70% of expected headers
-  // present) before auto-selecting — a weak/ambiguous match should fall
+  // present) before auto-selecting -- a weak/ambiguous match should fall
   // back to leaving the dropdown as-is rather than guessing wrong.
   if (best && best.confidence >= 0.7) return best;
   return null;

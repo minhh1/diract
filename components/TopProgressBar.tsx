@@ -9,7 +9,7 @@ interface ProgressBarContextValue {
   // table's own data fetch) only hide the bar once everything is done.
   start: () => void;
   done: () => void;
-  // For navigation specifically — call before router.push/Link click.
+  // For navigation specifically -- call before router.push/Link click.
   // The bar resolves itself automatically once the URL actually changes,
   // so callers don't need to know when the destination is "ready".
   startNavigation: () => void;
@@ -26,7 +26,7 @@ export function useProgressBar() {
 }
 
 // Drives the top bar from a boolean loading flag instead of manual
-// start()/done() calls — swap in for a route/page-level "if (loading)
+// start()/done() calls -- swap in for a route/page-level "if (loading)
 // return <Spinner />" gate. Reference-counting in the provider means
 // concurrent users of this hook (e.g. a tab's own fetch alongside a
 // route change) resolve correctly.
@@ -39,7 +39,7 @@ export function useProgressBarWhile(active: boolean) {
   }, [active, start, done]);
 }
 
-// useSearchParams() needs a Suspense boundary in this Next.js version —
+// useSearchParams() needs a Suspense boundary in this Next.js version -
 // isolate it in its own leaf component (same pattern already used for
 // GenericMasterTable/Sidebar elsewhere in this app).
 function RouteChangeWatcher({
@@ -55,7 +55,7 @@ function RouteChangeWatcher({
     prevKey.current = key;
     if (!pendingRef.current) return;
     // Small settle delay so the destination has a moment to paint before
-    // we call it "done" — avoids the bar flickering off mid-transition.
+    // we call it "done" -- avoids the bar flickering off mid-transition.
     // pendingRef stays true until done() actually runs (not just while it's
     // scheduled), so a second navigation landing inside this window is
     // recognized as still-pending rather than starting an uncounted extra
@@ -105,7 +105,7 @@ export function ProgressBarProvider({ children }: { children: ReactNode }) {
     if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
     setVisible(true);
     setWidth(15);
-    // Decelerating growth toward ~85% — never claims "done" on its own,
+    // Decelerating growth toward ~85% -- never claims "done" on its own,
     // only done() pushes it the rest of the way to 100.
     growTimerRef.current = setInterval(() => {
       setWidth(w => (w >= 85 ? w : w + (85 - w) * 0.1));
@@ -133,7 +133,7 @@ export function ProgressBarProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startNavigation = useCallback(() => {
-    // A navigation is already in flight — treat a second click before it
+    // A navigation is already in flight -- treat a second click before it
     // settles as part of the same trip instead of stacking another start(),
     // since only one done() will ever fire for the eventual final URL.
     if (pendingNavRef.current) return;

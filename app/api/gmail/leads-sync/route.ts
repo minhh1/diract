@@ -1,9 +1,9 @@
 // app/api/gmail/leads-sync/route.ts
 // Scans the company's shared "Leads" Gmail label (companies.gmail_leads_label
-// — see supabase/companies_gmail_leads_label.sql) for new messages and
+// -- see supabase/companies_gmail_leads_label.sql) for new messages and
 // proposes an assignment for each one (link to an existing Lead, or create a
 // new Lead) into lead_email_assignment_requests. Nothing is ever applied
-// here — every proposal waits for an admin to approve it via
+// here -- every proposal waits for an admin to approve it via
 // /api/lead-email-assignments/approve. Mirrors the source-of-truth mailbox
 // resolution in app/api/gmail/sync/route.ts's runSync().
 import { NextRequest, NextResponse } from "next/server";
@@ -11,7 +11,7 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getGmailAccessToken, getOrCreateLabelHierarchy, listMessagesWithLabel, matchLeadForEmail } from "@/lib/services/leadGmailAssignment";
 
 // Same shape/table as the edge-function crons' heartbeat() helper (see e.g.
-// supabase/functions/gmail-email-sync-cron/index.ts) — registered as
+// supabase/functions/gmail-email-sync-cron/index.ts) -- registered as
 // "gmail-leads-sync" in AdminGmailSyncTab.tsx's HEARTBEAT_DEFS so a stuck or
 // failing Leads sync shows up in Admin → Gmail sync → System health next to
 // the other Gmail cron/worker jobs, not just this one company's UI.
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ensure the shared Leads label exists in every connected member's
-    // mailbox — this is the "push the shared label to every team member"
+    // mailbox -- this is the "push the shared label to every team member"
     // requirement, and it runs on every sync (not just once), so a newly
     // connected member or one who deleted the label gets it back
     // automatically. Previously this only ever looked the label up and gave
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // Skip anything already linked to a Lead, or already proposed/reviewed —
+    // Skip anything already linked to a Lead, or already proposed/reviewed -
     // the partial unique index on lead_email_assignment_requests also guards
     // this at the DB level, but pre-filtering avoids paying for a metadata
     // fetch + match lookup per already-seen message on every sync run.
@@ -171,8 +171,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Inserted one row at a time (rather than one bulk INSERT) so a single
-    // duplicate-key race against the partial unique index — a concurrent sync
-    // run, or a message that slipped past the pre-filter above — only drops
+    // duplicate-key race against the partial unique index -- a concurrent sync
+    // run, or a message that slipped past the pre-filter above -- only drops
     // that one proposal instead of aborting the whole statement/batch.
     let proposedCount = 0;
     for (const row of newRows) {

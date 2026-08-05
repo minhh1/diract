@@ -83,7 +83,7 @@ export default function TrustCashBookWidget({ records, trustAccountName }: { rec
           receiptNumber: r.values.receipt_number || null,
           matterNumber: matterNumbers.get(matterId) || null,
           matterName: matterNames.get(matterId) || null,
-          particulars: r.values.payor_payee || r.values.purpose || '—',
+          particulars: r.values.payor_payee || r.values.purpose || '-',
           amountIn: Number(r.values.amount_in) || 0,
           amountOut: Number(r.values.amount_out) || 0,
           running,
@@ -144,16 +144,16 @@ export default function TrustCashBookWidget({ records, trustAccountName }: { rec
               return (
                 <tr key={r.id} className="border-b border-slate-50">
                   <td className="px-4 py-2 text-slate-500">{formatDateAU(r.values.date)}</td>
-                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{r.values.receipt_number || '—'}</td>
-                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{matterNumbers.get(matterId) || '—'}</td>
+                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{r.values.receipt_number || '-'}</td>
+                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{matterNumbers.get(matterId) || '-'}</td>
                   <td className="px-4 py-2 text-slate-600">
                     {matterId ? (
                       <button onClick={() => router.push(`/dashboard/projects?id=${matterId}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
-                        {matterNames.get(matterId) || '—'}
+                        {matterNames.get(matterId) || '-'}
                       </button>
-                    ) : '—'}
+                    ) : '-'}
                   </td>
-                  <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || r.values.purpose || '—'}</td>
+                  <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || r.values.purpose || '-'}</td>
                   <td className="px-4 py-2 text-right text-slate-700">{r.values.amount_in ? aud.format(Number(r.values.amount_in)) : ''}</td>
                   <td className="px-4 py-2 text-right text-slate-700">{r.values.amount_out ? aud.format(Number(r.values.amount_out)) : ''}</td>
                   <td className="px-4 py-2 text-right font-semibold text-slate-900">{aud.format(running)}</td>

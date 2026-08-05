@@ -58,7 +58,7 @@ interface FillPage {
 }
 
 function randomCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — easy to read aloud
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I -- easy to read aloud
   let out = "";
   for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
@@ -86,10 +86,10 @@ function defaultExpiry(): string {
 
 // A "combined group" is every field transitively linked to `fieldId` via
 // trigger_field_id, walked in both directions (who I show after, and who
-// shows after me) — the flat pool that free reordering happens within.
+// shows after me) -- the flat pool that free reordering happens within.
 // Returned in `list`'s current order. A field with no links of its own
 // (never combined) is a group of one. Always filters out joined_to_field_id
-// aliases first, whatever `list` is passed — an aliased field never renders
+// aliases first, whatever `list` is passed -- an aliased field never renders
 // its own row, so it can't sit "inside" a visible chain. Without this, a
 // field that gets Linked away while it's mid-chain would silently stay
 // wired into the graph as an invisible member, breaking the visible
@@ -113,11 +113,11 @@ function groupOf(list: TemplateField[], fieldId: string): TemplateField[] {
 }
 
 // Rewrites trigger_field_id for every member of a group to match its
-// current array order — a combined group is always a strict order-of-
+// current array order -- a combined group is always a strict order-of-
 // appearance sequence, so after any reorder the first member has no
 // trigger and each later member's trigger becomes whoever now sits right
 // before it. trigger_value only survives on a member whose immediate
-// predecessor didn't actually change — otherwise a leftover "= Yes"
+// predecessor didn't actually change -- otherwise a leftover "= Yes"
 // condition could end up describing a completely different question.
 function relinkGroup(list: TemplateField[], memberIds: Set<string>): TemplateField[] {
   const ordered = list.filter(f => memberIds.has(f.id));
@@ -134,7 +134,7 @@ function relinkGroup(list: TemplateField[], memberIds: Set<string>): TemplateFie
 // fields that all belong to the same combined group becomes one block
 // (rendered together in a shaded area), everything else is its own block of
 // one. Deliberately goes off the CURRENT array order rather than the
-// trigger_field_id graph directly — combining always keeps both fields
+// trigger_field_id graph directly -- combining always keeps both fields
 // contiguous (see setTrigger), so this only matters as a fallback for an
 // edge case like a stale/imported chain that isn't actually adjacent.
 function buildFieldBlocks(list: TemplateField[]): TemplateField[][] {
@@ -163,7 +163,7 @@ export default function DocumentTemplatesTab({ recordId }: Props) {
 
   useProgressBarWhile(loading);
 
-  // Called both on mount and after every save/join/upload/revoke — only the
+  // Called both on mount and after every save/join/upload/revoke -- only the
   // initial call should show the full-tab spinner (`loading` starts true).
   // Re-fetching afterwards must NOT flip it back to true, or every join/save
   // would unmount the whole tab to a bare spinner and swallow the "Saved"
@@ -194,7 +194,7 @@ export default function DocumentTemplatesTab({ recordId }: Props) {
     return null;
   };
 
-  // Uploads sequentially (not in parallel) — the .doc -> .docx conversion
+  // Uploads sequentially (not in parallel) -- the .doc -> .docx conversion
   // step shells out to a single-threaded LibreOffice instance server-side,
   // so parallel uploads would just queue up behind each other anyway.
   const handleFiles = async (files: FileList | File[]) => {
@@ -282,7 +282,7 @@ export default function DocumentTemplatesTab({ recordId }: Props) {
             <div key={p.id} className="flex items-center gap-4 p-5 bg-white border border-slate-200 rounded-[24px]">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-[13px] font-bold text-slate-800">{p.title}{p.clientName ? ` — ${p.clientName}` : ""}</p>
+                  <p className="text-[13px] font-bold text-slate-800">{p.title}{p.clientName ? ` -- ${p.clientName}` : ""}</p>
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${p.isActive ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"}`}>
                     {p.isActive ? "Active" : "Revoked"}
                   </span>
@@ -347,7 +347,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
   const [triggerFieldId, setTriggerFieldId] = useState<string | null>(null);
   const [triggerQuery, setTriggerQuery] = useState("");
   // The inline "new branching question" mini-form inside the Combine
-  // popover — only one can be open at a time, alongside triggerFieldId.
+  // popover -- only one can be open at a time, alongside triggerFieldId.
   const [newQuestionOpen, setNewQuestionOpen] = useState(false);
   const [newQuestionLabel, setNewQuestionLabel] = useState("");
   const [newQuestionType, setNewQuestionType] = useState<TemplateField["field_type"]>("select");
@@ -359,14 +359,14 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
   const [pendingConditionValues, setPendingConditionValues] = useState<string[]>([]);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
-  // Aliased fields (joined_to_field_id set) never render their own row —
+  // Aliased fields (joined_to_field_id set) never render their own row -
   // they show up as a chip on their root's row instead. Reorder only
   // operates over what's visible. Linking is scoped to this one document:
   // fields never leave `fields` to search across other templates.
   const visibleFields = fields.filter(f => !f.joined_to_field_id);
   const chipsFor = (fieldId: string) => fields.filter(f => f.joined_to_field_id === fieldId);
   // A field can only be picked to link if it's currently standalone (not
-  // itself an alias, and not already a root with its own followers) — that
+  // itself an alias, and not already a root with its own followers) -- that
   // keeps every link/unlink a single-field mutation with no multi-field
   // group-merge case to reconcile.
   const linkCandidates = (excludeId: string) => fields.filter(f =>
@@ -376,7 +376,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
   const update = (id: string, patch: Partial<TemplateField>) =>
     setFields(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f));
 
-  // Candidates for "combine with" from excludeId's popover — anything NOT
+  // Candidates for "combine with" from excludeId's popover -- anything NOT
   // already in excludeId's own group. Picking something from excludeId's
   // own group would cycle: setTrigger moves the picked field's whole group
   // to sit after excludeId's tail, and excludeId can't sit both before AND
@@ -407,12 +407,12 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
       return rest;
     });
   };
-  // Creates a fresh question that exists purely to gate `forFieldId` — not
+  // Creates a fresh question that exists purely to gate `forFieldId` -- not
   // detected from the uploaded document (no real {{tag}} backs it), so its
   // tag_key is synthetic and prefixed to never collide with a real
   // placeholder. Otherwise it's a normal field: same type system, answered
   // by the client like anything else, and other fields can combine with it
-  // too. Lands immediately below forFieldId, in the same group — same as
+  // too. Lands immediately below forFieldId, in the same group -- same as
   // picking an existing field from the Combine search would do.
   const addBranchOnlyQuestion = (forFieldId: string, label: string, fieldType: TemplateField["field_type"], optionsText: string): string => {
     const id = crypto.randomUUID();
@@ -444,7 +444,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
     if (!follower) return;
     update(follower.id, { trigger_value: values.length ? values.join("||") : null });
   };
-  // Only branch-only questions can be deleted outright — a real,
+  // Only branch-only questions can be deleted outright -- a real,
   // document-detected field must stay in sync with its {{tag}}, but a
   // branch-only one has no such tie and was authored purely in this UI.
   // Whatever was following it gets reattached to its own predecessor first,
@@ -478,8 +478,8 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
   };
 
   // Reordering happens within the field's whole combined group (every field
-  // it's transitively linked to) so any member — including the original
-  // first one — can move freely. A field that isn't combined with anything
+  // it's transitively linked to) so any member -- including the original
+  // first one -- can move freely. A field that isn't combined with anything
   // reorders among the other standalone/group-head fields instead, matching
   // how plain (uncombined) fields always worked.
   const siblingsOf = (f: TemplateField) => {
@@ -506,7 +506,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
 
   // Moves an entire combined group (or a standalone field) as a single unit
   // past whichever block sits next to it, swapping the two blocks' whole
-  // ranges — separate from moveField, which only reorders within a group.
+  // ranges -- separate from moveField, which only reorders within a group.
   // Membership-based rather than index-based so any alias fields riding
   // along elsewhere in `fields` just stay wherever they were, unaffected.
   const moveBlock = (block: TemplateField[], dir: -1 | 1) => {
@@ -531,8 +531,8 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
   // Optimistic: the row updates immediately: the API call happens in the
   // background and only touches local state again if it fails.
   // A field that gets Linked away (aliased) never renders its own row again,
-  // so if it was mid-combine-chain it needs detaching first — same as
-  // clearTrigger — or whatever was following it would be left pointing at a
+  // so if it was mid-combine-chain it needs detaching first -- same as
+  // clearTrigger -- or whatever was following it would be left pointing at a
   // now-invisible predecessor and fall out of the visible group.
   const handleLink = async (memberFieldId: string, rootFieldId: string) => {
     setFields(prev => {
@@ -573,7 +573,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
     const draggedId = e.dataTransfer.getData("text/plain");
     if (draggedId && draggedId !== rootId) handleLink(draggedId, rootId);
   };
-  // Dropping anywhere else in the list (not on a specific row —
+  // Dropping anywhere else in the list (not on a specific row -
   // handleRowDrop stops propagation so this only fires for "empty space")
   // unlinks the dragged chip, returning it to its own row.
   const handleContainerDrop = (e: DragEvent) => {
@@ -630,7 +630,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description,
-          // Blank input just means "use the template name" — send null
+          // Blank input just means "use the template name" -- send null
           // rather than persisting a redundant copy of the name.
           download_filename: downloadFilename.trim() === template.name.trim() ? null : downloadFilename,
         }),
@@ -638,7 +638,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
     ]);
     setSaving(false);
     if (fieldsRes.ok) { setSaved(true); setTimeout(() => setSaved(false), 1500); onSaved(); return; }
-    // Surface the failure — a save that silently does nothing is worse than
+    // Surface the failure -- a save that silently does nothing is worse than
     // no save at all, since the admin has no way to tell their edits (and
     // anything downstream, like combine/branching setup) never persisted.
     let message = "Failed to save";
@@ -789,7 +789,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                               .map(c => (
                                 <button key={c.id} onClick={() => { handleLink(c.id, f.id); setLinkFieldId(null); setLinkQuery(""); }}
                                   className="w-full text-left px-3 py-2 text-[12px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl truncate">
-                                  <code className="text-indigo-400">{`{{${c.tag_key}}}`}</code> — {c.label}
+                                  <code className="text-indigo-400">{`{{${c.tag_key}}}`}</code> -- {c.label}
                                 </button>
                               ))}
                             {linkCandidates(f.id).length === 0 && (
@@ -868,7 +868,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                                   const newId = addBranchOnlyQuestion(f.id, newQuestionLabel, newQuestionType, newQuestionOptions);
                                   setNewQuestionOpen(false); setTriggerQuery("");
                                   setNewQuestionLabel(""); setNewQuestionType("select"); setNewQuestionOptions("Yes, No");
-                                  // The question just created shows after f — if f itself is a
+                                  // The question just created shows after f -- if f itself is a
                                   // choice question, ask which of its answers should reveal it,
                                   // same as picking an existing field would.
                                   if (f.field_type === "select" || f.field_type === "multiselect") {
@@ -908,7 +908,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                                       }
                                     }}
                                       className="w-full text-left px-3 py-2 text-[12px] text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl truncate">
-                                      <code className="text-indigo-400">{`{{${c.tag_key}}}`}</code> — {c.label}
+                                      <code className="text-indigo-400">{`{{${c.tag_key}}}`}</code> -- {c.label}
                                     </button>
                                   ))}
                                 {triggerCandidates(f.id).length === 0 && (
@@ -943,7 +943,7 @@ function TemplateCard({ template, customFields, onSaved, onDelete }: {
                   // A branch-only question exists purely to gate what comes
                   // next, so a "default value" (which prefills what gets
                   // written into a document it isn't even part of) isn't
-                  // useful here — this replaces it with the condition that
+                  // useful here -- this replaces it with the condition that
                   // actually matters: which answer reveals its follower.
                   const follower = followerOf(f.id);
                   if (!follower) {

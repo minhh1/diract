@@ -4,7 +4,7 @@
 // app/api/archive-requests/approve's admin-gate + bulk-ids + per-id results
 // shape. For 'create_new' rows, the Lead record is created and its id is
 // persisted onto the request (matched_lead_id) BEFORE the Gmail label step
-// runs — so if the label step fails (e.g. the approving admin has no
+// runs -- so if the label step fails (e.g. the approving admin has no
 // connected Gmail account), the row stays 'pending' with `error` set and a
 // retry reuses the already-created Lead instead of creating a duplicate.
 import { NextRequest, NextResponse } from "next/server";

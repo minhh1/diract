@@ -10,7 +10,7 @@
 
 export interface PerfLogEntry {
   t: number; // ms since this page's own load started (see currentT below)
-  at: number; // Date.now() — wall-clock, for grouping entries by page load
+  at: number; // Date.now() -- wall-clock, for grouping entries by page load
   label: string;
   detail?: string;
   // URL path at the moment this entry was logged -- lets Admin > Performance
@@ -74,7 +74,7 @@ export function perfLog(label: string, detail?: string): void {
   const path = typeof window !== "undefined" ? window.location.pathname : undefined;
   const t = currentT(path);
 
-  console.log(`[timing] ${t}ms  ${label}${detail ? `  — ${detail}` : ""}`);
+  console.log(`[timing] ${t}ms  ${label}${detail ? `  -- ${detail}` : ""}`);
 
   const entries = readEntries();
   entries.push({ t, at: Date.now(), label, detail, path });

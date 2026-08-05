@@ -34,7 +34,7 @@ function deriveFieldType(col: any): FieldConfig['type'] {
 /**
  * Takes the base relationalEditCols from useTableSchema (which has
  * empty editFields) and enriches each entry by fetching the linked
- * table's own schema metadata — so RecordEditModal receives a real
+ * table's own schema metadata -- so RecordEditModal receives a real
  * field list rather than an empty form.
  */
 export function useRelationalEditFields(
@@ -64,7 +64,7 @@ export function useRelationalEditFields(
       const next: Record<string, RelationalEditConfig> = {};
       Object.entries(baseRelationalEditCols).forEach(([colId, config]) => {
         const linkedSchema = schemaByTable[config.table] || [];
-        // Only data columns become editable fields — not identity,
+        // Only data columns become editable fields -- not identity,
         // metadata, sensitive, or relation columns on the linked table.
         const editFields: FieldConfig[] = linkedSchema
           .filter(c => c.category === 'data')

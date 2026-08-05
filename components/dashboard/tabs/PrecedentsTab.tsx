@@ -288,7 +288,7 @@ export default function PrecedentsTab({ recordId, initialPrecedentId }: Props) {
 }
 
 // ── Issue modal ───────────────────────────────────────────────────
-// The default flow is entirely manual — you write the subject and body
+// The default flow is entirely manual -- you write the subject and body
 // yourself, no AI involved. "Draft with AI" is a separate, optional assist
 // that pre-fills those two fields from a brief for you to then review/edit;
 // it never runs on its own as part of issuing. AI in this feature is
@@ -452,7 +452,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
               Open PDF
             </a>
           )}
-          {/* The .docx the PDF was rendered from — a letter almost always
+          {/* The .docx the PDF was rendered from -- a letter almost always
               needs one last edit before it goes out. */}
           {result.docxUrl && (
             <a href={result.docxUrl} target="_blank" rel="noopener noreferrer"
@@ -597,7 +597,7 @@ function IssueModal({ precedent, recordId, onClose, onIssued }: {
                       <input type="checkbox" checked={checked} disabled={!checked && signerIds.length >= 4}
                         onChange={() => toggleSigner(s.userId)} />
                       <span className="text-[12px] font-medium text-slate-700">{s.name || s.accountName}</span>
-                      {s.position && <span className="text-[11px] text-slate-400">— {s.position}</span>}
+                      {s.position && <span className="text-[11px] text-slate-400">- {s.position}</span>}
                     </label>
                   );
                 })}
@@ -787,7 +787,7 @@ function MatterSettingsModal({ projectId, onClose }: { projectId: string; onClos
                         <input type="checkbox" checked={checked} disabled={!checked && effective.signers.length >= 4}
                           onChange={() => toggleSigner(s.userId)} />
                         <span className="text-[12px] font-medium text-slate-700">{s.name || s.accountName}</span>
-                        {s.position && <span className="text-[11px] text-slate-400">— {s.position}</span>}
+                        {s.position && <span className="text-[11px] text-slate-400">- {s.position}</span>}
                         {!s.hasSignoff && (
                           <Link href="/dashboard/profile" target="_blank" onClick={e => e.stopPropagation()}
                             className="ml-auto text-[10px] font-bold text-amber-600 hover:text-amber-700 shrink-0">

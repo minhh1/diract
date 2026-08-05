@@ -29,7 +29,7 @@ function defaultExpiry(companyType: string | null | undefined): string {
 // time -- companyId/isAdmin come from CompanyContext (already resolved
 // once for the whole dashboard shell), not re-derived here.
 async function fetchPublicTaskPagesData(userId: string): Promise<{ allTeams: Team[]; myTeams: Team[]; pages: Page[] }> {
-  // teams has no company_id column — teams aren't scoped to a company in
+  // teams has no company_id column -- teams aren't scoped to a company in
   // this schema (see components/admin/AdminTeamsTab.tsx, which loads them
   // the same unfiltered way). Independent of the pages fetch, so both run
   // in the same batch instead of one after the other.

@@ -31,7 +31,7 @@ export interface CustomField {
   linked_table_id: string | null;
   linked_display_column: string | null;
   // Optional second field combined onto the search/display label as
-  // "<linked_display_column> — <linked_display_column_2>" (see
+  // "<linked_display_column> -- <linked_display_column_2>" (see
   // supabase/company_table_fields_display_field_2.sql). Same value format
   // as linked_display_column: a native column, or 'cf:<id>' for a custom
   // field, when linked_table is a system table; a field_key on the linked
@@ -47,7 +47,7 @@ export interface CustomField {
   show_in_table: boolean;
   help_text: string | null;
   isCustomTable?: boolean;
-  // Auto numbering — custom-table fields only (see
+  // Auto numbering -- custom-table fields only (see
   // supabase/company_table_field_sequences.sql). Non-null prefix marks the
   // field auto-numbered ('' = bare numbers); prefix may contain {YY}/{YYYY}/
   // {MM} date tokens. pad is the zero-pad width (null = 6), start the
@@ -78,7 +78,7 @@ export interface CustomField {
   // Both null means no filter, sum every linked row.
   formula_condition_field_id?: string | null;
   formula_condition_value?: string | null;
-  // Multi-record relations — relation-type, custom-table fields only (see
+  // Multi-record relations -- relation-type, custom-table fields only (see
   // supabase/company_table_field_allow_multiple.sql). Undefined/false means
   // the normal single-linked-record behavior.
   allow_multiple?: boolean;

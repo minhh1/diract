@@ -1,6 +1,6 @@
 // app/api/document-templates/public/[pageId]/submit/route.ts
 // GENUINELY UNAUTHENTICATED client-facing route. Like the sibling GET route it
-// performs NO supabase.auth.getUser() and NO session/membership check of any kind —
+// performs NO supabase.auth.getUser() and NO session/membership check of any kind -
 // access is gated only by loadActiveFillPage (page exists + active + not expired),
 // using the service-role admin client throughout.
 //
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  // Re-check the access code here too — the GET route already gated the
+  // Re-check the access code here too -- the GET route already gated the
   // form, but submit is an independent request and must not be bypassable
   // by calling it directly.
   if (!codeMatches(page, body?.code)) {
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   }
 
   const submitted: Record<string, any> = (body?.values && typeof body.values === "object") ? body.values : {};
-  // Fields the client explicitly marked "Not applicable" — treated as
+  // Fields the client explicitly marked "Not applicable" -- treated as
   // intentionally blank (satisfies "required", forces a blank value even if
   // stale text is sitting in `submitted`) rather than just an empty input,
   // so the doc-cleanup pass below removes the line for them too.
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     .select("id, template_id, tag_key, label, is_required, auto_fill_field_id, auto_fill_relation_column, auto_fill_related_table, auto_fill_related_field, auto_fill_composite, joined_to_field_id, trigger_field_id, trigger_value")
     .in("template_id", templateIds);
 
-  // Resolve each field to its join-root — mirrors the GET route (see
+  // Resolve each field to its join-root -- mirrors the GET route (see
   // app/api/document-templates/public/[pageId]/route.ts for the full
   // rationale). The client's form was built from that same resolution, so
   // `values`/`naFields` here are keyed by ROOT tag_key; each field row still
@@ -109,9 +109,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     }
   }
   // One-hop related-field auto-fill (the matter's linked Property, parent
-  // Matter, or a custom relation field) — see the GET route for the same.
+  // Matter, or a custom relation field) -- see the GET route for the same.
   const relatedAutoFillValues = await resolveRelatedAutoFillValues(admin, page.project_id, fieldRows || []);
-  // Computed composites (full property address, Client v Other Side) — see
+  // Computed composites (full property address, Client v Other Side) -- see
   // the GET route for the same.
   const compositeTypes = [...new Set((fieldRows || []).map((f: any) => f.auto_fill_composite).filter(Boolean))] as CompositeAutoFillType[];
   const compositeValues: Record<string, string | null> = {};
@@ -127,10 +127,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   // Effective value for a tag: "Not applicable" always wins (forces blank
   // even over stale submitted text), then whatever the client actually
   // submitted (which already started out pre-filled with the auto-fill or
-  // default value — see the GET route — so this is what they chose to keep,
+  // default value -- see the GET route -- so this is what they chose to keep,
   // edit, or delete), else its auto-fill value as a last-resort fallback if
   // the client genuinely never touched the field. Default values are NOT
-  // reapplied here — they only ever pre-fill the input once; if the client
+  // reapplied here -- they only ever pre-fill the input once; if the client
   // deletes that text without marking "Not applicable", it must stay blank
   // rather than silently reappearing in the generated document.
   const effective = (root: any): string => {
@@ -143,7 +143,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   };
 
   // A required field whose trigger condition isn't currently met (e.g. trust
-  // fields when the borrower isn't a trust) doesn't actually apply — recurse
+  // fields when the borrower isn't a trust) doesn't actually apply -- recurse
   // up the trigger chain since an ancestor might itself be conditionally
   // hidden. Cycle-guarded the same way pageLocalRoot is. trigger_value may
   // hold several "||"-separated allowed values (a condition can accept any
@@ -166,9 +166,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   }
 
   // ── Validate required fields (de-duplicated by join-resolved tag_key) ──
-  // A field marked "Not applicable" satisfies its own requiredness — that's
+  // A field marked "Not applicable" satisfies its own requiredness -- that's
   // the whole point of the button. Scoped to the documents actually being
-  // generated — a required field exclusive to a document that isn't part of
+  // generated -- a required field exclusive to a document that isn't part of
   // this "generate this document only" request shouldn't block it. Uses
   // each field's ROOT for requiredness/label, since once joined the group
   // is treated as one field (see pageLocalRoot above).
@@ -202,7 +202,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     }
     const srcBuffer = Buffer.from(await fileData.arrayBuffer());
 
-    // Build this template's substitution map from its own fields — each
+    // Build this template's substitution map from its own fields -- each
     // substitutes into ITS OWN literal {{tag}} placeholder, but the value
     // comes from its join-resolved root (shared across every document that
     // joins onto the same answer).
@@ -215,7 +215,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     let out: Buffer;
     try {
       // Read the ORIGINAL (pre-render) document.xml from a separate PizZip
-      // instance to find paragraphs whose only content is a tag — that's
+      // instance to find paragraphs whose only content is a tag -- that's
       // only knowable before rendering (see lib/docxCleanup.ts).
       const analysisZip = new PizZip(srcBuffer);
       const soleTagParas = findSoleTagParagraphs(analysisZip.file("word/document.xml")?.asText() || "");

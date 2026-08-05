@@ -55,7 +55,7 @@ interface Loan {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
 
@@ -570,7 +570,7 @@ function LoanDetail({ loan, projectId, onChanged }: { loan: Loan; projectId: str
                 </div>
                 <div>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Actual Repaid ({matchedTxCount} tx)</p>
-                  <p className="text-[16px] font-bold text-slate-800">{actualRepaid != null ? money(actualRepaid) : "— (no transactions matched to this loan yet)"}</p>
+                  <p className="text-[16px] font-bold text-slate-800">{actualRepaid != null ? money(actualRepaid) : "- (no transactions matched to this loan yet)"}</p>
                 </div>
                 {actualRepaid != null && (
                   <div>
@@ -794,7 +794,7 @@ export default function LoansSubtab({ projectId }: { projectId: string }) {
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className={`text-[13px] font-bold ${loan.is_discharged ? "text-slate-400" : "text-slate-700"}`}>{loan.principal_amount != null ? money(loan.allocated_principal_amount) : "—"}</p>
+                    <p className={`text-[13px] font-bold ${loan.is_discharged ? "text-slate-400" : "text-slate-700"}`}>{loan.principal_amount != null ? money(loan.allocated_principal_amount) : "-"}</p>
                     {loan.is_split && (
                       <p className="text-[10px] font-bold text-indigo-500 flex items-center gap-1 justify-end">
                         <Split size={9} /> {loan.allocation_percent.toFixed(0)}% of {money(loan.principal_amount || 0)}

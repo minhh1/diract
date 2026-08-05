@@ -58,7 +58,7 @@ interface Props {
   autoNumberParentTable?: AutoNumberParentTable;
 }
 
-// ── LinkedRecordModal — multi-select (one row per linked record) ─
+// ── LinkedRecordModal -- multi-select (one row per linked record) ─
 
 interface LinkedItem { id: string; name: string; }
 
@@ -79,7 +79,7 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
   const isPersonLink = field.fieldType === 'person_link';
   const [personLinkType, setPersonLinkType] = useState<'entity' | 'profile'>('entity');
 
-  // Derive table and nameCol purely from field definition — never from page context
+  // Derive table and nameCol purely from field definition -- never from page context
   const table = isPersonLink
     ? (personLinkType === 'profile' ? 'profiles' : 'entities')
     : field.fieldType === 'relation'
@@ -251,14 +251,14 @@ function LinkedRecordModal({ field, selected, companyId, onSave, onClose }: Link
 interface EditableValueProps {
   field: FieldLayout;
   value: any;
-  linkedItems?: LinkedItem[];     // for entity/property/linked fields — array of linked records
+  linkedItems?: LinkedItem[];     // for entity/property/linked fields -- array of linked records
   onSave: (v: any) => Promise<void>;
   onAddLinked?: (item: LinkedItem) => Promise<void>;
   onRemoveLinked?: (id: string) => Promise<void>;
   companyId?: string;
 }
 
-// linkedItems passed directly as array from parent — no JSON parsing needed
+// linkedItems passed directly as array from parent -- no JSON parsing needed
 
 function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, onRemoveLinked, companyId }: EditableValueProps) {
   const router = useRouter();
@@ -325,7 +325,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   };
 
   const displayVal = (): string | null => {
-    // For base relation fields (single linked record stored as UUID) —
+    // For base relation fields (single linked record stored as UUID) -
     // junction-backed relations (e.g. property_id) fall through to
     // the multi-value join below instead.
     if (field.fieldType === 'relation' && !field.relationJunction) {
@@ -372,7 +372,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
         return field.selectOptions?.length ? (
           <select autoFocus value={draft} onChange={e => setDraft(e.target.value)}
             className="flex-1 bg-slate-50 border border-indigo-300 rounded-lg px-4 py-2 text-[13px] outline-none">
-            <option value="">— Select —</option>
+            <option value="">- Select -</option>
             {field.selectOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </select>
         ) : (
@@ -428,7 +428,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
           {/* Click anywhere to open modal */}
           {linkedItems.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
-              {/* For relation (single) — click chip to change */}
+              {/* For relation (single) -- click chip to change */}
               {field.fieldType === 'relation' && !field.relationJunction ? (
                 <div className="flex items-center gap-1.5 min-w-0 max-w-full">
                   <span
@@ -459,7 +459,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
                   )}
                 </div>
               ) : (
-                /* For multi (entity/property) — chips with actions + add more */
+                /* For multi (entity/property) -- chips with actions + add more */
                 <>
                   {linkedItems.map(item => (
                     <div key={item.id} className="flex items-center gap-0.5 min-w-0 max-w-full pl-3 pr-1.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-[11px] font-medium group">
@@ -494,7 +494,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
               )}
             </div>
           ) : (
-            /* Empty state — same as regular fields */
+            /* Empty state -- same as regular fields */
             <button onClick={() => setShowModal(true)}
               className="flex items-center gap-2 group/field text-left w-full">
               <span className="text-[14px] font-medium text-slate-300 italic group-hover/field:text-indigo-400 transition-colors">
@@ -570,7 +570,7 @@ function EditableValue({ field, value, linkedItems = [], onSave, onAddLinked, on
   );
 }
 
-// ── LinkedRecordEditModal — edit a linked record inline ──────────
+// ── LinkedRecordEditModal -- edit a linked record inline ──────────
 interface LinkedRecordEditModalProps {
   item: LinkedItem;
   field: FieldLayout;
@@ -647,7 +647,7 @@ const RELATED_TABLES: Record<string, RelatedTableConfig[]> = {
   ],
 };
 
-// ── RelatedRowEditor — inline edit/add for a related table row ────
+// ── RelatedRowEditor -- inline edit/add for a related table row ────
 interface RelatedRowEditorProps {
   config: RelatedTableConfig;
   parentId: string;
@@ -701,7 +701,7 @@ function RelatedRowEditor({ config, parentId, row, onSave, onBack }: RelatedRowE
                 value={draft[col.key] || ''}
                 onChange={e => setDraft(p => ({ ...p, [col.key]: e.target.value }))}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-[13px] outline-none focus:border-indigo-400 bg-white">
-                <option value="">— Select —</option>
+                <option value="">- Select -</option>
                 {col.options.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             ) : col.type === 'entity' ? (
@@ -794,7 +794,7 @@ function LinkedRecordEditModal({ item, field, companyId, onClose }: LinkedRecord
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl mx-0 sm:mx-4 max-h-[90vh] flex flex-col overflow-hidden">
 
-        {/* When editing a related row — show editor view */}
+        {/* When editing a related row -- show editor view */}
         {editingRelated ? (
           <RelatedRowEditor
             config={editingRelated.config}

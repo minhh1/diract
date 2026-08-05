@@ -269,7 +269,7 @@ export default function DutyFeesSubtab({ projectId }: { projectId: string }) {
                   )}
                 </div>
                 <p className="text-[18px] font-bold text-slate-800">
-                  {feesResult.mortgageFee != null ? money(feesResult.mortgageFee) : (hasLoan ? "—" : "N/A — no loan recorded for this project")}
+                  {feesResult.mortgageFee != null ? money(feesResult.mortgageFee) : (hasLoan ? "-" : "N/A -- no loan recorded for this project")}
                 </p>
               </div>
             )}

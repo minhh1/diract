@@ -167,7 +167,7 @@ function resolveCellValue(row: any, path: string) {
 }
 
 function formatCell(value: any) {
-  if (value === null || value === undefined) return '—';
+  if (value === null || value === undefined) return '-';
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'number') return value.toLocaleString();
   if (value === 'half_yearly') return 'Half yearly';

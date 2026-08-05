@@ -57,7 +57,7 @@ export default function GroupConditionModal({ groupName, fields, currentFieldId,
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Column</p>
               <select value={fieldId} onChange={e => { setFieldId(e.target.value); setValue(""); }}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-                <option value="">— None (manual) —</option>
+                <option value="">- None (manual) -</option>
                 {selectFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
               </select>
             </div>
@@ -66,7 +66,7 @@ export default function GroupConditionModal({ groupName, fields, currentFieldId,
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Equals</p>
                 <select value={value} onChange={e => setValue(e.target.value)}
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-                  <option value="">— Select —</option>
+                  <option value="">- Select -</option>
                   {selectedField.select_options!.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
                 {onAddFieldOption && (

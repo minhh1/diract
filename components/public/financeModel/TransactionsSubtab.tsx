@@ -53,7 +53,7 @@ type DateRange = "week" | "month" | "since_start" | "total";
 type SortKey = "date" | "amount";
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
 
@@ -125,9 +125,9 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
   useEffect(() => { load(); }, [projectId]);
 
   const budgetLineLabel = (id: string | null) => {
-    if (!id) return "—";
+    if (!id) return "-";
     const line = budgetLines.find(l => l.id === id);
-    return line ? `${line.category ? `${line.category} — ` : ""}${line.label || ""}` : "—";
+    return line ? `${line.category ? `${line.category} -- ` : ""}${line.label || ""}` : "-";
   };
 
   const toggleSetValue = (set: Set<string>, value: string, setter: (s: Set<string>) => void) => {
@@ -352,7 +352,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
             <span className="text-slate-400 text-[11px]">→</span>
             <select value={newRule.budgetLineId} onChange={e => setNewRule(p => ({ ...p, budgetLineId: e.target.value }))} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
               <option value="">Budget line...</option>
-              {budgetLines.map(l => <option key={l.id} value={l.id}>{l.category} — {l.label}</option>)}
+              {budgetLines.map(l => <option key={l.id} value={l.id}>{l.category} -- {l.label}</option>)}
             </select>
             <button onClick={addRule} disabled={savingRule || !newRule.matchValue.trim() || !newRule.budgetLineId} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full disabled:opacity-40">
               <Plus size={11} /> Add rule
@@ -424,7 +424,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Budget line</label>
             <select value={newTx.budgetLineId} onChange={e => setNewTx(p => ({ ...p, budgetLineId: e.target.value }))} className="text-[12px] border border-slate-200 rounded-xl px-2 py-1.5 bg-white text-slate-700">
               <option value="">Unclassified</option>
-              {budgetLines.map(l => <option key={l.id} value={l.id}>{l.category} — {l.label}</option>)}
+              {budgetLines.map(l => <option key={l.id} value={l.id}>{l.category} -- {l.label}</option>)}
             </select>
           </div>
           <button onClick={handleAddTx} disabled={savingTx} className="text-[11px] font-bold bg-indigo-600 text-white rounded-xl px-4 py-1.5 disabled:opacity-40">
@@ -455,9 +455,9 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
               {filtered.map(t => (
                 <tr key={t.id} className="border-t border-slate-50 hover:bg-slate-50/60">
                   <td className="px-6 py-2 text-slate-500 whitespace-nowrap">{formatDate(t.date)}</td>
-                  <td className="px-2 py-2 text-slate-700 font-medium">{t.contact || "—"}</td>
-                  <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.reference || "—"}</td>
-                  <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.description || "—"}</td>
+                  <td className="px-2 py-2 text-slate-700 font-medium">{t.contact || "-"}</td>
+                  <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.reference || "-"}</td>
+                  <td className="px-2 py-2 text-slate-400 truncate max-w-xs">{t.description || "-"}</td>
                   <td className="px-2 py-2">
                     <select
                       value={t.budget_line ? `bl:${t.budget_line}` : t.loan_id ? `loan:${t.loan_id}` : ""}
@@ -466,7 +466,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                     >
                       <option value="">Unclassified</option>
                       <optgroup label="Budget line">
-                        {budgetLines.map(l => <option key={`bl:${l.id}`} value={`bl:${l.id}`}>{l.category} — {l.label}</option>)}
+                        {budgetLines.map(l => <option key={`bl:${l.id}`} value={`bl:${l.id}`}>{l.category} -- {l.label}</option>)}
                       </optgroup>
                       {loans.length > 0 && (
                         <optgroup label="Loan">
@@ -475,7 +475,7 @@ export default function TransactionsSubtab({ projectId }: { projectId: string })
                       )}
                     </select>
                   </td>
-                  <td className="px-2 py-2 text-slate-400">{t.source || "—"}</td>
+                  <td className="px-2 py-2 text-slate-400">{t.source || "-"}</td>
                   <td className={`px-6 py-2 text-right font-medium whitespace-nowrap ${t.type === "Expense" ? "text-rose-600" : "text-emerald-600"}`}>
                     {t.type === "Expense" ? "−" : "+"}{money(Math.abs(t.amount ?? 0))}
                   </td>

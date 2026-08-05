@@ -14,7 +14,7 @@ export interface PropertyMatch {
   suburb: string;
 }
 
-// Normalizes an address string for comparison purposes only — strips
+// Normalizes an address string for comparison purposes only -- strips
 // commas, collapses whitespace, lowercases. Used so that "Lot 7, 90 Baker
 // Drive" and "Lot 7 90 Baker Drive" (same address, different punctuation)
 // are correctly recognised as the same property, instead of failing a
@@ -32,7 +32,7 @@ function normalizeAddressForMatch(addr: string): string {
  * matches the given street address (and suburb, if provided), using
  * punctuation/whitespace-normalized comparison rather than exact string
  * equality. This is the single source of truth for "does this address
- * match an existing property" — used both at review time (to decide
+ * match an existing property" -- used both at review time (to decide
  * whether a child-section row defaults to New or Update) and at commit
  * time (resolvePropertyParent below), so the two stages can never
  * disagree with each other about whether a property already exists.
@@ -67,7 +67,7 @@ export async function findMatchingProperty(
  * a real properties.id, scoped to this company. If no match exists,
  * creates a minimal property record from what's available and flags it
  * as newly-created so the review step can surface "this property record
- * was auto-created with minimal details — fill in the rest later."
+ * was auto-created with minimal details -- fill in the rest later."
  */
 export async function resolvePropertyParent(
   companyId: string,

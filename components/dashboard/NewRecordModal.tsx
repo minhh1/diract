@@ -32,12 +32,12 @@ interface Props {
   onClose: () => void;
   // Pre-fills `values` before the user touches anything (e.g. locking the
   // matter to a project the caller already knows, or seeding a description
-  // from elsewhere) — omit for the plain empty-record prompt every existing
+  // from elsewhere) -- omit for the plain empty-record prompt every existing
   // caller still gets.
   initialValues?: Record<string, any>;
   // Field to show a "Rewrite with AI" button under, calling
   // /api/ai/rewrite-text on that field's current value and committing the
-  // result back into it — same one-shot rewrite MyTasksButtonWidget uses,
+  // result back into it -- same one-shot rewrite MyTasksButtonWidget uses,
   // just inline in the full field list instead of a separate drafts panel.
   aiRewriteFieldKey?: string;
 }
@@ -46,7 +46,7 @@ interface Props {
 // anything is persisted, so the "New record" flows can never leave empty OR
 // incomplete-required rows behind (createRecord in
 // lib/services/customTableService.ts refuses valueless/invalid creates
-// outright — this just surfaces that requirement up front instead of after
+// outright -- this just surfaces that requirement up front instead of after
 // a failed submit).
 export default function NewRecordModal({ tableName, fields, onCreate, onClose, initialValues, aiRewriteFieldKey }: Props) {
   const [values, setValues] = useState<Record<string, any>>(initialValues || {});
@@ -55,7 +55,7 @@ export default function NewRecordModal({ tableName, fields, onCreate, onClose, i
   const [rewriting, setRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
   // FieldValueInput's text control is an uncontrolled <input defaultValue={...}> (commits
-  // onBlur, not on every keystroke, so typing doesn't fight external updates) — bumping this
+  // onBlur, not on every keystroke, so typing doesn't fight external updates) -- bumping this
   // remounts just that one field after a rewrite so the new text actually shows on screen;
   // setValues alone updates what gets submitted but never what's rendered.
   const [rewriteVersion, setRewriteVersion] = useState(0);

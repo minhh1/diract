@@ -3,7 +3,7 @@
 // Field editor for a template's schema (see components/marketplace/TemplateTableBuilder.tsx).
 // Deliberately mirrors components/schema/FieldConfigPanel.tsx's shape/callback
 // pattern (onSave/onDelete) but operates on template_definition_table_fields
-// or template_definition_system_fields instead of the live company_* tables —
+// or template_definition_system_fields instead of the live company_* tables -
 // same idea as SchemaVisualisation.tsx serving both company_table_fields and
 // company_custom_fields through one FieldConfigPanel.
 import { useState, useEffect } from "react";

@@ -1,7 +1,7 @@
 // app/dashboard/templates/page.tsx
 // Company-wide checklist template management, outside any single project's
 // Checklist tab. Reuses TemplateManager in "page mode" (no onClose/projectId/
-// onApply) — create/edit/reorder/delete only, since applying a template needs
+// onApply) -- create/edit/reorder/delete only, since applying a template needs
 // a target project (do that from the project's own Checklist tab instead).
 "use client";
 

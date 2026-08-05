@@ -503,7 +503,7 @@ function SettingsPageInner() {
                                       </span>
                                     </td>
                                     <td className="p-2 font-bold text-slate-700">{r.identifier}</td>
-                                    <td className="p-2 text-slate-500">{r.message || '—'}</td>
+                                    <td className="p-2 text-slate-500">{r.message || '-'}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -671,7 +671,7 @@ function SettingsPageInner() {
                                     {Object.entries(side.fields).filter(([key]) => key !== "id" && key !== "created_at").slice(0, 6).map(([key, value]) => (
                                       <div key={key}>
                                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{fieldLabels[key] || key.replace(/_/g, " ")}</p>
-                                        <p className="text-[13px] font-medium text-slate-700 truncate">{value === null || value === undefined || value === "" ? "—" : String(value)}</p>
+                                        <p className="text-[13px] font-medium text-slate-700 truncate">{value === null || value === undefined || value === "" ? "-" : String(value)}</p>
                                       </div>
                                     ))}
                                   </div>

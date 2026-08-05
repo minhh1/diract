@@ -286,7 +286,7 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
               <div>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Tree config</p>
                 <p className="text-[11px] text-slate-600">
-                  Display: {view.columns[0]?.displayFields?.join(', ') || '—'}
+                  Display: {view.columns[0]?.displayFields?.join(', ') || '-'}
                   {' · '}Sort: {view.columns[0]?.sortField || 'none'} {view.columns[0]?.sortDirection || ''}
                 </p>
               </div>
@@ -326,7 +326,7 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
                         {/* Field selector */}
                         <select value={f.fieldId || ''} onChange={e => updateFilter(slug, idx, { fieldId: e.target.value, value: '' })}
                           className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none focus:border-indigo-300 bg-white">
-                          <option value="">— Select field —</option>
+                          <option value="">- Select field -</option>
                           {fields.map(field => (
                             <option key={field.id} value={field.id}>{field.label}</option>
                           ))}
@@ -363,7 +363,7 @@ export default function AdminDefaultViewsTab({ companyId, scope }: Props) {
                             selectedField?.fieldType === 'select' && selectedField.options?.length ? (
                               <select value={f.value || ''} onChange={e => updateFilter(slug, idx, { value: e.target.value })}
                                 className="flex-1 px-3 py-1.5 border border-slate-200 rounded-full text-[11px] outline-none bg-white">
-                                <option value="">— Any —</option>
+                                <option value="">- Any -</option>
                                 {selectedField.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                               </select>
                             ) : selectedField?.fieldType === 'boolean' ? null : (

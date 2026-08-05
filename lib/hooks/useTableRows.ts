@@ -1,6 +1,6 @@
 // lib/hooks/useTableRows.ts
 // Shared TanStack Query hook for fetching table rows.
-// Used by both Sidebar and GenericMasterTable — requests are automatically
+// Used by both Sidebar and GenericMasterTable -- requests are automatically
 // deduplicated so only ONE DB fetch happens regardless of how many components use it.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ const NAME_COL: Record<TableName, string> = {
   entities:   'name',
 };
 
-// Shared fetcher — fetches id + name column only (for sidebar)
+// Shared fetcher -- fetches id + name column only (for sidebar)
 // GenericMasterTable overrides with its own richer select
 async function fetchRows(tableName: TableName): Promise<any[]> {
   const nameCol = NAME_COL[tableName];
@@ -32,7 +32,7 @@ async function fetchRows(tableName: TableName): Promise<any[]> {
   return data || [];
 }
 
-// Hook for sidebar — lightweight, just id + name
+// Hook for sidebar -- lightweight, just id + name
 export function useTableRows(tableName: TableName) {
   return useQuery({
     queryKey: ['rows', tableName],
@@ -41,7 +41,7 @@ export function useTableRows(tableName: TableName) {
   });
 }
 
-// Hook for master table — accepts a custom fetcher for richer selects
+// Hook for master table -- accepts a custom fetcher for richer selects
 // but shares the same query key so sidebar benefits from the cache
 export function useTableRowsFull(
   tableName: TableName,
@@ -56,7 +56,7 @@ export function useTableRowsFull(
   });
 }
 
-// Invalidate rows cache — call after insert/update/delete
+// Invalidate rows cache -- call after insert/update/delete
 export function useInvalidateRows() {
   const queryClient = useQueryClient();
   return (tableName: TableName) => {

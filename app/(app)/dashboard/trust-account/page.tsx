@@ -150,15 +150,15 @@ export default function TrustAccountPage() {
                   "still working". */}
               <div className="text-right">
                 <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest">Protected</p>
-                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading || protectedTable.recordsLoading ? '—' : money(protectedTotal)}</p>
+                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading || protectedTable.recordsLoading ? '-' : money(protectedTotal)}</p>
               </div>
               <div className="text-right">
                 <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">Available</p>
-                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading || protectedTable.recordsLoading ? '—' : money(available)}</p>
+                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading || protectedTable.recordsLoading ? '-' : money(available)}</p>
               </div>
               <div className="text-right">
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total</p>
-                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading ? '—' : money(total)}</p>
+                <p className="text-[14px] font-bold text-slate-800">{trustTable.recordsLoading ? '-' : money(total)}</p>
               </div>
             </div>
           </div>
@@ -166,7 +166,7 @@ export default function TrustAccountPage() {
 
         {currentAccount && (
           <p className="text-[11px] font-medium text-slate-400 mb-4">
-            BSB: {currentAccount.values.bsb || '—'} · Acc: {currentAccount.values.account_number || '—'}
+            BSB: {currentAccount.values.bsb || '-'} · Acc: {currentAccount.values.account_number || '-'}
           </p>
         )}
 

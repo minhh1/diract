@@ -1,6 +1,6 @@
 // lib/requireSiteAdmin.ts
 // Shared guard for the Platform Health API routes (secrets registry, cost
-// sync, live heartbeat check) — all of them are cross-company, so the
+// sync, live heartbeat check) -- all of them are cross-company, so the
 // per-company company_admin check (see e.g. app/api/gmail/retry-failure)
 // doesn't apply; these are gated on profiles.is_site_admin instead.
 import { NextResponse } from "next/server";

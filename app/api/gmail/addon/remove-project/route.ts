@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
 
   const now = new Date().toISOString();
 
-  // Soft delete — set deleted_at, never hard delete
+  // Soft delete -- set deleted_at, never hard delete
   // Records remain recoverable from the app
   await db.from('projects')
     .update({ deleted_at: now })

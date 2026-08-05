@@ -216,7 +216,7 @@ export async function commitBaseRow(
   let eName = '';
   let eType = '';
 
-  // Build base object — skip non-column keys
+  // Build base object -- skip non-column keys
   Object.entries(row.parsed).forEach(([header, val]) => {
     if (SKIP_BASE_COLS.has(header)) return;
     if (header === 'entity_name') { eName = String(val ?? ''); return; }
@@ -228,7 +228,7 @@ export async function commitBaseRow(
     obj[header] = val;
   });
 
-  // ── Properties — resolve holding entity ───────────────────────
+  // ── Properties -- resolve holding entity ───────────────────────
   if (baseMode === 'properties' && eName) {
     const { data: ent } = await supabase
       .from('entities')
@@ -246,7 +246,7 @@ export async function commitBaseRow(
     obj.entity_type = eType || obj.entity_type;
   }
 
-  // ── Projects — resolve or create linked property ──────────────
+  // ── Projects -- resolve or create linked property ──────────────
   if (baseMode === 'projects') {
     const streetAddress = row.parsed.property_street_address;
     if (streetAddress?.trim()) {

@@ -31,7 +31,7 @@ export default function GmailPage() {
   const [parentLabel, setParentLabel] = useState('Shared Emails');
   const [parentCode, setParentCode] = useState('');
   const [labelTokens, setLabelTokens] = useState<string[]>(['matter_number', 'project_name']);
-  const [sublabelSeparator, setSublabelSeparator] = useState(' — ');
+  const [sublabelSeparator, setSublabelSeparator] = useState(' -- ');
   const [archiveLabel, setArchiveLabel] = useState('');
   const [leadsLabel, setLeadsLabel] = useState('');
 
@@ -263,12 +263,12 @@ export default function GmailPage() {
       console.log('[LABEL STEP 2] Detail fetch response diractLabels:', data.diractLabels);
       console.log('[LABEL STEP 2] Detail fetch response labelIds:', data.labelIds);
       setEmailBody(data.body || null);
-      // Only update if detail returns labels — don't wipe list values
+      // Only update if detail returns labels -- don't wipe list values
       if (data.diractLabels && data.diractLabels.length > 0) {
         console.log('[LABEL STEP 2] Updating selectedLabelIds from detail fetch');
         setSelectedLabelIds(data.diractLabels);
       } else {
-        console.log('[LABEL STEP 2] Detail returned no diractLabels — keeping list values:', msg.diractLabels);
+        console.log('[LABEL STEP 2] Detail returned no diractLabels -- keeping list values:', msg.diractLabels);
       }
     } catch (err) {
       console.error('[LABEL STEP 2] Detail fetch error:', err);
@@ -285,7 +285,7 @@ export default function GmailPage() {
     projectId: string,
     project: GmailProject
   ): Promise<string> => {
-    console.log('[LABEL STEP 3] Building label — parentLabel:', parentLabel, 'parentCode:', parentCode, 'tokens:', labelTokens, 'separator:', JSON.stringify(sublabelSeparator));
+    console.log('[LABEL STEP 3] Building label -- parentLabel:', parentLabel, 'parentCode:', parentCode, 'tokens:', labelTokens, 'separator:', JSON.stringify(sublabelSeparator));
     const { data: cfValues } = await supabase
       .from('company_custom_field_values')
       .select('value_text, field:field_id(label, field_key)')
@@ -338,7 +338,7 @@ export default function GmailPage() {
     projectId: string,
     gmailLabelName: string
   ) => {
-    console.log('[LABEL STEP 4] commitAssign — messageId:', messageId, 'label:', gmailLabelName);
+    console.log('[LABEL STEP 4] commitAssign -- messageId:', messageId, 'label:', gmailLabelName);
     setAssigning(messageId);
     try {
       const res = await fetch('/api/gmail/assign', {
@@ -429,7 +429,7 @@ export default function GmailPage() {
           return;
         }
       } catch (err) {
-        console.error('Label check failed — proceeding anyway:', err);
+        console.error('Label check failed -- proceeding anyway:', err);
       }
     }
 
@@ -440,10 +440,10 @@ export default function GmailPage() {
 
   const handleRemoveLabel = async () => {
     if (!selectedMessage) return;
-    console.log('[LABEL STEP 6] handleRemoveLabel — messageId:', selectedMessage.id);
+    console.log('[LABEL STEP 6] handleRemoveLabel -- messageId:', selectedMessage.id);
 
     try {
-      // Just send messageId — server resolves project from project_emails
+      // Just send messageId -- server resolves project from project_emails
       const res = await fetch('/api/gmail/remove-label', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

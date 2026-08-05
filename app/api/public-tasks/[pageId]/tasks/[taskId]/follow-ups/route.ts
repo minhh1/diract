@@ -1,7 +1,7 @@
 // app/api/public-tasks/[pageId]/tasks/[taskId]/follow-ups/route.ts
 // Logs a new follow-up on a task. A task can be followed up more than
 // once (e.g. chasing the same person repeatedly), so this is an
-// append-only log rather than a single boolean/date — awaiting_follow_up
+// append-only log rather than a single boolean/date -- awaiting_follow_up
 // and follow_up_date on the task itself are kept as a denormalized
 // "latest state" cache so status badges elsewhere don't need to know
 // about the log table.

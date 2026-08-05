@@ -57,6 +57,42 @@ function isDeadRefreshTokenError(message: string): boolean {
 // signOut() calls stacking up before the navigation actually happens).
 let reauthing = false;
 
+// supabase.auth.signOut() fires the exact same SIGNED_OUT event whether the
+// SDK just detected a dead refresh token or the user deliberately clicked
+// "Sign out" -- the two cases were indistinguishable from inside this
+// component's onAuthStateChange listener, so a deliberate sign-out was
+// getting caught by the SIGNED_OUT handler below and treated as an
+// unexpected expiry: the red "session expired" banner would flash, and it
+// would redirect to /login?reason=session_expired, showing "Your session
+// expired, please sign in again" even though nothing actually expired.
+// Callers that are about to sign the user out on purpose (Sidebar.tsx's
+// "Sign out" button) should call this first so the listener knows to stand
+// down for that one event.
+let intentionalSignOut = false;
+export function markIntentionalSignOut() {
+  intentionalSignOut = true;
+}
+
+// Same cookie AppLoader.tsx consumes for its own splash screen (see
+// app/auth/callback/route.ts, which sets it right before the redirect that
+// hands off a brand-new session -- e.g. a signup's email-confirmation
+// link). Confirmed live (2026-08-06): a first-time signup's confirmation
+// redirect landed on a real, valid session, but this component's
+// onAuthStateChange listener fired a SIGNED_OUT event within that very
+// first moment anyway -- the browser client's own initial session
+// hydration can look momentarily like a sign-out immediately after a
+// fresh cookie-based session is set -- and bounced the user straight back
+// to /login with "Your session expired", which is exactly backwards: this
+// was their first successful sign-in, nothing had expired. A short grace
+// window after a genuine fresh sign-in treats a SIGNED_OUT event as part
+// of that initial hydration, not a real logout.
+const JUST_LOGGED_IN_COOKIE = "nk_just_logged_in";
+const JUST_LOGGED_IN_GRACE_MS = 8000;
+
+function hasJustLoggedInCookie(): boolean {
+  return document.cookie.split("; ").some(c => c === `${JUST_LOGGED_IN_COOKIE}=1`);
+}
+
 async function forceReauth(pathname: string) {
   if (reauthing) return;
   reauthing = true;
@@ -69,6 +105,11 @@ export default function SessionHealthBanner() {
   const pathname = usePathname();
   const [problem, setProblem] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  // Lazy initializer -- runs synchronously during this component's own
+  // first render, before any effect (including AppLoader's, which consumes/
+  // clears this same cookie) gets a chance to run, so this reliably
+  // captures the flag regardless of mount-order timing between the two.
+  const [justLoggedInUntil] = useState(() => (typeof document !== "undefined" && hasJustLoggedInCookie()) ? Date.now() + JUST_LOGGED_IN_GRACE_MS : 0);
 
   useEffect(() => {
     // A genuinely anonymous /public/* (or /login) visitor never had a
@@ -85,6 +126,7 @@ export default function SessionHealthBanner() {
         if (!active) return;
         if (error) {
           if (isDeadRefreshTokenError(error.message)) {
+            if (Date.now() < justLoggedInUntil) return;
             setProblem(`Your session expired (${context}) -- signing you out...`);
             forceReauth(window.location.pathname);
             return;
@@ -115,6 +157,8 @@ export default function SessionHealthBanner() {
       // deliberate logout, so send them to a fresh login rather than
       // leaving them stranded on a page that will just keep 401ing.
       if (event === "SIGNED_OUT") {
+        if (intentionalSignOut) return;
+        if (Date.now() < justLoggedInUntil) return;
         setProblem("Your session expired -- signing you out...");
         forceReauth(window.location.pathname);
       }
@@ -143,7 +187,7 @@ export default function SessionHealthBanner() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       clearInterval(interval);
     };
-  }, [pathname]);
+  }, [pathname, justLoggedInUntil]);
 
   if (!problem || dismissed) return null;
 

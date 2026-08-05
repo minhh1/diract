@@ -22,7 +22,7 @@ export interface CompanyCustomField {
   auto_number_pad: number | null;
 }
 
-// Module-level cache shared by every caller — Sidebar's tree section and
+// Module-level cache shared by every caller -- Sidebar's tree section and
 // GenericMasterTable both need this same "custom fields for table X" list,
 // and previously each fetched it independently even when showing the same
 // table, doubling a query that never changes mid-session.
@@ -63,7 +63,7 @@ async function fetchRemote(companyId: string, tableName: string): Promise<Compan
 
 // Exported so any non-hook caller (e.g. RecordDashboard's imperative load
 // waterfall) can share this same cache instead of running its own redundant
-// select — RecordDashboard needs exactly these columns already.
+// select -- RecordDashboard needs exactly these columns already.
 //
 // The in-memory cache/inFlight above dies on reload, so this is re-queried
 // from scratch on every fresh page load even though a company's custom

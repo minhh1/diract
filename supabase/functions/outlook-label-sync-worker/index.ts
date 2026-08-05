@@ -1,5 +1,5 @@
 // supabase/functions/outlook-label-sync-worker/index.ts
-// Every 1 min via pg_cron — DISPATCHER ONLY, mirroring gmail-label-sync-worker's
+// Every 1 min via pg_cron -- DISPATCHER ONLY, mirroring gmail-label-sync-worker's
 // dispatcher/processor split (cheap DB-only work here, fans out one HTTPS
 // call per pending user to outlook-label-sync-processor which does the
 // actual Graph work in its own isolate). Kept from the start rather than
@@ -9,7 +9,7 @@
 // Simplified vs. the Gmail version: a single realtime/backlog priority
 // split instead of Gmail's four-tier scheme (new/processing/old were
 // separated there to fix a real starvation incident under production
-// load — Outlook starts at zero load, so that tuning isn't needed yet;
+// load -- Outlook starts at zero load, so that tuning isn't needed yet;
 // revisit if the same starvation pattern shows up).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -129,7 +129,7 @@ Deno.serve(async (_req) => {
   const t0 = Date.now();
 
   if (!(await acquireLock())) {
-    console.log("[outlook-label-sync-worker] Previous tick still running — skipping");
+    console.log("[outlook-label-sync-worker] Previous tick still running -- skipping");
     return respond({ ok: true, skipped: "already_running" });
   }
 
@@ -226,7 +226,7 @@ async function runDispatch(t0: number): Promise<Response> {
     .select("*", { count: "exact", head: true }).eq("job_type", "label_sync").eq("status", "pending");
 
   const result = { dispatched: units.length, ok, quarantined: quarantinedCount, dispatchErrors, userBusy, remaining };
-  console.log(`[outlook-label-sync-worker] DONE in ${Date.now() - t0}ms —`, JSON.stringify(result));
+  console.log(`[outlook-label-sync-worker] DONE in ${Date.now() - t0}ms -`, JSON.stringify(result));
   await heartbeat("outlook-label-sync-worker", Date.now() - t0, result);
   return respond({ ok: true, ...result });
 }

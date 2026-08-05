@@ -177,7 +177,7 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
       <span className="text-slate-400 w-20 shrink-0">{String(entry.values.date || "").slice(0, 10)}</span>
       {showStaff && (
         <span className="text-slate-600 font-medium w-24 shrink-0 truncate">
-          {staffNames.get(String(entry.values.staff || "")) || "—"}
+          {staffNames.get(String(entry.values.staff || "")) || "-"}
         </span>
       )}
       <span className="flex-1 min-w-0 truncate text-slate-600">{entry.values.description || <span className="italic text-slate-300">No description</span>}</span>

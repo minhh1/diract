@@ -1,7 +1,7 @@
 // components/admin/GmailLegacyLabelCleanupPanel.tsx
 // Admin-triggered, one-off cleanup for the historical "Filed Emails/*"
 // label scheme this company used before switching to the current
-// "<parentLabel>/<matterNumber> — <project name> [CODE]" one (see
+// "<parentLabel>/<matterNumber> -- <project name> [CODE]" one (see
 // supabase/functions/gmail-legacy-label-cleanup/index.ts's own doc
 // comment) -- the old labels were never merged into the new ones, so a
 // matter that predates the switch shows BOTH on every old message.

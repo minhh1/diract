@@ -54,7 +54,7 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
       .from('projects').select('access_mode').eq('id', projectId).single();
     if (project?.access_mode) setAccessMode(project.access_mode as AccessMode);
 
-    // Assigned teams — two-step to avoid join issues
+    // Assigned teams -- two-step to avoid join issues
     const { data: ptRows } = await supabase
       .from('project_teams')
       .select('team_id')
@@ -75,7 +75,7 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
     }
     setAssignedTeams(teams);
 
-    // Assigned individual members — two-step to avoid join issues
+    // Assigned individual members -- two-step to avoid join issues
     const { data: pmRows, error: pmErr } = await supabase
       .from('project_members')
       .select('profile_id')
@@ -99,7 +99,7 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
       .from('teams').select('id, team_name, leader_id').eq('is_active', true).order('team_name');
     setAllTeams(allT || []);
 
-    // All company members — get user_ids then fetch profiles
+    // All company members -- get user_ids then fetch profiles
     const { data: ms, error: msError } = await supabase
       .from('company_memberships')
       .select('user_id')
@@ -195,7 +195,7 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
         </div>
       </div>
 
-      {/* Teams — show when specific_teams selected */}
+      {/* Teams -- show when specific_teams selected */}
       {accessMode === 'specific_teams' && (
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
@@ -257,7 +257,7 @@ export default function ProjectAccessPanel({ projectId, companyId, isAdmin }: Pr
         </div>
       )}
 
-      {/* Members — show when specific_members selected */}
+      {/* Members -- show when specific_members selected */}
       {accessMode === 'specific_members' && (
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">

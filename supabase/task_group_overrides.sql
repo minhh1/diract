@@ -1,4 +1,4 @@
--- Organised-view classification is per (task, viewed-in-whose-tab) — the
+-- Organised-view classification is per (task, viewed-in-whose-tab) -- the
 -- same task can be "Action" in the assignee's tab and "Watching" in a
 -- watcher's tab, so this can't live as a single column on tasks.
 ALTER TABLE tasks DROP COLUMN IF EXISTS task_group;

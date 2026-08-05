@@ -16,7 +16,7 @@ export default function TemplateDownload({ mode, sectionKey }: Props) {
   const onDownload = async () => {
     setLoading(true);
 
-    // Build all sections — this fetches custom fields from the DB
+    // Build all sections -- this fetches custom fields from the DB
     const sections = await buildAllSections(mode);
 
     // Find the right section
@@ -29,7 +29,7 @@ export default function TemplateDownload({ mode, sectionKey }: Props) {
     // Convert raw header keys to human-readable labels:
     // - Base fields: "full_address" → "Full Address"
     // - Custom fields: "custom:uuid:field_key" → the field's label from the DB
-    // - Cross-table: "relation:holding_entity.abn" → "Holding Entity — ABN"
+    // - Cross-table: "relation:holding_entity.abn" → "Holding Entity -- ABN"
     const labelledHeaders = section.headers.map(h => headerToLabel(h, section));
 
     // For child sections (bills, credentials etc.), prepend property address column

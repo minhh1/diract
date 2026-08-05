@@ -1,6 +1,6 @@
 // lib/projectAccess.ts
 // Filters a list of tasks down to only those whose project the *viewer*
-// (not the assignee) actually has access to — per-project access_mode can
+// (not the assignee) actually has access to -- per-project access_mode can
 // restrict a project to specific teams/members, and being on the same
 // team-scoped public page doesn't override that. Uses the service-role
 // client (RLS bypass is safe here since this function is the enforcement).

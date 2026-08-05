@@ -1,5 +1,5 @@
 // app/api/lead-email-assignments/keyword-rules/route.ts
-// Admin CRUD for lead_email_keyword_rules — the third-priority signal
+// Admin CRUD for lead_email_keyword_rules -- the third-priority signal
 // app/api/gmail/leads-sync uses to match an incoming email's subject to a
 // specific Lead (after Gmail thread-id and sender-email matching both come
 // up empty). See supabase/migrations/20260730140000_lead_email_assignments.sql.

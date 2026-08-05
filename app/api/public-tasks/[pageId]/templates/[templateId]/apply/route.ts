@@ -78,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   const companyType = page.companies?.company_type;
   const tasksToInsert = await Promise.all(items.map(async (item: any) => {
     const dueDate = await resolveDate(item, project.created_at, project.estimated_completion_date, companyType);
-    // Only carry over an assignee if they're within this page's scope — otherwise leave unassigned.
+    // Only carry over an assignee if they're within this page's scope -- otherwise leave unassigned.
     const assigneeId = item.assignee_id && targetUserIds.includes(item.assignee_id) ? item.assignee_id : null;
     return {
       project_id: projectId,

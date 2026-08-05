@@ -1,5 +1,5 @@
 // supabase/functions/gmail-label-sync-worker/index.ts
-// Every 1 min via pg_cron — DISPATCHER ONLY. Does cheap DB-only work
+// Every 1 min via pg_cron -- DISPATCHER ONLY. Does cheap DB-only work
 // (which jobs need attention, who's pending, who's quarantined) and fans
 // out one concurrent HTTPS call per pending user to
 // gmail-label-sync-processor, which does the actual Gmail API work in its
@@ -8,8 +8,8 @@
 // execution ceiling or memory/CPU budget (both of which we hit trying to
 // do this work in-process during the 2026-07-21 incident).
 //
-// Dispatch happens via plain Deno fetch() to another edge function's URL —
-// NOT through pg_net — so it doesn't compete with pg_cron's own limited
+// Dispatch happens via plain Deno fetch() to another edge function's URL -
+// NOT through pg_net -- so it doesn't compete with pg_cron's own limited
 // outbound worker pool (the other bottleneck from that incident).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -35,7 +35,7 @@ const MAX_ATTEMPTS = 3;
 const MIGRATION_THRESHOLD = 50;
 // Dispatcher-side work per job is cheap (DB only), but the real ceiling is
 // DISPATCH_CONCURRENCY (kept low to respect Supabase's own function-gateway
-// rate limit) — so total (job,user) units per tick still has to stay
+// rate limit) -- so total (job,user) units per tick still has to stay
 // modest or the dispatcher itself blows the 150s ceiling waiting them out.
 // Empirically even ~2.86 req/s (350ms pacing) kept exceeding the gateway's
 // sustainable rate (observed retry-after growing across a single tick), so
@@ -90,7 +90,7 @@ interface DispatchUnit {
 }
 
 // Supabase's gateway rate limit is a token bucket, not a pure concurrency
-// cap — a free concurrency slot re-fires the instant it's free, which can
+// cap -- a free concurrency slot re-fires the instant it's free, which can
 // drain the bucket faster than it refills even at DISPATCH_CONCURRENCY=3
 // (observed retry-after growing to 25s under sustained pressure). Pace the
 // request *start* rate independently of how many slots are open.
@@ -114,7 +114,7 @@ async function dispatchOnce(unit: DispatchUnit): Promise<{ quarantined?: boolean
 }
 
 // Gmail's "Too many concurrent requests for user" (429) is a per-ACCOUNT
-// ceiling, not per-caller — a user on several active matters can be the
+// ceiling, not per-caller -- a user on several active matters can be the
 // target of multiple simultaneous processor calls (one per job), each
 // individually respecting its own dispatcher's pacing with no cross-job or
 // cross-function awareness. This is a DB-backed lock (not in-process)
@@ -136,7 +136,7 @@ async function dispatchOne(unit: DispatchUnit): Promise<"ok" | "quarantined" | "
     return "ok";
   } catch (err: any) {
     // Supabase's own function gateway rate-limits concurrent invocations
-    // and tells us how long to back off — worth one retry within the same
+    // and tells us how long to back off -- worth one retry within the same
     // tick before giving up, since DISPATCH_CONCURRENCY alone won't catch
     // every burst.
     const backoffMatch = /retry after (\d+)ms/i.exec(err.message || "");
@@ -152,7 +152,7 @@ async function dispatchOne(unit: DispatchUnit): Promise<"ok" | "quarantined" | "
       }
     }
 
-    // Couldn't reach the processor even after one retry — a dispatch-level
+    // Couldn't reach the processor even after one retry -- a dispatch-level
     // problem, not necessarily evidence this user's account is broken, so
     // don't quarantine here. Log it clearly and leave them pending for next tick.
     console.error(`[label-sync-worker] Dispatch failed for user ${unit.userId} job ${unit.jobId}:`, err.message);
@@ -186,7 +186,7 @@ Deno.serve(async (_req) => {
   const t0 = Date.now();
 
   if (!(await acquireLock())) {
-    console.log("[label-sync-worker] Previous tick still running — skipping");
+    console.log("[label-sync-worker] Previous tick still running -- skipping");
     return respond({ ok: true, skipped: "already_running" });
   }
 
@@ -199,7 +199,7 @@ Deno.serve(async (_req) => {
 
 async function runDispatch(t0: number): Promise<Response> {
   // Each tier gets its own reserved query limit instead of "gather
-  // new-then-processing-then-old and truncate to BATCH_SIZE" — that scheme
+  // new-then-processing-then-old and truncate to BATCH_SIZE" -- that scheme
   // let a steady trickle of brand-new jobs (newJobs alone often filled
   // BATCH_SIZE) permanently starve processingJobs, since the merge loop
   // broke before ever reaching them. Found in production on 2026-07-22:
@@ -211,7 +211,7 @@ async function runDispatch(t0: number): Promise<Response> {
   // translate into a proportionally larger dispatch-unit count.
   // Realtime-flagged jobs (a genuinely new email, deletion, or newly-
   // created label, per gmail-push/gmail-addon) always go first, ahead of
-  // the ordinary backlog tiers below — otherwise a brand-new action just
+  // the ordinary backlog tiers below -- otherwise a brand-new action just
   // competes on equal footing with hundreds of routine backlog jobs.
   const { data: realtimeJobs } = await db
     .from("gmail_sync_jobs")
@@ -267,14 +267,14 @@ async function runDispatch(t0: number): Promise<Response> {
   }
 
   const units: DispatchUnit[] = [];
-  // Job count alone doesn't bound tick duration — the 184-job starvation
+  // Job count alone doesn't bound tick duration -- the 184-job starvation
   // backlog found on 2026-07-22 wasn't uniform: most jobs had 1-2 pending
   // users left, but a handful had 6-7 (never touched since creation). At
   // ~1 unit/sec pacing, a batch that happens to include several of those
-  // can still blow the 150s ceiling even with a modest job-count limit —
+  // can still blow the 150s ceiling even with a modest job-count limit -
   // cap the actual unit count directly and let leftover jobs roll to next
   // tick instead. Trimmed further after adding the per-user concurrency
-  // lock (2026-07-23) — its extra acquire/release round-trip per unit
+  // lock (2026-07-23) -- its extra acquire/release round-trip per unit
   // pushed one tick to 177s, over the ceiling (it happened to still
   // complete, but too close for comfort).
   const MAX_UNITS_PER_TICK = 18;
@@ -376,7 +376,7 @@ async function runDispatch(t0: number): Promise<Response> {
   const quarantinedCount = outcomes.filter(o => o === "quarantined").length;
   const dispatchErrors = outcomes.filter(o => o === "dispatch_error").length;
   // Another job (this dispatcher or gmail-email-sync-worker) already had a
-  // write in flight against this same Gmail account — left pending, no
+  // write in flight against this same Gmail account -- left pending, no
   // error logged, picked up again next tick once that other call clears.
   const userBusy = outcomes.filter(o => o === "user_busy").length;
 
@@ -384,7 +384,7 @@ async function runDispatch(t0: number): Promise<Response> {
     .select("*", { count: "exact", head: true }).eq("job_type", "label_sync").eq("status", "pending");
 
   const result = { dispatched: units.length, ok, quarantined: quarantinedCount, dispatchErrors, userBusy, remaining };
-  console.log(`[label-sync-worker] DONE in ${Date.now() - t0}ms —`, JSON.stringify(result));
+  console.log(`[label-sync-worker] DONE in ${Date.now() - t0}ms -`, JSON.stringify(result));
   await heartbeat("gmail-label-sync-worker", Date.now() - t0, result);
   return respond({ ok: true, ...result });
 }

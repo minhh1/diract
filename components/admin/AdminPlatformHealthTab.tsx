@@ -108,7 +108,7 @@ interface AnalyticsData {
 }
 
 // Search + "show top N / show all" list, shared by the Analytics sub-tab's
-// Top pages and Top API endpoints panels — both can have far more distinct
+// Top pages and Top API endpoints panels -- both can have far more distinct
 // entries than fit comfortably in a preview, so search is the fast way to
 // find one specific path without scrolling a long list.
 const RANKED_LIST_PREVIEW = 10;

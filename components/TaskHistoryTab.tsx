@@ -1,5 +1,5 @@
 // components/TaskHistoryTab.tsx
-// Shared "History" tab content for the task edit modal — used by both the
+// Shared "History" tab content for the task edit modal -- used by both the
 // main app's Checklist View and the public task page. Reads directly from
 // task_activity_log (RLS-gated to the viewer's company).
 "use client";

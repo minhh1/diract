@@ -6,7 +6,7 @@
 // each rolled their own local version of this exact function; new code
 // should import this one instead of adding another.
 export function formatDateAU(d: string | null | undefined): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
   catch { return String(d).slice(0, 10); }
 }
@@ -14,7 +14,7 @@ export function formatDateAU(d: string | null | undefined): string {
 // Longer form ("1 Aug 2026"), for headers/PDFs where the short numeric form
 // reads ambiguously out of context.
 export function formatDateAULong(d: string | null | undefined): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }); }
   catch { return String(d).slice(0, 10); }
 }

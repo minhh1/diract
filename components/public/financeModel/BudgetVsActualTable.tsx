@@ -141,9 +141,9 @@ export default function BudgetVsActualTable({ budgetLines, editable, onDelete, t
               <td className="px-6 py-2 text-slate-500">{line.category}</td>
               <td className="px-2 py-2 text-slate-700 font-medium">{line.label}</td>
               <td className="px-2 py-2 text-right text-slate-700">{fmt(budgeted)}</td>
-              <td className="px-2 py-2 text-right text-slate-700">{actual == null ? "—" : fmt(actual)}</td>
+              <td className="px-2 py-2 text-right text-slate-700">{actual == null ? "-" : fmt(actual)}</td>
               <td className={`px-2 py-2 text-right font-medium ${variance == null ? "text-slate-300" : variance > 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                {variance == null ? "—" : `${variance > 0 ? "+" : ""}${fmt(variance)}`}
+                {variance == null ? "-" : `${variance > 0 ? "+" : ""}${fmt(variance)}`}
               </td>
               {showTasks && (
                 <td className="px-2 py-2">

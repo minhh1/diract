@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-  // Look up token — include default_team_id + role
+  // Look up token -- include default_team_id + role
   const { data: tokenData, error: tokenError } = await supabaseAdmin
     .from('registration_tokens')
     .select('id, company_id, used_at, expires_at, default_team_id, role, company:company_id(id, name)')
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
     .update({ used_at: new Date().toISOString() })
     .eq('id', tokenData.id);
 
-  console.log('[join-company] success — user', user.id, 'joined company', companyId);
+  console.log('[join-company] success -- user', user.id, 'joined company', companyId);
 
   return NextResponse.json({
     ok: true,

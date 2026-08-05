@@ -67,7 +67,7 @@ export default function CashFlowPanel({ budgetLines, tasks, monthlyRows, unresol
               const isDim = saving === line.id;
               return (
                 <tr key={line.id} className={`border-t border-slate-50 ${isDim ? "opacity-50" : ""}`}>
-                  <td className="py-1.5 pr-2 text-slate-700 font-medium whitespace-nowrap">{line.category ? `${line.category} — ` : ""}{line.label}</td>
+                  <td className="py-1.5 pr-2 text-slate-700 font-medium whitespace-nowrap">{line.category ? `${line.category} -- ` : ""}{line.label}</td>
                   <td className="py-1.5 px-2">
                     <select
                       value={line.linkedTaskId || ""}
@@ -130,8 +130,8 @@ export default function CashFlowPanel({ budgetLines, tasks, monthlyRows, unresol
               {monthlyRows.map(r => (
                 <tr key={r.month} className="border-t border-slate-50">
                   <td className="py-1 pr-2 text-slate-500">{r.month}</td>
-                  <td className="py-1 px-2 text-right text-emerald-600">{r.cashIn > 0 ? money(r.cashIn) : "—"}</td>
-                  <td className="py-1 px-2 text-right text-rose-600">{r.cashOut > 0 ? money(r.cashOut) : "—"}</td>
+                  <td className="py-1 px-2 text-right text-emerald-600">{r.cashIn > 0 ? money(r.cashIn) : "-"}</td>
+                  <td className="py-1 px-2 text-right text-rose-600">{r.cashOut > 0 ? money(r.cashOut) : "-"}</td>
                   <td className={`py-1 px-2 text-right font-medium ${r.net >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{money(r.net)}</td>
                   <td className={`py-1 px-2 text-right font-bold ${r.cumulative >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{money(r.cumulative)}</td>
                 </tr>

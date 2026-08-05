@@ -1,5 +1,5 @@
 // app/api/precedents/issuances/[id]/download/route.ts
-// Streams a previously-issued precedent back on demand — the private bucket
+// Streams a previously-issued precedent back on demand -- the private bucket
 // means there's no durable public URL, and a signed URL created at issuance
 // time would eventually expire, so history downloads go through this route
 // instead of a stored link (see precedent_issuances.sql). ?format=docx serves

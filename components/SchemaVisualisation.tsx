@@ -295,7 +295,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (isCustomTable && customTableId) {
-    // company_table_fields — uses linked_system_table + linked_table_id
+    // company_table_fields -- uses linked_system_table + linked_table_id
     await supabase
       .from('company_table_fields')
       .update({
@@ -329,7 +329,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
       })
       .eq('id', selectedFieldId);
   } else {
-    // company_custom_fields — uses single linked_table column
+    // company_custom_fields -- uses single linked_table column
     await supabase
       .from('company_custom_fields')
       .update({
@@ -427,7 +427,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Soft-delete — the field's stored values are untouched, so this is
+    // Soft-delete -- the field's stored values are untouched, so this is
     // fully reversible from Trash.
     if (isCustomTable) {
       await supabase.from('company_table_fields').update({ deleted_at: new Date().toISOString() }).eq('id', selectedFieldId);
@@ -466,7 +466,7 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
   };
 
   // Snapshots every custom field on the active system table (entities/
-  // projects/properties) into a brand-new draft template — a one-time copy,
+  // projects/properties) into a brand-new draft template -- a one-time copy,
   // not a live link (see supabase/template_marketplace.sql).
   const handlePublishSystemFields = async () => {
     if (isCustomTable || !companyId || fields.length === 0) return;

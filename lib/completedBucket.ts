@@ -1,6 +1,6 @@
 // lib/completedBucket.ts
 // Splits completed tasks into "this week" (completed within the last 7
-// days) vs "older" — used to break the Completed section into two groups
+// days) vs "older" -- used to break the Completed section into two groups
 // in the Checklist View and the public task page. Tasks with no
 // completed_at (completed before that column existed) fall into "older".
 export function splitCompletedByRecency<T>(

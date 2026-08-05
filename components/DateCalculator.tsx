@@ -1,5 +1,5 @@
 // components/DateCalculator.tsx
-// "X days from" popover — calendar days or AU business days (skips weekends +
+// "X days from" popover -- calendar days or AU business days (skips weekends +
 // public holidays for a chosen state, via the date-calc edge function).
 "use client";
 
@@ -24,7 +24,7 @@ interface Props {
   defaultFromDate?: string;
   /** Called with the computed YYYY-MM-DD date when the user clicks "Use this date" */
   onApply?: (date: string) => void;
-  /** Icon-only trigger button styling — pass a className to override */
+  /** Icon-only trigger button styling -- pass a className to override */
   triggerClassName?: string;
 }
 

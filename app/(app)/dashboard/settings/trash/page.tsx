@@ -101,7 +101,7 @@ export default function TrashPage() {
     const freshDisabledSystemTables: Record<string, { deleted_at: string; field_ids: string[] }> = (companyRow as any)?.disabled_system_tables || {};
     const freshTableLabelOverrides: Record<string, { singular: string; plural: string }> = (companyRow as any)?.table_label_overrides || {};
 
-    // ── Who deleted each schema-level item — most recent 'delete' log entry
+    // ── Who deleted each schema-level item -- most recent 'delete' log entry
     // per entity, resolved to a name. Record-level deletes aren't logged
     // here (see file header), so this only ever covers the four schema types.
     const { data: deleteLogs } = await supabase

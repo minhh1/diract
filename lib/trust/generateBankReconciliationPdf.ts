@@ -45,7 +45,7 @@ function money(n: number): string {
 }
 
 function formatDate(d: string | null): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return (d || '').slice(0, 10); }
 }
 
@@ -172,7 +172,7 @@ export async function generateBankReconciliationPdf(input: GenerateBankReconcili
   function signRow(label: string, value: string) {
     ensureRoom(40);
     text(label, MARGIN, 9, { color: [0.5, 0.5, 0.55] }); y -= 14;
-    text(value || '—', MARGIN, 11); y -= 10;
+    text(value || '-', MARGIN, 11); y -= 10;
     page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.87) });
     y -= 24;
   }

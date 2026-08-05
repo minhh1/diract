@@ -1,5 +1,5 @@
 // supabase/functions/gmail-email-sync-worker/index.ts
-// Every 1 min via pg_cron — DISPATCHER ONLY. See gmail-label-sync-worker
+// Every 1 min via pg_cron -- DISPATCHER ONLY. See gmail-label-sync-worker
 // for the full rationale: cheap DB-only pass here, actual Gmail work fans
 // out to gmail-email-sync-processor via plain HTTPS fetch, one invocation
 // per pending user, each in its own isolate.
@@ -27,9 +27,9 @@ const MAX_ATTEMPTS = 3;
 // SAME slow queue genuinely transient failures depend on staying fast.
 const MIGRATION_THRESHOLD = 50;
 // Per-job work here also includes a Gmail metadata backfill for NULL-subject
-// rows, so this dispatcher is heavier than the label-sync one — same
+// rows, so this dispatcher is heavier than the label-sync one -- same
 // DISPATCH_CONCURRENCY ceiling applies, so keep the per-tick job count modest.
-// See gmail-label-sync-worker for why pacing is ~1 req/s, not 2.86 req/s —
+// See gmail-label-sync-worker for why pacing is ~1 req/s, not 2.86 req/s -
 // empirically the gateway's sustainable rate is lower than that.
 const BATCH_SIZE = 5;
 const DISPATCH_CONCURRENCY = 3;
@@ -135,7 +135,7 @@ async function dispatchOnce(unit: DispatchUnit): Promise<{ quarantined?: boolean
 }
 
 // Gmail's "Too many concurrent requests for user" (429) is a per-ACCOUNT
-// ceiling, not per-caller — a user on several active matters can be the
+// ceiling, not per-caller -- a user on several active matters can be the
 // target of multiple simultaneous processor calls (one per job), each
 // individually respecting its own dispatcher's pacing with no cross-job or
 // cross-function awareness. This is a DB-backed lock (not in-process)
@@ -157,7 +157,7 @@ async function dispatchOne(unit: DispatchUnit): Promise<"ok" | "quarantined" | "
     return "ok";
   } catch (err: any) {
     // Supabase's own function gateway rate-limits concurrent invocations
-    // and tells us how long to back off — worth one retry within the same
+    // and tells us how long to back off -- worth one retry within the same
     // tick before giving up, since DISPATCH_CONCURRENCY alone won't catch
     // every burst.
     const backoffMatch = /retry after (\d+)ms/i.exec(err.message || "");
@@ -204,7 +204,7 @@ Deno.serve(async (_req) => {
   const t0 = Date.now();
 
   if (!(await acquireLock())) {
-    console.log("[email-sync-worker] Previous tick still running — skipping");
+    console.log("[email-sync-worker] Previous tick still running -- skipping");
     return respond({ ok: true, skipped: "already_running" });
   }
 
@@ -218,7 +218,7 @@ Deno.serve(async (_req) => {
 async function runDispatch(t0: number): Promise<Response> {
   // Realtime-flagged jobs (a genuinely new email, deletion, or newly-
   // created label, per gmail-push/gmail-addon) sort first, ahead of the
-  // ordinary FIFO backlog — otherwise a brand-new action just competes on
+  // ordinary FIFO backlog -- otherwise a brand-new action just competes on
   // equal footing with the rest of the queue.
   // Sorted by updated_at, not created_at -- a job fully routed to the
   // migration lane below gets its updated_at bumped specifically so it
@@ -346,14 +346,14 @@ async function runDispatch(t0: number): Promise<Response> {
     const nullSubjectIds = new Set((dbEmails || []).filter((e: any) => !e.subject || !e.date).map((e: any) => e.gmail_message_id));
 
     // Resolve a token for every DISTINCT filer of this project's emails, not
-    // one arbitrary connected member picked as a blanket "source" — a
+    // one arbitrary connected member picked as a blanket "source" -- a
     // project's backlog is routinely filed by several different team
     // members (confirmed live: one project's 33 emails split 22/6/5 across
     // three different filers), and Gmail message IDs are mailbox-scoped, so
     // reading a message's raw content only ever works via whichever mailbox
     // actually filed THAT specific message. The previous single-source
     // design silently imported nothing for any message the one chosen user
-    // didn't personally own, with no error and no log entry — the job still
+    // didn't personally own, with no error and no log entry -- the job still
     // reported "done" regardless.
     const distinctFilerIds = [...new Set(Object.values(filerByMsgId))];
     const sourceTokensByUserId: Record<string, string> = {};
@@ -367,7 +367,7 @@ async function runDispatch(t0: number): Promise<Response> {
     }
 
     // Backfill metadata for NULL rows once per job, not once per dispatched
-    // user — same per-filer token requirement as the import step above,
+    // user -- same per-filer token requirement as the import step above,
     // since a metadata read is just as mailbox-scoped as a raw-content read.
     if (nullSubjectIds.size > 0) {
       console.log(`[email-sync-worker] Backfilling metadata for ${nullSubjectIds.size} emails`);
@@ -430,7 +430,7 @@ async function runDispatch(t0: number): Promise<Response> {
   const quarantinedCount = outcomes.filter(o => o === "quarantined").length;
   const dispatchErrors = outcomes.filter(o => o === "dispatch_error").length;
   // Another job (this dispatcher or gmail-label-sync-worker) already had a
-  // write in flight against this same Gmail account — left pending, no
+  // write in flight against this same Gmail account -- left pending, no
   // error logged, picked up again next tick once that other call clears.
   const userBusy = outcomes.filter(o => o === "user_busy").length;
 
@@ -438,7 +438,7 @@ async function runDispatch(t0: number): Promise<Response> {
     .select("*", { count: "exact", head: true }).eq("job_type", "email_sync").eq("status", "pending");
 
   const result = { dispatched: units.length, ok, quarantined: quarantinedCount, dispatchErrors, userBusy, remaining };
-  console.log(`[email-sync-worker] DONE in ${Date.now() - t0}ms —`, JSON.stringify(result));
+  console.log(`[email-sync-worker] DONE in ${Date.now() - t0}ms -`, JSON.stringify(result));
   await heartbeat("gmail-email-sync-worker", Date.now() - t0, result);
   return respond({ ok: true, ...result });
 }

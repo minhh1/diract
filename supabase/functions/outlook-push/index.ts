@@ -1,18 +1,18 @@
 // supabase/functions/outlook-push/index.ts
-// Graph change-notification webhook — the Outlook equivalent of
+// Graph change-notification webhook -- the Outlook equivalent of
 // supabase/functions/gmail-push. Two big differences from Gmail's Pub/Sub
 // push:
 //   1. Graph requires an immediate validationToken echo-back handshake on
 //      subscription creation/renewal, which Gmail has no equivalent of.
 //   2. The notification body only says "something changed for this
-//      subscription" — no payload of *what* changed, unlike Gmail's
+//      subscription" -- no payload of *what* changed, unlike Gmail's
 //      history.list which returns the actual diff. The real diff comes
 //      from a delta-query pass (using the user's stored delta_link as a
 //      cursor) triggered by the notification.
 // Scope for this pass: detect a category matching a known project being
 // manually applied (in native Outlook) to a message we don't already know
 // about, and enqueue a label_sync job to propagate it to the rest of the
-// team — mirroring Gmail's labelsAdded handling. Message deletion and
+// team -- mirroring Gmail's labelsAdded handling. Message deletion and
 // category-removal detection are not handled here (out of scope for this
 // phase, same as gmail-push's messagesDeleted/labelsRemoved paths would be
 // for a first pass).
@@ -113,7 +113,7 @@ async function processUserDelta(userId: string): Promise<void> {
   const centralEmailEnabled = !!companyRow?.central_email_enabled;
 
   if (!tokenRow.delta_link) {
-    console.log(`[outlook-push] No delta_link for ${userId} — skipping until setup-outlook-watch seeds one`);
+    console.log(`[outlook-push] No delta_link for ${userId} -- skipping until setup-outlook-watch seeds one`);
     return;
   }
 
@@ -186,7 +186,7 @@ async function processUserDelta(userId: string): Promise<void> {
         project_id: labelRow.project_id, outlook_message_id: item.id, category_name: categoryName,
         target_user_id: userId, details: { source: "native_outlook_detected" },
       });
-      console.log(`[outlook-push] Detected native category "${categoryName}" on ${item.id} for ${userId} — job enqueued`);
+      console.log(`[outlook-push] Detected native category "${categoryName}" on ${item.id} for ${userId} -- job enqueued`);
     }
   }
 
@@ -218,7 +218,7 @@ Deno.serve(async (req) => {
   const userIds = new Set<string>();
   for (const n of notifications) {
     if (n.clientState !== webhookSecret) {
-      console.warn("[outlook-push] clientState mismatch — rejecting notification");
+      console.warn("[outlook-push] clientState mismatch -- rejecting notification");
       continue;
     }
     const { data: tokenRow } = await db.from("user_outlook_tokens")

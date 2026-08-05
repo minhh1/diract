@@ -6,7 +6,7 @@
 // project-creation path (not just NewProjectModal's own fetch call) can
 // reuse it -- lib/ai/actions.ts's createProject (Teams/WhatsApp bot) is the
 // other caller, since bot-created projects previously never got a Gmail
-// label at all (confirmed live: the Teams bot's "Done — created project"
+// label at all (confirmed live: the Teams bot's "Done -- created project"
 // left project_gmail_labels empty, unlike every other creation path).
 export async function createProjectGmailLabel(
   adminDb: any,
@@ -33,7 +33,7 @@ export async function createProjectGmailLabel(
   const parentCode = company?.gmail_parent_code || "";
   const parentFull = parentCode ? `${parentLabel} #${parentCode}` : parentLabel;
   const tokens: string[] = company?.gmail_label_tokens || ["project_name"];
-  const separator: string = company?.gmail_sublabel_separator || " — ";
+  const separator: string = company?.gmail_sublabel_separator || " -- ";
 
   let matterNumber = "";
   const { data: matterField } = await adminDb

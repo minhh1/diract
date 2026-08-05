@@ -202,7 +202,7 @@ function MasterTableRow({
               className="w-full p-1.5 -m-1.5 border border-indigo-300 rounded-lg text-sm outline-none"
             />
           ) : cellError ? (
-            // Error state — original value stays, shown red with tooltip
+            // Error state -- original value stays, shown red with tooltip
             <div className="relative group/error">
               <span
                 onClick={canEditThisCol ? startEdit : undefined}
@@ -367,7 +367,7 @@ function MasterTableRow({
                         title={expandValue ? String(expandValue) : undefined}
                         className="text-[13px] font-medium text-slate-800 truncate"
                       >
-                        {String(expandValue || '—')}
+                        {String(expandValue || '-')}
                       </p>
                     </div>
                   );
@@ -629,7 +629,7 @@ export default function MasterTable({
                   <div className="relative flex items-center h-full">
                     {isAdmin && (
                       // Absolutely positioned so it overlays the label's own
-                      // left padding on hover instead of taking up flex space —
+                      // left padding on hover instead of taking up flex space -
                       // otherwise this being admin-only shifted the header
                       // label out of alignment with its data cells below,
                       // and admin/non-admin views ended up with different
@@ -646,7 +646,7 @@ export default function MasterTable({
                           onReorder(next);
                           setDraggedIdx(null);
                         }}
-                        // Dimmed rather than fully hidden at rest — opacity-0
+                        // Dimmed rather than fully hidden at rest -- opacity-0
                         // relied on hover to ever become visible/reachable at
                         // all, which doesn't exist on touch devices (iPad
                         // Safari). Full opacity on hover still gives desktop

@@ -27,7 +27,7 @@ function money(n: number): string {
   return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
 }
 function formatDate(d: string | null): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return (d || '').slice(0, 10); }
 }
 
@@ -81,7 +81,7 @@ export async function generateDormantTrustBalancesPdf(input: GenerateDormantTrus
   for (const b of input.balances) {
     const values: Record<string, string> = {
       matterNumber: b.matterNumber || '', matterName: b.matterName, lastDate: formatDate(b.lastDate),
-      daysDormant: b.daysDormant != null && Number.isFinite(b.daysDormant) ? String(b.daysDormant) : '—',
+      daysDormant: b.daysDormant != null && Number.isFinite(b.daysDormant) ? String(b.daysDormant) : '-',
       balance: money(b.balance),
     };
     const wrapped = COLS.map(col => wrapPdfText(values[col.key] || '', regular, ROW_SIZE, col.width - 4));

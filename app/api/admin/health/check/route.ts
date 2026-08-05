@@ -1,9 +1,9 @@
 // app/api/admin/health/check/route.ts
 // Live, on-demand reachability check across every external service this app
-// depends on plus a couple of our own internal routes — distinct from
+// depends on plus a couple of our own internal routes -- distinct from
 // cron_heartbeats (which only tells you when a *scheduled job* last ran).
 // Site-admin gated and triggered by the Platform Health tab's Heartbeat
-// sub-tab, not cron — every check runs in parallel with its own timeout so
+// sub-tab, not cron -- every check runs in parallel with its own timeout so
 // one dead service can't hang the whole page.
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -71,7 +71,7 @@ async function checkStripe(): Promise<void> {
 }
 
 async function checkGoogle(): Promise<void> {
-  // Unauthenticated connectivity check only — confirms Google's own
+  // Unauthenticated connectivity check only -- confirms Google's own
   // infrastructure is reachable, not that our OAuth credentials still work
   // (each user's Gmail token is refreshed independently, see lib/gmail/client.ts).
   const res = await fetch("https://www.google.com/generate_204", { method: "GET" });
@@ -93,7 +93,7 @@ async function checkGotenberg(): Promise<void> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
-// Guacamole has no unauthenticated health endpoint — any HTTP response
+// Guacamole has no unauthenticated health endpoint -- any HTTP response
 // (even 401/404) proves the region's gateway is up; only a network-level
 // failure (timeout, connection refused) counts as Down.
 async function checkGuacamoleRegion(url: string): Promise<void> {

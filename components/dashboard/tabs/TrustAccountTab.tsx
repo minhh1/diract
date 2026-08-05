@@ -28,7 +28,7 @@ const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' 
 // matching how the company-wide Transactions tab already describes these
 // rows ("Payment to X"), not the raw internal value.
 function displayType(rawType: string | null | undefined): string {
-  if (!rawType) return '—';
+  if (!rawType) return '-';
   return rawType.startsWith('Withdrawal') ? 'Payment' : rawType;
 }
 
@@ -155,11 +155,11 @@ export default function TrustAccountTab({ recordId, companyId, userId, isAdmin }
               <tr key={r.id} className="border-b border-slate-50">
                 <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{formatDateAU(r.values.date)}</td>
                 <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                  {r.values.receipt_number || r.values.payment_number || r.values.journal_number || '—'}
+                  {r.values.receipt_number || r.values.payment_number || r.values.journal_number || '-'}
                 </td>
                 <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{displayType(r.values.type)}</td>
                 <td className="px-4 py-2 text-slate-600">
-                  {r.values.voided_at ? <span className="line-through text-slate-400">{r.values.payor_payee || r.values.purpose || '—'}</span> : (r.values.payor_payee || r.values.purpose || '—')}
+                  {r.values.voided_at ? <span className="line-through text-slate-400">{r.values.payor_payee || r.values.purpose || '-'}</span> : (r.values.payor_payee || r.values.purpose || '-')}
                   {r.values.voided_at && <span className="ml-2 text-[9px] font-bold text-rose-500 uppercase tracking-wider">Voided</span>}
                   {r.values.reversal_of && <span className="ml-2 text-[9px] font-bold text-amber-500 uppercase tracking-wider">Reversal</span>}
                 </td>

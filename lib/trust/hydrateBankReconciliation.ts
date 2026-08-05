@@ -25,7 +25,7 @@ function describe(row: Record<string, any>): string {
   if (type === 'Deposit') return who ? `Deposit from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}${matter ? ` for ${matter}` : ''}` : type;
   if (type === 'Journal Transfer') return matter ? `Transfer (${matter})` : type;
-  return type || '—';
+  return type || '-';
 }
 
 export interface HydratedBankReconciliation {

@@ -3,12 +3,12 @@
 -- gmail-email-sync-worker, gmail-label-sync-worker). Confirmed by direct
 -- observation: with all three firing at once, exactly one succeeds and the
 -- other two time out on DNS resolution alone (TCP/SSL handshake never even
--- starts) — even after raising timeout_milliseconds to 25000, the other two
+-- starts) -- even after raising timeout_milliseconds to 25000, the other two
 -- still never complete. That rules out "timeout too short": pg_net's
 -- outbound worker concurrency itself can't serve more than one of these at
 -- the same instant. Fix: stagger the actual net.http_post call inside each
 -- job by a few seconds via pg_sleep so only one fires into pg_net at a time
--- — this works regardless of pg_cron version, since it doesn't rely on any
+-- -- this works regardless of pg_cron version, since it doesn't rely on any
 -- sub-minute schedule syntax.
 SELECT cron.schedule('gmail-label-sync-worker', '* * * * *', $$
   SELECT pg_sleep(5);

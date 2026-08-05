@@ -151,12 +151,12 @@ const HEARTBEAT_DEFS: Record<string, { label: string; intervalMs: number }> = {
   "gmail-email-sync-worker": { label: "Email sync worker (every 1 min)", intervalMs: 60 * 1000 },
   "gmail-watch-renewal": { label: "Watch renewal (daily)", intervalMs: 24 * 60 * 60 * 1000 },
   "gmail-sync-recovery-worker": { label: "Sync recovery worker (every 15 min)", intervalMs: 15 * 60 * 1000 },
-  // Event-driven (Gmail Pub/Sub webhook), not cron-scheduled — a long interval
+  // Event-driven (Gmail Pub/Sub webhook), not cron-scheduled -- a long interval
   // avoids a false "Down" reading during a genuinely quiet night/weekend,
   // while still catching a subscription that's actually stopped delivering.
   "gmail-push": { label: "Pub/Sub webhook (event-driven)", intervalMs: 24 * 60 * 60 * 1000 },
   // Manually triggered from the "Sync leads" button (app/api/gmail/leads-sync)
-  // — not cron-scheduled either, so a long interval here for the same reason
+  // -- not cron-scheduled either, so a long interval here for the same reason
   // as gmail-push: it should only read "Down" if it hasn't run in a very
   // long time, not just because no one happened to click Sync leads today.
   "gmail-leads-sync": { label: "Leads inbox sync (manual)", intervalMs: 24 * 60 * 60 * 1000 },
@@ -199,7 +199,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
   useEffect(() => { loadActivity(true); }, [companyId, activityFilter, activityRange, activityCustomFrom, activityCustomTo, activitySortAsc]);
   useProgressBarWhile(loading);
 
-  // "Live" queue was a one-shot fetch on mount with no polling — anyone
+  // "Live" queue was a one-shot fetch on mount with no polling -- anyone
   // watching it saw a frozen snapshot from whenever they opened the tab
   // while jobs kept progressing underneath. Poll in the background instead;
   // `silent` skips the loading-spinner flash on every refresh, and the
@@ -248,8 +248,8 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 
     setArchiveEmails(comp?.gmail_archive_emails || []);
 
-    // Resolve "shared with" — every connected user in the company shares in every label.
-    // Queries company_gmail_connections (a view), not user_gmail_tokens directly — that
+    // Resolve "shared with" -- every connected user in the company shares in every label.
+    // Queries company_gmail_connections (a view), not user_gmail_tokens directly -- that
     // table's RLS only ever returns your own row to a browser client.
     const { data: tokens } = await supabase.from("company_gmail_connections").select("user_id, email");
     const connectedIds = (tokens || []).map((t: any) => t.user_id);
@@ -930,7 +930,7 @@ export default function AdminGmailSyncTab({ companyId }: AdminGmailSyncTabProps)
 }
 
 // Mirrors the worker's own pending-job priority: brand new jobs first, then
-// jobs already in progress, then everything else oldest-first — so
+// jobs already in progress, then everything else oldest-first -- so
 // "position" reflects the order the worker will actually pick them up in.
 function computeQueuePositions(jobs: any[]): any[] {
   const byType = new Map<string, any[]>();

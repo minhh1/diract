@@ -108,7 +108,7 @@ export async function generateReceiptPdf(input: GenerateReceiptPdfInput): Promis
   y -= 40;
   text('RECEIVED FROM', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] }, y);
   y -= 14;
-  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['—'];
+  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['-'];
   debtorLines.forEach(name => { text(name, MARGIN, 12, { bold: true }, y); y -= 14; });
 
   y -= 10;

@@ -98,7 +98,7 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
   y -= 40;
   text('PAID TO', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] }, y);
   y -= 14;
-  text(input.payment.payTo || '—', MARGIN, 12, { bold: true }, y);
+  text(input.payment.payTo || '-', MARGIN, 12, { bold: true }, y);
   y -= 14;
 
   if (input.payment.payeeAddress) {
@@ -121,7 +121,7 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
   y -= 16;
   const matterText = input.payment.matterName
     ? (input.payment.matterNumber ? `${input.payment.matterNumber} - ${input.payment.matterName}` : input.payment.matterName)
-    : '—';
+    : '-';
   text(matterText, MARGIN, 11, {}, y);
   text(money(input.payment.amount), PAGE_W - MARGIN, 11, { align: 'right' }, y);
   y -= 16;

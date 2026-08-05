@@ -2,7 +2,7 @@
 // Checklist template list/create/edit UI. Renders as a modal overlay when `onClose` is
 // passed (embedded in a project's Checklist tab, with "Apply to this project" available via
 // `onApply`/`projectId`), or as a plain in-page panel when it isn't (the standalone "Templates"
-// tool in the sidebar rail — company-wide management only, no project to apply against).
+// tool in the sidebar rail -- company-wide management only, no project to apply against).
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
@@ -50,7 +50,7 @@ function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
-// "Untitled", "Untitled 1", "Untitled 2"... — picks the lowest unused number given existing names.
+// "Untitled", "Untitled 1", "Untitled 2"... -- picks the lowest unused number given existing names.
 export function nextUntitledName(existingNames: string[]): string {
   const used = new Set(
     existingNames
@@ -70,7 +70,7 @@ interface TemplateManagerProps {
   teams: Team[];
   companyId: string;
   onCreateTemplate: (name: string) => Promise<Template | null>;
-  /** Project context — omit all three to hide "Apply to this project" (standalone tool use). */
+  /** Project context -- omit all three to hide "Apply to this project" (standalone tool use). */
   projectId?: string;
   projectCreatedAt?: string;
   projectDueDate?: string | null;
@@ -107,7 +107,7 @@ export default function TemplateManager({
   // reference so "After: X" links keep pointing at the same task after the shuffle, then
   // resets the dragged task's own anchor to "After: <whatever is now directly above it>"
   // (or "Project created" if it's now first). Runs on every dragover (not just drop) so the
-  // other tasks visibly slide out of the way as the dragged one passes over them — `draggedIdx`
+  // other tasks visibly slide out of the way as the dragged one passes over them -- `draggedIdx`
   // tracks the dragged item's current live position, so each subsequent hover moves it again
   // relative to where it already is, and self-throttles once it's sitting on the hovered row.
   const handleDragOverItem = (to: number) => {
@@ -196,7 +196,7 @@ export default function TemplateManager({
   // another), recursing through resolveItemStartDate. `seenDue`/`seenStart`
   // guard against cycles across BOTH kinds of reference, since a due-chain
   // can bounce into a start-chain and back. `items` is the full ordered
-  // array the index refers to — pass the same array the item's `task_<n>`/
+  // array the index refers to -- pass the same array the item's `task_<n>`/
   // `start_task_<n>` values were assigned against. `fallback` reproduces
   // each caller's own historical "anchor string didn't match anything
   // known" behaviour (resolveItemDate defaulted to "now", resolveItemStartDate
@@ -290,7 +290,7 @@ export default function TemplateManager({
       await supabase.from('checklist_template_items').delete().eq('template_id', selected.id);
 
       // Persist tasks in their current list order (the user's own drag order) rather than
-      // re-sorting by computed date — dragging is now how order is controlled. `due_anchor`
+      // re-sorting by computed date -- dragging is now how order is controlled. `due_anchor`
       // values like `task_<oldIndex>` reference positions in `editItems`; dropping empty-title
       // rows shifts everyone after them, so remap references to the filtered positions.
       const withOldIndex = editItems
@@ -335,7 +335,7 @@ export default function TemplateManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editName, editItems]);
 
-  // Resolved dates for the "apply" preview — keyed by item id, populated async.
+  // Resolved dates for the "apply" preview -- keyed by item id, populated async.
   const [resolvedDates, setResolvedDates] = useState<Record<string, string | null>>({});
   const [resolvedStartDates, setResolvedStartDates] = useState<Record<string, string | null>>({});
 
@@ -571,7 +571,7 @@ export default function TemplateManager({
     setTemplates(prev => prev.map(t => t.id === created.id ? newTemplate : t));
   };
 
-  // Resolved dates for the edit view — keyed by index into editItems (new items have no id yet).
+  // Resolved dates for the edit view -- keyed by index into editItems (new items have no id yet).
   // Shown as a per-task badge; actual reordering into date order happens on save (see auto-save effect
   // below) rather than live in this list, so a row doesn't jump out from under the field being edited.
   const [editDates, setEditDates] = useState<Record<number, string | null>>({});
@@ -811,7 +811,7 @@ export default function TemplateManager({
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     {item.start_offset_days != null && (
                       <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                        <Calendar size={9} /> Start: <span className="font-medium text-indigo-600">{resolvedStartDates[item.id] ?? '—'}</span>
+                        <Calendar size={9} /> Start: <span className="font-medium text-indigo-600">{resolvedStartDates[item.id] ?? '-'}</span>
                       </span>
                     )}
                     {item.due_offset_days !== null && (
@@ -824,7 +824,7 @@ export default function TemplateManager({
                         {ANCHORS.find(a => a.value === item.due_anchor)?.label
                           || (/^task_(\d+)$/.exec(item.due_anchor || '') ? `After: ${selected.items[Number(/^task_(\d+)$/.exec(item.due_anchor || '')![1])]?.title || 'task'}` : item.due_anchor)}
                         {' → '}
-                        <span className="font-medium text-indigo-600">{resolvedDates[item.id] ?? '—'}</span>
+                        <span className="font-medium text-indigo-600">{resolvedDates[item.id] ?? '-'}</span>
                         {item.due_offset_mode === 'business' && (
                           <span className="text-slate-300"> ({item.due_offset_state} business days)</span>
                         )}

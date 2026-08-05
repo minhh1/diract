@@ -1,7 +1,7 @@
 // app/api/admin/analytics/route.ts
 // Aggregates page_visits + api_invocations for the Platform Health tab's
 // Analytics sub-tab. Aggregation happens here in JS rather than a SQL
-// view/RPC — simplest option for this app's traffic volume; revisit with a
+// view/RPC -- simplest option for this app's traffic volume; revisit with a
 // real grouped query if these tables get large enough for that to matter.
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";

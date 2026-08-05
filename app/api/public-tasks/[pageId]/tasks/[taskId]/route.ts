@@ -73,7 +73,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
     await saveTaskWatchers(admin, { taskId, companyId: page.company_id, newIds: body.watcherIds, actorId: user.id });
   }
 
-  // Organised-view classification — scoped to whichever tab (assignee or
+  // Organised-view classification -- scoped to whichever tab (assignee or
   // watcher) it was moved in, not the task globally, so the same task can
   // sit in different buckets for different people.
   if (body.taskGroup !== undefined) {

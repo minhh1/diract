@@ -1,10 +1,10 @@
 // app/api/document-templates/public/[pageId]/draft/route.ts
 // GENUINELY UNAUTHENTICATED client-facing route. Like the sibling GET/submit routes,
-// performs NO supabase.auth.getUser() and NO session/membership check — access is
+// performs NO supabase.auth.getUser() and NO session/membership check -- access is
 // gated only by loadActiveFillPage (page exists + active + not expired) plus the
 // same access-code recheck submit does, using the service-role admin client throughout.
 //
-// Autosaves the client's in-progress answers (debounced client-side — see
+// Autosaves the client's in-progress answers (debounced client-side -- see
 // app/public/documents/[pageId]/page.tsx) so a closed tab or a different device
 // doesn't mean retyping everything. Overwrites whatever was saved before; there's no
 // merge logic since the client always sends its full current values/naFields state.

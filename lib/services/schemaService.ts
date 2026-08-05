@@ -74,7 +74,7 @@ export async function getSchemaMetadata(
   return fetchSchemaMetadataRemote(tableName, companyId, key);
 }
 
-// Synchronous accessor for use in useState lazy initializers — a component
+// Synchronous accessor for use in useState lazy initializers -- a component
 // remounting for a table already visited this session (e.g. switching
 // between Properties/Entities/Projects) can read the cache instantly on
 // first render, instead of waiting a tick for the async version to resolve
@@ -129,7 +129,7 @@ export function clearCompanyIdCache() {
   cachedCompanyId = null;
 }
 
-// Synchronous companion to getCompanyId() — same rationale as
+// Synchronous companion to getCompanyId() -- same rationale as
 // getCachedSchemaMetadata above.
 export function getCachedCompanyIdSync(): { resolved: boolean; companyId: string | null } {
   return { resolved: companyCacheResolved, companyId: cachedCompanyId };

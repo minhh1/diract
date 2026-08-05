@@ -1,6 +1,6 @@
 // components/public/PublicDocumentsContent.tsx
 // The actual client-facing document-fill UI (field form, per-document tabs,
-// generate/download) — extracted from app/public/documents/[pageId]/page.tsx
+// generate/download) -- extracted from app/public/documents/[pageId]/page.tsx
 // so the exact same experience can render two ways: as the full standalone
 // /public/documents/[pageId] page (embedded=false, that route's own thin
 // wrapper supplies pageId from the URL), or inline inside a
@@ -44,7 +44,7 @@ interface ResultBatch { label: string; files: GeneratedFile[]; zipUrl: string | 
 // Caches a verified access code per page in localStorage so a returning
 // client isn't asked to re-enter it every visit. Scoped by pageId, cleared
 // automatically the moment a cached code is ever rejected (e.g. the admin
-// changed it) — never trusted blindly, always re-verified against the
+// changed it) -- never trusted blindly, always re-verified against the
 // server on load. Wrapped in try/catch for privacy-mode browsers where
 // localStorage access can throw.
 const pageDataCacheKey = (pageId: string) => `docfill_page_${pageId}`;
@@ -62,7 +62,7 @@ function clearCachedCode(pageId: string) {
 // Which fields currently satisfy their trigger (if any) and should render.
 // Fields with no trigger are always visible. A triggered field needs its
 // trigger to itself be visible, answered (a value, or explicitly marked N/A),
-// and — if triggerValue is set — the trigger's answer to include at least
+// and -- if triggerValue is set -- the trigger's answer to include at least
 // one of triggerValue's "||"-separated allowed values (a single value is
 // just the one-element case). Recursive with a cache + in-progress guard so
 // a chain (or an accidental cycle) resolves once and a cycle just falls back
@@ -139,7 +139,7 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
     (json.fields || []).forEach((f: Field) => { initial[f.tagKey] = f.value || ""; });
     setValues(initial);
     // Restores which fields the client had previously marked "Not
-    // applicable" in a saved draft — the answered VALUES themselves are
+    // applicable" in a saved draft -- the answered VALUES themselves are
     // already folded into each field's `value` above (see the GET route),
     // but N/A is a separate flag with no value of its own to carry it.
     setNaFields(new Set(json.naFields || []));
@@ -162,8 +162,8 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
     }
 
     // Try a cached code first (if we have one) so a returning client skips
-    // straight to the form. If the server rejects it — wrong, or the admin
-    // changed/removed the code — fall through to a normal, code-less load
+    // straight to the form. If the server rejects it -- wrong, or the admin
+    // changed/removed the code -- fall through to a normal, code-less load
     // instead of getting stuck on a bad cached value.
     if (cachedCode) {
       const cachedAttempt = await fetchPage(cachedCode);
@@ -227,7 +227,7 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
     setValue(tagKey, "");
   };
 
-  // Global (not tab-scoped, since values/naFields are shared across tabs) —
+  // Global (not tab-scoped, since values/naFields are shared across tabs) -
   // which fields currently satisfy their trigger, if they have one.
   const visibleTagKeys = useMemo(
     () => computeVisibleTagKeys(data?.fields ?? [], values, naFields),
@@ -236,9 +236,9 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
 
   // Clears a triggered field's stale value/N/A the moment it drops OUT of
   // visibleTagKeys (e.g. the client changes an earlier answer so a branch no
-  // longer applies) — otherwise a stale answer could silently survive into a
+  // longer applies) -- otherwise a stale answer could silently survive into a
   // generated document even though its field is no longer shown. Only fires
-  // on a genuine visible→hidden transition (tracked via prevVisibleRef) —
+  // on a genuine visible→hidden transition (tracked via prevVisibleRef) -
   // NOT on initial load, when every not-yet-answered gated field starts out
   // hidden with a pre-filled default/auto-filled value that hasn't been
   // shown to the client yet and must survive until its trigger is answered.
@@ -266,9 +266,9 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
   }, [data, visibleTagKeys, values, naFields]);
 
   // Autosaves the client's answers (debounced) so a closed tab or a
-  // different device doesn't mean retyping everything — see the draft
+  // different device doesn't mean retyping everything -- see the draft
   // route. `lastLoadedDataRef` distinguishes "values just changed because a
-  // fresh load/reload applied them" (skip — nothing new to save) from an
+  // fresh load/reload applied them" (skip -- nothing new to save) from an
   // actual edit the client made (save it), without needing a second effect.
   const lastLoadedDataRef = useRef<PageData | null>(null);
   useEffect(() => {
@@ -292,7 +292,7 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
 
   const activeDoc = data?.documents.find(d => d.id === activeDocId) || null;
   const isMultiDoc = (data?.documents.length ?? 0) > 1;
-  // With one document there's nothing to scope a tab to — show every field.
+  // With one document there's nothing to scope a tab to -- show every field.
   // With several, each tab only shows the fields that document actually uses.
   // Either way, a field with an unmet trigger stays hidden regardless of tab.
   const visibleFields = data
@@ -403,7 +403,7 @@ export default function PublicDocumentsContent({ pageId, embedded = false }: Pro
           )}
         </div>
 
-        {/* Per-document tabs — only shown when more than one document is bundled */}
+        {/* Per-document tabs -- only shown when more than one document is bundled */}
         {isMultiDoc && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {data.documents.map(d => (

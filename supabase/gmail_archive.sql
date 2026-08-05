@@ -12,7 +12,7 @@ ALTER TABLE project_gmail_labels ADD COLUMN IF NOT EXISTS archived_at timestampt
 -- Enqueues an 'archive' job the moment a project's status flips to
 -- 'Closed', but only for companies that opted into gmail_auto_archive_on_close,
 -- and only when there's an active (non-removed, non-archived) shared label
--- to archive. Fires on the UPDATE transition only — projects that were
+-- to archive. Fires on the UPDATE transition only -- projects that were
 -- already 'Closed' before this trigger existed are NOT retroactively swept.
 CREATE OR REPLACE FUNCTION enqueue_gmail_archive_on_close() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER AS $$

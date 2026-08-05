@@ -1,6 +1,6 @@
 -- pg_cron schedules for the Outlook async label-sync engine (Phase 2 of
 -- Outlook parity for Shared Labels), mirroring supabase/gmail_cron_timeout_fix.sql.
--- outlook-label-sync-worker is staggered to :45 of each minute — the three
+-- outlook-label-sync-worker is staggered to :45 of each minute -- the three
 -- existing per-minute Gmail jobs already occupy :05/:15/:30 (see that
 -- file's header comment: pg_net's outbound worker can only serve one
 -- net.http_post at the exact same instant, so anything firing in the same
@@ -26,7 +26,7 @@ SELECT cron.schedule('outlook-label-sync-cron', '*/15 * * * *', $$
     timeout_milliseconds := 25000)
 $$);
 
--- Every 6h, not daily like gmail-watch-renewal — Graph subscriptions expire
+-- Every 6h, not daily like gmail-watch-renewal -- Graph subscriptions expire
 -- in ~3 days max vs. Gmail's ~7-day watch, so this needs a much tighter
 -- cadence to avoid a gap in coverage.
 SELECT cron.schedule('outlook-watch-renewal', '0 */6 * * *', $$

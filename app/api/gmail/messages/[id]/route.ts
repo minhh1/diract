@@ -1,5 +1,5 @@
 // app/api/gmail/messages/[id]/route.ts
-// Label detection: check project_emails table — no Gmail label ID mapping needed.
+// Label detection: check project_emails table -- no Gmail label ID mapping needed.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
@@ -47,7 +47,7 @@ export async function GET(
       }
     }
 
-    // ── Check project_emails — simple DB lookup ────────────────────
+    // ── Check project_emails -- simple DB lookup ────────────────────
     const { data: pe } = await supabase
       .from('project_emails')
       .select('project_id')

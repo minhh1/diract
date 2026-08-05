@@ -17,15 +17,15 @@ import {
 import type { FacilityConfig, MonthlyCashFlow, MonthlyDebtRow, TaskDatesRef, TimedBudgetLine } from "@/lib/cashFlowEngine";
 
 function formatPct(v: number | null): string {
-  return v != null ? `${v.toFixed(1)}%` : "—";
+  return v != null ? `${v.toFixed(1)}%` : "-";
 }
 
 function formatMultiple(v: number | null): string {
-  return v != null ? `${v.toFixed(2)}x` : "—";
+  return v != null ? `${v.toFixed(2)}x` : "-";
 }
 
 function formatPayback(months: number | null): string {
-  return months != null ? `${months} mo` : "— (doesn't recover)";
+  return months != null ? `${months} mo` : "- (doesn't recover)";
 }
 
 function MetricsColumn({ title, metrics }: { title: string; metrics: ReturnsMetrics }) {
@@ -38,7 +38,7 @@ function MetricsColumn({ title, metrics }: { title: string; metrics: ReturnsMetr
       </div>
       <div>
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">NPV</p>
-        <p className="text-[14px] font-bold text-slate-800">{metrics.npv != null ? money(metrics.npv) : "—"}</p>
+        <p className="text-[14px] font-bold text-slate-800">{metrics.npv != null ? money(metrics.npv) : "-"}</p>
       </div>
       <div>
         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Equity Multiple</p>
@@ -132,7 +132,7 @@ export default function ReturnsPanel({
             </div>
             <div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Residual Value</p>
-              <p className="text-[18px] font-bold text-slate-800">{residualLandValue != null ? money(residualLandValue) : "— (not achievable)"}</p>
+              <p className="text-[18px] font-bold text-slate-800">{residualLandValue != null ? money(residualLandValue) : "- (not achievable)"}</p>
             </div>
           </div>
         </div>

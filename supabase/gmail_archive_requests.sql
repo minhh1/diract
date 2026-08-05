@@ -1,5 +1,5 @@
 -- User-facing archive requests from the Gmail add-on. Every add-on request
--- lands here as 'pending' — an admin must approve (or reject) it from the
+-- lands here as 'pending' -- an admin must approve (or reject) it from the
 -- admin "Gmail sync" tab before gmail_sync_jobs / gmail-archive-worker
 -- ever touch the project. Direct admin-initiated archiving from the admin
 -- tab bypasses this table entirely (it enqueues gmail_sync_jobs directly).

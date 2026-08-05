@@ -178,7 +178,7 @@ export default function ImportResultsTable({ results, onReverse, customFieldLabe
                     >
                       {res.details?.[key] != null && res.details[key] !== ''
                         ? String(res.details[key])
-                        : <span className="text-slate-300">—</span>
+                        : <span className="text-slate-300">-</span>
                       }
                     </td>
                   ))}
@@ -191,7 +191,7 @@ export default function ImportResultsTable({ results, onReverse, customFieldLabe
                     >
                       {res.customFields?.[fieldId] != null && res.customFields[fieldId] !== ''
                         ? String(res.customFields[fieldId])
-                        : <span className="text-slate-300">—</span>
+                        : <span className="text-slate-300">-</span>
                       }
                     </td>
                   ))}

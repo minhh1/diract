@@ -1,5 +1,5 @@
 // supabase/functions/calendar-backfill/index.ts
-// One-time run — creates calendar events for all existing tasks with due dates
+// One-time run -- creates calendar events for all existing tasks with due dates
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -58,7 +58,7 @@ Deno.serve(async (_req) => {
     if (i + batch < (tasks || []).length) await new Promise(r => setTimeout(r, 500));
   }
 
-  console.log(`[backfill] DONE — synced=${synced} failed=${failed}`);
+  console.log(`[backfill] DONE -- synced=${synced} failed=${failed}`);
   return new Response(JSON.stringify({ ok: true, synced, failed }), {
     headers: { "Content-Type": "application/json" },
   });

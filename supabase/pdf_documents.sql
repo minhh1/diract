@@ -9,7 +9,7 @@
 --   browser. All reads/writes happen in API routes through the service-role
 --   client (`admin.storage.from('pdf-documents')`).
 --
--- Files live at: {companyId}/{documentId}.pdf — a save overwrites (upsert) the
+-- Files live at: {companyId}/{documentId}.pdf -- a save overwrites (upsert) the
 -- same object, so there's a single current version per document (no history).
 
 CREATE TABLE IF NOT EXISTS pdf_documents (

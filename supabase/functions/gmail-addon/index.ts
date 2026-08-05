@@ -26,7 +26,7 @@ async function isCompanyAdmin(email: string, companyId: string): Promise<boolean
   return data?.role === 'company_admin';
 }
 
-// Mirrors lib/schema/fieldCapabilities.ts (Next.js app) — kept in sync
+// Mirrors lib/schema/fieldCapabilities.ts (Next.js app) -- kept in sync
 // manually since this Deno function can't import from the app.
 const RELATION_FIELD_TYPES = ['table_relation', 'property', 'entity', 'project', 'link'];
 function isRelationFieldType(fieldType: string): boolean {
@@ -44,7 +44,7 @@ function isEmptyFieldValue(v: unknown): boolean {
 }
 
 // Relation field types that resolve to one of the three fixed system
-// tables, each with an obvious single identifying text column — table_relation
+// tables, each with an obvious single identifying text column -- table_relation
 // and link are excluded (no established identifying-column convention, and
 // unused on system-table custom fields as of writing) and stay blocked.
 const RESOLVABLE_RELATION_TABLES: Record<string, { table: string; nameColumn: string }> = {
@@ -58,7 +58,7 @@ function isResolvableRelationType(fieldType: string): boolean {
 
 // Resolves a typed name (or, for "property", a typed address) to a row in
 // the relevant system table without a search-and-pick UI (Google CardService
-// can't do live search) — mirrors lib/ai/actions.ts's
+// can't do live search) -- mirrors lib/ai/actions.ts's
 // resolveEntityByName/resolveProjectByName + pickBestMatch (used by the
 // Teams bot for the identical "no picker available" problem): a single
 // ilike candidate, or an exact case-insensitive match among several, is
@@ -66,16 +66,16 @@ function isResolvableRelationType(fieldType: string): boolean {
 // match, or several similarly-named candidates with none an exact match)
 // creates a new row rather than guessing which existing one was meant, and
 // flags it needs_review=true so it surfaces in that table's review banner
-// (components/GenericMasterTable.tsx) — the existing duplicate-
+// (components/GenericMasterTable.tsx) -- the existing duplicate-
 // reconciliation tool (Settings → Reconciliation) is what a user would then
 // use to merge it if it does turn out to be a duplicate.
-// Case-insensitive EXACT match (ilike with no wildcards) — checked first
+// Case-insensitive EXACT match (ilike with no wildcards) -- checked first
 // and separately from the fuzzy substring search below, because the DB's
 // own uniqueness guard on this table (e.g. entities' unique_entity_per_company)
 // keys off the exact name, not a substring. Two different relation fields
 // resolving the identical name on the same project (e.g. Client Name and
 // Debtor both "X Pty Ltd") is a completely ordinary case, not an edge case
-// — skipping this exact check and going straight to the fuzzy search below
+// -- skipping this exact check and going straight to the fuzzy search below
 // is what caused it to intermittently 500 with a duplicate-key error
 // instead of just linking to the same record for both fields.
 async function findExactRelationMatch(table: string, nameColumn: string, companyId: string, trimmed: string): Promise<{ id: string } | null> {
@@ -108,14 +108,14 @@ async function resolveOrCreateRelation(
     .ilike(config.nameColumn, `%${trimmed}%`);
 
   const list = (candidates || []) as any[];
-  // No exact-match branch needed here any more (handled above) — several
+  // No exact-match branch needed here any more (handled above) -- several
   // fuzzy candidates with none exact is genuinely ambiguous.
   const match = list.length === 1 ? list[0] : null;
   if (match) return { id: match.id, flagged: false };
 
   const reason = list.length > 1
-    ? `Created from Gmail — "${trimmed}" matched several existing records, none exactly: ${list.map((c) => c[config.nameColumn]).join(', ')}`
-    : `Created from Gmail — "${trimmed}" didn't match any existing record`;
+    ? `Created from Gmail -- "${trimmed}" matched several existing records, none exactly: ${list.map((c) => c[config.nameColumn]).join(', ')}`
+    : `Created from Gmail -- "${trimmed}" didn't match any existing record`;
   const insertRow: Record<string, unknown> = {
     company_id: companyId,
     [config.nameColumn]: trimmed,
@@ -132,9 +132,9 @@ async function resolveOrCreateRelation(
 
   if (error?.code === '23505') {
     // Lost a race against a concurrent request creating the same name (e.g.
-    // a double-tap on "Create project & label") — someone else's insert won
+    // a double-tap on "Create project & label") -- someone else's insert won
     // between our candidate search and our own insert. Re-query by exact
-    // name (not the fuzzy search — that's what let this fall through to an
+    // name (not the fuzzy search -- that's what let this fall through to an
     // error previously) rather than erroring: the row now exists, so use it
     // like a normal confident match.
     const retryExact = await findExactRelationMatch(config.table, config.nameColumn, companyId, trimmed);
@@ -204,7 +204,7 @@ async function logTaskActivity(params: { taskId: string; companyId: string; acto
 
 // Enqueues a label_sync job right after a label is created, instead of
 // relying solely on gmail-label-sync-cron's 15-minute sweep to notice the
-// new project_gmail_labels row — gmail-label-sync-worker runs every 1
+// new project_gmail_labels row -- gmail-label-sync-worker runs every 1
 // minute, so this gets a brand-new label synced within ~60s instead of up
 // to 15 minutes. Best-effort: never throws, since a missing job just means
 // the 15-min cron catches it later instead of blocking the label creation.
@@ -257,7 +257,7 @@ async function nameForTeamId(id: string | null | undefined): Promise<string> {
   return data?.team_name || 'Unknown';
 }
 
-// Watchers — extra people (beyond the assignee) who see a task and get
+// Watchers -- extra people (beyond the assignee) who see a task and get
 // notified, but aren't responsible for it. Grouped per task for list views.
 async function watchersByTaskIds(taskIds: string[]): Promise<Record<string, { id: string; name: string }[]>> {
   const result: Record<string, { id: string; name: string }[]> = {};
@@ -275,7 +275,7 @@ async function watchersByTaskIds(taskIds: string[]): Promise<Record<string, { id
 }
 
 // Per-task follow-up count (done entries) and next scheduled date (earliest
-// pending entry) — shared by /project-tasks, /all-tasks, /unallocated-tasks,
+// pending entry) -- shared by /project-tasks, /all-tasks, /unallocated-tasks,
 // run alongside their other independent lookups via Promise.all rather than
 // after them, since none of these three depend on each other.
 async function followUpSummary(taskIds: string[]): Promise<{ counts: Record<string, number>; scheduled: Record<string, string> }> {
@@ -294,7 +294,7 @@ async function followUpSummary(taskIds: string[]): Promise<{ counts: Record<stri
 }
 
 // Matter-number custom-field value per project, for the simplified task-row
-// view — shared by /all-tasks and /unallocated-tasks.
+// view -- shared by /all-tasks and /unallocated-tasks.
 async function matterNumbersForProjects(companyId: string, projectIds: string[]): Promise<Record<string, string>> {
   if (!projectIds.length) return {};
   const { data: matterField } = await db.from('company_custom_fields')
@@ -305,7 +305,7 @@ async function matterNumbersForProjects(companyId: string, projectIds: string[])
   return Object.fromEntries((values || []).map((v: any) => [v.record_id, v.value_text || '']));
 }
 
-// Company-scoped Gmail label settings — no calling-user data in here
+// Company-scoped Gmail label settings -- no calling-user data in here
 // (isAdmin is layered on by /label-settings itself), so this is safe to
 // share verbatim across every user of a company via /warm-cache.
 async function getLabelSettingsCore(companyId: string): Promise<{ parentLabel: string; parentCode: string; separator: string; tokens: string[] } | null> {
@@ -318,12 +318,12 @@ async function getLabelSettingsCore(companyId: string): Promise<{ parentLabel: s
   return {
     parentLabel: company.gmail_parent_label || 'Shared Emails',
     parentCode: company.gmail_parent_code || '',
-    separator: company.gmail_sublabel_separator || ' — ',
+    separator: company.gmail_sublabel_separator || ' -- ',
     tokens: company.gmail_label_tokens || ['project_name'],
   };
 }
 
-// Company-scoped project custom-field settings — likewise no calling-user
+// Company-scoped project custom-field settings -- likewise no calling-user
 // data (isAdmin is layered on by /project-field-settings itself).
 async function getProjectFieldsCore(companyId: string): Promise<{ fields: any[] }> {
   const { data: fields } = await db
@@ -354,7 +354,7 @@ async function getProjectFieldsCore(companyId: string): Promise<{ fields: any[] 
   };
 }
 
-// Company-scoped task-building blocks (profiles/statuses/teams/templates) —
+// Company-scoped task-building blocks (profiles/statuses/teams/templates) -
 // nothing here varies per calling user, so it's shared as-is via /warm-cache.
 async function getTaskContextCore(companyId: string) {
   const [
@@ -415,7 +415,7 @@ async function getTaskContextCore(companyId: string) {
   };
 }
 
-// Company-wide unallocated tasks — no calling-user data, shared as-is via
+// Company-wide unallocated tasks -- no calling-user data, shared as-is via
 // /warm-cache (only page 0 is worth pre-warming; deeper pages stay live).
 async function getUnallocatedTasksCore(companyId: string, limit: number, offset: number): Promise<{ tasks: any[]; limit: number; offset: number; totalCount: number | null; error?: string }> {
   const [
@@ -596,12 +596,12 @@ Deno.serve(async (req) => {
 
     // ── GET /warm-cache ─────────────────────────────────────────────
     // Called by the add-on's own time-based trigger (warmAddonCaches in
-    // gmail-addon.gs), not by any user action — bulk-fetches the
+    // gmail-addon.gs), not by any user action -- bulk-fetches the
     // company-scoped (never per-calling-user) data every real card build
     // reads, for every company with at least one connected Gmail user, so
     // the trigger's script-wide cache is warm before anyone opens the
     // add-on. Deliberately excludes anything that varies per calling user
-    // (isAdmin, per-assignee task lists) — those still need their own
+    // (isAdmin, per-assignee task lists) -- those still need their own
     // live/per-user-cached fetch.
     if (req.method === 'GET' && path === '/warm-cache') {
       const { data: connections } = await db
@@ -705,7 +705,7 @@ Deno.serve(async (req) => {
       const sortField = sortConfig?.sort_field || '__name__';
       const sortAsc = (sortConfig?.sort_direction || 'asc') === 'asc';
 
-      // Only sort by DB columns directly — custom field sorts done in memory
+      // Only sort by DB columns directly -- custom field sorts done in memory
       const dbSortField = sortField === '__name__' ? 'name'
         : sortField === 'status' ? 'status'
         : 'name'; // fallback, custom field sorted in memory
@@ -790,7 +790,7 @@ Deno.serve(async (req) => {
         console.log('[search-projects] cfDefs found:', cfDefs.length, cfDefs.map((f: any) => f.field_key));
 
         if (cfDefs.length) {
-          // Don't use .in(record_id, projectIds) — too many IDs hits URL limits
+          // Don't use .in(record_id, projectIds) -- too many IDs hits URL limits
           // Instead fetch all values for these fields and filter in memory
           const { data: cfVals, error: cfErr } = await db
             .from('company_custom_field_values')
@@ -912,7 +912,7 @@ Deno.serve(async (req) => {
 
       if (!projectName || !companyId) return json({ error: 'Missing required fields' }, 400, headers);
 
-      // Exact-name duplicate guard — case-insensitive (ilike with no
+      // Exact-name duplicate guard -- case-insensitive (ilike with no
       // wildcards), so "Smith v Jones" and "smith v jones" count as the same
       // matter. Only an exact match is blocked; anything less certain is
       // left for a human to notice and merge via Reconciliation.
@@ -972,7 +972,7 @@ Deno.serve(async (req) => {
 
       // Build label name
       const tokens: string[] = company?.gmail_label_tokens || ['project_name'];
-      const separator = company?.gmail_sublabel_separator || ' — ';
+      const separator = company?.gmail_sublabel_separator || ' -- ';
       const parentLabel = company?.gmail_parent_label || 'Shared Emails';
       const labelCode = await generateUniqueLabelCode(companyId);
 
@@ -1005,8 +1005,8 @@ Deno.serve(async (req) => {
         fieldValues[matterFieldForLabel.id] = matterNumber;
       }
 
-      // Resolvable relation fields (entity/property/project — e.g. "Client
-      // Name") arrive here as a typed name, not a record id — there's no
+      // Resolvable relation fields (entity/property/project -- e.g. "Client
+      // Name") arrive here as a typed name, not a record id -- there's no
       // search-and-pick UI in the add-on for relation fields. Resolve each
       // to a real row (creating one, flagged for review, when there's no
       // confident match) before the required-field check below and the
@@ -1025,7 +1025,7 @@ Deno.serve(async (req) => {
       // Property is a base column (projects.property_id), not a custom
       // field, so it's resolved separately from the loop above. Required
       // specifically for Conveyancing matters (see NewProjectModal.tsx for
-      // the same rule on the web-app side) — optional otherwise.
+      // the same rule on the web-app side) -- optional otherwise.
       let propertyId: string | null = null;
       if (propertyAddress) {
         const resolvedProperty = await resolveOrCreateRelation(companyId, 'property', propertyAddress, profile.id);
@@ -1043,7 +1043,7 @@ Deno.serve(async (req) => {
         return json({ error: 'Property is required for Conveyancing matters.' }, 400, headers);
       }
 
-      // Required-field check — relation-type fields OTHER than the
+      // Required-field check -- relation-type fields OTHER than the
       // resolvable ones (link/table_relation) have no input widget in the
       // add-on, so they're excluded from this check; a company with one of
       // those marked required can only create projects from the web app.
@@ -1106,7 +1106,7 @@ Deno.serve(async (req) => {
         if (cfErr) {
           await db.from('projects').delete().eq('id', project.id);
           const isDuplicate = cfErr.code === '23505' || cfErr.message.includes('unique') || cfErr.message.includes('Duplicate');
-          return json({ error: isDuplicate ? 'One of these values must be unique — it already exists on another project' : cfErr.message }, isDuplicate ? 409 : 500, headers);
+          return json({ error: isDuplicate ? 'One of these values must be unique -- it already exists on another project' : cfErr.message }, isDuplicate ? 409 : 500, headers);
         }
       }
 
@@ -1122,7 +1122,7 @@ Deno.serve(async (req) => {
 
       if (pglErr) {
         console.error('[create-project] project_gmail_labels insert failed:', pglErr.message);
-        // Roll back everything created so far — a project silently missing
+        // Roll back everything created so far -- a project silently missing
         // its label is worse than no project at all (see 2026-07-22 incident:
         // this insert's result was never checked, so the client was told
         // "success" while the label row never existed).
@@ -1194,7 +1194,7 @@ Deno.serve(async (req) => {
 
       // Ledger tables (see supabase/company_table_ledger.sql) can only be
       // written through insert_ledger_record's special balance/overdraw
-      // handling — not offered here, same as the web app's plain-insert path.
+      // handling -- not offered here, same as the web app's plain-insert path.
       const { data: tables } = await db
         .from('company_tables')
         .select('id, name, is_ledger')
@@ -1223,7 +1223,7 @@ Deno.serve(async (req) => {
       // Relation fields other than entity/property/project (need a
       // search-and-pick UI against other records, or in table_relation's
       // case an arbitrary custom table with no established identifying
-      // column) and formula fields (computed, not hand-entered — and this
+      // column) and formula fields (computed, not hand-entered -- and this
       // endpoint doesn't evaluate formulas) have no input widget in the
       // add-on. A required field of either kind means this table can't be
       // completed from Gmail at all.
@@ -1263,7 +1263,7 @@ Deno.serve(async (req) => {
 
       const { data: table } = await db.from('company_tables').select('id, is_ledger').eq('id', tableId).is('deleted_at', null).maybeSingle();
       if (!table) return json({ error: 'Table not found' }, 404, headers);
-      if (table.is_ledger) return json({ error: "Ledger tables can't be created from the add-on — use the web app." }, 400, headers);
+      if (table.is_ledger) return json({ error: "Ledger tables can't be created from the add-on -- use the web app." }, 400, headers);
 
       const { data: fields } = await db
         .from('company_table_fields')
@@ -1280,7 +1280,7 @@ Deno.serve(async (req) => {
       }
 
       // Resolvable relation fields (entity/property/project) arrive as a
-      // typed name, not a record id — resolve each to a real row before the
+      // typed name, not a record id -- resolve each to a real row before the
       // required-field/unique checks and value inserts below, which all
       // expect a real id (see resolveOrCreateRelation for the matching
       // logic and why it creates-and-flags rather than guessing).
@@ -1308,7 +1308,7 @@ Deno.serve(async (req) => {
 
       // Auto-numbered fields (e.g. invoice/lead numbers) are assigned
       // server-side so the sequence stays consecutive under concurrent
-      // writers — see supabase/company_table_field_sequences.sql.
+      // writers -- see supabase/company_table_field_sequences.sql.
       const withNumbers: Record<string, string> = { ...values };
       for (const field of allFields) {
         if (field.auto_number_prefix != null && isEmptyFieldValue(withNumbers[field.id])) {
@@ -1323,7 +1323,7 @@ Deno.serve(async (req) => {
         .select('id').single();
       if (recErr || !record) return json({ error: recErr?.message || 'Failed to create record' }, 500, headers);
 
-      // Atomically claim every is_unique field's value — see
+      // Atomically claim every is_unique field's value -- see
       // supabase/company_table_unique_locks.sql. On the first failure,
       // release everything already claimed by this call and roll back.
       const claimed: { fieldId: string; value: string }[] = [];
@@ -1334,7 +1334,7 @@ Deno.serve(async (req) => {
         if (!ok) {
           await Promise.all(claimed.map(c => db.rpc('release_unique_value', { p_field_id: c.fieldId, p_record_id: record.id, p_value: String(c.value) })));
           await db.from('company_table_records').delete().eq('id', record.id);
-          return json({ error: `"${field.label}" must be unique — this value is already used on another record.` }, 409, headers);
+          return json({ error: `"${field.label}" must be unique -- this value is already used on another record.` }, 409, headers);
         }
         claimed.push({ fieldId: field.id, value });
       }
@@ -1353,7 +1353,7 @@ Deno.serve(async (req) => {
         if (valErr) {
           console.error('[create-table-record] values insert failed:', valErr.message);
           await db.from('company_table_records').delete().eq('id', record.id);
-          return json({ error: 'Could not save this record — please try again.' }, 500, headers);
+          return json({ error: 'Could not save this record -- please try again.' }, 500, headers);
         }
       }
 
@@ -1389,7 +1389,7 @@ Deno.serve(async (req) => {
         .eq('id', companyId).single();
 
       const tokens: string[] = company?.gmail_label_tokens || ['project_name'];
-      const separator = company?.gmail_sublabel_separator || ' — ';
+      const separator = company?.gmail_sublabel_separator || ' -- ';
       const parentLabel = company?.gmail_parent_label || 'Shared Emails';
       const labelCode = await generateUniqueLabelCode(companyId);
 
@@ -1476,13 +1476,13 @@ Deno.serve(async (req) => {
     }
 
     // ── POST /request-archive ────────────────────────────────────
-    // Submits a closed-matter archive request for admin approval — never
+    // Submits a closed-matter archive request for admin approval -- never
     // archives directly. Lives in the generic archive_requests table (see
     // supabase/archive_requests.sql) as entity_table='gmail_project_archive',
     // reviewed from the unified Admin → Archive requests tab; approving one
     // calls enqueueProjectArchive (app/api/archive-requests/approve), which
     // is what actually enqueues gmail_sync_jobs. Was gmail_archive_requests,
-    // a Gmail-only silo — migrated onto the shared request/approval system
+    // a Gmail-only silo -- migrated onto the shared request/approval system
     // so admins have one place to review every kind of pending request.
     if (req.method === 'POST' && path === '/request-archive') {
       const body = await req.json();
@@ -1545,7 +1545,7 @@ Deno.serve(async (req) => {
         .eq('id', companyId).single();
 
       const tokens: string[] = company?.gmail_label_tokens || ['project_name'];
-      const separator = company?.gmail_sublabel_separator || ' — ';
+      const separator = company?.gmail_sublabel_separator || ' -- ';
       const parentLabel = company?.gmail_parent_label || 'Shared Emails';
 
       const results: any[] = [];
@@ -1820,7 +1820,7 @@ Deno.serve(async (req) => {
       }).select().single();
 
       // Process in background (Edge Functions can run async)
-      // We use waitUntil pattern — process immediately but don't await in response
+      // We use waitUntil pattern -- process immediately but don't await in response
       const projectIds = unlabelled.map((p: any) => p.id);
 
       // Start processing immediately
@@ -1863,7 +1863,7 @@ Deno.serve(async (req) => {
       const projectId = url.searchParams.get('projectId') || '';
       if (!projectId) return json({ error: 'Missing projectId' }, 400, headers);
 
-      // Matter number — a project-level custom field, same for every task
+      // Matter number -- a project-level custom field, same for every task
       // in this list, used by the simplified task-row view. This chain
       // (projects → company_custom_fields → company_custom_field_values)
       // doesn't depend on the tasks/statuses queries below, so all three run
@@ -2020,7 +2020,7 @@ Deno.serve(async (req) => {
       }).eq('id', taskId);
 
       if (error) return json({ error: error.message }, 500, headers);
-      // Sync calendar — mark complete or re-activate
+      // Sync calendar -- mark complete or re-activate
       triggerCalendarSync(taskId, isCompleted ? 'complete' : 'upsert');
       if (existingTask) {
         const actorId = await getProfileId(userEmail);
@@ -2031,7 +2031,7 @@ Deno.serve(async (req) => {
 
     // ── POST /add-follow-up ──────────────────────────────────────────
     // A task can be followed up more than once (e.g. chasing the same
-    // person repeatedly) — each log entry is its own row. awaiting_follow_up
+    // person repeatedly) -- each log entry is its own row. awaiting_follow_up
     // / follow_up_date on the task are kept as a denormalized "latest
     // state" cache so status badges elsewhere don't need to know about
     // the log table.
@@ -2147,7 +2147,7 @@ Deno.serve(async (req) => {
     }
 
     // ── POST /link-email ────────────────────────────────────────────
-    // Attaches (or replaces) the Gmail message a task references — lets a
+    // Attaches (or replaces) the Gmail message a task references -- lets a
     // user viewing a task open the email that prompted it.
     if (req.method === 'POST' && path === '/link-email') {
       const body = await req.json();
@@ -2321,7 +2321,7 @@ Deno.serve(async (req) => {
     }
 
     // ── GET /my-tasks ─────────────────────────────────────────────
-    // Returns tasks assigned to the authenticated user — due today or overdue
+    // Returns tasks assigned to the authenticated user -- due today or overdue
     // Designed for Loop app / external integrations
     if (req.method === 'GET' && path === '/my-tasks') {
       const userId = url.searchParams.get('userId') || '';
@@ -2396,7 +2396,7 @@ Deno.serve(async (req) => {
     }
 
     // ── GET /team-tasks ───────────────────────────────────────────
-    // Returns all tasks for all members of a company — for team digest
+    // Returns all tasks for all members of a company -- for team digest
     if (req.method === 'GET' && path === '/team-tasks') {
       const companyId = url.searchParams.get('companyId') || '';
       if (!companyId) return json({ error: 'Missing companyId' }, 400, headers);
@@ -2545,7 +2545,7 @@ Deno.serve(async (req) => {
     }
 
     // ── GET /all-tasks ──────────────────────────────────────────────
-    // Powers the Home card's "All My Tasks" section — the requesting user's
+    // Powers the Home card's "All My Tasks" section -- the requesting user's
     // own active tasks across every project, with each project's Gmail
     // label name (so users can tell at a glance which label/thread a task
     // belongs to). Paginated via limit/offset.
@@ -2638,7 +2638,7 @@ Deno.serve(async (req) => {
     }
 
     // ── GET /unallocated-tasks ────────────────────────────────────────
-    // Company-wide tasks with no assignee — these fall through every
+    // Company-wide tasks with no assignee -- these fall through every
     // per-person view (including "All My Tasks"), so they need their own
     // place to surface. Paginated via limit/offset, same shape as /all-tasks.
     if (req.method === 'GET' && path === '/unallocated-tasks') {
@@ -2722,7 +2722,7 @@ Deno.serve(async (req) => {
 // If execution limit is near, saves progress and lets next invocation continue.
 
 const BATCH_SIZE = 20;
-const MAX_RUNTIME_MS = 100000; // 100s — stop before Supabase's 150s limit
+const MAX_RUNTIME_MS = 100000; // 100s -- stop before Supabase's 150s limit
 
 async function processImportJob(
   jobId: string,
@@ -2745,7 +2745,7 @@ async function processImportJob(
       .eq('id', companyId).single();
 
     const tokens: string[] = company?.gmail_label_tokens || ['project_name'];
-    const separator = company?.gmail_sublabel_separator || ' — ';
+    const separator = company?.gmail_sublabel_separator || ' -- ';
     const parentLabel = company?.gmail_parent_label || 'Shared Emails';
 
     const { data: matterField } = await db
@@ -2768,15 +2768,15 @@ async function processImportJob(
     console.log(`[import-job] Starting from ${processed}/${projectIds.length}`);
 
     for (let i = 0; i < remaining.length; i++) {
-      // Timeout guard — stop before execution limit
+      // Timeout guard -- stop before execution limit
       if (Date.now() - startTime > MAX_RUNTIME_MS) {
-        console.log(`[import-job] Timeout guard hit at ${processed}/${projectIds.length} — saving progress`);
+        console.log(`[import-job] Timeout guard hit at ${processed}/${projectIds.length} -- saving progress`);
         await db.from('label_import_jobs').update({
           processed,
           created,
           existed,
           status: 'paused',
-          error: `Paused at ${processed}/${projectIds.length} — will resume on next run`,
+          error: `Paused at ${processed}/${projectIds.length} -- will resume on next run`,
           updated_at: new Date().toISOString(),
         }).eq('id', jobId);
         return;
@@ -2922,7 +2922,7 @@ async function generateUniqueLabelCode(companyId: string): Promise<string> {
     for (let i = 0; i < 5; i++) {
       code += chars[Math.floor(Math.random() * chars.length)];
     }
-    // Check collision — exclude labels from deleted projects
+    // Check collision -- exclude labels from deleted projects
     const { data } = await db
       .from('project_gmail_labels')
       .select('id, projects!inner(deleted_at)')
@@ -2938,7 +2938,7 @@ async function generateUniqueLabelCode(companyId: string): Promise<string> {
 }
 
 function generateLabelCode(): string {
-  // Synchronous fallback — use for contexts where async isn't available
+  // Synchronous fallback -- use for contexts where async isn't available
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
   for (let i = 0; i < 5; i++) {

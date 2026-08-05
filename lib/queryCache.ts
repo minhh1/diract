@@ -4,7 +4,7 @@
 // - On subsequent calls: returns cached instantly, fetches fresh in background, updates if changed
 
 const CACHE_VERSION = 'v2'; // bumped to clear stale cross-company cached data
-const TTL_MS = 5 * 60 * 1000; // 5 minutes — after this, cache is considered stale
+const TTL_MS = 5 * 60 * 1000; // 5 minutes -- after this, cache is considered stale
 
 interface CacheEntry<T> {
   data: T;
@@ -91,7 +91,7 @@ export function clearStaleCrossCompanyCache(): void {
   Object.keys(localStorage)
     .filter(k => {
       if (!k.startsWith('nk_cache_rows_')) return false;
-      // New format: nk_cache_rows_<companyId>_<table> — companyId is a UUID
+      // New format: nk_cache_rows_<companyId>_<table> -- companyId is a UUID
       const rest = k.replace('nk_cache_rows_', '');
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}/.test(rest);
       return !isUUID; // remove old non-UUID-prefixed keys
@@ -159,7 +159,7 @@ export async function swr<T>(
     fetchFresh(); // fire and forget
     return cached;
   } else {
-    // No cache — must wait for fresh data
+    // No cache -- must wait for fresh data
     try {
       const fresh = await dedupedFetch();
       writeCache(key, fresh);

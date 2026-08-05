@@ -152,11 +152,11 @@ export default function PublicBudgetSandbox() {
                         className="w-28 text-right px-2 py-1 border border-transparent hover:border-slate-200 focus:border-indigo-400 rounded-lg outline-none bg-transparent" />
                     </td>
                     <td className="px-2 py-1.5 text-right">
-                      <input type="number" value={l.actual ?? ""} onChange={e => setAmount(l.id, "actual", e.target.value)} placeholder="—"
+                      <input type="number" value={l.actual ?? ""} onChange={e => setAmount(l.id, "actual", e.target.value)} placeholder="-"
                         className="w-28 text-right px-2 py-1 border border-transparent hover:border-slate-200 focus:border-indigo-400 rounded-lg outline-none bg-transparent" />
                     </td>
                     <td className={`px-2 py-1.5 text-right ${variance == null ? "text-slate-300" : variance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                      {variance == null ? "—" : `${variance > 0 ? "+" : ""}${money(variance)}`}
+                      {variance == null ? "-" : `${variance > 0 ? "+" : ""}${money(variance)}`}
                     </td>
                     <td className="px-2 py-1.5 text-right">
                       <button onClick={() => remove(l.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>

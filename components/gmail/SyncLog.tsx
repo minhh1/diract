@@ -45,7 +45,7 @@ export default function SyncLog({ isAdmin }: { isAdmin: boolean }) {
     setError(null);
 
     try {
-      // Fetch logs — simple query without joins to avoid RLS issues
+      // Fetch logs -- simple query without joins to avoid RLS issues
       const { data: rawLogs, error: logsError } = await supabase
         .from('gmail_sync_log')
         .select('*')

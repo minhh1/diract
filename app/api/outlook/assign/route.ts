@@ -1,10 +1,10 @@
 // app/api/outlook/assign/route.ts
-// Origination point for the Outlook async label-sync engine — the analog
+// Origination point for the Outlook async label-sync engine -- the analog
 // of gmail-addon's create-project/import flow (the thing that mints the
 // first label copy and kicks enqueueLabelSyncJob off). Applies the
 // category + folder to the ACTING user's own message synchronously, then
 // inserts one outlook_sync_jobs row so outlook-label-sync-worker propagates
-// it to the rest of the team asynchronously — this is deliberately NOT a
+// it to the rest of the team asynchronously -- this is deliberately NOT a
 // synchronous loop over every teammate (that's the lighter Gmail in-app-
 // client pattern the user explicitly said not to replicate).
 import { NextRequest, NextResponse } from "next/server";
@@ -24,7 +24,7 @@ async function buildCategoryName(
     .eq("id", companyId).single();
 
   const tokens: string[] = company?.outlook_label_tokens?.length ? company.outlook_label_tokens : ["project_name"];
-  const separator: string = company?.outlook_sublabel_separator || " — ";
+  const separator: string = company?.outlook_sublabel_separator || " -- ";
 
   const { data: cfValues } = await supabase
     .from("company_custom_field_values")
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     const folderName = company?.outlook_parent_folder || "Shared Emails";
 
     // Persist the folder name (and mark the company as Outlook-active) on
-    // first use — outlook-label-sync-cron uses outlook_parent_folder being
+    // first use -- outlook-label-sync-cron uses outlook_parent_folder being
     // set as its signal for "this company has Outlook labels to sync",
     // mirroring how gmail-label-sync-cron keys off gmail_parent_label.
     if (!company?.outlook_parent_folder) {

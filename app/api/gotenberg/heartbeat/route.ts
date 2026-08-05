@@ -1,12 +1,12 @@
 // app/api/gotenberg/heartbeat/route.ts
-// Cron-only — pings the docservice/Gotenberg doc-conversion host's /health
+// Cron-only -- pings the docservice/Gotenberg doc-conversion host's /health
 // endpoint and records a cron_heartbeats row, same CRON_SECRET bearer-auth
 // pattern as app/api/ai/usage/sweep/route.ts and
 // app/api/virtual-computers/sweep/route.ts. Distinct from the live,
-// on-demand check in app/api/admin/health/check/route.ts (checkGotenberg) —
+// on-demand check in app/api/admin/health/check/route.ts (checkGotenberg) -
 // that one only runs when an admin has the Platform Health tab open; this
 // one runs on a schedule (see .github/workflows/gotenberg-heartbeat.yml,
-// every 10 minutes — Vercel Cron on the Hobby plan only supports once-daily
+// every 10 minutes -- Vercel Cron on the Hobby plan only supports once-daily
 // jobs) so an outage shows up in the Services sub-tab even if nobody's
 // looking, and a stale/never-run row is itself a signal something's wrong.
 import { NextResponse } from "next/server";

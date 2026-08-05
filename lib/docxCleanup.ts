@@ -11,7 +11,7 @@ import PizZip from "pizzip";
 const TAG_RE = /\{\{\s*[^{}]+?\s*\}\}/g;
 const PARA_RE = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
 
-// Must run on the ORIGINAL (pre-render) word/document.xml — after rendering,
+// Must run on the ORIGINAL (pre-render) word/document.xml -- after rendering,
 // a paragraph that's now blank could either have always been blank (leave
 // it alone) or have contained only a tag that rendered empty (remove it).
 // Only the pre-render text can tell these apart.
@@ -36,14 +36,14 @@ function cleanupRenderedXml(renderedDocXml: string, soleTagParagraphIndexes: Set
     const isSoleTagPara = soleTagParagraphIndexes.has(idx);
     idx++;
     if (!isSoleTagPara) return block;
-    // Confirm it actually rendered blank before removing — a sole-tag
+    // Confirm it actually rendered blank before removing -- a sole-tag
     // paragraph whose tag got a real value should stay exactly as is.
     const visibleText = block.replace(/<[^>]+>/g, "").trim();
     return visibleText === "" ? "" : block;
   });
 
   // Inline blanks (a tag inside a sentence rendering to "") leave a doubled
-  // space rather than a whole empty paragraph — collapse those too.
+  // space rather than a whole empty paragraph -- collapse those too.
   out = out.replace(/(<w:t[^>]*>)([^<]*)(<\/w:t>)/g, (_full, open, text, close) => {
     return `${open}${text.replace(/ {2,}/g, " ")}${close}`;
   });

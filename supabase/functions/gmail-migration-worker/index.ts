@@ -1,9 +1,9 @@
 // supabase/functions/gmail-migration-worker/index.ts
-// Every 5 min — the dedicated slow lane for LARGE (job, user) backlogs
+// Every 5 min -- the dedicated slow lane for LARGE (job, user) backlogs
 // (message_count > MIGRATION_THRESHOLD in gmail-email-sync-worker /
 // gmail-label-sync-worker, see 20260804040000_gmail_migration_lane.sql for
 // the incident this fixes), routed here directly instead of ever being
-// attempted by the fast lane and quarantining into gmail_sync_failures —
+// attempted by the fast lane and quarantining into gmail_sync_failures -
 // that table stays reserved for genuinely transient failures (rate limits,
 // timeouts) that gmail-sync-recovery-worker can clear in one retry, so a
 // one-time historical backlog can never again starve daily sync for
@@ -11,7 +11,7 @@
 //
 // Structurally a near-copy of gmail-sync-recovery-worker's per-message loop
 // (same BudgetDeferredError mid-mailbox deferral, same claim-based import
-// idempotency) — the two are kept separate rather than merged into one
+// idempotency) -- the two are kept separate rather than merged into one
 // parameterised worker because they read from different tables with
 // different queueing semantics (this one needs message_count for its
 // smallest-first sort; recovery needs job_id/user_id to look up
@@ -34,7 +34,7 @@ const MAX_ATTEMPTS = 3;
 // calls in below -- applying labels in chunks like this instead of one at a
 // time is what actually lets a fair-share slice make a real dent.
 const APPLY_CHUNK_SIZE = 25;
-// Bigger than recovery's 100s — this worker exists specifically to make a
+// Bigger than recovery's 100s -- this worker exists specifically to make a
 // dedicated dent in large backlogs, not to leave headroom for something
 // else sharing the tick.
 const TIME_BUDGET_MS = 130_000;
@@ -262,7 +262,7 @@ async function logActivity(row: Record<string, unknown>): Promise<void> {
 }
 
 // Same idempotency guard as gmail-email-sync-processor / gmail-sync-recovery-worker
-// (see supabase/migrations/20260730170000_gmail_import_claims.sql) — this
+// (see supabase/migrations/20260730170000_gmail_import_claims.sql) -- this
 // worker, the fast processors, and the recovery worker can all attempt to
 // import the same message for the same user, so the claim (not just the
 // per-user Gmail lock) is what actually prevents a duplicate copy landing
@@ -279,7 +279,7 @@ async function releaseImportClaim(userId: string, msgId: string): Promise<void> 
 
 // Thrown when a single migration job's own work (hundreds/thousands of
 // messages) alone exceeds the tick's time budget. Real incremental
-// progress, not a broken account — Gmail's label state is the checkpoint,
+// progress, not a broken account -- Gmail's label state is the checkpoint,
 // so the next tick resumes wherever this one left off. Doesn't count
 // against MAX_ATTEMPTS, so a big mailbox can take as many ticks as it needs
 // without wrongly escalating to persistent_failure.
@@ -322,7 +322,7 @@ Deno.serve(async (_req) => {
   const t0 = Date.now();
 
   if (!(await acquireLock())) {
-    console.log("[migration-worker] Previous tick still running — skipping");
+    console.log("[migration-worker] Previous tick still running -- skipping");
     return respond({ ok: true, skipped: "already_running" });
   }
 
@@ -354,7 +354,7 @@ async function runMigration(t0: number): Promise<Response> {
     const item = pending[i];
     const elapsed = Date.now() - t0;
     if (elapsed > TIME_BUDGET_MS) {
-      console.log(`[migration-worker] Time budget reached — ${pending.length - processed} untouched, deferring to next tick`);
+      console.log(`[migration-worker] Time budget reached -- ${pending.length - processed} untouched, deferring to next tick`);
       break;
     }
     // Fair-share pacing: split whatever's left of the tick budget across
@@ -362,7 +362,7 @@ async function runMigration(t0: number): Promise<Response> {
     // of letting one mailbox run against the FULL remaining budget. A
     // deferral doesn't count against MAX_ATTEMPTS (see BudgetDeferredError
     // below), so an item that never quite finishes within its slice keeps
-    // re-sorting to the front of next tick's smallest-first batch — without
+    // re-sorting to the front of next tick's smallest-first batch -- without
     // this, that one item can burn the entire tick every time and starve
     // every other item behind it indefinitely. Recomputed each iteration
     // (not fixed once upfront) so an item that finishes early hands its
@@ -373,7 +373,15 @@ async function runMigration(t0: number): Promise<Response> {
     const {
       id: itemId, company_id: companyId, source_job_id: sourceJobId, job_type: jobType,
       project_id: projectId, user_id: userId, label_code: labelCode, total_users: totalUsers, attempts,
+      confirmed_applied_ids: confirmedAppliedIdsRaw,
     } = item;
+    // Message ids this item has already successfully called applyLabel on
+    // in a PRIOR tick -- excluded from toApply below regardless of what a
+    // fresh Gmail list read says, since that read isn't reliably
+    // consistent under sustained polling (see this migration's own
+    // comment). Mutated in place as chunks succeed and persisted back to
+    // the row so it survives into the next tick even if this one defers.
+    const confirmedAppliedIds = new Set<string>(Array.isArray(confirmedAppliedIdsRaw) ? confirmedAppliedIdsRaw : []);
     processed++;
     console.log(`[migration-worker] Processing item=${itemId} job=${sourceJobId} user=${userId} type=${jobType} messages=${item.message_count} attempt=${attempts + 1}/${MAX_ATTEMPTS} budget=${Math.round(itemBudgetMs / 1000)}s`);
 
@@ -382,7 +390,7 @@ async function runMigration(t0: number): Promise<Response> {
     try {
       const { data: job } = await db.from("gmail_sync_jobs").select("*").eq("id", sourceJobId).maybeSingle();
       if (!job) {
-        // Parent job no longer exists (e.g. project/label deleted) — nothing left to migrate
+        // Parent job no longer exists (e.g. project/label deleted) -- nothing left to migrate
         await db.from("gmail_migration_jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", itemId);
         done++;
         continue;
@@ -419,9 +427,13 @@ async function runMigration(t0: number): Promise<Response> {
             // ticks for no real reason. Defer instead, same non-punishing
             // retry as a budget timeout -- this genuinely isn't this item's
             // fault.
-            if (!complete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) — will retry next tick`);
+            if (!complete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) -- will retry next tick`);
             const gmailMsgSet = new Set(currentlyLabelled);
-            const toApply = dbMsgIds.filter((id: string) => !gmailMsgSet.has(id));
+            // Excludes confirmedAppliedIds too, not just the live list -- a
+            // message this item already succeeded on in a prior tick never
+            // goes back into toApply, even if this tick's list read is one
+            // of the ones that (transiently, wrongly) omits it.
+            const toApply = dbMsgIds.filter((id: string) => !gmailMsgSet.has(id) && !confirmedAppliedIds.has(id));
             // Chunked + parallel, same pattern deleteGmailLabel already uses
             // below -- applying one at a time sequentially meant a mailbox
             // with real per-call latency (large/archive mailboxes especially)
@@ -429,9 +441,21 @@ async function runMigration(t0: number): Promise<Response> {
             // messages, never converging even across many ticks.
             const applyFailures: { msgId: string; status?: number; error?: string }[] = [];
             for (let c = 0; c < toApply.length; c += APPLY_CHUNK_SIZE) {
-              if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${toApply.length - c} of ${toApply.length} messages remaining) — will resume next tick`);
+              if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${toApply.length - c} of ${toApply.length} messages remaining) -- will resume next tick`);
               const results = await Promise.all(toApply.slice(c, c + APPLY_CHUNK_SIZE).map(msgId => applyLabel(token, msgId, labelId)));
-              for (const r of results) if (!r.ok) applyFailures.push(r);
+              let chunkHadNewConfirmations = false;
+              for (const r of results) {
+                if (r.ok) { confirmedAppliedIds.add(r.msgId); chunkHadNewConfirmations = true; }
+                else applyFailures.push(r);
+              }
+              // Persisted after every chunk (not just once at the end) so a
+              // later defer/throw in this same tick, or the isolate simply
+              // running out of platform time, doesn't lose confirmations
+              // that already genuinely happened.
+              if (chunkHadNewConfirmations) {
+                await db.from("gmail_migration_jobs")
+                  .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", itemId);
+              }
             }
             if (applyFailures.length) {
               console.error(`[migration-worker] applyLabel failed for ${applyFailures.length}/${toApply.length} messages on item=${itemId}:`, JSON.stringify(applyFailures.slice(0, 5)));
@@ -470,14 +494,19 @@ async function runMigration(t0: number): Promise<Response> {
           const { ids: currentlyLabelled, complete: labelListComplete } = await getMessagesWithLabel(token, labelId);
           // Same reasoning as the label_sync branch above -- an incomplete
           // list must not be read as "none of these have the label yet".
-          if (!labelListComplete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) — will retry next tick`);
+          if (!labelListComplete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) -- will retry next tick`);
           const labelled = new Set(currentlyLabelled);
           for (const msgId of msgIds) {
-            if (labelled.has(msgId)) continue;
-            if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${msgIds.length} messages) — will resume next tick`);
+            if (labelled.has(msgId) || confirmedAppliedIds.has(msgId)) continue;
+            if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${msgIds.length} messages) -- will resume next tick`);
             const hasMsg = await userHasMessage(token, msgId);
             if (hasMsg) {
-              await applyLabel(token, msgId, labelId);
+              const result = await applyLabel(token, msgId, labelId);
+              if (result.ok) {
+                confirmedAppliedIds.add(msgId);
+                await db.from("gmail_migration_jobs")
+                  .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", itemId);
+              }
               continue;
             }
             const filerToken = sourceTokensByUserId[filerByMsgId[msgId]];
@@ -493,7 +522,7 @@ async function runMigration(t0: number): Promise<Response> {
         throw new Error(`Migration not supported for job_type "${jobType}"`);
       }
 
-      // Success — resume this user in their ORIGINAL job (same
+      // Success -- resume this user in their ORIGINAL job (same
       // completed_users bookkeeping the fast lane and recovery worker use)
       // and mark this migration item done.
       await markUserComplete(sourceJobId, userId, totalUsers);
@@ -511,10 +540,10 @@ async function runMigration(t0: number): Promise<Response> {
     } catch (err: any) {
       if (err?.deferred) {
         await db.from("gmail_migration_jobs").update({
-          status: "pending", last_error: err.message || "Deferred — resuming next tick", updated_at: new Date().toISOString(),
+          status: "pending", last_error: err.message || "Deferred -- resuming next tick", updated_at: new Date().toISOString(),
         }).eq("id", itemId);
         deferred++;
-        console.log(`[migration-worker] ⏸ Deferred (not counted as a failed attempt): ${itemId} — ${err.message}`);
+        console.log(`[migration-worker] ⏸ Deferred (not counted as a failed attempt): ${itemId} -- ${err.message}`);
         continue;
       }
 
@@ -533,14 +562,14 @@ async function runMigration(t0: number): Promise<Response> {
           project_id: projectId, gmail_label_name: item.gmail_label_name,
           target_user_id: userId, details: { job_type: jobType, error: err.message, lane: "migration" },
         });
-        console.error(`[migration-worker] ✗ Escalated to persistent_failure: ${itemId} — ${err.message}`);
+        console.error(`[migration-worker] ✗ Escalated to persistent_failure: ${itemId} -- ${err.message}`);
       } else {
-        console.error(`[migration-worker] ✗ Retry failed (${nextAttempts}/${MAX_ATTEMPTS}): ${itemId} — ${err.message}`);
+        console.error(`[migration-worker] ✗ Retry failed (${nextAttempts}/${MAX_ATTEMPTS}): ${itemId} -- ${err.message}`);
       }
     }
   }
 
-  console.log(`[migration-worker] DONE in ${Date.now() - t0}ms — processed=${processed} done=${done} escalated=${escalated} deferred=${deferred}`);
+  console.log(`[migration-worker] DONE in ${Date.now() - t0}ms -- processed=${processed} done=${done} escalated=${escalated} deferred=${deferred}`);
   await heartbeat("gmail-migration-worker", Date.now() - t0, { processed, done, escalated, deferred });
   return respond({ ok: true, processed, done, escalated, deferred });
 }

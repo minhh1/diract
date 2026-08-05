@@ -1,5 +1,5 @@
 // app/api/health/route.ts
-// Baseline self-check for this Next.js deployment itself — used as the
+// Baseline self-check for this Next.js deployment itself -- used as the
 // "internal" target by the Platform Health tab's live heartbeat check
 // (app/api/admin/health/check/route.ts). Deliberately returns no sensitive
 // data (no auth required) so it can double as an external uptime-monitor

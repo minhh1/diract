@@ -124,7 +124,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
     const rows: InvoiceRow[] = [...byRecord.entries()].map(([id, row]) => ({
       id,
       invoiceNumber: row.invoice_number || '',
-      debtorName: (debtorIdsByRecord.get(id) || []).map(did => debtorNameById.get(did)).filter(Boolean).join(', ') || '—',
+      debtorName: (debtorIdsByRecord.get(id) || []).map(did => debtorNameById.get(did)).filter(Boolean).join(', ') || '-',
       debtorIds: debtorIdsByRecord.get(id) || [],
       issueDate: row.issue_date || null,
       dueDate: row.due_date || null,
@@ -305,8 +305,8 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
                 <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                   <td className="px-4 py-2.5 font-medium text-slate-700">{inv.invoiceNumber}</td>
                   <td className="px-4 py-2.5 text-slate-600">{inv.debtorName}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{inv.issueDate || '—'}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{inv.dueDate || '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{inv.issueDate || '-'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{inv.dueDate || '-'}</td>
                   <td className="px-4 py-2.5">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_BADGE[inv.status] || 'bg-slate-100 text-slate-500'}`}>
                       {inv.status}

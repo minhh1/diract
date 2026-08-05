@@ -54,7 +54,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Gmail add-on callout — a minor feature next to the rest of the
+      {/* Gmail add-on callout -- a minor feature next to the rest of the
           platform, so it's a small mention down here rather than a
           headline spotlight row. */}
       <section className="py-24 px-6">

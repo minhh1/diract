@@ -34,7 +34,7 @@ export function useFieldConstraints(companyId: string, tableName: string) {
     return data as ConstraintResult;
   }, [companyId, tableName]);
 
-  // Check multiple fields at once — returns first violation found
+  // Check multiple fields at once -- returns first violation found
   const checkConstraints = useCallback(async (
     fields: { key: string; value: string }[],
     excludeRecordId?: string

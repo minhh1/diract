@@ -135,22 +135,22 @@ export default function TrustReceiptsCashBookWidget({ records, trustAccountName 
               return (
                 <tr key={r.id} className="border-b border-slate-50">
                   <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{formatDateAU(r.values.date)}</td>
-                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">{r.values.receipt_number || '—'}</td>
-                  <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{r.values.payment_method || '—'}</td>
-                  <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || '—'}</td>
-                  <td className="px-4 py-2 text-slate-600">{r.values.purpose || '—'}</td>
-                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">{matterNumbers.get(matterId) || '—'}</td>
-                  <td className="px-4 py-2 text-slate-600">{clientNames.get(clientId) || '—'}</td>
-                  <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{matterTypes.get(matterId) || '—'}</td>
+                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">{r.values.receipt_number || '-'}</td>
+                  <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{r.values.payment_method || '-'}</td>
+                  <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || '-'}</td>
+                  <td className="px-4 py-2 text-slate-600">{r.values.purpose || '-'}</td>
+                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">{matterNumbers.get(matterId) || '-'}</td>
+                  <td className="px-4 py-2 text-slate-600">{clientNames.get(clientId) || '-'}</td>
+                  <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{matterTypes.get(matterId) || '-'}</td>
                   <td className="px-4 py-2 text-slate-600">
                     {matterId ? (
                       <button onClick={() => router.push(`/dashboard/projects?id=${matterId}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
-                        {matterNames.get(matterId) || '—'}
+                        {matterNames.get(matterId) || '-'}
                       </button>
-                    ) : '—'}
+                    ) : '-'}
                   </td>
                   <td className="px-4 py-2 text-right font-semibold text-slate-900 whitespace-nowrap">{aud.format(Number(r.values.amount_in) || 0)}</td>
-                  <td className="px-4 py-2 text-center text-slate-400">{r.values.reconciled_in ? '✓' : '—'}</td>
+                  <td className="px-4 py-2 text-center text-slate-400">{r.values.reconciled_in ? '✓' : '-'}</td>
                 </tr>
               );
             })}

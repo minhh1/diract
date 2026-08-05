@@ -2,7 +2,7 @@
 -- target user's mailbox at once, across BOTH dispatchers (label-sync and
 -- email-sync run as separate functions/isolates, so this has to be a
 -- shared, DB-backed lock, not an in-process one). Gmail's "Too many
--- concurrent requests for user" (429) is a per-ACCOUNT ceiling — a user
+-- concurrent requests for user" (429) is a per-ACCOUNT ceiling -- a user
 -- who's a member of several active matters can otherwise be the target of
 -- multiple simultaneous processor calls (one per job), each individually
 -- respecting its own dispatcher's pacing/concurrency but with no

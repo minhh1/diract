@@ -92,7 +92,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
       return;
     }
 
-    // Exact-name duplicate guard — case-insensitive, so "Smith v Jones" and
+    // Exact-name duplicate guard -- case-insensitive, so "Smith v Jones" and
     // "smith v jones" count as the same matter. Only an exact match is
     // blocked; anything less certain is left for a human to notice and
     // merge via Reconciliation.
@@ -173,7 +173,7 @@ export default function NewProjectModal({ isOpen, onClose, onRefresh }: Props) {
         }
       }
 
-      // Best-effort — a project should still count as created even if Gmail
+      // Best-effort -- a project should still count as created even if Gmail
       // label setup fails (e.g. company hasn't configured Gmail sync yet).
       if (proj) {
         fetch('/api/gmail/create-project-label', {

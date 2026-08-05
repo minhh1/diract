@@ -54,7 +54,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
     .filter(id => id !== task.assignee_id)
     .map(id => profiles.find((p: any) => p.id === id))
     .filter(Boolean);
-  // "Cannot happen without" — every prerequisite task_dependencies row must be
+  // "Cannot happen without" -- every prerequisite task_dependencies row must be
   // completed before this task can be marked done (hard-blocked, not just a
   // warning). Deleted prerequisite tasks fall out of `allTasks` and so no
   // longer block anything, matching task_dependencies.sql's comment on
@@ -174,7 +174,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
   const dependsOnIds: string[] = task.id ? (dependenciesByTask?.[task.id] || []) : [];
   const dependsOnTasks = dependsOnIds.map(id => (allTasks || []).find((t: any) => t.id === id)).filter(Boolean);
   // Only earlier-created, not-already-linked, other tasks in this project are offerable
-  // — deliberately no cycle detection beyond excluding itself (task_dependencies.sql's
+  // -- deliberately no cycle detection beyond excluding itself (task_dependencies.sql's
   // CHECK constraint blocks self-reference at the DB level too), matching the scope
   // called out when this feature was designed: a simple prerequisite set, not a full
   // DAG editor with cycle prevention.
@@ -234,7 +234,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Assignee</p>
             <select value={draft.assignee_id || ''} onChange={e => set({ assignee_id: e.target.value || null })}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-              <option value="">— Unassigned —</option>
+              <option value="">- Unassigned -</option>
               {profiles.map((p: any) => <option key={p.id} value={p.id}>{p.full_name || p.email}</option>)}
             </select>
           </div>
@@ -242,7 +242,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Assigned team</p>
             <select value={draft.assigned_team_id || ''} onChange={e => set({ assigned_team_id: e.target.value || null })}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-              <option value="">— No team —</option>
+              <option value="">- No team -</option>
               {teams.map((t: any) => <option key={t.id} value={t.id}>{t.team_name}</option>)}
             </select>
           </div>
@@ -338,7 +338,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
                 <div className="flex items-center gap-2">
                   <select value={addDependencyId} onChange={e => setAddDependencyId(e.target.value)}
                     className="flex-1 px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none bg-white">
-                    <option value="">— Select a task —</option>
+                    <option value="">- Select a task -</option>
                     {dependencyOptions.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                   <button onClick={() => { if (!addDependencyId) return; onAddDependency(task.id, addDependencyId); setAddDependencyId(''); }}
@@ -399,20 +399,20 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   const [showCompletedThisWeek, setShowCompletedThisWeek] = useState(false);
   const [showCompletedOlder, setShowCompletedOlder] = useState(false);
   // Time & Fee Entries is a law-firm-only custom table (installed from the Law Firm
-  // template, slug 'time-fee-entries') — most companies won't have it at all, in which
+  // template, slug 'time-fee-entries') -- most companies won't have it at all, in which
   // case timeFeesTable stays null and the per-task "Add to Time & Fees" action is hidden
   // entirely rather than shown disabled.
   const [timeFeesTable, setTimeFeesTable] = useState<CustomTable | null>(null);
   const [timeFeesFields, setTimeFeesFields] = useState<CustomTableField[]>([]);
   const [convertingTask, setConvertingTask] = useState<Task | null>(null);
   // Users in this company with a connected Gmail/Calendar account (see
-  // company_gmail_connections — a view bypassing user_gmail_tokens' own-row-only RLS,
+  // company_gmail_connections -- a view bypassing user_gmail_tokens' own-row-only RLS,
   // scoped to the caller's company). Drives whether the per-task "Add to calendar"
   // action shows at all: only when that task's assignee has a calendar to add it to.
   const [connectedAssigneeIds, setConnectedAssigneeIds] = useState<Set<string>>(new Set());
   const [syncingTaskId, setSyncingTaskId] = useState<string | null>(null);
   // taskId -> ids of tasks it depends on (task_dependencies.task_id = this task,
-  // .depends_on_task_id = the prerequisite) — AND semantics, every one must be
+  // .depends_on_task_id = the prerequisite) -- AND semantics, every one must be
   // completed before this task can be. See task_dependencies.sql.
   const [dependenciesByTask, setDependenciesByTask] = useState<Record<string, string[]>>({});
 
@@ -487,13 +487,13 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   };
 
   // Single project-relation field on Time & Fee Entries (see relationCandidates'
-  // convention — the same one RecordDashboardTab auto-detects a matter field by).
+  // convention -- the same one RecordDashboardTab auto-detects a matter field by).
   // description is matched by field_key rather than auto-detected since text fields
   // aren't uniquely typed; if a company renamed/removed it, the entry still opens
   // with the matter locked in, just without a prefilled/AI-rewritable description.
   const timeFeesMatterFieldKey = relationCandidates(timeFeesFields, 'projects')[0]?.field_key;
   const timeFeesDescriptionFieldKey = timeFeesFields.find(f => f.field_key === 'description')?.field_key;
-  // Invoice is assigned during billing, not when logging the entry — never asked for here.
+  // Invoice is assigned during billing, not when logging the entry -- never asked for here.
   const timeEntryFields = timeFeesFields.filter(f => f.field_key !== 'invoice');
 
   const handleCreateTimeEntry = async (values: Record<string, any>): Promise<string | null> => {
@@ -507,7 +507,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   };
 
   // Fires the same calendar-sync edge function the public tasks page and Gmail Add-on
-  // already trigger on save — ChecklistTab itself never does, so this is the only way a
+  // already trigger on save -- ChecklistTab itself never does, so this is the only way a
   // task edited from the main dashboard gets pushed to the assignee's calendar. The
   // event title uses whatever format the company has configured (Settings -> Calendar
   // sync), not anything decided here.
@@ -602,7 +602,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
   };
 
   const handleUpdate = async (id: string, patch: Partial<Task>) => {
-    // completed_at is set server-side by a DB trigger keyed off is_completed —
+    // completed_at is set server-side by a DB trigger keyed off is_completed -
     // mirror that locally so the completed-this-week/older split is correct
     // immediately, without waiting for a refetch.
     const localPatch = 'is_completed' in patch
@@ -621,7 +621,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     }
   };
 
-  // A task can be followed up more than once — each log entry is its own
+  // A task can be followed up more than once -- each log entry is its own
   // row; awaiting_follow_up/follow_up_date on the task itself are kept as a
   // denormalized "latest state" cache so status badges elsewhere don't need
   // to know about the log table. Both actions update local state immediately
@@ -644,7 +644,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     setFollowUpsByTask(prev => ({ ...prev, [taskId]: next }));
     const patch = applyFollowUpCacheLocally(taskId, next);
 
-    // A future follow-up date is effectively a rescheduled due date — move
+    // A future follow-up date is effectively a rescheduled due date -- move
     // it along so the task doesn't keep showing as due before then.
     if (!isDone) setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: date } : t));
 

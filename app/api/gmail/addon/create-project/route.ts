@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Project name required' }, { status: 400 });
   }
 
-  // adminDb created inside handler — never at module level
+  // adminDb created inside handler -- never at module level
   const db = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
   const parentCode  = company.gmail_parent_code || '';
   const parentFull  = parentCode ? `${parentLabel} #${parentCode}` : parentLabel;
   const tokens: string[] = company.gmail_label_tokens || ['matter_number', 'project_name'];
-  const separator: string = company.gmail_sublabel_separator || ' — ';
+  const separator: string = company.gmail_sublabel_separator || ' -- ';
 
   // Build sublabel from tokens
   const sublabelParts: string[] = [];

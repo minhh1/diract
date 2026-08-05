@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Only company admins can create a company-wide page" }, { status: 403 });
   }
   if (scope === "team") {
-    // teams has no company_id column — teams aren't scoped to a company in
+    // teams has no company_id column -- teams aren't scoped to a company in
     // this schema, so we just check the team exists and the user belongs to it.
     const { data: team } = await admin.from("teams").select("id, leader_id").eq("id", teamId).maybeSingle();
     if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });

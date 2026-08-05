@@ -2,9 +2,9 @@
 // Admin-side (auth required). Marks two fields WITHIN THE SAME uploaded
 // document as "the same answer" (the client is asked once, applied to both
 // tags), or reverses that. Linking across different documents isn't
-// supported — each document's fields are joined independently.
+// supported -- each document's fields are joined independently.
 //
-// POST body: { fieldId, joinTargetFieldId } — joinTargetFieldId null unlinks
+// POST body: { fieldId, joinTargetFieldId } -- joinTargetFieldId null unlinks
 // fieldId (makes it independent again). Otherwise fieldId's whole group
 // (itself plus anyone already aliased to it) is repointed onto
 // joinTargetFieldId's group root, so joined_to_field_id always points

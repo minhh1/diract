@@ -1,5 +1,5 @@
 // lib/gmail/archiveProject.ts
-// Shared enqueue logic for closed-matter archiving — used by both the
+// Shared enqueue logic for closed-matter archiving -- used by both the
 // admin-direct trigger (app/api/gmail/archive-project) and the unified
 // archive-request approval flow (app/api/archive-requests/approve's
 // 'gmail_project_archive' entity_table case). Stamps

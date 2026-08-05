@@ -1,6 +1,6 @@
 // app/api/document-templates/upload/route.ts
 // Admin-side (auth required). Accepts a .docx (or legacy .doc, auto-converted
-// via Gotenberg — see lib/gotenberg.ts) upload + projectId + name, stores the
+// via Gotenberg -- see lib/gotenberg.ts) upload + projectId + name, stores the
 // real .docx in the private `document-templates` bucket, discovers distinct
 // {{tag}} placeholders by unzipping word/document.xml with pizzip (NOT full
 // docxtemplater rendering), and creates a document_templates row + one
@@ -15,11 +15,11 @@ import { randomUUID } from "crypto";
 const OLE2_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
 // Word can split a {{tag}} across multiple <w:t> runs, so strip all XML tags from
-// word/document.xml before scanning for placeholders — same approach docxtemplater
+// word/document.xml before scanning for placeholders -- same approach docxtemplater
 // itself uses to reassemble tags spanning runs.
 //
 // Tag content is whatever sits between the delimiters (matches docxtemplater's
-// own lenient parsing) — not just \w+, since real-world tags are often
+// own lenient parsing) -- not just \w+, since real-world tags are often
 // human-readable phrases like "{{Lender Company Name}}" or
 // "{{Chairperson Name (Director of the Lender Company)}}", not bare identifiers.
 function extractTags(docXml: string): string[] {
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   // ── Legacy .doc (Word 97-2003, OLE2/CFBF container) → convert to real
   // .docx via Gotenberg before anything else. This also catches .doc files
-  // that were merely renamed to .docx — real .docx is a ZIP archive (starts
+  // that were merely renamed to .docx -- real .docx is a ZIP archive (starts
   // with "PK"); PizZip would otherwise open OLE2 content "successfully" with
   // word/document.xml simply missing, silently producing zero detected tags.
   if (bytes.subarray(0, 8).equals(OLE2_SIGNATURE)) {

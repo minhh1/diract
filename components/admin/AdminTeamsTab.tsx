@@ -169,7 +169,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     setAllProfiles(profs);
 
     // Load team members (many-to-many via team_members table or profiles.team_id)
-    // Using profiles.team_id for now — members can only be in one team this way
+    // Using profiles.team_id for now -- members can only be in one team this way
     // Switch to team_members join table if multi-team is needed in DB
     const activeTeams: Team[] = (ts || [])
       .filter((t: any) => t.is_active)
@@ -239,7 +239,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
     supabase.from('teams').update({ is_active: false }).eq('id', teamId).then();
   };
 
-  // Applies a local state update and keeps the cache in sync in one step —
+  // Applies a local state update and keeps the cache in sync in one step -
   // every mutation below is optimistic (UI updates instantly, the network
   // write happens in the background) so the cache never goes stale relative
   // to what's on screen.
@@ -514,7 +514,7 @@ export default function AdminTeamsTab({ companyId }: Props) {
             );
           })}
 
-          {/* Member checklist — shown when + is clicked */}
+          {/* Member checklist -- shown when + is clicked */}
           {expandedTeamId === team.id && (
             <div className="px-6 py-3 space-y-1.5 border-t border-slate-100">
                 <div className="flex items-center justify-between pb-1">

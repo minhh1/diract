@@ -1,5 +1,5 @@
 // app/api/outlook/messages/route.ts
-// Mirrors app/api/gmail/messages/route.ts's shape — list the inbox,
+// Mirrors app/api/gmail/messages/route.ts's shape -- list the inbox,
 // cross-referenced against project_outlook_emails for assignment state.
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";

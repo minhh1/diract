@@ -1,5 +1,5 @@
 // supabase/functions/gmail-push/index.ts
-// PUB/SUB handler — real-time corrections + auto-label by subject
+// PUB/SUB handler -- real-time corrections + auto-label by subject
 // 1. Label removed by user → re-add if still active in DB, remove from completed_users
 // 2. New email with company label → save to project_emails + store subject
 // 3. New email without label → check subject against project_email_subjects → auto-label
@@ -287,11 +287,11 @@ async function invalidateUserForProject(companyId: string, projectId: string, us
 }
 
 // A genuinely new email needs to reach EVERY other team member, not just
-// the one this push event was about — reset the whole job (both types),
+// the one this push event was about -- reset the whole job (both types),
 // not just this one user, so the dispatcher reconsiders everyone next
 // tick. The label/email sync crons used to do this blindly for every
 // project on every 15-min sweep regardless of whether anything changed,
-// which is what made most of the label-sync backlog on 2026-07-21/22 —
+// which is what made most of the label-sync backlog on 2026-07-21/22 -
 // now that they only touch a job when something's actually different,
 // gmail-push has to be the one to flag "something's different" for new
 // mail, or new messages would stop propagating to the rest of the team.
@@ -310,12 +310,12 @@ async function isCompanyAdmin(companyId: string, userId: string): Promise<boolea
   return data?.role === "company_admin";
 }
 
-// Only an admin's delete should actually stick — anyone else's is treated as
+// Only an admin's delete should actually stick -- anyone else's is treated as
 // a mistake and undone. Doesn't try to restore the exact deleted message in
 // place (Gmail's history "messagesDeleted" means it's genuinely gone from
 // that mailbox, not just trashed); instead it removes just this one user
 // from both jobs' completed_users, so the next dispatch re-syncs everything
-// for them from scratch — which naturally re-imports whatever they're
+// for them from scratch -- which naturally re-imports whatever they're
 // missing, including the one they deleted, from another connected member's
 // copy, the same path used for anyone newly joining an existing label.
 async function restoreIfNotAdmin(companyId: string, projectId: string, userId: string): Promise<boolean> {
@@ -338,7 +338,7 @@ async function restoreIfNotAdmin(companyId: string, projectId: string, userId: s
 Deno.serve(async (req) => {
   const t0 = Date.now();
   // Updated as the handler progresses so the finally block below always has
-  // something meaningful to report, however early the handler exits — this
+  // something meaningful to report, however early the handler exits -- this
   // is a webhook, not a cron job, so its "liveness" signal is "did the last
   // invocation get this far" rather than a fixed schedule.
   const summary: Record<string, unknown> = { stage: "start" };
@@ -446,7 +446,7 @@ Deno.serve(async (req) => {
     // ── Labels added: aggregate across ALL history events first ───────
     // A single bulk operation (e.g. someone labelling hundreds of old
     // emails at once) shows up as many separate history events, each
-    // contributing one labelsAdded item — grouping by label before doing
+    // contributing one labelsAdded item -- grouping by label before doing
     // any work lets us tell "a handful of new emails" apart from "a bulk
     // batch" and pick a cheap path for the latter, rather than making a
     // full Gmail metadata fetch (getMessage) per message inline in the
@@ -482,16 +482,16 @@ Deno.serve(async (req) => {
       const { companyId, dbLabel, gmailLabelDisplayName, items } = group;
 
       if (items.length > BULK_LABEL_THRESHOLD) {
-        // Bulk path — skip the per-message Gmail metadata fetch entirely.
+        // Bulk path -- skip the per-message Gmail metadata fetch entirely.
         // We already have message/thread IDs for free from the history
         // event, so record skeleton rows (subject/snippet left null) and
         // one summary log line, then nudge the label/email sync jobs back
-        // to "pending" so the regular dispatcher pipeline — which already
-        // has proper timeouts, quarantine, and a metadata backfill pass —
+        // to "pending" so the regular dispatcher pipeline -- which already
+        // has proper timeouts, quarantine, and a metadata backfill pass -
         // reconciles the details on its own next tick. A "done" job is
         // invisible to the dispatcher's polling query, so it has to be
         // reset rather than left alone.
-        console.log(`[push] Bulk label event: ${items.length} messages for "${gmailLabelDisplayName}" — deferring detail to workers`);
+        console.log(`[push] Bulk label event: ${items.length} messages for "${gmailLabelDisplayName}" -- deferring detail to workers`);
 
         const rows = items.map(it => ({
           project_id: dbLabel.project_id, company_id: companyId,
@@ -512,7 +512,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Small path — same per-message detail as before.
+      // Small path -- same per-message detail as before.
       for (const it of items) {
         const msgId = it.msgId;
         console.log(`[push] Label added "${gmailLabelDisplayName}" → project ${dbLabel.project_id}`);
@@ -528,7 +528,7 @@ Deno.serve(async (req) => {
         if (e1) console.error(`[push] project_emails error:`, e1.message);
         else {
           console.log(`[push] ✓ Saved msg=${msgId} subject="${meta1.subject}"`);
-          // A skipped duplicate (already tracked) returns no row — only a
+          // A skipped duplicate (already tracked) returns no row -- only a
           // genuinely new message needs to propagate to the rest of the team.
           if (d1 && d1.length > 0) {
             if (companiesCentralEmail.get(companyId)) await captureBodyForCentralEmail(token, msgId, d1[0].content_id);
@@ -566,7 +566,7 @@ Deno.serve(async (req) => {
     for (const event of history) {
 
       // ── Labels removed: only an admin's removal sticks ────────────
-      // Same policy as message deletion — a regular member accidentally
+      // Same policy as message deletion -- a regular member accidentally
       // unlabeling their own copy gets auto-corrected (the label is
       // supposed to be shared team-wide), but an admin deliberately taking
       // one email out of a shared label is a real decision and shouldn't
@@ -598,9 +598,9 @@ Deno.serve(async (req) => {
             .split(",").map(c => c.trim()).filter(Boolean);
           const isAdmin = await isCompanyAdmin(companyId, userId);
           if (isAdmin || maintenanceSkipCodes.includes(codeMatch[1])) {
-            console.log(`[push] ${isAdmin ? "Admin" : "Maintenance bypass"} removed label "${gmailLabel.name}" from ${msgId} — leaving it removed`);
+            console.log(`[push] ${isAdmin ? "Admin" : "Maintenance bypass"} removed label "${gmailLabel.name}" from ${msgId} -- leaving it removed`);
             // Delete this user's project_emails row for this message so it's
-            // permanently excluded from future resyncs for them — not just
+            // permanently excluded from future resyncs for them -- not just
             // skipped this once. Without this, a later trigger unrelated to
             // this message (e.g. a new team member joining, which resets
             // completed_users for everyone) would re-include it and silently
@@ -684,7 +684,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Auto-label by subject — search across ALL companies
+        // Auto-label by subject -- search across ALL companies
         const msgData = await getMessage(token, msgId);
         if (!msgData) continue;
         const sh = (msgData.payload?.headers || []).find((h: any) => h.name === "Subject");
@@ -695,11 +695,11 @@ Deno.serve(async (req) => {
         const threadIdForMatch = msgData.threadId || msgId;
         const senderAddress = extractEmailMeta(msgData).from_address?.toLowerCase() || null;
 
-        // Prefer thread continuity over subject text — Gmail's own threading
+        // Prefer thread continuity over subject text -- Gmail's own threading
         // (References/In-Reply-To) is a far more reliable signal than a
         // normalized subject string, which two unrelated matters can share
         // (e.g. a sender's copy-paste/typo referencing the wrong lot number
-        // in near-identical property names — this is exactly how emails for
+        // in near-identical property names -- this is exactly how emails for
         // adjacent matters 260581/260582 got cross-labeled). If this
         // message's thread already has another message filed to a project,
         // use that project directly and skip subject matching entirely.
@@ -758,7 +758,7 @@ Deno.serve(async (req) => {
               .map(r => r.gmail_thread_id)
           );
           if (otherThreadsWithSameSubject.size > 0) {
-            console.log(`[push] Skipping auto-label — sender ${senderAddress} already sent "${normSubject}" to ${otherThreadsWithSameSubject.size} other thread(s); treating as a templated subject`);
+            console.log(`[push] Skipping auto-label -- sender ${senderAddress} already sent "${normSubject}" to ${otherThreadsWithSameSubject.size} other thread(s); treating as a templated subject`);
             continue;
           }
         }
@@ -795,11 +795,11 @@ Deno.serve(async (req) => {
 
           const distinctSubjectProjects = new Set((candidates || []).map(c => `${c.company_id}:${c.project_id}`));
           if (distinctSubjectProjects.size > 1) {
-            // Same subject text matches more than one project — exactly the
+            // Same subject text matches more than one project -- exactly the
             // ambiguous case that caused the cross-labeling incident. No
             // reliable way to pick the right one from subject text alone,
             // so skip auto-labeling rather than guess.
-            console.log(`[push] Skipping auto-label — "${normSubject}" matches ${distinctSubjectProjects.size} different projects`);
+            console.log(`[push] Skipping auto-label -- "${normSubject}" matches ${distinctSubjectProjects.size} different projects`);
             continue;
           }
           subjectMatch = candidates?.[0] || null;
@@ -848,7 +848,7 @@ Deno.serve(async (req) => {
 
       // ── Messages deleted: only an admin's delete sticks ────────────
       // Gmail's history "messagesDeleted" fires for ANY deletion anywhere
-      // in the mailbox, not just shared project emails — a user cleaning
+      // in the mailbox, not just shared project emails -- a user cleaning
       // out personal inbox clutter generates the exact same event. Only
       // act on it (and only log it) when this message was actually a
       // tracked project email for this user; otherwise it's noise that
@@ -863,7 +863,7 @@ Deno.serve(async (req) => {
 
         const restored = await restoreIfNotAdmin(existing.company_id, existing.project_id, userId);
 
-        console.log(`[push] Message deleted ${msgId}${restored ? " — non-admin, restoring" : " — admin, deletion stands"}`);
+        console.log(`[push] Message deleted ${msgId}${restored ? " -- non-admin, restoring" : " -- admin, deletion stands"}`);
         await logActivity({
           company_id: existing.company_id, triggered_by: null,
           action: "message_deleted", project_id: existing.project_id,
@@ -871,7 +871,7 @@ Deno.serve(async (req) => {
           details: { subject: existing.subject || null, snippet: existing.snippet || null, restored },
         });
 
-        // The deleting user's own row is gone from their mailbox — drop it
+        // The deleting user's own row is gone from their mailbox -- drop it
         // so it doesn't linger as a stale "they have this" record; a
         // restore (if any) will create a fresh row once the re-sync runs.
         await db.from("project_emails").delete().eq("user_id", userId).eq("gmail_message_id", msgId);
@@ -882,7 +882,7 @@ Deno.serve(async (req) => {
     // Only runs when the loop above actually saw evidence of it, so an
     // active project whose label simply hasn't been created for this user
     // yet (brand new project, hasn't hit its first sync cycle) never gets
-    // flagged here — there's no labelsRemoved event for a label that was
+    // flagged here -- there's no labelsRemoved event for a label that was
     // never applied in the first place. dbLabelsByCode/gmailLabels are
     // already loaded for every other check above, so this reconciliation
     // (this user's active company labels vs. what they actually have) costs
@@ -897,7 +897,7 @@ Deno.serve(async (req) => {
       for (const [labelCode, dbLabel] of dbLabelsByCode) {
         const stillExists = gmailLabels.some(l => l.name.includes(`[${labelCode}]`));
         if (stillExists) continue;
-        console.log(`[push] "${dbLabel.gmail_label_name}" missing entirely for ${userId} — flagging for recreation`);
+        console.log(`[push] "${dbLabel.gmail_label_name}" missing entirely for ${userId} -- flagging for recreation`);
         await invalidateUserForProject(dbLabel.company_id, dbLabel.project_id, userId);
         await logActivity({
           company_id: dbLabel.company_id, triggered_by: null, action: "label_recreated",

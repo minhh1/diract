@@ -1,4 +1,4 @@
--- "Custom dashboard" record tab type — a linked-table tab (same
+-- "Custom dashboard" record tab type -- a linked-table tab (same
 -- linked_table_id/link_field_id convention as the "custom_table" grid tab,
 -- see record_tab_grid_cells.sql) whose content is the same DashboardWidget[]
 -- builder/renderer the standalone company_dashboards use, just scoped to the

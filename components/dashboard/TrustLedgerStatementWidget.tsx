@@ -103,9 +103,9 @@ export default function TrustLedgerStatementWidget({ records }: { records: Custo
                 {entries.map(r => (
                   <tr key={r.id} className="border-b border-slate-50">
                     <td className="px-4 py-2 text-slate-500">{formatDateAU(r.values.date)}</td>
-                    <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{r.values.receipt_number || '—'}</td>
-                    <td className="px-4 py-2 text-slate-600">{r.values.type || '—'}</td>
-                    <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || r.values.purpose || '—'}</td>
+                    <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{r.values.receipt_number || '-'}</td>
+                    <td className="px-4 py-2 text-slate-600">{r.values.type || '-'}</td>
+                    <td className="px-4 py-2 text-slate-600">{r.values.payor_payee || r.values.purpose || '-'}</td>
                     <td className="px-4 py-2 text-right text-slate-700">{r.values.amount_in ? aud.format(Number(r.values.amount_in)) : ''}</td>
                     <td className="px-4 py-2 text-right text-slate-700">{r.values.amount_out ? aud.format(Number(r.values.amount_out)) : ''}</td>
                     <td className="px-4 py-2 text-right font-semibold text-slate-900">{aud.format(Number(r.values.running_balance) || 0)}</td>

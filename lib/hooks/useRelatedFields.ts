@@ -39,14 +39,14 @@ function fixCasing(segment: string): string {
     .join(' ');
 }
 
-// The RPC's raw label is the whole chain (e.g. "Parent Property — Council
-// Entity — Name" for a depth-2 relation) -- once a field is shown inside its
+// The RPC's raw label is the whole chain (e.g. "Parent Property -- Council
+// Entity -- Name" for a depth-2 relation) -- once a field is shown inside its
 // own drill-in folder (see ColumnConfigDrawer.tsx), repeating that entire
 // chain as the row's own label just runs off the edge of the panel. Only the
 // LAST segment is the field itself; the rest is exactly the folder the user
 // already drilled through to get here.
 export function cleanLabel(raw: string): string {
-  const parts = raw.split(' — ');
+  const parts = raw.split(' -- ');
   return fixCasing(parts[parts.length - 1]);
 }
 
@@ -54,7 +54,7 @@ export function cleanLabel(raw: string): string {
 // without the folder context alongside it (e.g. a grid column's hover
 // tooltip), where the section still needs to be spelled out.
 export function cleanFullLabel(raw: string): string {
-  return raw.split(' — ').map(fixCasing).join(' — ');
+  return raw.split(' -- ').map(fixCasing).join(' -- ');
 }
 
 // Scoped by companyId -- a bare tableName key served a previous company's
@@ -74,7 +74,7 @@ function shellCacheKey(companyId: string, tableName: string): string {
 // get_all_related_fields feeds the actual row-fetch query (dotted cross-table
 // columns get silently dropped without it), so it can't be made lazy without
 // risking data loss for already-configured columns. Instead, cap how long we
-// wait for it — this RPC is known to occasionally hang for 10+ seconds
+// wait for it -- this RPC is known to occasionally hang for 10+ seconds
 // server-side (statement timeout); failing fast client-side keeps the rest of
 // the page responsive even when that happens.
 const FETCH_TIMEOUT_MS = 4000;
@@ -98,7 +98,7 @@ async function fetchRelatedFieldsRemote(tableName: string): Promise<RelatedField
 // Exported so background prefetch (lib/hooks/prefetchShells.ts) can warm a
 // table's related fields into the same shellCache the hook below reads from,
 // without mounting the hook itself. No-ops if already warm (in-memory or
-// persisted) — a real visit's hook will still background-refresh either way.
+// persisted) -- a real visit's hook will still background-refresh either way.
 export async function warmRelatedFields(tableName: string, companyId: string): Promise<void> {
   const key = cacheKey(companyId, tableName);
   if (cache.has(key) || readShellCache<RelatedField[]>(shellCacheKey(companyId, tableName))) return;
@@ -141,7 +141,7 @@ export function useRelatedFields(tableName: string): RelatedFieldsResult {
       if (error) {
         console.error('useRelatedFields error:', error);
         perfLog(`useRelatedFields(${tableName}): resolved`, String(error.message));
-        // Don't cache a timeout as if it were "no related fields" — a later
+        // Don't cache a timeout as if it were "no related fields" -- a later
         // mount (e.g. after the slow request actually finishes) should retry
         // rather than being stuck with an empty result. If we already had a
         // persisted result, keep showing that instead of clearing it.

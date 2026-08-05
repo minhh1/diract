@@ -103,7 +103,7 @@ export async function hydrateTrustReceiptForRender(
     },
     lines: rows.map(r => ({
       matterNumber: r.matter ? (matterNumberById.get(r.matter) || null) : null,
-      matterName: r.matter ? (matterNameById.get(r.matter) || 'Unknown matter') : '—',
+      matterName: r.matter ? (matterNameById.get(r.matter) || 'Unknown matter') : '-',
       amount: Number(r.amount_in) || Number(r.amount_out) || 0,
     })),
     total: rows.reduce((s, r) => s + (Number(r.amount_in) || 0) + (Number(r.amount_out) || 0), 0),

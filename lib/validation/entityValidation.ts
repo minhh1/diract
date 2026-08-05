@@ -73,7 +73,7 @@ export const ENTITY_FIELD_VALIDATORS: Record<string, FieldValidationRule> = {
   },
   abn: {
     validate: (v) => {
-      if (!v || !v.trim()) return null; // optional — empty is fine
+      if (!v || !v.trim()) return null; // optional -- empty is fine
       return isValidABN(v) ? null : "Not a valid ABN (must be 11 digits and pass the ABN checksum)";
     },
   },

@@ -1,5 +1,5 @@
 // app/api/outlook/messages/[id]/route.ts
-// Mirrors app/api/gmail/messages/[id]/route.ts — fetch one message's body.
+// Mirrors app/api/gmail/messages/[id]/route.ts -- fetch one message's body.
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { getOutlookAccessToken } from "@/lib/msGraph/getAccessToken";

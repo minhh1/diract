@@ -15,7 +15,7 @@ import { readCache, writeCache } from "@/lib/queryCache";
 //
 // Previously started from a blank Map on every mount with nothing cached --
 // so "Matter Number"/"Client Name" (this hook resolves the latter) visibly
-// showed blank/"—" and then jumped to the real value on every single visit,
+// showed blank/"-" and then jumped to the real value on every single visit,
 // not just first load. Seeded from localStorage now, same
 // paint-then-revalidate-in-background shape as the rest of the app.
 const cacheKey = (companyId: string, table: string) => `record_names_${companyId}_${table}`;

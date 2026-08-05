@@ -186,7 +186,7 @@ export default function IrregularityFixPanel({ pageId, itemId, canEdit, bordered
           ) : target.fieldType === "select" && target.selectOptions?.length ? (
             <select value={draft ?? ""} onChange={e => { setDraft(e.target.value); save(e.target.value); }}
               className="text-[12px] border border-slate-200 rounded-full px-3 py-1.5 outline-none bg-white">
-              <option value="">— Select —</option>
+              <option value="">- Select -</option>
               {target.selectOptions.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
           ) : target.fieldType === "boolean" ? (

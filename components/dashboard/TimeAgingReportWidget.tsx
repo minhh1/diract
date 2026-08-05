@@ -144,7 +144,7 @@ export default function TimeAgingReportWidget({ records, agingDays }: { records:
               {items.map(it => (
                 <tr key={it.recordId} className="border-b border-slate-50">
                   <td className="px-4 py-2 font-medium text-slate-700 whitespace-nowrap">{matterLabel(it.matterId)}</td>
-                  <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{staffNames.get(it.staffId) || "—"}</td>
+                  <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{staffNames.get(it.staffId) || "-"}</td>
                   <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{formatDateAU(it.date)}</td>
                   <td className="px-4 py-2 text-slate-500 max-w-xs truncate">{it.description}</td>
                   <td className="px-4 py-2 text-right text-slate-700">{it.hours.toFixed(1)}</td>

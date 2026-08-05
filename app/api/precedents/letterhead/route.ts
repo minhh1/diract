@@ -3,10 +3,10 @@
 // company, company_letterheads). Mirrors app/api/document-templates/upload/route.ts's
 // validation shape (.docx/.doc accept, legacy .doc -> .docx via Gotenberg,
 // magic-byte checks) but is company-scoped, not project-scoped. Runs the
-// uploaded letterhead through lib/precedents/letterheadClassify.ts first —
+// uploaded letterhead through lib/precedents/letterheadClassify.ts first -
 // AI-classifies each paragraph's semantic role (Our Ref, date, delivery
 // mode, recipient, salutation, subject, body, signoff, closing) and rewrites
-// placeholders in place — then lib/precedents/letterheadTag.ts's blind
+// placeholders in place -- then lib/precedents/letterheadTag.ts's blind
 // append still runs afterward as a safety net (it no-ops on tags that
 // already exist), so a classification failure or a plain logo-only
 // letterhead with nothing to classify both still end up with working
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   const contentTagKey = "content";
   const signoffTagKey = "signoff";
 
-  // Smart classification — best-effort. A model outage, a letterhead with
+  // Smart classification -- best-effort. A model outage, a letterhead with
   // nothing recognizable (pure logo/header art), or an unexpected shape all
   // just mean detectedFields stays empty; insertLetterTags below still runs
   // regardless.
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: dbErr?.message || "Failed to save letterhead" }, { status: 500 });
   }
 
-  // Old file is orphaned in storage once the row points elsewhere — clean it
+  // Old file is orphaned in storage once the row points elsewhere -- clean it
   // up now that the new one is safely committed.
   if (existing?.storage_path && existing.storage_path !== storagePath) {
     await admin.storage.from(BUCKET).remove([existing.storage_path]);
@@ -144,9 +144,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, letterhead });
 }
 
-// Lets an admin review/correct what the classifier found — e.g. drop a
+// Lets an admin review/correct what the classifier found -- e.g. drop a
 // wrongly-detected field entirely (it just falls back to being folded into
-// the {{content}} block, same as a letterhead with nothing detected at all —
+// the {{content}} block, same as a letterhead with nothing detected at all -
 // see lib/precedents/contentXml.ts) or fix up the delivery-mode wording
 // without re-uploading the whole document.
 export async function PATCH(req: NextRequest) {

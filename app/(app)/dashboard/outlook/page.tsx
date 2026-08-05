@@ -3,7 +3,7 @@
 // UI, just enough to trigger app/api/outlook/assign (the origination point
 // for the async label-sync engine) and watch it propagate to a second
 // connected account. Not a visual port of the Gmail client
-// (EmailList/EmailDetail/compose/label-settings modal) — that's later,
+// (EmailList/EmailDetail/compose/label-settings modal) -- that's later,
 // separate UI work once this backend is proven out.
 "use client";
 

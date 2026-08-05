@@ -1,12 +1,12 @@
 // components/public/PublicTasksContent.tsx
 // The actual public-task-report UI (table, tabs, add/edit modals, apply-
-// template modal) — extracted from app/public/tasks/[pageId]/page.tsx so
+// template modal) -- extracted from app/public/tasks/[pageId]/page.tsx so
 // the exact same experience can render two ways: as the full standalone
 // /public/tasks/[pageId] page (embedded=false, that route's own thin
 // wrapper supplies pageId from the URL), or inline inside a
 // PublicTaskPageWidget on a dashboard (embedded=true, see
 // components/dashboard/PublicTaskPageWidget.tsx) instead of just linking
-// out to it. Requires a real signed-in session — no separate PIN system.
+// out to it. Requires a real signed-in session -- no separate PIN system.
 // Access scope (self / team / company / my_and_unassigned) is enforced
 // server-side in the API route.
 "use client";
@@ -98,7 +98,7 @@ export const gmailConnectionsCacheKey = (companyId: string) => `gmail_connection
 const taskDependenciesCacheKey = (pageId: string) => `task_dependencies_${pageId}`;
 
 // Columns whose content can run long (project names, people's names) should
-// wrap within their cell instead of forcing the table wider — everything
+// wrap within their cell instead of forcing the table wider -- everything
 // else (dates, status, cost) is short enough to stay on one line.
 const WRAP_COLUMNS = new Set(["project_name", "created_by"]);
 
@@ -131,22 +131,22 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   // (no ProgressBarProvider out there, so this safely no-ops when !embedded).
   useProgressBarWhile(loading);
   // Time & Fee Entries is a law-firm-only custom table (installed from the Law Firm
-  // template, slug 'time-fee-entries') — most companies won't have it at all, in which
+  // template, slug 'time-fee-entries') -- most companies won't have it at all, in which
   // case timeFeesTable stays null and the per-task "Add to Time & Fees" action is hidden
   // entirely rather than shown disabled. Same convention as ChecklistTab.tsx.
   const [timeFeesTable, setTimeFeesTable] = useState<CustomTable | null>(null);
   const [timeFeesFields, setTimeFeesFields] = useState<CustomTableField[]>([]);
   const [convertingTask, setConvertingTask] = useState<Task | null>(null);
   // Users in this company with a connected Gmail/Calendar account (see
-  // company_gmail_connections — a view bypassing user_gmail_tokens' own-row-only RLS,
+  // company_gmail_connections -- a view bypassing user_gmail_tokens' own-row-only RLS,
   // scoped to the caller's company). Drives whether the per-task "Add to calendar"
   // action shows at all: only when that task's assignee has a calendar to add it to.
   const [connectedAssigneeIds, setConnectedAssigneeIds] = useState<Set<string>>(new Set());
   const [syncingTaskId, setSyncingTaskId] = useState<string | null>(null);
   // taskId -> ids of tasks it depends on (task_dependencies.task_id = this task,
-  // .depends_on_task_id = the prerequisite) — AND semantics, every one must be
+  // .depends_on_task_id = the prerequisite) -- AND semantics, every one must be
   // completed before this task can be. See supabase/task_dependencies.sql. Only
-  // covers tasks actually visible on this page (own tabs) — a dependency on a task
+  // covers tasks actually visible on this page (own tabs) -- a dependency on a task
   // outside this page's scope can't be created from here.
   const [dependenciesByTask, setDependenciesByTask] = useState<Record<string, string[]>>({});
   // Set by "Next task" (mark this task done, open Add task pre-linked to it) --
@@ -166,7 +166,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     });
   };
 
-  // Silent refetch — updates data in place without flashing the full-page
+  // Silent refetch -- updates data in place without flashing the full-page
   // loading spinner. Used for realtime-triggered refreshes and after the
   // current user's own mutations.
   const refresh = useCallback(async () => {
@@ -241,14 +241,14 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     if (domSettled) perfLogPageReady("public", "task page");
   }, [domSettled]);
 
-  // Browser tab title — matches the on-page header instead of the generic
+  // Browser tab title -- matches the on-page header instead of the generic
   // site-wide "Diract" title. Skipped when embedded in a dashboard widget,
   // which shouldn't hijack the tab title away from the dashboard itself.
   useEffect(() => {
     if (!embedded && data?.scopeName) document.title = `Tasks - ${data.scopeName}`;
   }, [data?.scopeName, embedded]);
 
-  // ── Realtime — live-refresh when anyone (this page or the main app)
+  // ── Realtime -- live-refresh when anyone (this page or the main app)
   // changes a task for this company, so multiple viewers stay in sync
   // without a manual reload. Also listens for `projects`/
   // `company_custom_field_values` changes -- a row's displayed
@@ -276,7 +276,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   }, [data?.companyId, pageId, refresh]);
 
   // Relies on RLS to scope to the signed-in viewer's own company, same as every
-  // other direct company_tables query in the app — no need to filter by companyId.
+  // other direct company_tables query in the app -- no need to filter by companyId.
   //
   // When this component is the `embedded` dashboard widget, the signed-in
   // viewer's own session already went through the app's normal bootstrap
@@ -411,7 +411,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   };
 
   const toggleComplete = async (task: Task) => {
-    // Optimistic — flip it locally right away, then confirm with the server.
+    // Optimistic -- flip it locally right away, then confirm with the server.
     setData(prev => prev ? {
       ...prev,
       tabs: prev.tabs.map(tab => ({
@@ -429,7 +429,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   const deleteTask = async (task: Task) => {
     if (!window.confirm(`Delete "${task.name}"?`)) return;
-    // Optimistic — remove it locally right away, then confirm with the server.
+    // Optimistic -- remove it locally right away, then confirm with the server.
     setData(prev => prev ? {
       ...prev,
       tabs: prev.tabs.map(tab => ({ ...tab, tasks: tab.tasks.filter(t => t.id !== task.id) })),
@@ -439,13 +439,13 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
   };
 
   // Single project-relation field on Time & Fee Entries (see relationCandidates'
-  // convention — the same one RecordDashboardTab auto-detects a matter field by).
+  // convention -- the same one RecordDashboardTab auto-detects a matter field by).
   // description is matched by field_key rather than auto-detected since text fields
   // aren't uniquely typed; if a company renamed/removed it, the entry still opens
   // with the matter locked in, just without a prefilled/AI-rewritable description.
   const timeFeesMatterFieldKey = relationCandidates(timeFeesFields, "projects")[0]?.field_key;
   const timeFeesDescriptionFieldKey = timeFeesFields.find(f => f.field_key === "description")?.field_key;
-  // Invoice is assigned during billing, not when logging the entry — never asked for here.
+  // Invoice is assigned during billing, not when logging the entry -- never asked for here.
   const timeEntryFields = timeFeesFields.filter(f => f.field_key !== "invoice");
 
   const handleCreateTimeEntry = async (values: Record<string, any>): Promise<string | null> => {
@@ -464,7 +464,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   const todayStr = () => companyTodayStr(data?.companyType);
 
-  // Optimistic — update local state immediately so the tick feels instant,
+  // Optimistic -- update local state immediately so the tick feels instant,
   // then fire the request in the background. Re-fetch to resync on failure.
   const addFollowUp = (task: Task, date: string) => {
     const isDone = date <= todayStr();
@@ -553,7 +553,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     })();
   };
 
-  // Manually override which organised-view bucket a task sits in — scoped
+  // Manually override which organised-view bucket a task sits in -- scoped
   // to the tab it was moved in (the same task can be "Action" for the
   // assignee and "Watching" for someone just watching it), not the task
   // globally.
@@ -649,9 +649,9 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
   const renderRow = (t: Task) => {
     const dl = getDaysLeft(t.dueDate, t.isCompleted);
-    // "Cannot happen without" — every prerequisite must be completed before t can
+    // "Cannot happen without" -- every prerequisite must be completed before t can
     // be (hard-blocked, not just a warning). Direct dependencies only, not
-    // transitive through a chain — see ChecklistTab.tsx's identical comment.
+    // transitive through a chain -- see ChecklistTab.tsx's identical comment.
     const blockedBy = (dependenciesByTask[t.id] || [])
       .map(id => allVisibleTasks.find(v => v.id === id))
       .filter((v): v is Task => !!v && !v.isCompleted);
@@ -930,15 +930,15 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
 
 function renderCell(key: string, t: Task) {
   switch (key) {
-    case "project_name": return t.projectName || "—";
-    case "matter_number": return t.matterNumber || "—";
-    case "due_date": return t.dueDate || "—";
-    case "due_time": return t.dueTime ? t.dueTime.slice(0, 5) : "—";
-    case "team": return t.team || "—";
-    case "estimated_cost": return t.estimatedCost ? `$${Number(t.estimatedCost).toLocaleString()}` : "—";
-    case "date_entered": return t.dateEntered || "—";
-    case "created_by": return t.createdBy || "—";
-    default: return "—";
+    case "project_name": return t.projectName || "-";
+    case "matter_number": return t.matterNumber || "-";
+    case "due_date": return t.dueDate || "-";
+    case "due_time": return t.dueTime ? t.dueTime.slice(0, 5) : "-";
+    case "team": return t.team || "-";
+    case "estimated_cost": return t.estimatedCost ? `$${Number(t.estimatedCost).toLocaleString()}` : "-";
+    case "date_entered": return t.dateEntered || "-";
+    case "created_by": return t.createdBy || "-";
+    default: return "-";
   }
 }
 

@@ -93,7 +93,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
   const [verifyResult, setVerifyResult] = useState<string | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
 
-  // Computed fields are never hand-edited — see supabase/company_table_fields_formula.sql.
+  // Computed fields are never hand-edited -- see supabase/company_table_fields_formula.sql.
   if (field.formula_type) {
     // Formatted per field_type, same convention as every other read-only
     // display of a field value in the app (GenericMasterTable.tsx,
@@ -112,7 +112,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         className={plain ? 'w-full text-[12px] font-medium text-slate-500 truncate px-0.5 py-1' : 'w-full bg-slate-50 border border-slate-200 rounded-full py-2 px-3.5 text-[13px] font-medium text-slate-500 truncate'}
         title="Auto-calculated"
       >
-        {display || (plain ? '' : '—')}
+        {display || (plain ? '' : '-')}
       </div>
     );
   }
@@ -168,7 +168,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         onKeyDown={handleKeyDown}
         className={`${inputClass} appearance-none`}
       >
-        <option value="">{plain ? '' : '—'}</option>
+        <option value="">{plain ? '' : '-'}</option>
         {(field.select_options || []).map(opt => (
           <option key={opt} value={opt}>{opt}</option>
         ))}
@@ -244,7 +244,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
     );
   }
 
-  // ABN/ACN — checksum-validated (isValidABN/isValidACN) with an inline
+  // ABN/ACN -- checksum-validated (isValidABN/isValidACN) with an inline
   // "Verify" button that calls the ABR ABN Lookup web service
   // (app/api/abn-lookup/route.ts) to confirm the number is actually
   // registered, not just structurally well-formed.
@@ -265,7 +265,7 @@ export default function FieldValueInput({ field, value, onCommit, disabled, disp
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'Lookup failed');
-        setVerifyResult(json.status ? `${json.entityName} — ${json.status}` : json.entityName || 'No match found');
+        setVerifyResult(json.status ? `${json.entityName} -- ${json.status}` : json.entityName || 'No match found');
       } catch (err) {
         setVerifyError(err instanceof Error ? err.message : 'Lookup failed');
       } finally {

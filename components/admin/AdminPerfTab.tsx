@@ -1,5 +1,5 @@
 // components/admin/AdminPerfTab.tsx
-// Internal load-time diagnostics — reads the perfLog ring buffer (lib/perfLog.ts)
+// Internal load-time diagnostics -- reads the perfLog ring buffer (lib/perfLog.ts)
 // that every major data-loading hook writes to, and groups it back into
 // per-page-load waterfalls. Gated to a single user in app/dashboard/admin/page.tsx;
 // this component itself doesn't re-check identity since it holds no data of
@@ -280,7 +280,7 @@ export default function AdminPerfTab() {
                       <tr key={i} className="border-t border-slate-50">
                         <td className="px-4 py-1.5 font-mono text-slate-500">{e.t}</td>
                         <td className={`px-4 py-1.5 font-mono ${delta > 500 ? "text-red-500 font-bold" : "text-slate-300"}`}>
-                          {i === 0 ? "—" : `+${delta}`}
+                          {i === 0 ? "-" : `+${delta}`}
                         </td>
                         <td className="px-4 py-1.5 text-slate-700 font-medium">{e.label}</td>
                         <td className="px-4 py-1.5 text-slate-400">{e.detail || ""}</td>

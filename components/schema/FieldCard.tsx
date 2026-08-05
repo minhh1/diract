@@ -13,7 +13,7 @@ interface Props {
   // label -- a common source of confusion when picking fields for a widget
   // ("which 'Status' did I mean?"). Empty when the label is unique.
   otherTablesWithLabel?: string[];
-  // How many fields on THIS SAME table share this exact label — 2+ means a
+  // How many fields on THIS SAME table share this exact label -- 2+ means a
   // real duplicate (e.g. two "Billing Type" fields both on Projects), the
   // kind of mess a template install can silently create if it only checks
   // field_key, not label, for an existing equivalent.

@@ -22,6 +22,7 @@ import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
 import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
 import { clearAllClientCaches, clearActiveIdentityCache } from "@/lib/clearClientCaches";
+import { markIntentionalSignOut } from "@/components/SessionHealthBanner";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import type { ActiveFilter } from "@/lib/types/filters";
 import { savedViewsService, DEFAULT_VIEW_NAME, type SavedView } from "@/lib/services/savedViewsService";
@@ -85,13 +86,13 @@ const SYSTEM_TABLE_FIELDS: Record<string, { key: string; label: string }[]> = {
 };
 
 const DEFAULT_TREE_CONFIG: Record<string, TreeConfig> = {
-  projects:   { displayFields: ['name'],           separator: ' — ', sortField: 'name',           sortDirection: 'asc', filters: [] },
-  properties: { displayFields: ['street_address'], separator: ' — ', sortField: 'street_address', sortDirection: 'asc', filters: [] },
-  entities:   { displayFields: ['name'],           separator: ' — ', sortField: 'name',           sortDirection: 'asc', filters: [] },
+  projects:   { displayFields: ['name'],           separator: ' – ', sortField: 'name',           sortDirection: 'asc', filters: [] },
+  properties: { displayFields: ['street_address'], separator: ' – ', sortField: 'street_address', sortDirection: 'asc', filters: [] },
+  entities:   { displayFields: ['name'],           separator: ' – ', sortField: 'name',           sortDirection: 'asc', filters: [] },
 };
 
 const SEPARATORS = [
-  { value: ' — ', label: 'Dash (—)' },
+  { value: ' – ', label: 'Dash (–)' },
   { value: ' / ', label: 'Slash (/)' },
   { value: ' | ', label: 'Pipe (|)' },
   { value: ' · ', label: 'Dot (·)' },
@@ -663,7 +664,7 @@ export default function Sidebar() {
   // tapping the backdrop.
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Use shared company context — avoids duplicate auth call with GenericMasterTable
+  // Use shared company context -- avoids duplicate auth call with GenericMasterTable
   const { companyId: ctxCompanyId, companyName: ctxCompanyName, companyType: ctxCompanyType, userId: ctxUserId, isAdmin: ctxIsAdmin, isSiteAdmin: ctxIsSiteAdmin, ledTeamIds: ctxLedTeamIds, loading: ctxLoading, tableLabelOverrides, disabledSystemTables } = useCompany();
 
   // Per-company display-name overrides (e.g. a law firm renaming "Projects"
@@ -701,7 +702,7 @@ export default function Sidebar() {
   const [visibleTables, setVisibleTables] = useState<string[]>([]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showTreeConfig, setShowTreeConfig] = useState(false);
-  // Which table's records the tree section browses — independent of the
+  // Which table's records the tree section browses -- independent of the
   // active page/tab, so switching e.g. Projects → Properties in the main
   // view doesn't yank the tree away from whatever the user picked there.
   // Defaults to the active page only on first-ever load (no saved pick yet).
@@ -729,14 +730,14 @@ export default function Sidebar() {
     : pathname.includes("properties") ? "properties"
     : "entities";
 
-  // Which second-level panel is open, if any — independent of the current
+  // Which second-level panel is open, if any -- independent of the current
   // page after mount (e.g. opening Tools while browsing Projects doesn't
   // navigate anywhere, it just shows Tools' destinations to pick from).
   // Seeded from the current page so landing on e.g. /dashboard/admin opens
   // straight to the Admin panel rather than defaulting to Tables.
   const [activeRailSection, setActiveRailSection] = useState<RailSection | null>(() => {
     // Marketplace is a plain link (no second-level panel of its own), so it
-    // must seed no panel at all — otherwise landing here directly leaves
+    // must seed no panel at all -- otherwise landing here directly leaves
     // Tables' panel open behind it, and the two look simultaneously "active".
     if (pathname.startsWith('/dashboard/marketplace')) return null;
     if (pathname.includes('/admin')) return 'admin';
@@ -783,14 +784,14 @@ export default function Sidebar() {
     return () => { cancelled = true; };
   }, [ctxCompanyId, tablesPanelOpen, hasLawFirmTemplate]);
 
-  // Shared with GenericMasterTable via useCompanyCustomFields' module cache —
+  // Shared with GenericMasterTable via useCompanyCustomFields' module cache -
   // when the tree's table matches the active page's table, this fires once.
   // Skipped while the Tables panel itself isn't showing (e.g. browsing a
-  // Tools/Settings/Admin page) — no point fetching data for a panel the
+  // Tools/Settings/Admin page) -- no point fetching data for a panel the
   // user hasn't opened.
   const { fields: customFieldCols } = useCompanyCustomFields(treeTableSlug, tablesPanelOpen);
 
-  // Record list is opt-in — collapse it again whenever the tree's table changes
+  // Record list is opt-in -- collapse it again whenever the tree's table changes
   useEffect(() => { setTreeOpen(false); }, [treeTableSlug]);
 
   // Mobile drawer closes itself on navigation -- otherwise it'd stay open
@@ -827,12 +828,12 @@ export default function Sidebar() {
     });
   }, [mode, ctxUserId, ctxCompanyId, tablesPanelOpen]);
 
-  // Deferred until the tree is actually expanded — this used to run
+  // Deferred until the tree is actually expanded -- this used to run
   // unconditionally on every mount/table-switch (rows + custom field values,
   // up to 2000 records), even for users who never open the tree. It also
   // fired twice per table switch: once with the synchronous default
   // treeConfig, again once the real config loaded from the DB a moment
-  // later. Gating on treeOpen fixes both — closed trees do no work at all,
+  // later. Gating on treeOpen fixes both -- closed trees do no work at all,
   // and opening one fetches once against whichever config has landed by then.
   useEffect(() => {
     if (!treeOpen) return;
@@ -878,7 +879,7 @@ export default function Sidebar() {
   }, [showCompanySwitcher]);
 
   // ── Profile + visibility ───────────────────────────────────────
-  // companyId/isAdmin come from CompanyContext (shared with GenericMasterTable) —
+  // companyId/isAdmin come from CompanyContext (shared with GenericMasterTable) -
   // this only fetches the extra fields that context doesn't carry.
   const fetchProfile = async () => {
     if (!ctxUserId) return;
@@ -895,7 +896,7 @@ export default function Sidebar() {
       .single();
 
     if (error) {
-      // Column might not exist yet — fetch without it
+      // Column might not exist yet -- fetch without it
       const { data: profBasic } = await supabase
         .from("profiles")
         .select("full_name")
@@ -975,7 +976,7 @@ export default function Sidebar() {
       query = (query as any).order(config.sortField, { ascending: config.sortDirection === 'asc' });
     }
 
-    // 100 was silently hiding records once a table grew past it (e.g. 521 matters) —
+    // 100 was silently hiding records once a table grew past it (e.g. 521 matters) -
     // raised well above current table sizes; the list only renders when expanded.
     query = (query as any).limit(2000);
 
@@ -1162,7 +1163,7 @@ export default function Sidebar() {
   // Clicking a Tables nav link should always land on that table's plain
   // list. isTableActive alone can't distinguish "already on the list" from
   // "viewing one record via ?id=" or "a saved view's ?view= filter applied"
-  // — neither changes the pathname — so guarding navigation on isTableActive
+  // -- neither changes the pathname -- so guarding navigation on isTableActive
   // by itself made clicking the same table while inside a record's
   // dashboard a no-op; you had to hit that page's own back button instead.
   const goToTableList = (slug: string) => {
@@ -1291,7 +1292,7 @@ export default function Sidebar() {
             </button>
           )}
 
-          {/* Account menu — fixed width so it stays readable even though the trigger sits in the narrow rail */}
+          {/* Account menu -- fixed width so it stays readable even though the trigger sits in the narrow rail */}
           {showCompanySwitcher && (
             <div className="absolute bottom-0 left-full ml-2 w-72 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden z-50">
               <Link
@@ -1395,6 +1396,12 @@ export default function Sidebar() {
             // signed-in user on a shared machine. See
             // lib/clearClientCaches.ts's doc comment.
             clearAllClientCaches();
+            // Tell SessionHealthBanner this SIGNED_OUT event is expected --
+            // otherwise it can't tell a deliberate sign-out from a dead
+            // refresh token, and briefly flashes a "session expired" banner
+            // + redirects to /login?reason=session_expired instead of a
+            // plain, quiet sign-out.
+            markIntentionalSignOut();
             supabase.auth.signOut().then(() => window.location.replace("/login"));
           }}
           title="Sign out"
@@ -1513,7 +1520,7 @@ export default function Sidebar() {
                   );
                 })}
 
-                {/* Trust Account — fixed, bespoke page (not a
+                {/* Trust Account -- fixed, bespoke page (not a
                     company_dashboards row), gated on the company actually
                     having the Trust Accounts table (Law Firm template) so
                     it's invisible to every other company. Rendered as a
@@ -1535,7 +1542,7 @@ export default function Sidebar() {
                   </button>
                 )}
 
-                {/* Run Pay — fixed, bespoke page (not a company_dashboards
+                {/* Run Pay -- fixed, bespoke page (not a company_dashboards
                     row), gated on the company having the Pay Runs table
                     (see supabase/migrations/20260805090000_niksen_payroll_tables.sql).
                     Same "table-list row, not its own section" pattern as
@@ -1555,7 +1562,7 @@ export default function Sidebar() {
                   </button>
                 )}
 
-                {/* Precedents — the firm's library as a browsable
+                {/* Precedents -- the firm's library as a browsable
                     destination, distinct from issuing one on a matter (that
                     lives on the matter's own Precedents tab). Same
                     fixed-bespoke-page pattern as Trust Account above. See
@@ -1587,7 +1594,7 @@ export default function Sidebar() {
                 )}
               </div>
 
-              {/* Dashboards — custom, user-built screens bound to one
+              {/* Dashboards -- custom, user-built screens bound to one
                   custom table (quick-add form + grid + stats + activity
                   chart). See lib/hooks/useCustomDashboards.ts. */}
               <div className="mb-2">
@@ -1667,7 +1674,7 @@ export default function Sidebar() {
                 )}
               </div>
 
-              {/* Saved views — for the currently active table */}
+              {/* Saved views -- for the currently active table */}
               {isTableActive(mode) && (
                 <div className="mb-2">
                   <div className="flex items-center justify-between px-3 mb-1">
@@ -1680,7 +1687,7 @@ export default function Sidebar() {
                       <Plus size={12} strokeWidth={3} />
                     </button>
                   </div>
-                  {/* Not highlighted even when no named view is selected —
+                  {/* Not highlighted even when no named view is selected -
                       filters auto-save without one, so "no view selected"
                       doesn't mean "no filter active" and shouldn't look
                       like a selected/active state. Always navigates (not
@@ -1722,7 +1729,7 @@ export default function Sidebar() {
               {/* Divider */}
               <div className="h-px bg-slate-100 my-2 mx-3" />
 
-              {/* Tree nav — record list is collapsed by default, opt-in via the disclosure toggle */}
+              {/* Tree nav -- record list is collapsed by default, opt-in via the disclosure toggle */}
               <div>
                 <div className="relative" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center justify-between px-3 mb-1">

@@ -118,13 +118,13 @@ async function resolveFilterValue(filterValue: string | null | undefined): Promi
 }
 
 interface Props {
-  // Exactly one of these identifies the target — a system table (entities/
+  // Exactly one of these identifies the target -- a system table (entities/
   // projects/properties) or a sibling custom table.
   linkedSystemTable?: string | null;
   linkedTableId?: string | null;
   displayField?: string | null; // system-table column to search/show, default 'name'
-  // Optional second field combined onto every label as "<displayField> —
-  // <displayField2>" (e.g. "260586 — Onsell Contract - Dahlia by Azure Lot
+  // Optional second field combined onto every label as "<displayField> -
+  // <displayField2>" (e.g. "260586 -- Onsell Contract - Dahlia by Azure Lot
   // 35" combining a Matter Number custom field with the matter's Project
   // Name) -- same format as displayField for a system-table target (native
   // column, or 'cf:<company_custom_fields.id>'); for a custom-table target
@@ -229,7 +229,7 @@ interface Props {
 }
 
 // Resolves the primary display field's value (plus an optional second
-// field, combined as "<primary> — <secondary>") for records of a custom
+// field, combined as "<primary> -- <secondary>") for records of a custom
 // (company_tables) table -- used both to label the currently-selected value
 // and to build the search results list.
 async function fetchCustomTableRecordLabels(
@@ -262,7 +262,7 @@ async function fetchCustomTableRecordLabels(
     };
     const primary = String(valueOf(primaryField.id) || 'Untitled');
     const secondary = secondaryField ? String(valueOf(secondaryField.id) || '') : '';
-    return { id: r.id, label: secondary ? `${primary} — ${secondary}` : primary };
+    return { id: r.id, label: secondary ? `${primary} -- ${secondary}` : primary };
   });
 }
 
@@ -292,7 +292,7 @@ async function appendDisplayField2(
     const { data } = await supabase.from(linkedSystemTable).select(`id, ${displayField2}`).in('id', ids);
     (data || []).forEach((r: any) => { if (r[displayField2] != null) byId.set(r.id, String(r[displayField2])); });
   }
-  return rows.map(r => byId.has(r.id) ? { ...r, label: `${r.label} — ${byId.get(r.id)}` } : r);
+  return rows.map(r => byId.has(r.id) ? { ...r, label: `${r.label} -- ${byId.get(r.id)}` } : r);
 }
 
 // Fetches EVERY candidate row for a system-table relation once (native
@@ -370,7 +370,7 @@ async function fetchAllSystemTableOptions(
   return (rows || []).map((r: any) => {
     const primary = String(r[col] ?? 'Untitled');
     const secondary = col2IsCf ? cfByField.get(displayField2!.slice(3))?.get(r.id) : (col2Native ? r[col2Native] : null);
-    const label = secondary ? `${primary} — ${secondary}` : primary;
+    const label = secondary ? `${primary} -- ${secondary}` : primary;
     const searchParts = [
       primary,
       ...nativeExtra.map(c => r[c]),
@@ -742,7 +742,7 @@ export default function RelationPicker({
         title={label || undefined}
         className={plain ? `w-full font-medium text-slate-500 truncate ${sizeClass}` : `w-full bg-slate-50 border border-slate-200 rounded-full font-medium text-slate-500 truncate ${sizeClass}`}
       >
-        {label || (plain ? '' : '—')}
+        {label || (plain ? '' : '-')}
       </div>
     );
   }

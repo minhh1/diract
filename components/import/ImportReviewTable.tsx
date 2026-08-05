@@ -31,7 +31,7 @@ function deriveAllColumns(
   const cols: { key: string; label: string; isCustom: boolean }[] = [];
   const seen = new Set<string>();
 
-  // Base parsed fields — skip internal address sub-fields and nulls
+  // Base parsed fields -- skip internal address sub-fields and nulls
   const SKIP = new Set([
     'property_suburb', 'property_state', 'property_postcode', 'property_country',
   ]);
@@ -112,7 +112,7 @@ export default function ImportReviewTable({
               </th>
             ))}
 
-            {/* Custom field columns — visually separated */}
+            {/* Custom field columns -- visually separated */}
             {customColumns.length > 0 && (
               <th
                 className="p-3 text-[9px] font-bold text-violet-400 uppercase tracking-widest border-l-2 border-violet-200 whitespace-nowrap bg-violet-50/40"
@@ -223,7 +223,7 @@ export default function ImportReviewTable({
                         >
                           {val
                             ? <span className="text-slate-700 font-medium truncate block">{val}</span>
-                            : <span className="text-slate-300 italic">—</span>
+                            : <span className="text-slate-300 italic">-</span>
                           }
                         </button>
                       )}
@@ -264,7 +264,7 @@ export default function ImportReviewTable({
                         >
                           {val
                             ? <span className="text-slate-700 font-medium truncate block">{val}</span>
-                            : <span className="text-slate-300 italic">—</span>
+                            : <span className="text-slate-300 italic">-</span>
                           }
                         </button>
                       )}

@@ -1,5 +1,5 @@
 // components/gmail/EmailPicker.tsx
-// Searchable dropdown for picking a connected Gmail account from a list —
+// Searchable dropdown for picking a connected Gmail account from a list -
 // used wherever a flat list of buttons would get unwieldy for companies
 // with a lot of staff (source-of-truth emails, archive accounts).
 "use client";

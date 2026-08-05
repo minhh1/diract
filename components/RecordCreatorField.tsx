@@ -102,7 +102,7 @@ export default function RecordCreatorField({
     onCreated(data.id, primaryValue.trim());
   };
 
-  // Already created — show the result
+  // Already created -- show the result
   if (created) {
     return (
       <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-100 rounded-2xl">

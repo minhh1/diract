@@ -77,7 +77,7 @@ export default function RecordDashboardTab({ tabId, linkedTableId, recordId, com
       // the one place billing_role is set.
       setIsFeeSource(tab?.billing_role === 'fee_source');
 
-      // Auto-set link field — scoped to this record's own system table so
+      // Auto-set link field -- scoped to this record's own system table so
       // an unrelated relation field of a different kind on the linked table
       // doesn't cause a false ambiguity (see lib/dashboardWidgets/linkField.ts).
       let lf: string | null = tab?.link_field_id ?? null;

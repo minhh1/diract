@@ -84,7 +84,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
     setCsvPreviewHeaders([]); setCsvPreviewRows([]);
   };
 
-  // ── File select — show preview immediately ──────────────────────
+  // ── File select -- show preview immediately ──────────────────────
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);
     setDetectedNotice(null);
@@ -156,7 +156,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
       customFieldMap
     );
 
-    // DEBUG — remove after confirming
+    // DEBUG -- remove after confirming
     console.log('customFieldMap size:', customFieldMap.size);
     console.log('customFieldMap entries:', [...customFieldMap.entries()].slice(0, 5));
     console.log('First row parsed keys:', Object.keys(parsed[0]?.parsed || {}));
@@ -221,7 +221,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
             raw_payload: r.parsed,
           })));
         } else if (mode === 'projects') {
-          // ── Project duplicate check — match by name + property ──
+          // ── Project duplicate check -- match by name + property ──
           for (const row of parsed) {
             const name = row.parsed.name?.trim();
             const streetAddress = row.parsed.property_street_address?.trim();
@@ -269,7 +269,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
         alert(`Duplicate check failed: ${err.message}. You can still review and commit manually.`);
       }
 
-      // For properties + entities — map flags to actions
+      // For properties + entities -- map flags to actions
       if (mode !== 'projects') {
         parsed.forEach(row => {
           const rowFlags = flags.filter(f => f.staging_row_index === row.rowIndex);
@@ -510,7 +510,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
                 onChange={(e) => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]); }}
               />
 
-              {/* ── CSV Preview — shown immediately after file selected ── */}
+              {/* ── CSV Preview -- shown immediately after file selected ── */}
               {csvPreviewHeaders.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
@@ -541,7 +541,7 @@ export default function ImportModal({ isOpen, onClose, onRefresh }: any) {
                                 key={ci}
                                 className="px-4 py-2.5 text-slate-600 border-r border-slate-50 last:border-0 max-w-[200px] truncate"
                               >
-                                {row[ci] || <span className="text-slate-300">—</span>}
+                                {row[ci] || <span className="text-slate-300">-</span>}
                               </td>
                             ))}
                           </tr>

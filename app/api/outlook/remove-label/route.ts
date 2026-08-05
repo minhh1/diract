@@ -1,8 +1,8 @@
 // app/api/outlook/remove-label/route.ts
 // Mirrors app/api/gmail/remove-label/route.ts's admin-vs-member semantics,
 // but propagation to other members goes through the same async
-// outlook_sync_jobs engine used by assign — not an inline per-member loop
-// — since outlook-label-sync-processor already knows how to strip a
+// outlook_sync_jobs engine used by assign -- not an inline per-member loop
+// -- since outlook-label-sync-processor already knows how to strip a
 // category from every known copy once a label's removed_at is set
 // (the isRemoved path).
 import { NextRequest, NextResponse } from "next/server";

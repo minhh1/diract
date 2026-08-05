@@ -1,7 +1,7 @@
 // lib/taskWatchers.ts
 // Reconciles a task's watcher list (task_watchers rows) to exactly the
 // given set of profile IDs, logging an activity entry for whatever
-// changed. Shared between the public task page's create/update routes —
+// changed. Shared between the public task page's create/update routes -
 // ChecklistTab.tsx does the same diff inline since it already has the
 // current watcher list and profile names in memory client-side.
 import { logTaskActivity } from "./taskActivityLog";

@@ -123,12 +123,12 @@ interface CachedRelatedCols {
 const relatedColsCacheKey = (companyId: string, tableSlug: string) => `related_cols_${companyId}_${tableSlug}`;
 
 // ── Format a cell value for display ───────────────────────────────
-// Relation-type fields store a target record id in `values` — the resolved
+// Relation-type fields store a target record id in `values` -- the resolved
 // label lives in `record.displayValues` (populated by useCustomTable), so
 // those need the whole record, not just the raw value.
 function formatValue(record: CustomTableRecord, field: CustomTableField): string {
   const value = record.values[field.field_key];
-  if (value === null || value === undefined || value === '') return '—';
+  if (value === null || value === undefined || value === '') return '-';
   if (RELATION_FIELD_TYPES.includes(field.field_type)) return record.displayValues[field.field_key] ?? 'Untitled';
   if (field.field_type === 'boolean') return value ? 'Yes' : 'No';
   if (field.field_type === 'currency') return `$${Number(value).toLocaleString()}`;
@@ -460,16 +460,16 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
     const parsed = parseRelatedColId(colId);
     if (parsed) {
       const relationField = fields.find(f => f.id === parsed.relationFieldId);
-      if (!relationField) return '—';
+      if (!relationField) return '-';
       const raw = record.values[relationField.field_key];
       const targetIds: string[] = Array.isArray(raw) ? raw : (raw ? [raw] : []);
-      if (targetIds.length === 0) return '—';
+      if (targetIds.length === 0) return '-';
       const byTarget = relatedValues.get(colId);
       const labels = targetIds.map(id => byTarget?.get(id)).filter((l): l is string => !!l);
-      return labels.length ? labels.join(', ') : '—';
+      return labels.length ? labels.join(', ') : '-';
     }
     const field = fields.find(f => f.id === colId);
-    if (!field) return '—';
+    if (!field) return '-';
     return formatValue(record, field);
   }, [fields, relatedValues]);
 
@@ -947,14 +947,14 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                       {cc.tableCols.map((colId, idx) => {
                         const value = resolveValue(record, colId);
                         // Expand toggle lives inside the first column, to the
-                        // right of its value — where the old "open record"
+                        // right of its value -- where the old "open record"
                         // icon used to sit, since the whole row opens the
                         // record now instead.
                         const showExpandToggle = idx === 0 && cc.expandCols.length > 0;
                         return (
                           <td
                             key={colId}
-                            title={value !== '—' ? value : undefined}
+                            title={value !== '-' ? value : undefined}
                             className="p-6 truncate font-medium text-slate-700"
                           >
                             {idx === 0 ? (
@@ -1017,7 +1017,7 @@ function CustomTableMasterPageInner({ tableSlug }: Props) {
                                     {resolveColLabel(colId)}
                                   </p>
                                   <p
-                                    title={expandValue !== '—' ? expandValue : undefined}
+                                    title={expandValue !== '-' ? expandValue : undefined}
                                     className="text-[13px] font-medium text-slate-800 truncate"
                                   >
                                     {expandValue}

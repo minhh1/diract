@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   console.log('Auth user:', user?.id, 'error:', authError?.message);
 
   if (!user) {
-    // User not logged in — store tokens in URL params temporarily
+    // User not logged in -- store tokens in URL params temporarily
     // and redirect to login with a return URL
     return NextResponse.redirect(
       `${APP_URL}/login?redirect=/dashboard/gmail`

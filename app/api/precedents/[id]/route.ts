@@ -1,7 +1,7 @@
 // app/api/precedents/[id]/route.ts
 // Admin-side (auth required). `id` here is the precedentId. PATCH updates
 // name/description/ai_instructions/display_order. DELETE is a soft delete
-// (deleted_at, matching company_tables' convention) rather than a hard one —
+// (deleted_at, matching company_tables' convention) rather than a hard one -
 // precedent_issuances rows keep referencing this precedent for history even
 // after it's retired from the tab.
 import { NextRequest, NextResponse } from "next/server";

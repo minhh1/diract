@@ -24,7 +24,7 @@ function money(n: number): string {
 }
 
 function formatDate(d: string | null | undefined): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return new Date(d).toLocaleDateString('en-AU'); } catch { return d; }
 }
 
@@ -38,7 +38,7 @@ function describe(r: CustomTableRecord): string {
   if (type === 'Deposit') return who ? `${type} from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}${matter ? ` for ${matter}` : ''}` : type;
   if (type === 'Journal Transfer') return matter ? `Transfer for ${matter}` : type;
-  return type || '—';
+  return type || '-';
 }
 
 export default function TrustTransactionsTab({
@@ -147,14 +147,14 @@ export default function TrustTransactionsTab({
                   {r.values.voided_at && <span className="ml-2 text-[9px] font-bold text-rose-500 uppercase tracking-wider">Voided</span>}
                   {r.values.reversal_of && <span className="ml-2 text-[9px] font-bold text-amber-500 uppercase tracking-wider">Reversal</span>}
                 </td>
-                <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.payment_number || r.values.journal_number || r.values.cheque_number || '—'}</td>
-                <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{matterNumbers.get(String(r.values.matter || '')) || '—'}</td>
+                <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.payment_number || r.values.journal_number || r.values.cheque_number || '-'}</td>
+                <td className="px-4 py-2.5 text-slate-500 font-mono text-[11px]">{matterNumbers.get(String(r.values.matter || '')) || '-'}</td>
                 <td className="px-4 py-2.5 text-slate-600">
                   {r.values.matter ? (
                     <button onClick={() => router.push(`/dashboard/projects?id=${r.values.matter}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
-                      {r.displayValues?.matter || '—'}
+                      {r.displayValues?.matter || '-'}
                     </button>
-                  ) : (r.displayValues?.matter || '—')}
+                  ) : (r.displayValues?.matter || '-')}
                 </td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_out ? money(Number(r.values.amount_out)) : ''}</td>
                 <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_in ? money(Number(r.values.amount_in)) : ''}</td>

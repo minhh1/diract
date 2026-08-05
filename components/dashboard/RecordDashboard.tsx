@@ -56,7 +56,7 @@ interface Props {
   recordId: string;
   onBack: () => void;
   embedded?: boolean;
-  initialRecord?: any; // pre-fetched row from master table — skips first loadRecord fetch
+  initialRecord?: any; // pre-fetched row from master table -- skips first loadRecord fetch
 }
 
 // Guards resolveLinkedItems' relation lookup below against a value_text-only
@@ -378,7 +378,7 @@ export default function RecordDashboard({
     return null;
   };
 
-  // Load linked items — custom fields from linked_values table, base relation fields from record directly
+  // Load linked items -- custom fields from linked_values table, base relation fields from record directly
   // Accepts rec and flds directly to avoid stale state after Promise.all
   const resolveLinkedItems = async (rec?: Record<string, any> | null, flds?: FieldLayout[]) => {
     const currentRecord = rec ?? record;
@@ -413,7 +413,7 @@ export default function RecordDashboard({
       if (data) map[f.id] = [{ id: storedId, name: (data as any)[nameColumn] || 'Untitled' }];
     }));
 
-    // ── Person link fields — value is stored as text name directly ──
+    // ── Person link fields -- value is stored as text name directly ──
     const personLinkFields = currentFields.filter(f =>
       f.field_source === 'base' && f.fieldType === 'person_link'
     );
@@ -431,7 +431,7 @@ export default function RecordDashboard({
       const nameCol = f.relationDisplayColumn || 'name';
       if (!table) return;
 
-      // Junction-backed relations (e.g. property_id) — multiple linked records
+      // Junction-backed relations (e.g. property_id) -- multiple linked records
       if (f.relationJunction) {
         const { table: junctionTable, sourceCol, targetCol } = f.relationJunction;
         const { data } = await supabase
@@ -582,7 +582,7 @@ export default function RecordDashboard({
     const seedTables = tablesForSeeding || [];
 
     if (tabData && tabData.length > 0) {
-      // Deduplicate — keep only first tab of each title
+      // Deduplicate -- keep only first tab of each title
       const seen = new Set<string>();
       const uniqueTabs = tabData.filter(t => {
         if (seen.has(t.title)) return false;
@@ -1051,7 +1051,7 @@ export default function RecordDashboard({
     }
     const resolvedItem = { id: resolvedId, name: resolvedName };
 
-    // Junction-backed base relation fields (e.g. property_id) — insert a link row
+    // Junction-backed base relation fields (e.g. property_id) -- insert a link row
     if (field.field_source === 'base' && field.fieldType === 'relation' && field.relationJunction) {
       const { table: junctionTable, sourceCol, targetCol } = field.relationJunction;
       const { error } = await supabase.from(junctionTable).insert({
@@ -1062,7 +1062,7 @@ export default function RecordDashboard({
       return;
     }
 
-    // Base relation fields — save UUID directly to the record column
+    // Base relation fields -- save UUID directly to the record column
     if (field.field_source === 'base' && field.fieldType === 'relation') {
       const { error } = await supabase.from(systemTable!).update({ [field.field_key]: resolvedId }).eq('id', recordId);
       if (error) { window.alert(error.message); return; }
@@ -1071,7 +1071,7 @@ export default function RecordDashboard({
       return;
     }
 
-    // Person link fields — store the display name as text
+    // Person link fields -- store the display name as text
     if (field.field_source === 'base' && field.fieldType === 'person_link') {
       const { error } = await supabase.from(systemTable!).update({ [field.field_key]: resolvedName }).eq('id', recordId);
       if (error) { window.alert(error.message); return; }
@@ -1672,7 +1672,7 @@ export default function RecordDashboard({
   if (loading) {
     // Mirrors the shape of the real header + TabBar below (rather than a
     // bare spinner) so the tab row doesn't pop into existence once data
-    // arrives — same intent as GenericMasterTable's row skeleton.
+    // arrives -- same intent as GenericMasterTable's row skeleton.
     const tabSkeleton = (
       <div className="flex items-center gap-1 border-b border-slate-100 px-6 -mx-8 bg-white animate-pulse">
         {[0, 1, 2, 3].map(i => (
@@ -1861,7 +1861,7 @@ export default function RecordDashboard({
           )}
         </p>
 
-        {/* Send SMS — entities only */}
+        {/* Send SMS -- entities only */}
         {systemTable === 'entities' && (
           <SendSmsCard
             entityId={recordId}
@@ -1870,7 +1870,7 @@ export default function RecordDashboard({
           />
         )}
 
-        {/* Sub-projects row — projects only */}
+        {/* Sub-projects row -- projects only */}
         {systemTable === 'projects' && (
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest shrink-0">

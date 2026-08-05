@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     || request.cookies.get('invite_token')?.value
     || null
 
-  // Where to land after sign-in — e.g. back on the public task page the
+  // Where to land after sign-in -- e.g. back on the public task page the
   // user was trying to view, or (via `next`) the reset-password form after
   // a password-recovery link. Only relative paths are honoured.
   const nextParam = searchParams.get('next')
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Handle invite token — add user to company
+    // Handle invite token -- add user to company
     if (inviteToken) {
       const { data: tokenData } = await supabase
         .from('registration_tokens')
@@ -147,6 +147,6 @@ export async function GET(request: NextRequest) {
     return response
   }
 
-  // No code — redirect to login
+  // No code -- redirect to login
   return NextResponse.redirect(`${origin}/login`)
 }

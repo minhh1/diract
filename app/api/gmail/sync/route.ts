@@ -59,7 +59,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
 
   if (!connectedUsers.length) return { synced: 0, reapplied: 0, users: 0 };
 
-  // Find source users — those whose Gmail email is nominated as source of truth
+  // Find source users -- those whose Gmail email is nominated as source of truth
   // If none nominated, fall back to first connected user
   let sourceUsers: { userId: string; accessToken: string }[] = [];
 
@@ -77,9 +77,9 @@ export async function runSync(companyId: string, triggeredBy: string) {
   }
 
   if (!sourceUsers.length) {
-    // Fallback — use first connected user
+    // Fallback -- use first connected user
     sourceUsers = [connectedUsers[0]];
-    console.log(`[sync] No source emails nominated — using ${connectedUsers[0].userId} as source`);
+    console.log(`[sync] No source emails nominated -- using ${connectedUsers[0].userId} as source`);
   } else {
     console.log(`[sync] Using ${sourceUsers.length} nominated source email(s)`);
   }
@@ -99,7 +99,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
     const messageIds = await getMessagesWithLabel(sourceUser.accessToken, sourceLabelId);
     if (!messageIds.length) continue;
 
-    console.log(`[sync] "${pl.gmail_label_name}" — ${messageIds.length} messages`);
+    console.log(`[sync] "${pl.gmail_label_name}" -- ${messageIds.length} messages`);
 
     for (const msgId of messageIds) {
       // Get raw message + subject from source
@@ -162,7 +162,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
         if (!userLabelId) continue;
 
         if (!hasSyncRecord) {
-          // ── New user — never synced this message ─────────────────
+          // ── New user -- never synced this message ─────────────────
           let finalMsgId = msgId;
 
           const existingMsgRes = await fetch(
@@ -171,7 +171,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
           );
 
           if (existingMsgRes.ok) {
-            // User has the message — just apply label
+            // User has the message -- just apply label
             const applyRes = await fetch(
               `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/modify`,
               {
@@ -232,8 +232,8 @@ export async function runSync(companyId: string, triggeredBy: string) {
           console.log(`[sync] ✓ NEW "${subject}" → ${userId}`);
 
         } else if (removedAt !== null) {
-          // ── Label was removed — re-apply it ─────────────────────
-          // Non-admin removed their label — sync restores it
+          // ── Label was removed -- re-apply it ─────────────────────
+          // Non-admin removed their label -- sync restores it
 
           const msgRes = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}`,
@@ -281,7 +281,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
 
               console.log(`[sync] ↺ REAPPLIED "${subject}" → ${userId}`);
             } else {
-              // Label is already there — just clear removed_at
+              // Label is already there -- just clear removed_at
               await db.from('user_gmail_label_sync')
                 .update({ label_removed_at: null, synced_at: new Date().toISOString() })
                 .eq('user_id', userId)
@@ -289,7 +289,7 @@ export async function runSync(companyId: string, triggeredBy: string) {
                 .eq('gmail_message_id', msgId);
             }
           } else {
-            // User no longer has the message — re-import it
+            // User no longer has the message -- re-import it
             const importRes = await fetch(
               `https://gmail.googleapis.com/gmail/v1/users/me/messages/import`,
               {

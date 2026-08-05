@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  // Resolve email — prefer X-User-Email header (sent by addon directly),
+  // Resolve email -- prefer X-User-Email header (sent by addon directly),
   // fall back to token userinfo lookup
   let email: string | null = req.headers.get('X-User-Email');
 
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     parentLabel: company?.gmail_parent_label || '',
     parentCode:  company?.gmail_parent_code  || '',
     tokens:      company?.gmail_label_tokens  || ['matter_number', 'project_name'],
-    separator:   company?.gmail_sublabel_separator || ' — ',
+    separator:   company?.gmail_sublabel_separator || ' -- ',
     isAdmin,
     email,
   });

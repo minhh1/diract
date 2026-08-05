@@ -1,5 +1,5 @@
 // components/admin/LeadEmailKeywordRulesPanel.tsx
-// Admin-managed "subject contains X -> propose this Lead" rules — the
+// Admin-managed "subject contains X -> propose this Lead" rules -- the
 // third-priority signal app/api/gmail/leads-sync uses to match an incoming
 // email when Gmail thread-id and sender-email matching both come up empty.
 // Rendered inside AdminLeadEmailAssignmentsTab, below the pending queue.
@@ -27,7 +27,7 @@ interface LeadOption {
 }
 
 // The Leads table is a plain custom table (slug 'leads') with EAV-style
-// value storage — same lookup pattern as lib/hooks/useCustomTable.ts, kept
+// value storage -- same lookup pattern as lib/hooks/useCustomTable.ts, kept
 // local here since this is the only place in the admin UI that needs a
 // bare "id -> primary field value" list for it.
 async function loadLeadOptions(companyId: string): Promise<LeadOption[]> {

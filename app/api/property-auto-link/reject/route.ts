@@ -1,5 +1,5 @@
 // app/api/property-auto-link/reject/route.ts
-// Admin-only reject for property_auto_link_requests — no side effects, just
+// Admin-only reject for property_auto_link_requests -- no side effects, just
 // flips status. These rows are system-generated (property-auto-link-scan),
 // same as lead_email_assignment_requests, so there's no requested_by human
 // to notify. A rejected project never gets re-proposed by a later scan

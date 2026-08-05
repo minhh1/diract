@@ -88,8 +88,8 @@ export default function EquityWaterfallPanel({
                 <td className="py-1 px-2 text-right text-slate-600">{money(r.preferredReturnPaid)}</td>
                 <td className="py-1 px-2 text-right text-slate-600">{money(r.residualShare)}</td>
                 <td className="py-1 px-2 text-right font-bold text-slate-800">{money(r.totalDistribution)}</td>
-                <td className="py-1 px-2 text-right text-slate-600">{r.equityMultiple != null ? `${r.equityMultiple.toFixed(2)}x` : "—"}</td>
-                <td className={`py-1 px-2 text-right ${r.irrPct != null && r.irrPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{r.irrPct != null ? `${r.irrPct.toFixed(1)}%` : "—"}</td>
+                <td className="py-1 px-2 text-right text-slate-600">{r.equityMultiple != null ? `${r.equityMultiple.toFixed(2)}x` : "-"}</td>
+                <td className={`py-1 px-2 text-right ${r.irrPct != null && r.irrPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{r.irrPct != null ? `${r.irrPct.toFixed(1)}%` : "-"}</td>
               </tr>
             ))}
           </tbody>

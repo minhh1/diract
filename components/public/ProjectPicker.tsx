@@ -1,6 +1,6 @@
 // components/public/ProjectPicker.tsx
 // Searchable project picker (by name and/or matter number) for the public
-// task page. Filters an already-loaded project catalog client-side — no
+// task page. Filters an already-loaded project catalog client-side -- no
 // network round trip per keystroke, which is what made this feel slow when
 // it hit a search API on every character typed.
 "use client";

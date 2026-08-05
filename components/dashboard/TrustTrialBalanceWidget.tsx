@@ -136,14 +136,14 @@ export default function TrustTrialBalanceWidget({ records, trustAccountName }: {
           <tbody>
             {matters.map(m => (
               <tr key={m.matterId} className="border-b border-slate-50">
-                <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">{matterNumbers.get(m.matterId) || '—'}</td>
+                <td className="px-4 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">{matterNumbers.get(m.matterId) || '-'}</td>
                 <td className="px-4 py-2 text-slate-600">
                   <button onClick={() => router.push(`/dashboard/projects?id=${m.matterId}&tab=trust_account`)} className="text-teal-700 hover:underline text-left">
-                    {matterNames.get(m.matterId) || '—'}
+                    {matterNames.get(m.matterId) || '-'}
                   </button>
                 </td>
-                <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{matterTypes.get(m.matterId) || '—'}</td>
-                <td className="px-4 py-2 text-slate-600">{clientNames.get(m.clientId) || '—'}</td>
+                <td className="px-4 py-2 text-slate-600 whitespace-nowrap">{matterTypes.get(m.matterId) || '-'}</td>
+                <td className="px-4 py-2 text-slate-600">{clientNames.get(m.clientId) || '-'}</td>
                 <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{formatDateAU(m.lastDate)}</td>
                 <td className={`px-4 py-2 text-right font-semibold whitespace-nowrap ${m.balance < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{aud.format(m.balance)}</td>
               </tr>

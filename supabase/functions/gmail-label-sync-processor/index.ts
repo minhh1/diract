@@ -1,7 +1,7 @@
 // supabase/functions/gmail-label-sync-processor/index.ts
 // Does the actual Gmail work for ONE (job, user) pair. Invoked directly by
-// gmail-label-sync-worker (the dispatcher) via a plain HTTPS fetch — NOT
-// via pg_cron/pg_net — so each unit of work runs in its own isolate with
+// gmail-label-sync-worker (the dispatcher) via a plain HTTPS fetch -- NOT
+// via pg_cron/pg_net -- so each unit of work runs in its own isolate with
 // its own compute budget and 150s ceiling, instead of competing for one
 // shared isolate's memory/CPU the way in-process concurrency did. This is
 // what actually scales as company/staff count grows: throughput is bounded
@@ -187,7 +187,7 @@ async function logActivity(row: Record<string, unknown>): Promise<void> {
   try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break sync over logging */ }
 }
 
-// First failure quarantines the user for this job — the dispatcher never
+// First failure quarantines the user for this job -- the dispatcher never
 // retries them itself again; gmail-sync-recovery-worker owns it from here.
 // Logged to gmail_sync_log too (action: sync_error), not just the failures
 // table, so it shows up in the Activity Log immediately, not only once
@@ -269,7 +269,7 @@ Deno.serve(async (req) => {
   try {
     const token = await getAccessToken(userId);
     if (!token) {
-      console.log(`[label-sync-processor] No token for ${userId} — marking complete (nothing to do)`);
+      console.log(`[label-sync-processor] No token for ${userId} -- marking complete (nothing to do)`);
       await markUserComplete(jobId, userId, totalUsers);
       return respond({ ok: true, userId, skipped: "no_token" });
     }
@@ -277,7 +277,7 @@ Deno.serve(async (req) => {
     const { data: memberCheck } = await db.from("company_memberships")
       .select("user_id").eq("user_id", userId).eq("company_id", companyId).maybeSingle();
     if (!memberCheck) {
-      console.log(`[label-sync-processor] ${userId} is not a member of ${companyId} — skipping without marking complete`);
+      console.log(`[label-sync-processor] ${userId} is not a member of ${companyId} -- skipping without marking complete`);
       return respond({ ok: true, userId, skipped: "not_member" });
     }
 
@@ -318,7 +318,7 @@ Deno.serve(async (req) => {
         // user's mailbox. Sharing one action name made this admin-facing
         // log unreadable: this event has no `reapplied` field, so it fell
         // through to describeActivity's "label_removed" case and rendered
-        // as the nonsensical "$user removed this (admin) — staying
+        // as the nonsensical "$user removed this (admin) -- staying
         // removed" regardless of who actually deleted the project.
         await logActivity({
           company_id: companyId, triggered_by: null, action: "label_deleted",

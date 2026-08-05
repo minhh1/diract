@@ -1,10 +1,10 @@
 // supabase/functions/calendar-sync/index.ts
-// Creates / updates / deletes a Google Calendar event for a task — on the
+// Creates / updates / deletes a Google Calendar event for a task -- on the
 // assignee's own calendar, and optionally also on the company's nominated
 // source-of-truth Gmail account's calendar (companies.
 // sync_tasks_to_company_calendar), if that's turned on. These are two
 // independent copies (separate event ids), synced whether or not the
-// other target is available — a task with no assignee (or an assignee who
+// other target is available -- a task with no assignee (or an assignee who
 // hasn't connected Calendar) can still sync to the company calendar, and
 // vice versa. Whether the assignee shares their own calendar with anyone
 // else is entirely up to them; this doesn't manage sharing/ACLs there.
@@ -124,7 +124,7 @@ async function updateCalendarEvent(
   );
   if (!res.ok) {
     const err = await res.text();
-    // Event might not exist on this calendar — try create instead
+    // Event might not exist on this calendar -- try create instead
     if (res.status === 404) return false;
     console.error("[calendar] update error:", err);
     return false;
@@ -154,7 +154,7 @@ function extractTokens(format: string): string[] {
 }
 
 // Title format can reference {task_name}, {project_name}, or any of the
-// company's custom fields on the projects table (by field_key) — e.g.
+// company's custom fields on the projects table (by field_key) -- e.g.
 // {matter_number} for a law firm, {job_reference} for a trades company.
 // customFieldValues is keyed by field_key, resolved by the caller.
 function buildEventTitle(format: string, taskName: string, projectName: string, customFieldValues: Record<string, string>): string {
@@ -194,7 +194,7 @@ function buildEvent(params: {
   const { title, description, dueDate, dueTime, durationMins, isCompleted, timezone } = params;
 
   let start: any, end: any;
-  const datePart = dueDate.substring(0, 10); // dueDate may be a full timestamp — keep just YYYY-MM-DD
+  const datePart = dueDate.substring(0, 10); // dueDate may be a full timestamp -- keep just YYYY-MM-DD
 
   if (dueTime) {
     // Timed event -- dueTime is HH:MM:SS, already includes seconds. Sent as
@@ -236,7 +236,7 @@ Deno.serve(async (req) => {
 
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // Event-driven (called per-task, not cron-scheduled) — heartbeat still
+  // Event-driven (called per-task, not cron-scheduled) -- heartbeat still
   // records "last time this ran" so the Platform Health tab can flag it as
   // Down if task syncing has genuinely stopped invoking this function.
   const started = Date.now();
@@ -272,7 +272,7 @@ Deno.serve(async (req) => {
     const timezone = company?.timezone || "Australia/Sydney";
 
     // ── Resolve sync targets ────────────────────────────────────────
-    // Two independent copies — each syncs (or doesn't) on its own, so a
+    // Two independent copies -- each syncs (or doesn't) on its own, so a
     // task missing one target still syncs to the other.
     const assigneeEmail = (task.assignee as any)?.email || null;
     let assigneeAuth: { token: string; userId: string } | null = null;
@@ -289,7 +289,7 @@ Deno.serve(async (req) => {
     let companyAuth: { token: string; userId: string } | null = null;
     const wantsCompanySync = !!company?.sync_tasks_to_company_calendar || !!task.sync_to_company_calendar;
     // Also resolve this if a company-calendar copy already exists, even if
-    // the setting/flag has since been turned off — otherwise a delete or
+    // the setting/flag has since been turned off -- otherwise a delete or
     // complete action can't clean up the now-orphaned copy.
     if ((wantsCompanySync || task.company_calendar_event_id) && company?.gmail_source_emails?.length) {
       companyAuth = await getTokenByEmail(company.gmail_source_emails[0]);
@@ -297,12 +297,12 @@ Deno.serve(async (req) => {
     }
 
     if (!assigneeAuth && !companyAuth) {
-      console.log("[calendar] no sync target available — skipping");
+      console.log("[calendar] no sync target available -- skipping");
       return new Response(JSON.stringify({ ok: true, skipped: "no sync target" }), { headers: corsHeaders });
     }
 
     // Resolve any custom-field tokens referenced in the title format (e.g.
-    // {matter_number}, {job_reference} — whatever fields this company has
+    // {matter_number}, {job_reference} -- whatever fields this company has
     // configured on the projects table) for this task's project.
     const customTokenKeys = extractTokens(titleFormat).filter(t => t !== "task_name" && t !== "project_name");
     const customFieldValues: Record<string, string> = {};
@@ -365,7 +365,7 @@ Deno.serve(async (req) => {
 
     // ── Handle upsert ──────────────────────────────────────────────
     if (!task.due_date) {
-      console.log("[calendar] no due date — skipping");
+      console.log("[calendar] no due date -- skipping");
       return new Response(JSON.stringify({ ok: true, skipped: "no due date" }), { headers: corsHeaders });
     }
 
@@ -379,7 +379,7 @@ Deno.serve(async (req) => {
       let eventId = task.calendar_event_id;
       if (eventId) {
         const updated = await updateCalendarEvent(assigneeAuth.token, assigneeCalendarId, eventId, event);
-        if (!updated) eventId = null; // gone, or calendar_target changed — recreate
+        if (!updated) eventId = null; // gone, or calendar_target changed -- recreate
       }
       if (!eventId) eventId = await createCalendarEvent(assigneeAuth.token, assigneeCalendarId, event);
       if (eventId) { dbUpdate.calendar_event_id = eventId; anySynced = true; }
@@ -387,7 +387,7 @@ Deno.serve(async (req) => {
 
     if (companyAuth && !wantsCompanySync && task.company_calendar_event_id) {
       // The company-wide setting and this task's own flag are both off,
-      // but a copy exists from before — remove the now-unwanted copy.
+      // but a copy exists from before -- remove the now-unwanted copy.
       await deleteCalendarEvent(companyAuth.token, "primary", task.company_calendar_event_id);
       dbUpdate.company_calendar_event_id = null;
       anySynced = true;

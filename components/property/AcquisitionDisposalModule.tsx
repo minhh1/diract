@@ -6,7 +6,7 @@ export default function AcquisitionDisposalModule({ data }: { data: any }) {
   const DataRow = ({ label, value }: { label: string; value: any }) => (
     <div className="grid grid-cols-3 border-b border-slate-100 p-5 hover:bg-slate-50 transition-colors">
       <div className="text-[11px] font-medium text-slate-400 flex items-center">{label}</div>
-      <div className="col-span-2 text-sm font-medium text-slate-700">{String(value || "—")}</div>
+      <div className="col-span-2 text-sm font-medium text-slate-700">{String(value || "-")}</div>
     </div>
   );
 

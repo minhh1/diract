@@ -318,7 +318,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           />
         </div>
 
-        {/* Grid width — system tables only */}
+        {/* Grid width -- system tables only */}
         {!field.isCustomTable && (
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
@@ -415,7 +415,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
 
             {/* Combines a second field onto every label, e.g. a Matter
                 Number custom field alongside the Project Name display field
-                -- "260586 — Onsell Contract - Dahlia by Azure Lot 35" in
+                -- "260586 -- Onsell Contract - Dahlia by Azure Lot 35" in
                 every search-and-choose bar for this relation (see
                 supabase/company_table_fields_display_field_2.sql). Offers
                 the same candidates as "Also search by" below for a system-
@@ -442,7 +442,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                   ))}
                 </select>
                 <p className="text-[10px] text-slate-400 mt-1 px-1">
-                  Combined onto the display field wherever this relation is searched, e.g. &quot;260586 — Onsell Contract&quot;
+                  Combined onto the display field wherever this relation is searched, e.g. &quot;260586 -- Onsell Contract&quot;
                 </p>
               </div>
             )}
@@ -614,7 +614,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           </div>
         )}
 
-        {/* Auto numbering — text fields on either a custom table (server-
+        {/* Auto numbering -- text fields on either a custom table (server-
             side sequence, see supabase/company_table_field_sequences.sql)
             or a system table like projects' Matter Number (see
             supabase/migrations/20260730180000_custom_field_auto_numbering.sql
@@ -655,7 +655,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
           </div>
         )}
 
-        {/* Computed value — number/currency fields, plus date fields (date
+        {/* Computed value -- number/currency fields, plus date fields (date
             only ever offers "Max of related", see below). Multiply/% of are
             custom-table only and numeric-only (they reference a SIBLING
             field on the same table); "Sum of related"/"Max of related" are

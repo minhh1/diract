@@ -14,14 +14,14 @@ export interface SavedView {
 }
 
 // Reserved view name for the implicit, always-auto-saved filter slot used
-// when the user hasn't created/selected a named view — lets filters persist
+// when the user hasn't created/selected a named view -- lets filters persist
 // without forcing anyone through the "name a view" flow first. Hidden from
 // the Sidebar's saved-views list.
 export const DEFAULT_VIEW_NAME = "__default__";
 
 // Caches getDefaultFilters' answer so GenericMasterTable can paint the
 // no-?view= (by far the common) case with the RIGHT filters immediately on
-// mount instead of blanking to "no filters" for a round trip — same
+// mount instead of blanking to "no filters" for a round trip -- same
 // raw-answer-plus-lazy-seed pattern as usePresetTable.ts's scoped-view
 // cache, and warmed by the same bootstrap step for the same reason: so
 // there's nothing left to load once the main table screen appears.

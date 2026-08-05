@@ -1,6 +1,6 @@
 // app/api/precedents/settings/route.ts
 // Formatting defaults for issued precedent documents (subject-line style,
-// date format, salutation style, up to 4 signers) — see
+// date format, salutation style, up to 4 signers) -- see
 // supabase/migrations/..._precedent_settings.sql. Answered once: a
 // project_id-less row is the company-wide default (edited from the admin
 // "Precedents" tab), an optional project_id-scoped row overrides it for one

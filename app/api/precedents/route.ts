@@ -1,7 +1,7 @@
 // app/api/precedents/route.ts
 // The firm's precedent library (see supabase/migrations/..._precedents.sql).
 // GET is used both by the Precedents settings screen's library section and
-// by the record-page "Precedent" tab (components/dashboard/tabs/PrecedentsTab.tsx) —
+// by the record-page "Precedent" tab (components/dashboard/tabs/PrecedentsTab.tsx) -
 // scoped by recordTable, defaulting to 'projects' (Matters). Any company
 // member can add a new precedent; editing/reordering/deleting an existing
 // one is admin-only (see app/api/precedents/[id]/route.ts).

@@ -1,5 +1,5 @@
 // lib/daysLeft.ts
-// Shared "days left" label for a task's due date — used in the Checklist
+// Shared "days left" label for a task's due date -- used in the Checklist
 // View and the public task page (kept in sync there; the Gmail add-on has
 // its own copy of this logic since Apps Script can't import from here).
 

@@ -56,7 +56,7 @@ function teamColor(teamId: string, teams: Team[]): string {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
 
@@ -596,7 +596,7 @@ function BulkEditModal({
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Move the whole schedule</p>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div>
-                    <p className="text-[9px] text-slate-400 mb-1">New project start (currently {projectStart ?? "—"})</p>
+                    <p className="text-[9px] text-slate-400 mb-1">New project start (currently {projectStart ?? "-"})</p>
                     <input type="date" value={shiftTo} onChange={e => setShiftTo(e.target.value)}
                       className="px-3 py-1.5 border border-slate-200 rounded-full text-[12px] outline-none bg-white" />
                   </div>
@@ -674,7 +674,7 @@ function BulkEditModal({
                     return (
                       <div key={t.id} className={`flex items-center gap-3 px-4 py-2 rounded-2xl ${changed ? "bg-indigo-50" : "bg-slate-50"}`}>
                         <p className="flex-1 text-[11px] text-slate-700 truncate">{t.name}</p>
-                        <span className="text-[10px] text-slate-400 whitespace-nowrap">{effectiveDate(t, "start_date") ?? "—"} → <span className={changed ? "font-bold text-indigo-600" : "font-medium"}>{effectiveDate(t, "due_date") ?? "—"}</span></span>
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap">{effectiveDate(t, "start_date") ?? "-"} → <span className={changed ? "font-bold text-indigo-600" : "font-medium"}>{effectiveDate(t, "due_date") ?? "-"}</span></span>
                       </div>
                     );
                   })}
@@ -1218,10 +1218,10 @@ export default function TimelineSubtab({ projectId }: { projectId: string }) {
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1 cursor-pointer" onClick={() => setEditingTask(t)}>
                         {t.teams.map(tm => <span key={tm.id} title={tm.team_name} className="w-4 h-1.5 rounded-full" style={{ backgroundColor: teamColor(tm.id, teams) }} />)}
-                        {!t.teams.length && <span className="text-slate-300 text-[10px]">—</span>}
+                        {!t.teams.length && <span className="text-slate-300 text-[10px]">-</span>}
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-slate-500">{t.assignee?.full_name || "—"}</td>
+                    <td className="px-2 py-2 text-slate-500">{t.assignee?.full_name || "-"}</td>
                     <td className="px-2 py-2 text-slate-500 whitespace-nowrap cursor-pointer hover:text-indigo-600" onClick={() => setEditingTask(t)}>{formatDate(t.start_date)}</td>
                     <td className="px-6 py-2 text-slate-500 whitespace-nowrap cursor-pointer hover:text-indigo-600" onClick={() => setEditingTask(t)}>{formatDate(t.due_date)}</td>
                   </tr>

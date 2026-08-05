@@ -44,7 +44,7 @@ export default function TimeEntriesDetail() {
             hours, and status through your billing workflow (Draft → Released → Billed → Written Off).
           </p>
           <div className={`space-y-2 max-w-sm ${isDark ? "dark" : ""}`}>
-            <FieldRow label="Matter" value="2024/0187 — Smith Family Trust" />
+            <FieldRow label="Matter" value="2024/0187 -- Smith Family Trust" />
             <FieldRow label="Rate" value="$450.00" />
             <FieldRow label="Hours" value="0.3" />
             <FieldRow label="Amount" value="$135.00" valid />
@@ -70,8 +70,8 @@ export default function TimeEntriesDetail() {
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">Matter</p>
               <div className="space-y-1">
-                <div className="rounded-lg bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700">2024/0187 — Smith Family Trust</div>
-                <div className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-400">2024/0201 — Nguyen Trust Deed</div>
+                <div className="rounded-lg bg-indigo-50 px-3 py-1.5 text-[12px] font-medium text-indigo-700">2024/0187 -- Smith Family Trust</div>
+                <div className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-400">2024/0201 -- Nguyen Trust Deed</div>
               </div>
               <p className="flex items-center gap-1 text-[10px] text-slate-400 mt-2 px-1"><CornerDownLeft size={10} /> Enter or Tab to confirm</p>
             </div>

@@ -3,7 +3,7 @@
 // another uploaded PDF, remove a page, and drag a thumbnail to any position to
 // reorder. "Apply" builds the final PDF with pdf-lib (copyPages per entry, in
 // the current thumbnail order) and hands the new bytes back to PdfEditor as
-// its new working copy — the same in-memory-until-Save model already used for
+// its new working copy -- the same in-memory-until-Save model already used for
 // annotations. The caller is responsible for clearing the ops log on apply,
 // since page indices are invalidated by any reorder/removal.
 "use client";

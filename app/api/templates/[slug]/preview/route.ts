@@ -1,6 +1,6 @@
 // app/api/templates/[slug]/preview/route.ts
 // Read-only: builds the full "what happens if I install this" manifest for
-// the admin to review before approving — every table the template would
+// the admin to review before approving -- every table the template would
 // add (with its fields), every system field it would add, whether each
 // individually conflicts with something the company already has, and a
 // snapshot of the company's current schema for context. See
@@ -255,10 +255,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
       // No exact field_key match, but the company may already have this
       // same field under a different key (e.g. one they built by hand
       // before this template existed, or before this field was added to
-      // it — `field_key`s in that case are often auto-generated
+      // it -- `field_key`s in that case are often auto-generated
       // (`field_<timestamp>`), not the template's clean slug). Installing
-      // blindly in that case creates a confusing duplicate — see the Huynh
-      // Lawyers "Client" / "Client Name" cleanup this was found from —
+      // blindly in that case creates a confusing duplicate -- see the Huynh
+      // Lawyers "Client" / "Client Name" cleanup this was found from -
       // so flag an exact case-insensitive label match on the same table too.
       const { data: labelMatch } = await admin
         .from("company_custom_fields").select("id, label")

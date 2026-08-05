@@ -10,7 +10,7 @@
 --   app/api/profile/avatar/route.ts (never a direct client upload), which
 --   validates file type/size before storing.
 --
--- Files live at: {userId}/{uuid}.{ext} — old files for a user are removed
+-- Files live at: {userId}/{uuid}.{ext} -- old files for a user are removed
 -- when a new avatar is uploaded or the avatar is cleared.
 
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url text;

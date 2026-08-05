@@ -42,7 +42,7 @@ export default function NewPropertyModal({ isOpen, onClose, onRefresh, tableName
   const [purchaseDate, setPurchaseDate] = useState('');
   const [folioIdentifier, setFolioIdentifier] = useState('');
 
-  // Generic custom table — just a name field
+  // Generic custom table -- just a name field
   const [recordName, setRecordName] = useState('');
   const nameQuality = useNameQualityCheck();
 

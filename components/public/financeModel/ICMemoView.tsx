@@ -68,29 +68,29 @@ export default function ICMemoView({
         </div>
 
         <div className="grid grid-cols-4 gap-4">
-          <Kpi label="Return on Equity" value={result.returnOnEquityPct != null ? `${result.returnOnEquityPct.toFixed(1)}%` : "—"} />
+          <Kpi label="Return on Equity" value={result.returnOnEquityPct != null ? `${result.returnOnEquityPct.toFixed(1)}%` : "-"} />
           <Kpi label="Required Equity" value={money(result.requiredEquity)} />
           <Kpi label="Net Profit" value={money(result.netProfit)} />
-          <Kpi label="Margin on Cost" value={result.marginOnCostPct != null ? `${result.marginOnCostPct.toFixed(1)}%` : "—"} />
-          <Kpi label="Leveraged IRR (XIRR)" value={returns.leveraged.irrPct != null ? `${returns.leveraged.irrPct.toFixed(1)}%` : "—"} />
-          <Kpi label="Unleveraged IRR (XIRR)" value={returns.unleveraged.irrPct != null ? `${returns.unleveraged.irrPct.toFixed(1)}%` : "—"} />
-          <Kpi label="Equity Multiple" value={returns.leveraged.equityMultiple != null ? `${returns.leveraged.equityMultiple.toFixed(2)}x` : "—"} />
+          <Kpi label="Margin on Cost" value={result.marginOnCostPct != null ? `${result.marginOnCostPct.toFixed(1)}%` : "-"} />
+          <Kpi label="Leveraged IRR (XIRR)" value={returns.leveraged.irrPct != null ? `${returns.leveraged.irrPct.toFixed(1)}%` : "-"} />
+          <Kpi label="Unleveraged IRR (XIRR)" value={returns.unleveraged.irrPct != null ? `${returns.unleveraged.irrPct.toFixed(1)}%` : "-"} />
+          <Kpi label="Equity Multiple" value={returns.leveraged.equityMultiple != null ? `${returns.leveraged.equityMultiple.toFixed(2)}x` : "-"} />
           <Kpi label="Peak Debt" value={money(facilitySimulation.peakDebt)} />
-          <Kpi label="NPV @ 10% (Leveraged)" value={returns.leveraged.npv != null ? money(returns.leveraged.npv) : "—"} />
-          <Kpi label="Payback (Leveraged)" value={returns.leveraged.paybackMonths != null ? `${returns.leveraged.paybackMonths} mo` : "—"} />
+          <Kpi label="NPV @ 10% (Leveraged)" value={returns.leveraged.npv != null ? money(returns.leveraged.npv) : "-"} />
+          <Kpi label="Payback (Leveraged)" value={returns.leveraged.paybackMonths != null ? `${returns.leveraged.paybackMonths} mo` : "-"} />
         </div>
 
         <div className="border-t border-slate-100 pt-4">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Key Assumptions</p>
           <div className="grid grid-cols-4 gap-3 text-[11px] text-slate-600">
-            <div><span className="text-slate-400">Dwellings: </span>{inputs.dwellingsCount ?? "—"}</div>
-            <div><span className="text-slate-400">Avg size: </span>{inputs.avgDwellingSizeSqm ?? "—"} sqm</div>
-            <div><span className="text-slate-400">Sale price/dwelling: </span>{inputs.expectedSalePricePerDwelling != null ? money(inputs.expectedSalePricePerDwelling) : "—"}</div>
-            <div><span className="text-slate-400">Construction rate: </span>{inputs.constructionRatePerSqm != null ? `${money(inputs.constructionRatePerSqm)}/sqm` : "—"}</div>
-            <div><span className="text-slate-400">Duration: </span>{inputs.projectDurationMonths ?? "—"} months</div>
-            <div><span className="text-slate-400">Facility limit: </span>{inputs.facilityLimit != null ? money(inputs.facilityLimit) : "—"}</div>
-            <div><span className="text-slate-400">Facility rate: </span>{inputs.facilityInterestRatePct != null ? `${inputs.facilityInterestRatePct}% p.a.` : "—"}</div>
-            <div><span className="text-slate-400">Max LVR: </span>{inputs.maxLvrPct != null ? `${inputs.maxLvrPct}%` : "—"}</div>
+            <div><span className="text-slate-400">Dwellings: </span>{inputs.dwellingsCount ?? "-"}</div>
+            <div><span className="text-slate-400">Avg size: </span>{inputs.avgDwellingSizeSqm ?? "-"} sqm</div>
+            <div><span className="text-slate-400">Sale price/dwelling: </span>{inputs.expectedSalePricePerDwelling != null ? money(inputs.expectedSalePricePerDwelling) : "-"}</div>
+            <div><span className="text-slate-400">Construction rate: </span>{inputs.constructionRatePerSqm != null ? `${money(inputs.constructionRatePerSqm)}/sqm` : "-"}</div>
+            <div><span className="text-slate-400">Duration: </span>{inputs.projectDurationMonths ?? "-"} months</div>
+            <div><span className="text-slate-400">Facility limit: </span>{inputs.facilityLimit != null ? money(inputs.facilityLimit) : "-"}</div>
+            <div><span className="text-slate-400">Facility rate: </span>{inputs.facilityInterestRatePct != null ? `${inputs.facilityInterestRatePct}% p.a.` : "-"}</div>
+            <div><span className="text-slate-400">Max LVR: </span>{inputs.maxLvrPct != null ? `${inputs.maxLvrPct}%` : "-"}</div>
           </div>
         </div>
 

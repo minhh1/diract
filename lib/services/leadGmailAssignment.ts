@@ -34,7 +34,7 @@ async function resolveLeadsTable(admin: AdminClient, companyId: string) {
 }
 
 // Display name for a Lead already matched (kind='link_existing'), used to
-// build the per-lead Gmail label name — the primary field ("Client's name")
+// build the per-lead Gmail label name -- the primary field ("Client's name")
 // on the Leads table's own `lead_name` field.
 export async function getLeadDisplayName(admin: AdminClient, companyId: string, leadId: string): Promise<string> {
   const leadsTable = await resolveLeadsTable(admin, companyId);
@@ -49,7 +49,7 @@ export async function getLeadDisplayName(admin: AdminClient, companyId: string, 
   return data?.value_text || "Lead";
 }
 
-// Priority order: (1) same Gmail thread already linked to a Lead — the
+// Priority order: (1) same Gmail thread already linked to a Lead -- the
 // strongest signal, a reply in an existing conversation; (2) sender address
 // exactly matches an existing Lead's "email" field; (3) an admin-configured
 // keyword rule matches the subject. Returns null if nothing matches, meaning
@@ -114,11 +114,11 @@ export async function matchLeadForEmail(
 
 // Minimal, purpose-built record insert for the "create_new" approval path.
 // Deliberately doesn't reuse lib/services/customTableService.ts's
-// createRecord() — that function is hardcoded to the browser's RLS-scoped
+// createRecord() -- that function is hardcoded to the browser's RLS-scoped
 // singleton client (`@/lib/supabase`), which has no valid session inside a
 // server API route. The Leads table has no formulas, no ledger semantics,
 // and no unique constraints on the fields this prefills, so the full
-// validation/rollup machinery in createRecord isn't needed here — just an
+// validation/rollup machinery in createRecord isn't needed here -- just an
 // insert plus an auto-number claim for lead_number.
 export async function createLeadRecordFromProposal(
   admin: AdminClient,
@@ -270,11 +270,11 @@ export async function getOrCreateLabelHierarchy(accessToken: string, labelParts:
 
 // Generalizes app/api/gmail/assign/route.ts for Leads: builds the label path
 // `${leadsParentLabel}/${leadName} [CODE]`, upserts lead_gmail_labels/
-// lead_emails (DB-first, rolled back if the Gmail apply call fails — same
+// lead_emails (DB-first, rolled back if the Gmail apply call fails -- same
 // atomicity as the project flow), applies the label in the acting admin's
 // mailbox, then pushes the same label into every other team member's
 // mailbox. Doesn't touch user_gmail_label_sync (that table only backs the
-// periodic *project* reconciliation job in app/api/gmail/sync — there's no
+// periodic *project* reconciliation job in app/api/gmail/sync -- there's no
 // equivalent lead reconciliation job in this feature, so nothing reads it
 // for leads).
 export async function applyLeadGmailLabel(
@@ -303,7 +303,7 @@ export async function applyLeadGmailLabel(
 
   const sublabel = labelParts[labelParts.length - 1];
 
-  // DB first — abort before touching Gmail if either write fails.
+  // DB first -- abort before touching Gmail if either write fails.
   const { error: lglError } = await admin.from("lead_gmail_labels").upsert({
     company_id: companyId,
     lead_id: leadId,

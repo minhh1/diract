@@ -22,7 +22,7 @@ function money(n: number): string {
 }
 
 function formatDate(d: string | null | undefined): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return new Date(d).toLocaleDateString('en-AU'); } catch { return d; }
 }
 
@@ -35,7 +35,7 @@ function describe(r: CustomTableRecord): string {
   if (type === 'Deposit') return who ? `${type} from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}${matter ? ` for ${matter}` : ''}` : type;
   if (type === 'Journal Transfer') return matter ? `Transfer for ${matter}` : type;
-  return type || '—';
+  return type || '-';
 }
 
 export default function BankReconciliationTab({
@@ -274,11 +274,11 @@ export default function BankReconciliationTab({
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-right text-slate-700">{money(Number(r.values.bank_statement_balance) || 0)}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{r.values.prepared_by || '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{r.values.prepared_by || '-'}</td>
                   <td className="px-4 py-2.5 text-slate-500">
                     {r.values.reviewed_by ? (
                       <span title={`Signed ${formatDate(r.values.reviewed_at)}`}>{r.values.reviewed_by} <span className="text-emerald-500">✓</span></span>
-                    ) : r.values.status !== 'Reconciled' ? '—' : isPartner ? (
+                    ) : r.values.status !== 'Reconciled' ? '-' : isPartner ? (
                       <button onClick={() => handleSign(r)} disabled={signingId === r.id} className="text-teal-700 font-bold text-[10px] hover:underline disabled:opacity-50">
                         {signingId === r.id ? 'Signing…' : 'Confirm & Sign'}
                       </button>
@@ -374,7 +374,7 @@ export default function BankReconciliationTab({
                     </td>
                     <td className="px-2 py-2.5 text-slate-600">{formatDate(r.values.date)}</td>
                     <td className="px-2 py-2.5 text-slate-700 font-medium">{describe(r)}</td>
-                    <td className="px-2 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.cheque_number || '—'}</td>
+                    <td className="px-2 py-2.5 text-slate-500 font-mono text-[11px]">{r.values.receipt_number || r.values.cheque_number || '-'}</td>
                     <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_out ? money(Number(r.values.amount_out)) : ''}</td>
                     <td className="px-4 py-2.5 text-right text-slate-700">{r.values.amount_in ? money(Number(r.values.amount_in)) : ''}</td>
                   </tr>

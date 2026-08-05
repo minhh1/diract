@@ -88,11 +88,11 @@ const ROLE_LABELS: Record<string, string> = {
   operator: 'Operator',
 };
 
-// Calendar event title tokens — what each field means, with an example so
+// Calendar event title tokens -- what each field means, with an example so
 // admins don't have to guess what a token renders as. Beyond these two
 // built-ins, the available tokens depend on this company's own custom
 // fields on projects (e.g. "Matter Number" for a law firm, "Job Reference"
-// for a trades company) — fetched at runtime, not hardcoded here.
+// for a trades company) -- fetched at runtime, not hardcoded here.
 const CALENDAR_BASE_TOKENS = [
   { id: 'task_name',    label: 'Task Name',    example: 'Follow up with client' },
   { id: 'project_name', label: 'Project Name', example: 'Acme Corp' },
@@ -111,7 +111,7 @@ const TIMEZONE_OPTIONS: string[] =
 interface ProjectCustomField { id: string; field_key: string; label: string; }
 
 const CALENDAR_SEPARATORS = [
-  { value: ' — ', label: 'Em dash  ( — )' },
+  { value: ' -- ', label: 'Em dash  ( -- )' },
   { value: ' - ', label: 'Hyphen   ( - )' },
   { value: '/',   label: 'Slash    ( / )' },
   { value: ' | ', label: 'Pipe     ( | )' },
@@ -127,7 +127,7 @@ function parseCalendarFormat(format: string, knownTokenIds: string[]): { tokens:
     tokens.push(m[1]);
     positions.push(m.index);
   }
-  let separator = ' — ';
+  let separator = ' -- ';
   if (tokens.length >= 2) {
     const firstEnd = format.indexOf('}', positions[0]) + 1;
     separator = format.slice(firstEnd, positions[1]);
@@ -172,8 +172,8 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
 
   // Everything below is independent of everything else (none of these
   // queries depend on another's result), so it all runs in one batch
-  // instead of a multi-stage waterfall. The one true dependency —
-  // members' profiles needing the membership rows' user_ids — is fetched
+  // instead of a multi-stage waterfall. The one true dependency -
+  // members' profiles needing the membership rows' user_ids -- is fetched
   // after this batch resolves.
   const [
     { data: comp },
@@ -191,7 +191,7 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
       .order('created_at', { ascending: false }),
     // This company's own custom fields on projects (calendar sync tokens
     // depend on what this specific company has configured, not a
-    // hardcoded list — e.g. a law firm might have "Matter Number" while
+    // hardcoded list -- e.g. a law firm might have "Matter Number" while
     // another company has nothing extra at all).
     supabase
       .from('company_custom_fields')
@@ -211,14 +211,14 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
       .eq('company_id', companyId),
     // Connected Gmail emails for source-of-truth / archive pickers.
     // Queries the company_gmail_connections view, not user_gmail_tokens
-    // directly — that table's RLS (user_id = auth.uid()) only ever
+    // directly -- that table's RLS (user_id = auth.uid()) only ever
     // returns your own row, so this is the only way to see who else in
     // the company is connected without exposing anyone's OAuth tokens.
     supabase.from('company_gmail_connections').select('email'),
   ]);
   perfLog("admin: batch fetch resolved");
 
-  // Members — separate queries to avoid FK join issues
+  // Members -- separate queries to avoid FK join issues
   let members: Member[] = [];
   if (memberships && memberships.length > 0) {
     const userIds = memberships.map((m: any) => m.user_id);
@@ -287,7 +287,7 @@ export default function AdminPage() {
 function AdminPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Which tab is active now lives in the URL — the sidebar's Admin panel
+  // Which tab is active now lives in the URL -- the sidebar's Admin panel
   // links directly to e.g. ?tab=gmailSync, replacing what used to be a
   // horizontal tab bar crammed with 12 items on this page itself.
   const tabParam = searchParams.get('tab');
@@ -364,7 +364,7 @@ function AdminPageInner() {
 
   // Calendar settings
   const [calendarTokens, setCalendarTokens] = useState<string[]>(['matter_number', 'task_name']);
-  const [calendarSeparator, setCalendarSeparator] = useState(' — ');
+  const [calendarSeparator, setCalendarSeparator] = useState(' -- ');
   const [calendarDragIdx, setCalendarDragIdx] = useState<number | null>(null);
   const [calendarDuration, setCalendarDuration] = useState(30);
   const [syncToCompanyCalendar, setSyncToCompanyCalendar] = useState(false);
@@ -447,20 +447,20 @@ function AdminPageInner() {
   const handleRemoveMember = async (member: Member) => {
     if (!window.confirm(`Remove ${member.full_name || member.email} from this company?`)) return;
     setSaving(member.id);
-    await supabase.from('company_memberships')
-      .delete()
-      .eq('user_id', member.id)
-      .eq('company_id', company!.id);
-    // This used to leave the member's linked Staff entity (see
-    // staffEntityService.ts) fully active -- removing someone from the
-    // company didn't stop them from still appearing in every Staff picker
-    // for new time entries/task assignments, or in the raw Entities list,
-    // indistinguishable from a current member. Soft-delete so they drop out
-    // of every .is('deleted_at', null)-filtered picker/list going forward;
-    // past records that already reference them keep resolving (see
-    // useRecordNames' " (Removed)" suffix) rather than breaking.
-    if (member.entityId) {
-      await supabase.from('entities').update({ deleted_at: new Date().toISOString() }).eq('id', member.entityId);
+    // Server-side (app/api/admin/members/[memberId]/route.ts) -- this used
+    // to be a single client-side company_memberships delete, which left the
+    // member's linked Staff entity fully active (kept showing up in every
+    // picker/list forever, indistinguishable from a current member) and
+    // their connected Gmail account (token + live push subscription)
+    // running against a company they'd just been removed from. Disconnecting
+    // Gmail needs the refresh token + Google client secret, which must never
+    // reach the browser, so the whole removal now happens server-side.
+    const res = await fetch(`/api/admin/members/${member.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: 'Could not remove this member.' }));
+      window.alert(error || 'Could not remove this member.');
+      setSaving(null);
+      return;
     }
     queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
       ...old,
@@ -528,7 +528,7 @@ function AdminPageInner() {
 
   // Lets an admin whose company doesn't have a relevant custom field yet
   // (e.g. no "Matter Number" equivalent) create one on the spot, so it's
-  // immediately available as a calendar title token — instead of being
+  // immediately available as a calendar title token -- instead of being
   // stuck with only the fixed Task Name / Project Name tokens.
   const handleAddCustomField = async () => {
     if (!company || !newCustomFieldLabel.trim()) return;
@@ -666,7 +666,7 @@ function AdminPageInner() {
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
 
-      {/* Header — the tab bar that used to live here moved to the sidebar's
+      {/* Header -- the tab bar that used to live here moved to the sidebar's
           Admin panel; 12 tabs in a horizontal row was getting too crowded. */}
       <header className="bg-white border-b border-slate-100 shrink-0 px-8 py-8">
         <div className="flex items-center gap-3">
@@ -725,7 +725,7 @@ function AdminPageInner() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-[13px] font-bold text-slate-800 truncate">
-                            {member.full_name || '—'}
+                            {member.full_name || '-'}
                           </p>
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
                             member.role === 'company_admin'
@@ -1091,7 +1091,7 @@ function AdminPageInner() {
             <AdminAiAssistantTab companyId={companyId} />
           )}
 
-          {/* ── Performance (internal — site-admin only) ── */}
+          {/* ── Performance (internal -- site-admin only) ── */}
           {activeTab === 'perf' && isSiteAdmin && (
             <AdminPerfTab />
           )}
@@ -1285,7 +1285,7 @@ function AdminPageInner() {
                     )}
                   </div>
 
-                  {/* Inline "add custom field" — for when this company doesn't
+                  {/* Inline "add custom field" -- for when this company doesn't
                       have the reference field it wants to sync yet (e.g. a
                       matter number, job reference, PO number...). */}
                   {addingCustomField && (
@@ -1344,7 +1344,7 @@ function AdminPageInner() {
                         ? calendarTokens
                             .map(id => calendarTokenDefs.find(t => t.id === id)?.example || id)
                             .join(calendarSeparator)
-                        : '—'}
+                        : '-'}
                     </p>
                   </div>
                 </div>

@@ -69,7 +69,7 @@ export async function generateTrustOverdrawnPdf(input: GenerateTrustOverdrawnPdf
 
   for (const row of input.rows) {
     ensureRoom(18);
-    text(row.matterNumber || '—', col1, 9, {}, y);
+    text(row.matterNumber || '-', col1, 9, {}, y);
     text(row.matterName, col2, 9, {}, y);
     text(money(row.balance), col3, 9, { bold: true, color: [0.72, 0.11, 0.24], align: 'right' }, y);
     y -= 16;

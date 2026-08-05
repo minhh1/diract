@@ -108,7 +108,7 @@ export async function generateTrustChequePdf(input: GenerateTrustChequePdfInput)
   text(formatDate(input.cheque.date), PAGE_W - MARGIN - 16, 11, { align: 'right' }, chequeTop - 40);
 
   text('PAY', MARGIN + 16, 9, { bold: true, color: [0.55, 0.55, 0.6] }, chequeTop - 80);
-  text(input.cheque.payTo || '—', MARGIN + 16, 14, { bold: true }, chequeTop - 96);
+  text(input.cheque.payTo || '-', MARGIN + 16, 14, { bold: true }, chequeTop - 96);
 
   text('THE SUM OF', MARGIN + 16, 9, { bold: true, color: [0.55, 0.55, 0.6] }, chequeTop - 124);
   text(amountInWords(input.cheque.amount), MARGIN + 16, 11, {}, chequeTop - 140);
@@ -130,7 +130,7 @@ export async function generateTrustChequePdf(input: GenerateTrustChequePdfInput)
   text(`Cheque No. ${input.cheque.chequeNumber}`, MARGIN, 10, {}, y);
   text(formatDate(input.cheque.date), MARGIN + 200, 10, {}, y);
   y -= 16;
-  text(`Pay to: ${input.cheque.payTo || '—'}`, MARGIN, 10, {}, y);
+  text(`Pay to: ${input.cheque.payTo || '-'}`, MARGIN, 10, {}, y);
   y -= 16;
   if (matterText) { text(`Matter: ${matterText}`, MARGIN, 10, {}, y); y -= 16; }
   if (input.cheque.memo) { text(`Memo: ${input.cheque.memo}`, MARGIN, 10, {}, y); y -= 16; }

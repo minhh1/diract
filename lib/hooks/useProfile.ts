@@ -22,7 +22,7 @@ async function fetchProfile() {
   if (error || !prof) return null;
   perfLog("useProfile: profile resolved");
 
-  // Company + membership + all memberships — parallel
+  // Company + membership + all memberships -- parallel
   const [companyRes, membershipRes, membershipsRes] = await Promise.all([
     prof.active_company_id
       ? supabase.from("companies").select("id, name, status").eq("id", prof.active_company_id).single()
@@ -48,6 +48,6 @@ export function useProfile() {
   return useQuery({
     queryKey: ['profile'],
     queryFn: fetchProfile,
-    staleTime: 60 * 1000, // profile changes rarely — cache for 1 min
+    staleTime: 60 * 1000, // profile changes rarely -- cache for 1 min
   });
 }

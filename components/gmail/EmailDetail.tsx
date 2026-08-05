@@ -166,7 +166,7 @@ export default function EmailDetail({
             </div>
           )}
 
-          {/* Project search — shown when no labels OR adding another */}
+          {/* Project search -- shown when no labels OR adding another */}
           {(!hasLabels || showAddLabel) && (
             <div>
               {!hasLabels && (

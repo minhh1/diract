@@ -42,7 +42,7 @@ export function writePinGatedCache<T>(key: string, code: string, data: T): void 
   try {
     localStorage.setItem(cacheKey(key), JSON.stringify({ code, data }));
   } catch {
-    // localStorage full or unavailable — silently ignore
+    // localStorage full or unavailable -- silently ignore
   }
 }
 

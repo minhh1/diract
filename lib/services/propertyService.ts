@@ -95,7 +95,7 @@ export const propertyService = {
     return flattened;
   },
 
-  // lib/services/propertyService.ts — add this alongside getAll
+  // lib/services/propertyService.ts -- add this alongside getAll
 
 async getDetails(propertyId: string) {
   const { data: property, error } = await supabase
@@ -124,7 +124,7 @@ async getDetails(propertyId: string) {
   ]);
 
   // "Insurances" and "utilities" aren't modeled as their own tables in
-  // the schema this project actually has — properties carries insurer
+  // the schema this project actually has -- properties carries insurer
   // fields directly (insurer_name, policy_number, insurance_expiry), and
   // utility credentials live in property_credentials. Returning them in
   // the shapes their respective modules expect:

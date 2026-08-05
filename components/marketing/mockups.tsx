@@ -331,11 +331,11 @@ export function MockMatterBoard() {
       label="Matters"
       columns={["Matter", "Status"]}
       rows={[
-        ["2024/0187 — Smith Family Trust", { text: "In progress", badge: "indigo" }],
-        ["2024/0201 — Nguyen Trust Deed", { text: "Awaiting docs", badge: "amber" }],
-        ["2024/0164 — Harbord Property Co.", { text: "Settled", badge: "emerald" }],
-        ["2024/0212 — 88 Riverside Ave", { text: "In progress", badge: "indigo" }],
-        ["2024/0225 — Walsh Discretionary Trust", { text: "Awaiting docs", badge: "amber" }],
+        ["2024/0187 -- Smith Family Trust", { text: "In progress", badge: "indigo" }],
+        ["2024/0201 -- Nguyen Trust Deed", { text: "Awaiting docs", badge: "amber" }],
+        ["2024/0164 -- Harbord Property Co.", { text: "Settled", badge: "emerald" }],
+        ["2024/0212 -- 88 Riverside Ave", { text: "In progress", badge: "indigo" }],
+        ["2024/0225 -- Walsh Discretionary Trust", { text: "Awaiting docs", badge: "amber" }],
       ]}
     />
   );
@@ -355,11 +355,11 @@ export function MockTimeEntries() {
       label="Time entries"
       columns={["Matter", "Date", "Duration Hours", "Amount"]}
       rows={[
-        ["2024/0187 — Smith Family Trust", "22 Jul", "0.4h", "$180.00"],
-        ["2024/0201 — Nguyen Trust Deed", "22 Jul", "0.2h", "$90.00"],
-        ["2024/0164 — Harbord Property Co.", "21 Jul", "0.1h", "$45.00"],
-        ["2024/0212 — 88 Riverside Ave", "21 Jul", "0.3h", "$135.00"],
-        ["2024/0225 — Walsh Discretionary Trust", "20 Jul", "0.2h", "$90.00"],
+        ["2024/0187 -- Smith Family Trust", "22 Jul", "0.4h", "$180.00"],
+        ["2024/0201 -- Nguyen Trust Deed", "22 Jul", "0.2h", "$90.00"],
+        ["2024/0164 -- Harbord Property Co.", "21 Jul", "0.1h", "$45.00"],
+        ["2024/0212 -- 88 Riverside Ave", "21 Jul", "0.3h", "$135.00"],
+        ["2024/0225 -- Walsh Discretionary Trust", "20 Jul", "0.2h", "$90.00"],
       ]}
     />
   );
@@ -379,27 +379,27 @@ export const AUTO_TIME_ENTRY_EXAMPLES: {
   description: { brief: string; standard: string; detailed: string };
   hours: string; emails: number;
 }[] = [
-  { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0187 — Smith Family Trust", hours: "0.3", emails: 3, description: {
+  { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0187 -- Smith Family Trust", hours: "0.3", emails: 3, description: {
     brief: "Reviewed Deed of Variation.",
     standard: "Reviewed Deed of Variation and drafted a short covering note to the trustee.",
     detailed: "Reviewed Deed of Variation and drafted a short covering note to the trustee confirming the updated distribution schedule.",
   } },
-  { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0212 — 88 Riverside Ave", hours: "0.2", emails: 1, description: {
+  { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0212 -- 88 Riverside Ave", hours: "0.2", emails: 1, description: {
     brief: "Reviewed Section 32 statement.",
     standard: "Reviewed Section 32 disclosure statement ahead of exchange.",
     detailed: "Reviewed Section 32 disclosure statement ahead of exchange, noting the easement disclosure and confirming no further vendor amendments required.",
   } },
-  { initials: "PS", mine: false, date: "21 Jul", matter: "2024/0201 — Nguyen Trust Deed", hours: "0.2", emails: 2, description: {
+  { initials: "PS", mine: false, date: "21 Jul", matter: "2024/0201 -- Nguyen Trust Deed", hours: "0.2", emails: 2, description: {
     brief: "Drafted covering letter to settlor.",
     standard: "Drafted covering letter to settlor for execution.",
     detailed: "Drafted covering letter to settlor for execution, enclosing the trust deed and explaining the signing requirements for each trustee.",
   } },
-  { initials: "TW", mine: false, date: "21 Jul", matter: "2024/0164 — Harbord Property Co.", hours: "0.1", emails: 4, description: {
+  { initials: "TW", mine: false, date: "21 Jul", matter: "2024/0164 -- Harbord Property Co.", hours: "0.1", emails: 4, description: {
     brief: "Confirmed settlement figures.",
     standard: "Confirmed settlement figure adjustments with purchaser's solicitor.",
     detailed: "Confirmed settlement figure adjustments with purchaser's solicitor, reconciling rates and water usage apportionments ahead of settlement.",
   } },
-  { initials: "AK", mine: false, date: "20 Jul", matter: "2024/0225 — Walsh Discretionary Trust", hours: "0.1", emails: 1, description: {
+  { initials: "AK", mine: false, date: "20 Jul", matter: "2024/0225 -- Walsh Discretionary Trust", hours: "0.1", emails: 1, description: {
     brief: "Reviewed trustee resolution.",
     standard: "Reviewed trustee resolution ahead of registration.",
     detailed: "Reviewed trustee resolution ahead of registration, confirming appointor consent was correctly recorded before lodgement.",
@@ -494,11 +494,11 @@ export function MockAutoTimeEntries() {
 // The example entries shown by the Trust deep-dive page, kept in sync with
 // the home/law-firm-page preview mockup below.
 export const TRUST_LEDGER_EXAMPLES: { row: Cell[] }[] = [
-  { row: ["12 Jun", "TR-0442", "Receipt", "Deposit received", "$45,000", "—", "$45,000"] },
-  { row: ["18 Jun", "—", "Disbursement", "Search fees", "—", "$220", "$44,780"] },
-  { row: ["25 Jun", "TR-0443", "Receipt", "Further deposit", "$12,500", "—", "$57,280"] },
-  { row: ["03 Jul", "—", "Disbursement", "Stamp duty", "—", "$18,400", "$38,880"] },
-  { row: ["09 Jul", "—", "Disbursement", "Registration fee", "—", "$145", "$38,735"] },
+  { row: ["12 Jun", "TR-0442", "Receipt", "Deposit received", "$45,000", "-", "$45,000"] },
+  { row: ["18 Jun", "-", "Disbursement", "Search fees", "-", "$220", "$44,780"] },
+  { row: ["25 Jun", "TR-0443", "Receipt", "Further deposit", "$12,500", "-", "$57,280"] },
+  { row: ["03 Jul", "-", "Disbursement", "Stamp duty", "-", "$18,400", "$38,880"] },
+  { row: ["09 Jul", "-", "Disbursement", "Registration fee", "-", "$145", "$38,735"] },
 ];
 export const TRUST_LEDGER_COLUMNS = [
   { label: "Date" }, { label: "Receipt No." }, { label: "Type" }, { label: "Particulars" },
@@ -724,17 +724,17 @@ const CLIENT_CARD_COLORS = {
 } as const;
 
 const CLIENT_UPDATE_CARDS: { color: keyof typeof CLIENT_CARD_COLORS; matter: string; summary?: string; stage: string; settlementDate: string }[] = [
-  { color: "amber", matter: "2024/0201 — Nguyen Trust Deed", stage: "Awaiting execution", settlementDate: "—" },
-  { color: "blue", matter: "2024/0212 — 88 Riverside Ave", summary: "Contract exchanged; awaiting finance approval before booking settlement.", stage: "Pre-settlement", settlementDate: "14 Aug 2026" },
-  { color: "emerald", matter: "2024/0187 — Smith Family Trust", stage: "Trustee resolution pending", settlementDate: "—" },
-  { color: "purple", matter: "2024/0225 — Walsh Discretionary Trust", stage: "Drafting", settlementDate: "—" },
-  { color: "red", matter: "2024/0164 — Harbord Property Co.", stage: "Settled", settlementDate: "2 Jul 2026" },
+  { color: "amber", matter: "2024/0201 -- Nguyen Trust Deed", stage: "Awaiting execution", settlementDate: "-" },
+  { color: "blue", matter: "2024/0212 -- 88 Riverside Ave", summary: "Contract exchanged; awaiting finance approval before booking settlement.", stage: "Pre-settlement", settlementDate: "14 Aug 2026" },
+  { color: "emerald", matter: "2024/0187 -- Smith Family Trust", stage: "Trustee resolution pending", settlementDate: "-" },
+  { color: "purple", matter: "2024/0225 -- Walsh Discretionary Trust", stage: "Drafting", settlementDate: "-" },
+  { color: "red", matter: "2024/0164 -- Harbord Property Co.", stage: "Settled", settlementDate: "2 Jul 2026" },
 ];
 // Card body expands on click, same accordion-style behavior as the real
 // client update board -- the blue card starts expanded since that's the
 // one with an ai_summary line worth showing by default.
 export function MockClientUpdates() {
-  const [expanded, setExpanded] = useState<string | null>("2024/0212 — 88 Riverside Ave");
+  const [expanded, setExpanded] = useState<string | null>("2024/0212 -- 88 Riverside Ave");
   return (
     <div className="w-full max-w-sm space-y-2.5">
       {CLIENT_UPDATE_CARDS.map((c) => {
@@ -958,10 +958,10 @@ export function MockLoanTable() {
       label="Loans"
       columns={["Facility", "Type", "Principal"]}
       rows={[
-        ["Westpac — Construction", { text: "Senior", badge: "indigo" }, "$4.2M"],
-        ["ANZ — Land Facility", { text: "Senior", badge: "indigo" }, "$1.8M"],
+        ["Westpac -- Construction", { text: "Senior", badge: "indigo" }, "$4.2M"],
+        ["ANZ -- Land Facility", { text: "Senior", badge: "indigo" }, "$1.8M"],
         ["Riverside Capital", { text: "Mezzanine", badge: "violet" }, "$650k"],
-        ["NAB — Working Capital", { text: "Senior", badge: "indigo" }, "$500k"],
+        ["NAB -- Working Capital", { text: "Senior", badge: "indigo" }, "$500k"],
         ["Private Lender Group", { text: "Private Lender", badge: "amber" }, "$300k"],
       ]}
     />
@@ -1003,8 +1003,8 @@ export function MockLoanSchedule() {
       label="Loan schedule"
       columns={["Period", "Opening", "Interest", "Principal", "Closing"]}
       rows={[
-        ["Q1", "$1.2M", "$18k", "—", "$1.2M"],
-        ["Q2", "$1.2M", "$18k", "—", "$1.2M"],
+        ["Q1", "$1.2M", "$18k", "-", "$1.2M"],
+        ["Q2", "$1.2M", "$18k", "-", "$1.2M"],
         ["Q3", "$1.2M", "$18k", "$200k", "$1.0M"],
         ["Q4", "$1.0M", "$15k", "$300k", "$700k"],
         ["Q5", "$700k", "$10.5k", "$700k", "$0"],
@@ -1070,7 +1070,7 @@ export function MockGmailLabels() {
   return (
     <WidgetCard label="Gmail label sync">
       <div className="mb-3 px-3 py-2.5 bg-slate-50 rounded-xl text-[11px] font-mono text-slate-600 truncate">
-        Shared Emails/2024/0212 — 88 Riverside Ave
+        Shared Emails/2024/0212 -- 88 Riverside Ave
       </div>
       <div className="space-y-2">
         {team.map((name) => (
@@ -1112,7 +1112,7 @@ export function MockDisbursementsImport() {
         <div className="border border-slate-200 rounded-2xl overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50/60">
             <Check size={12} className="text-indigo-600 shrink-0" />
-            <span className="text-[11px] font-bold text-slate-700 truncate">2024/0187 — Smith Family Trust</span>
+            <span className="text-[11px] font-bold text-slate-700 truncate">2024/0187 -- Smith Family Trust</span>
           </div>
           <div className="divide-y divide-slate-50">
             {DISBURSEMENT_LINES.map((line) => (

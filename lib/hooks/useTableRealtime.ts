@@ -24,7 +24,7 @@ interface UseTableRealtimeOptions {
   // overrides both of these instead of company_id/companyId.
   filterColumn?: string;
   filterValue?: string | null;
-  // Called with the minimal patch needed — the page applies it to its
+  // Called with the minimal patch needed -- the page applies it to its
   // local items array without re-fetching anything from the database.
   onInsert: (row: Record<string, any>) => void;
   onUpdate: (row: Record<string, any>) => void;
@@ -35,7 +35,7 @@ interface UseTableRealtimeOptions {
  * Subscribes to Supabase Realtime events for a single table, scoped by
  * filterColumn=eq.filterValue (company_id=eq.companyId by default). Patches
  * the local items array in-place for each event rather than triggering a
- * full re-fetch — so edits appear instantly without a loading state or
+ * full re-fetch -- so edits appear instantly without a loading state or
  * network round trip.
  *
  * The subscription is automatically cleaned up when the component

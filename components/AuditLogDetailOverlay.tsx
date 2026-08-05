@@ -59,7 +59,7 @@ export default function AuditLogDetailOverlay({ isOpen, onClose, log }: any) {
                 <div key={key} className="flex justify-between items-start py-3 border-b border-slate-200/50 last:border-0">
                   <span className="text-[11px] font-medium text-slate-400 capitalize">{key.replace(/_/g, ' ')}</span>
                   <span className="text-[13px] font-medium text-slate-800 text-right max-w-[300px]">
-                    {String(val || '—')}
+                    {String(val || '-')}
                   </span>
                 </div>
               ))}

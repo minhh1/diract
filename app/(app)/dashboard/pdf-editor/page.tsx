@@ -1,6 +1,6 @@
 // app/dashboard/pdf-editor/page.tsx
 // Library view for the standalone PDF editor: pick or drag-drop a PDF to open it
-// straight into the editor (no upload round trip — it's only written to the
+// straight into the editor (no upload round trip -- it's only written to the
 // bucket on first Save), or open one of the company's already-saved PDFs.
 // Not tied to the document-templates/fill flow.
 "use client";

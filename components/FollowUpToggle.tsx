@@ -1,5 +1,5 @@
 // components/FollowUpToggle.tsx
-// Second "tick" — tracks follow-ups done on a task, distinct from full
+// Second "tick" -- tracks follow-ups done on a task, distinct from full
 // completion. A task can be followed up more than once (e.g. chasing the
 // same person repeatedly), so this keeps a dated log with a running count
 // rather than a single boolean + date. Click the flag to log a new
@@ -63,9 +63,9 @@ export default function FollowUpToggle({ entries, onAdd, onRemove, onMarkDone, c
 
   // Popover width is 272px; flip to the left of the button if it would
   // otherwise overflow the right edge of the viewport. Vertically, pick
-  // whichever side (above/below the button) has more room — and clamp the
+  // whichever side (above/below the button) has more room -- and clamp the
   // popover's own max-height to whatever that side actually has, with
-  // internal scrolling as the last-resort safety net — so it can never
+  // internal scrolling as the last-resort safety net -- so it can never
   // render off-screen even when the task row is right at the edge of the
   // viewport. Repositions on scroll/resize since it's portaled to <body>
   // (fixed positioning).

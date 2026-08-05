@@ -11,6 +11,6 @@ export interface ActiveFilter {
   fieldId: string;      // column id e.g. 'status' or 'custom_field:uuid'
   label: string;        // display label e.g. 'Status'
   operator: FilterOperator;
-  value: string;        // always string — cast on apply
+  value: string;        // always string -- cast on apply
   fieldType: string;    // 'text', 'select', 'boolean', 'date', 'number', 'currency'
 }

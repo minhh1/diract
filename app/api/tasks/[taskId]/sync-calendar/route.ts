@@ -1,5 +1,5 @@
 // app/api/tasks/[taskId]/sync-calendar/route.ts
-// Manual "Add to calendar" trigger for a single task — pushes it to the
+// Manual "Add to calendar" trigger for a single task -- pushes it to the
 // assignee's connected calendar via the same calendar-sync edge function
 // (and the same company-configured event title format, see
 // companies.calendar_event_title_format / buildEventTitle in

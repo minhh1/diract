@@ -1,11 +1,11 @@
 // supabase/functions/gmail-archive-worker/index.ts
-// Every 1 min — processes 'archive' jobs from gmail_sync_jobs.
+// Every 1 min -- processes 'archive' jobs from gmail_sync_jobs.
 // Phase A: deliver every project email to every nominated archive account
 // and verify (re-check) presence in ALL of them.
 // Phase B: only once every email is confirmed present in every archive
 // account, trash it from every other connected member and remove their
 // now-empty copy of the original shared label. Never trashes anything
-// unconfirmed — a partial delivery failure just retries next tick.
+// unconfirmed -- a partial delivery failure just retries next tick.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -236,7 +236,7 @@ function respond(data: any, status = 200): Response {
 }
 
 // ── Overlap guard ────────────────────────────────────────────────
-// Runs on both pg_cron and a GitHub Actions backup trigger — this table
+// Runs on both pg_cron and a GitHub Actions backup trigger -- this table
 // (shared with the label/email dispatchers) makes a second trigger source
 // firing mid-run a safe no-op. Especially important here since this worker
 // trashes emails; two concurrent invocations racing on the same job's
@@ -264,7 +264,7 @@ Deno.serve(async (_req) => {
   const t0 = Date.now();
 
   if (!(await acquireLock())) {
-    console.log("[archive-worker] Previous tick still running — skipping");
+    console.log("[archive-worker] Previous tick still running -- skipping");
     return respond({ ok: true, skipped: "already_running" });
   }
 
@@ -375,7 +375,7 @@ async function runArchive(t0: number): Promise<Response> {
       }
 
       if (archiveTokens.size < archiveUserIds.length) {
-        console.log(`[archive-worker] Only reached ${archiveTokens.size}/${archiveUserIds.length} archive accounts this tick — retrying next tick`);
+        console.log(`[archive-worker] Only reached ${archiveTokens.size}/${archiveUserIds.length} archive accounts this tick -- retrying next tick`);
         await db.from("gmail_sync_jobs").update({ status: "processing", updated_at: new Date().toISOString() }).eq("id", jobId);
         continue;
       }
@@ -414,7 +414,7 @@ async function runArchive(t0: number): Promise<Response> {
         await db.from("project_gmail_labels").update({ removed_at: new Date().toISOString() })
           .eq("project_id", projectId).eq("company_id", companyId);
         await db.from("gmail_sync_jobs").update({ status: "done", updated_at: new Date().toISOString() }).eq("id", jobId);
-        console.log(`[archive-worker] ✓ Job ${jobId} done — nothing left to purge`);
+        console.log(`[archive-worker] ✓ Job ${jobId} done -- nothing left to purge`);
         processed++;
         continue;
       }
@@ -469,7 +469,7 @@ async function runArchive(t0: number): Promise<Response> {
   const { count: remaining } = await db.from("gmail_sync_jobs")
     .select("*", { count: "exact", head: true }).eq("job_type", "archive").in("status", ["pending", "processing"]);
 
-  console.log(`[archive-worker] DONE in ${Date.now() - t0}ms — processed=${processed} remaining=${remaining}`);
+  console.log(`[archive-worker] DONE in ${Date.now() - t0}ms -- processed=${processed} remaining=${remaining}`);
   await heartbeat("gmail-archive-worker", Date.now() - t0, { processed, remaining });
   return respond({ ok: true, processed, remaining });
 }

@@ -33,19 +33,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!Array.isArray(fields)) return NextResponse.json({ error: "fields array is required" }, { status: 400 });
 
   // Fields already in this template vs. brand-new ones the admin authored
-  // inline (a "branch-only" question with no {{tag}} in the document — see
+  // inline (a "branch-only" question with no {{tag}} in the document -- see
   // is_branch_only) that arrived in this same batch with a client-generated
   // id, to be inserted rather than updated.
   const { data: existing } = await admin
     .from("document_template_fields").select("id, is_branch_only").eq("template_id", templateId);
   const ownIds = new Set((existing || []).map((f: any) => f.id));
   // Trigger fields must point at a field that will actually exist once this
-  // save completes — includes ids brand-new in this same batch, since a
+  // save completes -- includes ids brand-new in this same batch, since a
   // freshly-created branch-only question is typically wired up as a trigger
   // in the very save that creates it.
   const allIds = new Set<string>([...ownIds, ...fields.map(f => f.id)]);
 
-  // A branch-only question missing from this save was deleted client-side —
+  // A branch-only question missing from this save was deleted client-side -
   // safe to actually remove since it never corresponded to a real {{tag}}
   // in the document. Deliberately scoped to is_branch_only only: a real,
   // document-detected field silently missing from the payload (a bug, a
@@ -108,7 +108,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       trigger_field_id: triggerFieldId,
       trigger_value: triggerFieldId ? (String(f.trigger_value || "").trim() || null) : null,
       is_branch_only: !!f.is_branch_only,
-      // Persist the order the admin arranged fields into client-side —
+      // Persist the order the admin arranged fields into client-side -
       // display_order was previously read-only (only ever set once at
       // upload time from tag-discovery order).
       display_order: i,
@@ -118,7 +118,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     } else {
       const tagKey = String(f.tag_key || "").trim();
-      if (!tagKey) continue; // nothing to insert without a tag_key — see the "new branching question" flow, which always generates one
+      if (!tagKey) continue; // nothing to insert without a tag_key -- see the "new branching question" flow, which always generates one
       const { error } = await admin.from("document_template_fields").insert({ id: f.id, template_id: templateId, tag_key: tagKey, ...payload });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     }

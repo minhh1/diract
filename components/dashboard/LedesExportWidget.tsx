@@ -41,11 +41,11 @@ export default function LedesExportWidget({ records }: { records: CustomTableRec
           <tbody>
             {records.map(r => (
               <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                <td className="px-5 py-2.5 font-semibold text-slate-800">{r.values.invoice_number || '—'}</td>
+                <td className="px-5 py-2.5 font-semibold text-slate-800">{r.values.invoice_number || '-'}</td>
                 <td className="px-5 py-2.5 text-slate-500">{formatDateAU(r.values.issue_date)}</td>
-                <td className="px-5 py-2.5 text-slate-500">{r.values.status || '—'}</td>
+                <td className="px-5 py-2.5 text-slate-500">{r.values.status || '-'}</td>
                 <td className="px-5 py-2.5 text-right font-medium text-slate-800">
-                  {r.values.total_inc_gst != null && r.values.total_inc_gst !== '' ? aud.format(Number(r.values.total_inc_gst) || 0) : '—'}
+                  {r.values.total_inc_gst != null && r.values.total_inc_gst !== '' ? aud.format(Number(r.values.total_inc_gst) || 0) : '-'}
                 </td>
                 <td className="px-3 py-2.5 text-right">
                   <a

@@ -2,7 +2,7 @@
 -- fields (e.g. "Is the borrower a trust?") without it needing to already
 -- exist as a {{tag}} placeholder in the uploaded document. It's a normal
 -- document_template_fields row like any other (same type system, same
--- trigger_field_id/trigger_value wiring) — is_branch_only just means its
+-- trigger_field_id/trigger_value wiring) -- is_branch_only just means its
 -- tag_key is synthetic (never matches a real placeholder), so docxtemplater
 -- simply never substitutes it into any generated document. The client still
 -- answers it like any other question; other fields can still combine with it.

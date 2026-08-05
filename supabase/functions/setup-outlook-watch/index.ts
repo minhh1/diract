@@ -3,10 +3,10 @@
 // connected Outlook users. Call via: supabase functions invoke setup-outlook-watch
 // Mirrors supabase/functions/setup-gmail-watch, adapted for Graph:
 //   - a Graph subscription (not a Gmail "watch") expires in ~3 days max,
-//     not ~7 — outlook-watch-renewal has to run much more often than
+//     not ~7 -- outlook-watch-renewal has to run much more often than
 //     gmail-watch-renewal to keep up.
 //   - creating a subscription requires notificationUrl (outlook-push) to
-//     already be deployed and reachable — Graph immediately calls it with a
+//     already be deployed and reachable -- Graph immediately calls it with a
 //     validationToken and expects an echo back within 10s before the
 //     subscription create call itself returns.
 //   - Gmail's watch just gives you a starting historyId; Graph delta sync

@@ -1,5 +1,5 @@
 // supabase/functions/date-calc/index.ts
-// "X days from" calculator — calendar days or Australian business days
+// "X days from" calculator -- calendar days or Australian business days
 // (business days skip weekends + public holidays for a chosen state).
 //
 // Called with: { fromDate: 'YYYY-MM-DD', days: number, mode: 'calendar' | 'business', state?: string }
@@ -16,7 +16,7 @@ interface NagerHoliday {
   counties: string[] | null;
 }
 
-// In-memory cache — persists across warm invocations of this edge function instance.
+// In-memory cache -- persists across warm invocations of this edge function instance.
 const holidayCache = new Map<number, NagerHoliday[]>();
 
 async function getHolidaysForYear(year: number): Promise<NagerHoliday[]> {
@@ -36,7 +36,7 @@ async function getHolidaysForYear(year: number): Promise<NagerHoliday[]> {
 }
 
 function isHolidayForState(holiday: NagerHoliday, state: string): boolean {
-  if (!holiday.counties) return true; // national holiday — applies to every state
+  if (!holiday.counties) return true; // national holiday -- applies to every state
   return holiday.counties.includes(`AU-${state}`);
 }
 
@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
     const step = days >= 0 ? 1 : -1;
     const target = Math.abs(days);
 
-    // Pre-fetch holidays for every year we might touch — rough upper bound of
+    // Pre-fetch holidays for every year we might touch -- rough upper bound of
     // 3 calendar days per business day covers weekends/holiday clusters.
     const yearsNeeded = new Set<number>();
     const roughSpanDays = target * 3 + 10;

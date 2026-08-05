@@ -36,7 +36,7 @@ function buildSections(relations: RelationDef[], colsByRel: (ColumnMeta[] | null
 
 // Builds column config drawer sections for expand-panel relation fields.
 // Each relation becomes a section; fields come from get_schema_metadata
-// on the child table — zero hardcoding.
+// on the child table -- zero hardcoding.
 export function useRelationSections(
   relations: RelationDef[],
   companyId?: string | null

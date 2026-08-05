@@ -1,6 +1,6 @@
 // app/api/public-tasks/[pageId]/route.ts
 // Powers the embeddable public task report page. Requires a real signed-in
-// session — access is scoped by the page's self/team/company configuration,
+// session -- access is scoped by the page's self/team/company configuration,
 // enforced here (not via RLS) using the service-role key, same pattern as
 // the Gmail add-on's /my-tasks and /team-tasks endpoints.
 import { NextRequest, NextResponse } from "next/server";
@@ -116,7 +116,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   // each other.
   const [matterValues, assigneeProfilesForCompany, { data: rawWatched }] = await Promise.all([
     matterFieldId && (allProjects?.length)
-      // Don't filter by .in(record_id, ...) with hundreds of IDs — hits URL
+      // Don't filter by .in(record_id, ...) with hundreds of IDs -- hits URL
       // limits and silently returns nothing. Fetch all values for this
       // field (already scoped to this company via field_id) and map in
       // memory; covers both a task row's matterNumber and the form
@@ -140,7 +140,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   // unallocated AND watched -- so dedupe by id first), instead of up to
   // three separate calls each paying their own internal round trip(s).
   // Being on the same team-scoped page doesn't grant access to a project
-  // restricted to specific teams/members — filter those out for whoever
+  // restricted to specific teams/members -- filter those out for whoever
   // is actually viewing the page (not the task's assignee). Admins can
   // already see everything else in the app, so they're exempt entirely.
   let allowedTaskIds: Set<string> | null = null;
@@ -174,7 +174,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   // Merging three separately-queried groups (assigned/watched/unallocated)
   // would otherwise leave each block sorted internally but not against each
   // other (e.g. all assigned tasks before all watched ones, regardless of
-  // due date) — sort the combined list once so every tab's date order is
+  // due date) -- sort the combined list once so every tab's date order is
   // correct end to end.
   const dueSortKey = (t: any) => {
     if (!t.due_date) return "9999-99-99 99:99:99";
@@ -334,7 +334,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     return NextResponse.json({ error: "Assignee is outside this page's scope" }, { status: 400 });
   }
   // Only auto-assign to the creator when they had no way to choose
-  // otherwise (a single-target page hides the assignee picker entirely) —
+  // otherwise (a single-target page hides the assignee picker entirely) -
   // on a multi-assignee page, leaving it blank means "unallocated",
   // deliberately, not "assign to me".
   if (!finalAssigneeId && targetUserIds.length === 1 && targetUserIds.includes(user.id)) finalAssigneeId = user.id;

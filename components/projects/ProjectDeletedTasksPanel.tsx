@@ -1,5 +1,5 @@
 // components/projects/ProjectDeletedTasksPanel.tsx
-// Admin-only tab per project — lists soft-deleted tasks (deleted_at set)
+// Admin-only tab per project -- lists soft-deleted tasks (deleted_at set)
 // so an admin can restore them or purge them for good. Purging is a hard
 // delete (irreversible), so it's gated behind a confirmation.
 "use client";

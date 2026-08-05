@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest, type NextFetchEvent } from 'next/server'
 
 // Fire-and-forget invocation counter feeding the Platform Health tab's
-// "API calls per day, per endpoint" chart — path + method + timestamp only,
+// "API calls per day, per endpoint" chart -- path + method + timestamp only,
 // no status code (Proxy runs pre-handler, before a status exists) and no
 // request body. Logged via event.waitUntil so it doesn't add latency to the
 // actual request and can't get cut off once the response is returned.
@@ -51,12 +51,12 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     }
   )
 
-  // getSession() reads and verifies the JWT from the cookie locally — no
+  // getSession() reads and verifies the JWT from the cookie locally -- no
   // network round-trip to Supabase's auth server. Proxy runs on every
   // request (including prefetches), so per Next.js's own guidance this
   // check should stay "optimistic": redirect based on the cookie, and leave
   // real authorization to RLS and each page's own checks, not Proxy. That's
-  // already how this app works — Proxy is only a UX-level redirect gate,
+  // already how this app works -- Proxy is only a UX-level redirect gate,
   // never the actual security boundary.
   const { data: { session } } = await supabase.auth.getSession()
   const user = session?.user

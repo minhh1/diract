@@ -1,5 +1,5 @@
 // lib/publicTaskPageAuth.ts
-// Shared authorization for public task page API routes — loads the page,
+// Shared authorization for public task page API routes -- loads the page,
 // checks it's active/not expired, and determines which users' tasks the
 // requester is allowed to see/act on based on the page's self/team/company
 // scope. Uses the service-role client (RLS bypass is safe here because

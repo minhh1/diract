@@ -42,8 +42,8 @@ async function getAccessToken(userId: string): Promise<string | null> {
 // ── Label name helpers ─────────────────────────────────────────────
 
 // Strip "/" from the leaf label name (part after last /)
-// e.g. "Huynh Lawyers/260576 — A/B Test [CODE]"
-//   → "Huynh Lawyers/260576 — A-B Test [CODE]"
+// e.g. "Huynh Lawyers/260576 -- A/B Test [CODE]"
+//   → "Huynh Lawyers/260576 -- A-B Test [CODE]"
 function sanitiseLabelName(name: string): string {
   const parts = name.split("/");
   if (parts.length <= 1) return name.replace(/\//g, "-");
@@ -282,7 +282,7 @@ async function computeExpectedLabelNames(
   const parentCode = company.gmail_parent_code || "";
   const parentFull = parentCode ? `${parentLabel} #${parentCode}` : parentLabel;
   const tokens: string[] = company.gmail_label_tokens || ["project_name"];
-  const separator: string = company.gmail_sublabel_separator || " — ";
+  const separator: string = company.gmail_sublabel_separator || " -- ";
 
   const { data: projects } = await db.from("projects").select("id, name").in("id", projectIds);
   const projectById = new Map((projects || []).map((p: any) => [p.id, p]));
@@ -336,7 +336,7 @@ async function heartbeat(name: string, durationMs: number, result: unknown): Pro
 // ── Function ──────────────────────────────────────────────────────
 
 // supabase/functions/gmail-label-sync-cron/index.ts
-// Every 15 min — upserts one label_sync job per project per company
+// Every 15 min -- upserts one label_sync job per project per company
 // Worker handles per-user processing and tracks completion
 
 
@@ -368,7 +368,7 @@ Deno.serve(async (_req) => {
     if (!connectedUserIds.length) continue;
     const totalUsers = connectedUserIds.length;
 
-    // Get active labels — archived projects are owned exclusively by
+    // Get active labels -- archived projects are owned exclusively by
     // gmail-archive-worker, never touched by the ordinary sync path
     const { data: activeLabels } = await db
       .from("project_gmail_labels")
@@ -377,7 +377,7 @@ Deno.serve(async (_req) => {
       .is("removed_at", null)
       .is("archived_at", null);
 
-    // Get removed labels (need cleanup) — skip ones already handled by archiving
+    // Get removed labels (need cleanup) -- skip ones already handled by archiving
     const { data: removedLabels } = await db
       .from("project_gmail_labels")
       .select("project_id, label_code, gmail_label_name, removed_at")
@@ -438,7 +438,7 @@ Deno.serve(async (_req) => {
       const existing = existingByProject.get(label.project_id) as any;
       if (existing?.status === "processing") continue;
 
-      // Skip partially completed jobs — don't wipe progress
+      // Skip partially completed jobs -- don't wipe progress
       const completedCount = (existing?.completed_users || []).length;
       if (existing?.status === "pending" && completedCount > 0 && completedCount < (existing?.total_users || totalUsers)) {
         skippedInProgress++;
@@ -446,12 +446,12 @@ Deno.serve(async (_req) => {
       }
 
       // A "done" job also needs redoing if the label was removed AFTER that
-      // job last completed — otherwise a job that finished applying the
+      // job last completed -- otherwise a job that finished applying the
       // label (completed_users full, status "done") stays "done" forever
       // once someone deletes the label, since total_users alone never
       // changes just because a label was removed. That silently stopped
       // the removal from ever reaching anyone but whoever did the
-      // deleting (their own copy is handled synchronously elsewhere) —
+      // deleting (their own copy is handled synchronously elsewhere) -
       // every other connected user's mailbox kept the "deleted" label
       // forever. Confirmed in production 2026-07-29/30 (matter 260598):
       // job marked done at 06:50 (the original create), label removed_at
@@ -467,11 +467,11 @@ Deno.serve(async (_req) => {
 
       // A job that's already "done" and reflects the label's current state
       // only needs redoing if the company's connected-member count changed
-      // since (someone joined/connected Gmail and needs the label too) —
+      // since (someone joined/connected Gmail and needs the label too) -
       // otherwise leave it alone. This used to reset EVERY done job to
       // pending on EVERY 15-min sweep unconditionally, which meant the
       // whole system was perpetually re-verifying every label against every
-      // user's mailbox forever — the real cause of most of the
+      // user's mailbox forever -- the real cause of most of the
       // load/starvation issues chased down on 2026-07-21/22, not just a
       // symptom of them.
       if (existing?.status === "done" && existing.total_users === totalUsers && !removalMissed && !renameMissed) {
@@ -523,7 +523,7 @@ Deno.serve(async (_req) => {
     console.log(`[label-sync-cron] Company ${companyId}: ${toUpdate.length} updated + ${toInsert.length} inserted + ${skippedInProgress} in-progress skipped + ${skippedAlreadyDone} already-done skipped (${totalUsers} users)`);
   }
 
-  console.log(`[label-sync-cron] DONE in ${Date.now() - t0}ms — ${queued} jobs`);
+  console.log(`[label-sync-cron] DONE in ${Date.now() - t0}ms -- ${queued} jobs`);
   await heartbeat("gmail-label-sync-cron", Date.now() - t0, { queued });
   return new Response(JSON.stringify({ ok: true, queued }), {
     headers: { "Content-Type": "application/json" },

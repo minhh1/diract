@@ -55,7 +55,7 @@ function parseAUAddress(raw: string): ParsedAddress {
     };
   }
 
-  // Fallback — just use the whole string as street address
+  // Fallback -- just use the whole string as street address
   return {
     street_address: clean,
     suburb: '',
@@ -110,7 +110,7 @@ function parseCurrency(raw: string): number {
   return parseFloat(clean) || 0;
 }
 
-// ── CSV line splitter — handles quoted fields with commas ──────────
+// ── CSV line splitter -- handles quoted fields with commas ──────────
 
 export function splitCSVLine(line: string): string[] {
   const result: string[] = [];
@@ -165,7 +165,7 @@ export function parseImportFile(
   // "custom:uuid:key"→ unchanged                     (already prefixed)
 
   const resolvedHeaders = rawHeaders.map(h => {
-    // Already prefixed — leave as-is
+    // Already prefixed -- leave as-is
     if (h.startsWith('custom:') || h.startsWith('relation:')) return h;
 
     if (customFieldMap) {
@@ -180,7 +180,7 @@ export function parseImportFile(
       if (bySnake) return bySnake;
     }
 
-    // Base column — snake_case it
+    // Base column -- snake_case it
     return h.toLowerCase().trim().replace(/\s+/g, '_');
   });
 
@@ -230,7 +230,7 @@ export function parseImportFile(
 
       // ── Base column ──────────────────────────────────────────────
       switch (header) {
-        // Properties — full address auto-split
+        // Properties -- full address auto-split
         case 'full_address':
           if (baseMode === 'properties' && sectionIsBase) {
             Object.assign(parsed, parseAUAddress(val));
@@ -239,7 +239,7 @@ export function parseImportFile(
           }
           break;
 
-        // Projects — property street address for child matching
+        // Projects -- property street address for child matching
         case 'property_street_address':
           if (!sectionIsBase) {
             const addr = parseAUAddress(val);
@@ -285,7 +285,7 @@ export function parseImportFile(
           );
           break;
 
-        // Entity fields — handled separately in commitImport
+        // Entity fields -- handled separately in commitImport
         case 'entity_name':
           parsed.entity_name = val || null;
           break;
@@ -303,7 +303,7 @@ export function parseImportFile(
           parsed.provider_entity_type = val || null;
           break;
 
-        // All other base columns — pass through as text
+        // All other base columns -- pass through as text
         default:
           // Skip empty values entirely rather than writing null
           if (val) parsed[header] = val;

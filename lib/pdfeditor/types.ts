@@ -1,5 +1,5 @@
 // Shared types for the PDF editor's edit-op log. All geometry is in PDF user-space
-// points (origin bottom-left, y-up) — the same space pdf.js text items already use
+// points (origin bottom-left, y-up) -- the same space pdf.js text items already use
 // (item.transform/item.width) and the space pdf-lib's page.draw* methods expect.
 // Screen/canvas pixel coordinates are converted to/from this space via the page's
 // pdf.js viewport (convertToPdfPoint / convertToViewportPoint), never hand-rolled.
@@ -36,17 +36,17 @@ export type CheckboxStyle = "ballot-x" | "squared-times" | "ballot-check" | "ove
 
 // A checkbox mark: a hollow square + a checked-state glyph, drawn directly
 // rather than a substituted text glyph from the SOURCE document's own font
-// — both because the Standard-14/WinAnsi fonts pdf-lib embeds can't render
+// -- both because the Standard-14/WinAnsi fonts pdf-lib embeds can't render
 // Unicode box glyphs (☐/☑/☒/⊠) at all, and because most real-world generated
 // PDFs (this app's own contracts included) draw their checkboxes as vector
 // line-art in the page content stream, not as text glyphs in the first
-// place — pdf.js's text layer never sees those at all, so there's nothing to
+// place -- pdf.js's text layer never sees those at all, so there's nothing to
 // click. x/y/width/height are the box's own bottom-left corner and side
 // length in PDF space (not derived from any source glyph), so the exact same
 // shape works whether this box was:
 //   - toggled from a real checkbox glyph pdf.js DID find in the text layer
 //     (itemIndex set, geometry computed once from that glyph's own bounding
-//     box at creation time — see toggleCheckbox in PdfPageView.tsx), or
+//     box at creation time -- see toggleCheckbox in PdfPageView.tsx), or
 //   - placed freehand via the "Checkbox" tool onto a vector-drawn or
 //     scanned-image checkbox pdf.js can't see at all (itemIndex omitted,
 //     geometry is just wherever the user clicked, sized to a fixed default).
@@ -75,7 +75,7 @@ export interface HighlightOp {
   opacity: number;
 }
 
-// A contiguous slice of a text box's text sharing one set of formatting — lets
+// A contiguous slice of a text box's text sharing one set of formatting -- lets
 // the user bold/italicize/underline part of a text box rather than all of it.
 // Rendered as sibling <span>s (so the browser's native text selection works
 // over them without needing contentEditable) and drawn consecutively in

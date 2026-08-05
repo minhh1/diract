@@ -1,10 +1,10 @@
 // app/api/gmail/retry-failure/route.ts
-// Admin-only manual retry for a gmail_sync_failures row — covers both
+// Admin-only manual retry for a gmail_sync_failures row -- covers both
 // "pending_retry" (force it now instead of waiting up to 15 min for
 // gmail-sync-recovery-worker's next tick) and "persistent_failure" (stuck
 // permanently until a human resets it, e.g. after the account owner
 // reconnects Gmail or a rate limit clears). Resets attempts to 0 since a
-// manual retry implies the underlying issue is believed fixed — it
+// manual retry implies the underlying issue is believed fixed -- it
 // shouldn't immediately re-escalate after just one more failed attempt.
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
   // Best-effort nudge so the recovery worker picks this up now instead of
-  // waiting up to 15 minutes — failure to reach it isn't fatal, the row is
+  // waiting up to 15 minutes -- failure to reach it isn't fatal, the row is
   // already back in pending_retry and the next scheduled tick will get it.
   fetch(`${supabaseUrl}/functions/v1/gmail-sync-recovery-worker`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",

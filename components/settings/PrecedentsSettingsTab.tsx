@@ -1,11 +1,11 @@
 // components/settings/PrecedentsSettingsTab.tsx
-// Precedents settings — open to every company member (unlike most of
+// Precedents settings -- open to every company member (unlike most of
 // /dashboard/admin), reached via /dashboard/settings?view=precedents. Any
 // member can add a new precedent to the library and edit their own staff
 // signoff; the firm-wide stuff (letterhead, formatting defaults, editing/
 // deleting someone ELSE's precedent or signoff) stays admin-only, gated
 // client-side via useCompany().isAdmin (the APIs enforce the same split
-// server-side — see app/api/precedents/*).
+// server-side -- see app/api/precedents/*).
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -28,7 +28,7 @@ interface Letterhead {
   detected_fields?: DetectedField[];
 }
 
-// Only these 7 ever appear in detected_fields — address/body/signoff are the
+// Only these 7 ever appear in detected_fields -- address/body/signoff are the
 // always-present core tags and never reported here (see
 // lib/precedents/letterheadClassify.ts's applyClassification).
 const FIELD_ROLE_LABELS: Record<string, string> = {
@@ -377,8 +377,8 @@ function LetterheadSection({ isAdmin }: { isAdmin: boolean }) {
 }
 
 // Where a firm reviews/corrects what got automatically identified in their
-// uploaded letterhead (Our Ref, date, delivery mode, etc. — see
-// lib/precedents/letterheadClassify.ts) — this is the answer to "where can
+// uploaded letterhead (Our Ref, date, delivery mode, etc. -- see
+// lib/precedents/letterheadClassify.ts) -- this is the answer to "where can
 // the user edit the fields": nowhere until this section existed. Recognising
 // these fields is the one place this feature uses AI at all; issuing a
 // document itself doesn't require it (see PrecedentsTab.tsx's Issue modal).

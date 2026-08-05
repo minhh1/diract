@@ -73,7 +73,7 @@ export async function getMessage(token: string, messageId: string): Promise<Grap
 }
 
 // Applies the category, then moves into folderId. Graph mints a NEW id on
-// move — callers must use the returned id for anything downstream.
+// move -- callers must use the returned id for anything downstream.
 export async function applyCategoryAndMove(
   token: string, messageId: string, existingCategories: string[], categoryName: string, folderId: string
 ): Promise<string> {
@@ -90,7 +90,7 @@ export async function applyCategoryAndMove(
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ destinationId: folderId }),
   });
-  if (!moveRes.ok) return messageId; // already in the target folder — category is still applied
+  if (!moveRes.ok) return messageId; // already in the target folder -- category is still applied
   const moved = await moveRes.json();
   return moved.id || messageId;
 }

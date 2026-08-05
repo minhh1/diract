@@ -1,4 +1,4 @@
--- user_gmail_tokens RLS is `user_id = auth.uid()` — correctly locks down
+-- user_gmail_tokens RLS is `user_id = auth.uid()` -- correctly locks down
 -- access_token/refresh_token so no client can read a colleague's OAuth
 -- credentials. But that also means the browser client can never see WHO
 -- ELSE in the company is connected, breaking every "pick from connected

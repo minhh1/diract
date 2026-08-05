@@ -1,10 +1,10 @@
 // components/pdfeditor/PdfPageView.tsx
 // Renders one PDF page: the pdf.js canvas bitmap, pdf.js's own TextLayer (correctly
-// positioned per-run text spans — reused rather than hand-computing span boxes),
+// positioned per-run text spans -- reused rather than hand-computing span boxes),
 // an overlay for committed annotations (highlight/textbox/draw/signature), and an
 // interaction layer that captures pointer events for the active annotation tool.
 // All PDF-space <-> screen-space conversion goes through the page's pdf.js
-// viewport (convertToPdfPoint / convertToViewportPoint) — no hand-rolled matrices.
+// viewport (convertToPdfPoint / convertToViewportPoint) -- no hand-rolled matrices.
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +13,7 @@ import { TextCursor } from "lucide-react";
 import type { CheckboxOp, CheckboxStyle, DrawOp, HighlightOp, ImageOp, PdfEditOp, TextBoxOp, TextRun, ToolId } from "@/lib/pdfeditor/types";
 import { matchStandardFont, standardFontCss } from "@/lib/pdfeditor/fontMatch";
 
-// Shared offscreen canvas for text-width measurement — used to auto-grow the
+// Shared offscreen canvas for text-width measurement -- used to auto-grow the
 // inline-edit input as the user types and to size the matching post-commit
 // overlay, so the two line up with no visual jump between them.
 let measureCanvas: HTMLCanvasElement | null = null;
@@ -21,7 +21,7 @@ let measureCanvas: HTMLCanvasElement | null = null;
 // Real ☐/☒/⊠/☑ Unicode glyphs for the committed-checkbox render below, drawn
 // from the same bundled symbol font applyEdits.ts embeds into the saved PDF
 // (see its own top-of-file comment, including why this is a .ttf and not a
-// .woff/.woff2, and why it's DejaVu Sans rather than a Noto symbol font) —
+// .woff/.woff2, and why it's DejaVu Sans rather than a Noto symbol font) -
 // loaded once per session via the Font Loading API (not a CSS @font-face,
 // since there's no stylesheet to put one in here) and cached module-wide the
 // same way measureCanvas above is, rather than per-PdfPageView-instance
@@ -119,7 +119,7 @@ function measureGlyphInkRatios(glyph: string, fontFamily: string): { widthRatio:
 }
 
 // Reads the current browser text selection as a [start, end) character range
-// relative to `container`'s concatenated text content — the standard technique
+// relative to `container`'s concatenated text content -- the standard technique
 // for mapping window.getSelection() (which is per-text-node) onto a flat
 // string offset, used to know which part of a text box's runs to reformat.
 function getSelectionOffsetsWithin(container: HTMLElement): { start: number; end: number } | null {
@@ -179,7 +179,7 @@ function splitAndPatchRuns(runs: TextRun[], start: number, end: number, patch: P
 }
 
 // pdfjs-dist doesn't re-export TextContent/TextItem from its top-level types
-// module — shapes mirrored here from display/api.d.ts (str/transform/width/
+// module -- shapes mirrored here from display/api.d.ts (str/transform/width/
 // height/fontName/hasEOL, plus the page's fontName -> fontFamily style map).
 interface PdfTextItem {
   str: string;
@@ -345,8 +345,8 @@ export default function PdfPageView({
   // where dragging over its words selects a substring to bold/italicize/
   // underline via TextBoxToolbar. The two gestures both start with
   // pointerdown-and-drag so they can't be active at once. (Deliberately not a
-  // double-click gesture: two ordinary clicks in quick succession — e.g.
-  // reselecting a box to drag it again — reads as a double-click too, which
+  // double-click gesture: two ordinary clicks in quick succession -- e.g.
+  // reselecting a box to drag it again -- reads as a double-click too, which
   // made the box seem to randomly get "stuck" unable to move.)
   const [textSelectId, setTextSelectId] = useState<string | null>(null);
   const dragStateRef = useRef<{ id: string; startClientX: number; startClientY: number; startX: number; startY: number; moved: boolean } | null>(null);
@@ -377,7 +377,7 @@ export default function PdfPageView({
   }, [selectedOpId, onDeleteOp]);
 
   // Set for one tick after a real drag (moved past the 2px threshold) ends,
-  // then cleared the moment it's read — lets a click handler that ALSO wants
+  // then cleared the moment it's read -- lets a click handler that ALSO wants
   // to run on a plain click (checkbox toggle below) tell "this was a click"
   // apart from "this was the tail end of a drag". dragStateRef itself can't
   // answer that: onDragEnd already nulls it out before the browser's own
@@ -441,7 +441,7 @@ export default function PdfPageView({
 
   // ── Checkbox resize (drag a handle to scale the box's own side length) ──
   // A placed checkbox has no way to know the real document's own checkbox
-  // size underneath it (see CheckboxOp's doc comment) — DEFAULT_CHECKBOX_SIZE_PDF
+  // size underneath it (see CheckboxOp's doc comment) -- DEFAULT_CHECKBOX_SIZE_PDF
   // is only a best guess, and real templates vary (confirmed: one contract's
   // real boxes measured ~10pt, another's ~7.2pt). Rather than re-tuning that
   // one guess forever, let the user drag it to match whatever's actually
@@ -555,7 +555,7 @@ export default function PdfPageView({
 
   // Inline text-run editing: a floating <input> overlaid on the clicked run
   // (the underlying span is hidden while it's open) rather than making
-  // pdf.js's own transform-scaled span directly contentEditable — that combo
+  // pdf.js's own transform-scaled span directly contentEditable -- that combo
   // (CSS transform + contentEditable) is a known source of broken caret/focus
   // behavior across browsers, which is why the plain-input version below is
   // used instead.
@@ -692,7 +692,7 @@ export default function PdfPageView({
       } catch (e: any) {
         // The cleanup below cancels an in-flight render/text-layer task whenever this
         // effect re-runs (e.g. page or zoom change before the previous render finished),
-        // which rejects their promises with a cancellation exception — expected, not a bug.
+        // which rejects their promises with a cancellation exception -- expected, not a bug.
         if (cancelled || e?.name === "RenderingCancelledException") return;
         console.error("PdfPageView render error:", e);
       }
@@ -744,7 +744,7 @@ export default function PdfPageView({
     const original = span?.dataset.originalText || item.str;
     if (er.value === original) {
       // Reverted back to the original text (e.g. typed a letter, then deleted
-      // it) — actively remove any existing edit for this run instead of
+      // it) -- actively remove any existing edit for this run instead of
       // leaving it in place; otherwise the revert is silently ignored and the
       // stale prior edit keeps getting saved.
       const existing = opsRef.current.find((o) => o.type === "text-edit" && o.page === pageIndex && o.itemIndex === er.index);
@@ -780,12 +780,12 @@ export default function PdfPageView({
   // layer) toggle directly on click, no floating input. The first click on a
   // fresh glyph flips from whatever the ORIGINAL glyph showed (empty → checked,
   // already-checked → unchecked) and bakes the box's geometry, derived once
-  // from that glyph's own bounding box, directly into the new CheckboxOp —
+  // from that glyph's own bounding box, directly into the new CheckboxOp -
   // every click after that just flips the existing op's `checked` (handled by
   // the checkbox render block below now that an op exists, not this
-  // function again — see its own onClick). Most real-world contracts don't
+  // function again -- see its own onClick). Most real-world contracts don't
   // have a glyph here at all (checkboxes drawn as vector line-art instead,
-  // invisible to pdf.js's text layer) — see the "Checkbox" tool's placement
+  // invisible to pdf.js's text layer) -- see the "Checkbox" tool's placement
   // handler in handlePointerUp for that case.
   function toggleCheckbox(i: number) {
     const item = textItemsRef.current[i];
@@ -795,7 +795,7 @@ export default function PdfPageView({
 
     const wasChecked = isCheckedGlyph(span.dataset.originalText || item.str);
     // Same derivation as the old inline render/save-time geometry used to
-    // recompute on every frame — now computed once, here, and stored directly
+    // recompute on every frame -- now computed once, here, and stored directly
     // as the op's own box so render/save just draw x/y/width/height as-is.
     const boxSize = Math.min(item.width, item.height * 1.1);
     onAddOpRef.current({
@@ -1044,7 +1044,7 @@ export default function PdfPageView({
 
       <div ref={textLayerRef} className="textLayer" style={{ zIndex: 2, pointerEvents: activeTool === "select" ? "auto" : "none", ["--total-scale-factor" as any]: scale, ["--scale-factor" as any]: scale }} />
 
-      {/* Committed inline text-run edits — rendered independently of pdf.js's own
+      {/* Committed inline text-run edits -- rendered independently of pdf.js's own
           span (whose geometry is calibrated for the original text) so the visual
           position matches the live editing input exactly, with no jump on commit. */}
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 2 }}>
@@ -1053,7 +1053,7 @@ export default function PdfPageView({
           const [sx, sy] = viewport.convertToViewportPoint(o.x, o.y);
           const fontSizePx = o.fontSize * scale;
           const css = standardFontCss(o.font);
-          // Cover at least the original glyph's width — otherwise a shorter
+          // Cover at least the original glyph's width -- otherwise a shorter
           // replacement leaves the old glyph's edges peeking out from behind it.
           const width = Math.max(o.width * scale, measureTextWidth(o.text, fontSizePx, css.fontFamily)) + 4;
           return (
@@ -1067,16 +1067,16 @@ export default function PdfPageView({
           );
         })}
 
-        {/* Committed checkboxes — real ☐/☒/⊠/☑ Unicode glyphs via the bundled
+        {/* Committed checkboxes -- real ☐/☒/⊠/☑ Unicode glyphs via the bundled
             symbol font (ensureCheckboxFontLoaded above), matching what
             applyEdits.ts embeds into the saved PDF exactly, rather than a
             hand-drawn rectangle + lines standing in for one (except
             "overlay-x", which IS still two drawn lines -- see its own branch
             below, and CheckboxStyle's doc comment for why). Geometry
             (x/y/width/height) is the box itself, computed once at creation
-            time — see CheckboxOp's doc comment — not re-derived from a source
+            time -- see CheckboxOp's doc comment -- not re-derived from a source
             glyph on every render. Click toggles checked; drag repositions;
-            select-then-Delete or the badge removes it — same interaction set
+            select-then-Delete or the badge removes it -- same interaction set
             as every other placed annotation. */}
         {pageOps.filter((o): o is PdfEditOp & { type: "checkbox" } => o.type === "checkbox").map((o) => {
           const style: CheckboxStyle = o.style ?? "ballot-x";
@@ -1154,10 +1154,10 @@ export default function PdfPageView({
 
           // A checkbox placed via the tool doesn't know the ORIGINAL vector-drawn
           // or scanned checkbox's real size underneath it (that's the whole
-          // problem this tool exists to sidestep — see CheckboxOp's doc comment),
+          // problem this tool exists to sidestep -- see CheckboxOp's doc comment),
           // so a snug 1px whiteout risks leaving a sliver of the old box's border
           // peeking out around the new one on anything but a perfectly-sized,
-          // perfectly-centered placement. Generously oversized instead — plain
+          // perfectly-centered placement. Generously oversized instead -- plain
           // white blends into the page background regardless, so there's no
           // downside to erasing more than strictly necessary here.
           const padX = CHECKBOX_WHITEOUT_PAD_X_PDF * scale;
@@ -1239,7 +1239,7 @@ export default function PdfPageView({
                 pointerEvents: activeTool === "select" ? "auto" : "none",
                 // Default gesture is drag-to-move (like every other annotation). The toolbar's
                 // cursor button switches to text-select mode instead, where dragging over the
-                // words selects a substring to format — the two can't be active at once
+                // words selects a substring to format -- the two can't be active at once
                 // (beginDrag no-ops while textSelecting, see above), so no gesture conflict.
                 userSelect: textSelecting ? "text" : "none",
                 cursor: activeTool === "select" ? (textSelecting ? "text" : "grab") : undefined,
@@ -1343,7 +1343,7 @@ export default function PdfPageView({
           onClick={(e) => e.stopPropagation()}
           style={{
             // Grows with what's typed (canvas-measured) rather than staying a fixed
-            // width — otherwise typed text scrolls out of view inside a cramped box.
+            // width -- otherwise typed text scrolls out of view inside a cramped box.
             position: "absolute", left: editingRun.left, top: editingRun.top,
             width: Math.max(editingRun.minWidth, measureTextWidth(editingRun.value, editingRun.fontSizePx, editingRun.fontFamily) + 10),
             fontSize: editingRun.fontSizePx, fontFamily: editingRun.fontFamily,

@@ -194,7 +194,7 @@ export default function TrustPaymentModal({
 
         <label className="flex items-center gap-2 text-[11px] font-medium text-slate-500 cursor-pointer">
           <input type="checkbox" checked={pexaDirectDebit} onChange={e => handlePexaToggle(e.target.checked)} className="rounded" />
-          PEXA Direct Debit — auto-fill payee as {PEXA_PAYEE_NAME}
+          PEXA Direct Debit -- auto-fill payee as {PEXA_PAYEE_NAME}
         </label>
 
         <div>
@@ -215,7 +215,7 @@ export default function TrustPaymentModal({
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Available after payment</label>
             <div className={`w-full bg-slate-100 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-bold ${availableAfter != null && availableAfter < 0 ? 'text-rose-600' : 'text-slate-600'}`}>
-              {matterId ? money(availableAfter ?? 0) : '—'}
+              {matterId ? money(availableAfter ?? 0) : '-'}
             </div>
           </div>
         </div>

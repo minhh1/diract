@@ -224,7 +224,7 @@ export default function TabBar({
         <span className="text-[12px] font-medium">Add tab</span>
       </button>
 
-      {/* Fixed extra tabs (e.g. Access) — non-removable, always at end */}
+      {/* Fixed extra tabs (e.g. Access) -- non-removable, always at end */}
       {extraTabs.map(et => {
         const isActive = activeTabId === et.id;
         const EtIcon = et.icon;

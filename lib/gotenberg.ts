@@ -1,6 +1,6 @@
 // lib/gotenberg.ts
 // Converts legacy Word 97-2003 .doc files to real .docx via our own small
-// conversion microservice (docservice/) — NOT Gotenberg's own HTTP API,
+// conversion microservice (docservice/) -- NOT Gotenberg's own HTTP API,
 // which only ever outputs PDF. docservice/ is built on the gotenberg base
 // image purely to reuse the LibreOffice install it already ships.
 //

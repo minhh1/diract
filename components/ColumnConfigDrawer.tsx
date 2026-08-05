@@ -197,10 +197,10 @@ export default function ColumnConfigDrawer({
   const labelFor = (colId: string) =>
     resolveColLabel ? resolveColLabel(colId) : colId.replace(/_id$/, '').replace('.', ' ');
 
-  // Local draft for filters — only applied on Save
+  // Local draft for filters -- only applied on Save
   const [draftFilters, setDraftFilters] = useState<ActiveFilter[]>(filters);
   const [filtersDirty, setFiltersDirty] = useState(false);
-  // Brief "Saved" confirmation on the button — the drawer intentionally
+  // Brief "Saved" confirmation on the button -- the drawer intentionally
   // stays open on save so filters can keep being tweaked without reopening it.
   const [justSaved, setJustSaved] = useState(false);
 
@@ -533,7 +533,7 @@ export default function ColumnConfigDrawer({
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-100 shrink-0 space-y-3">
-          {/* Filter save button — only shown on filters tab */}
+          {/* Filter save button -- only shown on filters tab */}
           {activeTab === 'filters' && (
             <div className="flex items-center gap-2">
               <button

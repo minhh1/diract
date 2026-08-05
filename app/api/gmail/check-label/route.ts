@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       .map(l => l.name);
   }
 
-  // Also check our DB — is this message already assigned to a different project?
+  // Also check our DB -- is this message already assigned to a different project?
   const { data: existing } = await supabase
     .from('project_emails')
     .select('project_id, project:project_id(name)')

@@ -683,7 +683,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     {feeRows.map(r => (
                       <label key={r.id} className="flex items-center gap-3 px-4 py-2.5 text-[12px] cursor-pointer hover:bg-slate-50">
                         <input type="checkbox" checked={selectedFeeIds.has(r.id)} onChange={() => toggleFee(r.id)} className="shrink-0" />
-                        <span className="text-slate-400 w-20 shrink-0">{r.date || '—'}</span>
+                        <span className="text-slate-400 w-20 shrink-0">{r.date || '-'}</span>
                         <span className="flex-1 truncate text-slate-700">{r.description || '(no description)'}</span>
                         <span className="text-slate-500 shrink-0">{r.hours.toFixed(2)}h</span>
                         <span className="font-bold text-slate-800 w-20 text-right shrink-0">{money(r.amount)}</span>
@@ -784,7 +784,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                     {disbRows.map(r => (
                       <label key={r.id} className="flex items-center gap-3 px-4 py-2.5 text-[12px] cursor-pointer hover:bg-slate-50">
                         <input type="checkbox" checked={selectedDisbIds.has(r.id)} onChange={() => toggleDisb(r.id)} className="shrink-0" />
-                        <span className="text-slate-400 w-20 shrink-0">{r.date || '—'}</span>
+                        <span className="text-slate-400 w-20 shrink-0">{r.date || '-'}</span>
                         <span className="flex-1 truncate text-slate-700">{r.description || '(no description)'}</span>
                         <span className="font-bold text-slate-800 w-20 text-right shrink-0">{money(r.amount)}</span>
                       </label>

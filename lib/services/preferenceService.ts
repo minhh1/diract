@@ -30,7 +30,7 @@ export const preferenceService = {
    *   - an AFTER trigger that deactivates sibling rows whenever a row is
    *     written with is_active = true
    * So this function does not need to manually deactivate other rows
-   * before upserting — Postgres guarantees at most one active preset per
+   * before upserting -- Postgres guarantees at most one active preset per
    * (user_id, table_slug) atomically, even under concurrent writes from
    * multiple tabs/devices.
    *
@@ -71,7 +71,7 @@ async save(payload: {
   }
 
   // Activate via the same atomic two-statement RPC already proven correct
-  // for switching presets — deactivating siblings and activating the
+  // for switching presets -- deactivating siblings and activating the
   // target happen as two separate sequential statements, never racing
   // the partial index the way a single INSERT with is_active=true does.
   if (wantsActive) {
@@ -92,14 +92,14 @@ async save(payload: {
 
   /**
    * Switch the active preset WITHOUT touching its stored columns/layout.
-   * Use this when the user clicks an existing saved view in ViewPresets —
+   * Use this when the user clicks an existing saved view in ViewPresets -
    * you want to flip which one is "active," not resave/overwrite its
    * column config with whatever happens to be in local state at that
    * moment.
    *
    * Implemented as a single set-based UPDATE via RPC so that deactivating
    * the previously-active row and activating the newly-selected row happen
-   * as one atomic statement — this avoids the unique-index/trigger race
+   * as one atomic statement -- this avoids the unique-index/trigger race
    * that occurs if siblings are deactivated and the target activated as
    * two separate statements.
    */

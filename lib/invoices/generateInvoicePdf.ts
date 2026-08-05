@@ -407,7 +407,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
   // One or more debtors (e.g. joint purchasers) -- each its own paragraph,
   // with a blank line between them. The single-debtor case lands at
   // exactly the same y as before this existed (billTo.y - 14).
-  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['—'];
+  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['-'];
   let debtorY = layout.billTo.y - 14;
   debtorLines.forEach((name, i) => {
     text(name, layout.billTo.x, typo.debtorName, { bold: true }, debtorY);

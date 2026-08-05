@@ -1,6 +1,6 @@
 // lib/renderMarkdown.ts
 // Renders admin-authored text (currently just a document template's client-
-// facing "explanation") as basic formatted HTML — bold/italic/lists/links —
+// facing "explanation") as basic formatted HTML -- bold/italic/lists/links -
 // sanitized before use with dangerouslySetInnerHTML. isomorphic-dompurify
 // (not plain dompurify) because this runs inside a "use client" component
 // that Next still server-renders once for the initial HTML, where there's

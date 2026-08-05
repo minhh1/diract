@@ -1,5 +1,5 @@
 // lib/taskGroup.ts
-// "Organised view" classification for the public task page — buckets each
+// "Organised view" classification for the public task page -- buckets each
 // task into one of three groups. A manual override (taskGroup, stored on
 // the task) always wins; otherwise it's auto-detected: tasks the viewer is
 // only watching (not assigned) are "watcher", tasks that mention chasing

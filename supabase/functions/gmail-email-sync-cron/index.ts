@@ -42,8 +42,8 @@ async function getAccessToken(userId: string): Promise<string | null> {
 // ── Label name helpers ─────────────────────────────────────────────
 
 // Strip "/" from the leaf label name (part after last /)
-// e.g. "Huynh Lawyers/260576 — A/B Test [CODE]"
-//   → "Huynh Lawyers/260576 — A-B Test [CODE]"
+// e.g. "Huynh Lawyers/260576 -- A/B Test [CODE]"
+//   → "Huynh Lawyers/260576 -- A-B Test [CODE]"
 function sanitiseLabelName(name: string): string {
   const parts = name.split("/");
   if (parts.length <= 1) return name.replace(/\//g, "-");
@@ -271,7 +271,7 @@ async function heartbeat(name: string, durationMs: number, result: unknown): Pro
 // ── Function ──────────────────────────────────────────────────────
 
 // supabase/functions/gmail-email-sync-cron/index.ts
-// Every 15 min (offset 7) — queues email_sync jobs per project
+// Every 15 min (offset 7) -- queues email_sync jobs per project
 
 
 Deno.serve(async (_req) => {
@@ -307,26 +307,26 @@ Deno.serve(async (_req) => {
     });
     const notConnected = memberIds.filter((id: string) => !connectedUserIds.includes(id));
     if (notConnected.length) console.log(`[email-sync-cron] ✗ no token for ${notConnected.length} users: ${notConnected.join(', ')}`);
-    if (!connectedUserIds.length) { console.log(`[email-sync-cron] No connected users — skipping`); continue; }
+    if (!connectedUserIds.length) { console.log(`[email-sync-cron] No connected users -- skipping`); continue; }
 
-    // Get active labels — archived projects are owned exclusively by gmail-archive-worker
+    // Get active labels -- archived projects are owned exclusively by gmail-archive-worker
     const { data: labels, error: labelsErr } = await db.from("project_gmail_labels")
       .select("project_id, label_code, gmail_label_name").eq("company_id", companyId)
       .is("removed_at", null).is("archived_at", null);
     console.log(`[email-sync-cron] activeLabels=${labels?.length || 0}${labelsErr ? ' error=' + labelsErr.message : ''}`);
-    if (!labels?.length) { console.log(`[email-sync-cron] No active labels — skipping`); continue; }
+    if (!labels?.length) { console.log(`[email-sync-cron] No active labels -- skipping`); continue; }
 
-    // Batch: which of these projects have at least one filed email — checked
+    // Batch: which of these projects have at least one filed email -- checked
     // per-project (bounded by this company's active label count) rather
     // than pulling every project_emails row for the company and collecting
     // distinct project_ids in JS. That used to silently miss projects once
     // a company's total project_emails count passed PostgREST's default
     // row cap (no .order()/.range() on the query, so extra rows past the
-    // cap were dropped, not paginated) — confirmed live: Huynh Lawyers had
+    // cap were dropped, not paginated) -- confirmed live: Huynh Lawyers had
     // 4,803 project_emails rows and 17 projects (the most recently active
     // ones, including newly-added backlogs) never got an email_sync job
     // queued at all, so nobody but the original filer ever received those
-    // messages. A per-project existence check can't truncate this way — its
+    // messages. A per-project existence check can't truncate this way -- its
     // cost scales with active label count, not with total email history.
     const projectIdsWithEmails = new Set<string>();
     for (let i = 0; i < labels.length; i += BATCH_SIZE) {
@@ -338,7 +338,7 @@ Deno.serve(async (_req) => {
     }
     console.log(`[email-sync-cron] projectsWithEmails=${projectIdsWithEmails.size}/${labels.length}`);
 
-    // Batch fetch existing jobs — include completed_users to check progress
+    // Batch fetch existing jobs -- include completed_users to check progress
     const { data: existingJobs, error: jobsErr } = await db.from("gmail_sync_jobs")
       .select("id, status, project_id, completed_users, total_users")
       .eq("job_type", "email_sync")
@@ -357,7 +357,7 @@ Deno.serve(async (_req) => {
       // Skip if currently processing
       if (existing?.status === "processing") { skippedProcessing++; continue; }
 
-      // Skip if partially completed — don't wipe progress
+      // Skip if partially completed -- don't wipe progress
       const completedCount = (existing?.completed_users || []).length;
       const totalUsers = existing?.total_users || 0;
       if (existing?.status === "pending" && completedCount > 0 && completedCount < totalUsers) {
@@ -373,7 +373,7 @@ Deno.serve(async (_req) => {
       }
 
       // A job that's already "done" only needs redoing if the connected-
-      // member count changed since — otherwise leave it alone. This used
+      // member count changed since -- otherwise leave it alone. This used
       // to reset EVERY done job to pending on EVERY 15-min sweep
       // unconditionally, meaning the whole system perpetually re-verified
       // every project's emails against every user's mailbox forever. See
@@ -415,7 +415,7 @@ Deno.serve(async (_req) => {
     console.log(`[email-sync-cron] Company ${companyId}: queued=${companyQueued}`);
   }
 
-  console.log(`[email-sync-cron] DONE in ${Date.now() - t0}ms — totalQueued=${queued}`);
+  console.log(`[email-sync-cron] DONE in ${Date.now() - t0}ms -- totalQueued=${queued}`);
   await heartbeat("gmail-email-sync-cron", Date.now() - t0, { queued });
   return new Response(JSON.stringify({ ok: true, queued }), { headers: { "Content-Type": "application/json" } });
 });

@@ -1,6 +1,6 @@
 // supabase/functions/gmail-email-sync-processor/index.ts
 // Does the actual Gmail work for ONE (job, user) pair. Invoked directly by
-// gmail-email-sync-worker (the dispatcher) via a plain HTTPS fetch — see
+// gmail-email-sync-worker (the dispatcher) via a plain HTTPS fetch -- see
 // gmail-label-sync-processor for the full rationale. Since only one user's
 // data lives in this isolate, a small internal message-level concurrency is
 // safe here (it isn't multiplied by many other jobs/users sharing the same

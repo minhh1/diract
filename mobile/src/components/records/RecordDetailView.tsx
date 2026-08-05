@@ -26,7 +26,7 @@ function RelationFieldRow({ field, value, onSave }: { field: RecordField; value:
     return (
       <View style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
-        <Text style={[styles.value, { color: theme.text }]}>{value == null ? '—' : String(value)}</Text>
+        <Text style={[styles.value, { color: theme.text }]}>{value == null ? '-' : String(value)}</Text>
       </View>
     );
   }
@@ -36,7 +36,7 @@ function RelationFieldRow({ field, value, onSave }: { field: RecordField; value:
       <Pressable onPress={() => setPickerOpen(true)} style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
         <Text style={[styles.value, { color: theme.text }]} numberOfLines={2}>
-          {labelQuery.isLoading ? '…' : labelQuery.data ?? (value ? String(value) : '—')}
+          {labelQuery.isLoading ? '…' : labelQuery.data ?? (value ? String(value) : '-')}
         </Text>
       </Pressable>
       <RelationPickerSheet
@@ -62,7 +62,7 @@ function DateFieldRow({ field, value, onSave }: { field: RecordField; value: unk
     <>
       <Pressable onPress={() => setPickerOpen(true)} style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
-        <Text style={[styles.value, { color: theme.text }]}>{value ? new Date(value as string).toLocaleDateString('en-AU') : '—'}</Text>
+        <Text style={[styles.value, { color: theme.text }]}>{value ? new Date(value as string).toLocaleDateString('en-AU') : '-'}</Text>
       </Pressable>
       {pickerOpen && (
         <DateTimePicker
@@ -140,7 +140,7 @@ function FieldRow({
       <Pressable onPress={() => setEditing(true)} style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
         <Text style={[styles.value, { color: theme.text }]} numberOfLines={2}>
-          {value == null || value === '' ? '—' : String(value)}
+          {value == null || value === '' ? '-' : String(value)}
         </Text>
       </Pressable>
     );

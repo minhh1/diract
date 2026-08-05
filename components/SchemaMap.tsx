@@ -75,7 +75,7 @@ const FIELD_TYPE_COLORS: Record<string, string> = {
   relation:       '#6366f1',
 };
 
-// FK columns that should never generate relation lines —
+// FK columns that should never generate relation lines -
 // they point to tables not in the schema map
 const SKIP_FK_COLUMNS = new Set([
   'created_by', 'team_id', 'approved_by', 'used_by',
@@ -211,7 +211,7 @@ export default function SchemaMap() {
     const newRelations: RelationLine[] = [];
     const seenRelations = new Set<string>();
 
-    // All known table IDs — only draw lines between these
+    // All known table IDs -- only draw lines between these
     const knownTableIds = new Set([
       ...systemTables,
       ...customTables.map(t => t.id),
@@ -258,7 +258,7 @@ export default function SchemaMap() {
         })),
       ];
 
-      // Extract deduplicated relation lines — only to known tables
+      // Extract deduplicated relation lines -- only to known tables
       fields
         .filter(f => f.isFK && !SKIP_FK_COLUMNS.has(f.id))
         .forEach(f => {
@@ -527,7 +527,7 @@ export default function SchemaMap() {
                     strokeWidth={isSelected ? 2.5 : 1}
                   />
 
-                  {/* Header fill — full top + square bottom to avoid gap */}
+                  {/* Header fill -- full top + square bottom to avoid gap */}
                   <rect
                     width={BOX_WIDTH}
                     height={HEADER_HEIGHT + 8}
@@ -624,7 +624,7 @@ export default function SchemaMap() {
                             : field.label}
                         </text>
 
-                        {/* Field type — right aligned */}
+                        {/* Field type -- right aligned */}
                         <text
                           x={BOX_WIDTH - 10}
                           y={fy + FIELD_HEIGHT / 2 + 4}

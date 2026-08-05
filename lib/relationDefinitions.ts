@@ -102,7 +102,7 @@ export const PROPERTY_RELATIONS: RelationDef[] = [
       { id: 'access_note', label: 'Access note' },
     ],
   },
-  // Project linked to a property — shown in property expand panel
+  // Project linked to a property -- shown in property expand panel
   {
     key: 'projects',
     label: 'Project',
@@ -136,7 +136,7 @@ export const ENTITY_RELATIONS: RelationDef[] = [
   },
 ];
 
-// PROJECT_RELATIONS is intentionally empty here — it's fully driven
+// PROJECT_RELATIONS is intentionally empty here -- it's fully driven
 // by useTableRelations which introspects sub-projects and child
 // properties from the database. Keeping this export so any legacy
 // imports don't break.

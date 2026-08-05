@@ -206,7 +206,7 @@ export default function DisbursementInvoiceImportModal({ onClose, onImported, re
                           <AlertTriangle size={13} className="text-amber-500 shrink-0" />
                         )}
                         <p className="text-[12px] font-bold text-slate-700 truncate">
-                          {g.matterNumber}{g.projectName ? ` — ${g.projectName}` : ""}
+                          {g.matterNumber}{g.projectName ? ` -- ${g.projectName}` : ""}
                         </p>
                       </div>
                       {!g.projectId && (

@@ -1,7 +1,7 @@
 // lib/relativeDate.ts
 // Human-friendly relative label for an arbitrary date (e.g. a follow-up
-// date) — "today", "tomorrow", "in 3 days", "Monday next week", "in 3
-// weeks" — instead of a raw date string. Used in the Checklist View and
+// date) -- "today", "tomorrow", "in 3 days", "Monday next week", "in 3
+// weeks" -- instead of a raw date string. Used in the Checklist View and
 // the public task page (kept in sync there; the Gmail add-on has its own
 // copy of this logic since Apps Script can't import from here).
 

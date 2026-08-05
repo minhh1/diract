@@ -130,7 +130,7 @@ export default function AutoAddRulesModal({ pageId, recordLabel, onClose }: { pa
             ) : (
               <select value={fieldId} onChange={e => setFieldId(e.target.value)}
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-full text-[13px] outline-none bg-white">
-                <option value="">— Select a field —</option>
+                <option value="">- Select a field -</option>
                 {fields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
               </select>
             )}

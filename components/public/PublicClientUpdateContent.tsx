@@ -1,5 +1,5 @@
 // components/public/PublicClientUpdateContent.tsx
-// The actual client-update-page UI (MatterBoard + PIN gate) — extracted
+// The actual client-update-page UI (MatterBoard + PIN gate) -- extracted
 // from app/public/updates/[slug]/page.tsx so the exact same experience can
 // render two ways: as the full standalone /public/updates/[slug] page
 // (embedded=false, that route's own thin wrapper supplies slug from the

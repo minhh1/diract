@@ -14,7 +14,7 @@ interface ReverseRelation {
 }
 
 // Which columns to show in each child table's relation panel.
-// This is the one config piece that can't be derived from schema alone —
+// This is the one config piece that can't be derived from schema alone -
 // which columns are worth showing in a compact sub-table is a display
 // decision, not a structural one.
 const RELATION_DISPLAY_COLS: Record<string, { id: string; label: string }[]> = {
@@ -134,7 +134,7 @@ export function useTableRelations(tableName: string, enabled: boolean = true): {
   useEffect(() => {
     if (!tableName || tableName === '__skip__') { setLoading(false); return; }
     if (cache.has(tableName)) { setRelations(cache.get(tableName)!); setLoading(false); return; }
-    // get_reverse_relations/get_self_relations are expensive server-side —
+    // get_reverse_relations/get_self_relations are expensive server-side -
     // only fetch once actually needed (Setup drawer open, or a relation is
     // already expanded) rather than on every page mount.
     if (!enabled) return;

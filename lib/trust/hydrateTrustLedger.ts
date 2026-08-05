@@ -17,7 +17,7 @@ function describe(row: Record<string, any>, matterName: string): string {
   if (type === 'Deposit') return who ? `Deposit from ${who}` : type;
   if (type?.startsWith('Withdrawal')) return who ? `Payment to ${who}` : type;
   if (type === 'Journal Transfer') return who ? `Transfer (${who})` : type;
-  return type || '—';
+  return type || '-';
 }
 
 export interface HydratedTrustLedger {

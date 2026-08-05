@@ -55,13 +55,13 @@ function deriveFieldType(col: ColumnMeta): FieldConfig['type'] {
 export function useTableSchema(tableName: string, externalCompanyId?: string | null): TableSchema {
   // When a caller already has companyId from a shared context (e.g.
   // CompanyContext, which every dashboard page mounts anyway), pass it in
-  // so this hook can skip its own auth.getUser() + profiles round trip —
+  // so this hook can skip its own auth.getUser() + profiles round trip -
   // otherwise every consumer duplicates that same identity lookup on every
   // mount, racing CompanyContext's own fetch for no benefit.
   const usingExternalCompanyId = externalCompanyId !== undefined;
 
   // Lazy initializers run synchronously on first render (unlike useEffect,
-  // which always waits a tick) — so a table already visited this session
+  // which always waits a tick) -- so a table already visited this session
   // renders with its real schema immediately instead of flashing "loading"
   // for one frame on every remount (e.g. switching Properties → Entities).
   const [all, setAll] = useState<ColumnMeta[]>(() => {

@@ -186,7 +186,7 @@ function SharePanel({ projectId }: { projectId: string }) {
             <div key={page.id} className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl">
               <p className="text-[12px] font-medium text-slate-700 flex-1">
                 {page.title}
-                {page.access_code && <span className="text-slate-400 font-normal"> — code: {page.access_code}</span>}
+                {page.access_code && <span className="text-slate-400 font-normal"> -- code: {page.access_code}</span>}
               </p>
               <button onClick={() => copyLink(page)} className="p-1 text-slate-300 hover:text-indigo-600" title="Copy link">
                 {copiedId === page.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}

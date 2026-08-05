@@ -174,7 +174,7 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
   // overwritten by the meta column's own y decrements; the shared `y` is
   // set to whichever column actually ran lower once both are drawn.
   const debtorBlockStartY = y;
-  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['—'];
+  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['-'];
   let debtorY = debtorBlockStartY;
   debtorLines.forEach((name, i) => {
     text(name, MARGIN, 11, {}, debtorY);

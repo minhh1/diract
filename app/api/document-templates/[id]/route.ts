@@ -2,11 +2,11 @@
 // Admin-side (auth required). `id` here is the templateId. PATCH updates a
 // template's description (shown to the client on the fill-in link, see
 // app/public/documents/[pageId]/page.tsx) and download_filename (the base
-// filename used for the generated .docx — falls back to the template's own
+// filename used for the generated .docx -- falls back to the template's own
 // `name` when unset, see safeFileName() in the submit route). DELETE removes
 // a document template: the stored .docx object, then the DB row (cascades to
 // document_template_fields and document_fill_page_templates join rows via
-// FK ON DELETE CASCADE — a template used by an existing client link is
+// FK ON DELETE CASCADE -- a template used by an existing client link is
 // simply dropped from that link's document set, not blocked).
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";

@@ -1,5 +1,5 @@
 // supabase/functions/gmail-watch-renewal/index.ts
-// Runs daily — checks Gmail watch health for all connected users
+// Runs daily -- checks Gmail watch health for all connected users
 // 1. Renews watches expiring within 48 hours
 // 2. Detects users whose last_history_id hasn't changed in 24h (stalled sync)
 // 3. Emails company admin if any user's sync is stalled
@@ -158,13 +158,13 @@ Deno.serve(async (_req) => {
       } else if (watchExpiry < now) {
         stalledReason = `Watch expired ${new Date(watchExpiry).toLocaleString("en-AU")}`;
       } else if (!last_history_id) {
-        stalledReason = "No history ID — never received push notification";
+        stalledReason = "No history ID -- never received push notification";
       } else if (lastUpdate < stalledThreshold && lastUpdate > 0) {
         stalledReason = `No activity for ${Math.round((now - lastUpdate) / 3600000)}h`;
       }
 
       if (stalledReason) {
-        console.log(`[watch-renewal] STALLED: ${email} — ${stalledReason}`);
+        console.log(`[watch-renewal] STALLED: ${email} -- ${stalledReason}`);
         stalled.push({ email, lastSeen: updated_at || "never", reason: stalledReason });
       }
 
@@ -182,11 +182,11 @@ Deno.serve(async (_req) => {
 
         const result = await renewWatch(userId, token);
         if (result.ok) {
-          console.log(`[watch-renewal] ✓ Renewed ${email} — expires ${result.expiry}`);
+          console.log(`[watch-renewal] ✓ Renewed ${email} -- expires ${result.expiry}`);
           renewed.push(email);
           // Remove from stalled if renewal fixed it
           const idx = stalled.findIndex(s => s.email === email);
-          if (idx !== -1 && stalledReason !== "No history ID — never received push notification") {
+          if (idx !== -1 && stalledReason !== "No history ID -- never received push notification") {
             stalled.splice(idx, 1);
           }
         } else {
@@ -195,7 +195,7 @@ Deno.serve(async (_req) => {
         }
       } else {
         const hoursLeft = Math.round((watchExpiry - now) / 3600000);
-        console.log(`[watch-renewal] ✓ ${email} watch OK — ${hoursLeft}h remaining`);
+        console.log(`[watch-renewal] ✓ ${email} watch OK -- ${hoursLeft}h remaining`);
       }
     }
 
@@ -212,7 +212,7 @@ Deno.serve(async (_req) => {
             <tr>
               <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${i.email}</td>
               <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#dc2626;">${'reason' in i ? i.reason : i.error}</td>
-              <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#94a3b8;">${'lastSeen' in i ? new Date(i.lastSeen).toLocaleString("en-AU") : "—"}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#94a3b8;">${'lastSeen' in i ? new Date(i.lastSeen).toLocaleString("en-AU") : "-"}</td>
             </tr>`).join("");
 
           const renewedHtml = renewed.length
@@ -221,7 +221,7 @@ Deno.serve(async (_req) => {
 
           const body = `
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;padding:24px;">
-              <h2 style="color:#0f172a;margin:0 0 8px;">⚠️ Gmail Sync Alert — ${companyName}</h2>
+              <h2 style="color:#0f172a;margin:0 0 8px;">⚠️ Gmail Sync Alert -- ${companyName}</h2>
               <p style="color:#64748b;margin:0 0 24px;">The following users have Gmail sync issues that require attention:</p>
               <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;">
                 <thead>
@@ -241,7 +241,7 @@ Deno.serve(async (_req) => {
             </div>`;
 
           await sendAdminEmail(adminToken, adminEmail,
-            `⚠️ Gmail Sync Alert — ${issues.length} user${issues.length !== 1 ? "s" : ""} affected (${companyName})`,
+            `⚠️ Gmail Sync Alert -- ${issues.length} user${issues.length !== 1 ? "s" : ""} affected (${companyName})`,
             body);
           console.log(`[watch-renewal] ✓ Alert email sent to ${adminEmail}`);
         }

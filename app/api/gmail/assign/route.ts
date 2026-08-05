@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
 
     // ── Step 6: create label hierarchy ────────────────────────
     // First check if a code version of this label already exists in Gmail
-    // (e.g. "Huynh Lawyers/260541 — 33 Moore Street [61E27]")
+    // (e.g. "Huynh Lawyers/260541 -- 33 Moore Street [61E27]")
     // If so, use it directly instead of creating a duplicate without the code.
     const { data: existingPglCheck } = await supabase
       .from('project_gmail_labels')
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       );
       if (labelWithCode) {
         console.log(`[assign] Found existing code label in Gmail: "${labelWithCode.name}" → ${labelWithCode.id}`);
-        // Skip hierarchy creation — use the existing code label
+        // Skip hierarchy creation -- use the existing code label
         const sublabel2 = labelWithCode.name.split('/').slice(-1)[0];
         const { error: pglError2 } = await supabase
           .from('project_gmail_labels')
@@ -229,7 +229,7 @@ export async function POST(req: NextRequest) {
         if (centralEmailEnabled) {
           await captureBodyForCentralEmail(supabase, peData2?.content_id, messageId, user.id);
         }
-        console.log('[assign] Re-applied existing code label — done');
+        console.log('[assign] Re-applied existing code label -- done');
         return NextResponse.json({
           ok: true,
           labelName: labelWithCode.name,
@@ -291,7 +291,7 @@ export async function POST(req: NextRequest) {
     const sublabel = labelParts[labelParts.length - 1];
 
     // ── Steps 7+8: DB first, then Gmail (atomic) ──────────────
-    // Save to DB BEFORE Gmail — if DB fails, abort before touching Gmail.
+    // Save to DB BEFORE Gmail -- if DB fails, abort before touching Gmail.
     // If Gmail fails after DB save, roll back DB rows.
 
     const { data: existingPgl } = await supabase
@@ -358,7 +358,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `DB error saving email: ${peError.message}` }, { status: 500 });
     }
 
-    console.log('[assign] DB saved — applying label in Gmail');
+    console.log('[assign] DB saved -- applying label in Gmail');
 
     // 3. Rename label in Gmail to include code
     if (labelNameWithCode !== gmailLabelName && createdLabelId) {
@@ -386,7 +386,7 @@ export async function POST(req: NextRequest) {
 
     if (!applyRes.ok) {
       const err = await applyRes.json();
-      console.error('[assign] Failed to apply label in Gmail — rolling back DB', err);
+      console.error('[assign] Failed to apply label in Gmail -- rolling back DB', err);
       // Roll back both DB rows
       await supabase.from('project_emails')
         .delete().eq('user_id', user.id).eq('gmail_message_id', messageId);

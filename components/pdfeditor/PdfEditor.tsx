@@ -2,11 +2,11 @@
 // Top-level PDF editor: loads the document via pdfjs-dist, owns page navigation,
 // the toolbar/active tool, the edit-op undo/redo stack, and Save (flattens via
 // lib/pdfeditor/applyEdits.ts and PUTs the result, then reloads it as the new
-// baseline so further edits — including re-editing text you just changed — work
+// baseline so further edits -- including re-editing text you just changed -- work
 // against the saved PDF).
 //
 // A freshly picked/dropped file (source.kind === "new") is opened straight from
-// the browser's File object — no upload happens until the first Save, at which
+// the browser's File object -- no upload happens until the first Save, at which
 // point it's created in the bucket for the first time and this component starts
 // tracking its documentId so subsequent Saves are PUTs against it. Opening a
 // previously-saved document (source.kind === "existing") still goes through the
@@ -34,7 +34,7 @@ interface Props {
   onBack: () => void;
 }
 
-// How many pages before/after the current one actually render their canvas —
+// How many pages before/after the current one actually render their canvas -
 // see the render-loop comment below for why this exists.
 const PAGE_RENDER_WINDOW = 2;
 
@@ -174,7 +174,7 @@ export default function PdfEditor({ source, onBack }: Props) {
   // IntersectionObserver ratio thresholds. Ratio thresholds are relative to
   // each *target's own* area, which breaks down for a page many times taller
   // than the viewport (as little as a sliver of it may ever be visible at
-  // once, so its ratio can simply never cross 0.25) — pages 8-17 of a real
+  // once, so its ratio can simply never cross 0.25) -- pages 8-17 of a real
   // contract PDF are ~2x the usual point size and never registered as
   // "current" this way, so they never entered the render window and stayed
   // permanently blank. Picking whichever page's rect straddles a fixed line
@@ -230,7 +230,7 @@ export default function PdfEditor({ source, onBack }: Props) {
     });
   };
 
-  // Used for drag-move / resize (called once at drag end — the drag itself is
+  // Used for drag-move / resize (called once at drag end -- the drag itself is
   // a purely visual CSS transform in PdfPageView, no ops churn per pointer-move)
   // and for discrete edits like bold/italic/underline toggles. Each call is a
   // single atomic, undo-able mutation.
@@ -319,7 +319,7 @@ export default function PdfEditor({ source, onBack }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  // Page structure changes (reorder/add/remove) aren't part of the ops log —
+  // Page structure changes (reorder/add/remove) aren't part of the ops log -
   // they replace the working copy directly, the same way a Save does. Any
   // pending annotation ops are cleared since their page indices are no longer
   // valid against the restructured document.
@@ -335,7 +335,7 @@ export default function PdfEditor({ source, onBack }: Props) {
   };
 
   const handleDelete = async () => {
-    if (!documentId) { onBack(); return; } // never saved — nothing in the bucket to remove
+    if (!documentId) { onBack(); return; } // never saved -- nothing in the bucket to remove
     if (!confirm("Delete this PDF? This can't be undone.")) return;
     setDeleting(true);
     try {
@@ -487,7 +487,7 @@ export default function PdfEditor({ source, onBack }: Props) {
 
         {!loading && !loadError && pages.map((page, idx) => {
           // Only the pages near the current scroll position actually mount
-          // PdfPageView (which renders a real canvas + text layer) — rendering
+          // PdfPageView (which renders a real canvas + text layer) -- rendering
           // every page's canvas up front doesn't scale to long documents, and
           // gets especially expensive for oversized pages (e.g. a page at 2x
           // the usual point dimensions renders a ~4x-pixel-count canvas).

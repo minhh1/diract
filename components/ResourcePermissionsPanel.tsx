@@ -140,7 +140,7 @@ export default function ResourcePermissionsPanel({ resourceType, resourceId, res
             ) : (
               <div className="space-y-2 mb-4">
                 {permissions.length === 0 && (
-                  <p className="text-[11px] text-slate-400 py-3">No one has an explicit role yet — visibility follows the company default.</p>
+                  <p className="text-[11px] text-slate-400 py-3">No one has an explicit role yet -- visibility follows the company default.</p>
                 )}
                 {permissions.map(perm => {
                   const prof = profileFor(perm.user_id);

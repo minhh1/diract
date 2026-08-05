@@ -1,5 +1,5 @@
 // app/api/lead-email-assignments/reject/route.ts
-// Admin-only reject for lead_email_assignment_requests — no side effects,
+// Admin-only reject for lead_email_assignment_requests -- no side effects,
 // just flips status. Unlike archive_requests, these rows are system-
 // generated (no requested_by to notify back).
 import { NextRequest, NextResponse } from "next/server";

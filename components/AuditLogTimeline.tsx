@@ -98,7 +98,7 @@ export default function AuditLogTimeline({ logs, title }: AuditLogTimelineProps)
                         {Object.entries(log.details).slice(0, 4).map(([key, val]) => (
                           <div key={key}>
                             <p className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter mb-0.5 truncate">{formatLabel(key)}</p>
-                            <p className="text-[11px] font-medium text-slate-600 truncate">{String(val || '—')}</p>
+                            <p className="text-[11px] font-medium text-slate-600 truncate">{String(val || '-')}</p>
                           </div>
                         ))}
                         {Object.keys(log.details).length > 4 && (

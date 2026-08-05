@@ -9,7 +9,7 @@ import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 
 const DEFAULT_PRESET_NAME = "Default view";
 
-// Crude but effective stand-in for the real column label — this hook has no
+// Crude but effective stand-in for the real column label -- this hook has no
 // access to schema/relation metadata, so it estimates from the column id
 // itself (roughly tracks label length: underscores/dots become spaces).
 // Used only until an admin explicitly resizes a column, at which point the
@@ -76,7 +76,7 @@ export function writeCachedScopedView(companyId: string, tableSlug: string, view
   } catch {}
 }
 
-// Synchronous reads for useState lazy initializers — see the matching
+// Synchronous reads for useState lazy initializers -- see the matching
 // comment in useTableSchema.ts for why this matters (avoids a one-frame
 // "loading" flash when remounting on an already-visited table/company).
 function readCachedRows(companyId: string | null | undefined, tableSlug: string): any[] | null {
@@ -97,8 +97,8 @@ interface UsePresetTableOptions {
   defaultExpandCols?: string[];
   defaultExpandRelations?: string[];
   userId?: string | null; // pass from context to skip auth call
-  companyId?: string | null; // pass from context — columns are company-wide, not personal
-  myTeamIds?: string[]; // pass from context — resolves a team-scoped default view ahead of the company-wide one
+  companyId?: string | null; // pass from context -- columns are company-wide, not personal
+  myTeamIds?: string[]; // pass from context -- resolves a team-scoped default view ahead of the company-wide one
   isAdmin?: boolean; // only admins may change the company's column layout
   schemaReady?: boolean; // false while defaultCols/defaultExpandCols are still resolving
   fetchItems: (visibleColumns: string[]) => Promise<any[]>;
@@ -116,7 +116,7 @@ export function usePresetTable({
   schemaReady = true,
   fetchItems,
 }: UsePresetTableOptions) {
-  // Lazy initializers run synchronously on first render — a table already
+  // Lazy initializers run synchronously on first render -- a table already
   // visited this session (e.g. switching Properties → Entities → back)
   // renders with its last-known rows/columns immediately instead of
   // blanking to a skeleton for a frame while init() re-fetches in the
@@ -152,7 +152,7 @@ export function usePresetTable({
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
-  // colWidths only stores columns an admin has explicitly resized — everything
+  // colWidths only stores columns an admin has explicitly resized -- everything
   // else falls back to a size estimate here rather than one flat default, so
   // newly-added or never-resized columns don't all render at the same width.
   const effectiveColWidths = useMemo(() => {
@@ -166,7 +166,7 @@ export function usePresetTable({
   const fetchItemsRef = useRef(fetchItems);
   fetchItemsRef.current = fetchItems; // always latest without being a dep
 
-  // Most callers already have the user id via context (providedUserId) —
+  // Most callers already have the user id via context (providedUserId) -
   // only hit auth.getUser() when that isn't available.
   const resolveUserId = useCallback(async (): Promise<string | null> => {
     if (providedUserId) return providedUserId;
@@ -174,7 +174,7 @@ export function usePresetTable({
     return user?.id ?? null;
   }, [providedUserId]);
 
-  // Columns/widths are company-wide (set by admins, shared by every member) —
+  // Columns/widths are company-wide (set by admins, shared by every member) -
   // wait for companyId from context rather than re-resolving it here, so we
   // don't duplicate the identity fetch GenericMasterTable already does.
   const init = useCallback(async () => {
@@ -183,7 +183,7 @@ export function usePresetTable({
 
     // ── Step 1: show cached rows immediately ─────────────────────
     // (Already seeded synchronously via the lazy initializer above when
-    // possible — this re-check just decides whether we can skip blocking
+    // possible -- this re-check just decides whether we can skip blocking
     // the UI on this run. Only flip loading on when there's truly no
     // cache, so a lazily-seeded "not loading" state isn't clobbered.)
     const cachedRows = readCachedRows(companyId, tableSlug);
@@ -193,7 +193,7 @@ export function usePresetTable({
       // companyId often resolves a tick after mount, so the lazy initializer
       // above may have seeded loading=true (it read with companyId still
       // null, before any cache was visible). Reconcile it here now that we
-      // actually know there's cached data to show — otherwise this branch
+      // actually know there's cached data to show -- otherwise this branch
       // never touches setLoading again (it only refreshes in the background)
       // and the skeleton stays up forever.
       setLoading(false);
@@ -203,7 +203,7 @@ export function usePresetTable({
 
     // ── Step 2: load the company's column layout (single source of truth) ──
     // A cached raw view lets Step 3 fire immediately with the RIGHT column
-    // list instead of defaultCols — the whole point of this cache existing —
+    // list instead of defaultCols -- the whole point of this cache existing -
     // while the real answer is still refreshed in the background in case an
     // admin changed the layout since it was cached.
     const cachedScopedView = readCachedScopedView(companyId, tableSlug);
@@ -261,13 +261,13 @@ export function usePresetTable({
         })
         .catch(() => {});
     } else {
-      // No cache — must wait
+      // No cache -- must wait
       const data = await fetchItemsRef.current([...resolved.tableCols, ...resolved.expandCols]);
       perfLog(`usePresetTable(${tableSlug}): blocking fetch resolved`, `${data?.length ?? 0} rows`);
       if (data?.length) setItems(data);
       setLoading(false);
     }
-  }, [tableSlug, companyId, schemaReady, resolveUserId, (myTeamIds || []).join(',')]); // fetchItems/defaultCols/resolveFromView accessed via closure — recreated only when identity/company/schema readiness changes (resolveFromView deliberately excluded: it's recreated whenever a caller passes new defaultCols/defaultExpandCols array literals, which would otherwise re-run init on every render)
+  }, [tableSlug, companyId, schemaReady, resolveUserId, (myTeamIds || []).join(',')]); // fetchItems/defaultCols/resolveFromView accessed via closure -- recreated only when identity/company/schema readiness changes (resolveFromView deliberately excluded: it's recreated whenever a caller passes new defaultCols/defaultExpandCols array literals, which would otherwise re-run init on every render)
 
   // Layout effect, not a plain effect -- init()'s cache-hit paths (Step 1's
   // items/loading correction, Step 2's tableCols/expandCols/colWidths/sort
@@ -284,7 +284,7 @@ export function usePresetTable({
   // useCustomTable.ts's mount effect.
   useIsomorphicLayoutEffect(() => { init(); }, [init]);
 
-  // Persists the company-wide column layout (+ sort). Admin-only — every
+  // Persists the company-wide column layout (+ sort). Admin-only -- every
   // member reads this same row, so an admin's change is immediately
   // "hardcoded" for the team.
   const saveCompanyColumns = async (
@@ -322,7 +322,7 @@ export function usePresetTable({
     const startWidth = effectiveColWidths[colId] || 250;
     // Track the latest widths outside React state so the save-on-mouseup
     // call is a plain statement, not a side effect inside a setState
-    // updater — React (Strict Mode) may invoke updater functions twice.
+    // updater -- React (Strict Mode) may invoke updater functions twice.
     let latestWidths = colWidths;
     const onMouseMove = (mE: MouseEvent) => {
       const newWidth = Math.max(150, startWidth + (mE.pageX - startX));
@@ -357,7 +357,7 @@ export function usePresetTable({
     saveCompanyColumns(nt, ne, colWidths);
   };
 
-  // Sorting itself is free for everyone (session-only, applied client-side) —
+  // Sorting itself is free for everyone (session-only, applied client-side) -
   // but when an admin sorts, that choice also becomes the durable company
   // default, same as column changes. Mirrors how filters work: instant for
   // everyone, permanent only through the admin-authored / saved-view path.

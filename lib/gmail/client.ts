@@ -1,7 +1,7 @@
 // lib/gmail/client.ts
 // Gmail client for the Diract app.
 // Label management always goes through project_gmail_labels (DB source of truth).
-// Never generates label codes client-side — codes are created by the Edge Function.
+// Never generates label codes client-side -- codes are created by the Edge Function.
 
 export interface GmailMessage {
   id: string;
@@ -163,7 +163,7 @@ export async function fetchEmailBody(
 
 // ── Apply project label ────────────────────────────────────────────
 // Uses project_gmail_labels as source of truth.
-// Never generates label names — always reads from DB.
+// Never generates label names -- always reads from DB.
 
 export async function applyProjectLabel(
   messageId: string,
@@ -174,7 +174,7 @@ export async function applyProjectLabel(
   try {
     const token = await refreshTokenIfNeeded(userId, supabase);
 
-    // Look up the label from DB — single source of truth
+    // Look up the label from DB -- single source of truth
     const { data: labelRow } = await supabase
       .from('project_gmail_labels')
       .select('gmail_label_name, label_code')
@@ -240,7 +240,7 @@ export async function applyProjectLabel(
 }
 
 // ── Create label hierarchy ─────────────────────────────────────────
-// Creates parent/child labels in Gmail. e.g. "Huynh Lawyers/260547 — Smith [ABC12]"
+// Creates parent/child labels in Gmail. e.g. "Huynh Lawyers/260547 -- Smith [ABC12]"
 
 async function createLabelHierarchy(token: string, labelName: string): Promise<any> {
   const parts = labelName.split('/');

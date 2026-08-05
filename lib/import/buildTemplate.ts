@@ -7,7 +7,7 @@ export interface CrossTableField {
   fkColumn: string;    // e.g. 'holding_entity_id'
   sourceTable: string; // e.g. 'entities'
   fieldName: string;   // e.g. 'abn'
-  label: string;       // e.g. 'Holding Entity — ABN'
+  label: string;       // e.g. 'Holding Entity -- ABN'
   headerKey: string;   // e.g. 'relation:holding_entity.abn'
 }
 
@@ -68,7 +68,7 @@ const VALUATION_HEADERS = [
   'valuation_date', 'amount', 'is_full_valuation', 'notes',
 ];
 
-// Columns that should never appear as cross-table import targets —
+// Columns that should never appear as cross-table import targets -
 // either because they're identity/metadata columns, or because
 // they're already handled by the base import logic (e.g. entity_name
 // on properties already resolves the holding entity)
@@ -134,7 +134,7 @@ async function appendCustomFieldHeaders(
     );
     if (!tableCustomFields.length) return section;
 
-    // Use the field's label as the CSV header — human readable
+    // Use the field's label as the CSV header -- human readable
     // Keep custom: prefix only internally for the parser
     const customHeaders = tableCustomFields.map(
       f => `custom:${f.id}:${f.field_key}`
@@ -163,7 +163,7 @@ async function appendCrossTableHeaders(
     const { data } = await supabase.rpc('get_all_related_fields', {
       base_table: tableName,
       p_company_id: companyId,
-      max_depth: 1, // depth 1 only for import — deep nesting gets unwieldy in CSV
+      max_depth: 1, // depth 1 only for import -- deep nesting gets unwieldy in CSV
     });
     const fields = (data || []).filter((f: any) => !f.is_sensitive);
     cache.set(tableName, fields);
@@ -264,7 +264,7 @@ export async function buildHeaderMap(
   const map = new Map<string, string>();
   if (!targetTable) return map;
 
-  // Note: don't filter by company_id here — if cid is wrong/empty
+  // Note: don't filter by company_id here -- if cid is wrong/empty
   // we'd silently return an empty map. Filter by table_name only,
   // since custom fields are already company-scoped via RLS.
   const { data: customFields } = await supabase

@@ -3,7 +3,7 @@
 // this app used to file matters under a plain "Filed Emails/<matterNumber>
 // - <description>" parent label, with no [labelCode] suffix and no DB
 // tracking at all -- at some point the company switched to the current
-// "<parentLabel>/<matterNumber> — <project name> [CODE]" scheme (see
+// "<parentLabel>/<matterNumber> -- <project name> [CODE]" scheme (see
 // lib/gmail/createProjectLabel.ts), but the OLD labels were never merged
 // into the new ones or deleted. Confirmed live (2026-07-31): Huy Pham's
 // mailbox alone had 291 "Filed Emails/*" labels still sitting alongside
@@ -266,7 +266,7 @@ Deno.serve(async (req) => {
   const path = url.pathname.replace(/^\/gmail-legacy-label-cleanup/, "") || "/";
 
   try {
-    // ── GET /scan?companyId=X — dry-run report, no writes ──────────
+    // ── GET /scan?companyId=X -- dry-run report, no writes ──────────
     if (req.method === "GET" && path === "/scan") {
       const companyId = url.searchParams.get("companyId") || "";
       if (!companyId) return respond({ error: "Missing companyId" }, 400);
@@ -300,7 +300,7 @@ Deno.serve(async (req) => {
       return respond({ ok: true, users, totalPairs, totalMessages });
     }
 
-    // ── POST /apply { companyId, userId } — bounded, re-invokable ──
+    // ── POST /apply { companyId, userId } -- bounded, re-invokable ──
     if (req.method === "POST" && path === "/apply") {
       const body = await req.json();
       const { companyId, userId } = body;

@@ -6,7 +6,7 @@
 // engine that works the same way for every system table AND every company
 // custom table -- see lib/duplicates/similarity.ts and fieldConfig.ts.
 //
-// Read-only and open to any company member (matches the old tool's access —
+// Read-only and open to any company member (matches the old tool's access -
 // only the merge RPC itself is admin-gated, at the database layer).
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";

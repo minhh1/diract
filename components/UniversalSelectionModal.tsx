@@ -13,7 +13,7 @@ interface Props {
   table: "entities" | "projects" | "properties" | string;
 }
 
-// Thin router — delegates to the correct modal based on table type.
+// Thin router -- delegates to the correct modal based on table type.
 // Custom tables fall through to NewPropertyModal as a generic record creator.
 export default function UniversalSelectionModal({ isOpen, onClose, onSelect, table }: Props) {
   const handleRefresh = () => {
@@ -32,6 +32,6 @@ export default function UniversalSelectionModal({ isOpen, onClose, onSelect, tab
     return <NewPropertyModal isOpen={isOpen} onClose={onClose} onRefresh={handleRefresh} />;
   }
 
-  // Custom table — generic modal
+  // Custom table -- generic modal
   return <NewPropertyModal isOpen={isOpen} onClose={onClose} onRefresh={handleRefresh} tableName={table} />;
 }

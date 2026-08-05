@@ -1,6 +1,6 @@
 // components/admin/AdminLeadEmailAssignmentsTab.tsx
 // Company-admin review queue for lead_email_assignment_requests (see
-// supabase/migrations/20260730140000_lead_email_assignments.sql) — every
+// supabase/migrations/20260730140000_lead_email_assignments.sql) -- every
 // email app/api/gmail/leads-sync finds under the shared Leads Gmail label
 // gets proposed here, either "link to this existing Lead" or "create a new
 // Lead", and nothing is applied to Gmail/the Leads table until approved.

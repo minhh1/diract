@@ -91,7 +91,7 @@ export async function generateTrustReceiptPdf(input: GenerateTrustReceiptPdfInpu
   y -= 40;
   text(input.receipt.isDeposit ? 'RECEIVED FROM' : 'PAID TO', MARGIN, 9, { bold: true, color: [0.55, 0.55, 0.6] }, y);
   y -= 14;
-  text(input.receipt.payorPayee || '—', MARGIN, 12, { bold: true }, y);
+  text(input.receipt.payorPayee || '-', MARGIN, 12, { bold: true }, y);
   y -= 14;
 
   if (input.receipt.purpose) {

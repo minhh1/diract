@@ -16,7 +16,7 @@ function money(n: number): string {
 }
 
 function formatDate(d: string | null | undefined): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return new Date(d).toLocaleDateString('en-AU'); } catch { return d; }
 }
 
@@ -71,8 +71,8 @@ export default function ProtectedFundsTab({
             ) : protectedRecords.map(r => (
               <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                 <td className="px-4 py-2.5 text-slate-600">{formatDate(r.values.date_protected)}</td>
-                <td className="px-4 py-2.5 text-slate-700 font-medium">{r.displayValues?.matter || '—'}</td>
-                <td className="px-4 py-2.5 text-slate-500">{r.values.reason || '—'}</td>
+                <td className="px-4 py-2.5 text-slate-700 font-medium">{r.displayValues?.matter || '-'}</td>
+                <td className="px-4 py-2.5 text-slate-500">{r.values.reason || '-'}</td>
                 <td className="px-4 py-2.5 text-right font-bold text-slate-800">{money(Number(r.values.amount) || 0)}</td>
                 <td className="px-2 py-2.5 text-right">
                   <button onClick={() => handleRelease(r)} disabled={releasingId === r.id} className="px-3 py-1 rounded-full text-[10px] font-bold text-slate-500 hover:bg-slate-100 disabled:opacity-50">
@@ -90,7 +90,7 @@ export default function ProtectedFundsTab({
           <summary className="cursor-pointer font-bold uppercase tracking-widest text-[9px]">Released ({allProtectedRecords.filter(r => r.values.released_at).length})</summary>
           <div className="mt-2 space-y-1">
             {allProtectedRecords.filter(r => r.values.released_at).map(r => (
-              <p key={r.id}>{formatDate(r.values.released_at)} — {r.displayValues?.matter} — {money(Number(r.values.amount) || 0)} — {r.values.released_reason || '—'}</p>
+              <p key={r.id}>{formatDate(r.values.released_at)} -- {r.displayValues?.matter} -- {money(Number(r.values.amount) || 0)} -- {r.values.released_reason || '-'}</p>
             ))}
           </div>
         </details>

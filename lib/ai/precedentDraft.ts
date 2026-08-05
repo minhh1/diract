@@ -4,7 +4,7 @@
 // natural-language prompt. Modeled directly on lib/ai/fileDraft.ts's
 // draftFileContent (same grounding-context + system-prompt + one-shot-call
 // shape) but returns both a suggested subject line AND the body from a
-// single call, and unlike fileDraft.ts also returns token usage — the issue
+// single call, and unlike fileDraft.ts also returns token usage -- the issue
 // route needs it to log ai_usage_events / respect monthly_token_cap the same
 // way app/api/ai/rewrite-text/route.ts does.
 import { retrieveGroundingContext } from "./retrieval";

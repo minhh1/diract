@@ -1,7 +1,7 @@
 // app/api/gmail/create-project-label/route.ts
 // Called right after a project is created from the dashboard (NewProjectModal)
 // so it gets a shared Gmail label the same way projects created via the
-// Gmail Add-on do — that flow was previously the only path that ever wrote a
+// Gmail Add-on do -- that flow was previously the only path that ever wrote a
 // project_gmail_labels row, so dashboard-created projects never synced to
 // Gmail at all. Only writes metadata here; the actual per-mailbox Gmail
 // label creation happens in gmail-label-sync-processor once the job below

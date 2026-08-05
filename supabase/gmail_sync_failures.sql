@@ -4,7 +4,7 @@
 -- worker invocation, blocking every other job in that batch. Fix: the fast
 -- workers (gmail-label-sync-worker, gmail-email-sync-worker) now quarantine
 -- a user here the FIRST time their per-user step fails, and never retry
--- them directly again — retries are owned exclusively by the slower
+-- them directly again -- retries are owned exclusively by the slower
 -- gmail-sync-recovery-worker (every 15 min), so a broken account can never
 -- block the fast queue again.
 CREATE TABLE IF NOT EXISTS gmail_sync_failures (
@@ -32,8 +32,8 @@ DROP POLICY IF EXISTS gmail_sync_failures_company ON gmail_sync_failures;
 CREATE POLICY gmail_sync_failures_company ON gmail_sync_failures
   FOR ALL USING (company_id = active_company_id()) WITH CHECK (company_id = active_company_id());
 
--- Retry quarantined failures on a slow, deliberate cadence — 15x less often
--- than the fast workers — so a rate-limited account gets breathing room
+-- Retry quarantined failures on a slow, deliberate cadence -- 15x less often
+-- than the fast workers -- so a rate-limited account gets breathing room
 -- instead of being hammered every minute.
 SELECT cron.schedule(
   'gmail-sync-recovery-worker',

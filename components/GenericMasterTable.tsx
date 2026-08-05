@@ -99,7 +99,7 @@ function buildDynamicSelectQuery(
   }
 
   const embeds = [...aliasMap.entries()]
-    .filter(([alias]) => !alias.includes('.')) // skip nested paths — not supported by PostgREST
+    .filter(([alias]) => !alias.includes('.')) // skip nested paths -- not supported by PostgREST
     .map(
       ([alias, { fkColumn, fields }]) =>
         `${alias}:${fkColumn}(${[...fields].join(',')})`
@@ -145,12 +145,12 @@ function GenericMasterTableInner({
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("id");
   const viewId = searchParams.get("view");
-  // Sidebar's "All (no filter)" sets this to signal a real reset — dropping
+  // Sidebar's "All (no filter)" sets this to signal a real reset -- dropping
   // just ?view= only clears the *named view* selection, it doesn't touch
   // ad-hoc filters auto-saved without one (the common case).
   const clearFiltersSignal = searchParams.get("clearFilters");
 
-  // Use shared company context — avoids duplicate auth call with Sidebar
+  // Use shared company context -- avoids duplicate auth call with Sidebar
   const { companyId: ctxCompanyId, isAdmin: ctxIsAdmin, userId: ctxUserId, myTeamIds: ctxMyTeamIds } = useCompany();
   const { start: startProgress, done: doneProgress } = useProgressBar();
 
@@ -187,7 +187,7 @@ function GenericMasterTableInner({
   const relationalEditCols = useRelationalEditFields(schema.relationalEditCols);
   const relatedFields = useRelatedFields(tableName);
 
-  // Stabilise references — prevents fetchItems from getting new ref on every render
+  // Stabilise references -- prevents fetchItems from getting new ref on every render
   // which would re-trigger usePresetTable.init causing the double-load flicker
   const schemaAll = useMemo(
     () => schema.all,
@@ -199,14 +199,14 @@ function GenericMasterTableInner({
   );
   const fetchedCategoriesRef = useRef<Set<string>>(new Set());
   // Shared with Sidebar's tree section via useCompanyCustomFields' module
-  // cache — when both show the same table, this fires the query once.
+  // cache -- when both show the same table, this fires the query once.
   const { fields: customFieldCols, loading: customFieldsLoading } = useCompanyCustomFields(tableName);
   const filtersReadyToSave = useRef(false);
 
 
 
   // get_reverse_relations is expensive server-side and its result is only
-  // used by the Setup drawer and expand-row sub-tables — only fetch once
+  // used by the Setup drawer and expand-row sub-tables -- only fetch once
   // the drawer's actually been opened, rather than on every page mount.
   const { relations: projectRelations } = useTableRelations(
     tableName === 'projects' ? 'projects' : '__skip__',
@@ -229,7 +229,7 @@ function GenericMasterTableInner({
   // Pre-populate from localStorage profile cache immediately
   useEffect(() => {
     if (companyIdRef.current) return;
-    // Use context value if available — avoids auth round-trip
+    // Use context value if available -- avoids auth round-trip
     if (ctxCompanyId) {
       companyIdRef.current = ctxCompanyId;
       setCompanyId(ctxCompanyId);
@@ -252,7 +252,7 @@ function GenericMasterTableInner({
   const fetchItems = useCallback(async (visibleColumns: string[]) => {
     perfLog(`GenericMasterTable(${tableName}): fetchItems start`);
 
-    // Use cached companyId if available — saves ~1800ms per call
+    // Use cached companyId if available -- saves ~1800ms per call
     let cid = companyIdRef.current;
     if (!cid) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -261,12 +261,12 @@ function GenericMasterTableInner({
       cid = prof?.active_company_id || null;
       companyIdRef.current = cid;
       setCompanyId(cid);
-      perfLog(`GenericMasterTable(${tableName}): fetchItems' own auth+profile resolved`, "companyIdRef was empty — redundant lookup, should be rare");
+      perfLog(`GenericMasterTable(${tableName}): fetchItems' own auth+profile resolved`, "companyIdRef was empty -- redundant lookup, should be rare");
     }
 
     let items: any[] = [];
 
-    // Shared cache key — sidebar reads from this same cache
+    // Shared cache key -- sidebar reads from this same cache
     const cacheKeyBase = `rows_${cid}_${tableName}`; // scoped by company to prevent cross-company cache bleed
 
     const visibleCustomFieldIds = visibleColumns
@@ -275,16 +275,16 @@ function GenericMasterTableInner({
 
     // Values are looked up by field_id alone (which already scopes to this
     // table's custom fields, RLS scopes to this company) rather than by
-    // record_id — that's what lets this run in Promise.all alongside the
+    // record_id -- that's what lets this run in Promise.all alongside the
     // base row query below instead of waiting for it to know which IDs to
     // ask for. Trade-off: this can also fetch values for soft-deleted rows,
     // which the merge step below silently discards since they match no
-    // baseItems id — cheap compared to a whole extra sequential round-trip.
+    // baseItems id -- cheap compared to a whole extra sequential round-trip.
     const fetchCustomFields = async () => {
       if (!visibleCustomFieldIds.length || !cid) return {};
       // Unscoped by record_id (see comment above) means this can genuinely
-      // exceed PostgREST's default 1000-row page — confirmed happening for
-      // Huynh Lawyers (1510 rows across just 3 columns) — silently dropping
+      // exceed PostgREST's default 1000-row page -- confirmed happening for
+      // Huynh Lawyers (1510 rows across just 3 columns) -- silently dropping
       // whichever records didn't fall in the first page, showing as blank
       // cells with no error. Page through with .range() until exhausted
       // instead of a single unbounded select.
@@ -301,7 +301,7 @@ function GenericMasterTableInner({
         if (page.length < PAGE_SIZE) break;
       }
       // Relation-type columns (entity/property/project) hold a raw linked
-      // record id in value_record_id — resolve each to its display name so
+      // record id in value_record_id -- resolve each to its display name so
       // the grid shows e.g. "Ipswich Oak Pty Ltd" instead of a bare uuid.
       // Batched per target table (not per cell) to stay cheap even with a
       // full column of these.
@@ -511,7 +511,7 @@ function GenericMasterTableInner({
   }, [schema.loading, t.loading, customFieldsLoading, tableName]);
 
   // ── Filter persistence ───────────────────────────────────────────────
-  // Filters always auto-save — either onto the selected named view
+  // Filters always auto-save -- either onto the selected named view
   // (?view=<id>, created from the Sidebar) or, with no view selected, onto
   // an implicit per-user/per-table default slot. No "create a view first"
   // step required either way.
@@ -545,10 +545,10 @@ function GenericMasterTableInner({
 
         const cached = readCachedDefaultFilters(ctxCompanyId, ctxUserId, tableName);
         if (cached) {
-          // Already applied via the lazy initializer on first mount — but
+          // Already applied via the lazy initializer on first mount -- but
           // this effect can re-run later too (e.g. dropping back to the
           // default slot from a named view), so reconcile here as well.
-          // No startProgress()/blocking here — that's the whole point of
+          // No startProgress()/blocking here -- that's the whole point of
           // the cache existing. Refresh in the background instead, and
           // only touch state if the real answer actually changed.
           setFilters(cached.filters);
@@ -575,10 +575,10 @@ function GenericMasterTableInner({
         return;
       }
 
-      // Named view (?view=<id>) — not cached, see savedViewsService's own
+      // Named view (?view=<id>) -- not cached, see savedViewsService's own
       // comment on why only the implicit default-filters slot is warmed.
       filtersReadyToSave.current = false;
-      startProgress(); // covers view switches — data stays visible while this resolves
+      startProgress(); // covers view switches -- data stays visible while this resolves
       try {
         const view = await savedViewsService.get(viewId);
         setFilters(view?.filters || []);
@@ -650,7 +650,7 @@ function GenericMasterTableInner({
 
   // ── Sort ───────────────────────────────────────────────────────────
   // Sort state/persistence lives in usePresetTable (company-wide when the
-  // sorter is an admin, session-only otherwise) — see handleSort there.
+  // sorter is an admin, session-only otherwise) -- see handleSort there.
 
   const handleSort = useCallback((colId: string, direction: SortDirection, mode?: SortMode) => {
     t.handleSort(colId, direction, mode);
@@ -664,7 +664,7 @@ function GenericMasterTableInner({
   ) => {
     t.handleToggleColumn(fieldId, target);
 
-    // Properties — lazy credential refetch
+    // Properties -- lazy credential refetch
     if (tableName === 'properties' && target !== 'none') {
       const categoryKey = getCategoryKeyForColumn(fieldId);
       if (categoryKey && !fetchedCategoriesRef.current.has(categoryKey)) {
@@ -676,7 +676,7 @@ function GenericMasterTableInner({
       }
     }
 
-    // Custom field columns on any table — refetch with new column included
+    // Custom field columns on any table -- refetch with new column included
     if (fieldId.startsWith('custom_field:') && target !== 'none') {
       const allCols = [...new Set([...t.tableCols, ...t.expandCols, fieldId])];
       const data = await fetchItems(allCols);
@@ -722,8 +722,8 @@ function GenericMasterTableInner({
     return typeof value === 'object' ? '' : (value ?? '');
   }, [schema.all, customFieldCols]);
 
-  // Related fields already carry a clean "Section — Field" label (e.g.
-  // "Holding Entity — Entity Type") from the RPC — use it instead of
+  // Related fields already carry a clean "Section -- Field" label (e.g.
+  // "Holding Entity -- Entity Type") from the RPC -- use it instead of
   // mangling the raw dotted path, which produced redundant headers like
   // "Holding Entity Entity Type".
   const relationPathLabel = useCallback((colId: string): string | null => {
@@ -738,17 +738,17 @@ function GenericMasterTableInner({
       const field = customFieldCols.find(f => f.id === fieldId);
       // customFieldsLoading is gated above the table's first render, so a
       // miss here means the field was deleted after being added to the
-      // column layout — show that rather than the raw uuid fragment.
+      // column layout -- show that rather than the raw uuid fragment.
       return field?.label || 'Deleted field';
     }
     if (colId.includes('.')) {
       const full = relationPathLabel(colId);
       if (full) {
-        // Column header shows just the field — the section stays visible
+        // Column header shows just the field -- the section stays visible
         // via the tooltip (resolveColTooltip) to avoid repeating it twice.
-        // Works the same for a depth-2 chain ("A — B — C") as depth-1
-        // ("A — B") -- the leaf is always the last segment.
-        const parts = full.split(' — ');
+        // Works the same for a depth-2 chain ("A -- B -- C") as depth-1
+        // ("A -- B") -- the leaf is always the last segment.
+        const parts = full.split(' -- ');
         return parts[parts.length - 1];
       }
       return colId.replace('.', ' ').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -758,7 +758,7 @@ function GenericMasterTableInner({
     return colId.replace(/_id$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }, [customFieldCols, schema.all, relationPathLabel]);
 
-  // Fuller label for hover tooltips — includes the relation section for
+  // Fuller label for hover tooltips -- includes the relation section for
   // paths where the header itself was shortened above.
   const resolveColTooltip = useCallback((colId: string): string => {
     if (colId.includes('.') && !colId.startsWith('custom_field:')) {
@@ -768,7 +768,7 @@ function GenericMasterTableInner({
     return resolveColLabel(colId);
   }, [relationPathLabel, resolveColLabel]);
 
-  // Only genuine cross-table relation columns get a link now — clicking
+  // Only genuine cross-table relation columns get a link now -- clicking
   // anywhere on the row itself opens *this* record (see MasterTable's row
   // onClick), so a column no longer needs its own "open this record" link
   // just because it's the primary/first-visible/custom-field column.
@@ -840,7 +840,7 @@ function GenericMasterTableInner({
     );
 
     const allSections = [...withFolders, ...customSection];
-    // Normalise — ensure every section has a `fields` array
+    // Normalise -- ensure every section has a `fields` array
     return allSections.map(section => ({
     ...section,
     label: (section as any).label ?? (section as any).title ?? '',
@@ -880,7 +880,7 @@ function GenericMasterTableInner({
   const sortedItems = useMemo(() => {
     const primaryCol = tableName === 'properties' ? 'street_address' : 'name';
 
-    // Search — every column currently shown (table + expand panel), not
+    // Search -- every column currently shown (table + expand panel), not
     // just the primary/name column, so e.g. searching a client name or
     // reference number on projects actually finds matches. Reuses
     // resolveValue so relation/custom-field/currency/date formatting stays
@@ -991,11 +991,11 @@ function GenericMasterTableInner({
 
   // ── Records created from the Gmail add-on, pending review ──────────
   // Free-text names/addresses typed in the add-on for a relation field
-  // (entity/property/project — no search-and-pick UI available there) get
-  // resolved server-side against the matching table — anything short of a
+  // (entity/property/project -- no search-and-pick UI available there) get
+  // resolved server-side against the matching table -- anything short of a
   // confident single match creates a new row flagged needs_review instead
   // of blocking creation. There's no in-app notification system in this
-  // app, so this banner is the only place that surfaces it — see
+  // app, so this banner is the only place that surfaces it -- see
   // supabase/functions/gmail-addon/index.ts's resolveOrCreateRelation.
   const needsReviewItems = useMemo(
     () => t.items.filter(item => item.needs_review),
@@ -1012,7 +1012,7 @@ function GenericMasterTableInner({
   }, [t.setItems, tableName]);
 
   // Discards a record the add-on auto-created that turned out to be wrong
-  // (e.g. a typo that should have matched an existing record but didn't) —
+  // (e.g. a typo that should have matched an existing record but didn't) -
   // soft-delete rather than just clearing the flag, since "Confirmed" means
   // "this is a real, correct record" and this is the opposite case.
   const discardReviewItem = useCallback(async (id: string) => {
@@ -1036,12 +1036,12 @@ function GenericMasterTableInner({
   }
 
   // Wait for schema (labels/columns metadata), rows, AND custom fields
-  // together — a table visited before this session has all three
+  // together -- a table visited before this session has all three
   // synchronously seeded from cache (see the lazy initializers in
   // useTableSchema/usePresetTable/customFieldsCache above) so this resolves
   // to false immediately with nothing to show here. Gating on rows/schema
   // alone let custom_field columns render their raw "custom_field:<uuid>"
-  // id for a frame before customFieldCols caught up — showing a half-ready
+  // id for a frame before customFieldCols caught up -- showing a half-ready
   // view instead of a complete one.
   if (schema.loading || t.loading || customFieldsLoading) {
     return (
@@ -1102,7 +1102,7 @@ function GenericMasterTableInner({
             above it. Not needed once the sidebar itself is visible (md+). */}
         <div className="pt-16 md:pt-8 px-8 pb-4">
 
-          {/* Title + actions — wrap instead of overflowing on narrow
+          {/* Title + actions -- wrap instead of overflowing on narrow
               (mobile) widths; the page shell clips overflow, so a
               non-wrapping row here just pushes buttons off-screen rather
               than squeezing them. */}
@@ -1153,7 +1153,7 @@ function GenericMasterTableInner({
             />
           </div>
 
-          {/* Needs-review banner — records auto-created from the Gmail add-on */}
+          {/* Needs-review banner -- records auto-created from the Gmail add-on */}
           {needsReviewItems.length > 0 && (
             <div className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-3">

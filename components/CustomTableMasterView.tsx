@@ -92,7 +92,7 @@ export default function CustomTableMasterView({
 
   const formatValue = (record: CustomTableRecord, field: CustomTableField): string => {
     const value = record.values[field.field_key];
-    if (value === null || value === undefined) return '—';
+    if (value === null || value === undefined) return '-';
     if (RELATION_FIELD_TYPES.includes(field.field_type)) return record.displayValues[field.field_key] ?? 'Untitled';
     if (field.field_type === 'boolean') return value ? 'Yes' : 'No';
     if (field.field_type === 'currency') return `$${Number(value).toLocaleString()}`;

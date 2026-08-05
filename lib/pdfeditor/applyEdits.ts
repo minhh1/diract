@@ -1,5 +1,5 @@
 // Flattens the editor's op log onto the original PDF bytes using pdf-lib and
-// returns the resulting PDF. Pure function — no DOM, no pdf.js — so it can run
+// returns the resulting PDF. Pure function -- no DOM, no pdf.js -- so it can run
 // entirely client-side right before the "Save" upload.
 import { PDFDocument, PDFFont, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
@@ -7,12 +7,12 @@ import type { CheckboxStyle, PdfEditOp, StandardFontKey } from "./types";
 import { withBoldItalic } from "./fontMatch";
 
 // Standard-14 fonts (used for every other text op below) have no glyph for
-// ☐/☒/⊠/☑ at all — that's the whole reason CheckboxOp was ever drawn as
+// ☐/☒/⊠/☑ at all -- that's the whole reason CheckboxOp was ever drawn as
 // manual vector line-art in the first place. This ships DejaVu Sans (Bitstream
-// Vera-derived license — see public/fonts/checkbox-symbols-LICENSE.txt) to
+// Vera-derived license -- see public/fonts/checkbox-symbols-LICENSE.txt) to
 // draw the real Unicode glyphs instead. It's the one bundled font confirmed
 // to actually have all four: Noto Sans Symbols 2 (tried first) is missing
-// U+22A0 entirely — that codepoint sits in the Mathematical Operators block,
+// U+22A0 entirely -- that codepoint sits in the Mathematical Operators block,
 // outside every one of that font's own symbol subsets. Fetched and embedded
 // lazily, once per applyEdits() call, only if the document actually has a
 // checkbox op.
@@ -128,7 +128,7 @@ export async function applyEdits(originalBytes: Uint8Array, ops: PdfEditOp[]): P
     if (op.type === "text-edit") {
       const font = await getFont(op.font);
       // No reliable way to know the true page background from the browser,
-      // so the whiteout assumes white — documented limitation.
+      // so the whiteout assumes white -- documented limitation.
       page.drawRectangle({
         x: op.x - 1,
         y: op.y - op.height * 0.25,
@@ -138,10 +138,10 @@ export async function applyEdits(originalBytes: Uint8Array, ops: PdfEditOp[]): P
       });
       page.drawText(op.text, { x: op.x, y: op.y, size: op.fontSize, font, color: rgb(...op.color) });
     } else if (op.type === "checkbox") {
-      // x/y/width/height ARE the box itself (computed once at creation time —
+      // x/y/width/height ARE the box itself (computed once at creation time -
       // either from a source glyph's own bounding box, for one pdf.js found in
       // the text layer, or a fixed default for one placed via the "Checkbox"
-      // tool onto a vector-drawn or scanned checkbox pdf.js can't see at all —
+      // tool onto a vector-drawn or scanned checkbox pdf.js can't see at all -
       // see CheckboxOp's doc comment and PdfPageView.tsx's toggleCheckbox/
       // handlePointerUp). No further derivation here, unlike the old version
       // of this branch, so this always matches the live preview exactly. Side
@@ -171,7 +171,7 @@ export async function applyEdits(originalBytes: Uint8Array, ops: PdfEditOp[]): P
           });
         }
       } else {
-        // Whiteout first — FLAT pads (see PdfPageView.tsx's matching
+        // Whiteout first -- FLAT pads (see PdfPageView.tsx's matching
         // constants/comment), not proportional to this box's own size: a
         // placed checkbox has no way to know the real size of the
         // vector-drawn or scanned checkbox it's covering underneath. Kept
@@ -192,7 +192,7 @@ export async function applyEdits(originalBytes: Uint8Array, ops: PdfEditOp[]): P
           color: rgb(1, 1, 1),
         });
         // Real glyphs (via the embedded symbol font above), not a hand-drawn
-        // rectangle + diagonal lines — see computeGlyphPlacement's own doc
+        // rectangle + diagonal lines -- see computeGlyphPlacement's own doc
         // comment for how this is sized/positioned off the glyph's actual
         // ink, not pdf-lib's advance-width-only metrics.
         const { font, rawFont } = await getCheckboxFont();

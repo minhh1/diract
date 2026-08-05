@@ -31,7 +31,7 @@ export default function GmailLabelsDetail() {
             so the link survives if the record is later renamed.
           </p>
           <div className={`max-w-md px-4 py-3 bg-slate-50 rounded-xl text-[12px] font-mono text-slate-600 ${isDark ? "dark" : ""}`}>
-            Shared Emails/2024/0212 — 88 Riverside Ave <span className="text-slate-400">[AB3F1]</span>
+            Shared Emails/2024/0212 -- 88 Riverside Ave <span className="text-slate-400">[AB3F1]</span>
           </div>
         </Section>
 

@@ -1,5 +1,5 @@
 // app/api/admin/secrets/route.ts
-// CRUD for platform_secrets_registry — manually-tracked platform-level
+// CRUD for platform_secrets_registry -- manually-tracked platform-level
 // credentials (Stripe key, DO token, etc.) that have no programmatic expiry
 // the app can query, so a site admin records a rotation cadence by hand.
 // See supabase/platform_secrets_registry.sql.

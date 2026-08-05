@@ -3,7 +3,7 @@
 -- AWS Cost Explorer, Stripe fees, Vercel) via a daily cron + on-demand
 -- refresh (app/api/admin/costs/refresh). 'manual' rows are entered by a
 -- site admin for the services confirmed to have no public billing API
--- (Fly.io, Supabase, Together AI, as of this table's creation) — same
+-- (Fly.io, Supabase, Together AI, as of this table's creation) -- same
 -- shape either way so the UI doesn't need to special-case them.
 CREATE TABLE IF NOT EXISTS platform_cost_snapshots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

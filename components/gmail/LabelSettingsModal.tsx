@@ -34,7 +34,7 @@ const AVAILABLE_TOKENS = [
 ];
 
 const SEPARATORS = [
-  { value: ' — ', label: 'Em dash  ( — )' },
+  { value: ' -- ', label: 'Em dash  ( -- )' },
   { value: ' - ', label: 'Hyphen   ( - )' },
   { value: '/',   label: 'Slash    ( / )' },
   { value: ' | ', label: 'Pipe     ( | )' },
@@ -154,7 +154,7 @@ export default function LabelSettingsModal({
             />
           </div>
 
-          {/* Shared label names — archive + leads, kept beside the parent
+          {/* Shared label names -- archive + leads, kept beside the parent
               label so every Gmail label name lives in one place */}
           <div className="space-y-2">
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">

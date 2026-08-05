@@ -1,7 +1,7 @@
 // lib/taskActivityLog.ts
 // Human-readable change descriptions + insert helper for the task activity
 // log, shared between the main app (ChecklistTab) and the public task page
-// — both run in the browser/Next.js context and can use a Supabase client
+// -- both run in the browser/Next.js context and can use a Supabase client
 // directly. The Gmail Add-on's edge function and Apps Script log entries
 // the same way but write their own log rows inline (different runtime).
 
@@ -72,7 +72,7 @@ export function describeTaskChanges(before: any, after: any, lookups: TaskLogLoo
 }
 
 // Inserts a row into task_activity_log. `supabase` can be either the
-// browser client (RLS-gated) or a service-role client (server routes) —
+// browser client (RLS-gated) or a service-role client (server routes) -
 // both expose the same `.from().insert()` shape.
 export async function logTaskActivity(
   supabase: any,

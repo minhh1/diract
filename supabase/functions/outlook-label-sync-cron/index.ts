@@ -1,5 +1,5 @@
 // supabase/functions/outlook-label-sync-cron/index.ts
-// Every 15 min — upserts one label_sync job per project per company,
+// Every 15 min -- upserts one label_sync job per project per company,
 // mirroring gmail-label-sync-cron. outlook-label-sync-worker handles
 // per-user processing and tracks completion.
 
@@ -26,7 +26,7 @@ Deno.serve(async (_req) => {
   let queued = 0;
 
   // Mirrors gmail-label-sync-cron's own signal (.not('gmail_parent_label',
-  // 'is', null)) rather than mail_provider — outlook_parent_folder is what
+  // 'is', null)) rather than mail_provider -- outlook_parent_folder is what
   // app/api/outlook/assign actually persists on first use, so it's the
   // reliable "this company is actively using Outlook labels" flag.
   const { data: companies } = await db.from("companies")
@@ -106,7 +106,7 @@ Deno.serve(async (_req) => {
     console.log(`[outlook-label-sync-cron] Company ${companyId}: ${toUpdate.length} updated + ${toInsert.length} inserted + ${skippedInProgress} in-progress skipped + ${skippedAlreadyDone} already-done skipped (${totalUsers} users)`);
   }
 
-  console.log(`[outlook-label-sync-cron] DONE in ${Date.now() - t0}ms — ${queued} jobs`);
+  console.log(`[outlook-label-sync-cron] DONE in ${Date.now() - t0}ms -- ${queued} jobs`);
   await heartbeat("outlook-label-sync-cron", Date.now() - t0, { queued });
   return new Response(JSON.stringify({ ok: true, queued }), {
     headers: { "Content-Type": "application/json" },

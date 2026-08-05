@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  // Only need messageId — project resolved from DB
+  // Only need messageId -- project resolved from DB
   const { messageId, logId } = body;
   console.log('[remove-label] messageId:', messageId);
 
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (!tokenRow) {
-          console.log(`[remove-label] No Gmail token for user ${userId} — skipping`);
+          console.log(`[remove-label] No Gmail token for user ${userId} -- skipping`);
           continue;
         }
 
@@ -222,7 +222,7 @@ export async function POST(req: NextRequest) {
         .eq('gmail_message_id', messageId)
         .eq('company_id', companyId);
 
-      // Mark project_gmail_labels as removed — do NOT delete.
+      // Mark project_gmail_labels as removed -- do NOT delete.
       // Cron uses label_code to find and remove label from all users' Gmail.
       await adminDb
         .from('project_gmail_labels')
@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
         .eq('company_id', companyId);
 
     } else {
-      // Non-admin removes only their own row — cron will re-add within 5 min
+      // Non-admin removes only their own row -- cron will re-add within 5 min
       await adminDb
         .from('project_emails')
         .delete()

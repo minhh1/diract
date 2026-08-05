@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    // User not logged in — redirect to login, they'll need to reconnect
+    // User not logged in -- redirect to login, they'll need to reconnect
     return NextResponse.redirect(
       `${APP_URL}/login?redirect=/dashboard/outlook`
     );

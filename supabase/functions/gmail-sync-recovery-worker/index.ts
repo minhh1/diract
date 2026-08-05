@@ -1,11 +1,11 @@
 // supabase/functions/gmail-sync-recovery-worker/index.ts
-// Every 15 min — the ONLY thing that ever retries a user quarantined in
+// Every 15 min -- the ONLY thing that ever retries a user quarantined in
 // gmail_sync_failures (gmail-label-sync-worker / gmail-email-sync-worker
-// never retry a failed user themselves — they quarantine and move on so a
+// never retry a failed user themselves -- they quarantine and move on so a
 // single rate-limited or broken account can never block the fast queue).
 // Retries one (job, user) pair at a time; on success, resumes that user in
 // their original job. After RECOVERY_MAX_ATTEMPTS failed retries, escalates
-// to 'persistent_failure' — surfaced in the admin "Persistent failures" tab
+// to 'persistent_failure' -- surfaced in the admin "Persistent failures" tab
 // so someone can go fix the underlying account issue.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -26,7 +26,7 @@ const APPLY_CHUNK_SIZE = 25;
 // A large mailbox or an account still tripping Gmail's own rate limit can
 // eat the whole 150s platform ceiling by itself. Without a budget check,
 // the platform kills the isolate mid-loop with no chance to persist
-// progress — and since the query always orders by last_attempted_at
+// progress -- and since the query always orders by last_attempted_at
 // ascending, the next tick just re-picks the exact same stuck item first,
 // forever. Bail out with time to spare so every tick always finishes and
 // writes its heartbeat.
@@ -94,7 +94,11 @@ async function getGmailLabels(token: string): Promise<{ id: string; name: string
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
     headers: { Authorization: `Bearer ${token}` }, signal: withTimeout(),
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const error = await res.text().catch(() => "");
+    console.error(`[sync-recovery-worker] getGmailLabels failed: ${res.status} ${error.slice(0, 300)}`);
+    return [];
+  }
   return (await res.json()).labels || [];
 }
 
@@ -139,29 +143,46 @@ async function createLabelHierarchy(
   return lastId;
 }
 
-async function getMessagesWithLabel(token: string, labelId: string): Promise<string[]> {
+// `complete: false` means a page failed to load -- the caller MUST treat
+// that as "this list can't be trusted", not "these are the only messages
+// currently carrying the label". See gmail-migration-worker's identical
+// function for the incident this fixes: a silently-truncated/empty result
+// here used to make toApply look bigger than it really was, and the
+// "remaining" count reported in last_error could visibly regress between
+// ticks purely because this call failed, with nothing anywhere to say so.
+async function getMessagesWithLabel(token: string, labelId: string): Promise<{ ids: string[]; complete: boolean }> {
   const ids: string[] = [];
   let pageToken: string | undefined;
+  let complete = true;
   do {
     const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
     url.searchParams.set("labelIds", labelId);
     url.searchParams.set("maxResults", "500");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` }, signal: withTimeout() });
-    if (!res.ok) break;
+    if (!res.ok) {
+      const error = await res.text().catch(() => "");
+      console.error(`[sync-recovery-worker] getMessagesWithLabel failed mid-page (label=${labelId}, ${ids.length} collected so far): ${res.status} ${error.slice(0, 300)}`);
+      complete = false;
+      break;
+    }
     const data = await res.json();
     (data.messages || []).forEach((m: any) => ids.push(m.id));
     pageToken = data.nextPageToken;
   } while (pageToken);
-  return ids;
+  return { ids, complete };
 }
 
-async function applyLabel(token: string, msgId: string, labelId: string): Promise<boolean> {
+// Return shape carries the failure reason, not just ok/not-ok -- mirrors
+// gmail-migration-worker's identical change.
+async function applyLabel(token: string, msgId: string, labelId: string): Promise<{ ok: boolean; msgId: string; status?: number; error?: string }> {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/modify`, {
     method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ addLabelIds: [labelId] }), signal: withTimeout(),
   });
-  return res.ok;
+  if (res.ok) return { ok: true, msgId };
+  const error = await res.text().catch(() => "");
+  return { ok: false, msgId, status: res.status, error: error.slice(0, 300) };
 }
 
 async function removeLabelFromMessage(token: string, msgId: string, labelId: string): Promise<boolean> {
@@ -173,7 +194,10 @@ async function removeLabelFromMessage(token: string, msgId: string, labelId: str
 }
 
 async function deleteGmailLabel(token: string, labelId: string): Promise<void> {
-  const msgs = await getMessagesWithLabel(token, labelId);
+  // Doesn't need `complete` -- deleting the label object below removes it
+  // from every message that had it regardless of how many this per-message
+  // pass got to first.
+  const { ids: msgs } = await getMessagesWithLabel(token, labelId);
   if (msgs.length) {
     for (let i = 0; i < msgs.length; i += 50) {
       await Promise.all(msgs.slice(i, i + 50).map(id => removeLabelFromMessage(token, id, labelId)));
@@ -245,7 +269,7 @@ async function releaseImportClaim(userId: string, msgId: string): Promise<void> 
 
 // Thrown when a single failure's own work (e.g. a large mailbox with
 // hundreds of messages) alone exceeds the tick's time budget. This is real
-// incremental progress, not a broken account — Gmail's label state is the
+// incremental progress, not a broken account -- Gmail's label state is the
 // checkpoint, so the next tick picks up wherever this one left off. Doesn't
 // count against RECOVERY_MAX_ATTEMPTS, so a big mailbox can take as many
 // ticks as it needs without wrongly escalating to "persistent_failure".
@@ -267,7 +291,7 @@ function respond(data: any, status = 200): Response {
 }
 
 // ── Overlap guard ────────────────────────────────────────────────
-// Runs on both pg_cron and a GitHub Actions backup trigger — this table
+// Runs on both pg_cron and a GitHub Actions backup trigger -- this table
 // (shared with the label/email dispatchers) makes a second trigger source
 // firing mid-run a safe no-op instead of two invocations racing to update
 // the same gmail_sync_failures rows.
@@ -293,7 +317,7 @@ Deno.serve(async (_req) => {
   const t0 = Date.now();
 
   if (!(await acquireLock())) {
-    console.log("[sync-recovery-worker] Previous tick still running — skipping");
+    console.log("[sync-recovery-worker] Previous tick still running -- skipping");
     return respond({ ok: true, skipped: "already_running" });
   }
 
@@ -319,7 +343,7 @@ async function runRecovery(t0: number): Promise<Response> {
 
   // A single large mailbox can eat a lot of the tick's time budget by
   // itself (see BudgetDeferredError above), so small/fast items (which is
-  // most real failures — rate limits, transient errors) should get their
+  // most real failures -- rate limits, transient errors) should get their
   // shot first; large mailboxes are safe to push to the back since
   // deferrals don't burn RECOVERY_MAX_ATTEMPTS and make real incremental
   // progress (Gmail's label state is the checkpoint) once they do get a
@@ -344,7 +368,7 @@ async function runRecovery(t0: number): Promise<Response> {
     const elapsed = Date.now() - t0;
     if (elapsed > TIME_BUDGET_MS) {
       skipped = failures.length - retried;
-      console.log(`[sync-recovery-worker] Time budget reached — skipping ${skipped} untouched, deferring to next tick`);
+      console.log(`[sync-recovery-worker] Time budget reached -- skipping ${skipped} untouched, deferring to next tick`);
       break;
     }
     // Fair-share pacing (same fix as gmail-migration-worker's runMigration):
@@ -352,7 +376,7 @@ async function runRecovery(t0: number): Promise<Response> {
     // haven't been attempted yet, recomputed every iteration, instead of
     // letting the oldest/smallest item run against the FULL remaining
     // budget. Closes exactly the gap this file's own header comment above
-    // (sizeByProject sort) already flagged as a residual risk — sorting
+    // (sizeByProject sort) already flagged as a residual risk -- sorting
     // smallest-first helps, but a mailbox that's merely "not the biggest"
     // can still fail to finish within budget and, since deferrals don't
     // burn RECOVERY_MAX_ATTEMPTS, keep re-winning the front slot and
@@ -362,8 +386,12 @@ async function runRecovery(t0: number): Promise<Response> {
     const itemDeadline = Date.now() + itemBudgetMs;
     const {
       id: failureId, company_id: companyId, job_id: jobId, job_type: jobType,
-      project_id: projectId, user_id: userId, attempts,
+      project_id: projectId, user_id: userId, attempts, confirmed_applied_ids: confirmedAppliedIdsRaw,
     } = failure;
+    // Same fix as gmail-migration-worker's identical variable -- a message
+    // this failure already succeeded on in a prior tick stays excluded from
+    // toApply regardless of what a later Gmail list read says.
+    const confirmedAppliedIds = new Set<string>(Array.isArray(confirmedAppliedIdsRaw) ? confirmedAppliedIdsRaw : []);
     retried++;
     console.log(`[sync-recovery-worker] Retrying failure=${failureId} job=${jobId} user=${userId} type=${jobType} attempt=${attempts + 1}/${RECOVERY_MAX_ATTEMPTS} budget=${Math.round(itemBudgetMs / 1000)}s`);
 
@@ -372,7 +400,7 @@ async function runRecovery(t0: number): Promise<Response> {
       const { data } = await db.from("gmail_sync_jobs").select("*").eq("id", jobId).maybeSingle();
       job = data;
       if (!job) {
-        // Parent job no longer exists — nothing left to recover
+        // Parent job no longer exists -- nothing left to recover
         await db.from("gmail_sync_failures").update({ status: "resolved", resolved_at: new Date().toISOString() }).eq("id", failureId);
         resolved++;
         continue;
@@ -401,16 +429,24 @@ async function runRecovery(t0: number): Promise<Response> {
           if (!labelId) labelId = await createLabelHierarchy(token, gmailLabelName, gmailLabels);
           if (!labelId) throw new Error("Could not find or create label");
           if (dbMsgIds.length) {
-            const gmailMsgSet = new Set(await getMessagesWithLabel(token, labelId));
-            const toApply = dbMsgIds.filter((id: string) => !gmailMsgSet.has(id));
+            const { ids: currentlyLabelled, complete } = await getMessagesWithLabel(token, labelId);
+            if (!complete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) -- will retry next tick`);
+            const gmailMsgSet = new Set(currentlyLabelled);
+            const toApply = dbMsgIds.filter((id: string) => !gmailMsgSet.has(id) && !confirmedAppliedIds.has(id));
             // Chunked + parallel, same pattern deleteGmailLabel already uses
             // below -- applying one at a time sequentially meant a mailbox
             // with real per-call latency (large/archive mailboxes especially)
             // could exhaust an entire fair-share slice on only a handful of
             // messages, never converging even across many ticks.
             for (let c = 0; c < toApply.length; c += APPLY_CHUNK_SIZE) {
-              if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${toApply.length - c} of ${toApply.length} messages remaining) — will resume next tick`);
-              await Promise.all(toApply.slice(c, c + APPLY_CHUNK_SIZE).map(msgId => applyLabel(token, msgId, labelId)));
+              if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${toApply.length - c} of ${toApply.length} messages remaining) -- will resume next tick`);
+              const results = await Promise.all(toApply.slice(c, c + APPLY_CHUNK_SIZE).map(msgId => applyLabel(token, msgId, labelId)));
+              let chunkHadNewConfirmations = false;
+              for (const r of results) if (r.ok) { confirmedAppliedIds.add(r.msgId); chunkHadNewConfirmations = true; }
+              if (chunkHadNewConfirmations) {
+                await db.from("gmail_sync_failures")
+                  .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
+              }
             }
             if (toApply.length) {
               await db.from("project_emails").update({ gmail_label_applied: true })
@@ -443,13 +479,20 @@ async function runRecovery(t0: number): Promise<Response> {
           if (!labelId) labelId = await createLabelHierarchy(token, gmailLabelName, gmailLabels);
           if (!labelId) throw new Error("Could not find or create label");
 
-          const labelled = new Set(await getMessagesWithLabel(token, labelId));
+          const { ids: currentlyLabelled, complete: labelListComplete } = await getMessagesWithLabel(token, labelId);
+          if (!labelListComplete) throw new BudgetDeferredError(`Could not get a complete list of currently-labelled messages (label=${labelId}) -- will retry next tick`);
+          const labelled = new Set(currentlyLabelled);
           for (const msgId of msgIds) {
-            if (labelled.has(msgId)) continue;
-            if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${msgIds.length} messages) — will resume next tick`);
+            if (labelled.has(msgId) || confirmedAppliedIds.has(msgId)) continue;
+            if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${msgIds.length} messages) -- will resume next tick`);
             const hasMsg = await userHasMessage(token, msgId);
             if (hasMsg) {
-              await applyLabel(token, msgId, labelId);
+              const result = await applyLabel(token, msgId, labelId);
+              if (result.ok) {
+                confirmedAppliedIds.add(msgId);
+                await db.from("gmail_sync_failures")
+                  .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
+              }
               continue;
             }
             const filerToken = sourceTokensByUserId[filerByMsgId[msgId]];
@@ -468,7 +511,7 @@ async function runRecovery(t0: number): Promise<Response> {
         throw new Error(`Recovery not supported for job_type "${jobType}"`);
       }
 
-      // Success — resume this user in their original job and clear the quarantine
+      // Success -- resume this user in their original job and clear the quarantine
       await markUserComplete(jobId, userId, job.total_users);
       await db.from("gmail_sync_failures").update({
         status: "resolved", resolved_at: new Date().toISOString(), last_attempted_at: new Date().toISOString(),
@@ -484,13 +527,13 @@ async function runRecovery(t0: number): Promise<Response> {
     } catch (err: any) {
       if (err?.deferred) {
         // Real progress was made (Gmail's own label state is the checkpoint)
-        // but this item alone ran out of time — retry it next tick without
+        // but this item alone ran out of time -- retry it next tick without
         // burning one of its RECOVERY_MAX_ATTEMPTS.
         await db.from("gmail_sync_failures").update({
-          last_error: err.message || "Deferred — resuming next tick", last_attempted_at: new Date().toISOString(),
+          last_error: err.message || "Deferred -- resuming next tick", last_attempted_at: new Date().toISOString(),
         }).eq("id", failureId);
         deferred++;
-        console.log(`[sync-recovery-worker] ⏸ Deferred (not counted as a failed attempt): ${failureId} — ${err.message}`);
+        console.log(`[sync-recovery-worker] ⏸ Deferred (not counted as a failed attempt): ${failureId} -- ${err.message}`);
         continue;
       }
 
@@ -509,14 +552,14 @@ async function runRecovery(t0: number): Promise<Response> {
           project_id: projectId, gmail_label_name: job?.gmail_label_name || null,
           target_user_id: userId, details: { job_type: jobType, error: err.message },
         });
-        console.error(`[sync-recovery-worker] ✗ Escalated to persistent_failure: ${failureId} — ${err.message}`);
+        console.error(`[sync-recovery-worker] ✗ Escalated to persistent_failure: ${failureId} -- ${err.message}`);
       } else {
-        console.error(`[sync-recovery-worker] ✗ Retry failed (${nextAttempts}/${RECOVERY_MAX_ATTEMPTS}): ${failureId} — ${err.message}`);
+        console.error(`[sync-recovery-worker] ✗ Retry failed (${nextAttempts}/${RECOVERY_MAX_ATTEMPTS}): ${failureId} -- ${err.message}`);
       }
     }
   }
 
-  console.log(`[sync-recovery-worker] DONE in ${Date.now() - t0}ms — retried=${retried} resolved=${resolved} escalated=${escalated} deferred=${deferred} skipped=${skipped}`);
+  console.log(`[sync-recovery-worker] DONE in ${Date.now() - t0}ms -- retried=${retried} resolved=${resolved} escalated=${escalated} deferred=${deferred} skipped=${skipped}`);
   await heartbeat("gmail-sync-recovery-worker", Date.now() - t0, { retried, resolved, escalated, deferred, skipped });
   return respond({ ok: true, retried, resolved, escalated, deferred, skipped });
 }

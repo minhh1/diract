@@ -87,7 +87,7 @@ export async function generateInvoiceDocx(input: GenerateInvoicePdfInput): Promi
   // One or more debtors (e.g. joint purchasers) -- each its own paragraph
   // with a blank line between them. Word reflows naturally, unlike the
   // fixed-position pdf-lib renderers, so this is just N paragraphs.
-  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['—'];
+  const debtorLines = input.invoice.debtorNames.length ? input.invoice.debtorNames : ['-'];
   debtorLines.forEach((name, i) => {
     children.push(p(name, { bold: true, size: 11 }));
     if (i < debtorLines.length - 1) children.push(p(''));

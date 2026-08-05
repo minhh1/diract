@@ -486,7 +486,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
                   value={inputs[f.key] ?? ""}
                   onChange={e => setField(f.key, e.target.value)}
                   onBlur={() => saveInputs(inputs)}
-                  placeholder="—"
+                  placeholder="-"
                   className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-[12px] outline-none focus:border-indigo-400 bg-white"
                 />
               </div>
@@ -496,19 +496,19 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
 
         {/* Owner's equity leads -- the number that actually tells you if a leveraged deal is worth doing */}
         <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-4">
-          <OutputCard big label="Return on Equity" value={result.returnOnEquityPct != null ? `${result.returnOnEquityPct.toFixed(1)}%` : "—"} tone={result.returnOnEquityPct != null ? (result.returnOnEquityPct >= 0 ? "good" : "bad") : undefined} />
+          <OutputCard big label="Return on Equity" value={result.returnOnEquityPct != null ? `${result.returnOnEquityPct.toFixed(1)}%` : "-"} tone={result.returnOnEquityPct != null ? (result.returnOnEquityPct >= 0 ? "good" : "bad") : undefined} />
           <OutputCard big label="Required Equity" value={money(result.requiredEquity)} />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <OutputCard label="Verdict" value={result.feasible == null ? "— (set a target margin)" : result.feasible ? "Feasible" : "Not feasible"} tone={result.feasible == null ? undefined : result.feasible ? "good" : "bad"} />
+          <OutputCard label="Verdict" value={result.feasible == null ? "- (set a target margin)" : result.feasible ? "Feasible" : "Not feasible"} tone={result.feasible == null ? undefined : result.feasible ? "good" : "bad"} />
           <OutputCard label="Net Profit" value={money(result.netProfit)} tone={result.netProfit >= 0 ? "good" : "bad"} />
-          <OutputCard label="Margin on Cost" value={result.marginOnCostPct != null ? `${result.marginOnCostPct.toFixed(1)}%` : "—"} />
+          <OutputCard label="Margin on Cost" value={result.marginOnCostPct != null ? `${result.marginOnCostPct.toFixed(1)}%` : "-"} />
           <OutputCard label="Total Development Cost" value={money(result.totalDevelopmentCost)} />
           <OutputCard label="Gross Revenue" value={money(result.revenue)} />
           <OutputCard label="Peak Debt" value={money(result.peakDebt)} />
-          <OutputCard label="Break-even Price / Dwelling" value={breakEven != null ? money(breakEven) : "—"} />
-          <OutputCard label="Max Supportable Land Price" value={maxLand != null ? money(maxLand) : "— (not achievable at any price)"} />
-          <OutputCard label="Simplified IRR" value={irr != null ? `${irr.toFixed(1)}%` : "—"} />
+          <OutputCard label="Break-even Price / Dwelling" value={breakEven != null ? money(breakEven) : "-"} />
+          <OutputCard label="Max Supportable Land Price" value={maxLand != null ? money(maxLand) : "- (not achievable at any price)"} />
+          <OutputCard label="Simplified IRR" value={irr != null ? `${irr.toFixed(1)}%` : "-"} />
         </div>
 
         {/* Cost breakdown */}
@@ -568,8 +568,8 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
           </thead>
           <tbody>
             <tr><td className="py-1 text-slate-500">Net Profit</td>{autoScenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{money(s.result.netProfit)}</td>)}</tr>
-            <tr><td className="py-1 text-slate-500">Margin on Cost</td>{autoScenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.marginOnCostPct != null ? `${s.result.marginOnCostPct.toFixed(1)}%` : "—"}</td>)}</tr>
-            <tr><td className="py-1 text-slate-500">Return on Equity</td>{autoScenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.returnOnEquityPct != null ? `${s.result.returnOnEquityPct.toFixed(1)}%` : "—"}</td>)}</tr>
+            <tr><td className="py-1 text-slate-500">Margin on Cost</td>{autoScenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.marginOnCostPct != null ? `${s.result.marginOnCostPct.toFixed(1)}%` : "-"}</td>)}</tr>
+            <tr><td className="py-1 text-slate-500">Return on Equity</td>{autoScenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.returnOnEquityPct != null ? `${s.result.returnOnEquityPct.toFixed(1)}%` : "-"}</td>)}</tr>
           </tbody>
         </table>
       </div>
@@ -591,7 +591,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
                 <td className="text-slate-400 font-bold pr-2">{row.salePriceDeltaPct > 0 ? "+" : ""}{row.salePriceDeltaPct}%</td>
                 {row.cells.map(c => (
                   <td key={c.constructionDeltaPct} className={`py-1 ${c.marginOnCostPct == null ? "text-slate-300" : c.marginOnCostPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                    {c.marginOnCostPct != null ? c.marginOnCostPct.toFixed(1) : "—"}
+                    {c.marginOnCostPct != null ? c.marginOnCostPct.toFixed(1) : "-"}
                   </td>
                 ))}
               </tr>
@@ -623,7 +623,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
               </div>
               <div className="flex items-center gap-4 text-[11px]">
                 <span className="text-slate-500">Net Profit: <span className="font-bold text-slate-800">{money(r.netProfit)}</span></span>
-                <span className="text-slate-500">ROE: <span className="font-bold text-slate-800">{r.returnOnEquityPct != null ? `${r.returnOnEquityPct.toFixed(1)}%` : "—"}</span></span>
+                <span className="text-slate-500">ROE: <span className="font-bold text-slate-800">{r.returnOnEquityPct != null ? `${r.returnOnEquityPct.toFixed(1)}%` : "-"}</span></span>
                 <button onClick={() => deleteScenario(s.id)} className="text-slate-300 hover:text-rose-500"><X size={13} /></button>
               </div>
             </div>
@@ -687,7 +687,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         </div>
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Margin on Development Cost</p>
-          <p className="text-[18px] font-bold text-slate-800">{pnlMarginOnCostPct != null ? `${pnlMarginOnCostPct.toFixed(2)}%` : "—"}</p>
+          <p className="text-[18px] font-bold text-slate-800">{pnlMarginOnCostPct != null ? `${pnlMarginOnCostPct.toFixed(2)}%` : "-"}</p>
         </div>
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Equity (Total Dev. Cost − Loan Principal)</p>
@@ -695,7 +695,7 @@ export default function FeasibilitySubtab({ projectId }: { projectId: string }) 
         </div>
         <div>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Margin on Equity</p>
-          <p className="text-[18px] font-bold text-slate-800">{pnlMarginOnEquityPct != null ? `${pnlMarginOnEquityPct.toFixed(2)}%` : "—"}</p>
+          <p className="text-[18px] font-bold text-slate-800">{pnlMarginOnEquityPct != null ? `${pnlMarginOnEquityPct.toFixed(2)}%` : "-"}</p>
         </div>
       </div>
 

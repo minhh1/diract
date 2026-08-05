@@ -156,7 +156,7 @@ function SharePanel({ projectId }: { projectId: string }) {
             <div key={page.id} className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl">
               <p className="text-[12px] font-medium text-slate-700 flex-1">
                 {page.title}
-                {page.access_code && <span className="text-slate-400 font-normal"> — code: {page.access_code}</span>}
+                {page.access_code && <span className="text-slate-400 font-normal"> -- code: {page.access_code}</span>}
               </p>
               <button onClick={() => copyLink(page)} className="p-1 text-slate-300 hover:text-indigo-600" title="Copy link">
                 {copiedId === page.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
@@ -503,7 +503,7 @@ export default function ResidualLandSolverContent({ projectId, pageId, allowProj
                   value={inputs[f.key] ?? ""}
                   onChange={e => setField(f.key, e.target.value)}
                   onBlur={() => saveInputs(inputs)}
-                  placeholder="—"
+                  placeholder="-"
                   className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-[12px] outline-none focus:border-indigo-400 bg-white"
                 />
               </div>
@@ -514,7 +514,7 @@ export default function ResidualLandSolverContent({ projectId, pageId, allowProj
         <div className="border-t border-slate-100 pt-4">
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Residual Land Value (max site bid at target margin)</p>
           <p className={`text-[26px] font-bold ${solved ? "text-emerald-600" : "text-slate-300"}`}>
-            {solved ? money(solved.landPrice) : inputs.targetMarginPct == null ? "— set a target margin" : "— not achievable at any price"}
+            {solved ? money(solved.landPrice) : inputs.targetMarginPct == null ? "- set a target margin" : "- not achievable at any price"}
           </p>
         </div>
 
@@ -523,14 +523,14 @@ export default function ResidualLandSolverContent({ projectId, pageId, allowProj
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">At That Price</p>
             <Row label="Land price" value={money(solved.landPrice)} indent />
             <Row label="Stamp duty (re-derived at the solved price)" value={money(solved.stampDuty)} indent />
-            <Row label="Title transfer fee" value={solved.titleTransferFee != null ? money(solved.titleTransferFee) : state ? "— unverified for this state, enter manually" : "—"} indent />
+            <Row label="Title transfer fee" value={solved.titleTransferFee != null ? money(solved.titleTransferFee) : state ? "- unverified for this state, enter manually" : "-"} indent />
             <Row label="Other acquisition costs" value={money(inputs.otherAcquisitionCosts ?? 0)} indent />
             <Row label="Total acquisition" value={money(solved.result.acquisition)} bold />
             <Row label="Total development cost" value={money(solved.result.totalDevelopmentCost)} indent />
             <Row label="Net profit" value={money(solved.result.netProfit)} indent />
-            <Row label="Margin on cost" value={solved.result.marginOnCostPct != null ? `${solved.result.marginOnCostPct.toFixed(1)}%` : "—"} indent />
+            <Row label="Margin on cost" value={solved.result.marginOnCostPct != null ? `${solved.result.marginOnCostPct.toFixed(1)}%` : "-"} indent />
             <Row label="Required equity" value={money(solved.result.requiredEquity)} indent />
-            <Row label="Return on equity" value={solved.result.returnOnEquityPct != null ? `${solved.result.returnOnEquityPct.toFixed(1)}%` : "—"} indent />
+            <Row label="Return on equity" value={solved.result.returnOnEquityPct != null ? `${solved.result.returnOnEquityPct.toFixed(1)}%` : "-"} indent />
             {dutyWorking && <p className="text-[10px] text-slate-400 mt-2">{dutyWorking.explanation}</p>}
           </div>
         )}
@@ -594,7 +594,7 @@ export default function ResidualLandSolverContent({ projectId, pageId, allowProj
                 <td className="text-slate-400 font-bold pr-2 whitespace-nowrap">{row.targetMarginPct}%</td>
                 {row.cells.map(c => (
                   <td key={c.salePriceDeltaPct} className={`py-1 ${c.landPrice == null ? "text-slate-300" : "text-slate-700"}`}>
-                    {c.landPrice != null ? money(c.landPrice) : "—"}
+                    {c.landPrice != null ? money(c.landPrice) : "-"}
                   </td>
                 ))}
               </tr>

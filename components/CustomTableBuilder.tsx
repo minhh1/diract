@@ -265,7 +265,7 @@ export default function CustomTableBuilder() {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: before } = await supabase.from('company_tables').select('*').eq('id', tableId).single();
 
-    // Soft-delete — the table and its records/fields stay in the database
+    // Soft-delete -- the table and its records/fields stay in the database
     // (nothing cascades), so this is fully reversible from Trash.
     await supabase.from('company_tables').update({ deleted_at: new Date().toISOString() }).eq('id', tableId);
 
@@ -317,7 +317,7 @@ export default function CustomTableBuilder() {
     refetch();
   };
 
-  // Snapshots this table's current shape into a brand-new draft template —
+  // Snapshots this table's current shape into a brand-new draft template -
   // a one-time copy, not a live link (see supabase/template_marketplace.sql).
   // Cross-table relations to another *custom* table aren't carried over
   // (nothing to resolve them against outside this single table's export);
@@ -679,7 +679,7 @@ export default function CustomTableBuilder() {
         </div>
       )}
 
-      {/* Edit modal — rename / re-icon / re-colour an existing table */}
+      {/* Edit modal -- rename / re-icon / re-colour an existing table */}
       {editingTable && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
           <div className="bg-white rounded-[40px] p-8 w-full max-w-md shadow-2xl">

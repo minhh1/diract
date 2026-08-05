@@ -1,5 +1,5 @@
 // lib/triggerCalendarSync.ts
-// Fire-and-forget call to the calendar-sync edge function — same trigger
+// Fire-and-forget call to the calendar-sync edge function -- same trigger
 // the Gmail Add-on's edge function uses, so task changes made from the web
 // app (public page, main app) also sync a calendar event, not only ones
 // made through the add-on. Server-side only (needs the service role key).

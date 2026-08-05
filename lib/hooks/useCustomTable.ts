@@ -61,7 +61,7 @@ export interface CustomTableField {
   linked_system_table: string | null;
   linked_display_field: string | null;
   // Optional second field combined onto the search/display label as
-  // "<linked_display_field> — <linked_display_field_2>" (see
+  // "<linked_display_field> -- <linked_display_field_2>" (see
   // supabase/company_table_fields_display_field_2.sql and
   // components/dashboard/RelationPicker.tsx's displayField2 prop).
   linked_display_field_2: string | null;

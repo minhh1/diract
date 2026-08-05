@@ -62,12 +62,12 @@ export default function DebtSchedulePanel({ simulation, hasFacilityConfig }: { s
               {simulation.rows.map(r => (
                 <tr key={r.month} className="border-t border-slate-50">
                   <td className="py-1 pr-2 text-slate-500">{r.month}</td>
-                  <td className="py-1 px-2 text-right text-slate-600">{r.drawdown > 0 ? money(r.drawdown) : "—"}</td>
-                  <td className="py-1 px-2 text-right text-slate-400">{r.interestCapitalized > 0 ? money(r.interestCapitalized) : "—"}</td>
-                  <td className="py-1 px-2 text-right text-emerald-600">{r.repayment > 0 ? money(r.repayment) : "—"}</td>
+                  <td className="py-1 px-2 text-right text-slate-600">{r.drawdown > 0 ? money(r.drawdown) : "-"}</td>
+                  <td className="py-1 px-2 text-right text-slate-400">{r.interestCapitalized > 0 ? money(r.interestCapitalized) : "-"}</td>
+                  <td className="py-1 px-2 text-right text-emerald-600">{r.repayment > 0 ? money(r.repayment) : "-"}</td>
                   <td className="py-1 px-2 text-right font-bold text-slate-800">{money(r.debtBalance)}</td>
-                  <td className="py-1 px-2 text-right text-rose-600">{r.equityInjected > 0 ? money(r.equityInjected) : "—"}</td>
-                  <td className={`py-1 px-2 text-right ${r.lvrPct != null && r.lvrPct > 100 ? "text-rose-600" : "text-slate-400"}`}>{r.lvrPct != null ? `${r.lvrPct.toFixed(1)}%` : "—"}</td>
+                  <td className="py-1 px-2 text-right text-rose-600">{r.equityInjected > 0 ? money(r.equityInjected) : "-"}</td>
+                  <td className={`py-1 px-2 text-right ${r.lvrPct != null && r.lvrPct > 100 ? "text-rose-600" : "text-slate-400"}`}>{r.lvrPct != null ? `${r.lvrPct.toFixed(1)}%` : "-"}</td>
                 </tr>
               ))}
             </tbody>

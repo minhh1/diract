@@ -1,6 +1,6 @@
 // lib/documentFillPageGate.ts
 // Gating for the GENUINELY UNAUTHENTICATED client-facing document-fill routes.
-// There is NO user session on this side — access is granted purely by the page id
+// There is NO user session on this side -- access is granted purely by the page id
 // existing, is_active = true, and expires_at being null or in the future, using the
 // service-role admin client throughout. Deliberately returns a single generic
 // "not found" (404) for missing / revoked / expired pages so a revoked page can't
@@ -19,7 +19,7 @@ export async function loadActiveFillPage(admin: any, pageId: string) {
   if (!page) return notFound;
   if (!page.is_active) return notFound;
   if (page.expires_at) {
-    // expires_at is a DATE — the page is valid through the end of that day.
+    // expires_at is a DATE -- the page is valid through the end of that day.
     const expiry = new Date(`${String(page.expires_at).slice(0, 10)}T23:59:59`);
     if (expiry < new Date()) return notFound;
   }
@@ -27,7 +27,7 @@ export async function loadActiveFillPage(admin: any, pageId: string) {
   return { error: null as null, page };
 }
 
-// Access-code check — a second, independent gate on top of expiry/active,
+// Access-code check -- a second, independent gate on top of expiry/active,
 // shared over a different channel than the link itself. Comparison is
 // trimmed but case-sensitive (codes are shown to the admin as typed/generated).
 export function codeMatches(page: { access_code: string | null }, provided: string | null | undefined): boolean {

@@ -1,7 +1,7 @@
 // app/api/document-templates/public/[pageId]/route.ts
 // GENUINELY UNAUTHENTICATED client-facing route. External clients/customers have no
 // account in this system, so this route performs NO supabase.auth.getUser() and NO
-// session/membership check of any kind — access is gated only by the page id
+// session/membership check of any kind -- access is gated only by the page id
 // existing, is_active = true, and expires_at not in the past (see loadActiveFillPage).
 // Uses the service-role admin client throughout because there is no user session.
 //
@@ -9,8 +9,8 @@
 // "Documents Template - {clientName}") + the merged, de-duplicated (by
 // tag_key) list of fields across all the page's joined templates, pre-
 // filling any auto_fill_field_id-bound value from the project's custom
-// field data. Each document also carries `fieldTagKeys` — which of the
-// deduped fields belong to it — so the client page can show one tab per
+// field data. Each document also carries `fieldTagKeys` -- which of the
+// deduped fields belong to it -- so the client page can show one tab per
 // document with just its own fields.
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
   if (gate.error) return gate.error;
   const { page } = gate;
 
-  // Access-code gate — a second, independent check on top of expiry/active.
+  // Access-code gate -- a second, independent check on top of expiry/active.
   // No code supplied yet: tell the client a code is needed without leaking
   // the field list. Wrong code: 401. Both cases skip the rest of this route.
   const heading = computeHeading(page.client_name);
@@ -63,10 +63,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       .order("display_order"),
   ]);
 
-  // Resolve each field to its join-root — a field explicitly joined with
+  // Resolve each field to its join-root -- a field explicitly joined with
   // another (see app/api/document-templates/fields/join/route.ts) collapses
   // onto that field's tag_key/label/etc rather than showing as its own
-  // input. Only resolves within THIS page's bundled fields — a join to a
+  // input. Only resolves within THIS page's bundled fields -- a join to a
   // field outside this page's documents has nothing to collapse onto here.
   const fieldsById = new Map((fieldRows || []).map((f: any) => [f.id, f]));
   function pageLocalRoot(f: any): any {
@@ -109,11 +109,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     return relatedAutoFillValues[relatedAutoFillKey(f)];
   };
 
-  // ── De-duplicate by (join-resolved) tag_key — a tag shared by two
+  // ── De-duplicate by (join-resolved) tag_key -- a tag shared by two
   // templates by exact text, OR explicitly joined despite different text,
   // is asked once, using the root field's own label/type/required/etc. ──
   // A returning client's own prior answers, if they saved any (see the
-  // draft route) — take priority over auto-fill/default since they reflect
+  // draft route) -- take priority over auto-fill/default since they reflect
   // what the client themselves deliberately typed, not a generic fallback.
   const draftValues: Record<string, any> = (page.draft_values && typeof page.draft_values === "object") ? page.draft_values : {};
   const draftNaFields = new Set<string>(Array.isArray(page.draft_na_fields) ? page.draft_na_fields : []);
@@ -152,7 +152,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     });
   }
 
-  // Which deduped (join-resolved) tag keys belong to each document — powers
+  // Which deduped (join-resolved) tag keys belong to each document -- powers
   // one tab per document on the client page, each showing only its own
   // fields (a tag shared or joined across documents just shows up on every
   // tab that uses it, kept in sync since they all read/write the same

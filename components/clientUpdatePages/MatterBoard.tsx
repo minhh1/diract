@@ -760,7 +760,7 @@ export default function MatterBoard({
     { id: "", label: "Ungrouped" },
     ...topGroups.flatMap(g => [
       { id: g.id, label: g.name },
-      ...groups.filter(sg => sg.parent_group_id === g.id && !sg.condition_field_id).map(sg => ({ id: sg.id, label: `— ${sg.name}` })),
+      ...groups.filter(sg => sg.parent_group_id === g.id && !sg.condition_field_id).map(sg => ({ id: sg.id, label: `- ${sg.name}` })),
     ]),
   ];
 
@@ -1715,9 +1715,9 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, mas
         {labelRow}
         {editable ? (
           <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-            value={relationId ?? null} initialLabel={value ?? undefined} initialCapacity={relationCapacity} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
+            value={relationId ?? null} initialLabel={value ?? undefined} initialCapacity={relationCapacity} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="-" />
         ) : (
-          <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">—</span>}</p>
+          <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">-</span>}</p>
         )}
       </div>
     );
@@ -1730,11 +1730,11 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, mas
         {editable ? (
           <select value={value ?? ""} onChange={e => onSave(e.target.value || null)}
             className="w-full px-2 py-1 border border-slate-200 rounded-lg text-[12px] outline-none bg-white">
-            <option value="">—</option>
+            <option value="">-</option>
             {field.select_options.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
         ) : (
-          <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">—</span>}</p>
+          <p className="text-[12px] text-slate-700">{value || <span className="text-slate-300">-</span>}</p>
         )}
       </div>
     );
@@ -1759,7 +1759,7 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, mas
       ) : (
         <p onClick={() => editable && (setDraft(value ?? ""), setEditing(true))}
           className={`text-[12px] text-slate-700 rounded px-1 -mx-1 min-h-[18px] ${editable ? "cursor-text hover:bg-slate-50" : ""}`}>
-          {value == null || value === "" ? <span className="text-slate-300">—</span> : formatValue(value, field, dateFormat, maskCurrency)}
+          {value == null || value === "" ? <span className="text-slate-300">-</span> : formatValue(value, field, dateFormat, maskCurrency)}
         </p>
       )}
     </div>
@@ -2252,9 +2252,9 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
             // same way it already does for every other column.
             <div className={expanded ? "" : "max-w-[220px]"}>
               <RelationPicker linkedSystemTable={field.linkedSystemTable} linkedTableId={field.linkedTableId}
-                value={relationId ?? null} initialLabel={value ?? undefined} initialCapacity={relationCapacity} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="—" />
+                value={relationId ?? null} initialLabel={value ?? undefined} initialCapacity={relationCapacity} onSelect={(id, _label, capacity) => onSave(id, capacity)} allowCreateNew variant="plain" placeholder="-" />
             </div>
-          ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "—"}</span>}
+          ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "-"}</span>}
           {historyButton}
         </span>
       </td>
@@ -2268,10 +2268,10 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
           {editable ? (
             <select value={value ?? ""} onChange={e => onSave(e.target.value || null)}
               className="text-[12px] border border-slate-200 rounded-full px-2 py-1 outline-none bg-white">
-              <option value="">—</option>
+              <option value="">-</option>
               {field.select_options.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
-          ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "—"}</span>}
+          ) : <span className={`inline-block align-bottom ${truncateClass}`}>{value || "-"}</span>}
           {historyButton}
         </span>
       </td>
@@ -2309,7 +2309,7 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
       className={`group px-4 py-4 text-slate-600 ${editable ? "cursor-text hover:bg-indigo-50/50" : ""} ${frozenClass}`}>
       <span className="inline-flex items-center gap-1.5">
         <span className={`inline-block align-bottom ${expanded ? "whitespace-nowrap" : truncateClass}`}>
-          {value == null || value === "" ? "—" : formatValue(value, field, dateFormat, maskCurrency)}
+          {value == null || value === "" ? "-" : formatValue(value, field, dateFormat, maskCurrency)}
         </span>
         {historyButton}
         {reviewButton}
