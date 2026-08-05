@@ -12,7 +12,7 @@
 // after that migration ran) gets one lazily seeded here with the same
 // default arrangement the migration backfilled for existing companies (see
 // lib/dashboardWidgets/defaultQuickGlanceLayout.ts).
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Loader2, Pencil, Check, X } from "lucide-react";
@@ -21,6 +21,7 @@ import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { supabase } from "@/lib/supabase";
 import { defaultQuickGlanceWidgets } from "@/lib/dashboardWidgets/defaultQuickGlanceLayout";
 import type { QuickGlanceWidget } from "@/lib/dashboardWidgets/quickGlanceTypes";
+import WelcomeOnboarding from "./quickGlance/WelcomeOnboarding";
 
 const QuickGlanceCanvas = dynamic(() => import("./quickGlance/QuickGlanceCanvas"));
 
@@ -29,8 +30,19 @@ const KNOWN_TYPES = ['Law Firm', 'Property Developer'];
 export default function QuickGlanceDashboard() {
   const { companyId, companyType, userId, loading: companyLoading } = useCompany();
   const router = useRouter();
-  const { tables, loading: tablesLoading } = useCustomTables(userId);
+  const { tables, loading: tablesLoading, refetch: refetchTables } = useCustomTables(userId);
   const isKnownType = !!companyType && KNOWN_TYPES.includes(companyType);
+  // A templateless company (companyType never got set -- true for every
+  // brand-new self-signup, see register_company_and_profile) that also has
+  // no custom tables yet is genuinely empty: show the onboarding assistant
+  // instead of redirecting anywhere. One that already built tables (via
+  // that same assistant, or by hand) just needs somewhere real to land --
+  // its first table -- rather than the old hardcoded /dashboard/properties
+  // redirect, which is hidden by default for exactly this kind of company
+  // (see supabase/migrations/20260805070000_hide_system_tables_for_templateless_companies.sql)
+  // and was a dead-end "Properties has been deleted" screen for every
+  // templateless company regardless of whether they'd built anything.
+  const hasAnyTables = tables.length > 0;
 
   const [widgets, setWidgets] = useState<QuickGlanceWidget[] | null>(null);
   const [editing, setEditing] = useState(false);
@@ -56,9 +68,25 @@ export default function QuickGlanceDashboard() {
     if (!companyLoading && !tablesLoading && isKnownType) load();
   }, [load, companyLoading, tablesLoading, isKnownType]);
 
+  // Decided once, the first time loading finishes, not reactively on every
+  // change to `tables` -- WelcomeOnboarding's embedded assistant can build
+  // several tables/dashboards across one conversation, and refetching mid-
+  // chat (see its onBuildProgress prop below) would otherwise yank the user
+  // away to their first table the instant the FIRST one exists, cutting a
+  // multi-step build short. A fresh visit to this page (a real remount)
+  // still redirects correctly once there's something to redirect to.
+  // null = not decided yet, true = started genuinely empty (keep showing
+  // onboarding for the rest of this mount regardless of later builds),
+  // false = already had tables at first load (redirecting away now).
+  const [startedEmpty, setStartedEmpty] = useState<boolean | null>(null);
+  const redirectDecidedRef = useRef(false);
   useEffect(() => {
-    if (!companyLoading && !isKnownType) router.replace('/dashboard/properties');
-  }, [companyLoading, isKnownType, router]);
+    if (companyLoading || tablesLoading || redirectDecidedRef.current) return;
+    redirectDecidedRef.current = true;
+    if (isKnownType) return;
+    setStartedEmpty(!hasAnyTables);
+    if (hasAnyTables) router.replace(`/dashboard/${tables[0].slug}`);
+  }, [companyLoading, tablesLoading, isKnownType, hasAnyTables, tables, router]);
 
   const hasLawFirmTemplate = tables.some(t => t.slug === 'trust-accounts');
   const hasPropertyDeveloperTemplate = tables.some(t => t.slug === 'finance-model-loans');
@@ -79,7 +107,39 @@ export default function QuickGlanceDashboard() {
     setEditing(false);
   };
 
-  if (companyLoading || !isKnownType || widgets === null) {
+  if (companyLoading || tablesLoading) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-[#F9FAFB]">
+        <Loader2 size={20} className="animate-spin text-slate-300" />
+      </div>
+    );
+  }
+
+  if (!isKnownType) {
+    // startedEmpty === false means this company already had tables the
+    // first time this page loaded -- the redirect effect above is
+    // sending it to its first table right now, so just show the spinner.
+    // startedEmpty === true means it's genuinely new; keep the onboarding
+    // assistant up for the rest of this visit even after it builds
+    // something (see the effect's own comment), offering a manual link to
+    // move on once there's somewhere real to go instead of yanking the
+    // chat away mid-build.
+    if (startedEmpty !== true) {
+      return (
+        <div className="flex flex-col h-screen items-center justify-center bg-[#F9FAFB]">
+          <Loader2 size={20} className="animate-spin text-slate-300" />
+        </div>
+      );
+    }
+    return (
+      <WelcomeOnboarding
+        onBuildProgress={refetchTables}
+        firstTableHref={hasAnyTables ? `/dashboard/${tables[0].slug}` : null}
+      />
+    );
+  }
+
+  if (widgets === null) {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-[#F9FAFB]">
         <Loader2 size={20} className="animate-spin text-slate-300" />

@@ -43,7 +43,7 @@ function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get('token');
-  // Where to send the user after a successful sign-in — e.g. back to the
+  // Where to send the user after a successful sign-in -- e.g. back to the
   // public task page they were trying to view. Only relative paths are
   // honoured, so this can't be abused as an open redirect.
   const redirectParam = searchParams.get('redirect');
@@ -77,6 +77,18 @@ function LoginPageInner() {
   useEffect(() => {
     if (searchParams.get('reason') === 'session_expired') {
       setError("Your session expired. Please sign in again.");
+    }
+    // app/auth/callback/route.ts sends people here when it couldn't
+    // exchange an email confirmation (or invite/reset) link for a session
+    // -- e.g. the link's single-use code was already consumed (a mail
+    // provider's own link-scanning/prefetch can do this before the person
+    // actually clicks it) or was opened somewhere the original PKCE
+    // request isn't available. Their email is very likely already
+    // confirmed at this point regardless -- signing in below with their
+    // password works fine, so say that plainly instead of leaving them
+    // wondering why the link "did nothing" (previously: no message at all).
+    if (searchParams.get('error') === 'auth_failed') {
+      setError("We couldn't complete that automatically, but your email is confirmed -- please sign in below.");
     }
   }, [searchParams]);
 
@@ -223,7 +235,7 @@ function LoginPageInner() {
     if (error) { setError(error.message); setGoogleLoading(false); }
   };
 
-  // ── Login — also handles joining existing company with token ──────
+  // ── Login -- also handles joining existing company with token ──────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
@@ -307,7 +319,7 @@ function LoginPageInner() {
     router.replace(postLoginPath);
   };
 
-  // ── Register — creates new company OR joins existing via token ────
+  // ── Register -- creates new company OR joins existing via token ────
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
@@ -458,7 +470,7 @@ function LoginPageInner() {
   return (
     <div className="flex min-h-screen bg-white font-sans antialiased select-text">
 
-      {/* Brand panel — hidden below lg, this is the Canva-style split login */}
+      {/* Brand panel -- hidden below lg, this is the Canva-style split login */}
       <div className="hidden lg:flex lg:w-[44%] relative bg-gradient-to-br from-indigo-600 to-violet-700 text-white flex-col justify-between p-14 overflow-hidden">
         <div className="pointer-events-none absolute -top-24 -right-16 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 -left-16 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
@@ -498,7 +510,7 @@ function LoginPageInner() {
         className="w-full max-w-[420px]"
       >
 
-        {/* Branding (mobile only — the split panel above covers this on lg+) */}
+        {/* Branding (mobile only -- the split panel above covers this on lg+) */}
         <div className="text-center mb-10 lg:hidden">
           <div className="mx-auto w-12 h-12 flex items-center justify-center mb-4">
             <BrandMark size={40} />
@@ -722,7 +734,7 @@ function LoginPageInner() {
           </button>
         </form>
 
-        {/* Toggle — for invite links, allow switching between sign in and register */}
+        {/* Toggle -- for invite links, allow switching between sign in and register */}
         <button
           onClick={switchMode}
           className="w-full mt-8 text-[13px] font-medium text-slate-400 hover:text-indigo-600 transition-colors text-center"
