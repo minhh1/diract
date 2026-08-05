@@ -46,6 +46,14 @@ export const AUDIENCES: Record<string, AudienceContent> = {
     primaryCtaHref: "/for/law-firm-au/get-started",
     features: [
       {
+        slug: "quick-glance",
+        icon: "Gauge",
+        title: "Quick Glance",
+        body: "The first thing you see after signing in — trust balance, dormant trust, and unbilled time by matter, so the day starts with what actually needs attention.",
+        accent: "emerald",
+        visual: "quickGlance",
+      },
+      {
         slug: "time-entries",
         icon: "Clock",
         title: "Time entries",

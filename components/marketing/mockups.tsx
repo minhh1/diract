@@ -10,10 +10,12 @@
 // (see MockupThemeProvider.tsx) renders correctly in dark mode for free --
 // except where noted (border-l-* has a real, pre-existing gap in the app's
 // own dark CSS, see MockClientUpdates).
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
-  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, Landmark, Building2, Store,
+  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,8 +36,13 @@ type Cell = string | { text: string; badge: TagColor };
 // Matches components/DataTable.tsx/MasterTable.tsx's real table chrome:
 // bg-white rounded-2xl border border-slate-200 shadow-sm container, thead
 // bg-slate-50 border-b border-slate-200 text-slate-400 uppercase 10px bold
-// tracking-widest headers, tr border-b border-slate-50 rows.
+// tracking-widest headers, tr border-b border-slate-50 rows. Rows are
+// click-to-select (real tables highlight the active row the same way) --
+// purely a marketing-mockup affordance so these read as live product
+// previews instead of flat screenshots, not a claim about any specific
+// selection *behavior* the real table does with that click.
 function TableFrame({ label, columns, rows }: { label: string; columns: string[]; rows: Cell[][] }) {
+  const [selected, setSelected] = useState<number | null>(null);
   return (
     <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="px-4 py-2.5 border-b border-slate-100">
@@ -51,7 +58,11 @@ function TableFrame({ label, columns, rows }: { label: string; columns: string[]
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-slate-50 last:border-0">
+            <tr
+              key={i}
+              onClick={() => setSelected((s) => (s === i ? null : i))}
+              className={`border-b border-slate-50 last:border-0 cursor-pointer transition-colors ${selected === i ? "bg-indigo-50/70" : "hover:bg-slate-50"}`}
+            >
               {row.map((cell, ci) => (
                 <td key={ci} className="px-4 py-3 text-[12px] font-medium text-slate-700 truncate">
                   {typeof cell === "string"
@@ -101,7 +112,8 @@ export function IconHeader({ icon: Icon, tint, iconColor, title, subtitle }: { i
 // numeric columns and a bold totals footer (with an optional colSpan on
 // its first cell, e.g. TrustLedgerStatementWidget.tsx's "Totals" label
 // spanning 4 columns before the In/Out/Balance totals) -- neither of which
-// plain TableFrame above has.
+// plain TableFrame above has. Same click-to-select row affordance as
+// TableFrame.
 export function DetailedTable({
   columns, rows, footer,
 }: {
@@ -109,6 +121,7 @@ export function DetailedTable({
   rows: Cell[][];
   footer?: { text: string; align?: "right"; colSpan?: number }[];
 }) {
+  const [selected, setSelected] = useState<number | null>(null);
   return (
     <table className="w-full text-left border-collapse">
       <thead>
@@ -120,7 +133,11 @@ export function DetailedTable({
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i} className="border-b border-slate-50 last:border-0">
+          <tr
+            key={i}
+            onClick={() => setSelected((s) => (s === i ? null : i))}
+            className={`border-b border-slate-50 last:border-0 cursor-pointer transition-colors ${selected === i ? "bg-indigo-50/70" : "hover:bg-slate-50"}`}
+          >
             {row.map((cell, ci) => (
               <td key={ci} className={`px-3 py-2 text-[11px] font-medium text-slate-700 whitespace-nowrap ${columns[ci]?.align === "right" ? "text-right" : "text-left"}`}>
                 {typeof cell === "string"
@@ -151,10 +168,17 @@ export function DetailedTable({
 // (#3987e5, the "step 400" of the dataviz skill's sequential blue ramp),
 // not a Tailwind indigo shade.
 export function Bars({ values }: { values: number[] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
   return (
     <div className="flex items-end justify-center gap-[2px] h-20 px-1">
       {values.map((v, i) => (
-        <div key={i} className="flex-1 max-w-[24px] rounded-t" style={{ height: `${v}%`, backgroundColor: "#3987e5", minHeight: 2 }} />
+        <div
+          key={i}
+          onMouseEnter={() => setHovered(i)}
+          onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
+          className="flex-1 max-w-[24px] rounded-t cursor-pointer transition-opacity"
+          style={{ height: `${v}%`, backgroundColor: "#3987e5", minHeight: 2, opacity: hovered === null || hovered === i ? 1 : 0.45 }}
+        />
       ))}
     </div>
   );
@@ -344,8 +368,17 @@ export const AUTO_TIME_ENTRY_EXAMPLES = [
 // detail-level toggle) sitting above the entry list, same per-entry shape
 // (timekeeper initials, matter label, editable-looking description box,
 // hours pill, email count). Example content is real-sounding legal
-// drafting wording against real-shaped matter numbers.
+// drafting wording against real-shaped matter numbers. The scope and
+// detail-level toggles genuinely switch, and each entry is a real
+// checkbox -- unchecking one lowers "Submit N selected" the same way the
+// real panel does when you deselect an entry before submitting.
 export function MockAutoTimeEntries() {
+  const [scope, setScope] = useState<"mine" | "everyone">("mine");
+  const [detail, setDetail] = useState<"brief" | "standard" | "detailed">("detailed");
+  const [selected, setSelected] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(AUTO_TIME_ENTRY_EXAMPLES.map((e) => [e.matter, true]))
+  );
+  const selectedCount = Object.values(selected).filter(Boolean).length;
   return (
     <div className="w-full max-w-sm rounded-[20px] border border-slate-200 bg-white shadow-xl overflow-hidden">
       <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
@@ -356,44 +389,51 @@ export function MockAutoTimeEntries() {
       <div className="flex items-center gap-2 px-5 pt-3">
         <span className="px-3 py-1.5 border border-slate-200 rounded-full text-[10px] font-bold text-slate-600">22 Jul 2026</span>
         <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[9px] font-bold">
-          <span className="px-2.5 py-1 rounded-full bg-white text-indigo-600 shadow-sm">My day</span>
-          <span className="px-2.5 py-1 rounded-full text-slate-400">Everyone's day (Admin)</span>
+          <button onClick={() => setScope("mine")} className={`px-2.5 py-1 rounded-full transition-all ${scope === "mine" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>My day</button>
+          <button onClick={() => setScope("everyone")} className={`px-2.5 py-1 rounded-full transition-all ${scope === "everyone" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>Everyone's day (Admin)</button>
         </div>
       </div>
 
       <div className="flex items-center gap-2 px-5 pt-3">
         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Descriptions</span>
         <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[9px] font-bold">
-          <span className="px-2.5 py-1 rounded-full text-slate-400">Brief</span>
-          <span className="px-2.5 py-1 rounded-full text-slate-400">Standard</span>
-          <span className="px-2.5 py-1 rounded-full bg-white text-indigo-600 shadow-sm">Detailed</span>
+          {(["brief", "standard", "detailed"] as const).map((d) => (
+            <button key={d} onClick={() => setDetail(d)} className={`px-2.5 py-1 rounded-full capitalize transition-all ${detail === d ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+              {d}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="px-5 py-4 space-y-3">
         {AUTO_TIME_ENTRY_EXAMPLES.map((e) => (
-          <div key={e.matter} className="border border-slate-200 rounded-2xl p-3 space-y-2">
+          <button
+            key={e.matter}
+            onClick={() => setSelected((s) => ({ ...s, [e.matter]: !s[e.matter] }))}
+            className={`w-full text-left border rounded-2xl p-3 space-y-2 transition-colors ${selected[e.matter] ? "border-slate-200" : "border-slate-100 opacity-50"}`}
+          >
             <div className="flex items-center gap-2 flex-wrap">
+              <span className={`w-3.5 h-3.5 rounded border-2 shrink-0 transition-colors ${selected[e.matter] ? "border-indigo-500 bg-indigo-500" : "border-slate-300"}`} />
               <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-bold flex items-center justify-center shrink-0">{e.initials}</span>
               <span className="text-[10px] text-slate-400 font-medium">{e.date}</span>
               <span className="text-[10px] text-slate-400">·</span>
               <span className="text-[10px] font-bold text-slate-500">Matter: {e.matter}</span>
             </div>
             <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-slate-700">
-              {e.description}
+              {detail === "brief" ? e.description.split(".")[0] + "." : e.description}
             </div>
             <div className="flex items-center gap-2">
               <span className="bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1 text-[11px] font-bold text-slate-700">{e.hours}</span>
               <span className="text-[10px] text-slate-400 font-medium">hours</span>
               <span className="ml-auto text-[10px] font-bold text-indigo-500">{e.emails} email{e.emails !== 1 ? "s" : ""}</span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
       <div className="px-5 py-4 border-t border-slate-100">
         <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold">
-          Submit 5 selected
+          Submit {selectedCount} selected
         </div>
       </div>
     </div>
@@ -442,15 +482,62 @@ export function MockTrustAccount() {
 // (This week / This month / All time -- Custom omitted, it swaps to a
 // date-range picker rather than showing more data), and the real 5-column
 // table (Staff, Entries, Hours, Billable hours, Amount) with its totals
-// footer.
+// footer. Switching presets is real -- each one is a genuinely smaller/
+// larger slice of the same underlying rows (this week is a subset of this
+// month, all time adds more), not just a highlight change with frozen
+// numbers.
+type FeesPreset = "week" | "month" | "all";
+const FEES_REPORT_DATA: Record<FeesPreset, { subtitle: string; rows: Cell[][]; footer: string[] }> = {
+  week: {
+    subtitle: "Time recorded per staff member · 2026-07-27 to 2026-07-31",
+    rows: [
+      ["Sarah Lee", "14", "9.0", "8.0", "$3,300"],
+      ["Jono Ferreira", "12", "7.5", "6.5", "$2,270"],
+      ["Priya Shah", "9", "6.0", "5.5", "$1,940"],
+      ["Tom Walsh", "7", "4.5", "4.0", "$1,440"],
+      ["Aisha Khan", "6", "3.5", "3.0", "$1,050"],
+    ],
+    footer: ["Total", "48", "30.5", "27.0", "$10,000"],
+  },
+  month: {
+    subtitle: "Time recorded per staff member · 2026-07-01 to 2026-07-31",
+    rows: [
+      ["Sarah Lee", "62", "38.5", "35.0", "$14,250"],
+      ["Jono Ferreira", "54", "31.0", "28.5", "$9,920"],
+      ["Priya Shah", "41", "27.5", "24.0", "$8,470"],
+      ["Tom Walsh", "33", "19.0", "17.0", "$6,180"],
+      ["Aisha Khan", "28", "14.5", "13.0", "$4,930"],
+    ],
+    footer: ["Total", "218", "130.5", "117.5", "$43,750"],
+  },
+  all: {
+    subtitle: "Time recorded per staff member · all time",
+    rows: [
+      ["Sarah Lee", "410", "256.0", "231.5", "$94,600"],
+      ["Jono Ferreira", "365", "221.0", "199.0", "$68,200"],
+      ["Priya Shah", "298", "184.5", "165.0", "$56,900"],
+      ["Tom Walsh", "252", "148.0", "131.5", "$45,300"],
+      ["Aisha Khan", "201", "112.5", "99.5", "$36,100"],
+    ],
+    footer: ["Total", "1,526", "922.0", "826.5", "$301,100"],
+  },
+};
 export function MockFeesReport() {
+  const [preset, setPreset] = useState<FeesPreset>("month");
+  const data = FEES_REPORT_DATA[preset];
   return (
     <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
-      <IconHeader icon={Clock} tint="bg-indigo-50" iconColor="text-indigo-700" title="Time & Fees Report" subtitle="Time recorded per staff member · 2026-07-01 to 2026-07-31" />
+      <IconHeader icon={Clock} tint="bg-indigo-50" iconColor="text-indigo-700" title="Time & Fees Report" subtitle={data.subtitle} />
       <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[10px] font-bold w-fit mb-3">
-        <span className="px-3 py-1.5 rounded-full text-slate-400">This week</span>
-        <span className="px-3 py-1.5 rounded-full bg-white text-indigo-600 shadow-sm">This month</span>
-        <span className="px-3 py-1.5 rounded-full text-slate-400">All time</span>
+        {([["week", "This week"], ["month", "This month"], ["all", "All time"]] as const).map(([key, lbl]) => (
+          <button
+            key={key}
+            onClick={() => setPreset(key)}
+            className={`px-3 py-1.5 rounded-full transition-all ${preset === key ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            {lbl}
+          </button>
+        ))}
       </div>
       <div className="rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
         <DetailedTable
@@ -458,20 +545,8 @@ export function MockFeesReport() {
             { label: "Staff" }, { label: "Entries", align: "right" }, { label: "Hours", align: "right" },
             { label: "Billable hours", align: "right" }, { label: "Amount", align: "right" },
           ]}
-          rows={[
-            ["Sarah Lee", "62", "38.5", "35.0", "$14,250"],
-            ["Jono Ferreira", "54", "31.0", "28.5", "$9,920"],
-            ["Priya Shah", "41", "27.5", "24.0", "$8,470"],
-            ["Tom Walsh", "33", "19.0", "17.0", "$6,180"],
-            ["Aisha Khan", "28", "14.5", "13.0", "$4,930"],
-          ]}
-          footer={[
-            { text: "Total" },
-            { text: "218", align: "right" },
-            { text: "130.5", align: "right" },
-            { text: "117.5", align: "right" },
-            { text: "$43,750", align: "right" },
-          ]}
+          rows={data.rows}
+          footer={data.footer.map((text, i) => ({ text, align: i === 0 ? undefined : "right" as const }))}
         />
       </div>
     </div>
@@ -485,7 +560,10 @@ export function MockFeesReport() {
 // (not a doc-type pill -- that's the separate library-browser screen, not
 // this one), the conditional "Check before use" warning, and the real
 // "Issue" button (px-4 py-2, FileOutput icon at size 13).
+// Chevron genuinely collapses the category, same as the real precedent
+// library's category cards.
 export function MockPrecedents() {
+  const [open, setOpen] = useState(true);
   const items = [
     { name: "Contract of Sale", jurisdiction: "VIC", prepared: "12/03/2026", warn: true, desc: "Standard residential contract, general conditions" },
     { name: "Discretionary Trust Deed", jurisdiction: null, prepared: "04/06/2026", warn: false, desc: "Discretionary trust deed template" },
@@ -495,11 +573,12 @@ export function MockPrecedents() {
   ];
   return (
     <div className="w-full max-w-sm rounded-[24px] border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="flex items-center gap-2 px-5 py-3.5">
-        <ChevronDown size={13} className="text-slate-400" />
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-5 py-3.5 text-left">
+        <ChevronDown size={13} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
         <span className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Property</span>
         <span className="text-[10px] text-slate-400 ml-auto">{items.length}</span>
-      </div>
+      </button>
+      {open && (
       <div className="px-3 pb-3 space-y-1.5">
         {items.map((p) => (
           <div key={p.name} className="flex items-center gap-3 p-3.5 bg-slate-50/60 rounded-[18px]">
@@ -527,6 +606,7 @@ export function MockPrecedents() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -592,36 +672,47 @@ const CLIENT_CARD_COLORS = {
   red: "border-l-red-400 bg-red-50/40",
 } as const;
 
+const CLIENT_UPDATE_CARDS: { color: keyof typeof CLIENT_CARD_COLORS; matter: string; summary?: string; stage: string; settlementDate: string }[] = [
+  { color: "amber", matter: "2024/0201 — Nguyen Trust Deed", stage: "Awaiting execution", settlementDate: "—" },
+  { color: "blue", matter: "2024/0212 — 88 Riverside Ave", summary: "Contract exchanged; awaiting finance approval before booking settlement.", stage: "Pre-settlement", settlementDate: "14 Aug 2026" },
+  { color: "emerald", matter: "2024/0187 — Smith Family Trust", stage: "Trustee resolution pending", settlementDate: "—" },
+  { color: "purple", matter: "2024/0225 — Walsh Discretionary Trust", stage: "Drafting", settlementDate: "—" },
+  { color: "red", matter: "2024/0164 — Harbord Property Co.", stage: "Settled", settlementDate: "2 Jul 2026" },
+];
+// Card body expands on click, same accordion-style behavior as the real
+// client update board -- the blue card starts expanded since that's the
+// one with an ai_summary line worth showing by default.
 export function MockClientUpdates() {
-  const cards: { color: keyof typeof CLIENT_CARD_COLORS; matter: string; summary?: string; expanded?: boolean }[] = [
-    { color: "amber", matter: "2024/0201 — Nguyen Trust Deed" },
-    { color: "blue", matter: "2024/0212 — 88 Riverside Ave", summary: "Contract exchanged; awaiting finance approval before booking settlement.", expanded: true },
-    { color: "emerald", matter: "2024/0187 — Smith Family Trust" },
-    { color: "purple", matter: "2024/0225 — Walsh Discretionary Trust" },
-    { color: "red", matter: "2024/0164 — Harbord Property Co." },
-  ];
+  const [expanded, setExpanded] = useState<string | null>("2024/0212 — 88 Riverside Ave");
   return (
     <div className="w-full max-w-sm space-y-2.5">
-      {cards.map((c) => (
-        <div key={c.matter} className={`border rounded-2xl border-l-4 ${CLIENT_CARD_COLORS[c.color]} border-y-slate-200 border-r-slate-200 overflow-hidden`}>
-          <div className={c.expanded ? "px-4 py-3 border-b border-slate-100" : "px-4 py-3"}>
-            <p className="text-[12px] font-medium text-slate-700">{c.matter}</p>
-            {c.summary && <p className="text-[11px] text-slate-400 italic mt-0.5">{c.summary}</p>}
-          </div>
-          {c.expanded && (
-            <div className="px-4 py-4 grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Stage</p>
-                <p className="text-[12px] font-medium text-slate-700">Pre-settlement</p>
-              </div>
-              <div>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Settlement date</p>
-                <p className="text-[12px] font-medium text-slate-700">14 Aug 2026</p>
-              </div>
+      {CLIENT_UPDATE_CARDS.map((c) => {
+        const isExpanded = expanded === c.matter;
+        return (
+          <button
+            key={c.matter}
+            onClick={() => setExpanded((e) => (e === c.matter ? null : c.matter))}
+            className={`w-full text-left border rounded-2xl border-l-4 ${CLIENT_CARD_COLORS[c.color]} border-y-slate-200 border-r-slate-200 overflow-hidden`}
+          >
+            <div className={isExpanded ? "px-4 py-3 border-b border-slate-100" : "px-4 py-3"}>
+              <p className="text-[12px] font-medium text-slate-700">{c.matter}</p>
+              {c.summary && <p className="text-[11px] text-slate-400 italic mt-0.5">{c.summary}</p>}
             </div>
-          )}
-        </div>
-      ))}
+            {isExpanded && (
+              <div className="px-4 py-4 grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Stage</p>
+                  <p className="text-[12px] font-medium text-slate-700">{c.stage}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Settlement date</p>
+                  <p className="text-[12px] font-medium text-slate-700">{c.settlementDate}</p>
+                </div>
+              </div>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -633,37 +724,49 @@ export function MockClientUpdates() {
 // real status badges (Watching, Follow-up scheduled, Blocked by N tasks),
 // and a due-date column -- not the plain 3-column table this mockup used
 // to show, which was closer to the separate internal admin tasks table.
+// Unlocked rows genuinely toggle done/not-done on click; the locked row
+// stays locked no matter what's clicked -- that's the real point of the
+// dependency lock, not a bug in this mockup.
+const TASK_ROWS: { key: string; locked: boolean; name: string; badge?: string; matter: string; due: string; dueColor: TagColor }[] = [
+  { key: "title-search", locked: false, name: "Order title search", matter: "2024/0212", due: "Today", dueColor: "amber" },
+  { key: "draft-contract", locked: true, name: "Draft contract", badge: "Blocked by 2 tasks", matter: "2024/0187", due: "23 Jul", dueColor: "indigo" },
+  { key: "engagement-letter", locked: false, name: "Send engagement letter", badge: "Watching", matter: "2024/0201", due: "Done", dueColor: "emerald" },
+  { key: "ppsr", locked: false, name: "Review PPSR", badge: "Follow-up scheduled", matter: "2024/0164", due: "24 Jul", dueColor: "indigo" },
+  { key: "trustee-resolution", locked: false, name: "Prepare trustee resolution", matter: "2024/0225", due: "25 Jul", dueColor: "indigo" },
+];
 export function MockTasks() {
-  const rows: { done: boolean; locked: boolean; name: string; badge?: string; matter: string; due: string; dueColor: TagColor }[] = [
-    { done: false, locked: false, name: "Order title search", matter: "2024/0212", due: "Today", dueColor: "amber" },
-    { done: false, locked: true, name: "Draft contract", badge: "Blocked by 2 tasks", matter: "2024/0187", due: "23 Jul", dueColor: "indigo" },
-    { done: true, locked: false, name: "Send engagement letter", badge: "Watching", matter: "2024/0201", due: "Done", dueColor: "emerald" },
-    { done: false, locked: false, name: "Review PPSR", badge: "Follow-up scheduled", matter: "2024/0164", due: "24 Jul", dueColor: "indigo" },
-    { done: false, locked: false, name: "Prepare trustee resolution", matter: "2024/0225", due: "25 Jul", dueColor: "indigo" },
-  ];
+  const [done, setDone] = useState<Record<string, boolean>>({ "engagement-letter": true });
   return (
     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="px-4 py-2.5 border-b border-slate-100">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tasks — My tasks</span>
       </div>
       <div>
-        {rows.map((r, i) => (
-          <div key={r.name} className={`flex items-center gap-3 px-4 py-3 ${i < rows.length - 1 ? "border-b border-slate-50" : ""}`}>
-            {r.locked ? (
-              <Lock size={14} className="text-slate-300 shrink-0" />
-            ) : (
-              <span className={`w-4 h-4 rounded-full border-2 shrink-0 ${r.done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`} />
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className={`text-[12px] font-medium ${r.done ? "line-through text-slate-400" : "text-slate-700"}`}>{r.name}</span>
-                {r.badge && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 whitespace-nowrap">{r.badge}</span>}
+        {TASK_ROWS.map((r, i) => {
+          const isDone = !!done[r.key];
+          return (
+            <button
+              key={r.key}
+              disabled={r.locked}
+              onClick={() => setDone((d) => ({ ...d, [r.key]: !d[r.key] }))}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${i < TASK_ROWS.length - 1 ? "border-b border-slate-50" : ""} ${r.locked ? "cursor-not-allowed" : "hover:bg-slate-50"}`}
+            >
+              {r.locked ? (
+                <Lock size={14} className="text-slate-300 shrink-0" />
+              ) : (
+                <span className={`w-4 h-4 rounded-full border-2 shrink-0 transition-colors ${isDone ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`} />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[12px] font-medium ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>{r.name}</span>
+                  {r.badge && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 whitespace-nowrap">{r.badge}</span>}
+                </div>
+                <span className="text-[10px] text-slate-400">{r.matter}</span>
               </div>
-              <span className="text-[10px] text-slate-400">{r.matter}</span>
-            </div>
-            <span className={`text-[10px] font-bold shrink-0 px-2 py-0.5 rounded-full ${TAG[r.dueColor]}`}>{r.due}</span>
-          </div>
-        ))}
+              <span className={`text-[10px] font-bold shrink-0 px-2 py-0.5 rounded-full ${TAG[isDone ? "emerald" : r.dueColor]}`}>{isDone ? "Done" : r.due}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -815,8 +918,18 @@ export function MockGmailLabels() {
 // line (same dealing number, or same date+description+amount already on
 // this matter) defaulting to EXCLUDED and flagged rather than hidden, and
 // an unmatched matter number shown but disabled -- never guessed or
-// auto-created.
+// auto-created. Checkboxes are real: toggling one updates the line count
+// and ex-GST total in the footer, exactly like the real review screen.
+const DISBURSEMENT_LINES = [
+  { key: "title-search", label: "Title search fee", amount: 45, duplicate: false, defaultChecked: true },
+  { key: "voi-check", label: "VOI check", amount: 12, duplicate: true, defaultChecked: false },
+];
 export function MockDisbursementsImport() {
+  const [checked, setChecked] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(DISBURSEMENT_LINES.map((l) => [l.key, l.defaultChecked]))
+  );
+  const selectedLines = DISBURSEMENT_LINES.filter((l) => checked[l.key]);
+  const total = selectedLines.reduce((sum, l) => sum + l.amount, 0);
   return (
     <div className="w-full max-w-sm rounded-[20px] border border-slate-200 bg-white shadow-xl overflow-hidden">
       <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
@@ -830,19 +943,22 @@ export function MockDisbursementsImport() {
             <span className="text-[11px] font-bold text-slate-700 truncate">2024/0187 — Smith Family Trust</span>
           </div>
           <div className="divide-y divide-slate-50">
-            <div className="flex items-center gap-2 px-4 py-2.5 text-[11px] text-slate-700">
-              <span className="w-3.5 h-3.5 rounded border-2 border-indigo-500 bg-indigo-500 shrink-0" />
-              <span className="flex-1 truncate">Title search fee</span>
-              <span className="text-slate-500 shrink-0">$45.00</span>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50/60 text-[11px] text-slate-700">
-              <span className="w-3.5 h-3.5 rounded border-2 border-slate-300 shrink-0" />
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[8px] font-bold uppercase shrink-0">
-                <CopyX size={9} /> Duplicate
-              </span>
-              <span className="flex-1 truncate">VOI check</span>
-              <span className="text-slate-500 shrink-0">$12.00</span>
-            </div>
+            {DISBURSEMENT_LINES.map((line) => (
+              <button
+                key={line.key}
+                onClick={() => setChecked((c) => ({ ...c, [line.key]: !c[line.key] }))}
+                className={`w-full flex items-center gap-2 px-4 py-2.5 text-[11px] text-slate-700 text-left transition-colors ${line.duplicate ? "bg-amber-50/60 hover:bg-amber-50" : "hover:bg-slate-50"}`}
+              >
+                <span className={`w-3.5 h-3.5 rounded border-2 shrink-0 transition-colors ${checked[line.key] ? "border-indigo-500 bg-indigo-500" : "border-slate-300"}`} />
+                {line.duplicate && (
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[8px] font-bold uppercase shrink-0">
+                    <CopyX size={9} /> Duplicate
+                  </span>
+                )}
+                <span className="flex-1 truncate">{line.label}</span>
+                <span className="text-slate-500 shrink-0">${line.amount.toFixed(2)}</span>
+              </button>
+            ))}
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 px-4 py-2.5 border border-amber-200 bg-amber-50/40 rounded-2xl">
@@ -854,8 +970,8 @@ export function MockDisbursementsImport() {
         </div>
       </div>
       <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
-        <span className="text-[10px] text-slate-400">1 line · $45.00 ex GST</span>
-        <span className="px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full whitespace-nowrap">Add 1 disbursement</span>
+        <span className="text-[10px] text-slate-400">{selectedLines.length} line{selectedLines.length === 1 ? "" : "s"} · ${total.toFixed(2)} ex GST</span>
+        <span className="px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full whitespace-nowrap">Add {selectedLines.length} disbursement{selectedLines.length === 1 ? "" : "s"}</span>
       </div>
     </div>
   );
@@ -879,32 +995,140 @@ export function MockAiSafety() {
   );
 }
 
+const MARKETPLACE_TEMPLATES: { key: string; icon: LucideIcon; color: string; name: string; industry: string }[] = [
+  { key: "law-firm", icon: Landmark, color: "#6366f1", name: "Law Firm", industry: "Legal" },
+  { key: "property", icon: Building2, color: "#0ea5e9", name: "Property Development", industry: "Property" },
+  { key: "sales", icon: Store, color: "#10b981", name: "Sales Pipeline", industry: "General" },
+];
 // Recreates the real Template marketplace (app/(app)/dashboard/marketplace/
 // page.tsx): the same icon-chip card, industry tag, and Install button as
 // the live "browse" list. The three templates shown here are meant to make
 // the point that the marketplace spans industries, not just the Law Firm
-// and Property Development templates that exist today.
+// and Property Development templates that exist today. Install genuinely
+// toggles to "Installed" on click, same as the real button flipping to
+// Update/Uninstall once a template is actually on your company.
+// Recreates the real Quick Glance landing page for law firms
+// (components/dashboard/quickGlance/LawFirmQuickGlance.tsx): the same
+// three trust stat cards (Trust balance, Dormant trust 90+ days, Matters
+// with trust) plus the Old Time aging widget
+// (components/dashboard/TimeAgingReportWidget.tsx) -- same Times/Matters
+// toggle and real "Older than 5d/10d/15d/30d" quick filter, amber-800
+// highlight on the active option, both genuinely changing which rows
+// show (the filter narrows the same underlying list, it isn't just a
+// highlight swap).
+type AgingItem = { matter: string; staff: string; date: string; hours: number; days: number };
+const QUICK_GLANCE_ITEMS: AgingItem[] = [
+  { matter: "2024/0225", staff: "Aisha Khan", date: "12 Jun", hours: 0.3, days: 42 },
+  { matter: "2024/0164", staff: "Priya Shah", date: "19 Jun", hours: 0.4, days: 35 },
+  { matter: "2024/0201", staff: "Jono Ferreira", date: "5 Jul", hours: 0.2, days: 18 },
+  { matter: "2024/0187", staff: "Sarah Lee", date: "11 Jul", hours: 0.3, days: 12 },
+  { matter: "2024/0212", staff: "Tom Walsh", date: "17 Jul", hours: 0.2, days: 6 },
+];
+const AGING_OPTIONS = [5, 10, 15, 30] as const;
+
+export function MockQuickGlance() {
+  const [view, setView] = useState<"times" | "matters">("times");
+  const [olderThan, setOlderThan] = useState<(typeof AGING_OPTIONS)[number]>(30);
+  const items = QUICK_GLANCE_ITEMS.filter((i) => i.days >= olderThan);
+  const matterRows = Object.values(
+    items.reduce<Record<string, { matter: string; entries: number; hours: number; days: number }>>((acc, it) => {
+      const existing = acc[it.matter];
+      if (existing) { existing.entries += 1; existing.hours += it.hours; }
+      else acc[it.matter] = { matter: it.matter, entries: 1, hours: it.hours, days: it.days };
+      return acc;
+    }, {})
+  );
+
+  return (
+    <div className="w-full max-w-lg space-y-3">
+      <div className="grid grid-cols-3 gap-2.5">
+        <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-2xl px-3 py-2.5">
+          <div className="h-8 w-8 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0"><Landmark size={14} /></div>
+          <div className="min-w-0">
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate">Trust balance</p>
+            <p className="text-[13px] font-bold text-slate-900 truncate">$38,735</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-2xl px-3 py-2.5">
+          <div className="h-8 w-8 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center shrink-0"><AlertTriangle size={14} /></div>
+          <div className="min-w-0">
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate">Dormant trust</p>
+            <p className="text-[13px] font-bold text-rose-600 truncate">2</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-2xl px-3 py-2.5">
+          <div className="h-8 w-8 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0"><Users size={14} /></div>
+          <div className="min-w-0">
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate">Matters w/ trust</p>
+            <p className="text-[13px] font-bold text-slate-900 truncate">7</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-slate-200 rounded-2xl bg-white p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <IconHeader icon={AlertTriangle} tint="bg-amber-50" iconColor="text-amber-700" title={`Old Time (${olderThan}+ days unbilled)`} subtitle="Time not yet invoiced, oldest first" />
+          <div className="flex items-center bg-slate-100 rounded-full p-0.5 text-[10px] font-bold">
+            <button onClick={() => setView("times")} className={`px-3 py-1.5 rounded-full transition-all ${view === "times" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>Times</button>
+            <button onClick={() => setView("matters")} className={`px-3 py-1.5 rounded-full transition-all ${view === "matters" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>Matters</button>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 mb-3">
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Older than</span>
+          {AGING_OPTIONS.map((d) => (
+            <button
+              key={d}
+              onClick={() => setOlderThan(d)}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${olderThan === d ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+        <div className="rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
+          {view === "times" ? (
+            <DetailedTable
+              columns={[{ label: "Matter" }, { label: "Staff" }, { label: "Hours", align: "right" }, { label: "Days unbilled", align: "right" }]}
+              rows={items.map((i) => [i.matter, i.staff, i.hours.toFixed(1), { text: `${i.days}`, badge: "amber" as const }])}
+            />
+          ) : (
+            <DetailedTable
+              columns={[{ label: "Matter" }, { label: "Entries", align: "right" }, { label: "Hours", align: "right" }, { label: "Days unbilled", align: "right" }]}
+              rows={matterRows.map((m) => [m.matter, String(m.entries), m.hours.toFixed(1), { text: `${m.days}`, badge: "amber" as const }])}
+            />
+          )}
+          {items.length === 0 && <p className="text-center py-6 text-[11px] text-slate-300 italic">Nothing unbilled past {olderThan} days</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MockMarketplace() {
-  const templates: { icon: LucideIcon; color: string; name: string; industry: string }[] = [
-    { icon: Landmark, color: "#6366f1", name: "Law Firm", industry: "Legal" },
-    { icon: Building2, color: "#0ea5e9", name: "Property Development", industry: "Property" },
-    { icon: Store, color: "#10b981", name: "Sales Pipeline", industry: "General" },
-  ];
+  const [installed, setInstalled] = useState<Record<string, boolean>>({});
   return (
     <WidgetCard label="Marketplace">
       <div className="space-y-2.5">
-        {templates.map((t) => (
-          <div key={t.name} className="flex items-center gap-3 rounded-2xl bg-slate-50 px-3.5 py-2.5">
-            <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${t.color}20` }}>
-              <t.icon size={15} style={{ color: t.color }} />
+        {MARKETPLACE_TEMPLATES.map((t) => {
+          const isInstalled = !!installed[t.key];
+          return (
+            <div key={t.key} className="flex items-center gap-3 rounded-2xl bg-slate-50 px-3.5 py-2.5">
+              <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${t.color}20` }}>
+                <t.icon size={15} style={{ color: t.color }} />
+              </div>
+              <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                <span className="text-[12px] font-bold text-slate-700 truncate">{t.name}</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase px-1.5 py-0.5 bg-white rounded-full shrink-0">{t.industry}</span>
+              </div>
+              <button
+                onClick={() => setInstalled((s) => ({ ...s, [t.key]: !s[t.key] }))}
+                className={`flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold rounded-full shrink-0 transition-colors ${isInstalled ? "bg-emerald-50 text-emerald-600" : "bg-indigo-600 text-white"}`}
+              >
+                {isInstalled && <Check size={10} />} {isInstalled ? "Installed" : "Install"}
+              </button>
             </div>
-            <div className="flex-1 min-w-0 flex items-center gap-1.5">
-              <span className="text-[12px] font-bold text-slate-700 truncate">{t.name}</span>
-              <span className="text-[8px] font-bold text-slate-400 uppercase px-1.5 py-0.5 bg-white rounded-full shrink-0">{t.industry}</span>
-            </div>
-            <span className="px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full shrink-0">Install</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </WidgetCard>
   );
@@ -918,6 +1142,7 @@ export const MOCKUPS = {
   reporting: MockReporting,
   aiSafety: MockAiSafety,
   marketplace: MockMarketplace,
+  quickGlance: MockQuickGlance,
   matterBoard: MockMatterBoard,
   timeEntries: MockTimeEntries,
   autoTimeEntries: MockAutoTimeEntries,
