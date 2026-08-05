@@ -18,6 +18,7 @@ export interface GenerateTrustPaymentPdfInput {
     paymentNumber: string;
     date: string | null;
     payTo: string | null;
+    payeeAddress: string | null;
     amount: number;
     paymentType: string | null;
     transferType: string | null;
@@ -98,6 +99,11 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
   y -= 14;
   text(input.payment.payTo || '—', MARGIN, 12, { bold: true }, y);
   y -= 14;
+
+  if (input.payment.payeeAddress) {
+    text(input.payment.payeeAddress, MARGIN, 10, { color: [0.4, 0.4, 0.45] }, y);
+    y -= 14;
+  }
 
   if (input.payment.reason) {
     y -= 8;

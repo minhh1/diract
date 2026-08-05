@@ -19,6 +19,13 @@ import PdfPreviewModal from "../dashboard/PdfPreviewModal";
 const PAYMENT_TYPES = ['Bank Cheque', 'Bank Transfer', 'Direct Debit', 'Trust Cheque'];
 const TRANSFER_TYPES = ['Direct Deposit', 'BPAY'];
 
+// PEXA's registered legal entity + address, for the "PEXA Direct Debit"
+// quick-fill below -- the recurring PEXA settlement-fee direct debit is
+// common enough on a conveyancing trust account to be worth a one-click
+// autofill rather than retyping it every time.
+const PEXA_PAYEE_NAME = 'Property Exchange Australia Ltd';
+const PEXA_PAYEE_ADDRESS = 'Tower 4, Level 16, Collins Square, 727 Collins Street, Docklands VIC 3008';
+
 function money(n: number): string {
   return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
 }
@@ -41,6 +48,9 @@ export default function TrustPaymentModal({
   const [matterId, setMatterId] = useState<string | null>(fixedMatterId ?? null);
   const [payToId, setPayToId] = useState<string | null>(null);
   const [payToLabel, setPayToLabel] = useState<string | null>(null);
+  const [payToPickerKey, setPayToPickerKey] = useState(0);
+  const [payeeAddress, setPayeeAddress] = useState('');
+  const [pexaDirectDebit, setPexaDirectDebit] = useState(false);
   const [amount, setAmount] = useState('');
   const [paymentType, setPaymentType] = useState(PAYMENT_TYPES[1]); // 'Bank Transfer' -- most common
   const [transferType, setTransferType] = useState(TRANSFER_TYPES[0]);
@@ -56,6 +66,21 @@ export default function TrustPaymentModal({
   const [processedNumber, setProcessedNumber] = useState<string | null>(null);
 
   const isEft = paymentType === 'Bank Transfer' || paymentType === 'Direct Debit';
+
+  // bumping payToPickerKey forces RelationPicker to remount so its
+  // initialLabel-seeded internal state picks up the new label -- it only
+  // reads initialLabel on mount (see RelationPicker.tsx), not on every
+  // prop change, since it otherwise treats its own currentLabel as the
+  // source of truth once a user has typed/selected something.
+  const handlePexaToggle = (checked: boolean) => {
+    setPexaDirectDebit(checked);
+    if (!checked) return;
+    setPayToId(null);
+    setPayToLabel(PEXA_PAYEE_NAME);
+    setPayeeAddress(PEXA_PAYEE_ADDRESS);
+    setPaymentType('Direct Debit');
+    setPayToPickerKey(k => k + 1);
+  };
 
   // Matter's current balance -- same running-balance math
   // insert_ledger_record() does server-side (sum of amount_in - amount_out
@@ -92,6 +117,7 @@ export default function TrustPaymentModal({
     const result = await createCustomRecord(trustTable.tableDef.id, companyId, userId, {
       date, trust_account: accountId, type: ledgerTypeFor(paymentType), payment_method: paymentType,
       matter: matterId, payor_payee: payToLabel, purpose: reason.trim() || undefined,
+      payee_address: payeeAddress.trim() || undefined,
       amount_out: amt,
       transfer_type: isEft ? transferType : undefined,
       account_name: accountName.trim() || undefined,
@@ -160,9 +186,20 @@ export default function TrustPaymentModal({
           </div>
           <div>
             <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Paid to</label>
-            <RelationPicker linkedSystemTable="entities" displayField="name" value={payToId}
+            <RelationPicker key={payToPickerKey} linkedSystemTable="entities" displayField="name" value={payToId} initialLabel={payToLabel ?? undefined}
               onSelect={(id, label) => { setPayToId(id); setPayToLabel(label); }} placeholder="Select a contact..." allowCreateEntity />
           </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-[11px] font-medium text-slate-500 cursor-pointer">
+          <input type="checkbox" checked={pexaDirectDebit} onChange={e => handlePexaToggle(e.target.checked)} className="rounded" />
+          PEXA Direct Debit — auto-fill payee as {PEXA_PAYEE_NAME}
+        </label>
+
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Payee address</label>
+          <input value={payeeAddress} onChange={e => setPayeeAddress(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" placeholder="Optional" />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

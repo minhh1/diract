@@ -74,6 +74,7 @@ export async function hydrateTrustPaymentForRender(
     company: { name: company?.name || '', abn: company?.abn || null, address: invoiceSettings.firmAddress || null, logoBytes, logoIsPng },
     payment: {
       paymentNumber, date: values.date || null, payTo: values.payor_payee || null,
+      payeeAddress: values.payee_address || null,
       amount: Number(values.amount_out) || 0, paymentType: values.payment_method || null,
       transferType: values.transfer_type || null, accountName: values.account_name || null,
       bsb: values.payee_bsb || null, accountNumber: values.account_number || null,

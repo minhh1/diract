@@ -447,6 +447,12 @@ BEGIN
     SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = v.field_key
   );
 
+  -- Payee Address -- see supabase/migrations/20260805100000_trust_payment_payee_address.sql.
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, display_order)
+  SELECT v_trust_table_id, 'payee_address', 'Payee Address', 'text', 26
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_trust_table_id AND field_key = 'payee_address');
+
   -- ── Client Credits (operating-side ledger -- NOT trust; client credit
   -- balances / overpayments against invoices, entirely separate account) ──
   INSERT INTO template_definition_tables (template_id, slug, name, icon, color, primary_field_key, display_order, is_ledger)
