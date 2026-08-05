@@ -257,6 +257,17 @@ export default function RecordDashboard({
     const hasMatchingInitialData = !!initialRecord && initialRecord.id === recordId;
     if (!hasMatchingInitialData) setLoading(true);
     setTabsLoaded(false);
+    // Defense in depth, not load-bearing today: every call site that opens
+    // a record gives RecordDashboard a `key={id}` (see app/(app)/dashboard/
+    // */page.tsx), so a genuinely different record already gets a brand
+    // new component instance with fresh state, not this one reused --
+    // visitedTabIds could never actually carry a stale record's tab ids
+    // into a new one's `tabs` array (record_tabs.id is a globally unique
+    // uuid, never shared across records). Reset explicitly anyway so that
+    // invariant isn't the only thing standing between two records' tab
+    // content, in case a future call site ever reuses this instance
+    // without a key.
+    setVisitedTabIds(new Set());
     perfLogPageStart('record', perfName);
 
     // companyId/isAdmin are already resolved once per session by
