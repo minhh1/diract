@@ -76,17 +76,33 @@ export function findHostedModel(id: string): HostedModel | undefined {
   return HOSTED_MODELS.find((m) => m.id === id);
 }
 
+// Claude models called directly (not through Together) -- e.g.
+// lib/disbursementInvoiceParser.ts / lib/genericInvoiceParser.ts's PDF
+// document-input extraction, which needs Claude's native PDF support (no
+// Together/Ollama model has one). Materially pricier than the hosted
+// catalog above ($5/$25 per MTok vs ~$1.74/$3.48 for the table-builder
+// chat's own DeepSeek V4 Pro) -- real cost, not billed at the flat
+// self-hosted service fee.
+export const ANTHROPIC_MODELS: Record<string, { inputUsdPer1kTokens: number; outputUsdPer1kTokens: number }> = {
+  "claude-opus-4-8": { inputUsdPer1kTokens: 0.005, outputUsdPer1kTokens: 0.025 },
+};
+
 // Shared by app/api/ai/chat/route.ts and app/api/teams/bot/[companyId]/route.ts
 // -- self-hosted usage has no real per-token provider cost, so it's billed
 // at a flat platform service fee instead (see PLATFORM_AI_SERVICE_FEE_USD_PER_1K_TOKENS
 // in lib/billing/plans.ts).
 export function costUsd(
-  provider: "hosted" | "self_hosted",
+  provider: "hosted" | "self_hosted" | "anthropic",
   modelId: string,
   usage: { inputTokens: number; outputTokens: number }
 ): number {
   if (provider === "self_hosted") {
     return ((usage.inputTokens + usage.outputTokens) / 1000) * PLATFORM_AI_SERVICE_FEE_USD_PER_1K_TOKENS;
+  }
+  if (provider === "anthropic") {
+    const model = ANTHROPIC_MODELS[modelId];
+    if (!model) return 0;
+    return (usage.inputTokens / 1000) * model.inputUsdPer1kTokens + (usage.outputTokens / 1000) * model.outputUsdPer1kTokens;
   }
   const model = findHostedModel(modelId);
   if (!model) return 0;

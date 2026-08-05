@@ -22,8 +22,11 @@ import { createWidget } from "@/lib/dashboardWidgets/defaults";
 import type { DashboardWidget, DashboardWidgetType } from "@/lib/dashboardWidgets/types";
 import type { ToolSchema } from "@/lib/ai/modelCall";
 
-const FIELD_TYPES = ["text", "number", "date", "boolean", "select", "email", "url", "currency"] as const;
+const FIELD_TYPES = ["text", "number", "date", "boolean", "select", "email", "url", "currency", "table_relation"] as const;
 type FieldType = (typeof FIELD_TYPES)[number];
+
+const FORMULA_TYPES = ["multiply", "percentage_of", "add", "sum_related", "max_related"] as const;
+type FormulaType = (typeof FORMULA_TYPES)[number];
 
 // The 7 general-purpose widget types -- deliberately excludes the 13
 // industry-specific ones (trust_*, finance_model_*, residual_land_solver,
@@ -86,16 +89,33 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
   },
   {
     name: "create_field",
-    description: "Add a field/column to a table (from create_table or list_existing_tables). Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this field.",
+    description: "Add a field/column to a table (from create_table or list_existing_tables). Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this field. Can also create a COMPUTED field (see formula_type) instead of a plain typed-in one -- see the formula_* params.",
     input_schema: {
       type: "object",
       properties: {
         table_id: { type: "string" },
         label: { type: "string", description: "Field label, e.g. 'Amount Due'." },
-        field_type: { type: "string", enum: [...FIELD_TYPES] },
+        field_type: { type: "string", enum: [...FIELD_TYPES], description: "'table_relation' links this field to another table's records -- pair it with relation_table_id." },
         select_options: { type: "array", items: { type: "string" }, description: "Only for field_type 'select' -- the list of choices, e.g. ['Draft','Sent','Paid']." },
         is_required: { type: "boolean" },
         help_text: { type: "string" },
+        relation_table_id: { type: "string", description: "Required when field_type is 'table_relation' -- the id (from create_table/list_existing_tables) of the table this field links to." },
+        formula_type: {
+          type: "string",
+          enum: [...FORMULA_TYPES],
+          description:
+            "Makes this field auto-computed instead of typed-in -- field_type should be 'number' or 'currency'. " +
+            "'multiply'/'add': combines two fields on THIS SAME table (formula_field_a_label + formula_field_b_label). " +
+            "'percentage_of': one field on THIS table times a percent (formula_field_a_label + formula_percent, e.g. 10 for 10%). " +
+            "'sum_related'/'max_related': totals (or finds the max of) a field on a RELATED CHILD table across every one of its rows that links back to this record -- requires formula_child_table_id, formula_field_a_label (on that child table), and formula_relation_field_label (a table_relation field on that child table pointing back at THIS table -- create it first with its own create_field call if it doesn't exist yet).",
+        },
+        formula_field_a_label: { type: "string", description: "formula_type multiply/add/percentage_of: label of the other field, on THIS table. formula_type sum_related/max_related: label of the field to total/max, on formula_child_table_id." },
+        formula_field_b_label: { type: "string", description: "formula_type multiply/add only: second field's label, on THIS table." },
+        formula_percent: { type: "number", description: "formula_type percentage_of only, e.g. 10 for 10%." },
+        formula_child_table_id: { type: "string", description: "formula_type sum_related/max_related only: id of the CHILD table formula_field_a_label and formula_relation_field_label live on." },
+        formula_relation_field_label: { type: "string", description: "formula_type sum_related/max_related only: label of the table_relation field ON formula_child_table_id that points back at THIS table." },
+        formula_condition_field_label: { type: "string", description: "formula_type sum_related/max_related only, optional: a field label on formula_child_table_id to only count matching rows (e.g. only 'Billable' items)." },
+        formula_condition_value: { type: "string", description: "Required if formula_condition_field_label is set -- the value that field must equal for a row to count." },
         confirm: { type: "boolean", description: "Must be true, and only after you've presented the full plan and the user has explicitly agreed to it in this conversation." },
       },
       required: ["table_id", "label", "field_type", "confirm"],
@@ -272,6 +292,72 @@ async function createField(admin: any, companyId: string, userId: string, input:
   if (!table) return { content: "Table not found", isError: true };
   if (table.is_from_template) return { content: "This table was installed from a template and is locked -- it cannot be edited", isError: true };
 
+  let linkedTableId: string | null = null;
+  if (fieldType === "table_relation") {
+    linkedTableId = String(input.relation_table_id || "");
+    const { data: relTable } = await admin.from("company_tables").select("id").eq("id", linkedTableId).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
+    if (!relTable) return { content: "relation_table_id not found -- field_type 'table_relation' requires a valid relation_table_id", isError: true };
+  }
+
+  // Resolves a field by LABEL on a specific table -- same convention as
+  // add_widget's own resolveLabel, since the model can't reliably produce
+  // real field ids on its own. Used below to turn formula_* label params
+  // into the real ids company_table_fields.formula_field_a_id etc. need.
+  const resolveFieldOnTable = async (tid: string, label: string): Promise<{ id: string; field_type: string; linked_table_id: string | null } | null> => {
+    const { data } = await admin.from("company_table_fields").select("id, field_type, linked_table_id").eq("table_id", tid).ilike("label", label).is("deleted_at", null).maybeSingle();
+    return data ?? null;
+  };
+
+  let formulaType: FormulaType | null = null;
+  let formulaFieldAId: string | null = null;
+  let formulaFieldBId: string | null = null;
+  let formulaPercent: number | null = null;
+  let formulaRelationFieldId: string | null = null;
+  let formulaConditionFieldId: string | null = null;
+  let formulaConditionValue: string | null = null;
+
+  if (input.formula_type) {
+    const rawFormulaType = String(input.formula_type);
+    if (!(FORMULA_TYPES as readonly string[]).includes(rawFormulaType)) {
+      return { content: `formula_type must be one of: ${FORMULA_TYPES.join(", ")}`, isError: true };
+    }
+    formulaType = rawFormulaType as FormulaType;
+
+    if (formulaType === "multiply" || formulaType === "add") {
+      const a = await resolveFieldOnTable(tableId, String(input.formula_field_a_label || ""));
+      const b = await resolveFieldOnTable(tableId, String(input.formula_field_b_label || ""));
+      if (!a || !b) return { content: "formula_field_a_label and formula_field_b_label must both be existing fields on this table (create them first if they don't exist yet)", isError: true };
+      formulaFieldAId = a.id;
+      formulaFieldBId = b.id;
+    } else if (formulaType === "percentage_of") {
+      const a = await resolveFieldOnTable(tableId, String(input.formula_field_a_label || ""));
+      if (!a) return { content: "formula_field_a_label must be an existing field on this table (create it first if it doesn't exist yet)", isError: true };
+      formulaFieldAId = a.id;
+      formulaPercent = Number(input.formula_percent);
+      if (Number.isNaN(formulaPercent)) return { content: "formula_percent is required and must be a number for formula_type 'percentage_of'", isError: true };
+    } else if (formulaType === "sum_related" || formulaType === "max_related") {
+      const childTableId = String(input.formula_child_table_id || "");
+      const { data: childTable } = await admin.from("company_tables").select("id").eq("id", childTableId).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
+      if (!childTable) return { content: "formula_child_table_id not found", isError: true };
+
+      const a = await resolveFieldOnTable(childTableId, String(input.formula_field_a_label || ""));
+      const rel = await resolveFieldOnTable(childTableId, String(input.formula_relation_field_label || ""));
+      if (!a || !rel) return { content: "formula_field_a_label and formula_relation_field_label must both be existing fields on formula_child_table_id (create them first if they don't exist yet)", isError: true };
+      if (rel.field_type !== "table_relation" || rel.linked_table_id !== tableId) {
+        return { content: `"${input.formula_relation_field_label}" must be a table_relation field on formula_child_table_id that links back to THIS table -- create it first with a create_field call (field_type: 'table_relation', relation_table_id: this table's id)`, isError: true };
+      }
+      formulaFieldAId = a.id;
+      formulaRelationFieldId = rel.id;
+
+      if (input.formula_condition_field_label) {
+        const cond = await resolveFieldOnTable(childTableId, String(input.formula_condition_field_label));
+        if (!cond) return { content: "formula_condition_field_label not found on formula_child_table_id", isError: true };
+        formulaConditionFieldId = cond.id;
+        formulaConditionValue = String(input.formula_condition_value ?? "");
+      }
+    }
+  }
+
   const { data: orderRows } = await admin.from("company_table_fields").select("display_order").eq("table_id", tableId).is("deleted_at", null).order("display_order", { ascending: false }).limit(1);
   const displayOrder = (orderRows?.[0]?.display_order ?? -1) + 1;
 
@@ -285,11 +371,19 @@ async function createField(admin: any, companyId: string, userId: string, input:
       field_key: `field_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       label,
       field_type: fieldType,
+      linked_table_id: linkedTableId,
       select_options: selectOptions,
       is_required: !!input.is_required,
       help_text: input.help_text ? String(input.help_text) : null,
       show_in_table: true,
       display_order: displayOrder,
+      formula_type: formulaType,
+      formula_field_a_id: formulaFieldAId,
+      formula_field_b_id: formulaFieldBId,
+      formula_percent: formulaPercent,
+      formula_relation_field_id: formulaRelationFieldId,
+      formula_condition_field_id: formulaConditionFieldId,
+      formula_condition_value: formulaConditionValue,
     })
     .select()
     .single();

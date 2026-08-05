@@ -86,7 +86,12 @@ const EXTRACTION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export async function parseDisbursementInvoicePdf(pdfBase64: string): Promise<ParsedInvoice> {
+export interface ParseDisbursementInvoiceResult {
+  parsed: ParsedInvoice;
+  usage: { inputTokens: number; outputTokens: number };
+}
+
+export async function parseDisbursementInvoicePdf(pdfBase64: string): Promise<ParseDisbursementInvoiceResult> {
   const response = await getClient().messages.create({
     model: "claude-opus-4-8",
     max_tokens: 8192,
@@ -116,5 +121,8 @@ export async function parseDisbursementInvoicePdf(pdfBase64: string): Promise<Pa
   const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === "text");
   if (!textBlock) throw new Error("No structured output returned.");
 
-  return JSON.parse(textBlock.text) as ParsedInvoice;
+  return {
+    parsed: JSON.parse(textBlock.text) as ParsedInvoice,
+    usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens },
+  };
 }

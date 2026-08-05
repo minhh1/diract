@@ -10,15 +10,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { parseDisbursementInvoicePdf } from "@/lib/disbursementInvoiceParser";
+import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
+import { costUsd } from "@/lib/billing/aiModels";
+
+const MODEL_ID = "claude-opus-4-8";
+// 10MB -- generous for a real supplier invoice (a few pages of text), but
+// bounds the worst-case cost of a single Claude document-input call.
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if ("error" in auth) return auth.error;
-  const { admin, companyId } = auth;
+  const { admin, user, companyId } = auth;
 
-  const { data: aiSettings } = await admin.from("ai_chat_settings").select("ai_enabled").eq("company_id", companyId).maybeSingle();
+  const { data: aiSettings } = await admin.from("ai_chat_settings").select("ai_enabled, monthly_token_cap").eq("company_id", companyId).maybeSingle();
   if (aiSettings?.ai_enabled === false) {
     return NextResponse.json({ error: "AI features are disabled for this company" }, { status: 403 });
+  }
+  const tokenCap = aiSettings?.monthly_token_cap ?? 2000000;
+  if (await isTokenCapReached(admin, companyId, tokenCap)) {
+    return NextResponse.json({ error: "Monthly AI usage cap reached for this company" }, { status: 429 });
   }
 
   const formData = await req.formData().catch(() => null);
@@ -29,13 +40,22 @@ export async function POST(req: NextRequest) {
   if (file.type !== "application/pdf") {
     return NextResponse.json({ error: "Only PDF files are supported" }, { status: 400 });
   }
+  if (file.size > MAX_PDF_BYTES) {
+    return NextResponse.json({ error: "PDF is too large (10MB max)" }, { status: 400 });
+  }
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
 
   let parsed;
   try {
-    parsed = await parseDisbursementInvoicePdf(base64);
+    const result = await parseDisbursementInvoicePdf(base64);
+    parsed = result.parsed;
+    const cost = costUsd("anthropic", MODEL_ID, result.usage);
+    await admin.from("ai_usage_events").insert({
+      company_id: companyId, user_id: user.id, model_id: MODEL_ID, provider: "anthropic",
+      input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens, cost_usd: cost,
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Couldn't read this invoice" }, { status: 502 });
   }
