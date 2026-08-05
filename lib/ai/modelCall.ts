@@ -170,6 +170,18 @@ export type HostedToolExecutor = (
   input: Record<string, unknown>
 ) => Promise<HostedToolExecutionResult>;
 
+// Fired around each individual tool call within a turn -- lets a caller
+// (app/api/ai/chat/route.ts) stream live "Creating table 'Invoices'..."
+// style progress to the browser instead of the chat going silent for
+// however long a multi-step build takes. "start" fires just before
+// executeTool runs, "done" right after, carrying whether it errored.
+export type HostedToolCallListener = (
+  name: string,
+  input: Record<string, unknown>,
+  phase: "start" | "done",
+  isError?: boolean
+) => void;
+
 const MAX_TOOL_LOOP_ITERATIONS = 12;
 
 export interface HostedToolChatResult extends TokenUsage {
@@ -211,7 +223,8 @@ export async function callTogetherModelWithTools(
   history: { role: "user" | "assistant"; content: string }[],
   tools: ToolSchema[],
   executeTool: HostedToolExecutor,
-  onDelta?: (delta: string) => void
+  onDelta?: (delta: string) => void,
+  onToolCall?: HostedToolCallListener
 ): Promise<HostedToolChatResult> {
   const openAiTools = toOpenAiTools(tools);
   const messages: Record<string, unknown>[] = [
@@ -259,7 +272,10 @@ export async function callTogetherModelWithTools(
         // input rather than crashing the whole turn; the tool executor
         // will reject it as a bad call and the model can retry.
       }
-      const result = await executeTool(call.function?.name ?? "", input);
+      const toolName = call.function?.name ?? "";
+      onToolCall?.(toolName, input, "start");
+      const result = await executeTool(toolName, input);
+      onToolCall?.(toolName, input, "done", result.isError);
       messages.push({ role: "tool", tool_call_id: call.id, content: result.content });
     }
   }

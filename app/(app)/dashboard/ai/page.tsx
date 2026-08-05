@@ -11,16 +11,39 @@
 // conversation id is generated client-side (crypto.randomUUID()) so the
 // first message in a new chat can create the row inline in
 // app/api/ai/chat/route.ts rather than needing a separate create call.
+//
+// Live tool-call progress ("Creating table 'Invoices'...") and an animated
+// thinking indicator are rendered from the stream's `{tool, phase}` events
+// (see lib/ai/modelCall.ts's onToolCall) -- not fabricated busy-work, this
+// is the actual multi-step tool loop happening server-side, surfaced as it
+// happens rather than the chat going silent for however long a build takes.
+// Tool activity isn't persisted (only the final assistant text is, per
+// ai_messages' schema), so reopening a past conversation shows just the
+// text, same as before.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Send, Loader2, AlertTriangle, Plus, Trash2, MessageSquare, Shield } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Sparkles, Send, Loader2, AlertTriangle, Plus, Trash2, MessageSquare, Shield,
+  Check, X, Table2, LayoutDashboard, ListChecks, PlusSquare,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
+import { renderMarkdown } from "@/lib/renderMarkdown";
+
+interface ToolCallEvent {
+  name: string;
+  input: Record<string, unknown>;
+  phase: "start" | "done";
+  isError?: boolean;
+}
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  toolCalls?: ToolCallEvent[];
 }
 
 interface Usage {
@@ -34,6 +57,93 @@ interface ConversationSummary {
   id: string;
   title: string;
   updatedAt: string;
+}
+
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  list_existing_tables: ListChecks,
+  list_existing_dashboards: ListChecks,
+  create_table: Table2,
+  create_field: PlusSquare,
+  create_dashboard: LayoutDashboard,
+  add_widget: LayoutDashboard,
+  delete_table: Trash2,
+  delete_field: Trash2,
+  remove_widget: Trash2,
+  delete_dashboard: Trash2,
+};
+
+function toolLabel(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case "list_existing_tables": return "Checking existing tables";
+    case "list_existing_dashboards": return "Checking existing dashboards";
+    case "create_table": return `Creating table "${input.name ?? ""}"`;
+    case "create_field": return `Adding field "${input.label ?? ""}"`;
+    case "create_dashboard": return `Creating dashboard "${input.name ?? ""}"`;
+    case "add_widget": return `Adding a ${input.widget_type ?? "widget"} widget`;
+    case "delete_table": return "Deleting table";
+    case "delete_field": return "Removing field";
+    case "remove_widget": return "Removing widget";
+    case "delete_dashboard": return "Deleting dashboard";
+    default: return name;
+  }
+}
+
+function ToolCallChip({ call }: { call: ToolCallEvent }) {
+  const Icon = TOOL_ICONS[call.name] || Sparkles;
+  const inFlight = call.phase === "start";
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.2 }}
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-medium border w-fit ${
+        inFlight
+          ? "bg-indigo-50 border-indigo-100 text-indigo-600"
+          : call.isError
+          ? "bg-red-50 border-red-100 text-red-600"
+          : "bg-emerald-50 border-emerald-100 text-emerald-700"
+      }`}
+    >
+      {inFlight ? (
+        <Loader2 size={11} className="animate-spin shrink-0" />
+      ) : call.isError ? (
+        <X size={11} className="shrink-0" />
+      ) : (
+        <Check size={11} className="shrink-0" />
+      )}
+      <Icon size={11} className="shrink-0 opacity-60" />
+      <span className="truncate">{toolLabel(call.name, call.input)}</span>
+    </motion.div>
+  );
+}
+
+// Animated "thinking" indicator shown while the assistant has produced
+// neither text nor a tool call yet for this turn -- a pulsing sparkle plus
+// three sequentially-bouncing dots, i.e. real motion rather than a static
+// "...".
+function ThinkingIndicator() {
+  return (
+    <div className="flex items-center gap-2.5 py-0.5">
+      <motion.div
+        className="flex items-center justify-center h-6 w-6 rounded-full bg-indigo-50 shrink-0"
+        animate={{ rotate: [0, 12, -12, 0] }}
+        transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
+      >
+        <Sparkles size={12} className="text-indigo-500" />
+      </motion.div>
+      <div className="flex items-center gap-1">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            className="h-1.5 w-1.5 rounded-full bg-indigo-300"
+            animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
+            transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: "easeInOut" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function AiAssistantPage() {
@@ -141,6 +251,25 @@ export default function AiAssistantPage() {
               return next;
             });
           }
+          if (evt.tool) {
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              const toolCalls = [...(last.toolCalls ?? [])];
+              if (evt.phase === "start") {
+                toolCalls.push({ name: evt.tool, input: evt.input ?? {}, phase: "start" });
+              } else {
+                for (let i = toolCalls.length - 1; i >= 0; i--) {
+                  if (toolCalls[i].name === evt.tool && toolCalls[i].phase === "start") {
+                    toolCalls[i] = { ...toolCalls[i], phase: "done", isError: evt.isError };
+                    break;
+                  }
+                }
+              }
+              next[next.length - 1] = { ...last, toolCalls };
+              return next;
+            });
+          }
           if (evt.error) setError(evt.error);
         }
       }
@@ -177,7 +306,7 @@ export default function AiAssistantPage() {
         <div className="p-4 border-b border-slate-100">
           <button
             onClick={startNewChat}
-            className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 active:scale-[0.98] transition-all"
           >
             <Plus size={13} /> New chat
           </button>
@@ -209,9 +338,13 @@ export default function AiAssistantPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-slate-100 shrink-0 px-8 py-6">
           <div className="flex items-center gap-3 max-w-3xl mx-auto">
-            <div className="h-9 w-9 rounded-2xl bg-indigo-50 flex items-center justify-center">
+            <motion.div
+              className="h-9 w-9 rounded-2xl bg-indigo-50 flex items-center justify-center"
+              animate={sending ? { scale: [1, 1.12, 1] } : { scale: 1 }}
+              transition={sending ? { repeat: Infinity, duration: 1.2, ease: "easeInOut" } : undefined}
+            >
               <Sparkles size={18} className="text-indigo-600" />
-            </div>
+            </motion.div>
             <h1 className="text-2xl font-light uppercase tracking-tight text-slate-900">Ask AI</h1>
           </div>
 
@@ -224,9 +357,11 @@ export default function AiAssistantPage() {
                 <span>~${usage.estimatedCostUsd.toFixed(2)} spent</span>
               </div>
               <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div
+                <motion.div
                   className={`h-full rounded-full ${capReached ? "bg-red-500" : "bg-indigo-500"}`}
-                  style={{ width: `${Math.min(100, (usage.tokensUsed / usage.tokenCap) * 100)}%` }}
+                  initial={false}
+                  animate={{ width: `${Math.min(100, (usage.tokensUsed / usage.tokenCap) * 100)}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
                 />
               </div>
             </div>
@@ -240,28 +375,69 @@ export default function AiAssistantPage() {
                 Tell it about your business, e.g. &quot;I run a plumbing company with 10 employees, I want to create invoices and manage payroll&quot; -- it&apos;ll set up the tables, fields, and dashboards for you.
               </p>
             )}
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[80%] rounded-[24px] px-5 py-3 text-[13px] whitespace-pre-wrap ${
-                    m.role === "user" ? "bg-indigo-600 text-white" : "bg-white border border-slate-200 text-slate-700"
-                  }`}
-                >
-                  {m.content || (sending && i === messages.length - 1 ? "..." : "")}
-                </div>
-              </div>
-            ))}
+            <AnimatePresence initial={false}>
+              {messages.map((m, i) => {
+                const isLast = i === messages.length - 1;
+                const toolsInFlight = (m.toolCalls ?? []).some((t) => t.phase === "start");
+                const showThinking = m.role === "assistant" && !m.content && sending && isLast && !toolsInFlight;
+                const showCursor = m.role === "assistant" && !!m.content && sending && isLast;
+                return (
+                  <motion.div
+                    key={i}
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-[24px] px-5 py-3 text-[13px] ${
+                        m.role === "user" ? "bg-indigo-600 text-white whitespace-pre-wrap" : "bg-white border border-slate-200 text-slate-700"
+                      }`}
+                    >
+                      {m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0 && (
+                        <div className="flex flex-col gap-1.5 mb-2.5">
+                          <AnimatePresence initial={false}>
+                            {m.toolCalls.map((call, ci) => (
+                              <ToolCallChip key={ci} call={call} />
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      )}
+
+                      {m.role === "user" ? (
+                        m.content
+                      ) : showThinking ? (
+                        <ThinkingIndicator />
+                      ) : m.content ? (
+                        <>
+                          <div className="ai-chat-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />
+                          {showCursor && <span className="inline-block w-[2px] h-[13px] bg-indigo-400 mt-0.5 animate-pulse" />}
+                        </>
+                      ) : null}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
             <div ref={bottomRef} />
           </div>
         </main>
 
         <footer className="bg-white border-t border-slate-100 shrink-0 px-8 py-6">
           <div className="max-w-3xl mx-auto">
-            {error && (
-              <p className="flex items-center gap-1.5 text-[11px] text-red-500 mb-2">
-                <AlertTriangle size={12} /> {error}
-              </p>
-            )}
+            <AnimatePresence>
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="flex items-center gap-1.5 text-[11px] text-red-500 mb-2 overflow-hidden"
+                >
+                  <AlertTriangle size={12} /> {error}
+                </motion.p>
+              )}
+            </AnimatePresence>
             {capReached && (
               <p className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 rounded-2xl px-4 py-2 mb-2">
                 <AlertTriangle size={12} /> Monthly token cap reached -- ask a company admin to raise it in Admin → AI Assistant.
@@ -274,12 +450,12 @@ export default function AiAssistantPage() {
                 onKeyDown={(e) => e.key === "Enter" && send()}
                 disabled={capReached}
                 placeholder="Describe your business..."
-                className="flex-1 px-4 py-3 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400 disabled:opacity-40"
+                className="flex-1 px-4 py-3 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400 transition-colors disabled:opacity-40"
               />
               <button
                 onClick={send}
                 disabled={sending || capReached || !input.trim()}
-                className="w-11 h-11 flex items-center justify-center bg-indigo-600 text-white rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                className="w-11 h-11 flex items-center justify-center bg-indigo-600 text-white rounded-full hover:bg-indigo-700 active:scale-[0.94] disabled:opacity-40 disabled:active:scale-100 transition-all"
               >
                 {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
               </button>

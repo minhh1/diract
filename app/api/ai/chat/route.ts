@@ -14,7 +14,11 @@
 // already have" mechanism.
 //
 // Response body is newline-delimited JSON: `{"delta": "..."}` lines as
-// tokens arrive, ending with `{"done": true}`.
+// tokens arrive, `{"tool": name, "input": {...}, "phase": "start"|"done", "isError"?}`
+// lines around each tool call (see lib/ai/modelCall.ts's onToolCall) so the
+// UI can show live "Creating table 'Invoices'..." progress instead of going
+// silent for however long a multi-step build takes, ending with
+// `{"done": true}`.
 import { NextRequest } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { callTogetherModelWithTools, type TokenUsage } from "@/lib/ai/modelCall";
@@ -117,13 +121,16 @@ export async function POST(req: NextRequest) {
       let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, content: "" };
       try {
         const onDelta = (delta: string) => controller.enqueue(ndjson({ delta }));
+        const onToolCall = (name: string, input: Record<string, unknown>, phase: "start" | "done", isError?: boolean) =>
+          controller.enqueue(ndjson({ tool: name, input, phase, isError }));
         const result = await callTogetherModelWithTools(
           MODEL_ID,
           SYSTEM_PROMPT,
           [...history, { role: "user", content: question }],
           TABLE_BUILDER_TOOLS,
           (name, input) => executeTableBuilderTool(admin, companyId, user.id, name, input),
-          onDelta
+          onDelta,
+          onToolCall
         );
         usage = result;
 
