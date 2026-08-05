@@ -1,8 +1,9 @@
 // app/dashboard/ai/page.tsx
-// Chat UI for the RAG assistant grounded in this company's CRM/Gmail/
-// WhatsApp/Teams data (see app/api/ai/chat/route.ts). Data sources and the
-// self-hosted Ollama URL are configured in Admin -> AI Assistant
-// (components/admin/AdminAiAssistantTab.tsx).
+// Chat UI for the table/dashboard-builder assistant (see
+// app/api/ai/chat/route.ts) -- describe your business and it creates the
+// custom tables, fields, and dashboards for it, via tool-calling against
+// this company's own schema. Admin-only, since every tool it can call runs
+// with admin-equivalent rights (see lib/ai/tableBuilderTools.ts).
 //
 // Conversations are personal (not shared with teammates) and persisted via
 // supabase/ai_conversations.sql + ai_messages.sql -- see
@@ -13,25 +14,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, Send, Loader2, AlertTriangle, Plus, Trash2, MessageSquare } from "lucide-react";
-
-interface Model {
-  id: string;
-  label: string;
-  provider: "hosted" | "self_hosted";
-  contextWindow?: number;
-}
-
-interface Citation {
-  sourceType: string;
-  sourceUrl: string | null;
-  snippet: string;
-}
+import { useRouter } from "next/navigation";
+import { Sparkles, Send, Loader2, AlertTriangle, Plus, Trash2, MessageSquare, Shield } from "lucide-react";
+import { useCompany } from "@/components/CompanyContext";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  citations?: Citation[];
 }
 
 interface Usage {
@@ -48,8 +37,9 @@ interface ConversationSummary {
 }
 
 export default function AiAssistantPage() {
-  const [models, setModels] = useState<Model[]>([]);
-  const [modelId, setModelId] = useState<string>("");
+  const router = useRouter();
+  const { isAdmin, loading: companyLoading } = useCompany();
+
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -57,16 +47,7 @@ export default function AiAssistantPage() {
   const [sending, setSending] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [retrievalWarning, setRetrievalWarning] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  const loadModels = useCallback(async () => {
-    const res = await fetch("/api/ai/models");
-    const json = await res.json();
-    setModels(json.models ?? []);
-    if (json.models?.length && !modelId) setModelId(json.models[0].id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const loadUsage = useCallback(async () => {
     const res = await fetch("/api/ai/usage");
@@ -82,10 +63,9 @@ export default function AiAssistantPage() {
   }, []);
 
   useEffect(() => {
-    loadModels();
     loadUsage();
     loadConversations();
-  }, [loadModels, loadUsage, loadConversations]);
+  }, [loadUsage, loadConversations]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -97,21 +77,18 @@ export default function AiAssistantPage() {
     setConversationId(null);
     setMessages([]);
     setError(null);
-    setRetrievalWarning(null);
   };
 
   const openConversation = async (id: string) => {
     setConversationId(id);
     setError(null);
-    setRetrievalWarning(null);
     const res = await fetch(`/api/ai/conversations/${id}`);
     if (!res.ok) return;
     const json = await res.json();
     setMessages(
-      (json.messages ?? []).map((m: { role: "user" | "assistant"; content: string; citations?: Citation[] }) => ({
+      (json.messages ?? []).map((m: { role: "user" | "assistant"; content: string }) => ({
         role: m.role,
         content: m.content,
-        citations: m.citations ?? undefined,
       }))
     );
   };
@@ -127,14 +104,11 @@ export default function AiAssistantPage() {
   const send = async () => {
     const question = input.trim();
     if (!question || sending || capReached) return;
-    const selected = models.find((m) => m.id === modelId);
-    if (!selected) return;
 
     const activeConversationId = conversationId ?? crypto.randomUUID();
     if (!conversationId) setConversationId(activeConversationId);
 
     setError(null);
-    setRetrievalWarning(null);
     setInput("");
     const history = messages.map((m) => ({ role: m.role, content: m.content }));
     setMessages((prev) => [...prev, { role: "user", content: question }, { role: "assistant", content: "" }]);
@@ -144,7 +118,7 @@ export default function AiAssistantPage() {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, modelId, provider: selected.provider, history, conversationId: activeConversationId }),
+        body: JSON.stringify({ question, history, conversationId: activeConversationId }),
       });
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => null))?.error || "Request failed");
 
@@ -160,13 +134,6 @@ export default function AiAssistantPage() {
         for (const line of lines) {
           if (!line.trim()) continue;
           const evt = JSON.parse(line);
-          if (evt.citations) {
-            setMessages((prev) => {
-              const next = [...prev];
-              next[next.length - 1] = { ...next[next.length - 1], citations: evt.citations };
-              return next;
-            });
-          }
           if (evt.delta) {
             setMessages((prev) => {
               const next = [...prev];
@@ -174,7 +141,6 @@ export default function AiAssistantPage() {
               return next;
             });
           }
-          if (evt.retrievalError) setRetrievalWarning(evt.retrievalError);
           if (evt.error) setError(evt.error);
         }
       }
@@ -186,6 +152,23 @@ export default function AiAssistantPage() {
       loadConversations();
     }
   };
+
+  if (companyLoading) return null;
+
+  if (!isAdmin) return (
+    <div className="flex flex-col items-center justify-center h-screen gap-3">
+      <Shield size={32} className="text-slate-200" />
+      <p className="text-slate-400 font-bold text-[11px] uppercase tracking-widest">
+        Admin access required
+      </p>
+      <button
+        onClick={() => router.back()}
+        className="text-[11px] text-indigo-600 font-bold hover:underline"
+      >
+        Go back
+      </button>
+    </div>
+  );
 
   return (
     <div className="flex h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
@@ -225,24 +208,11 @@ export default function AiAssistantPage() {
       {/* Chat */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-slate-100 shrink-0 px-8 py-6">
-          <div className="flex items-center justify-between max-w-3xl mx-auto">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                <Sparkles size={18} className="text-indigo-600" />
-              </div>
-              <h1 className="text-2xl font-light uppercase tracking-tight text-slate-900">Ask AI</h1>
+          <div className="flex items-center gap-3 max-w-3xl mx-auto">
+            <div className="h-9 w-9 rounded-2xl bg-indigo-50 flex items-center justify-center">
+              <Sparkles size={18} className="text-indigo-600" />
             </div>
-            <select
-              value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
-            >
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+            <h1 className="text-2xl font-light uppercase tracking-tight text-slate-900">Ask AI</h1>
           </div>
 
           {usage && (
@@ -267,7 +237,7 @@ export default function AiAssistantPage() {
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 && (
               <p className="text-[12px] text-slate-400 text-center py-12">
-                Ask about your CRM records, emails, WhatsApp, or Teams messages.
+                Tell it about your business, e.g. &quot;I run a plumbing company with 10 employees, I want to create invoices and manage payroll&quot; -- it&apos;ll set up the tables, fields, and dashboards for you.
               </p>
             )}
             {messages.map((m, i) => (
@@ -278,20 +248,6 @@ export default function AiAssistantPage() {
                   }`}
                 >
                   {m.content || (sending && i === messages.length - 1 ? "..." : "")}
-                  {m.citations && m.citations.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
-                      {m.citations.map((c, j) => (
-                        <div key={j} className="text-[10px] text-slate-400">
-                          [{j + 1}] {c.sourceType}
-                          {c.sourceUrl && (
-                            <a href={c.sourceUrl} className="ml-1 text-indigo-500 hover:underline">
-                              view source
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
@@ -301,11 +257,6 @@ export default function AiAssistantPage() {
 
         <footer className="bg-white border-t border-slate-100 shrink-0 px-8 py-6">
           <div className="max-w-3xl mx-auto">
-            {retrievalWarning && (
-              <p className="flex items-center gap-1.5 text-[11px] text-amber-600 mb-2">
-                <AlertTriangle size={12} /> Answered without grounding context -- retrieval failed: {retrievalWarning}
-              </p>
-            )}
             {error && (
               <p className="flex items-center gap-1.5 text-[11px] text-red-500 mb-2">
                 <AlertTriangle size={12} /> {error}
@@ -322,7 +273,7 @@ export default function AiAssistantPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && send()}
                 disabled={capReached}
-                placeholder="Ask a question..."
+                placeholder="Describe your business..."
                 className="flex-1 px-4 py-3 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400 disabled:opacity-40"
               />
               <button

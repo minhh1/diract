@@ -23,6 +23,18 @@ export interface HostedModel {
 }
 
 export const HOSTED_MODELS: HostedModel[] = [
+  // Used by lib/ai/modelCall.ts's callTogetherModelWithTools (see
+  // app/api/ai/chat/route.ts's table/dashboard-builder assistant) -- picked
+  // over DeepSeek V4 Flash specifically because Together's own model page
+  // shows a confirmed "Function Calling" badge for Pro and not for Flash,
+  // which matters since this route only exists to call tools.
+  {
+    id: "deepseek-ai/DeepSeek-V4-Pro",
+    label: "DeepSeek V4 Pro",
+    inputUsdPer1kTokens: 0.00174,
+    outputUsdPer1kTokens: 0.00348,
+    contextWindow: 512000,
+  },
   {
     id: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     label: "Llama 3.3 70B",

@@ -1,24 +1,51 @@
 // app/api/ai/chat/route.ts
-// RAG chat endpoint backing app/dashboard/ai/page.tsx. Retrieval, prompt
-// building, and model-calling are shared with the Teams bot (see
-// app/api/teams/bot/[companyId]/route.ts) via lib/ai/retrieval.ts and
-// lib/ai/modelCall.ts -- this route just adds the streaming response shape
-// the web chat UI expects.
+// Chat endpoint backing app/dashboard/ai/page.tsx -- the table/dashboard-
+// builder assistant. Admin-only (see the isAdmin check below): every tool
+// call in lib/ai/tableBuilderTools.ts runs with admin-equivalent rights
+// regardless of who's chatting, so access to the chat itself is gated the
+// same way any other admin-level action in this app is.
 //
-// Response body is newline-delimited JSON: one `{"citations": [...]}` line
-// first, then `{"delta": "..."}` lines as tokens arrive, ending with
-// `{"done": true}`.
+// This used to be a general RAG Q&A assistant grounded in CRM/Gmail/
+// WhatsApp/Teams/OneDrive data (see lib/ai/retrieval.ts, still used by the
+// Microsoft Teams bot at app/api/teams/bot/[companyId]/route.ts -- untouched
+// by this route now). Retrieval is gone here; the assistant's job is schema
+// construction, and list_existing_tables/list_existing_dashboards (plain
+// SQL lookups) replace semantic search as the "what does this company
+// already have" mechanism.
+//
+// Response body is newline-delimited JSON: `{"delta": "..."}` lines as
+// tokens arrive, ending with `{"done": true}`.
 import { NextRequest } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { resolveSourceTypes, retrieveGroundingContext, buildSystemPrompt } from "@/lib/ai/retrieval";
-import { callHostedModel, callSelfHostedModel, type TokenUsage } from "@/lib/ai/modelCall";
-import { findHostedModel, costUsd } from "@/lib/billing/aiModels";
+import { callTogetherModelWithTools, type TokenUsage } from "@/lib/ai/modelCall";
+import { TABLE_BUILDER_TOOLS, executeTableBuilderTool } from "@/lib/ai/tableBuilderTools";
+import { costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
+
+// Together-hosted, not Claude -- has a confirmed "Function Calling" badge
+// on Together's own model page (unlike DeepSeek V4 Flash, which doesn't),
+// which matters here since this whole route only exists to call tools.
+// 512K context (not the full 1M DeepSeek V4 Flash claims), ~$1.74/$3.48
+// per 1M tokens -- far cheaper than Claude, no separate Anthropic billing
+// relationship needed since TOGETHER_API_KEY is already configured for
+// this app's other AI features.
+const MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
+
+const SYSTEM_PROMPT = `You help set up custom tables, fields, and dashboards for this company's business in Diract, a business management tool. A user might describe their business (e.g. "I run a plumbing company with 10 employees, I want to create invoices and manage payroll") and you should design and actually create sensible tables, fields, and a dashboard for it using your tools -- not just describe what they should build.
+
+Guidelines:
+- Always call list_existing_tables and list_existing_dashboards before creating anything, so you don't duplicate what's already there.
+- Design sensible field sets for the tables you create (e.g. an Invoices table wants fields like client, amount, due date, status; a Payroll/Employees table wants fields like name, hourly rate, hours worked, pay period).
+- After creating a table and its fields, create a dashboard for it and add at least one widget (e.g. a grid to view/enter records, a summary_tile for a running total) so it's actually usable, not just an empty schema.
+- Only call a tool when the user's message actually calls for building/changing something. For casual questions or small talk, just answer in plain text -- do not create tables/fields/dashboards unprompted.
+- Before calling delete_table, delete_field, remove_widget, or delete_dashboard: first state in your own words exactly what will be deleted and any consequences (e.g. "This will remove the Payroll table and its 3 fields"), and wait for the user's explicit confirmation in their next message. Only then call the tool with confirm=true. If you call a delete tool without the user having agreed first, it will be rejected.
+- When you do delete something, mention in your reply that it's restorable afterward via Settings → Trash or Settings → Schema History.
+- Keep replies brief and focused on what you did or need to know next.`;
 
 function ndjson(obj: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(obj) + "\n");
@@ -27,17 +54,19 @@ function ndjson(obj: unknown): Uint8Array {
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, companyId, user } = auth;
+  const { admin, companyId, user, isAdmin } = auth;
+
+  if (!isAdmin) {
+    return new Response(JSON.stringify({ error: "Admin access required" }), { status: 403 });
+  }
 
   const body = await req.json().catch(() => null);
   const question: string | undefined = body?.question;
-  const modelId: string | undefined = body?.modelId;
-  const provider: "hosted" | "self_hosted" | undefined = body?.provider;
   const history: ChatMessage[] = Array.isArray(body?.history) ? body.history : [];
   const conversationId: string | undefined = body?.conversationId;
 
-  if (!question || !modelId || !provider) {
-    return new Response(JSON.stringify({ error: "question, modelId, and provider are required" }), { status: 400 });
+  if (!question) {
+    return new Response(JSON.stringify({ error: "question is required" }), { status: 400 });
   }
 
   // Persisted so a conversation survives a refresh/reopen (see
@@ -70,7 +99,7 @@ export async function POST(req: NextRequest) {
 
   const { data: settings } = await admin
     .from("ai_chat_settings")
-    .select("source_crm, source_gmail, source_whatsapp, source_teams, source_onedrive, self_hosted_ollama_url, monthly_token_cap, ai_enabled")
+    .select("monthly_token_cap, ai_enabled")
     .eq("company_id", companyId)
     .maybeSingle();
 
@@ -78,57 +107,53 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "AI features are disabled for this company" }), { status: 403 });
   }
 
-  const ollamaUrl = settings?.self_hosted_ollama_url ?? null;
-  if (provider === "self_hosted" && !ollamaUrl) {
-    return new Response(JSON.stringify({ error: "No self-hosted Ollama URL configured for this company" }), { status: 400 });
-  }
-  if (provider === "hosted" && !findHostedModel(modelId)) {
-    return new Response(JSON.stringify({ error: "Unknown hosted model" }), { status: 400 });
-  }
-
-  const tokenCap = settings?.monthly_token_cap ?? 2000000;
+  const tokenCap = settings?.monthly_token_cap ?? 1000000;
   if (await isTokenCapReached(admin, companyId, tokenCap)) {
     return new Response(JSON.stringify({ error: "Monthly token cap reached for this company" }), { status: 429 });
   }
 
-  const sourceTypes = resolveSourceTypes(settings);
-  const { citations, contextBlock, retrievalError } = await retrieveGroundingContext(
-    admin,
-    companyId,
-    question,
-    sourceTypes,
-    ollamaUrl
-  );
-
-  const systemPrompt = buildSystemPrompt(contextBlock);
-  const messages = [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: question }];
-
   const stream = new ReadableStream({
     async start(controller) {
-      controller.enqueue(ndjson({ citations, retrievalError }));
       let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, content: "" };
       try {
         const onDelta = (delta: string) => controller.enqueue(ndjson({ delta }));
-        usage =
-          provider === "hosted"
-            ? await callHostedModel(modelId, messages, onDelta)
-            : await callSelfHostedModel(ollamaUrl!, modelId, messages, onDelta);
+        const result = await callTogetherModelWithTools(
+          MODEL_ID,
+          SYSTEM_PROMPT,
+          [...history, { role: "user", content: question }],
+          TABLE_BUILDER_TOOLS,
+          (name, input) => executeTableBuilderTool(admin, companyId, user.id, name, input),
+          onDelta
+        );
+        usage = result;
+
+        // A cut-short multi-step build looks, from the client's point of
+        // view, like the assistant just stopped talking mid-task -- this
+        // tells the user why, rather than leaving it looking finished when
+        // it isn't. (Together/OpenAI-style APIs have no distinct "refusal"
+        // signal the way Anthropic's does -- a decline just comes back as
+        // normal assistant text with finish_reason "stop".)
+        if (result.hitIterationLimit) {
+          controller.enqueue(ndjson({ error: "This is taking more steps than I can do in one go -- ask me to continue and I'll pick up from here." }));
+        }
       } catch (err) {
-        controller.enqueue(ndjson({ error: err instanceof Error ? err.message : String(err) }));
+        // callTogetherModelWithTools already translates request failures
+        // into a message meant for an end user -- don't fall back to
+        // String(err) here, which would print raw internals for any
+        // non-Error throw.
+        controller.enqueue(ndjson({ error: err instanceof Error ? err.message : "Something went wrong talking to the assistant. Please try again." }));
       }
 
       if (conversationId && usage.content) {
-        await admin
-          .from("ai_messages")
-          .insert({ conversation_id: conversationId, role: "assistant", content: usage.content, citations });
+        await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "assistant", content: usage.content });
       }
 
-      const cost = costUsd(provider, modelId, usage);
+      const cost = costUsd("hosted", MODEL_ID, usage);
       await admin.from("ai_usage_events").insert({
         company_id: companyId,
         user_id: user.id,
-        model_id: modelId,
-        provider,
+        model_id: MODEL_ID,
+        provider: "hosted",
         input_tokens: usage.inputTokens,
         output_tokens: usage.outputTokens,
         cost_usd: cost,
