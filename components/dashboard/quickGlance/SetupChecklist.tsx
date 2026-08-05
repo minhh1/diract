@@ -132,7 +132,7 @@ export default function SetupChecklist() {
       body: "Choose whether a labeled email fans out to every teammate's mailbox, or stays central in-app.",
       action: (
         <div className="flex items-center gap-2 shrink-0">
-          <Link href="/dashboard/admin" className="px-4 py-2 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all">Review</Link>
+          <Link href="/dashboard/admin?tab=email" className="px-4 py-2 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all">Review</Link>
           <button onClick={dismissCentralEmail} title="Dismiss" className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
             <X size={14} />
           </button>

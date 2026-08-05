@@ -313,6 +313,19 @@ function AdminPageInner() {
   // AdminTeamsTab.tsx's rename control.
   const [editingRateId, setEditingRateId] = useState<string | null>(null);
   const [rateInput, setRateInput] = useState('');
+  // Whether this company has a Time & Fee Entries table at all -- an hourly
+  // default_rate per staff member only makes sense for a company that bills
+  // by the hour (currently just the law-firm-seed template). Same check as
+  // AdminTeamsTab.tsx's hasTimeEntries: the table's existence, not
+  // companies.company_type, so this stays correct even if a company's
+  // tables drift from whatever template it started from.
+  const [hasTimeEntries, setHasTimeEntries] = useState(false);
+  useEffect(() => {
+    if (!companyId) return;
+    supabase.from('company_tables').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).eq('slug', 'time-fee-entries').is('deleted_at', null)
+      .then(({ count }) => setHasTimeEntries(!!count));
+  }, [companyId]);
 
   const queryClient = useQueryClient();
   const adminQueryKey = ['admin', companyId] as const;
@@ -689,83 +702,85 @@ function AdminPageInner() {
                 members.map(member => (
                   <div
                     key={member.id}
-                    className={`bg-white border rounded-[28px] p-5 flex items-center gap-4 ${
+                    className={`bg-white border rounded-[28px] p-5 flex flex-col sm:flex-row sm:items-center gap-4 ${
                       member.is_active ? 'border-slate-100' : 'border-slate-100 opacity-50'
                     }`}
                   >
-                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-[12px] font-bold text-slate-600 uppercase shrink-0">
-                      {(member.full_name || member.email).substring(0, 2)}
-                    </div>
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-[12px] font-bold text-slate-600 uppercase shrink-0">
+                        {(member.full_name || member.email).substring(0, 2)}
+                      </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-[13px] font-bold text-slate-800 truncate">
-                          {member.full_name || '—'}
-                        </p>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                          member.role === 'company_admin'
-                            ? 'bg-amber-100 text-amber-700'
-                            : member.role === 'manager'
-                            ? 'bg-indigo-100 text-indigo-700'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {ROLE_LABELS[member.role] || member.role}
-                        </span>
-                        {!member.is_active && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-red-100 text-red-500">
-                            Inactive
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-[13px] font-bold text-slate-800 truncate">
+                            {member.full_name || '—'}
+                          </p>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                            member.role === 'company_admin'
+                              ? 'bg-amber-100 text-amber-700'
+                              : member.role === 'manager'
+                              ? 'bg-indigo-100 text-indigo-700'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {ROLE_LABELS[member.role] || member.role}
                           </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                        {member.email}
-                      </p>
-                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-                        {allTeams.length > 0 && (
-                          <select
-                            onChange={e => handleAssignTeam(member.id, e.target.value || null)}
-                            className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 outline-none bg-white hover:border-indigo-300 cursor-pointer"
-                            defaultValue=""
-                          >
-                            <option value="">Assign to team...</option>
-                            {allTeams.map(t => (
-                              <option key={t.id} value={t.id}>{t.team_name}</option>
-                            ))}
-                          </select>
-                        )}
-                        {editingRateId === member.id ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              autoFocus
-                              defaultValue={member.defaultRate ?? ''}
-                              onChange={e => setRateInput(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') handleSaveRate(member);
-                                if (e.key === 'Escape') setEditingRateId(null);
-                              }}
-                              placeholder="Rate"
-                              className="w-20 text-[11px] text-slate-600 border border-slate-200 rounded-full px-3 py-1 outline-none focus:ring-2 focus:ring-indigo-100"
-                            />
-                            <button
-                              onClick={() => handleSaveRate(member)}
-                              className="p-1.5 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all"
+                          {!member.is_active && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-red-100 text-red-500">
+                              Inactive
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                          {member.email}
+                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                          {allTeams.length > 0 && (
+                            <select
+                              onChange={e => handleAssignTeam(member.id, e.target.value || null)}
+                              className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 outline-none bg-white hover:border-indigo-300 cursor-pointer"
+                              defaultValue=""
                             >
-                              <Check size={11} />
+                              <option value="">Assign to team...</option>
+                              {allTeams.map(t => (
+                                <option key={t.id} value={t.id}>{t.team_name}</option>
+                              ))}
+                            </select>
+                          )}
+                          {hasTimeEntries && (editingRateId === member.id ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                autoFocus
+                                defaultValue={member.defaultRate ?? ''}
+                                onChange={e => setRateInput(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleSaveRate(member);
+                                  if (e.key === 'Escape') setEditingRateId(null);
+                                }}
+                                placeholder="Rate"
+                                className="w-20 text-[11px] text-slate-600 border border-slate-200 rounded-full px-3 py-1 outline-none focus:ring-2 focus:ring-indigo-100"
+                              />
+                              <button
+                                onClick={() => handleSaveRate(member)}
+                                className="p-1.5 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-all"
+                              >
+                                <Check size={11} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setRateInput(member.defaultRate != null ? String(member.defaultRate) : ''); setEditingRateId(member.id); }}
+                              className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                            >
+                              {member.defaultRate != null ? `$${member.defaultRate}/hr default` : 'Set default rate'}
                             </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setRateInput(member.defaultRate != null ? String(member.defaultRate) : ''); setEditingRateId(member.id); }}
-                            className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 hover:border-indigo-300 hover:text-indigo-600 transition-all"
-                          >
-                            {member.defaultRate != null ? `$${member.defaultRate}/hr default` : 'Set default rate'}
-                          </button>
-                        )}
+                          ))}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 flex-wrap sm:shrink-0 sm:ml-auto">
                       {saving === member.id ? (
                         <Loader2 size={16} className="animate-spin text-slate-300" />
                       ) : (
