@@ -64,6 +64,12 @@ function LoginPageInner() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Set alongside `error` only for the "this email is already registered"
+  // case (see register_company_and_profile's error_code: 'duplicate_email'
+  // -- supabase/migrations/20260806030000_register_company_duplicate_email_message.sql)
+  // so the error banner can offer switching to the login form instead of
+  // just showing the message.
+  const [duplicateEmail, setDuplicateEmail] = useState(false);
 
   // SessionHealthBanner sends people here (after force-signing them out)
   // when their refresh token dies while idle -- show why they landed back
@@ -193,7 +199,7 @@ function LoginPageInner() {
     }
   };
 
-  const clearMessages = () => { setError(null); setSuccess(null); };
+  const clearMessages = () => { setError(null); setSuccess(null); setDuplicateEmail(false); };
 
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
@@ -334,7 +340,20 @@ function LoginPageInner() {
         },
       });
 
-      if (authError) throw new Error(authError.message);
+      if (authError) {
+        // Supabase Auth's own message for this case ("User already
+        // registered") is already clean text, unlike the raw Postgres
+        // constraint error the RPC below can throw for the same underlying
+        // situation -- still worth the same "log in instead" treatment
+        // rather than just a dead-end error.
+        if (/already registered|already exists/i.test(authError.message)) {
+          setError("An account with this email already exists.");
+          setDuplicateEmail(true);
+          setLoading(false);
+          return;
+        }
+        throw new Error(authError.message);
+      }
       if (!authData.user) throw new Error("User creation failed.");
 
       const userId = authData.user.id;
@@ -394,7 +413,19 @@ function LoginPageInner() {
         );
 
         if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
-        if (result && !result.success) throw new Error(result.error || 'Registration failed');
+        if (result && !result.success) {
+          // Handled separately from the generic throw below (rather than
+          // string-matching the raw Postgres error in the catch block) --
+          // see the RPC's own comment on why this needs to be a distinct,
+          // stable error_code rather than parsing SQLERRM text.
+          if (result.error_code === 'duplicate_email') {
+            setError("An account with this email already exists.");
+            setDuplicateEmail(true);
+            setLoading(false);
+            return;
+          }
+          throw new Error(result.error || 'Registration failed');
+        }
 
         // register_company_and_profile's own return shape isn't relied on
         // elsewhere in this file -- reading the company id back off the
@@ -523,7 +554,19 @@ function LoginPageInner() {
         {/* Messages */}
         {error && (
           <div className="mb-6 px-5 py-3.5 bg-red-50 border border-red-100 rounded-2xl text-[11px] font-bold text-red-600 leading-relaxed flex items-start gap-2">
-            <AlertCircle size={14} className="mt-0.5 shrink-0" /> {error}
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            <span>
+              {error}
+              {duplicateEmail && (
+                <>
+                  {" "}Is this you?{" "}
+                  <button type="button" onClick={switchMode} className="underline hover:text-red-800 transition-colors">
+                    Log in instead
+                  </button>
+                  .
+                </>
+              )}
+            </span>
           </div>
         )}
         {success && (
