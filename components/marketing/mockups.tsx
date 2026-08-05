@@ -12,7 +12,7 @@
 // own dark CSS, see MockClientUpdates).
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
   FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge, Flag,
@@ -792,12 +792,24 @@ function TaskFollowUpButton({ entries, onAdd, onMarkDone, onRemove }: {
 }) {
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(mockTodayStr());
+  const containerRef = useRef<HTMLDivElement>(null);
   const doneEntries = entries.filter((e) => e.isDone);
   const scheduledEntries = entries.filter((e) => !e.isDone);
   const hasScheduled = scheduledEntries.length > 0;
   const isFuture = date > mockTodayStr();
+
+  // Click-away close, same as the real popover (components/FollowUpToggle.tsx).
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
   return (
-    <div className="relative shrink-0">
+    <div ref={containerRef} className="relative shrink-0">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         title={hasScheduled ? `${scheduledEntries.length} follow-up(s) scheduled, click to manage` : doneEntries.length > 0 ? `Followed up ${doneEntries.length}x, click to manage` : "Log a follow-up"}
