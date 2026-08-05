@@ -65,6 +65,15 @@ function LoginPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // SessionHealthBanner sends people here (after force-signing them out)
+  // when their refresh token dies while idle -- show why they landed back
+  // on login instead of leaving it unexplained.
+  useEffect(() => {
+    if (searchParams.get('reason') === 'session_expired') {
+      setError("Your session expired. Please sign in again.");
+    }
+  }, [searchParams]);
+
   // Token state
   const [tokenValid, setTokenValid] = useState<boolean | null>(null);
   const [tokenData, setTokenData] = useState<{

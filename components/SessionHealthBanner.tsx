@@ -39,6 +39,32 @@ import { isPublicPath } from "@/components/AppLoader";
 // since 15-20 minutes idle is the exact window being investigated.
 const ACTIVE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
+// Confirmed live (2026-08-05): idle tab on iOS gets suspended mid-refresh,
+// so the refresh token the SDK has stored is already rotated-out by the
+// time the tab resumes. getSession() then fails with exactly this class of
+// message -- unlike a plain "expired" token, reloading the page can't fix
+// it (the stored token itself is dead), so the only real recovery is a
+// clean sign-out + fresh login rather than leaving the user on a page that
+// will just keep 401ing silently.
+function isDeadRefreshTokenError(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes("refresh token") && (m.includes("invalid") || m.includes("not found"));
+}
+
+// signOut() below itself fires a SIGNED_OUT event, which would otherwise
+// re-enter this same function -- guard so only the first caller actually
+// signs out/redirects (harmless race either way, but avoids duplicate
+// signOut() calls stacking up before the navigation actually happens).
+let reauthing = false;
+
+async function forceReauth(pathname: string) {
+  if (reauthing) return;
+  reauthing = true;
+  await supabase.auth.signOut().catch(() => {});
+  const redirect = encodeURIComponent(pathname || "/dashboard/quick-glance");
+  window.location.href = `/login?reason=session_expired&redirect=${redirect}`;
+}
+
 export default function SessionHealthBanner() {
   const pathname = usePathname();
   const [problem, setProblem] = useState<string | null>(null);
@@ -57,7 +83,15 @@ export default function SessionHealthBanner() {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (!active) return;
-        if (error) { setProblem(`Session check failed (${context}): ${error.message}`); return; }
+        if (error) {
+          if (isDeadRefreshTokenError(error.message)) {
+            setProblem(`Your session expired (${context}) -- signing you out...`);
+            forceReauth(window.location.pathname);
+            return;
+          }
+          setProblem(`Session check failed (${context}): ${error.message}`);
+          return;
+        }
         if (!session) { setProblem(`No active session detected (${context}) -- you may have been signed out.`); return; }
         if (session.expires_at && session.expires_at * 1000 < Date.now()) {
           setProblem(`Session token expired (${context}) and didn't refresh in time.`);
@@ -75,7 +109,15 @@ export default function SessionHealthBanner() {
     // background token refresh surfaces here even though nothing else in
     // the app was listening for it before this component existed.
     const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") setProblem("Signed out (session ended).");
+      // supabase-js signs the client out itself when a background refresh
+      // finds its stored refresh token already dead (the same case
+      // checkSession catches above) -- same recovery applies: this isn't a
+      // deliberate logout, so send them to a fresh login rather than
+      // leaving them stranded on a page that will just keep 401ing.
+      if (event === "SIGNED_OUT") {
+        setProblem("Your session expired -- signing you out...");
+        forceReauth(window.location.pathname);
+      }
       if (event === "TOKEN_REFRESHED") setProblem(null);
     });
 
