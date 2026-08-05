@@ -41,18 +41,23 @@ type Cell = string | { text: string; badge: TagColor };
 // purely a marketing-mockup affordance so these read as live product
 // previews instead of flat screenshots, not a claim about any specific
 // selection *behavior* the real table does with that click.
-function TableFrame({ label, columns, rows }: { label: string; columns: string[]; rows: Cell[][] }) {
+function TableFrame({ label, columns, rows, wide }: { label: string; columns: string[]; rows: Cell[][]; wide?: boolean }) {
   const [selected, setSelected] = useState<number | null>(null);
   return (
-    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className={`w-full ${wide ? "max-w-2xl" : "max-w-sm"} rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden`}>
       <div className="px-4 py-2.5 border-b border-slate-100">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
       </div>
-      <table className="w-full text-left border-collapse">
+      <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse table-fixed">
+        <colgroup>
+          <col className="w-[42%]" />
+          {columns.slice(1).map((c) => <col key={c} />)}
+        </colgroup>
         <thead>
           <tr className="bg-slate-50 border-b border-slate-200 text-slate-400">
             {columns.map((c) => (
-              <th key={c} className="px-4 py-2.5 text-[9px] font-bold uppercase tracking-widest">{c}</th>
+              <th key={c} className="px-3 py-2.5 text-[9px] font-bold uppercase tracking-widest truncate">{c}</th>
             ))}
           </tr>
         </thead>
@@ -64,7 +69,7 @@ function TableFrame({ label, columns, rows }: { label: string; columns: string[]
               className={`border-b border-slate-50 last:border-0 cursor-pointer transition-colors ${selected === i ? "bg-indigo-50/70" : "hover:bg-slate-50"}`}
             >
               {row.map((cell, ci) => (
-                <td key={ci} className="px-4 py-3 text-[12px] font-medium text-slate-700 truncate">
+                <td key={ci} className="px-3 py-3 text-[12px] font-medium text-slate-700 truncate">
                   {typeof cell === "string"
                     ? cell
                     : <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap ${TAG[cell.badge]}`}>{cell.text}</span>}
@@ -74,6 +79,7 @@ function TableFrame({ label, columns, rows }: { label: string; columns: string[]
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -127,7 +133,7 @@ export function DetailedTable({
       <thead>
         <tr className="bg-slate-50 border-b border-slate-100">
           {columns.map((c) => (
-            <th key={c.label} className={`px-3 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`}>{c.label}</th>
+            <th key={c.label} className={`px-2 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap ${c.align === "right" ? "text-right" : "text-left"}`}>{c.label}</th>
           ))}
         </tr>
       </thead>
@@ -139,7 +145,7 @@ export function DetailedTable({
             className={`border-b border-slate-50 last:border-0 cursor-pointer transition-colors ${selected === i ? "bg-indigo-50/70" : "hover:bg-slate-50"}`}
           >
             {row.map((cell, ci) => (
-              <td key={ci} className={`px-3 py-2 text-[11px] font-medium text-slate-700 whitespace-nowrap ${columns[ci]?.align === "right" ? "text-right" : "text-left"}`}>
+              <td key={ci} className={`px-2 py-2 text-[11px] font-medium text-slate-700 whitespace-nowrap ${columns[ci]?.align === "right" ? "text-right" : "text-left"}`}>
                 {typeof cell === "string"
                   ? cell
                   : <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap ${TAG[cell.badge]}`}>{cell.text}</span>}
@@ -152,7 +158,7 @@ export function DetailedTable({
         <tfoot>
           <tr className="bg-slate-50 border-t border-slate-200">
             {footer.map((cell, ci) => (
-              <td key={ci} colSpan={cell.colSpan} className={`px-3 py-2 text-[11px] font-bold text-slate-900 whitespace-nowrap ${cell.align === "right" ? "text-right" : "text-left"}`}>
+              <td key={ci} colSpan={cell.colSpan} className={`px-2 py-2 text-[11px] font-bold text-slate-900 whitespace-nowrap ${cell.align === "right" ? "text-right" : "text-left"}`}>
                 {cell.text}
               </td>
             ))}
@@ -335,17 +341,25 @@ export function MockMatterBoard() {
   );
 }
 
+// Time & Fee Entries has no dedicated "list view" widget of its own -- it's
+// a plain custom table (supabase/template_law_firm_seed.sql:214-234), so
+// there's no single canonical screen to recreate pixel-for-pixel. These
+// four columns are a real subset of that template's actual fields, kept in
+// their real relative order (Matter, Date, Duration Hours, Amount --
+// Invoice/Staff/Type/Task Code/Activity Code/Description/Rate/Billable/
+// Status omitted for space, not reordered), with the real field label
+// "Duration Hours" rather than an invented "Hours" shorthand.
 export function MockTimeEntries() {
   return (
     <TableFrame
       label="Time entries"
-      columns={["Matter", "Date", "Hours"]}
+      columns={["Matter", "Date", "Duration Hours", "Amount"]}
       rows={[
-        ["2024/0187 — Smith Family Trust", "22 Jul", "0.4h"],
-        ["2024/0201 — Nguyen Trust Deed", "22 Jul", "0.2h"],
-        ["2024/0164 — Harbord Property Co.", "21 Jul", "0.1h"],
-        ["2024/0212 — 88 Riverside Ave", "21 Jul", "0.3h"],
-        ["2024/0225 — Walsh Discretionary Trust", "20 Jul", "0.2h"],
+        ["2024/0187 — Smith Family Trust", "22 Jul", "0.4h", "$180.00"],
+        ["2024/0201 — Nguyen Trust Deed", "22 Jul", "0.2h", "$90.00"],
+        ["2024/0164 — Harbord Property Co.", "21 Jul", "0.1h", "$45.00"],
+        ["2024/0212 — 88 Riverside Ave", "21 Jul", "0.3h", "$135.00"],
+        ["2024/0225 — Walsh Discretionary Trust", "20 Jul", "0.2h", "$90.00"],
       ]}
     />
   );
@@ -353,13 +367,43 @@ export function MockTimeEntries() {
 
 // The example entries shown by both the home-page drawer preview and the
 // AI Time Entries deep-dive page (app/(marketing)/features/[slug]) -- kept
-// as one shared array so both stay in sync.
-export const AUTO_TIME_ENTRY_EXAMPLES = [
-  { initials: "SL", date: "22 Jul", matter: "2024/0187 — Smith Family Trust", description: "Reviewed Deed of Variation and drafted a short covering note to the trustee.", hours: "0.3", emails: 3 },
-  { initials: "JF", date: "22 Jul", matter: "2024/0212 — 88 Riverside Ave", description: "Reviewed Section 32 disclosure statement ahead of exchange.", hours: "0.2", emails: 1 },
-  { initials: "PS", date: "21 Jul", matter: "2024/0201 — Nguyen Trust Deed", description: "Drafted covering letter to settlor for execution.", hours: "0.2", emails: 2 },
-  { initials: "TW", date: "21 Jul", matter: "2024/0164 — Harbord Property Co.", description: "Confirmed settlement figure adjustments with purchaser's solicitor.", hours: "0.1", emails: 4 },
-  { initials: "AK", date: "20 Jul", matter: "2024/0225 — Walsh Discretionary Trust", description: "Reviewed trustee resolution ahead of registration.", hours: "0.1", emails: 1 },
+// as one shared array so both stay in sync. Each entry carries three real
+// description variants, not one string truncated three ways -- the real
+// Brief/Standard/Detailed toggle (lib/ai/autoTimeEntryDraft.ts's
+// DETAIL_INSTRUCTIONS) sends the model three different instructions ("a
+// bare few words" / "the way a professional would phrase it on an actual
+// bill" / "name the actual document, party, or next step"), so each level
+// is genuinely different wording, not the same sentence cut short.
+export const AUTO_TIME_ENTRY_EXAMPLES: {
+  initials: string; date: string; matter: string;
+  description: { brief: string; standard: string; detailed: string };
+  hours: string; emails: number;
+}[] = [
+  { initials: "SL", date: "22 Jul", matter: "2024/0187 — Smith Family Trust", hours: "0.3", emails: 3, description: {
+    brief: "Reviewed Deed of Variation.",
+    standard: "Reviewed Deed of Variation and drafted a short covering note to the trustee.",
+    detailed: "Reviewed Deed of Variation and drafted a short covering note to the trustee confirming the updated distribution schedule.",
+  } },
+  { initials: "JF", date: "22 Jul", matter: "2024/0212 — 88 Riverside Ave", hours: "0.2", emails: 1, description: {
+    brief: "Reviewed Section 32 statement.",
+    standard: "Reviewed Section 32 disclosure statement ahead of exchange.",
+    detailed: "Reviewed Section 32 disclosure statement ahead of exchange, noting the easement disclosure and confirming no further vendor amendments required.",
+  } },
+  { initials: "PS", date: "21 Jul", matter: "2024/0201 — Nguyen Trust Deed", hours: "0.2", emails: 2, description: {
+    brief: "Drafted covering letter to settlor.",
+    standard: "Drafted covering letter to settlor for execution.",
+    detailed: "Drafted covering letter to settlor for execution, enclosing the trust deed and explaining the signing requirements for each trustee.",
+  } },
+  { initials: "TW", date: "21 Jul", matter: "2024/0164 — Harbord Property Co.", hours: "0.1", emails: 4, description: {
+    brief: "Confirmed settlement figures.",
+    standard: "Confirmed settlement figure adjustments with purchaser's solicitor.",
+    detailed: "Confirmed settlement figure adjustments with purchaser's solicitor, reconciling rates and water usage apportionments ahead of settlement.",
+  } },
+  { initials: "AK", date: "20 Jul", matter: "2024/0225 — Walsh Discretionary Trust", hours: "0.1", emails: 1, description: {
+    brief: "Reviewed trustee resolution.",
+    standard: "Reviewed trustee resolution ahead of registration.",
+    detailed: "Reviewed trustee resolution ahead of registration, confirming appointor consent was correctly recorded before lodgement.",
+  } },
 ];
 
 // A faithful, near-1:1 recreation of the real drawer
@@ -420,7 +464,7 @@ export function MockAutoTimeEntries() {
               <span className="text-[10px] font-bold text-slate-500">Matter: {e.matter}</span>
             </div>
             <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-slate-700">
-              {detail === "brief" ? e.description.split(".")[0] + "." : e.description}
+              {e.description[detail]}
             </div>
             <div className="flex items-center gap-2">
               <span className="bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1 text-[11px] font-bold text-slate-700">{e.hours}</span>
@@ -468,7 +512,7 @@ export const TRUST_LEDGER_FOOTER = [
 // totals).
 export function MockTrustAccount() {
   return (
-    <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+    <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
       <IconHeader icon={FileText} tint="bg-violet-50" iconColor="text-violet-700" title="Trust Ledger Statement" subtitle="Every transaction for one matter, with running balance" />
       <div className="rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
         <DetailedTable columns={TRUST_LEDGER_COLUMNS} rows={TRUST_LEDGER_EXAMPLES.map((e) => e.row)} footer={TRUST_LEDGER_FOOTER} />

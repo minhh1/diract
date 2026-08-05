@@ -41,9 +41,9 @@ export default function TrustComplianceDetail() {
             Every transaction for a matter, in date order, with a running balance on every row — not a rolled-up total that
             hides how it got there.
           </p>
-          <div className={`rounded-2xl border border-slate-200 bg-white p-4 max-w-2xl ${isDark ? "dark" : ""}`}>
+          <div className={`rounded-2xl border border-slate-200 bg-white p-4 max-w-3xl ${isDark ? "dark" : ""}`}>
             <IconHeader icon={FileText} tint="bg-violet-50" iconColor="text-violet-700" title="Trust Ledger Statement" subtitle="Every transaction for one matter, with running balance" />
-            <div className="rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
+            <div className="rounded-xl border border-slate-100 overflow-hidden">
               <DetailedTable columns={TRUST_LEDGER_COLUMNS} rows={TRUST_LEDGER_EXAMPLES.map((e) => e.row)} footer={TRUST_LEDGER_FOOTER} />
             </div>
           </div>
