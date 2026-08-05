@@ -375,31 +375,31 @@ export function MockTimeEntries() {
 // bill" / "name the actual document, party, or next step"), so each level
 // is genuinely different wording, not the same sentence cut short.
 export const AUTO_TIME_ENTRY_EXAMPLES: {
-  initials: string; date: string; matter: string;
+  initials: string; mine: boolean; date: string; matter: string;
   description: { brief: string; standard: string; detailed: string };
   hours: string; emails: number;
 }[] = [
-  { initials: "SL", date: "22 Jul", matter: "2024/0187 — Smith Family Trust", hours: "0.3", emails: 3, description: {
+  { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0187 — Smith Family Trust", hours: "0.3", emails: 3, description: {
     brief: "Reviewed Deed of Variation.",
     standard: "Reviewed Deed of Variation and drafted a short covering note to the trustee.",
     detailed: "Reviewed Deed of Variation and drafted a short covering note to the trustee confirming the updated distribution schedule.",
   } },
-  { initials: "JF", date: "22 Jul", matter: "2024/0212 — 88 Riverside Ave", hours: "0.2", emails: 1, description: {
+  { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0212 — 88 Riverside Ave", hours: "0.2", emails: 1, description: {
     brief: "Reviewed Section 32 statement.",
     standard: "Reviewed Section 32 disclosure statement ahead of exchange.",
     detailed: "Reviewed Section 32 disclosure statement ahead of exchange, noting the easement disclosure and confirming no further vendor amendments required.",
   } },
-  { initials: "PS", date: "21 Jul", matter: "2024/0201 — Nguyen Trust Deed", hours: "0.2", emails: 2, description: {
+  { initials: "PS", mine: false, date: "21 Jul", matter: "2024/0201 — Nguyen Trust Deed", hours: "0.2", emails: 2, description: {
     brief: "Drafted covering letter to settlor.",
     standard: "Drafted covering letter to settlor for execution.",
     detailed: "Drafted covering letter to settlor for execution, enclosing the trust deed and explaining the signing requirements for each trustee.",
   } },
-  { initials: "TW", date: "21 Jul", matter: "2024/0164 — Harbord Property Co.", hours: "0.1", emails: 4, description: {
+  { initials: "TW", mine: false, date: "21 Jul", matter: "2024/0164 — Harbord Property Co.", hours: "0.1", emails: 4, description: {
     brief: "Confirmed settlement figures.",
     standard: "Confirmed settlement figure adjustments with purchaser's solicitor.",
     detailed: "Confirmed settlement figure adjustments with purchaser's solicitor, reconciling rates and water usage apportionments ahead of settlement.",
   } },
-  { initials: "AK", date: "20 Jul", matter: "2024/0225 — Walsh Discretionary Trust", hours: "0.1", emails: 1, description: {
+  { initials: "AK", mine: false, date: "20 Jul", matter: "2024/0225 — Walsh Discretionary Trust", hours: "0.1", emails: 1, description: {
     brief: "Reviewed trustee resolution.",
     standard: "Reviewed trustee resolution ahead of registration.",
     detailed: "Reviewed trustee resolution ahead of registration, confirming appointor consent was correctly recorded before lodgement.",
@@ -412,17 +412,24 @@ export const AUTO_TIME_ENTRY_EXAMPLES: {
 // detail-level toggle) sitting above the entry list, same per-entry shape
 // (timekeeper initials, matter label, editable-looking description box,
 // hours pill, email count). Example content is real-sounding legal
-// drafting wording against real-shaped matter numbers. The scope and
-// detail-level toggles genuinely switch, and each entry is a real
-// checkbox -- unchecking one lowers "Submit N selected" the same way the
-// real panel does when you deselect an entry before submitting.
+// drafting wording against real-shaped matter numbers. The scope toggle
+// genuinely filters the list -- "My day" shows only the signed-in viewer's
+// own two entries (both initialed SL here), "Everyone's day (Admin)" shows
+// every timekeeper's, matching the real panel's own scoped API fetch (see
+// that file's `scope` state) -- not the same five rows redrawn under a
+// different label. The detail-level toggle genuinely switches too, and
+// each entry is a real checkbox -- unchecking one lowers the submit
+// count the same way the real panel does when you deselect an entry, and
+// the button label itself flips to "Push" in the admin/everyone scope,
+// same as the real panel's own `scope === "all" ? "Push" : "Submit"` copy.
 export function MockAutoTimeEntries() {
   const [scope, setScope] = useState<"mine" | "everyone">("mine");
   const [detail, setDetail] = useState<"brief" | "standard" | "detailed">("detailed");
   const [selected, setSelected] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(AUTO_TIME_ENTRY_EXAMPLES.map((e) => [e.matter, true]))
   );
-  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const visibleEntries = scope === "mine" ? AUTO_TIME_ENTRY_EXAMPLES.filter((e) => e.mine) : AUTO_TIME_ENTRY_EXAMPLES;
+  const selectedCount = visibleEntries.filter((e) => selected[e.matter]).length;
   return (
     <div className="w-full max-w-sm rounded-[20px] border border-slate-200 bg-white shadow-xl overflow-hidden">
       <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
@@ -450,7 +457,7 @@ export function MockAutoTimeEntries() {
       </div>
 
       <div className="px-5 py-4 space-y-3">
-        {AUTO_TIME_ENTRY_EXAMPLES.map((e) => (
+        {visibleEntries.map((e) => (
           <button
             key={e.matter}
             onClick={() => setSelected((s) => ({ ...s, [e.matter]: !s[e.matter] }))}
@@ -477,7 +484,7 @@ export function MockAutoTimeEntries() {
 
       <div className="px-5 py-4 border-t border-slate-100">
         <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold">
-          Submit {selectedCount} selected
+          {scope === "everyone" ? "Push" : "Submit"} {selectedCount} selected
         </div>
       </div>
     </div>
