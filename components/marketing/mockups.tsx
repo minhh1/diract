@@ -1016,13 +1016,19 @@ const MARKETPLACE_TEMPLATES: { key: string; icon: LucideIcon; color: string; nam
 // highlight on the active option, both genuinely changing which rows
 // show (the filter narrows the same underlying list, it isn't just a
 // highlight swap).
-type AgingItem = { matter: string; staff: string; date: string; hours: number; days: number };
+// Times columns/order (Matter, Staff, Date, Description, Hours, Days
+// unbilled) and Matters columns/order (Matter, Oldest unbilled date, Days
+// unbilled, Unbilled entries, Unbilled hours) both copied field-for-field
+// from TimeAgingReportWidget.tsx's own two <table>s -- an earlier version
+// of this mockup trimmed both down and reordered them, which looked
+// plausible but wasn't what the real widget shows.
+type AgingItem = { matter: string; staff: string; date: string; description: string; hours: number; days: number };
 const QUICK_GLANCE_ITEMS: AgingItem[] = [
-  { matter: "2024/0225", staff: "Aisha Khan", date: "12 Jun", hours: 0.3, days: 42 },
-  { matter: "2024/0164", staff: "Priya Shah", date: "19 Jun", hours: 0.4, days: 35 },
-  { matter: "2024/0201", staff: "Jono Ferreira", date: "5 Jul", hours: 0.2, days: 18 },
-  { matter: "2024/0187", staff: "Sarah Lee", date: "11 Jul", hours: 0.3, days: 12 },
-  { matter: "2024/0212", staff: "Tom Walsh", date: "17 Jul", hours: 0.2, days: 6 },
+  { matter: "2024/0225", staff: "Aisha Khan", date: "12 Jun", description: "Reviewed trustee resolution ahead of registration.", hours: 0.3, days: 42 },
+  { matter: "2024/0164", staff: "Priya Shah", date: "19 Jun", description: "Confirmed settlement figure adjustments with purchaser's solicitor.", hours: 0.4, days: 35 },
+  { matter: "2024/0201", staff: "Jono Ferreira", date: "5 Jul", description: "Drafted covering letter to settlor for execution.", hours: 0.2, days: 18 },
+  { matter: "2024/0187", staff: "Sarah Lee", date: "11 Jul", description: "Reviewed Deed of Variation and drafted a short covering note.", hours: 0.3, days: 12 },
+  { matter: "2024/0212", staff: "Tom Walsh", date: "17 Jul", description: "Reviewed Section 32 disclosure statement ahead of exchange.", hours: 0.2, days: 6 },
 ];
 const AGING_OPTIONS = [5, 10, 15, 30] as const;
 
@@ -1031,10 +1037,10 @@ export function MockQuickGlance() {
   const [olderThan, setOlderThan] = useState<(typeof AGING_OPTIONS)[number]>(30);
   const items = QUICK_GLANCE_ITEMS.filter((i) => i.days >= olderThan);
   const matterRows = Object.values(
-    items.reduce<Record<string, { matter: string; entries: number; hours: number; days: number }>>((acc, it) => {
+    items.reduce<Record<string, { matter: string; oldestDate: string; entries: number; hours: number; days: number }>>((acc, it) => {
       const existing = acc[it.matter];
       if (existing) { existing.entries += 1; existing.hours += it.hours; }
-      else acc[it.matter] = { matter: it.matter, entries: 1, hours: it.hours, days: it.days };
+      else acc[it.matter] = { matter: it.matter, oldestDate: it.date, entries: 1, hours: it.hours, days: it.days };
       return acc;
     }, {})
   );
@@ -1086,17 +1092,25 @@ export function MockQuickGlance() {
           ))}
         </div>
         <div className="rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
-          {view === "times" ? (
-            <DetailedTable
-              columns={[{ label: "Matter" }, { label: "Staff" }, { label: "Hours", align: "right" }, { label: "Days unbilled", align: "right" }]}
-              rows={items.map((i) => [i.matter, i.staff, i.hours.toFixed(1), { text: `${i.days}`, badge: "amber" as const }])}
-            />
-          ) : (
-            <DetailedTable
-              columns={[{ label: "Matter" }, { label: "Entries", align: "right" }, { label: "Hours", align: "right" }, { label: "Days unbilled", align: "right" }]}
-              rows={matterRows.map((m) => [m.matter, String(m.entries), m.hours.toFixed(1), { text: `${m.days}`, badge: "amber" as const }])}
-            />
-          )}
+          <div className={view === "times" ? "min-w-[600px]" : "min-w-[520px]"}>
+            {view === "times" ? (
+              <DetailedTable
+                columns={[
+                  { label: "Matter" }, { label: "Staff" }, { label: "Date" }, { label: "Description" },
+                  { label: "Hours", align: "right" }, { label: "Days unbilled", align: "right" },
+                ]}
+                rows={items.map((i) => [i.matter, i.staff, i.date, i.description, i.hours.toFixed(1), { text: `${i.days}`, badge: "amber" as const }])}
+              />
+            ) : (
+              <DetailedTable
+                columns={[
+                  { label: "Matter" }, { label: "Oldest unbilled date" }, { label: "Days unbilled", align: "right" },
+                  { label: "Unbilled entries", align: "right" }, { label: "Unbilled hours", align: "right" },
+                ]}
+                rows={matterRows.map((m) => [m.matter, m.oldestDate, { text: `${m.days}`, badge: "amber" as const }, String(m.entries), m.hours.toFixed(1)])}
+              />
+            )}
+          </div>
           {items.length === 0 && <p className="text-center py-6 text-[11px] text-slate-300 italic">Nothing unbilled past {olderThan} days</p>}
         </div>
       </div>
