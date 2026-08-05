@@ -6,6 +6,7 @@
 // generateTrustLedgerPdf.ts.
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { wrapPdfText } from "./pdfTextWrap";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface BankReconciliationLine {
   date: string | null;
@@ -214,9 +215,22 @@ export async function generateBankReconciliationPdf(input: GenerateBankReconcili
   text('Print name (Partner)', MARGIN, 9, { color: [0.5, 0.5, 0.55] });
   y -= 20;
 
+  // Pagination logic in this file can leave a trailing or interstitial page
+  // with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here,
+  // BEFORE page numbers are stamped on, so a blank page is still detectably
+  // blank (a page number would otherwise be the one thing drawn on it) and
+  // "Page X of Y" reflects the pages that actually survive.
+  removeBlankPages(pdfDoc);
+
   // ── Page numbering ───────────────────────────────────────────────────
-  pages.forEach((p, i) => {
-    const label = `Page ${i + 1} of ${pages.length}`;
+  // Re-read from pdfDoc rather than reusing the local `pages` array above --
+  // removeBlankPages may have dropped some of what's in it, and it's not
+  // safe to keep drawing onto a page reference that's no longer part of the
+  // document.
+  const survivingPages = pdfDoc.getPages();
+  survivingPages.forEach((p, i) => {
+    const label = `Page ${i + 1} of ${survivingPages.length}`;
     p.drawText(label, {
       x: PAGE_W - MARGIN - regular.widthOfTextAtSize(label, 8),
       y: MARGIN - 22, size: 8, font: regular, color: rgb(0.6, 0.6, 0.63),

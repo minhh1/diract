@@ -4,6 +4,7 @@
 // single fixed-layout page (no line-item tables, no per-template
 // customization) since a receipt is a short confirmation, not a bill.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface GenerateReceiptPdfInput {
   company: { name: string; abn: string | null; address: string | null; logoBytes: Uint8Array | null; logoIsPng: boolean };
@@ -149,5 +150,10 @@ export async function generateReceiptPdf(input: GenerateReceiptPdfInput): Promis
     y -= 16;
   }
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

@@ -6,6 +6,7 @@
 // generateTrustReceiptPdf.ts.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { wrapPdfText } from "./pdfTextWrap";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface TrustLedgerRow {
   transactionDate: string | null;
@@ -140,5 +141,10 @@ export async function generateTrustLedgerPdf(input: GenerateTrustLedgerPdfInput)
     text('No trust transactions recorded for this matter.', MARGIN, 11, { color: [0.5, 0.5, 0.55] }, y);
   }
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

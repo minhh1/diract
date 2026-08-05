@@ -11,6 +11,7 @@
 // rows, a MATTER/AMOUNT table) so the two documents read as a matched
 // pair -- this is the withdrawal-side counterpart of that deposit receipt.
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface GenerateTrustPaymentPdfInput {
   company: { name: string; abn: string | null; address: string | null; logoBytes: Uint8Array | null; logoIsPng: boolean };
@@ -143,5 +144,10 @@ export async function generateTrustPaymentPdf(input: GenerateTrustPaymentPdfInpu
     text(details, MARGIN, 10, { color: [0.4, 0.4, 0.45] }, y);
   }
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

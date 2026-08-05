@@ -15,6 +15,7 @@
 // `style` prop.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import type { GenerateInvoicePdfInput } from "./generateInvoicePdf";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 const PAGE_W = 595.28, PAGE_H = 841.89; // A4, points
 const MARGIN = 50;
@@ -416,5 +417,10 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
     y -= 8;
   }
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

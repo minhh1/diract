@@ -3,6 +3,7 @@
 // record to hydrate server-side).
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { wrapPdfText } from "./pdfTextWrap";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface DormantTrustBalanceRow {
   matterNumber: string | null;
@@ -98,5 +99,10 @@ export async function generateDormantTrustBalancesPdf(input: GenerateDormantTrus
     text('No dormant trust balances.', MARGIN, 10, { color: [0.5, 0.5, 0.55] }, y);
   }
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

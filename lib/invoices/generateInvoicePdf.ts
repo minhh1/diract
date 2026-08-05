@@ -8,6 +8,7 @@
 // this session, see the plan file for sources.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { totalDiscount } from "./apportionment";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface InvoiceTemplateDisplay {
   showStaffInitials: boolean;
@@ -519,6 +520,11 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     fontFor(typo.complianceNotice, false), typo.complianceNotice.size, CONTENT_W
   )) { text(line, margin, typo.complianceNotice, { color: [0.6, 0.6, 0.64] }); y -= 11; }
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }
 

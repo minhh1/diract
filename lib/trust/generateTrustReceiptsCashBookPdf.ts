@@ -3,6 +3,7 @@
 // column (see TrustReceiptsCashBookWidget.tsx's header for why).
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { wrapPdfText } from "./pdfTextWrap";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface TrustReceiptsCashBookRow {
   date: string | null;
@@ -125,5 +126,10 @@ export async function generateTrustReceiptsCashBookPdf(input: GenerateTrustRecei
   text('Period total', colX[8], 9, { bold: true }, y);
   text(money(input.totalCredit), colX[9] + COLS[9].width, 9, { bold: true, align: 'right' }, y);
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

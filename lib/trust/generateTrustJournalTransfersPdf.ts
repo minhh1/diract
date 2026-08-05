@@ -1,6 +1,7 @@
 // Trust Journal Transfers PDF -- sibling of generateTrustReceiptsCashBookPdf.ts.
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { wrapPdfText } from "./pdfTextWrap";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface TrustJournalTransferRow {
   date: string | null;
@@ -119,5 +120,10 @@ export async function generateTrustJournalTransfersPdf(input: GenerateTrustJourn
   text(money(input.totalCredit), colX[7] + COLS[7].width, 9, { bold: true, align: 'right' }, y);
   text(money(input.totalDebit), colX[8] + COLS[8].width, 9, { bold: true, align: 'right' }, y);
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

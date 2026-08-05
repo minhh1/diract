@@ -5,6 +5,7 @@
 // aren't persisted fields.
 import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { wrapPdfText } from "./pdfTextWrap";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface TrustTrialBalanceRow {
   matterNumber: string | null;
@@ -159,5 +160,10 @@ export async function generateTrustTrialBalancePdf(input: GenerateTrustTrialBala
   text('Date:', MARGIN + 300, 9.5, { bold: true }, y);
   text(input.reviewedDate ? formatDate(input.reviewedDate) : '_______________', MARGIN + 335, 9.5, {}, y);
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

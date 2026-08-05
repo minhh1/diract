@@ -12,6 +12,8 @@
 // Production (e.g. Vercel, which can't run LibreOffice in a serverless
 // function): deploy the same image to a host you control (Fly.io, Railway,
 // a small VPS) and set GOTENBERG_URL to its reachable address.
+import { removeBlankPagesFromBytes } from "@/lib/pdf/removeBlankPages";
+
 const GOTENBERG_URL = process.env.GOTENBERG_URL || "http://localhost:3033";
 
 async function convert(bytes: Buffer, filename: string, targetFormat: "docx" | "pdf"): Promise<Buffer> {
@@ -45,5 +47,10 @@ export async function convertDocToDocx(bytes: Buffer, filename: string): Promise
 // action (see app/api/precedents/letterhead/route.ts) so a tag-placement
 // mistake is visible before it's relied on.
 export async function convertDocxToPdf(bytes: Buffer, filename = "document.docx"): Promise<Buffer> {
-  return convert(bytes, filename, "pdf");
+  const pdfBytes = await convert(bytes, filename, "pdf");
+  // A trailing paragraph that falls right on a page break, or a firm's own
+  // template carrying a genuinely blank page, comes through LibreOffice's
+  // conversion as a real blank page in the output -- caught here so it
+  // never reaches a client rather than trusted not to happen.
+  return Buffer.from(await removeBlankPagesFromBytes(pdfBytes));
 }

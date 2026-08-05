@@ -5,6 +5,7 @@
 // receipt number (DepositFundsModal.tsx's shared-receipt multi-matter split).
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { wrapPdfText } from "./pdfTextWrap";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface GenerateTrustReceiptPdfInput {
   company: { name: string; abn: string | null; address: string | null; logoBytes: Uint8Array | null; logoIsPng: boolean };
@@ -125,5 +126,10 @@ export async function generateTrustReceiptPdf(input: GenerateTrustReceiptPdfInpu
   text('Total', MARGIN, 12, { bold: true }, y);
   text(money(input.total), PAGE_W - MARGIN, 12, { bold: true, align: 'right' }, y);
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }

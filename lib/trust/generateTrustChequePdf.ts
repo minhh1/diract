@@ -1,6 +1,7 @@
 // Builds a printable trust cheque + remittance stub. Same pdf-lib
 // primitives/letterhead conventions as generateTrustReceiptPdf.ts.
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { removeBlankPages } from "@/lib/pdf/removeBlankPages";
 
 export interface GenerateTrustChequePdfInput {
   company: { name: string; abn: string | null; address: string | null; logoBytes: Uint8Array | null; logoIsPng: boolean };
@@ -137,5 +138,10 @@ export async function generateTrustChequePdf(input: GenerateTrustChequePdfInput)
   text('Amount', MARGIN, 10, { bold: true }, y);
   text(money(input.cheque.amount), PAGE_W - MARGIN, 12, { bold: true, align: 'right' }, y);
 
+  // Pagination logic in this file can leave a trailing or interstitial
+  // page with nothing actually drawn on it (an off-by-one in a row-count
+  // estimate, a section that turned out to have zero rows) -- caught here
+  // rather than trusted not to happen.
+  removeBlankPages(pdfDoc);
   return pdfDoc.save();
 }
