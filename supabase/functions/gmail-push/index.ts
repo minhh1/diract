@@ -183,6 +183,58 @@ function normaliseSubject(subject: string): string {
     .replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+// ── Central Email: full-body capture ─────────────────────────────────
+// Gmail body parts are base64url-encoded (RFC 4648 §5, no padding) UTF-8 --
+// Deno's atob() only understands standard base64 and returns a raw binary
+// string, not decoded UTF-8, so both the alphabet and the text decoding
+// need handling here.
+function decodeGmailBase64Url(data: string): string {
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "===".slice((base64.length + 3) % 4);
+  try {
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+function extractBodyHtml(payload: any): string {
+  if (!payload) return "";
+  if (payload.body?.data) return decodeGmailBase64Url(payload.body.data);
+  if (payload.parts?.length) {
+    const htmlPart = payload.parts.find((p: any) => p.mimeType === "text/html");
+    const textPart = payload.parts.find((p: any) => p.mimeType === "text/plain");
+    const preferred = htmlPart || textPart;
+    if (preferred?.body?.data) return decodeGmailBase64Url(preferred.body.data);
+    for (const part of payload.parts) {
+      const body = extractBodyHtml(part);
+      if (body) return body;
+    }
+  }
+  return "";
+}
+
+// Best-effort: a failed capture just leaves this one message's central copy
+// looking empty, never breaks the webhook (matching every other call in
+// this file's "never throw over a non-essential write" convention, e.g.
+// logActivity/heartbeat above).
+async function captureBodyForCentralEmail(token: string, msgId: string, contentId: string | null | undefined): Promise<void> {
+  if (!contentId) return;
+  try {
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const msgData = await res.json();
+    const html = extractBodyHtml(msgData.payload);
+    if (html) await db.from("project_email_content").update({ body_html: html }).eq("id", contentId);
+  } catch (err) {
+    console.error(`[push] Central Email body capture failed for ${msgId}:`, err);
+  }
+}
+
 async function applyLabel(token: string, msgId: string, labelId: string): Promise<boolean> {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/modify`, {
     method: "POST",
@@ -324,14 +376,20 @@ Deno.serve(async (req) => {
     // Get ALL companies this user belongs to, with their gmail_parent_label
     const { data: memberships } = await db
       .from("company_memberships")
-      .select("company_id, companies:company_id(id, gmail_parent_label)")
+      .select("company_id, companies:company_id(id, gmail_parent_label, central_email_enabled)")
       .eq("user_id", userId);
 
     // Build map: parentLabel → companyId
     const companiesByPrefix = new Map<string, string>();
+    // Central Email: when on for a company, skip pushing labels into every
+    // other team member's mailbox (resetJobsForNewEmail below) -- the
+    // acting/receiving user's own copy (already written to project_emails
+    // above/below) plus a centrally-stored body is all that's kept.
+    const companiesCentralEmail = new Map<string, boolean>();
     for (const m of (memberships || [])) {
       const pl = (m.companies as any)?.gmail_parent_label;
       if (pl) companiesByPrefix.set(pl, m.company_id);
+      companiesCentralEmail.set(m.company_id, !!(m.companies as any)?.central_email_enabled);
     }
 
     console.log(`[push] user=${userId} companies=${companiesByPrefix.size} prefixes=[${[...companiesByPrefix.keys()].join(', ')}]`);
@@ -450,7 +508,7 @@ Deno.serve(async (req) => {
           target_user_id: userId, details: { label_code: labelCode, count: items.length },
         });
 
-        await resetJobsForNewEmail(companyId, dbLabel.project_id);
+        if (!companiesCentralEmail.get(companyId)) await resetJobsForNewEmail(companyId, dbLabel.project_id);
         continue;
       }
 
@@ -472,7 +530,10 @@ Deno.serve(async (req) => {
           console.log(`[push] ✓ Saved msg=${msgId} subject="${meta1.subject}"`);
           // A skipped duplicate (already tracked) returns no row — only a
           // genuinely new message needs to propagate to the rest of the team.
-          if (d1 && d1.length > 0) await resetJobsForNewEmail(companyId, dbLabel.project_id);
+          if (d1 && d1.length > 0) {
+            if (companiesCentralEmail.get(companyId)) await captureBodyForCentralEmail(token, msgId, d1[0].content_id);
+            else await resetJobsForNewEmail(companyId, dbLabel.project_id);
+          }
           await logActivity({
             company_id: companyId, triggered_by: null, action: "sync_to_user",
             project_id: dbLabel.project_id, gmail_message_id: msgId, gmail_label_name: gmailLabelDisplayName,
@@ -593,10 +654,11 @@ Deno.serve(async (req) => {
               project_id: dbLabel.project_id, company_id: matchedCompanyId,
               user_id: userId, gmail_message_id: msgId, gmail_thread_id: threadId2, gmail_label_applied: true,
             }, { onConflict: "user_id,gmail_message_id", ignoreDuplicates: true }).select();
+            const isNewMessage2 = !!(d2 && d2.length > 0);
             if (e2) console.error(`[push] upsert error:`, e2.message);
             else {
               console.log(`[push] ✓ Saved labelled email ${msgId} [${matchedCode}]`);
-              if (d2 && d2.length > 0) await resetJobsForNewEmail(matchedCompanyId, dbLabel.project_id);
+              if (isNewMessage2 && !companiesCentralEmail.get(matchedCompanyId)) await resetJobsForNewEmail(matchedCompanyId, dbLabel.project_id);
             }
             const meta2 = extractEmailMeta(md2);
             await logActivity({
@@ -604,10 +666,13 @@ Deno.serve(async (req) => {
               project_id: dbLabel.project_id, gmail_message_id: msgId, gmail_label_name: dbLabel.gmail_label_name,
               target_user_id: userId, details: { label_code: matchedCode, subject: meta2.subject, snippet: meta2.snippet },
             });
-            await db.from("project_emails").update({
+            const { data: updated2 } = await db.from("project_emails").update({
               subject: meta2.subject, from_address: meta2.from_address, from_name: meta2.from_name,
               date: meta2.date, snippet: meta2.snippet,
-            }).eq("user_id", userId).eq("gmail_message_id", msgId);
+            }).eq("user_id", userId).eq("gmail_message_id", msgId).select("content_id").single();
+            if (isNewMessage2 && companiesCentralEmail.get(matchedCompanyId)) {
+              await captureBodyForCentralEmail(token, msgId, updated2?.content_id);
+            }
             if (meta2.subject) {
               const ns = normaliseSubject(meta2.subject);
               if (ns) await db.from("project_email_subjects").upsert({
@@ -765,7 +830,10 @@ Deno.serve(async (req) => {
             subject: meta3.subject, from_address: meta3.from_address, from_name: meta3.from_name,
             date: meta3.date, snippet: meta3.snippet, gmail_label_applied: true,
           }, { onConflict: "user_id,gmail_message_id", ignoreDuplicates: true }).select();
-          if (d3 && d3.length > 0) await resetJobsForNewEmail(subjectMatch.company_id, subjectMatch.project_id);
+          if (d3 && d3.length > 0) {
+            if (companiesCentralEmail.get(subjectMatch.company_id)) await captureBodyForCentralEmail(token, msgId, d3[0].content_id);
+            else await resetJobsForNewEmail(subjectMatch.company_id, subjectMatch.project_id);
+          }
           await db.from("project_email_subjects").upsert({
             project_id: subjectMatch.project_id, company_id: subjectMatch.company_id,
             gmail_message_id: msgId, subject_normalised: normSubject,

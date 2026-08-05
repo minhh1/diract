@@ -105,6 +105,13 @@ async function processUserDelta(userId: string): Promise<void> {
   const token = await getAccessToken(userId);
   if (!token) return;
 
+  // Central Email: when on for this company, skip fanning the category out
+  // to every other member's mailbox (enqueueLabelSyncJob below) -- same
+  // treatment as gmail-push's resetJobsForNewEmail gate.
+  const { data: companyRow } = await db.from("companies")
+    .select("central_email_enabled").eq("id", tokenRow.company_id).single();
+  const centralEmailEnabled = !!companyRow?.central_email_enabled;
+
   if (!tokenRow.delta_link) {
     console.log(`[outlook-push] No delta_link for ${userId} — skipping until setup-outlook-watch seeds one`);
     return;
@@ -171,7 +178,9 @@ async function processUserDelta(userId: string): Promise<void> {
         });
       }
 
-      await enqueueLabelSyncJob(tokenRow.company_id, labelRow.project_id, labelRow.label_code, categoryName, userId);
+      if (!centralEmailEnabled) {
+        await enqueueLabelSyncJob(tokenRow.company_id, labelRow.project_id, labelRow.label_code, categoryName, userId);
+      }
       await logActivity({
         company_id: tokenRow.company_id, triggered_by: userId, action: "label_applied",
         project_id: labelRow.project_id, outlook_message_id: item.id, category_name: categoryName,

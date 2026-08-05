@@ -59,6 +59,10 @@ export default function AdminEmailTab({ companyId }: Props) {
   const [settings, setSettings] = useState<Record<string, boolean>>({});
   const [settingsLoading, setSettingsLoading] = useState(true);
 
+  const [centralEmailEnabled, setCentralEmailEnabled] = useState(false);
+  const [centralEmailLoading, setCentralEmailLoading] = useState(true);
+  const [centralEmailSaving, setCentralEmailSaving] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/company/email-domain");
@@ -74,10 +78,25 @@ export default function AdminEmailTab({ companyId }: Props) {
     setSettingsLoading(false);
   }, [companyId]);
 
+  const loadCentralEmail = useCallback(async () => {
+    setCentralEmailLoading(true);
+    const { data } = await supabase.from("companies").select("central_email_enabled").eq("id", companyId).single();
+    setCentralEmailEnabled(data?.central_email_enabled ?? false);
+    setCentralEmailLoading(false);
+  }, [companyId]);
+
   useEffect(() => {
     load();
     loadSettings();
-  }, [load, loadSettings]);
+    loadCentralEmail();
+  }, [load, loadSettings, loadCentralEmail]);
+
+  const toggleCentralEmail = async (enabled: boolean) => {
+    setCentralEmailSaving(true);
+    setCentralEmailEnabled(enabled);
+    await supabase.from("companies").update({ central_email_enabled: enabled }).eq("id", companyId);
+    setCentralEmailSaving(false);
+  };
 
   const connect = async () => {
     setError(null);
@@ -277,6 +296,36 @@ export default function AdminEmailTab({ companyId }: Props) {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-[32px] p-6">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Central email</p>
+        <p className="text-[12px] text-slate-400 mb-4">
+          Stop copying project-labeled emails into every team member&apos;s own Gmail/Outlook mailbox. The person
+          who files an email still gets it in their own mailbox as usual, but nobody else does -- everyone instead
+          reads it from the project&apos;s Emails tab in the app.
+        </p>
+        {centralEmailLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 size={16} className="animate-spin text-slate-300" />
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 rounded-2xl">
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-medium text-slate-700">Central email</p>
+              <p className="text-[11px] text-slate-400">On: emails stay central. Off: emails sync to every member&apos;s mailbox (default).</p>
+            </div>
+            <button
+              onClick={() => toggleCentralEmail(!centralEmailEnabled)}
+              disabled={centralEmailSaving}
+              className={`px-3 py-1 text-[10px] font-bold rounded-full transition-colors shrink-0 disabled:opacity-40 ${
+                centralEmailEnabled ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {centralEmailEnabled ? "On" : "Off"}
+            </button>
           </div>
         )}
       </div>

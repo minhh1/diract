@@ -1,6 +1,29 @@
 // app/api/gmail/assign/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { fetchEmailBody } from "@/lib/gmail/client";
+
+// Central Email: best-effort full-body capture so every project member can
+// read this message from the app, not just the acting user's own mailbox
+// (which is all that's left connected once cross-mailbox sync is skipped).
+// Never throws -- a failed capture just means this one message falls back
+// to looking empty in the central view, not a broken assign request.
+async function captureBodyForCentralEmail(
+  supabase: any,
+  contentId: string | null | undefined,
+  messageId: string,
+  userId: string
+): Promise<void> {
+  if (!contentId) return;
+  try {
+    const bodyHtml = await fetchEmailBody(messageId, userId, supabase);
+    if (bodyHtml) {
+      await supabase.from('project_email_content').update({ body_html: bodyHtml }).eq('id', contentId);
+    }
+  } catch (err) {
+    console.error('[assign] Central Email body capture failed:', err);
+  }
+}
 
 export async function POST(req: NextRequest) {
 
@@ -51,6 +74,16 @@ export async function POST(req: NextRequest) {
     console.log('[assign] Step 2 company:', prof?.active_company_id, 'error:', profError?.message);
     const companyId = prof?.active_company_id;
     if (!companyId) return NextResponse.json({ error: 'No company' }, { status: 400 });
+
+    // Central Email: when on, the acting user's own mailbox still gets the
+    // label (below), but we skip pushing it into every other member's
+    // mailbox too -- see app/dashboard/admin's Email tab toggle.
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('central_email_enabled')
+      .eq('id', companyId)
+      .single();
+    const centralEmailEnabled = companyRow?.central_email_enabled ?? false;
 
     // ── Step 3: get Gmail token row directly ───────────────────
     const { data: tokenRow, error: tokenError } = await supabase
@@ -164,7 +197,7 @@ export async function POST(req: NextRequest) {
         if (pglError2) {
           return NextResponse.json({ error: `DB error: ${pglError2.message}` }, { status: 500 });
         }
-        const { error: peError2 } = await supabase
+        const { data: peData2, error: peError2 } = await supabase
           .from('project_emails')
           .upsert({
             user_id: user.id,
@@ -178,7 +211,9 @@ export async function POST(req: NextRequest) {
             date: date || null,
             snippet: snippet || '',
             gmail_label_applied: true,
-          }, { onConflict: 'user_id,gmail_message_id' });
+          }, { onConflict: 'user_id,gmail_message_id' })
+          .select('content_id')
+          .single();
         if (peError2) {
           return NextResponse.json({ error: `DB error: ${peError2.message}` }, { status: 500 });
         }
@@ -191,6 +226,9 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({ addLabelIds: [labelWithCode.id] }),
           }
         );
+        if (centralEmailEnabled) {
+          await captureBodyForCentralEmail(supabase, peData2?.content_id, messageId, user.id);
+        }
         console.log('[assign] Re-applied existing code label — done');
         return NextResponse.json({
           ok: true,
@@ -292,7 +330,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Save project_emails
-    const { error: peError } = await supabase
+    const { data: peData, error: peError } = await supabase
       .from('project_emails')
       .upsert({
         user_id: user.id,
@@ -306,7 +344,9 @@ export async function POST(req: NextRequest) {
         date: date || null,
         snippet: snippet || '',
         gmail_label_applied: true,
-      }, { onConflict: 'user_id,gmail_message_id' });
+      }, { onConflict: 'user_id,gmail_message_id' })
+      .select('content_id')
+      .single();
 
     if (peError) {
       console.error('[assign] project_emails FAILED:', peError.message);
@@ -359,6 +399,10 @@ export async function POST(req: NextRequest) {
 
     console.log('[assign] Label applied successfully');
 
+    if (centralEmailEnabled) {
+      await captureBodyForCentralEmail(supabase, peData?.content_id, messageId, user.id);
+    }
+
     // ── Also write to user_gmail_label_sync for current user ───
     await supabase
       .from('user_gmail_label_sync')
@@ -373,114 +417,120 @@ export async function POST(req: NextRequest) {
       }, { onConflict: 'user_id,project_id,gmail_message_id' });
 
     // ── Step 9: sync to other company members ──────────────────
-    const { data: members } = await supabase
-      .from('company_memberships')
-      .select('user_id')
-      .eq('company_id', companyId)
-      .neq('user_id', user.id);
-
-    console.log('[assign] Other members to sync:', members?.length || 0);
+    // Skipped entirely when Central Email is on -- the email stays only in
+    // the acting user's own mailbox (already labeled above); everyone else
+    // reads it centrally instead (see Step 11's body capture below).
     const syncResults: string[] = [];
 
-    for (const member of (members || [])) {
-      try {
-        const { data: mTokenRow } = await supabase
-          .from('user_gmail_tokens')
-          .select('access_token, refresh_token, token_expires_at')
-          .eq('user_id', member.user_id)
-          .single();
+    if (!centralEmailEnabled) {
+      const { data: members } = await supabase
+        .from('company_memberships')
+        .select('user_id')
+        .eq('company_id', companyId)
+        .neq('user_id', user.id);
 
-        if (!mTokenRow) continue;
+      console.log('[assign] Other members to sync:', members?.length || 0);
 
-        let mAccessToken = mTokenRow.access_token;
-        const mExpired = Date.now() > new Date(mTokenRow.token_expires_at).getTime() - 5 * 60 * 1000;
+      for (const member of (members || [])) {
+        try {
+          const { data: mTokenRow } = await supabase
+            .from('user_gmail_tokens')
+            .select('access_token, refresh_token, token_expires_at')
+            .eq('user_id', member.user_id)
+            .single();
 
-        if (mExpired) {
-          const mRefreshRes = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              client_id: process.env.GOOGLE_CLIENT_ID!,
-              client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-              refresh_token: mTokenRow.refresh_token,
-              grant_type: 'refresh_token',
-            }),
-          });
-          const mRefreshed = await mRefreshRes.json();
-          if (mRefreshed.access_token) {
-            mAccessToken = mRefreshed.access_token;
-            await supabase.from('user_gmail_tokens').update({
-              access_token: mRefreshed.access_token,
-              token_expires_at: new Date(Date.now() + mRefreshed.expires_in * 1000).toISOString(),
-            }).eq('user_id', member.user_id);
-          } else continue;
-        }
+          if (!mTokenRow) continue;
 
-        // Get member labels and create hierarchy
-        const mLabelsRes = await fetch(
-          'https://gmail.googleapis.com/gmail/v1/users/me/labels',
-          { headers: { Authorization: `Bearer ${mAccessToken}` } }
-        );
-        const mLabelsData = await mLabelsRes.json();
-        const mExisting: { id: string; name: string }[] = mLabelsData.labels || [];
-        let mLabelId: string | null = null;
+          let mAccessToken = mTokenRow.access_token;
+          const mExpired = Date.now() > new Date(mTokenRow.token_expires_at).getTime() - 5 * 60 * 1000;
 
-        for (let i = 1; i <= labelParts.length; i++) {
-          const partialName = labelParts.slice(0, i).join('/');
-          const found = mExisting.find(l => l.name === partialName);
-          if (found) { mLabelId = found.id; continue; }
+          if (mExpired) {
+            const mRefreshRes = await fetch('https://oauth2.googleapis.com/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                client_id: process.env.GOOGLE_CLIENT_ID!,
+                client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+                refresh_token: mTokenRow.refresh_token,
+                grant_type: 'refresh_token',
+              }),
+            });
+            const mRefreshed = await mRefreshRes.json();
+            if (mRefreshed.access_token) {
+              mAccessToken = mRefreshed.access_token;
+              await supabase.from('user_gmail_tokens').update({
+                access_token: mRefreshed.access_token,
+                token_expires_at: new Date(Date.now() + mRefreshed.expires_in * 1000).toISOString(),
+              }).eq('user_id', member.user_id);
+            } else continue;
+          }
 
-          const mCreateRes = await fetch(
+          // Get member labels and create hierarchy
+          const mLabelsRes = await fetch(
             'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+            { headers: { Authorization: `Bearer ${mAccessToken}` } }
+          );
+          const mLabelsData = await mLabelsRes.json();
+          const mExisting: { id: string; name: string }[] = mLabelsData.labels || [];
+          let mLabelId: string | null = null;
+
+          for (let i = 1; i <= labelParts.length; i++) {
+            const partialName = labelParts.slice(0, i).join('/');
+            const found = mExisting.find(l => l.name === partialName);
+            if (found) { mLabelId = found.id; continue; }
+
+            const mCreateRes = await fetch(
+              'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${mAccessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  name: partialName,
+                  labelListVisibility: 'labelShow',
+                  messageListVisibility: i === labelParts.length ? 'show' : 'hide',
+                }),
+              }
+            );
+            if (!mCreateRes.ok) continue;
+            const mCreated = await mCreateRes.json();
+            mLabelId = mCreated.id;
+            mExisting.push({ id: mCreated.id, name: partialName });
+          }
+
+          if (!mLabelId) continue;
+
+          await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
             {
               method: 'POST',
               headers: {
                 Authorization: `Bearer ${mAccessToken}`,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                name: partialName,
-                labelListVisibility: 'labelShow',
-                messageListVisibility: i === labelParts.length ? 'show' : 'hide',
-              }),
+              body: JSON.stringify({ addLabelIds: [mLabelId] }),
             }
           );
-          if (!mCreateRes.ok) continue;
-          const mCreated = await mCreateRes.json();
-          mLabelId = mCreated.id;
-          mExisting.push({ id: mCreated.id, name: partialName });
+
+          // Write sync record for this member
+          await supabase
+            .from('user_gmail_label_sync')
+            .upsert({
+              company_id: companyId,
+              user_id: member.user_id,
+              project_id: projectId,
+              gmail_message_id: messageId,
+              gmail_label_id: mLabelId,
+              label_applied_at: new Date().toISOString(),
+              synced_at: new Date().toISOString(),
+            }, { onConflict: 'user_id,project_id,gmail_message_id' });
+
+          syncResults.push(member.user_id);
+        } catch (memberErr) {
+          console.error(`[assign] Failed to sync to member ${member.user_id}:`, memberErr);
         }
-
-        if (!mLabelId) continue;
-
-        await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${mAccessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ addLabelIds: [mLabelId] }),
-          }
-        );
-
-        // Write sync record for this member
-        await supabase
-          .from('user_gmail_label_sync')
-          .upsert({
-            company_id: companyId,
-            user_id: member.user_id,
-            project_id: projectId,
-            gmail_message_id: messageId,
-            gmail_label_id: mLabelId,
-            label_applied_at: new Date().toISOString(),
-            synced_at: new Date().toISOString(),
-          }, { onConflict: 'user_id,project_id,gmail_message_id' });
-
-        syncResults.push(member.user_id);
-      } catch (memberErr) {
-        console.error(`[assign] Failed to sync to member ${member.user_id}:`, memberErr);
       }
     }
 

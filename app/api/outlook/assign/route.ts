@@ -139,6 +139,13 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Enqueue async propagation to the rest of the team ────────────
+    // Skipped when Central Email is on for this company -- the acting
+    // user's own mailbox is already updated above; everyone else reads the
+    // email centrally instead.
+    const { data: companyCentralEmail } = await supabase
+      .from("companies").select("central_email_enabled").eq("id", companyId).single();
+    const centralEmailEnabled = !!companyCentralEmail?.central_email_enabled;
+
     const { data: members } = await supabase
       .from("company_memberships").select("user_id").eq("company_id", companyId);
     const memberIds = (members || []).map((m: any) => m.user_id);
@@ -147,7 +154,7 @@ export async function POST(req: NextRequest) {
       : { data: [] as any[] };
     const totalUsers = (connected || []).length;
 
-    if (totalUsers > 0) {
+    if (totalUsers > 0 && !centralEmailEnabled) {
       const { data: existingJob } = await supabase
         .from("outlook_sync_jobs")
         .select("id, status, completed_users")
@@ -174,7 +181,7 @@ export async function POST(req: NextRequest) {
     await supabase.from("outlook_sync_log").insert({
       company_id: companyId, triggered_by: user.id, action: "label_applied",
       project_id: projectId, outlook_message_id: newMessageId, category_name: categoryName,
-      target_user_id: user.id, details: { subject, syncQueuedForUsers: Math.max(totalUsers - 1, 0) },
+      target_user_id: user.id, details: { subject, syncQueuedForUsers: centralEmailEnabled ? 0 : Math.max(totalUsers - 1, 0) },
     });
 
     return NextResponse.json({ ok: true, categoryName, labelCode, messageId: newMessageId });
