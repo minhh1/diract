@@ -1,11 +1,15 @@
 "use client";
 
-// Property Developer Quick Glance -- a live map of current projects,
-// rendered as the main content of the full-page /dashboard/quick-glance
-// landing route (see QuickGlanceDashboard.tsx, which owns the page
-// header/shell around this). "Current" = not (all linked properties sold)
-// OR not (all linked loans discharged) -- see the per-field comments below
-// for where each of those lives.
+// A live map + list of current projects (map+list+expandable task-progress
+// cluster kept as ONE widget, not split further -- the task-progress bars
+// only make sense inside an expanded row of this same list, so there's no
+// sensible standalone "task progress" tile). Was the entire body of
+// PropertyDeveloperQuickGlance.tsx before Quick Glance became a movable/
+// resizable canvas (see lib/dashboardWidgets/quickGlanceTypes.ts) -- same
+// logic, relocated here as one self-fetching, independently addable widget
+// instance instead of Property Developer Quick Glance's only content.
+// "Current" = not (all linked properties sold) OR not (all linked loans
+// discharged) -- see the per-field comments below for where each lives.
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
@@ -17,11 +21,11 @@ import {
   fetchQuickGlanceProjects, quickGlanceProjectsCacheKey,
   type QuickGlanceProjectRow, type QuickGlancePropertyRow,
 } from "@/lib/hooks/prefetchQuickGlance";
-import ProjectTaskProgressBars from "./ProjectTaskProgressBars";
-import type { MapPin } from "./ProjectsMapWidget";
+import ProjectTaskProgressBars from "../ProjectTaskProgressBars";
+import type { MapPin } from "../ProjectsMapWidget";
 
 // ssr:false -- Leaflet touches window/document at import time.
-const ProjectsMapWidget = dynamic(() => import("./ProjectsMapWidget"), { ssr: false });
+const ProjectsMapWidget = dynamic(() => import("../ProjectsMapWidget"), { ssr: false });
 
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
 
@@ -30,7 +34,7 @@ const pillClass = (active: boolean) =>
     active ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'
   }`;
 
-export default function PropertyDeveloperQuickGlance() {
+export default function PropertyProjectsPanelWidget() {
   const { companyId } = useCompany();
   // finance-model-loans -- see supabase/migrations/20260731310000_niksen_finance_model_v2_tables.sql
   // (project relation field_key 'project') and .../20260801300000_niksen_loans_is_discharged.sql
@@ -41,9 +45,7 @@ export default function PropertyDeveloperQuickGlance() {
 
   // Cache-seeded so a repeat visit (or a first visit after the "shells"
   // bootstrap step warmed it -- see lib/hooks/prefetchQuickGlance.ts) paints
-  // the real project count immediately instead of 0-then-jump. `companyId`
-  // is guaranteed resolved here: QuickGlanceDashboard.tsx only ever mounts
-  // this component once useCompany().loading is false.
+  // the real project count immediately instead of 0-then-jump.
   const [projects, setProjects] = useState<QuickGlanceProjectRow[] | null>(
     () => companyId ? readCache<QuickGlanceProjectRow[]>(quickGlanceProjectsCacheKey(companyId)) : null
   );

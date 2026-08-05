@@ -7,22 +7,23 @@
 // isn't Paid/Void -- it's the pre-issue internal state, so surfacing it
 // here would show the firm's own drafts as if they were amounts owed by a
 // client. Sorted oldest first so the longest-outstanding invoice surfaces
-// at the top. Same self-contained
-// "reads records, computes its own list" shape as
-// components/dashboard/TimeAgingReportWidget.tsx -- part of Quick Glance's
-// Law Firm widget set (components/dashboard/quickGlance/LawFirmQuickGlance.tsx).
+// at the top. Self-fetches the invoices table directly (own useCustomTable
+// call) so it's independently addable/movable as one Quick Glance widget
+// instance (see lib/dashboardWidgets/quickGlanceTypes.ts's bespoke widget
+// shape), not fed records by a parent that owns a shared fetch.
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Receipt } from "lucide-react";
+import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
 import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import { formatDateAU } from "@/lib/formatDate";
-import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
-export default function UnpaidInvoicesWidget({ records }: { records: CustomTableRecord[] }) {
+export default function UnpaidInvoicesWidget() {
   const router = useRouter();
+  const { records } = useCustomTable('invoices');
 
   const unpaid = useMemo(() => {
     return records
@@ -70,16 +71,16 @@ export default function UnpaidInvoicesWidget({ records }: { records: CustomTable
           <tbody>
             {unpaid.map(u => (
               <tr key={u.id} className="border-b border-slate-50">
-                <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{u.invoiceNumber || '—'}</td>
+                <td className="px-4 py-2 font-mono text-[11px] text-slate-500">{u.invoiceNumber || '-'}</td>
                 <td className="px-4 py-2 font-medium text-slate-700">
                   <button
                     onClick={() => u.matterId && router.push(`/dashboard/projects?id=${u.matterId}`)}
                     className="text-teal-700 hover:underline text-left"
                   >
-                    {matterNames.get(u.matterId) || matterNumbers.get(u.matterId) || u.matterId.slice(0, 8) || '—'}
+                    {matterNames.get(u.matterId) || matterNumbers.get(u.matterId) || u.matterId.slice(0, 8) || '-'}
                   </button>
                 </td>
-                <td className="px-4 py-2 text-slate-500">{u.issueDate ? formatDateAU(u.issueDate) : '—'}</td>
+                <td className="px-4 py-2 text-slate-500">{u.issueDate ? formatDateAU(u.issueDate) : '-'}</td>
                 <td className="px-4 py-2 text-right font-semibold text-slate-900">{aud.format(u.amountDue)}</td>
               </tr>
             ))}
