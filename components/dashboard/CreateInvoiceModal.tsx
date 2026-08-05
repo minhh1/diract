@@ -22,6 +22,7 @@ import RelationPicker from "./RelationPicker";
 import { createRecord as createCustomRecord, updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
 import { scaleToTarget, applyToSelectedLines, applyPercentOrAmount, splitGst, type ApportionLine, type ApportionedLine } from "@/lib/invoices/apportionment";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
+import { companyTodayStr, companyYmd } from "@/lib/companyLocalDate";
 
 interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; staffPosition: string | null; rate: number; hours: number; amount: number; gstStatus: string; isFixedFee: boolean }
 interface DisbRow { id: string; tableId: string; date: string | null; description: string; amount: number; gstStatus: string }
@@ -41,7 +42,7 @@ function money(n: number): string {
 }
 
 export default function CreateInvoiceModal({ matterId, companyId, userId, onClose, onCreated }: Props) {
-  const { invoiceSettings } = useCompany();
+  const { invoiceSettings, companyType } = useCompany();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -91,7 +92,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const [showProfessionalFeesTable, setShowProfessionalFeesTable] = useState(true);
   const [showSummaryFeesByLawyerTable, setShowSummaryFeesByLawyerTable] = useState(true);
   const [templateId, setTemplateId] = useState('');
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(() => companyTodayStr(companyType));
   const [dueDate, setDueDate] = useState('');
   // False until the viewer picks a due date themselves -- same "auto-fill
   // until deliberately overridden" idea as RelationPicker's userClearedRef.
@@ -108,7 +109,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     const days = invoiceSettings.paymentTermsDays ?? 14;
     const d = new Date(issueDate + 'T00:00:00');
     d.setDate(d.getDate() + days);
-    setDueDate(d.toISOString().slice(0, 10));
+    setDueDate(companyYmd(d, companyType));
   }, [issueDate, invoiceSettings.paymentTermsDays, dueDateTouched]);
 
   // Re-default the two per-invoice table overrides from whichever template

@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { createRecord as createCustomRecord } from "@/lib/services/customTableService";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import { auTodayStr } from "@/lib/companyLocalDate";
 import RelationPicker from "../dashboard/RelationPicker";
 import PdfPreviewModal from "../dashboard/PdfPreviewModal";
 
@@ -43,7 +44,7 @@ export default function TrustPaymentModal({
   onClose: () => void;
   onProcessed: () => void;
 }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(auTodayStr());
   const [accountId, setAccountId] = useState(trustAccountId);
   const [matterId, setMatterId] = useState<string | null>(fixedMatterId ?? null);
   const [payToId, setPayToId] = useState<string | null>(null);

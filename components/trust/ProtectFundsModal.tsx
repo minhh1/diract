@@ -6,6 +6,7 @@
 // active. Writes to the Trust Protected Funds table (a plain, non-ledger
 // custom table) directly.
 import { useState } from "react";
+import { auTodayStr } from "@/lib/companyLocalDate";
 import { X, Loader2 } from "lucide-react";
 import { useCustomTable } from "@/lib/hooks/useCustomTable";
 import { createRecord as createCustomRecord } from "@/lib/services/customTableService";
@@ -22,7 +23,7 @@ export default function ProtectFundsModal({
   const [matterId, setMatterId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(auTodayStr());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

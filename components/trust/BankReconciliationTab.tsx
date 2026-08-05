@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { createRecord as createCustomRecord, updateRecord as updateCustomRecord, deleteRecord as deleteCustomRecord } from "@/lib/services/customTableService";
 import { useCustomTable, type CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import PdfPreviewModal from "../dashboard/PdfPreviewModal";
+import { auTodayStr } from "@/lib/companyLocalDate";
 
 function money(n: number): string {
   return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
@@ -25,7 +26,7 @@ function formatDate(d: string | null | undefined): string {
   try { return new Date(d).toLocaleDateString('en-AU'); } catch { return d; }
 }
 
-function todayStr(): string { return new Date().toISOString().slice(0, 10); }
+function todayStr(): string { return auTodayStr(); }
 
 function describe(r: CustomTableRecord): string {
   const type = r.values.type || '';

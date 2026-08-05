@@ -11,6 +11,7 @@ import { logTaskActivity } from "@/lib/taskActivityLog";
 import { filterTasksByProjectAccess } from "@/lib/projectAccess";
 import { triggerCalendarSync } from "@/lib/triggerCalendarSync";
 import { getActiveTaskStatuses, getMatterNumberFieldId } from "@/lib/publicTasksCache";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ pageId: string }> }) {
   const { pageId } = await params;
@@ -281,6 +282,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
     scope: page.scope,
     columns: page.columns,
     companyId: page.company_id,
+    companyType: page.companies?.company_type || null,
     tabs,
     formOptions: {
       projects: (allProjects || []).map((p: any) => ({ id: p.id, name: p.name, matterNumber: matterByProject[p.id] || null })),
@@ -349,7 +351,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     notes: notes || null,
     sync_to_company_calendar: !!syncToCompanyCalendar,
     created_by: user.id,
-    date_entered: new Date().toISOString().split("T")[0],
+    date_entered: companyTodayStr(page.companies?.company_type),
     is_completed: false,
   }).select().single();
 

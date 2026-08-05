@@ -780,8 +780,14 @@ export function MockClientUpdates() {
 // point of the dependency lock, not a bug in this mockup.
 interface MockFollowUp { id: string; date: string; isDone: boolean; }
 
+// The /for/law-firm-au and /for/property-developers-au audience pages this
+// mockup renders on are Australia-only by definition (see
+// lib/marketing/audiences.ts) -- "today" here is always Australia/Sydney
+// wall-clock time, regardless of the visitor's own browser timezone, same
+// reasoning as lib/companyLocalDate.ts's companyTodayStr for those two
+// verticals in the real app.
 function mockTodayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
 function TaskFollowUpButton({ entries, onAdd, onMarkDone, onRemove }: {

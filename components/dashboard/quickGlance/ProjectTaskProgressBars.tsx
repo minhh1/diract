@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
+import { auTodayStr } from "@/lib/companyLocalDate";
 
 interface Progress {
   total: number;
@@ -45,7 +46,7 @@ export default function ProjectTaskProgressBars({ projectId }: { projectId: stri
       .then(({ data }) => {
         if (cancelled) return;
         const tasks = data || [];
-        const today = new Date().toISOString().slice(0, 10);
+        const today = auTodayStr();
         const total = tasks.length;
         const completed = tasks.filter(t => t.is_completed).length;
         const expectedByNow = tasks.filter(t => t.due_date && String(t.due_date).slice(0, 10) <= today).length;

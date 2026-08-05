@@ -13,6 +13,7 @@ import { triggerCalendarSync } from "@/lib/triggerCalendarSync";
 import { getGraphAppToken, ensureFolderPath, uploadFile, updateFileContent } from "@/lib/msGraph/onedrive";
 import { createBotFile, updateBotFile } from "@/lib/ai/botFiles";
 import { createProjectGmailLabel } from "@/lib/gmail/createProjectLabel";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 
 export interface ResolvedMatch {
   id: string;
@@ -419,6 +420,7 @@ export interface CreateTaskParams {
 }
 
 export async function createTask(admin: any, companyId: string, userId: string, params: CreateTaskParams) {
+  const { data: company } = await admin.from("companies").select("company_type").eq("id", companyId).maybeSingle();
   const { data: task, error } = await admin
     .from("tasks")
     .insert({
@@ -430,7 +432,7 @@ export async function createTask(admin: any, companyId: string, userId: string, 
       assignee_id: params.assigneeId || null,
       notes: params.notes || null,
       created_by: userId,
-      date_entered: new Date().toISOString().split("T")[0],
+      date_entered: companyTodayStr(company?.company_type),
       is_completed: false,
     })
     .select()

@@ -13,6 +13,7 @@ import { useState } from "react";
 import { X, Check, Loader2, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { createRecord as createCustomRecord } from "@/lib/services/customTableService";
+import { auTodayStr } from "@/lib/companyLocalDate";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import RelationPicker from "../dashboard/RelationPicker";
 
@@ -34,7 +35,7 @@ export default function DepositFundsModal({
   onClose: () => void;
   onDeposited: (receiptNumber: string) => void;
 }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(auTodayStr());
   const [accountId, setAccountId] = useState(trustAccountId);
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
   const [entityId, setEntityId] = useState<string | null>(null);

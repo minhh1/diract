@@ -19,15 +19,15 @@ import { formatDateAU } from "@/lib/formatDate";
 import { generateTrustReceiptsCashBookPdf } from "@/lib/trust/generateTrustReceiptsCashBookPdf";
 import PdfPreviewModal from "./PdfPreviewModal";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import { auTodayStr, auStartOfMonthStr } from "@/lib/companyLocalDate";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
 function startOfMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  return auStartOfMonthStr();
 }
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return auTodayStr();
 }
 
 export default function TrustReceiptsCashBookWidget({ records, trustAccountName }: { records: CustomTableRecord[]; trustAccountName?: string }) {

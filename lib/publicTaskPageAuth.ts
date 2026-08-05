@@ -7,9 +7,14 @@
 import { NextResponse } from "next/server";
 
 export async function loadPageAndAuthorize(admin: any, pageId: string, userId: string) {
+  // companies:company_id(company_type) rides along on this same query (not
+  // a separate round trip) -- every caller needs it to compute "today" in
+  // Australia/Sydney time for the two AU-only verticals (see
+  // lib/companyLocalDate.ts) rather than whatever UTC offset the server
+  // happens to be running in.
   const { data: page } = await admin
     .from("public_task_pages")
-    .select("id, company_id, created_by, title, scope, team_id, columns, expires_at, is_active")
+    .select("id, company_id, created_by, title, scope, team_id, columns, expires_at, is_active, companies:company_id(company_type)")
     .eq("id", pageId).maybeSingle();
 
   if (!page) return { error: NextResponse.json({ error: "Page not found" }, { status: 404 }) };

@@ -31,6 +31,7 @@ import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { readPinGatedCache, writePinGatedCache, clearPinGatedCache } from "@/lib/publicPageCache";
 import { readCache, writeCache } from "@/lib/queryCache";
 import MatterBoard, { type MatterBoardField, type MatterBoardGroup, type MatterBoardItem, type MatterBoardFormatRule } from "@/components/clientUpdatePages/MatterBoard";
+import { auTodayStr } from "@/lib/companyLocalDate";
 
 interface Board {
   groups: MatterBoardGroup[]; items: MatterBoardItem[]; fields: MatterBoardField[]; formatRules: MatterBoardFormatRule[];
@@ -552,7 +553,7 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     if (!note.trim()) return;
     const tempId = `temp-${Date.now()}`;
     const source: "staff" | "client" = mode === "staff" ? "staff" : "client";
-    const optimisticNote = { id: tempId, note_date: new Date().toISOString().slice(0, 10), body: note.trim(), author_name: mode === "staff" ? "You" : null, source, created_at: new Date().toISOString(), property_id: propertyId ?? null };
+    const optimisticNote = { id: tempId, note_date: auTodayStr(), body: note.trim(), author_name: mode === "staff" ? "You" : null, source, created_at: new Date().toISOString(), property_id: propertyId ?? null };
     setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, notes: [optimisticNote, ...i.notes] } : i) });
 
     const request = mode === "staff" && staffPageId

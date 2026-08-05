@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { createClient } from "@supabase/supabase-js";
 import { loadPageAndAuthorize } from "@/lib/publicTaskPageAuth";
+import { companyTodayStr, companyYmd } from "@/lib/companyLocalDate";
 
 const DATE_CALC_URL = "https://txzzgtwrrokomiphairy.supabase.co/functions/v1/date-calc";
 
@@ -14,12 +15,12 @@ function getAnchorDate(item: any, projectCreatedAt: string, projectDueDate: stri
   return new Date(projectCreatedAt);
 }
 
-async function resolveDate(item: any, projectCreatedAt: string, projectDueDate: string | null): Promise<string | null> {
+async function resolveDate(item: any, projectCreatedAt: string, projectDueDate: string | null, companyType: string | null | undefined): Promise<string | null> {
   if (item.due_offset_days === null || item.due_offset_days === undefined) return null;
   const anchor = getAnchorDate(item, projectCreatedAt, projectDueDate);
 
   if (item.due_offset_mode === "business" && item.due_offset_state) {
-    const fromDateStr = anchor.toISOString().slice(0, 10);
+    const fromDateStr = companyYmd(anchor, companyType);
     try {
       const res = await fetch(DATE_CALC_URL, {
         method: "POST",
@@ -34,7 +35,7 @@ async function resolveDate(item: any, projectCreatedAt: string, projectDueDate: 
   }
 
   anchor.setDate(anchor.getDate() + (item.due_offset_days || 0));
-  return anchor.toISOString().slice(0, 10);
+  return companyYmd(anchor, companyType);
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ pageId: string; templateId: string }> }) {
@@ -74,8 +75,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
     .filter((i: any) => !i.parent_item_id)
     .sort((a: any, b: any) => a.display_order - b.display_order);
 
+  const companyType = page.companies?.company_type;
   const tasksToInsert = await Promise.all(items.map(async (item: any) => {
-    const dueDate = await resolveDate(item, project.created_at, project.estimated_completion_date);
+    const dueDate = await resolveDate(item, project.created_at, project.estimated_completion_date, companyType);
     // Only carry over an assignee if they're within this page's scope — otherwise leave unassigned.
     const assigneeId = item.assignee_id && targetUserIds.includes(item.assignee_id) ? item.assignee_id : null;
     return {
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
       due_date: dueDate,
       is_completed: false,
       created_by: user.id,
-      date_entered: new Date().toISOString().slice(0, 10),
+      date_entered: companyTodayStr(companyType),
     };
   }));
 

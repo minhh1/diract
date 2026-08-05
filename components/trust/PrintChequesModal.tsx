@@ -10,6 +10,7 @@ import { useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { createRecord as createCustomRecord } from "@/lib/services/customTableService";
+import { auTodayStr } from "@/lib/companyLocalDate";
 import type { useCustomTable } from "@/lib/hooks/useCustomTable";
 import RelationPicker from "../dashboard/RelationPicker";
 import PdfPreviewModal from "../dashboard/PdfPreviewModal";
@@ -25,7 +26,7 @@ export default function PrintChequesModal({
   const [matterId, setMatterId] = useState<string | null>(null);
   const [payTo, setPayTo] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(auTodayStr());
   const [memo, setMemo] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -6,6 +6,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Calendar, Loader2, CalendarClock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { auTodayStr } from "@/lib/companyLocalDate";
 
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'];
 
@@ -29,7 +30,7 @@ interface Props {
 
 export default function DateCalculator({ defaultFromDate, onApply, triggerClassName }: Props) {
   const [open, setOpen] = useState(false);
-  const [fromDate, setFromDate] = useState(defaultFromDate || new Date().toISOString().slice(0, 10));
+  const [fromDate, setFromDate] = useState(defaultFromDate || auTodayStr());
   const [days, setDays] = useState(7);
   const [mode, setMode] = useState<'calendar' | 'business'>('calendar');
   const [state, setState] = useState('NSW');

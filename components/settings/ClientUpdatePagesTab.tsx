@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
+import { companyTodayPlusDaysStr } from "@/lib/companyLocalDate";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import {
   Plus, Copy, Check, Trash2, ExternalLink, X, Pencil, RefreshCw, Users, Globe, Settings2, AlertTriangle, Loader2,
@@ -33,10 +34,8 @@ const SYSTEM_TABLE_OPTIONS = [
   { id: "properties", label: "Properties" },
 ];
 
-function defaultExpiry(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return d.toISOString().slice(0, 10);
+function defaultExpiry(companyType: string | null | undefined): string {
+  return companyTodayPlusDaysStr(30, companyType);
 }
 
 async function fetchTabData(userId: string): Promise<{ allTeams: Team[]; myTeams: Team[]; pages: Page[] }> {
@@ -222,6 +221,7 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
   isAdmin: boolean; teamOptions: Team[]; onClose: () => void; onCreated: (id: string) => void;
 }) {
   const { tables: customTables, loading: tablesLoading } = useCustomTables();
+  const { companyType } = useCompany();
 
   const [title, setTitle] = useState("");
   const [clientLabel, setClientLabel] = useState("");
@@ -233,7 +233,7 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
   const [visibility, setVisibility] = useState<"public" | "team">("public");
   const [teamIds, setTeamIds] = useState<Set<string>>(new Set());
   const [noExpiry, setNoExpiry] = useState(false);
-  const [expiresAt, setExpiresAt] = useState(defaultExpiry());
+  const [expiresAt, setExpiresAt] = useState(defaultExpiry(companyType));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
@@ -459,12 +459,13 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
 function EditPageModal({ page, teamOptions, onClose, onSaved }: {
   page: Page; teamOptions: Team[]; onClose: () => void; onSaved: () => void;
 }) {
+  const { companyType } = useCompany();
   const [title, setTitle] = useState(page.title);
   const [clientLabel, setClientLabel] = useState(page.client_label || "");
   const [visibility, setVisibility] = useState<"public" | "team">(page.visibility);
   const [teamIds, setTeamIds] = useState<Set<string>>(new Set(page.teamIds));
   const [noExpiry, setNoExpiry] = useState(!page.expires_at);
-  const [expiresAt, setExpiresAt] = useState(page.expires_at || defaultExpiry());
+  const [expiresAt, setExpiresAt] = useState(page.expires_at || defaultExpiry(companyType));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

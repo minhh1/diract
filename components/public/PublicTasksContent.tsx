@@ -30,6 +30,7 @@ import { getRelativeDateLabel } from "@/lib/relativeDate";
 import { splitCompletedByRecency } from "@/lib/completedBucket";
 import { classifyTask, TaskGroup, TASK_GROUP_LABELS } from "@/lib/taskGroup";
 import { relationCandidates } from "@/lib/dashboardWidgets/linkField";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
 
@@ -73,7 +74,7 @@ interface FormOptions {
   teams: { id: string; team_name: string }[];
   assignees: { id: string; name: string }[];
 }
-interface PageData { title: string; scopeName: string; scope: string; columns: string[]; companyId: string; tabs: Tab[]; formOptions: FormOptions; }
+interface PageData { title: string; scopeName: string; scope: string; columns: string[]; companyId: string; companyType: string | null; tabs: Tab[]; formOptions: FormOptions; }
 
 // Exported so lib/hooks/prefetchShells.ts's bootstrap warmer can pre-fetch
 // this exact endpoint for every public_task_page widget across every
@@ -461,7 +462,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
     return "Could not create the record.";
   };
 
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => companyTodayStr(data?.companyType);
 
   // Optimistic — update local state immediately so the tick feels instant,
   // then fire the request in the background. Re-fetch to resync on failure.
@@ -671,6 +672,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
               onAdd={date => addFollowUp(t, date)}
               onRemove={id => removeFollowUp(t, id)}
               onMarkDone={id => markFollowUpDone(t, id)}
+              companyType={data?.companyType}
             />
           </div>
         </td>
@@ -879,6 +881,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
           onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp} onMarkFollowUpDone={markFollowUpDone}
           allTasks={allVisibleTasks} dependenciesByTask={dependenciesByTask} onAddDependency={handleAddDependency} onRemoveDependency={handleRemoveDependency}
           pendingDependencyOn={pendingDependencyOn}
+          companyType={data.companyType}
         />
       )}
 
@@ -895,6 +898,7 @@ export default function PublicTasksContent({ pageId, embedded = false }: Props) 
           onDeleted={() => { setEditingTask(null); refresh(); }}
           onAddFollowUp={addFollowUp} onRemoveFollowUp={removeFollowUp} onMarkFollowUpDone={markFollowUpDone}
           allTasks={allVisibleTasks} dependenciesByTask={dependenciesByTask} onAddDependency={handleAddDependency} onRemoveDependency={handleRemoveDependency}
+          companyType={data.companyType}
         />
       )}
 
@@ -939,7 +943,7 @@ function renderCell(key: string, t: Task) {
 }
 
 // ── Add / Edit task modal ───────────────────────────────────────────
-function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSaving, onClose, onSaved, onDeleted, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, allTasks, dependenciesByTask, onAddDependency, onRemoveDependency, pendingDependencyOn }: {
+function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSaving, onClose, onSaved, onDeleted, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, allTasks, dependenciesByTask, onAddDependency, onRemoveDependency, pendingDependencyOn, companyType }: {
   pageId: string; formOptions: FormOptions; defaultAssigneeId: string | null; task?: Task;
   saving: boolean; setSaving: (v: boolean) => void; onClose: () => void; onSaved: () => void; onDeleted?: () => void;
   onAddFollowUp: (task: Task, date: string) => void; onRemoveFollowUp: (task: Task, id: string) => void; onMarkFollowUpDone: (task: Task, id: string) => void;
@@ -948,6 +952,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
   // Set only when opened via "Next task" -- once this brand-new task is created,
   // it's linked back to the task that was just marked done.
   pendingDependencyOn?: string | null;
+  companyType?: string | null;
 }) {
   const isEdit = !!task;
   const [name, setName] = useState(task?.name || "");
@@ -1103,6 +1108,7 @@ function TaskModal({ pageId, formOptions, defaultAssigneeId, task, saving, setSa
                   onAdd={date => onAddFollowUp(task, date)}
                   onRemove={id => onRemoveFollowUp(task, id)}
                   onMarkDone={id => onMarkFollowUpDone(task, id)}
+                  companyType={companyType}
                 />
                 <span className="text-[12px] text-slate-500">
                   {(() => {

@@ -10,6 +10,7 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { createClient } from "@supabase/supabase-js";
 import { loadPageAndAuthorize } from "@/lib/publicTaskPageAuth";
 import { logTaskActivity } from "@/lib/taskActivityLog";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ pageId: string; taskId: string }> }) {
   const { pageId, taskId } = await params;
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pag
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = companyTodayStr(page.companies?.company_type);
   const followedUpAt = body.followedUpAt || todayStr;
   const isDone = followedUpAt <= todayStr;
 

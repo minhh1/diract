@@ -11,6 +11,7 @@ import {
 import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
+import { companyTodayPlusDaysStr } from "@/lib/companyLocalDate";
 
 interface Team { id: string; team_name: string; leader_id: string | null; }
 interface Page {
@@ -19,10 +20,8 @@ interface Page {
   createdAt: string; createdBy: string;
 }
 
-function defaultExpiry(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return d.toISOString().slice(0, 10);
+function defaultExpiry(companyType: string | null | undefined): string {
+  return companyTodayPlusDaysStr(30, companyType);
 }
 
 // Cached via useQuery so revisiting this tab within staleTime shows the
@@ -147,12 +146,13 @@ export default function PublicTaskPagesTab() {
 function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
   isAdmin: boolean; teamOptions: Team[]; onClose: () => void; onCreated: () => void;
 }) {
+  const { companyType } = useCompany();
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState<"self" | "team" | "company">("self");
   const [teamId, setTeamId] = useState("");
   const [columns, setColumns] = useState<string[]>(["project_name", "due_date", "status"]);
   const [noExpiry, setNoExpiry] = useState(false);
-  const [expiresAt, setExpiresAt] = useState(defaultExpiry());
+  const [expiresAt, setExpiresAt] = useState(defaultExpiry(companyType));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
@@ -305,12 +305,13 @@ function CreatePageModal({ isAdmin, teamOptions, onClose, onCreated }: {
 function EditPageModal({ page, isAdmin, teamOptions, onClose, onSaved }: {
   page: Page; isAdmin: boolean; teamOptions: Team[]; onClose: () => void; onSaved: () => void;
 }) {
+  const { companyType } = useCompany();
   const [title, setTitle] = useState(page.title);
   const [scope, setScope] = useState<"self" | "team" | "company">(page.scope as "self" | "team" | "company");
   const [teamId, setTeamId] = useState(page.teamId || "");
   const [columns, setColumns] = useState<string[]>(page.columns || []);
   const [noExpiry, setNoExpiry] = useState(!page.expiresAt);
-  const [expiresAt, setExpiresAt] = useState(page.expiresAt || defaultExpiry());
+  const [expiresAt, setExpiresAt] = useState(page.expiresAt || defaultExpiry(companyType));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

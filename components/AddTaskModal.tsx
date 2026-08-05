@@ -3,8 +3,11 @@
 import { useState, useEffect } from "react";
 import { X, Calendar, Clock, Users, User, DollarSign, Loader2, Tag, Bell, Target } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useCompany } from "@/components/CompanyContext";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 
 export default function AddTaskModal({ isOpen, onClose, onRefresh, projectId }: any) {
+  const { companyType } = useCompany();
   const [loading, setLoading] = useState(false);
   const [isMonetary, setIsMonetary] = useState(false);
   const [teams, setTeams] = useState<any[]>([]);
@@ -40,7 +43,7 @@ export default function AddTaskModal({ isOpen, onClose, onRefresh, projectId }: 
       estimated_cost: isMonetary ? fd.get("cost") : 0,
       reminder_setting: fd.get("reminder"),
       created_by: user?.id,
-      date_entered: new Date().toISOString().split('T')[0]
+      date_entered: companyTodayStr(companyType)
     }]);
 
     if (!error) {

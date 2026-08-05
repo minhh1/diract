@@ -14,11 +14,12 @@ import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import { generateTrustOverdrawnPdf } from "@/lib/trust/generateTrustOverdrawnPdf";
 import PdfPreviewModal from "./PdfPreviewModal";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
+import { auTodayStr } from "@/lib/companyLocalDate";
 
 const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return auTodayStr();
 }
 
 export default function TrustOverdrawnWidget({ records, trustAccountName }: { records: CustomTableRecord[]; trustAccountName?: string }) {

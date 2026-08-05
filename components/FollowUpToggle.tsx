@@ -9,6 +9,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Flag, X, Check } from "lucide-react";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 
 export interface FollowUpEntry {
   id: string;
@@ -21,15 +22,17 @@ interface Props {
   onAdd: (date: string) => void;
   onRemove: (id: string) => void;
   onMarkDone: (id: string) => void;
+  // The owning company's companies.company_type -- "today" is pinned to
+  // Australia/Sydney for the two AU-only verticals (see
+  // lib/companyLocalDate.ts) regardless of where the signed-in user
+  // physically is; every other company type falls back to the caller's own
+  // local date, same as before this prop existed.
+  companyType?: string | null;
 }
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-export default function FollowUpToggle({ entries, onAdd, onRemove, onMarkDone }: Props) {
+export default function FollowUpToggle({ entries, onAdd, onRemove, onMarkDone, companyType }: Props) {
   const [open, setOpen] = useState(false);
-  const [pendingDate, setPendingDate] = useState(todayStr());
+  const [pendingDate, setPendingDate] = useState(() => companyTodayStr(companyType));
   const [pos, setPos] = useState<{ left: number; top: number | null; bottom: number | null; maxHeight: number }>({ left: 0, top: 0, bottom: null, maxHeight: 340 });
   const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -42,7 +45,7 @@ export default function FollowUpToggle({ entries, onAdd, onRemove, onMarkDone }:
     if (a.isDone !== b.isDone) return a.isDone ? 1 : -1; // scheduled (not done) first
     return b.followedUpAt.localeCompare(a.followedUpAt);
   });
-  const isFutureDate = pendingDate > todayStr();
+  const isFutureDate = pendingDate > companyTodayStr(companyType);
 
   useEffect(() => {
     if (!open) return;
@@ -97,8 +100,8 @@ export default function FollowUpToggle({ entries, onAdd, onRemove, onMarkDone }:
   }, [open]);
 
   const handleAdd = () => {
-    onAdd(pendingDate || todayStr());
-    setPendingDate(todayStr());
+    onAdd(pendingDate || companyTodayStr(companyType));
+    setPendingDate(companyTodayStr(companyType));
   };
 
   return (

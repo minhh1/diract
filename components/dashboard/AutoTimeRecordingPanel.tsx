@@ -22,6 +22,7 @@ import { X, Loader2, Sparkles, Check, RefreshCw, ChevronDown, ChevronUp, Mail, S
 import { useCompany } from "@/components/CompanyContext";
 import { supabase } from "@/lib/supabase";
 import type { DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
+import { auTodayStr } from "@/lib/companyLocalDate";
 
 const DETAIL_LEVELS: DescriptionDetailLevel[] = ["brief", "standard", "detailed"];
 
@@ -55,7 +56,7 @@ interface DraftEntry {
 
 interface StaffOption { userId: string; name: string; initials: string; }
 
-const todayInputValue = () => new Date().toISOString().slice(0, 10);
+const todayInputValue = () => auTodayStr();
 
 interface Props {
   label: string;

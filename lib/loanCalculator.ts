@@ -19,6 +19,7 @@
 // interest/principal split but does not recompute the instalment amount,
 // which is how amortizing loans work in practice unless explicitly
 // refinanced.
+import { auTodayUtcMidnight } from "@/lib/companyLocalDate";
 
 export interface LoanInterestRateEntry {
   effective_date: string; // ISO date
@@ -135,7 +136,7 @@ export function calculateLoanSchedule(
   until?: string | null
 ): LoanScheduleResult {
   const sorted = [...phases].sort((a, b) => a.phase_order - b.phase_order);
-  const today = new Date();
+  const today = auTodayUtcMidnight();
   const cutoff = until ? new Date(until) : null;
   let balance = principal;
   const periods: RepaymentPeriod[] = [];

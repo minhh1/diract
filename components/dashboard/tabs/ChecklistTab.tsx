@@ -22,6 +22,8 @@ import { createRecord } from "@/lib/services/customTableService";
 import { relationCandidates } from "@/lib/dashboardWidgets/linkField";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import type { CustomTable } from "@/lib/hooks/useCustomTables";
+import { useCompany } from "@/components/CompanyContext";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 
 interface Task {
   id: string; project_id: string; name: string; is_completed: boolean;
@@ -39,7 +41,7 @@ interface Team { id: string; team_name: string; category_tags?: string[] | null;
 interface Props { recordId: string; companyId: string; }
 
 // ── TaskRow ────────────────────────────────────────────────────────
-function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, canLogTimeEntry, onLogTimeEntry, connectedAssigneeIds, onSyncCalendar, syncingTaskId, dependenciesByTask, onNextTask }: any) {
+function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsByTask, watchersByTask, onUpdate, onDelete, onAddSubtask, onEdit, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, canLogTimeEntry, onLogTimeEntry, connectedAssigneeIds, onSyncCalendar, syncingTaskId, dependenciesByTask, onNextTask, companyType }: any) {
   const [expanded, setExpanded] = useState(true);
   const assignee = profiles.find((p: any) => p.id === task.assignee_id);
   const team = teams.find((t: any) => t.id === task.assigned_team_id);
@@ -80,6 +82,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
             onAdd={date => onAddFollowUp(task.id, date)}
             onRemove={id => onRemoveFollowUp(task.id, id)}
             onMarkDone={id => onMarkFollowUpDone(task.id, id)}
+            companyType={companyType}
           />
         </div>
         <div className="flex-1 min-w-0">
@@ -150,7 +153,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
               onAddFollowUp={onAddFollowUp} onRemoveFollowUp={onRemoveFollowUp} onMarkFollowUpDone={onMarkFollowUpDone}
               canLogTimeEntry={canLogTimeEntry} onLogTimeEntry={onLogTimeEntry}
               connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={onSyncCalendar} syncingTaskId={syncingTaskId}
-              dependenciesByTask={dependenciesByTask} onNextTask={onNextTask} />
+              dependenciesByTask={dependenciesByTask} onNextTask={onNextTask} companyType={companyType} />
           ))}
         </div>
       )}
@@ -159,7 +162,7 @@ function TaskRow({ task, subtasks, allTasks, profiles, teams, depth, followUpsBy
 }
 
 // ── TaskEditModal ─────────────────────────────────────────────────
-function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, onAddDependency, onRemoveDependency, followUps, watcherIds: initWatcherIds, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, onSave, onClose }: any) {
+function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, onAddDependency, onRemoveDependency, followUps, watcherIds: initWatcherIds, onAddFollowUp, onRemoveFollowUp, onMarkFollowUpDone, onSave, onClose, companyType }: any) {
   const [draft, setDraft] = useState<Partial<Task>>({ ...task });
   const [watcherIds, setWatcherIds] = useState<string[]>(initWatcherIds || []);
   const [saving, setSaving] = useState(false);
@@ -302,6 +305,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
                   onAdd={(date: string) => onAddFollowUp(task.id, date)}
                   onRemove={(id: string) => onRemoveFollowUp(task.id, id)}
                   onMarkDone={(id: string) => onMarkFollowUpDone(task.id, id)}
+                  companyType={companyType}
                 />
                 <span className="text-[12px] text-slate-500">
                   {(() => {
@@ -381,6 +385,7 @@ function TaskEditModal({ task, profiles, teams, allTasks, dependenciesByTask, on
 
 // ── ChecklistTab (main) ────────────────────────────────────────────
 export default function ChecklistTab({ recordId, companyId }: Props) {
+  const { companyType } = useCompany();
   const [tasks, setTasks]               = useState<Task[]>([]);
   const [followUpsByTask, setFollowUpsByTask] = useState<Record<string, FollowUpEntry[]>>({});
   const [watchersByTask, setWatchersByTask] = useState<Record<string, string[]>>({});
@@ -557,7 +562,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
       const { data } = await supabase.from('tasks').insert({
         ...insertPayload,
         created_by: user?.id,
-        date_entered: new Date().toISOString().split('T')[0],
+        date_entered: companyTodayStr(companyType),
       }).select().single();
       if (data) {
         setTasks(prev => [...prev, data]);
@@ -630,7 +635,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
     return patch;
   };
 
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => companyTodayStr(companyType);
 
   const handleAddFollowUp = (taskId: string, date: string) => {
     const isDone = date <= todayStr();
@@ -785,7 +790,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
               onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
               canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
               connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId}
-              dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} />
+              dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} companyType={companyType} />
           ))}
         </div>
       )}
@@ -805,7 +810,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
                   canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
                   connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId}
-                  dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} />
+                  dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} companyType={companyType} />
               ))}
             </div>
           )}
@@ -827,7 +832,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
                   onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
                   canLogTimeEntry={!!timeFeesTable} onLogTimeEntry={(t: Task) => setConvertingTask(t)}
                   connectedAssigneeIds={connectedAssigneeIds} onSyncCalendar={handleSyncCalendar} syncingTaskId={syncingTaskId}
-                  dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} />
+                  dependenciesByTask={dependenciesByTask} onNextTask={handleNextTask} companyType={companyType} />
               ))}
             </div>
           )}
@@ -841,7 +846,7 @@ export default function ChecklistTab({ recordId, companyId }: Props) {
           followUps={editingTask.id ? (followUpsByTask[editingTask.id] || []) : []}
           watcherIds={editingTask.id ? (watchersByTask[editingTask.id] || []) : []}
           onAddFollowUp={handleAddFollowUp} onRemoveFollowUp={handleRemoveFollowUp} onMarkFollowUpDone={handleMarkFollowUpDone}
-          companyId={companyId} projectId={recordId} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
+          companyId={companyId} projectId={recordId} onSave={handleSaveTask} onClose={() => setEditingTask(null)} companyType={companyType} />
       )}
       {showTemplates && (
         <TemplateManager

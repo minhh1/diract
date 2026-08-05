@@ -9,6 +9,7 @@ import { ShieldPlus, Loader2 } from "lucide-react";
 import type { useCustomTable, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import { updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
 import ProtectFundsModal from "./ProtectFundsModal";
+import { auTodayStr } from "@/lib/companyLocalDate";
 
 function money(n: number): string {
   return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
@@ -39,7 +40,7 @@ export default function ProtectedFundsTab({
     if (reason === null) return;
     setReleasingId(record.id);
     await updateCustomRecord(record.id, protectedTable.tableDef!.id, companyId, {
-      released_at: new Date().toISOString().slice(0, 10), released_reason: reason.trim() || null,
+      released_at: auTodayStr(), released_reason: reason.trim() || null,
     }, protectedTable.fields);
     setReleasingId(null);
     protectedTable.refetch();

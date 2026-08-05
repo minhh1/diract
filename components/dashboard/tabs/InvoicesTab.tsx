@@ -13,6 +13,8 @@ import { createRecord as createCustomRecord, updateRecord as updateCustomRecord 
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import CreateInvoiceModal from "../CreateInvoiceModal";
 import PdfPreviewModal from "../PdfPreviewModal";
+import { useCompany } from "@/components/CompanyContext";
+import { companyTodayStr } from "@/lib/companyLocalDate";
 
 interface Props {
   linkedTableId: string; // this company's Invoices table id
@@ -481,7 +483,8 @@ function RecordPaymentModal({
   receiptsTableId: string; receiptsFields: CustomTableField[];
   onClose: () => void; onSaved: (receiptId: string) => void;
 }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const { companyType } = useCompany();
+  const [date, setDate] = useState(companyTodayStr(companyType));
   const [amountReceived, setAmountReceived] = useState(String(invoice.amountDue.toFixed(2)));
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
   const [bankReference, setBankReference] = useState('');

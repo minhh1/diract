@@ -13,13 +13,15 @@
 // the old "just append them to a list" use but does matter once dependency
 // resolution needs an exact id correspondence. Template sizes are small
 // (tens of tasks, applied once), so N parallel round trips is a non-issue.
+import { auTodayStr } from "@/lib/companyLocalDate";
+
 export async function applyChecklistTemplate(
   supabase: any,
   tasksToCreate: Record<string, any>[],
   userId: string | null
 ): Promise<{ id: string }[]> {
   if (!tasksToCreate.length) return [];
-  const dateEntered = new Date().toISOString().split("T")[0];
+  const dateEntered = auTodayStr();
   const results = await Promise.all(tasksToCreate.map(async t => {
     const { display_order, ...rest } = t;
     const { data, error } = await supabase
