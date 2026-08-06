@@ -83,6 +83,19 @@
   background-color: rgba(99, 102, 241, 0.14);
 }
 
+/* Same problem as .cursor-pointer above, but for actual <button>/<a>
+   elements wide enough (flex-1, full row width, etc.) that scaling the
+   whole thing down on press visibly shifts its label several pixels --
+   a button wrapping a whole row's text as a toggle, say. Opt into shade-
+   only feedback instead of the base layer's scale. Unlayered for the
+   same reason as .cursor-pointer: must win over the base layer's
+   button:active scale/filter regardless of specificity. */
+.tactile-flat:active {
+  transform: none;
+  filter: none;
+  background-color: rgba(99, 102, 241, 0.08);
+}
+
 /* Custom Scrollbar using v4 syntax */
 @layer utilities {
   ::-webkit-scrollbar {
