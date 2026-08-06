@@ -8,6 +8,15 @@
 // functions (unlike node-canvas/poppler, which need system libcairo /
 // poppler-utils that aren't available there).
 import { definePDFJSModule, getDocumentProxy, renderPageAsImage } from "unpdf";
+// pdf.js's Node fake-worker setup falls back to a runtime `import("./pdf.worker.mjs")`
+// with a plain string specifier -- not statically analyzable, so Vercel's
+// file tracer never bundles that chunk into the deployed function and it
+// 404s there (despite working locally, where the full node_modules tree is
+// on disk). Populating globalThis.pdfjsWorker via a real static import is
+// pdf.js's own documented escape hatch for bundlers that can't trace the
+// dynamic path -- it short-circuits the runtime import entirely.
+import * as pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs";
+(globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker = pdfjsWorker;
 
 let pdfjsModuleReady: Promise<void> | null = null;
 function ensurePdfjsModule(): Promise<void> {
