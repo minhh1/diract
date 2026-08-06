@@ -34,7 +34,7 @@ type FormulaType = (typeof FORMULA_TYPES)[number];
 // which need context this assistant doesn't have and aren't broadly
 // applicable. A user can add those manually afterward.
 const GENERAL_WIDGET_TYPES: DashboardWidgetType[] = [
-  "heading", "text", "filter_bar", "quick_add_form", "grid", "summary_tile", "chart",
+  "heading", "text", "filter_bar", "quick_add_form", "grid", "summary_tile", "chart", "document_export",
 ];
 
 function slugify(name: string): string {
@@ -138,7 +138,7 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
   },
   {
     name: "add_widget",
-    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this widget.",
+    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers. 'document_export' gives records a working PDF download (letter or invoice style) -- see its own params. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this widget.",
     input_schema: {
       type: "object",
       properties: {
@@ -151,6 +151,21 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         summary_field_label: { type: "string", description: "summary_tile/chart widgets: the field to aggregate (omit for a plain record-count tile)." },
         summary_aggregate: { type: "string", enum: ["sum", "count", "net", "count-distinct"], description: "summary_tile/chart widgets, defaults to 'count'." },
         chart_date_field_label: { type: "string", description: "chart widgets (required): the date field for the x-axis." },
+        document_export_style: { type: "string", enum: ["letter", "invoice"], description: "document_export widgets (required): 'letter' renders onto the company's letterhead (needs a letterhead already uploaded in Settings -> Precedents); 'invoice' renders a generic billing-document layout. All fields below are on the dashboard's OWN bound table." },
+        recipient_name_field_label: { type: "string", description: "document_export style 'letter': field holding who the letter is addressed to." },
+        recipient_address_field_label: { type: "string", description: "document_export style 'letter': field holding the recipient's mailing address." },
+        subject_field_label: { type: "string", description: "document_export style 'letter': field holding the letter's subject line." },
+        body_field_label: { type: "string", description: "document_export style 'letter' (required): a text field holding the letter's body copy." },
+        invoice_number_field_label: { type: "string", description: "document_export style 'invoice': field holding the invoice number." },
+        invoice_date_field_label: { type: "string", description: "document_export style 'invoice': field holding the invoice date." },
+        due_date_field_label: { type: "string", description: "document_export style 'invoice': field holding the due date." },
+        customer_name_field_label: { type: "string", description: "document_export style 'invoice': field holding who's being billed." },
+        customer_address_field_label: { type: "string", description: "document_export style 'invoice': field holding the customer's address." },
+        description_field_label: { type: "string", description: "document_export style 'invoice': field holding this record's own line-item description." },
+        amount_field_label: { type: "string", description: "document_export style 'invoice': field holding this record's own line-item amount." },
+        subtotal_field_label: { type: "string", description: "document_export style 'invoice': field holding the subtotal." },
+        tax_field_label: { type: "string", description: "document_export style 'invoice': field holding the tax amount." },
+        total_field_label: { type: "string", description: "document_export style 'invoice': field holding the total." },
         confirm: { type: "boolean", description: "Must be true, and only after you've presented the full plan and the user has explicitly agreed to it in this conversation." },
       },
       required: ["dashboard_id", "widget_type", "confirm"],
@@ -480,6 +495,35 @@ async function addWidget(admin: any, companyId: string, userId: string, input: R
         valueFieldId,
         aggregate: (input.summary_aggregate as "sum" | "count" | "count-distinct") || "sum",
       }];
+    }
+  } else if (widget.type === "document_export") {
+    const style = String(input.document_export_style || "");
+    if (style !== "letter" && style !== "invoice") {
+      return { content: "document_export widgets need document_export_style ('letter' or 'invoice')", isError: true };
+    }
+    widget.config.style = style;
+    if (style === "letter") {
+      const bodyFieldId = input.body_field_label ? resolveLabel(String(input.body_field_label)) : null;
+      if (!bodyFieldId) return { content: "document_export style 'letter' needs body_field_label to match an existing field on the dashboard's table", isError: true };
+      widget.config.letter = {
+        bodyFieldId,
+        recipientNameFieldId: input.recipient_name_field_label ? resolveLabel(String(input.recipient_name_field_label)) : null,
+        recipientAddressFieldId: input.recipient_address_field_label ? resolveLabel(String(input.recipient_address_field_label)) : null,
+        subjectFieldId: input.subject_field_label ? resolveLabel(String(input.subject_field_label)) : null,
+      };
+    } else {
+      widget.config.invoice = {
+        invoiceNumberFieldId: input.invoice_number_field_label ? resolveLabel(String(input.invoice_number_field_label)) : null,
+        invoiceDateFieldId: input.invoice_date_field_label ? resolveLabel(String(input.invoice_date_field_label)) : null,
+        dueDateFieldId: input.due_date_field_label ? resolveLabel(String(input.due_date_field_label)) : null,
+        customerNameFieldId: input.customer_name_field_label ? resolveLabel(String(input.customer_name_field_label)) : null,
+        customerAddressFieldId: input.customer_address_field_label ? resolveLabel(String(input.customer_address_field_label)) : null,
+        descriptionFieldId: input.description_field_label ? resolveLabel(String(input.description_field_label)) : null,
+        amountFieldId: input.amount_field_label ? resolveLabel(String(input.amount_field_label)) : null,
+        subtotalFieldId: input.subtotal_field_label ? resolveLabel(String(input.subtotal_field_label)) : null,
+        taxFieldId: input.tax_field_label ? resolveLabel(String(input.tax_field_label)) : null,
+        totalFieldId: input.total_field_label ? resolveLabel(String(input.total_field_label)) : null,
+      };
     }
   }
 

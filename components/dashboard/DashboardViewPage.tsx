@@ -171,6 +171,7 @@ export default function DashboardViewPage({ slug }: { slug: string }) {
               primaryFieldKey={tableDef?.primary_field_key}
               sourceKind={sourceKind}
               companyId={companyId}
+              dashboardId={dashboard.id}
               userId={userId}
               filters={filters}
               setFilter={setFilter}

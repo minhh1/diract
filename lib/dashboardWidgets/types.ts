@@ -385,6 +385,43 @@ export interface TimeAgingReportWidget extends BaseWidget {
   config: { agingDays: number };
 }
 
+// A per-row "export PDF" widget for ANY custom table (unlike ledes_export's
+// fixed field_key contract) -- lets the AI-assisted table/dashboard-builder
+// (see lib/ai/tableBuilderTools.ts's add_widget) give a freshly-built table
+// a working document output without needing it to match any fixed
+// industry template. 'letter' style renders the record's mapped fields onto
+// the company's own letterhead (see lib/precedents/renderLetterheadPdf.ts);
+// 'invoice' style renders a generic billing-document layout (see
+// lib/invoices/generateGenericInvoicePdf.ts) -- neither reuses the
+// Law-Firm-specific precedent/invoice pipelines, which are both tied to a
+// fixed field/relation contract this widget can't assume. Field ids are
+// resolved from labels at add-widget time (same convention as every other
+// configurable widget here), editable afterward via WidgetConfigPanel.
+export interface DocumentExportWidget extends BaseWidget {
+  type: 'document_export';
+  config: {
+    style: 'letter' | 'invoice';
+    letter?: {
+      recipientNameFieldId: string | null;
+      recipientAddressFieldId: string | null;
+      subjectFieldId: string | null;
+      bodyFieldId: string | null; // a text field holding the letter's flat body copy
+    };
+    invoice?: {
+      invoiceNumberFieldId?: string | null;
+      invoiceDateFieldId?: string | null;
+      dueDateFieldId?: string | null;
+      customerNameFieldId?: string | null;
+      customerAddressFieldId?: string | null;
+      descriptionFieldId?: string | null; // v1: one line item per record, from its own fields
+      amountFieldId?: string | null;
+      subtotalFieldId?: string | null;
+      taxFieldId?: string | null;
+      totalFieldId?: string | null;
+    };
+  };
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
@@ -392,6 +429,6 @@ export type DashboardWidget =
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
   | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget
   | FinanceModelWidget | ResidualLandSolverWidget | AutoTimeRecordingButtonWidget
-  | TimeFeesReportWidget | TimeAgingReportWidget;
+  | TimeFeesReportWidget | TimeAgingReportWidget | DocumentExportWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];

@@ -85,6 +85,7 @@ export default function DashboardViewPage() {
             tableId={dashboard.source_table_id ?? dashboard.source_table_type}
             sourceKind={sourceKind}
             companyId={companyId}
+            dashboardId={dashboard.id}
             userId={userId}
             filters={filters}
             setFilter={setFilter}

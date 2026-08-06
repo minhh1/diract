@@ -1381,6 +1381,75 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
           <p className="text-[11px] text-slate-400 italic">No settings. It always reads this dashboard's own table.</p>
         )}
 
+        {draft.type === 'document_export' && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Style</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(['letter', 'invoice'] as const).map(s => (
+                  <button
+                    key={s}
+                    onClick={() => updateConfig({ style: s })}
+                    className={`py-2 rounded-full text-[11px] font-bold capitalize transition-all ${
+                      draft.config.style === s ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {draft.config.style === 'letter' ? (
+              <div className="space-y-2">
+                <p className="text-[10px] text-slate-400 px-1">Renders onto the company's letterhead (Settings → Precedents).</p>
+                {([
+                  ['bodyFieldId', 'Body text field (required)'],
+                  ['recipientNameFieldId', 'Recipient name field'],
+                  ['recipientAddressFieldId', 'Recipient address field'],
+                  ['subjectFieldId', 'Subject field'],
+                ] as const).map(([key, placeholder]) => (
+                  <select
+                    key={key}
+                    value={draft.config.letter?.[key] || ''}
+                    onChange={e => setDraft(prev => ({ ...prev, config: { ...(prev as any).config, letter: { ...(prev as any).config.letter, [key]: e.target.value || null } } } as DashboardWidget))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                  >
+                    <option value="">{placeholder}...</option>
+                    {fields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[10px] text-slate-400 px-1">One line item per record, from its own description/amount fields.</p>
+                {([
+                  ['invoiceNumberFieldId', 'Invoice number field'],
+                  ['invoiceDateFieldId', 'Invoice date field'],
+                  ['dueDateFieldId', 'Due date field'],
+                  ['customerNameFieldId', 'Customer name field'],
+                  ['customerAddressFieldId', 'Customer address field'],
+                  ['descriptionFieldId', 'Line item description field'],
+                  ['amountFieldId', 'Line item amount field'],
+                  ['subtotalFieldId', 'Subtotal field'],
+                  ['taxFieldId', 'Tax field'],
+                  ['totalFieldId', 'Total field'],
+                ] as const).map(([key, placeholder]) => (
+                  <select
+                    key={key}
+                    value={draft.config.invoice?.[key] || ''}
+                    onChange={e => setDraft(prev => ({ ...prev, config: { ...(prev as any).config, invoice: { ...(prev as any).config.invoice, [key]: e.target.value || null } } } as DashboardWidget))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                  >
+                    <option value="">{placeholder}...</option>
+                    {fields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {draft.type === 'public_task_page' && (
           <PublicTaskPageConfig
             pageId={draft.config.pageId}

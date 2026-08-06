@@ -35,6 +35,7 @@ const TimeFeesReportWidget = dynamic(() => import("./TimeFeesReportWidget"));
 const TimeAgingReportWidget = dynamic(() => import("./TimeAgingReportWidget"));
 const FinanceModelSearchWidget = dynamic(() => import("./FinanceModelSearchWidget"));
 const ResidualLandSolverContent = dynamic(() => import("@/components/public/ResidualLandSolverContent"));
+const DocumentExportWidget = dynamic(() => import("./DocumentExportWidget"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -77,6 +78,12 @@ interface Props {
   allRecords: CustomTableRecord[];
   tableId: string;
   companyId: string;
+  // Only read by document_export -- its download route needs to re-load the
+  // widget's own stored config server-side (see that route's own comment on
+  // why field ids always come from there, never the client). Undefined in
+  // builder-preview contexts, where the widget shows its empty/disabled
+  // state instead (nothing saved yet to download from).
+  dashboardId?: string;
   userId: string;
   filters: Record<string, any>;
   setFilter: (fieldId: string, value: any) => void;
@@ -129,7 +136,7 @@ interface Props {
 }
 
 export default function DashboardWidgetRenderer({
-  widget, sourceKind, fields, fieldById, records, recordsLoading, chartRecords, allRecords, tableId, companyId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
+  widget, sourceKind, fields, fieldById, records, recordsLoading, chartRecords, allRecords, tableId, companyId, dashboardId, userId, filters, setFilter, onChanged, mode = 'view', isLedger,
   isAdmin, onWidgetChange, fixedValues, quickAddPrefill, onQuickAddPrefill, onOptimisticAdd, primaryFieldKey,
   canSeeMultipleScope, viewDefaultFieldIds, onSetViewDefault, onClearViewDefault,
 }: Props) {
@@ -281,6 +288,9 @@ export default function DashboardWidgetRenderer({
 
     case 'time_aging_report':
       return <TimeAgingReportWidget records={allRecords} agingDays={widget.config.agingDays} />;
+
+    case 'document_export':
+      return <DocumentExportWidget records={allRecords} config={widget.config} dashboardId={dashboardId} widgetId={widget.id} primaryFieldKey={primaryFieldKey} />;
 
     case 'public_task_page':
       return <PublicTaskPageWidget pageId={widget.config.pageId} />;
