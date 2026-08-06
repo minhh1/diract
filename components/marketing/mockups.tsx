@@ -719,7 +719,13 @@ export function MockTeamsManagement() {
 // made this unreadable in dark mode. Given a legible marketing demo matters
 // more than faithfully reproducing a real app CSS gap, this mockup picks
 // its own explicit dark background per accent color instead of relying on
-// that cascade, via useMockupTheme() directly.
+// that cascade, via useMockupTheme() directly -- and that background is
+// SOLID, not a translucent tint: MockupThemeProvider deliberately never
+// darkens the marketing PAGE itself (see that file's own comment), so a
+// semi-transparent dark tint here would still composite against the
+// still-light page behind it and land back at the same pale, low-contrast
+// result. Only an opaque background guarantees real contrast regardless of
+// what's behind this card.
 // Literal classes (not template-interpolated) -- Tailwind's build-time
 // scanner can't see a dynamically-constructed `border-l-${color}-400`
 // class string, so it would get purged from the production bundle.
@@ -731,11 +737,11 @@ const CLIENT_CARD_COLORS = {
   red: "border-l-red-400 bg-red-50/40",
 } as const;
 const CLIENT_CARD_COLORS_DARK = {
-  amber: "border-l-amber-400 bg-amber-950/40",
-  blue: "border-l-blue-400 bg-blue-950/40",
-  emerald: "border-l-emerald-400 bg-emerald-950/40",
-  purple: "border-l-purple-400 bg-purple-950/40",
-  red: "border-l-red-400 bg-red-950/40",
+  amber: "border-l-amber-400 bg-amber-900",
+  blue: "border-l-blue-400 bg-blue-900",
+  emerald: "border-l-emerald-400 bg-emerald-900",
+  purple: "border-l-purple-400 bg-purple-900",
+  red: "border-l-red-400 bg-red-900",
 } as const;
 
 const CLIENT_UPDATE_CARDS: { color: keyof typeof CLIENT_CARD_COLORS; matter: string; summary?: string; stage: string; settlementDate: string }[] = [
