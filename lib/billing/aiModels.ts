@@ -34,7 +34,9 @@ export const HOSTED_MODELS: HostedModel[] = [
   // app/api/ai/chat/route.ts's table/dashboard-builder assistant) -- picked
   // over DeepSeek V4 Flash specifically because Together's own model page
   // shows a confirmed "Function Calling" badge for Pro and not for Flash,
-  // which matters since this route only exists to call tools.
+  // which matters since this route only exists to call tools. The default
+  // hosted model for everything else in this catalog too (every caller
+  // besides the two below just takes HOSTED_MODELS[0]) -- must stay first.
   {
     id: TABLE_BUILDER_MODEL_ID,
     label: "DeepSeek V4 Pro",
@@ -42,40 +44,19 @@ export const HOSTED_MODELS: HostedModel[] = [
     outputUsdPer1kTokens: 0.00348,
     contextWindow: 512000,
   },
+  // Kept as a second catalog entry (not trimmed down to just the one
+  // above) specifically because app/api/time-entries/auto-generate/route.ts
+  // and its regenerate-description sibling pin this exact id via
+  // `HOSTED_MODELS.find(...)!` -- they were deliberately tested against
+  // DeepSeek and found less reliable at producing bare, unwrapped JSON for
+  // that task (see those files' own comments). Removing this entry would
+  // throw at import time, not just degrade gracefully.
   {
     id: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     label: "Llama 3.3 70B",
     inputUsdPer1kTokens: 0.00088,
     outputUsdPer1kTokens: 0.00088,
     contextWindow: 128000,
-  },
-  {
-    id: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    label: "Llama 3.1 8B (fast, cheap)",
-    inputUsdPer1kTokens: 0.00018,
-    outputUsdPer1kTokens: 0.00018,
-    contextWindow: 128000,
-  },
-  {
-    id: "Qwen/Qwen2.5-72B-Instruct-Turbo",
-    label: "Qwen 2.5 72B",
-    inputUsdPer1kTokens: 0.0012,
-    outputUsdPer1kTokens: 0.0012,
-    contextWindow: 32000,
-  },
-  {
-    id: "deepseek-ai/DeepSeek-V3",
-    label: "DeepSeek V3",
-    inputUsdPer1kTokens: 0.00125,
-    outputUsdPer1kTokens: 0.00125,
-    contextWindow: 64000,
-  },
-  {
-    id: "mistralai/Mixtral-8x22B-Instruct-v0.1",
-    label: "Mixtral 8x22B",
-    inputUsdPer1kTokens: 0.0012,
-    outputUsdPer1kTokens: 0.0012,
-    contextWindow: 65536,
   },
   // The one vision-capable model in Together's serverless catalog (used by
   // lib/genericInvoiceParser.ts to read rasterized PDF invoice pages --
