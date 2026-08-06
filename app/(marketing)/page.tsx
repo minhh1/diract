@@ -17,7 +17,7 @@ const steps = [
 export default function HomePage() {
   return (
     <MockupThemeProvider>
-    <div className="min-h-screen bg-white text-slate-900 antialiased select-text">
+    <div className="min-h-screen bg-stone-50 text-slate-900 antialiased select-text">
       <MarketingNav audienceLinks={audienceNavLinks()} />
       <MockupThemeToggle />
 

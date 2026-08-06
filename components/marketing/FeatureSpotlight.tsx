@@ -69,7 +69,7 @@ export default function FeatureSpotlight({
   features: SpotlightFeature[];
 }) {
   return (
-    <section className="bg-slate-50 py-24 px-6">
+    <section className="bg-white py-24 px-6">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-20">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">{eyebrow}</p>

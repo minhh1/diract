@@ -468,7 +468,7 @@ function LoginPageInner() {
   };
 
   return (
-    <div className="flex min-h-screen bg-white font-sans antialiased select-text">
+    <div className="flex min-h-screen bg-stone-50 font-sans antialiased select-text">
 
       {/* Brand panel -- hidden below lg, this is the Canva-style split login */}
       <div className="hidden lg:flex lg:w-[44%] relative bg-gradient-to-br from-indigo-600 to-violet-700 text-white flex-col justify-between p-14 overflow-hidden">

@@ -178,7 +178,7 @@ export default function LawFirmGetStartedPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-white font-sans antialiased select-text">
+    <div className="flex min-h-screen bg-stone-50 font-sans antialiased select-text">
       {/* Brand panel */}
       <div className="hidden lg:flex lg:w-[44%] relative bg-gradient-to-br from-indigo-600 to-violet-700 text-white flex-col justify-between p-14 overflow-hidden">
         <div className="pointer-events-none absolute -top-24 -right-16 w-80 h-80 rounded-full bg-white/10 blur-3xl" />

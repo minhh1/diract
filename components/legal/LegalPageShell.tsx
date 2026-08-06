@@ -16,7 +16,7 @@ export default function LegalPageShell({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-stone-50">
       <div className="max-w-3xl mx-auto px-6 py-16">
         <Link href="/" className="text-[11px] text-indigo-600 hover:underline mb-8 block">
           ← Back to Diract
