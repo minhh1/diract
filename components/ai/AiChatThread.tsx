@@ -164,7 +164,7 @@ function ThinkingBlock({ text, defaultExpanded }: { text: string; defaultExpande
   );
 }
 
-interface Usage {
+export interface Usage {
   tokensUsed: number;
   tokenCap: number;
   estimatedCostUsd: number;
@@ -207,6 +207,12 @@ export interface AiChatThreadProps {
   // icon on app/(app)/dashboard/ai/page.tsx) -- this component already
   // tracks sending internally for its own send-button spinner either way.
   onSendingChange?: (sending: boolean) => void;
+  // Reports usage/cap on every fetch -- app/(app)/dashboard/ai/page.tsx
+  // renders it itself, in its own header, rather than this component
+  // reserving a full-width row for what's a short one-line stat (compact
+  // mode never wanted it anyway, and the non-compact page-level caller is
+  // the only one that ever did).
+  onUsageChange?: (usage: Usage | null) => void;
 }
 
 const BUILD_TOOL_NAMES = new Set(["create_table", "create_field", "create_dashboard", "add_widget"]);
@@ -229,6 +235,7 @@ export default function AiChatThread({
   onConversationCreated,
   onTurnComplete,
   onSendingChange,
+  onUsageChange,
 }: AiChatThreadProps) {
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId);
   const [messages, setMessages] = useState<ChatMessage[]>(
@@ -258,6 +265,13 @@ export default function AiChatThread({
     if (compact) return; // onboarding embed skips the usage bar -- see prop doc
     fetch("/api/ai/usage").then(res => res.ok ? res.json() : null).then(json => { if (json) setUsage(json); });
   }, [compact]);
+
+  useEffect(() => {
+    onUsageChange?.(usage);
+    // onUsageChange is a plain callback prop, not meant to retrigger this --
+    // only actual usage changes should report upward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usage]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -414,24 +428,6 @@ export default function AiChatThread({
 
   return (
     <div className={`flex flex-col ${compact ? "" : "h-full"}`}>
-      {!compact && usage && (
-        <div className="shrink-0 mb-6 flex items-center gap-2 text-[12px] text-slate-400">
-          <span>{usage.tokensUsed.toLocaleString()} / {usage.tokenCap.toLocaleString()} tokens this period</span>
-          <span className="text-slate-300">&middot;</span>
-          <div className="flex items-center gap-2">
-            <span>~${usage.estimatedCostUsd.toFixed(2)} spent</span>
-            <div className="h-1 w-16 bg-slate-100 rounded-full overflow-hidden">
-              <motion.div
-                className={`h-full rounded-full ${capReached ? "bg-red-400" : "bg-slate-300"}`}
-                initial={false}
-                animate={{ width: `${Math.min(100, (usage.tokensUsed / usage.tokenCap) * 100)}%` }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className={`flex-1 ${compact ? "max-h-[440px]" : ""} overflow-y-auto`}>
         <div className={`mx-auto w-full ${compact ? "" : "max-w-[720px]"} space-y-8`}>
           {messages.length === 0 && emptyStateHint && (

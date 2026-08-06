@@ -28,7 +28,7 @@ import { motion } from "framer-motion";
 import { Sparkles, Plus, Trash2, MessageSquare, Shield, Pin, Pencil, Check, X } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { useAiConversations } from "@/lib/hooks/useAiConversations";
-import AiChatThread, { type ChatMessage } from "@/components/ai/AiChatThread";
+import AiChatThread, { type ChatMessage, type Usage } from "@/components/ai/AiChatThread";
 
 export default function AiAssistantPage() {
   const router = useRouter();
@@ -55,6 +55,7 @@ export default function AiAssistantPage() {
   const [openedConversationId, setOpenedConversationId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
@@ -203,8 +204,8 @@ export default function AiAssistantPage() {
 
       {/* Chat */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="shrink-0 px-8 py-5">
-          <div className="flex items-center gap-2.5 max-w-[720px] mx-auto">
+        <header className="shrink-0 px-8 py-5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
             <motion.div
               animate={sending ? { opacity: [0.5, 1, 0.5] } : { opacity: 1 }}
               transition={sending ? { repeat: Infinity, duration: 1.2, ease: "easeInOut" } : undefined}
@@ -213,6 +214,21 @@ export default function AiAssistantPage() {
             </motion.div>
             <h1 className="text-[15px] font-medium text-slate-700">Ask AI</h1>
           </div>
+          {usage && (
+            <div className="flex items-center gap-2 text-[12px] text-slate-400 shrink-0">
+              <span>{usage.tokensUsed.toLocaleString()} / {usage.tokenCap.toLocaleString()} tokens</span>
+              <span className="text-slate-300">&middot;</span>
+              <span>~${usage.estimatedCostUsd.toFixed(2)} spent</span>
+              <div className="h-1 w-16 bg-slate-100 rounded-full overflow-hidden">
+                <motion.div
+                  className={`h-full rounded-full ${usage.tokensUsed >= usage.tokenCap ? "bg-red-400" : "bg-slate-300"}`}
+                  initial={false}
+                  animate={{ width: `${Math.min(100, (usage.tokensUsed / usage.tokenCap) * 100)}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                />
+              </div>
+            </div>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto px-8 pb-8">
@@ -225,6 +241,7 @@ export default function AiAssistantPage() {
               onConversationCreated={setConversationId}
               onTurnComplete={loadConversations}
               onSendingChange={setSending}
+              onUsageChange={setUsage}
             />
           </div>
         </main>
