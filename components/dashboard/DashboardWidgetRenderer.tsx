@@ -222,6 +222,7 @@ export default function DashboardWidgetRenderer({
           columnWidths={widget.config.columnWidths}
           columnHighlights={widget.config.columnHighlights}
           showTotalsRow={widget.config.showTotalsRow}
+          totalsColumns={widget.config.totalsColumns}
           fieldById={fieldById}
           isAdmin={mode === 'view' ? isAdmin : undefined}
           onReorder={onWidgetChange ? (fieldIds) => onWidgetChange({ ...widget, config: { ...widget.config, fieldIds } }) : undefined}

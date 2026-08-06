@@ -79,6 +79,10 @@ interface Props {
   // (filtered) `records` prop -- see GridWidget.config in
   // lib/dashboardWidgets/types.ts.
   showTotalsRow?: boolean;
+  // Which columns (field ids) actually participate in that footer row --
+  // see GridWidget.config.totalsColumns in lib/dashboardWidgets/types.ts.
+  // Undefined means every number/currency column (pre-existing default).
+  totalsColumns?: string[];
   // True while `records` is still on its way but the rest of the dashboard
   // (this grid's own header, the quick-add form beside it) is already
   // showing -- see useCustomTable.ts's fields-first split. Distinguishes
@@ -126,7 +130,7 @@ function initials(name: string): string {
 // section of a composed dashboard, not a standalone page.
 export default function DashboardGrid({
   tableId, sourceKind, companyId, userId, fields, primaryFieldKey, gridFieldIds, records, onChanged, readOnly, emptyRowCount = 0,
-  columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow, recordsLoading,
+  columnWidths, isAdmin, onReorder, onResize, columnHighlights, fieldById, showTotalsRow, totalsColumns, recordsLoading,
   showTimekeeperInitials, staffFieldKey,
 }: Props) {
   const { start: startProgress, done: doneProgress } = useProgressBar();
@@ -456,13 +460,24 @@ export default function DashboardGrid({
           <tfoot>
             <tr className="border-t border-slate-200 bg-slate-50 font-bold">
               {showInitialsCol && <td className="px-4 py-2" />}
-              {gridFields.map((f, idx) => (
-                <td key={f.id} className="px-4 py-2 text-[11px] text-slate-700" style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
-                  {f.field_type === 'number' || f.field_type === 'currency'
-                    ? formatTotal(records.reduce((sum, r) => sum + (Number(r.values[f.field_key]) || 0), 0), f.field_type)
-                    : idx === 0 ? 'Total' : ''}
-                </td>
-              ))}
+              {gridFields.map((f, idx) => {
+                const included = totalsColumns
+                  ? totalsColumns.includes(f.id)
+                  : (f.field_type === 'number' || f.field_type === 'currency');
+                let content = '';
+                if (included && f.field_type === 'boolean') {
+                  content = `${records.filter(r => !!r.values[f.field_key]).length} checked`;
+                } else if (included) {
+                  content = formatTotal(records.reduce((sum, r) => sum + (Number(r.values[f.field_key]) || 0), 0), f.field_type);
+                } else if (idx === 0) {
+                  content = 'Total';
+                }
+                return (
+                  <td key={f.id} className="px-4 py-2 text-[11px] text-slate-700" style={{ width: widthFor(f.id), minWidth: widthFor(f.id), maxWidth: widthFor(f.id) }}>
+                    {content}
+                  </td>
+                );
+              })}
               {!readOnly && <td className="px-2" />}
             </tr>
           </tfoot>

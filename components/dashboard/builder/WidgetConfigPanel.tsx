@@ -1052,8 +1052,43 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
                 onChange={e => updateConfig({ showTotalsRow: e.target.checked })}
                 className="rounded"
               />
-              <span className="text-[11px] font-medium text-slate-600">Show a totals row (sums every number/currency column)</span>
+              <span className="text-[11px] font-medium text-slate-600">Show a totals row</span>
             </label>
+
+            {draft.config.showTotalsRow && (() => {
+              const totalsEligible = draft.config.fieldIds
+                .map(id => fields.find(f => f.id === id))
+                .filter((f): f is NonNullable<typeof f> => !!f && (f.field_type === 'number' || f.field_type === 'currency' || f.field_type === 'boolean'));
+              if (!totalsEligible.length) return null;
+              // Undefined totalsColumns == today's default (every number/
+              // currency column, no boolean) -- materialized into an
+              // explicit array the moment any checkbox here is touched.
+              const defaultIds = totalsEligible.filter(f => f.field_type !== 'boolean').map(f => f.id);
+              const activeIds = draft.config.totalsColumns ?? defaultIds;
+              return (
+                <div className="pl-1 space-y-1.5">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">
+                    Columns to total
+                  </label>
+                  {totalsEligible.map(f => (
+                    <label key={f.id} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={activeIds.includes(f.id)}
+                        onChange={e => {
+                          const next = e.target.checked ? [...activeIds, f.id] : activeIds.filter(id => id !== f.id);
+                          updateConfig({ totalsColumns: next });
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-[11px] font-medium text-slate-600">
+                        {f.label}{f.field_type === 'boolean' ? ' (count checked)' : ''}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })()}
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">

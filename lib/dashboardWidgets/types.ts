@@ -102,6 +102,14 @@ export interface GridWidget extends BaseWidget {
     // never contribute, since they're not real records yet. Undefined/false
     // means no footer (today's behavior).
     showTotalsRow?: boolean;
+    // Restricts the totals footer to just these columns (field ids) -- e.g.
+    // sum Amount and count Billable but skip Rate, which is a per-unit price
+    // and meaningless summed across rows. Undefined falls back to every
+    // number/currency column (the original all-or-nothing behavior, kept so
+    // widgets saved before this existed don't silently go blank). A
+    // `boolean` column here counts checked rows instead of summing, since
+    // there's nothing to sum.
+    totalsColumns?: string[];
   };
 }
 

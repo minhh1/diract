@@ -74,6 +74,7 @@ DECLARE
   v_key text;
   v_field_id text;
   v_ids jsonb;
+  v_totals_ids jsonb;
 BEGIN
   IF v_type IN ('filter_bar', 'quick_add_form', 'grid') THEN
     v_ids := '[]'::jsonb;
@@ -82,6 +83,18 @@ BEGIN
       IF v_field_id IS NOT NULL THEN v_ids := v_ids || to_jsonb(v_field_id); END IF;
     END LOOP;
     v_config := v_config || jsonb_build_object('fieldIds', v_ids);
+
+    -- grid-only: same field_key -> id resolution, for the (optional) subset
+    -- of columns that participate in the totals footer -- see
+    -- GridWidget.config.totalsColumns in lib/dashboardWidgets/types.ts.
+    IF v_type = 'grid' AND v_config ? 'totalsColumns' THEN
+      v_totals_ids := '[]'::jsonb;
+      FOR v_key IN SELECT jsonb_array_elements_text(COALESCE(v_config->'totalsColumns', '[]'::jsonb)) LOOP
+        v_field_id := p_field_map->>v_key;
+        IF v_field_id IS NOT NULL THEN v_totals_ids := v_totals_ids || to_jsonb(v_field_id); END IF;
+      END LOOP;
+      v_config := v_config || jsonb_build_object('totalsColumns', v_totals_ids);
+    END IF;
 
   ELSIF v_type = 'summary_tile' THEN
     v_config := v_config

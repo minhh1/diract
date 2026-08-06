@@ -280,7 +280,8 @@ export function parseDSL(source: string, fields: CustomTableField[]): DslParseRe
         const emptyRowCount = kv.empty_rows ? Math.max(0, Math.min(20, parseInt(kv.empty_rows, 10) || 0)) : undefined;
         const conditions = parseConditions(kv.when, lineNo);
         const showTotalsRow = kv.totals === 'true' ? true : undefined;
-        widgets.push({ id, type, layout, config: { fieldIds: resolveFieldsList(kv.fields), emptyRowCount, conditions, showTotalsRow } });
+        const totalsColumns = kv.totals_fields ? resolveFieldsList(kv.totals_fields) : undefined;
+        widgets.push({ id, type, layout, config: { fieldIds: resolveFieldsList(kv.fields), emptyRowCount, conditions, showTotalsRow, totalsColumns } });
         break;
       }
       case 'summary_tile': {
@@ -404,7 +405,8 @@ export function serializeToDSL(widgets: DashboardWidget[], fields: CustomTableFi
               }).join(',')}`
             : '';
           const totals = w.config.showTotalsRow ? ` totals=true` : '';
-          return `grid fields=${fieldKeys(w.config.fieldIds)}${emptyRows}${when}${totals}${widthSuffix(w.layout.w)}`;
+          const totalsFields = w.config.totalsColumns ? ` totals_fields=${fieldKeys(w.config.totalsColumns)}` : '';
+          return `grid fields=${fieldKeys(w.config.fieldIds)}${emptyRows}${when}${totals}${totalsFields}${widthSuffix(w.layout.w)}`;
         }
         case 'summary_tile': {
           // Falls back to the deprecated single filterFieldId/filterValue
