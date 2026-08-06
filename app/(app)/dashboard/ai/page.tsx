@@ -13,11 +13,11 @@
 // app/api/ai/chat/route.ts rather than needing a separate create call.
 //
 // The actual message-list/streaming/tool-call-chip rendering lives in
-// components/ai/AiChatThread.tsx, shared with WelcomeOnboarding.tsx (a
-// brand-new company's first-run onboarding embed of this same assistant).
-// This page owns the conversation-list sidebar and remounts
-// AiChatThread (via `key`) whenever the selected conversation changes,
-// rather than lifting its message/conversationId state up here.
+// components/ai/AiChatThread.tsx, shared with AiAssistantWidget.tsx (an
+// ordinary Quick Glance widget embed of this same assistant, for a
+// templateless company). This page owns the conversation-list sidebar and
+// remounts AiChatThread (via `key`) whenever the selected conversation
+// changes, rather than lifting its message/conversationId state up here.
 "use client";
 
 import { useCallback, useEffect, useState } from "react";

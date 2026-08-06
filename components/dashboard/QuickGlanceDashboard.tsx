@@ -21,7 +21,6 @@ import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { supabase } from "@/lib/supabase";
 import { defaultQuickGlanceWidgets } from "@/lib/dashboardWidgets/defaultQuickGlanceLayout";
 import type { QuickGlanceWidget } from "@/lib/dashboardWidgets/quickGlanceTypes";
-import WelcomeOnboarding from "./quickGlance/WelcomeOnboarding";
 
 const QuickGlanceCanvas = dynamic(() => import("./quickGlance/QuickGlanceCanvas"));
 
@@ -30,26 +29,27 @@ const KNOWN_TYPES = ['Law Firm', 'Property Developer'];
 export default function QuickGlanceDashboard() {
   const { companyId, companyType, userId, loading: companyLoading } = useCompany();
   const router = useRouter();
-  const { tables, loading: tablesLoading, refetch: refetchTables } = useCustomTables(userId);
+  const { tables, loading: tablesLoading } = useCustomTables(userId);
   const isKnownType = !!companyType && KNOWN_TYPES.includes(companyType);
-  // A templateless company (companyType never got set -- true for every
-  // brand-new self-signup, see register_company_and_profile) keeps landing
-  // on the onboarding assistant even after it has AI-built tables -- those
-  // tables came from chatting with this same assistant, and the expectation
-  // is they'll keep coming back to it to adjust the schema to fit their
-  // workflow (add a field, add another table, ...), not get redirected away
-  // the moment the first one exists. Only a genuine marketplace template
-  // install (is_from_template -- see install_company_template, locked from
-  // further AI/manual edits by supabase/migrations/20260803030000_lock_
-  // template_schema.sql) means the company is "done" onboarding and should
-  // land on its real first table instead, same as the old hardcoded
-  // /dashboard/properties redirect intended (which was hidden by default
-  // for exactly this kind of company -- see supabase/migrations/
-  // 20260805070000_hide_system_tables_for_templateless_companies.sql -- and
-  // was a dead-end "Properties has been deleted" screen regardless of
-  // whether anything had been built).
-  const hasAnyTables = tables.length > 0;
+  // A genuine marketplace template install (is_from_template -- see
+  // install_company_template, locked from further AI/manual edits by
+  // supabase/migrations/20260803030000_lock_template_schema.sql) is the
+  // only thing that means a company is "done" onboarding.
   const hasTemplateTable = tables.some(t => t.is_from_template);
+  // The customizable canvas (this same component renders for a Law Firm/
+  // Property Developer) is also what a templateless company sees --
+  // WelcomeOnboarding.tsx used to swap in a whole separate full-page
+  // takeover for that case, but its AI assistant is now just an ordinary
+  // ai_assistant bespoke widget in the canvas (see
+  // lib/dashboardWidgets/defaultQuickGlanceLayout.ts's templateless
+  // default), so a company that's only ever used the assistant to build
+  // AI-generated tables keeps it as its landing page rather than getting
+  // redirected away the moment the first one exists (see hasTemplateTable
+  // above). Only a company that installed some OTHER marketplace template
+  // (is_from_template true, but not one of the two KNOWN_TYPES with a
+  // purpose-built layout) has nothing here built for it -- see the
+  // redirect effect below, unchanged from before.
+  const showCanvas = isKnownType || !hasTemplateTable;
 
   const [widgets, setWidgets] = useState<QuickGlanceWidget[] | null>(null);
   const [editing, setEditing] = useState(false);
@@ -57,7 +57,10 @@ export default function QuickGlanceDashboard() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    if (!companyId || !companyType) return;
+    // companyType may be null here (a templateless company) --
+    // defaultQuickGlanceWidgets(null, ...) has its own fallback arrangement
+    // for that case (setup checklist + AI assistant).
+    if (!companyId) return;
     const { data } = await supabase.from('company_quick_glance_layout').select('widgets').eq('company_id', companyId).maybeSingle();
     if (data) {
       setWidgets(data.widgets || []);
@@ -72,32 +75,24 @@ export default function QuickGlanceDashboard() {
   }, [companyId, companyType, tables]);
 
   useEffect(() => {
-    if (!companyLoading && !tablesLoading && isKnownType) load();
-  }, [load, companyLoading, tablesLoading, isKnownType]);
+    if (!companyLoading && !tablesLoading && showCanvas) load();
+  }, [load, companyLoading, tablesLoading, showCanvas]);
 
-  // Decided once, the first time loading finishes, not reactively on every
-  // change to `tables` -- WelcomeOnboarding's embedded assistant can build
-  // several tables/dashboards across one conversation, and refetching mid-
-  // chat (see its onBuildProgress prop below) would otherwise yank the user
-  // away the instant a marketplace template got installed mid-chat, cutting
-  // a multi-step build short (in practice the assistant itself never
-  // installs a template -- only the Marketplace page does -- but the same
-  // "decide once" guard still protects against that changing later). A
-  // fresh visit to this page (a real remount) still redirects correctly
-  // once there's a template installed to redirect to.
-  // null = not decided yet, true = started with no template installed (keep
-  // showing onboarding for the rest of this mount even after AI-built
-  // tables exist -- see hasTemplateTable above), false = already had a
-  // template at first load (redirecting away now).
-  const [startedEmpty, setStartedEmpty] = useState<boolean | null>(null);
-  const redirectDecidedRef = useRef(false);
+  // A template installed under some OTHER (unknown) type has nothing
+  // purpose-built here for it -- send it to its first table instead,
+  // same as the old hardcoded /dashboard/properties redirect intended
+  // (which was hidden by default for exactly this kind of company -- see
+  // supabase/migrations/20260805070000_hide_system_tables_for_templateless_companies.sql
+  // -- and was a dead-end "Properties has been deleted" screen). Guarded so
+  // it only ever fires once -- redirecting mid-render-cycle more than once
+  // is harmless but pointless.
+  const redirectedRef = useRef(false);
   useEffect(() => {
-    if (companyLoading || tablesLoading || redirectDecidedRef.current) return;
-    redirectDecidedRef.current = true;
-    if (isKnownType) return;
-    setStartedEmpty(!hasTemplateTable);
-    if (hasTemplateTable) router.replace(`/dashboard/${tables[0].slug}`);
-  }, [companyLoading, tablesLoading, isKnownType, hasTemplateTable, tables, router]);
+    if (companyLoading || tablesLoading || redirectedRef.current) return;
+    if (showCanvas) return;
+    redirectedRef.current = true;
+    router.replace(`/dashboard/${tables[0].slug}`);
+  }, [companyLoading, tablesLoading, showCanvas, tables, router]);
 
   const hasLawFirmTemplate = tables.some(t => t.slug === 'trust-accounts');
   const hasPropertyDeveloperTemplate = tables.some(t => t.slug === 'finance-model-loans');
@@ -126,28 +121,13 @@ export default function QuickGlanceDashboard() {
     );
   }
 
-  if (!isKnownType) {
-    // startedEmpty === false means this company already had a marketplace
-    // template installed the first time this page loaded -- the redirect
-    // effect above is sending it to its first table right now, so just show
-    // the spinner. startedEmpty === true means no template is installed yet
-    // (even if it already has AI-built tables); keep the onboarding
-    // assistant up for the rest of this visit so it stays the landing page
-    // for adjusting the schema to fit their workflow, offering a manual
-    // link to move on once there's somewhere real to go instead of forcing
-    // a redirect.
-    if (startedEmpty !== true) {
-      return (
-        <div className="flex flex-col h-screen items-center justify-center bg-[#F9FAFB]">
-          <Loader2 size={20} className="animate-spin text-slate-300" />
-        </div>
-      );
-    }
+  if (!showCanvas) {
+    // A template is installed under some unknown type -- the redirect
+    // effect above is sending it to its first table right now.
     return (
-      <WelcomeOnboarding
-        onBuildProgress={refetchTables}
-        firstTableHref={hasAnyTables ? `/dashboard/${tables[0].slug}` : null}
-      />
+      <div className="flex flex-col h-screen items-center justify-center bg-[#F9FAFB]">
+        <Loader2 size={20} className="animate-spin text-slate-300" />
+      </div>
     );
   }
 

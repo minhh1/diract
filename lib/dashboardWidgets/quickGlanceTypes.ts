@@ -35,7 +35,7 @@ export interface GenericQuickGlanceWidget {
 
 export type QuickGlanceStatKey = "trust_balance" | "dormant_trust_count" | "matters_with_trust_count";
 
-export type QuickGlanceBespokeType = "setup_checklist" | "quick_glance_stat" | "unpaid_invoices" | "property_projects_panel";
+export type QuickGlanceBespokeType = "setup_checklist" | "quick_glance_stat" | "unpaid_invoices" | "property_projects_panel" | "ai_assistant";
 
 export interface BespokeQuickGlanceWidget {
   kind: "bespoke";
@@ -53,6 +53,7 @@ export const QUICK_GLANCE_BESPOKE_TYPE_META: Record<QuickGlanceBespokeType, { la
   quick_glance_stat: { label: "Trust stat card", icon: "Landmark" },
   unpaid_invoices: { label: "Unpaid invoices", icon: "Receipt" },
   property_projects_panel: { label: "Projects map & list", icon: "MapPin" },
+  ai_assistant: { label: "AI assistant", icon: "Sparkles" },
 };
 
 // Same "only means anything on a company with the Law Firm template
@@ -65,6 +66,7 @@ export const DEFAULT_LAYOUT_BY_BESPOKE_TYPE: Record<QuickGlanceBespokeType, Omit
   quick_glance_stat: { w: 3, h: 2 },
   unpaid_invoices: { w: 5, h: 8 },
   property_projects_panel: { w: 12, h: 14 },
+  ai_assistant: { w: 6, h: 12 },
 };
 
 export const QUICK_GLANCE_STAT_LABELS: Record<QuickGlanceStatKey, string> = {

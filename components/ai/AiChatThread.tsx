@@ -3,10 +3,11 @@
 // The actual message-list + input + streaming/tool-call rendering for the
 // table/dashboard-builder assistant (see app/api/ai/chat/route.ts) --
 // shared by app/(app)/dashboard/ai/page.tsx (the full page, with its own
-// conversation-list sidebar around this) and WelcomeOnboarding.tsx (a
-// compact, single-conversation embed for a brand-new company's very first
-// screen). Pulled out of the AI page rather than duplicated, since the
-// streaming/tool-call-chip logic is the least trivial part of either.
+// conversation-list sidebar around this) and AiAssistantWidget.tsx (a
+// compact, single-conversation embed as an ordinary Quick Glance widget for
+// a templateless company). Pulled out of the AI page rather than
+// duplicated, since the streaming/tool-call-chip logic is the least
+// trivial part of either.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -137,7 +138,7 @@ interface Usage {
 export interface AiChatThreadProps {
   // Compact mode drops the token-usage bar and uses tighter spacing/a
   // rounded card shell -- meant to sit embedded inside another page
-  // (WelcomeOnboarding) rather than own the whole viewport the way
+  // (AiAssistantWidget) rather than own the whole viewport the way
   // app/(app)/dashboard/ai/page.tsx's chat pane does.
   compact?: boolean;
   // Seeds the thread with an assistant message that's already there on
@@ -154,8 +155,9 @@ export interface AiChatThreadProps {
   emptyStateHint?: string;
   placeholder?: string;
   // Bumped every time a create_table/create_dashboard/add_widget tool call
-  // completes -- WelcomeOnboarding uses this to know when to stop showing
-  // itself and hand off to the real quick-glance/schema view.
+  // completes -- AiAssistantWidget uses this to refetch the tables list so
+  // something this conversation just built shows up immediately in
+  // AddQuickGlanceWidgetMenu.tsx without a manual page reload.
   onBuildProgress?: () => void;
   // Fires the moment this thread mints its own conversation id (its very
   // first send) -- lets a host page refresh its own conversation-list

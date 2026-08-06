@@ -20,6 +20,7 @@ import SetupChecklist from "./SetupChecklist";
 import UnpaidInvoicesWidget from "./UnpaidInvoicesWidget";
 import QuickGlanceStatWidget from "./widgets/QuickGlanceStatWidget";
 import PropertyProjectsPanelWidget from "./widgets/PropertyProjectsPanelWidget";
+import AiAssistantWidget from "./widgets/AiAssistantWidget";
 import type { QuickGlanceWidget, QuickGlanceStatKey } from "@/lib/dashboardWidgets/quickGlanceTypes";
 
 export default function QuickGlanceWidgetCell({ widget, mode }: { widget: QuickGlanceWidget; mode: "view" | "preview" }) {
@@ -51,6 +52,8 @@ export default function QuickGlanceWidgetCell({ widget, mode }: { widget: QuickG
         return <QuickGlanceStatWidget statKey={(widget.config.statKey as QuickGlanceStatKey) || "trust_balance"} />;
       case "property_projects_panel":
         return <PropertyProjectsPanelWidget />;
+      case "ai_assistant":
+        return <AiAssistantWidget />;
       default:
         return null;
     }

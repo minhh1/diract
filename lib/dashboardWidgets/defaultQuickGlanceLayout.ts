@@ -44,5 +44,14 @@ export function defaultQuickGlanceWidgets(
     ];
   }
 
-  return [];
+  // Templateless (no Law Firm/Property Developer template installed) --
+  // lead with the setup checklist and the AI assistant so there's always
+  // somewhere to go build the schema out from, instead of an empty canvas.
+  // See QuickGlanceDashboard.tsx's is_from_template gating for why this
+  // company still lands on the normal Quick Glance canvas (not a dead end)
+  // even before it's built anything.
+  return [
+    { kind: "bespoke", id: uid(), type: "setup_checklist", layout: { x: 0, y: 0, w: 12, h: 3 }, config: {} },
+    { kind: "bespoke", id: uid(), type: "ai_assistant", layout: { x: 0, y: 3, w: 6, h: 12 }, config: {} },
+  ];
 }
