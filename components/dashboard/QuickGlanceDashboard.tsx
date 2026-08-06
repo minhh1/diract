@@ -33,16 +33,23 @@ export default function QuickGlanceDashboard() {
   const { tables, loading: tablesLoading, refetch: refetchTables } = useCustomTables(userId);
   const isKnownType = !!companyType && KNOWN_TYPES.includes(companyType);
   // A templateless company (companyType never got set -- true for every
-  // brand-new self-signup, see register_company_and_profile) that also has
-  // no custom tables yet is genuinely empty: show the onboarding assistant
-  // instead of redirecting anywhere. One that already built tables (via
-  // that same assistant, or by hand) just needs somewhere real to land --
-  // its first table -- rather than the old hardcoded /dashboard/properties
-  // redirect, which is hidden by default for exactly this kind of company
-  // (see supabase/migrations/20260805070000_hide_system_tables_for_templateless_companies.sql)
-  // and was a dead-end "Properties has been deleted" screen for every
-  // templateless company regardless of whether they'd built anything.
+  // brand-new self-signup, see register_company_and_profile) keeps landing
+  // on the onboarding assistant even after it has AI-built tables -- those
+  // tables came from chatting with this same assistant, and the expectation
+  // is they'll keep coming back to it to adjust the schema to fit their
+  // workflow (add a field, add another table, ...), not get redirected away
+  // the moment the first one exists. Only a genuine marketplace template
+  // install (is_from_template -- see install_company_template, locked from
+  // further AI/manual edits by supabase/migrations/20260803030000_lock_
+  // template_schema.sql) means the company is "done" onboarding and should
+  // land on its real first table instead, same as the old hardcoded
+  // /dashboard/properties redirect intended (which was hidden by default
+  // for exactly this kind of company -- see supabase/migrations/
+  // 20260805070000_hide_system_tables_for_templateless_companies.sql -- and
+  // was a dead-end "Properties has been deleted" screen regardless of
+  // whether anything had been built).
   const hasAnyTables = tables.length > 0;
+  const hasTemplateTable = tables.some(t => t.is_from_template);
 
   const [widgets, setWidgets] = useState<QuickGlanceWidget[] | null>(null);
   const [editing, setEditing] = useState(false);
@@ -72,21 +79,25 @@ export default function QuickGlanceDashboard() {
   // change to `tables` -- WelcomeOnboarding's embedded assistant can build
   // several tables/dashboards across one conversation, and refetching mid-
   // chat (see its onBuildProgress prop below) would otherwise yank the user
-  // away to their first table the instant the FIRST one exists, cutting a
-  // multi-step build short. A fresh visit to this page (a real remount)
-  // still redirects correctly once there's something to redirect to.
-  // null = not decided yet, true = started genuinely empty (keep showing
-  // onboarding for the rest of this mount regardless of later builds),
-  // false = already had tables at first load (redirecting away now).
+  // away the instant a marketplace template got installed mid-chat, cutting
+  // a multi-step build short (in practice the assistant itself never
+  // installs a template -- only the Marketplace page does -- but the same
+  // "decide once" guard still protects against that changing later). A
+  // fresh visit to this page (a real remount) still redirects correctly
+  // once there's a template installed to redirect to.
+  // null = not decided yet, true = started with no template installed (keep
+  // showing onboarding for the rest of this mount even after AI-built
+  // tables exist -- see hasTemplateTable above), false = already had a
+  // template at first load (redirecting away now).
   const [startedEmpty, setStartedEmpty] = useState<boolean | null>(null);
   const redirectDecidedRef = useRef(false);
   useEffect(() => {
     if (companyLoading || tablesLoading || redirectDecidedRef.current) return;
     redirectDecidedRef.current = true;
     if (isKnownType) return;
-    setStartedEmpty(!hasAnyTables);
-    if (hasAnyTables) router.replace(`/dashboard/${tables[0].slug}`);
-  }, [companyLoading, tablesLoading, isKnownType, hasAnyTables, tables, router]);
+    setStartedEmpty(!hasTemplateTable);
+    if (hasTemplateTable) router.replace(`/dashboard/${tables[0].slug}`);
+  }, [companyLoading, tablesLoading, isKnownType, hasTemplateTable, tables, router]);
 
   const hasLawFirmTemplate = tables.some(t => t.slug === 'trust-accounts');
   const hasPropertyDeveloperTemplate = tables.some(t => t.slug === 'finance-model-loans');
@@ -116,14 +127,15 @@ export default function QuickGlanceDashboard() {
   }
 
   if (!isKnownType) {
-    // startedEmpty === false means this company already had tables the
-    // first time this page loaded -- the redirect effect above is
-    // sending it to its first table right now, so just show the spinner.
-    // startedEmpty === true means it's genuinely new; keep the onboarding
-    // assistant up for the rest of this visit even after it builds
-    // something (see the effect's own comment), offering a manual link to
-    // move on once there's somewhere real to go instead of yanking the
-    // chat away mid-build.
+    // startedEmpty === false means this company already had a marketplace
+    // template installed the first time this page loaded -- the redirect
+    // effect above is sending it to its first table right now, so just show
+    // the spinner. startedEmpty === true means no template is installed yet
+    // (even if it already has AI-built tables); keep the onboarding
+    // assistant up for the rest of this visit so it stays the landing page
+    // for adjusting the schema to fit their workflow, offering a manual
+    // link to move on once there's somewhere real to go instead of forcing
+    // a redirect.
     if (startedEmpty !== true) {
       return (
         <div className="flex flex-col h-screen items-center justify-center bg-[#F9FAFB]">

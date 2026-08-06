@@ -47,7 +47,9 @@ export default function WelcomeOnboarding({ onBuildProgress, firstTableHref }: P
               Welcome{companyName ? ` to ${companyName}` : ""}
             </h1>
             <p className="text-[13px] text-slate-400 max-w-md mx-auto">
-              Your workspace is empty for now -- tell us what your business does and we&apos;ll set up the tables, fields, and dashboards for it.
+              {firstTableHref
+                ? "Tell it what to add or change -- new tables, fields, or dashboards -- and it'll adjust your workspace to fit."
+                : "Your workspace is empty for now -- tell us what your business does and we'll set up the tables, fields, and dashboards for it."}
             </p>
           </div>
 
