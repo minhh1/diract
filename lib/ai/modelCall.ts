@@ -6,6 +6,32 @@
 // Teams has no use for token-by-token deltas, just the final text).
 const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
 
+// Together's own rate limits scale automatically with the account's
+// cumulative spend (no manual "request an increase" -- confirmed live,
+// 2026-08-06) -- a burst of requests in a short window (a multi-step
+// table/dashboard build, several people chatting at once, ...) can still
+// hit a transient 429 well within normal usage. Retried here, once, for
+// every Together call site in this file, rather than surfacing it straight
+// to the user as "something went wrong" for what's usually a ~2s blip.
+const MAX_RATE_LIMIT_RETRIES = 3;
+
+async function fetchTogetherWithRetry(url: string, options: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, options);
+    if (res.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return res;
+    // Together's own 429 body names this header as the retry window
+    // ("Retry starting from ~2s (X-RateLimit-Reset header)") -- fall back
+    // to a short exponential backoff if it's missing or not a plausible
+    // small number of seconds (format isn't documented precisely enough to
+    // trust blindly).
+    const resetHeader = Number(res.headers.get("X-RateLimit-Reset"));
+    const waitMs = Number.isFinite(resetHeader) && resetHeader > 0 && resetHeader < 60
+      ? resetHeader * 1000
+      : 1000 * 2 ** attempt;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+}
+
 // Plain JSON-Schema tool definition -- provider-neutral. callTogetherModelWithTools
 // (below) wraps this in the OpenAI-compatible {type: "function", function: {...}}
 // envelope Together's API expects. Defined here (not in lib/ai/tableBuilderTools.ts,
@@ -32,7 +58,7 @@ export async function callHostedModel(
   messages: unknown[],
   onDelta?: (delta: string) => void
 ): Promise<TokenUsage> {
-  const res = await fetch("https://api.together.xyz/v1/chat/completions", {
+  const res = await fetchTogetherWithRetry("https://api.together.xyz/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
     body: JSON.stringify({ model: modelId, messages, stream: true, stream_options: { include_usage: true } }),
@@ -91,7 +117,7 @@ export async function callHostedModelWithTools(
   messages: unknown[],
   tools: unknown[]
 ): Promise<ToolCallResult> {
-  const res = await fetch("https://api.together.xyz/v1/chat/completions", {
+  const res = await fetchTogetherWithRetry("https://api.together.xyz/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
     body: JSON.stringify({ model: modelId, messages, tools, tool_choice: "auto", stream: false }),
@@ -257,7 +283,7 @@ export async function callTogetherModelWithTools(
   for (let i = 0; i < maxIterations; i++) {
     const body: Record<string, unknown> = { model: modelId, messages, tools: openAiTools, tool_choice: "auto", stream: false };
     if (i === 0 && reasoningEffort) body.reasoning_effort = reasoningEffort;
-    const res = await fetch("https://api.together.xyz/v1/chat/completions", {
+    const res = await fetchTogetherWithRetry("https://api.together.xyz/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
       body: JSON.stringify(body),
