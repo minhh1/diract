@@ -1,7 +1,7 @@
-// app/api/client-update-pages/[id]/items/[itemId]/ai-review-settlement/confirm/route.ts
+// app/api/client-update-pages/[id]/items/[itemId]/ai-review-field/confirm/route.ts
 // Clears the "AI set this, not yet reviewed" flag on a cell (see
 // client_update_page_ai_field_flags's own migration header) once a staff
-// member has looked at the AI-applied date and is happy with it -- the
+// member has looked at the AI-applied value and is happy with it -- the
 // value itself was already written when the review ran; this just stops
 // the UI underlining it. The other way a flag clears is a subsequent
 // direct edit to the same field (see values/route.ts's project_property

@@ -64,9 +64,9 @@ function isRelationField(field: MatterBoardField): boolean {
 }
 export interface MatterBoardNote { id: string; note_date: string; body: string; author_name: string | null; source: "staff" | "client"; created_at?: string | null; property_id?: string | null; }
 // Set on a project_property field's client_update_page_fields.id once the
-// AI settlement-date review feature has written a new value there that a
-// staff member hasn't confirmed yet (see client_update_page_ai_field_flags)
-// -- drives the underline/AiFlagValue treatment in ValueCell/SpreadsheetCell.
+// AI field-review feature has written a new value there that a staff
+// member hasn't confirmed yet (see client_update_page_ai_field_flags) --
+// drives the underline/AiFlagValue treatment in ValueCell/SpreadsheetCell.
 export type MatterBoardAiFlags = Record<string, { reasoning: string; appliedValue: string }>;
 export interface MatterBoardProperty { id: string; address: string | null; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; aiFlags?: MatterBoardAiFlags; }
 export interface MatterBoardItem { id: string; record_id?: string; group_id: string | null; matterName: string; values: Record<string, any>; relationIds?: Record<string, string | null>; relationCapacities?: Record<string, string | null>; notes: MatterBoardNote[]; properties?: MatterBoardProperty[]; ai_summary?: string | null; ai_summary_generated_at?: string | null; aiFlags?: MatterBoardAiFlags; }
@@ -143,21 +143,22 @@ interface Props {
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onSummarizeOpenMatters?: () => Promise<{ generated: number; skipped: number; failed: string[] }>;
   onClearSummaries?: () => Promise<number>;
-  // Settlement-date AI review (projects pages only -- see
-  // lib/clientUpdatePageSettlementReview.ts). onReviewSettlement is the
-  // manual "Review emails" button's handler; onConfirmAiFlag clears the
-  // "AI set this, not yet confirmed" marker on a cell once staff have
-  // looked at it. Both undefined for a client/public viewer -- confirming
-  // is staff-only, though the underline itself is shown to everyone (see
-  // ValueCell/SpreadsheetCell's AiFlagValue).
-  onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
+  // AI field review (projects pages only -- see
+  // lib/clientUpdatePageFieldReview.ts). onReviewField is the manual
+  // "Review emails" button's handler, offered on any reviewable field (see
+  // isReviewableField below) -- not just Settlement Date; onConfirmAiFlag
+  // clears the "AI set this, not yet confirmed" marker on a cell once
+  // staff have looked at it. Both undefined for a client/public viewer --
+  // confirming is staff-only, though the underline itself is shown to
+  // everyone (see ValueCell/SpreadsheetCell's AiFlagValue).
+  onReviewField?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newValue: string | null; reasoning: string }>;
   onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
-  // Bulk sibling to onReviewSettlement -- checks every matter on the page at
-  // once and logs a status entry for each regardless of outcome (agreed,
-  // extension requested, followed up, not yet agreed, no discussion), unlike
-  // the per-matter button/automatic trigger which only ever log when
+  // Bulk sibling to onReviewField -- checks every reviewable field on every
+  // matter on the page at once and logs a status entry for each regardless
+  // of outcome (agreed, change requested, followed up, not yet agreed, no
+  // discussion), unlike the per-field button which only ever logs when
   // agreement is actually reached.
-  onReviewAllSettlementStatus?: () => Promise<{ reviewed: number; agreed: number; failed: string[] }>;
+  onReviewAllFieldStatus?: () => Promise<{ reviewed: number; agreed: number; failed: string[] }>;
   onRenameMatter?: (itemId: string, name: string) => void;
   onReorderFields?: (fieldIds: string[]) => void;
   onDataChanged?: () => void; // matters added / columns changed -- needs a full refetch
@@ -196,12 +197,19 @@ function isCurrencyField(field: MatterBoardField): boolean {
   return field.field_type === "currency";
 }
 
-// The "Review emails for a settlement date change" button belongs on the
-// Settlement Date field specifically, not every project_property field --
-// matches the exact label check runSettlementDateReview
-// (lib/clientUpdatePageSettlementReview.ts) uses server-side.
-function isSettlementDateField(field: MatterBoardField): boolean {
-  return field.field_source === "project_property" && field.label.trim().toLowerCase() === "settlement date";
+// The "Review emails for updates to this field" button belongs on any
+// project_property field whose type the AI can safely parse a value out of
+// -- date/currency/number/plain text. Relation-typed fields (entity,
+// property, select, table_relation) are excluded, since free-text AI
+// output can't safely resolve to a valid option/record id -- matches
+// isReviewableFieldType (lib/ai/matterFieldReview.ts) used server-side,
+// duplicated here rather than imported since that module pulls in the
+// hosted-model client, which has no business being bundled into this
+// "use client" component.
+function isReviewableField(field: MatterBoardField): boolean {
+  if (field.field_source !== "project_property") return false;
+  const t = field.field_type;
+  return !t || t === "text" || t === "date" || t === "currency" || t === "number";
 }
 
 // Niksen Loans board only: flags a row red once its Repayment Date has
@@ -328,7 +336,7 @@ const FORMAT_COLOR_KEYS = Object.keys(FORMAT_COLORS);
 
 export default function MatterBoard({
   pageId, baseTable = "projects", pageKind = "user_dependent", initialFixItemId, groups, items, fields, formatRules, viewDefaults, onSaveViewDefault, maskCurrency = false, dateFormat, freezeFirstColumn, logCellChanges = true, canEdit, canComment,
-  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewSettlement, onConfirmAiFlag, onReviewAllSettlementStatus,
+  onSaveValue, onFetchCellHistory, onRenameGroup, onDeleteGroup, onAddGroup, onSetGroupCondition, onAddFieldOption, onSetDefaultStatusFilter, onCustomizeColumns, onRevertColumns, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onSummarizeOpenMatters, onClearSummaries, onRenameMatter, onReorderFields, onDataChanged, onDateFormatChanged, onFreezeFirstColumnChanged, onLogCellChangesChanged, onAddFormatRule, onUpdateFormatRule, onRemoveFormatRule, onReviewField, onConfirmAiFlag, onReviewAllFieldStatus,
   onAskQuestion, askEnabled, askScope, onAskEnabledChanged, onAskScopeChanged,
 }: Props) {
   const [mode, setMode] = useState<"cards" | "spreadsheet">("spreadsheet");
@@ -365,15 +373,15 @@ export default function MatterBoard({
   const [runningBulkUpdate, setRunningBulkUpdate] = useState(false);
 
   // Combines what used to be two separate buttons (generate summaries /
-  // confirm settlement status, both "for every open matter on this page")
-  // into one -- they're both a "catch this page up" bulk action a staff
-  // member reaches for at the same moment, so one click doing both is less
+  // confirm field status, both "for every open matter on this page") into
+  // one -- they're both a "catch this page up" bulk action a staff member
+  // reaches for at the same moment, so one click doing both is less
   // friction than two. Runs whichever of the two the page actually supports
-  // (a custom-table page has summaries but not settlement review, which is
+  // (a custom-table page has summaries but not field review, which is
   // projects-only -- see the prop comments below) and reports both results
   // together.
   const runBulkUpdate = async () => {
-    if ((!onSummarizeOpenMatters && !onReviewAllSettlementStatus) || runningBulkUpdate) return;
+    if ((!onSummarizeOpenMatters && !onReviewAllFieldStatus) || runningBulkUpdate) return;
     setRunningBulkUpdate(true);
     try {
       const parts: string[] = [];
@@ -382,10 +390,10 @@ export default function MatterBoard({
         parts.push(`Generated ${result.generated} summar${result.generated === 1 ? "y" : "ies"}`);
         if (result.failed.length) parts.push(`${result.failed.length} summary failure${result.failed.length === 1 ? "" : "s"}`);
       }
-      if (onReviewAllSettlementStatus) {
-        const result = await onReviewAllSettlementStatus();
-        parts.push(`checked ${result.reviewed} settlement date${result.reviewed === 1 ? "" : "s"} (${result.agreed} agreed to a new date)`);
-        if (result.failed.length) parts.push(`${result.failed.length} settlement-check failure${result.failed.length === 1 ? "" : "s"}: ${result.failed.join(", ")}`);
+      if (onReviewAllFieldStatus) {
+        const result = await onReviewAllFieldStatus();
+        parts.push(`checked ${result.reviewed} matter/field${result.reviewed === 1 ? "" : "s"} (${result.agreed} agreed to a new value)`);
+        if (result.failed.length) parts.push(`${result.failed.length} field-check failure${result.failed.length === 1 ? "" : "s"}: ${result.failed.join(", ")}`);
       }
       window.alert(parts.join("; "));
       onDataChanged?.();
@@ -868,11 +876,11 @@ export default function MatterBoard({
                   className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
                   <Download size={12} /> Export to CSV
                 </button>
-                {(onSummarizeOpenMatters || onReviewAllSettlementStatus) && (
+                {(onSummarizeOpenMatters || onReviewAllFieldStatus) && (
                   <button onClick={() => { runBulkUpdate(); setShowMoreMenu(false); }} disabled={runningBulkUpdate}
                     className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-xl text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors">
                     {runningBulkUpdate ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                    {onReviewAllSettlementStatus ? "Update summaries & settlement dates" : "Generate summaries for open matters"}
+                    {onReviewAllFieldStatus ? "Update summaries & field values" : "Generate summaries for open matters"}
                   </button>
                 )}
                 {onClearSummaries && (
@@ -1097,7 +1105,7 @@ export default function MatterBoard({
                 <MatterCard key={key} item={item} propertyId={propertyId} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} color={colorForItem(item)} baseTable={baseTable} pageKind={pageKind} pageId={pageId}
                   expanded={expandedCardKey === key} onToggleExpand={() => setExpandedCardKey(expandedCardKey === key ? null : key)}
                   onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onRenameMatter={onRenameMatter} onDataChanged={onDataChanged}
-                  onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} onAskQuestion={onAskQuestion} />
+                  onReviewField={onReviewField} onConfirmAiFlag={onConfirmAiFlag} onAskQuestion={onAskQuestion} />
               ))}
               {visibleItems.length === 0 && (
                 <p className="text-center text-slate-300 text-[11px] uppercase font-bold tracking-widest py-10">{baseTable === "entities" ? "No entities here yet" : "No matters here yet"}</p>
@@ -1106,7 +1114,7 @@ export default function MatterBoard({
           ) : (
             <SpreadsheetView items={visibleItems} fields={visibleFields} dateFormat={dateFormat} maskCurrency={maskCurrency} moveOptions={moveOptions} canEdit={canEdit} canComment={canComment} freezeFirstColumn={!!freezeFirstColumn} baseTable={baseTable} pageKind={pageKind} pageId={pageId} colorForItem={colorForItem}
               onSaveValue={onSaveValue ? requestSaveValue : undefined} onShowHistory={showCellHistory} onMoveItem={onMoveItem} onRemoveItem={onRemoveItem} onReorderFields={onReorderFields} onAddNote={onAddNote} onGenerateSummary={onGenerateSummary} onDataChanged={onDataChanged}
-              onReviewSettlement={onReviewSettlement} onConfirmAiFlag={onConfirmAiFlag} onAskQuestion={onAskQuestion} />
+              onReviewField={onReviewField} onConfirmAiFlag={onConfirmAiFlag} onAskQuestion={onAskQuestion} />
           )}
         </div>
       </div>
@@ -1484,7 +1492,7 @@ function SidebarAddRow({ onAdd }: { onAdd: (name: string) => void }) {
 
 // ── Cards mode ───────────────────────────────────────────────────────
 
-function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter, onDataChanged, onReviewSettlement, onConfirmAiFlag, onAskQuestion }: {
+function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, color, baseTable, pageKind, pageId, expanded, onToggleExpand, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onAddNote, onGenerateSummary, onRenameMatter, onDataChanged, onReviewField, onConfirmAiFlag, onAskQuestion }: {
   item: MatterBoardItem; propertyId?: string; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[];
   canEdit: boolean; canComment: boolean; color: string | null; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   expanded: boolean; onToggleExpand: () => void;
@@ -1496,7 +1504,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onRenameMatter?: (itemId: string, name: string) => void;
   onDataChanged?: () => void;
-  onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
+  onReviewField?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newValue: string | null; reasoning: string }>;
   onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
   onAskQuestion?: (itemId: string, question: string, fields: { label: string; value: string }[]) => Promise<string>;
 }) {
@@ -1506,13 +1514,13 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
   const [showFix, setShowFix] = useState(false);
   const [reviewingFieldId, setReviewingFieldId] = useState<string | null>(null);
 
-  const reviewSettlement = async (fieldId: string) => {
-    if (!onReviewSettlement || reviewingFieldId) return;
+  const reviewField = async (fieldId: string) => {
+    if (!onReviewField || reviewingFieldId) return;
     setReviewingFieldId(fieldId);
     try {
-      const result = await onReviewSettlement(item.id, fieldId, propertyId);
+      const result = await onReviewField(item.id, fieldId, propertyId);
       if (result.agreed) onDataChanged?.();
-      else window.alert(result.reasoning || "No agreement on a new settlement date was found in the emails.");
+      else window.alert(result.reasoning || "No agreement on a new value was found in the emails.");
     } catch (e: any) {
       window.alert(e?.message || "Couldn't review emails.");
     } finally {
@@ -1610,7 +1618,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
             {fields.map(f => (
               <ValueCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue}
                 aiFlag={item.aiFlags?.[f.id]} onConfirmAiFlag={onConfirmAiFlag ? () => confirmAiFlag(f.id) : undefined}
-                onReview={onReviewSettlement && isSettlementDateField(f) ? () => reviewSettlement(f.id) : undefined} reviewing={reviewingFieldId === f.id}
+                onReview={onReviewField && isReviewableField(f) ? () => reviewField(f.id) : undefined} reviewing={reviewingFieldId === f.id}
                 onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                 onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
             ))}
@@ -1632,7 +1640,7 @@ function MatterCard({ item, propertyId, fields, dateFormat, maskCurrency = false
   );
 }
 
-// A cell the settlement-date AI review feature just set, still awaiting a
+// A cell the AI field-review feature just set, still awaiting a
 // human look (see client_update_page_ai_field_flags) -- a distinct colour
 // so it reads as "AI touched this" at a glance, to BOTH staff and whoever's
 // viewing the public page (this shows regardless of canConfirm, which just
@@ -1701,7 +1709,7 @@ function ValueCell({ field, value, relationId, relationCapacity, dateFormat, mas
         <button onClick={onShowHistory} title="See what changed" className="text-slate-300 hover:text-indigo-600 transition-colors"><History size={9} /></button>
       )}
       {onReview && (
-        <button onClick={onReview} disabled={reviewing} title="Review emails for a settlement date change"
+        <button onClick={onReview} disabled={reviewing} title="Review emails for updates to this field"
           className="text-slate-300 hover:text-purple-600 disabled:opacity-40 transition-colors">
           {reviewing ? <Loader2 size={9} className="animate-spin" /> : <Sparkles size={9} />}
         </button>
@@ -1981,7 +1989,7 @@ function AskMatterPanel({ onAsk }: { onAsk: (question: string) => Promise<string
 // also on, the frozen field sits at left-8 instead of left-0 so the two
 // sticky columns don't overlap. ─────────────────────────────────────────
 
-function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onGenerateSummary, onDataChanged, onReviewSettlement, onConfirmAiFlag, onAskQuestion }: {
+function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, moveOptions, canEdit, canComment, freezeFirstColumn, baseTable, pageKind, pageId, colorForItem, onSaveValue, onShowHistory, onMoveItem, onRemoveItem, onReorderFields, onAddNote, onGenerateSummary, onDataChanged, onReviewField, onConfirmAiFlag, onAskQuestion }: {
   items: MatterBoardItem[]; fields: MatterBoardField[]; dateFormat: string; maskCurrency?: boolean; moveOptions: { id: string | ""; label: string }[]; canEdit: boolean; canComment: boolean;
   freezeFirstColumn: boolean; baseTable?: string; pageKind?: "user_dependent" | "auto_fed"; pageId?: string;
   colorForItem: (item: MatterBoardItem) => string | null;
@@ -1993,7 +2001,7 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
   onAddNote: (itemId: string, note: string, propertyId?: string) => void;
   onGenerateSummary?: (itemId: string) => Promise<void>;
   onDataChanged?: () => void;
-  onReviewSettlement?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newDate: string | null; reasoning: string }>;
+  onReviewField?: (itemId: string, fieldId: string, propertyId?: string) => Promise<{ agreed: boolean; newValue: string | null; reasoning: string }>;
   onConfirmAiFlag?: (itemId: string, fieldId: string, propertyId?: string) => Promise<void>;
   onAskQuestion?: (itemId: string, question: string, fields: { label: string; value: string }[]) => Promise<string>;
 }) {
@@ -2003,14 +2011,14 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
   // MatterCard's per-item reviewingFieldId) this needs to identify which
   // ROW's review is in flight, not just which field.
   const [reviewingKey, setReviewingKey] = useState<string | null>(null);
-  const reviewSettlement = async (itemId: string, fieldId: string, propertyId: string | undefined) => {
-    if (!onReviewSettlement || reviewingKey) return;
+  const reviewField = async (itemId: string, fieldId: string, propertyId: string | undefined) => {
+    if (!onReviewField || reviewingKey) return;
     const key = `${itemId}:${fieldId}`;
     setReviewingKey(key);
     try {
-      const result = await onReviewSettlement(itemId, fieldId, propertyId);
+      const result = await onReviewField(itemId, fieldId, propertyId);
       if (result.agreed) onDataChanged?.();
-      else window.alert(result.reasoning || "No agreement on a new settlement date was found in the emails.");
+      else window.alert(result.reasoning || "No agreement on a new value was found in the emails.");
     } catch (e: any) {
       window.alert(e?.message || "Couldn't review emails.");
     } finally {
@@ -2149,7 +2157,7 @@ function SpreadsheetView({ items, fields, dateFormat, maskCurrency = false, move
               {fields.map((f, i) => (
                 <SpreadsheetCell key={f.id} field={f} value={item.values[f.id]} relationId={item.relationIds?.[f.id]} relationCapacity={item.relationCapacities?.[f.id]} expanded={expandedFieldIds.has(f.id)} dateFormat={dateFormat} maskCurrency={maskCurrency} editable={canEdit && !!onSaveValue} frozen={freezeFirstColumn && i === 0} frozenBg={rowColorClasses?.smRow}
                   aiFlag={item.aiFlags?.[f.id]} onConfirmAiFlag={onConfirmAiFlag ? () => confirmAiFlag(item.id, f.id, propertyId) : undefined}
-                  onReview={onReviewSettlement && isSettlementDateField(f) ? () => reviewSettlement(item.id, f.id, propertyId) : undefined}
+                  onReview={onReviewField && isReviewableField(f) ? () => reviewField(item.id, f.id, propertyId) : undefined}
                   reviewing={reviewingKey === `${item.id}:${f.id}`}
                   onSave={(v, capacity) => onSaveValue?.(item.id, f.id, v, propertyId, capacity)}
                   onShowHistory={onShowHistory ? () => onShowHistory(item.id, f.id, f.label) : undefined} />
@@ -2232,7 +2240,7 @@ function SpreadsheetCell({ field, value, relationId, relationCapacity, expanded,
       className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-indigo-600 transition-opacity shrink-0"><History size={10} /></button>
   );
   const reviewButton = onReview && (
-    <button onClick={e => { e.stopPropagation(); onReview(); }} disabled={reviewing} title="Review emails for a settlement date change"
+    <button onClick={e => { e.stopPropagation(); onReview(); }} disabled={reviewing} title="Review emails for updates to this field"
       className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-purple-600 disabled:opacity-40 transition-opacity shrink-0">
       {reviewing ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
     </button>

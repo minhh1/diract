@@ -26,12 +26,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .eq("page_id", id)
     .order("created_at", { ascending: false });
 
-  // 'settlement_status' alongside 'value_changed' -- the bulk AI status
-  // check (.../settlement-status-all/route.ts) logs a status note against
-  // the Settlement Date field even when nothing actually changed (extension
-  // requested, followed up, not yet agreed, no discussion), so it needs to
-  // show up here too, not just the page-wide activity log.
-  if (itemId && fieldId) query = query.eq("item_id", itemId).eq("field_id", fieldId).in("action", ["value_changed", "settlement_status"]);
+  // 'field_status' (and the older 'settlement_status', logged before this
+  // feature covered every field, not just Settlement Date) alongside
+  // 'value_changed' -- the bulk AI status check
+  // (.../field-status-all/route.ts) logs a status note against a field
+  // even when nothing actually changed (change requested, followed up, not
+  // yet agreed, no discussion), so it needs to show up here too, not just
+  // the page-wide activity log.
+  if (itemId && fieldId) query = query.eq("item_id", itemId).eq("field_id", fieldId).in("action", ["value_changed", "field_status", "settlement_status"]);
   else query = query.limit(200);
 
   const { data: logs, error } = await query;

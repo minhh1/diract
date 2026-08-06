@@ -476,41 +476,44 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
     setBoard(prev => prev && { ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, ai_summary: json.summary, ai_summary_generated_at: json.generatedAt } : i) });
   };
 
-  // Settlement-date AI review (projects pages only -- see
-  // lib/clientUpdatePageSettlementReview.ts). Deliberately doesn't do the
-  // usual optimistic setBoard update itself -- when it agrees, the caller
-  // (MatterBoard's reviewSettlement/reviewSettlement in SpreadsheetView)
-  // calls onDataChanged (reloadStaffBoard below) to pick up both the new
-  // value AND the "AI set this" flag in one real refetch, rather than
-  // hand-constructing that flag shape here.
-  const reviewSettlement = async (itemId: string, fieldId: string, propertyId?: string) => {
-    if (mode !== "staff" || !staffPageId) return { agreed: false, newDate: null, reasoning: "Not signed in as staff." };
-    const res = await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/ai-review-settlement`, {
+  // AI field review (projects pages only -- see
+  // lib/clientUpdatePageFieldReview.ts) -- works for any reviewable field
+  // on the matter (Settlement Date, Purchase Price, Initial Deposit, etc.,
+  // see isReviewableFieldType), not just Settlement Date as it started out.
+  // Deliberately doesn't do the usual optimistic setBoard update itself --
+  // when it agrees, the caller (MatterBoard's reviewField in MatterCard/
+  // SpreadsheetView) calls onDataChanged (reloadStaffBoard below) to pick
+  // up both the new value AND the "AI set this" flag in one real refetch,
+  // rather than hand-constructing that flag shape here.
+  const reviewField = async (itemId: string, fieldId: string, propertyId?: string) => {
+    if (mode !== "staff" || !staffPageId) return { agreed: false, newValue: null, reasoning: "Not signed in as staff." };
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/ai-review-field`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldId, propertyId }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || "Failed to review emails");
-    return { agreed: !!json.agreed, newDate: json.newDate ?? null, reasoning: json.reasoning || "" };
+    return { agreed: !!json.agreed, newValue: json.newValue ?? null, reasoning: json.reasoning || "" };
   };
 
   const confirmAiFlag = async (itemId: string, fieldId: string, propertyId?: string) => {
     if (mode !== "staff" || !staffPageId) return;
-    await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/ai-review-settlement/confirm`, {
+    await fetch(`/api/client-update-pages/${staffPageId}/items/${itemId}/ai-review-field/confirm`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldId, propertyId }),
     });
   };
 
-  // Bulk sibling to reviewSettlement -- see
-  // app/api/client-update-pages/[id]/settlement-status-all/route.ts's own
+  // Bulk sibling to reviewField -- see
+  // app/api/client-update-pages/[id]/field-status-all/route.ts's own
   // header for why this is the one path that logs a status entry for every
-  // matter regardless of outcome, not just the ones where agreement is
-  // reached. Reloads the board afterward the same way summarizeOpenMatters
-  // does, since some matters may have had their date actually updated.
-  const reviewAllSettlementStatus = async () => {
+  // matter/field regardless of outcome, not just the ones where agreement
+  // is reached. Reloads the board afterward the same way
+  // summarizeOpenMatters does, since some matters may have had a value
+  // actually updated.
+  const reviewAllFieldStatus = async () => {
     if (mode !== "staff" || !staffPageId) return { reviewed: 0, agreed: 0, failed: [] as string[] };
-    const res = await fetch(`/api/client-update-pages/${staffPageId}/settlement-status-all`, { method: "POST" });
+    const res = await fetch(`/api/client-update-pages/${staffPageId}/field-status-all`, { method: "POST" });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || "Couldn't check settlement status");
+    if (!res.ok) throw new Error(json.error || "Couldn't check field status");
     await loadAsStaff();
     return json;
   };
@@ -781,9 +784,9 @@ export default function PublicClientUpdateContent({ slug, embedded = false, init
           onClearSummaries={mode === "staff" && meta.baseTable !== "entities" ? clearSummaries : undefined}
           onRenameMatter={mode === "staff" ? renameMatter : undefined}
           onReorderFields={mode === "staff" ? reorderFields : undefined}
-          onReviewSettlement={mode === "staff" && meta.baseTable === "projects" ? reviewSettlement : undefined}
+          onReviewField={mode === "staff" && meta.baseTable === "projects" ? reviewField : undefined}
           onConfirmAiFlag={mode === "staff" && meta.baseTable === "projects" ? confirmAiFlag : undefined}
-          onReviewAllSettlementStatus={mode === "staff" && meta.baseTable === "projects" ? reviewAllSettlementStatus : undefined}
+          onReviewAllFieldStatus={mode === "staff" && meta.baseTable === "projects" ? reviewAllFieldStatus : undefined}
           onAskQuestion={meta.baseTable === "projects" && (mode === "staff" || meta.askEnabled) ? askQuestion : undefined}
           askEnabled={meta.askEnabled}
           askScope={meta.askScope}

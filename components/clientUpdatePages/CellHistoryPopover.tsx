@@ -70,12 +70,14 @@ export default function CellHistoryPopover({ field, fieldLabel, dateFormat, onFe
             <div className="space-y-4">
               {logs.map(l => (
                 <div key={l.id} className="text-[12px] border-b border-slate-50 last:border-0 pb-4 last:pb-0">
-                  {l.action === "settlement_status" ? (
-                    // An AI status check (agreed/extension requested/followed
+                  {l.action === "field_status" || l.action === "settlement_status" ? (
+                    // An AI status check (agreed/change requested/followed
                     // up/not yet agreed/no discussion) -- old_value/new_value
                     // are both null since nothing on the cell actually
                     // changed, so there's no real "X → Y" to show; the
-                    // reasoning itself IS the entry.
+                    // reasoning itself IS the entry. 'settlement_status' is
+                    // the older action name, from before this covered every
+                    // field rather than just Settlement Date.
                     <div className="flex items-start justify-between gap-2">
                       <p className="flex items-center gap-1.5 text-slate-600">
                         <Sparkles size={11} className="text-purple-400 shrink-0" /> {l.reason}
