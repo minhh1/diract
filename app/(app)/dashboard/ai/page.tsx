@@ -65,14 +65,22 @@ export default function AiAssistantPage() {
   };
 
   const openConversation = async (id: string) => {
+    // Fetch BEFORE touching openedConversationId (the key AiChatThread
+    // remounts on) -- messages only seed that new instance's state at
+    // mount time (its useState initializer runs once), so setting
+    // openedConversationId first would remount with whatever
+    // initialMessages already held (stale/empty) and silently ignore this
+    // fetch's result once it lands, same failure shape as the mid-turn
+    // remount bug fixed above. Confirmed live: without this ordering,
+    // clicking a past conversation just shows an empty thread.
     setConversationId(id);
-    setOpenedConversationId(id);
     const res = await fetch(`/api/ai/conversations/${id}`);
     if (!res.ok) return;
     const json = await res.json();
     setInitialMessages(
       (json.messages ?? []).map((m: { role: "user" | "assistant"; content: string }) => ({ role: m.role, content: m.content }))
     );
+    setOpenedConversationId(id);
   };
 
   const deleteConversation = async (id: string, e: React.MouseEvent) => {

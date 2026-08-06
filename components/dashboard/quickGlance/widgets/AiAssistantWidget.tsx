@@ -66,8 +66,13 @@ export default function AiAssistantWidget() {
   };
 
   const openConversation = async (id: string) => {
+    // Fetch BEFORE touching openedConversationId (the key AiChatThread
+    // remounts on) -- see app/(app)/dashboard/ai/page.tsx's identical fix
+    // for why: initialMessages only seeds a new instance's state at mount
+    // time, so setting the key first would remount before this fetch
+    // lands and silently ignore its result. Confirmed live: without this
+    // ordering, clicking a past conversation just shows an empty thread.
     setConversationId(id);
-    setOpenedConversationId(id);
     setHistoryOpen(false);
     const res = await fetch(`/api/ai/conversations/${id}`);
     if (!res.ok) return;
@@ -75,6 +80,7 @@ export default function AiAssistantWidget() {
     setInitialMessages(
       (json.messages ?? []).map((m: { role: "user" | "assistant"; content: string }) => ({ role: m.role, content: m.content }))
     );
+    setOpenedConversationId(id);
   };
 
   const deleteConversation = async (id: string, e: React.MouseEvent) => {
