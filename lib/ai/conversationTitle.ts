@@ -35,9 +35,16 @@ export async function generateConversationTitle(firstMessage: string): Promise<s
         { role: "user", content: firstMessage.slice(0, 2000) },
       ],
       undefined,
-      20
+      // Generous for a 3-6 word answer -- DeepSeek V4 Pro is a reasoning
+      // model that can spend part of its completion on an unrequested
+      // chain-of-thought preamble even for a trivial prompt like this one
+      // (confirmed live: max_tokens: 20 left zero room left for the actual
+      // title, usage.content came back empty even though the request
+      // itself succeeded).
+      300
     );
     const title = usage.content.trim().replace(/^["'“”]+|["'“”]+$/g, "").replace(/[.!?]+$/, "").trim();
+    if (!title) console.error("[generateConversationTitle] empty content, usage:", JSON.stringify(usage));
     return title ? title.slice(0, 60) : null;
   } catch (err) {
     console.error("[generateConversationTitle] failed:", err);
