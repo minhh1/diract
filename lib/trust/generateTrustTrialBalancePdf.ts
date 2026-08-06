@@ -20,6 +20,11 @@ export interface GenerateTrustTrialBalancePdfInput {
   companyName: string;
   trustAccountName: string;
   asOf: string;
+  // Set for a monthly report (e.g. "Monthly Trial Balance -- August 2026")
+  // -- printed above the "As at" line instead of replacing it, since the
+  // underlying figures are still a point-in-time snapshot as at that
+  // month's last day (or today, if the month isn't over yet).
+  periodLabel?: string;
   rows: TrustTrialBalanceRow[];
   totalLedgerAccounts: number;
   statutoryDeposit: number;
@@ -76,6 +81,7 @@ export async function generateTrustTrialBalancePdf(input: GenerateTrustTrialBala
   text('Trial Balance', PAGE_W / 2, 18, { bold: true, center: true }, y); y -= 24;
   if (input.companyName) { text(input.companyName, PAGE_W / 2, 12, { bold: true, center: true }, y); y -= 18; }
   text(input.trustAccountName, PAGE_W / 2, 12, { bold: true, center: true }, y); y -= 16;
+  if (input.periodLabel) { text(input.periodLabel, PAGE_W / 2, 10, { bold: true, center: true }, y); y -= 14; }
   text(`As at ${formatDate(input.asOf)}`, PAGE_W / 2, 10, { color: [0.4, 0.4, 0.45], center: true }, y); y -= 26;
 
   let x = MARGIN;
