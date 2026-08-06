@@ -32,6 +32,7 @@ import { callTogetherModelWithTools } from "@/lib/ai/modelCall";
 import { TABLE_BUILDER_TOOLS, executeTableBuilderTool } from "@/lib/ai/tableBuilderTools";
 import { costUsd, TABLE_BUILDER_MODEL_ID as MODEL_ID } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
+import { generateConversationTitle } from "@/lib/ai/conversationTitle";
 
 // Together-hosted, not Claude -- has a confirmed "Function Calling" badge
 // on Together's own model page (unlike DeepSeek V4 Flash, which doesn't),
@@ -147,6 +148,15 @@ async function runJob({ jobId, admin, companyId, userId, conversationId, questio
       await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "assistant", content: result.content });
     }
     await admin.from("ai_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+
+    // Real sidebar title instead of the raw first message truncated at N
+    // characters -- only on a brand-new conversation's first turn (history
+    // is empty), and .is("title", null) guards against a race with an
+    // explicit rename rather than assuming one can't happen.
+    if (history.length === 0) {
+      const title = await generateConversationTitle(question);
+      if (title) await admin.from("ai_conversations").update({ title }).eq("id", conversationId).is("title", null);
+    }
 
     const cost = costUsd("hosted", MODEL_ID, result);
     await admin.from("ai_usage_events").insert({

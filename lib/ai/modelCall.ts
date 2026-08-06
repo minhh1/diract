@@ -56,12 +56,15 @@ export interface TokenUsage {
 export async function callHostedModel(
   modelId: string,
   messages: unknown[],
-  onDelta?: (delta: string) => void
+  onDelta?: (delta: string) => void,
+  maxTokens?: number
 ): Promise<TokenUsage> {
+  const body: Record<string, unknown> = { model: modelId, messages, stream: true, stream_options: { include_usage: true } };
+  if (maxTokens) body.max_tokens = maxTokens;
   const res = await fetchTogetherWithRetry("https://api.together.xyz/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
-    body: JSON.stringify({ model: modelId, messages, stream: true, stream_options: { include_usage: true } }),
+    body: JSON.stringify(body),
   });
   if (!res.ok || !res.body) throw new Error(`Together chat completion failed: ${res.status} ${await res.text()}`);
 

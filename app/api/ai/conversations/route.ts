@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { generateConversationTitle } from "@/lib/ai/conversationTitle";
 
 export async function GET() {
   const auth = await authorizeCompanyMember();
@@ -43,12 +44,28 @@ export async function GET() {
     if (!derivedTitleByConversation.has(m.conversation_id)) derivedTitleByConversation.set(m.conversation_id, m.content);
   }
 
+  // Conversations that predate real title generation (or whose runJob
+  // generation failed, see app/api/ai/chat/route.ts) still have nothing but
+  // the raw first message to fall back to -- summarize those now, in
+  // parallel, and persist so this only ever runs once per conversation
+  // (once c.title is set, later loads never hit this branch again).
+  const needsTitle = conversations.filter((c) => !c.title?.trim() && derivedTitleByConversation.has(c.id));
+  const generatedTitles = new Map<string, string>();
+  if (needsTitle.length > 0) {
+    await Promise.all(needsTitle.map(async (c) => {
+      const title = await generateConversationTitle(derivedTitleByConversation.get(c.id)!);
+      if (!title) return;
+      generatedTitles.set(c.id, title);
+      await admin.from("ai_conversations").update({ title }).eq("id", c.id).is("title", null);
+    }));
+  }
+
   return NextResponse.json({
     conversations: conversations.map((c) => ({
       id: c.id,
       updatedAt: c.updated_at,
       pinned: c.pinned,
-      title: (c.title?.trim() || derivedTitleByConversation.get(c.id) || "New chat").slice(0, 60),
+      title: (c.title?.trim() || generatedTitles.get(c.id) || derivedTitleByConversation.get(c.id) || "New chat").slice(0, 60),
     })),
   });
 }
