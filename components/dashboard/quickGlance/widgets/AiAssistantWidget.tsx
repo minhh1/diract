@@ -104,18 +104,16 @@ export default function AiAssistantWidget() {
 
   return (
     <div className="space-y-3 h-full flex flex-col">
-      <div className="flex items-center gap-3">
-        <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-          <Sparkles size={16} className="text-indigo-600" />
-        </div>
-        <p className="text-[13px] font-bold text-slate-800 flex-1">AI Assistant</p>
+      <div className="flex items-center gap-2.5">
+        <Sparkles size={15} className="text-slate-400 shrink-0" />
+        <p className="text-[13px] font-medium text-slate-700 flex-1">AI Assistant</p>
         {isAdmin && (
           <div className="relative" ref={historyRef}>
             <div className="flex items-center gap-1">
-              <button onClick={startNewChat} title="New chat" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors">
+              <button onClick={startNewChat} title="New chat" className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors">
                 <Plus size={14} />
               </button>
-              <button onClick={() => setHistoryOpen((o) => !o)} title="History" className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors">
+              <button onClick={() => setHistoryOpen((o) => !o)} title="History" className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors">
                 <History size={14} />
               </button>
             </div>
@@ -126,10 +124,10 @@ export default function AiAssistantWidget() {
                     key={c.id}
                     onClick={() => renamingId !== c.id && openConversation(c.id)}
                     className={`group flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-colors ${
-                      conversationId === c.id ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50 text-slate-600"
+                      conversationId === c.id ? "bg-slate-100 text-slate-800" : "hover:bg-slate-50 text-slate-600"
                     }`}
                   >
-                    <MessageSquare size={11} className="shrink-0 opacity-60" />
+                    <MessageSquare size={11} className="shrink-0 opacity-50" />
                     {renamingId === c.id ? (
                       <input
                         autoFocus
@@ -137,10 +135,10 @@ export default function AiAssistantWidget() {
                         onChange={(e) => setRenameValue(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.key === "Enter" && confirmRename(c.id)}
-                        className="flex-1 min-w-0 px-1.5 py-0.5 text-[11px] font-medium border border-indigo-200 rounded-md outline-none focus:border-indigo-400"
+                        className="flex-1 min-w-0 px-1.5 py-0.5 text-[11px] border border-slate-300 rounded-md outline-none focus:border-slate-400"
                       />
                     ) : (
-                      <p className="text-[11px] font-medium truncate flex-1">{c.title}</p>
+                      <p className="text-[11px] truncate flex-1">{c.title}</p>
                     )}
                     {renamingId === c.id ? (
                       <>
@@ -157,14 +155,14 @@ export default function AiAssistantWidget() {
                           onClick={(e) => { e.stopPropagation(); togglePin(c.id); }}
                           title={c.pinned ? "Unpin" : "Pin"}
                           className={`p-0.5 shrink-0 transition-all ${
-                            c.pinned ? "text-indigo-600" : "text-slate-300 opacity-0 group-hover:opacity-100 hover:text-indigo-500"
+                            c.pinned ? "text-slate-500" : "text-slate-300 opacity-0 group-hover:opacity-100 hover:text-slate-500"
                           }`}
                         >
                           <Pin size={10} fill={c.pinned ? "currentColor" : "none"} />
                         </button>
                         <button
                           onClick={(e) => startRename(c.id, c.title, e)}
-                          className="p-0.5 text-slate-300 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                          className="p-0.5 text-slate-300 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all shrink-0"
                         >
                           <Pencil size={10} />
                         </button>
@@ -186,7 +184,7 @@ export default function AiAssistantWidget() {
       </div>
 
       {isAdmin ? (
-        <div className="bg-white border border-slate-200 rounded-2xl flex-1 min-h-0 overflow-y-auto p-4">
+        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl flex-1 min-h-0 overflow-y-auto p-4">
           <AiChatThread
             key={openedConversationId ?? "new"}
             compact

@@ -120,27 +120,27 @@ export default function AiAssistantPage() {
   );
 
   return (
-    <div className="flex h-screen bg-[#F9FAFB] font-sans antialiased text-slate-600 overflow-hidden">
+    <div className="flex h-screen bg-[#FAF9F6] font-sans antialiased text-slate-600 overflow-hidden">
       {/* Conversation list */}
-      <div className="w-64 shrink-0 bg-white border-r border-slate-100 flex flex-col">
-        <div className="p-4 border-b border-slate-100">
+      <div className="w-64 shrink-0 border-r border-slate-200/70 flex flex-col">
+        <div className="p-4">
           <button
             onClick={startNewChat}
-            className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-[12px] font-bold rounded-full hover:bg-indigo-700 active:scale-[0.98] transition-all"
+            className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 border border-slate-200 text-slate-600 text-[13px] font-medium rounded-full hover:bg-white hover:border-slate-300 active:scale-[0.98] transition-all"
           >
-            <Plus size={13} /> New chat
+            <Plus size={14} /> New chat
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-0.5">
           {conversations.map((c) => (
             <div
               key={c.id}
               onClick={() => renamingId !== c.id && openConversation(c.id)}
-              className={`group flex items-center gap-2 px-3 py-2.5 rounded-2xl cursor-pointer transition-colors ${
-                conversationId === c.id ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50 text-slate-600"
+              className={`group flex items-center gap-2 px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
+                conversationId === c.id ? "bg-white shadow-sm text-slate-800" : "hover:bg-white/70 text-slate-500"
               }`}
             >
-              <MessageSquare size={13} className="shrink-0 opacity-60" />
+              <MessageSquare size={13} className="shrink-0 opacity-50" />
               {renamingId === c.id ? (
                 <input
                   autoFocus
@@ -148,18 +148,18 @@ export default function AiAssistantPage() {
                   onChange={(e) => setRenameValue(e.target.value)}
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.key === "Enter" && confirmRename(c.id)}
-                  className="flex-1 min-w-0 px-2 py-1 text-[12px] font-medium border border-indigo-200 rounded-lg outline-none focus:border-indigo-400"
+                  className="flex-1 min-w-0 px-2 py-1 text-[13px] border border-slate-300 rounded-lg outline-none focus:border-slate-400"
                 />
               ) : (
-                <p className="text-[12px] font-medium truncate flex-1">{c.title}</p>
+                <p className="text-[13px] truncate flex-1">{c.title}</p>
               )}
               {renamingId === c.id ? (
                 <>
                   <button onClick={(e) => { e.stopPropagation(); confirmRename(c.id); }} className="p-1 text-emerald-500 hover:text-emerald-700 shrink-0">
-                    <Check size={11} />
+                    <Check size={12} />
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); setRenamingId(null); }} className="p-1 text-slate-300 hover:text-slate-500 shrink-0">
-                    <X size={11} />
+                    <X size={12} />
                   </button>
                 </>
               ) : (
@@ -168,48 +168,47 @@ export default function AiAssistantPage() {
                     onClick={(e) => { e.stopPropagation(); togglePin(c.id); }}
                     title={c.pinned ? "Unpin" : "Pin"}
                     className={`p-1 shrink-0 transition-all ${
-                      c.pinned ? "text-indigo-600" : "text-slate-300 opacity-0 group-hover:opacity-100 hover:text-indigo-500"
+                      c.pinned ? "text-slate-500" : "text-slate-300 opacity-0 group-hover:opacity-100 hover:text-slate-500"
                     }`}
                   >
-                    <Pin size={11} fill={c.pinned ? "currentColor" : "none"} />
+                    <Pin size={12} fill={c.pinned ? "currentColor" : "none"} />
                   </button>
                   <button
                     onClick={(e) => startRename(c.id, c.title, e)}
-                    className="p-1 text-slate-300 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                    className="p-1 text-slate-300 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all shrink-0"
                   >
-                    <Pencil size={11} />
+                    <Pencil size={12} />
                   </button>
                   <button
                     onClick={(e) => deleteConversation(c.id, e)}
                     className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0"
                   >
-                    <Trash2 size={11} />
+                    <Trash2 size={12} />
                   </button>
                 </>
               )}
             </div>
           ))}
-          {conversations.length === 0 && <p className="text-[11px] text-slate-300 text-center py-8">No conversations yet</p>}
+          {conversations.length === 0 && <p className="text-[12px] text-slate-300 text-center py-8">No conversations yet</p>}
         </div>
       </div>
 
       {/* Chat */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-slate-100 shrink-0 px-8 py-6">
-          <div className="flex items-center gap-3 max-w-3xl mx-auto">
+        <header className="shrink-0 px-8 py-5">
+          <div className="flex items-center gap-2.5 max-w-[720px] mx-auto">
             <motion.div
-              className="h-9 w-9 rounded-2xl bg-indigo-50 flex items-center justify-center"
-              animate={sending ? { scale: [1, 1.12, 1] } : { scale: 1 }}
+              animate={sending ? { opacity: [0.5, 1, 0.5] } : { opacity: 1 }}
               transition={sending ? { repeat: Infinity, duration: 1.2, ease: "easeInOut" } : undefined}
             >
-              <Sparkles size={18} className="text-indigo-600" />
+              <Sparkles size={16} className="text-slate-400" />
             </motion.div>
-            <h1 className="text-2xl font-light uppercase tracking-tight text-slate-900">Ask AI</h1>
+            <h1 className="text-[15px] font-medium text-slate-700">Ask AI</h1>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-3xl mx-auto h-full">
+        <main className="flex-1 overflow-y-auto px-8 pb-8">
+          <div className="h-full">
             <AiChatThread
               key={openedConversationId ?? "new"}
               initialConversationId={openedConversationId}

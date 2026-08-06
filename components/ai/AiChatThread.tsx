@@ -90,62 +90,49 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
   }
 }
 
+// Neutral, bordered cards -- not filled with brand color -- so a turn with
+// several tool calls reads as a quiet activity log sitting above the reply,
+// not a row of colorful badges competing with the actual answer. State
+// (in-flight/done/error) is carried by the small icon/spinner alone.
 function ToolCallChip({ call }: { call: ToolCallEvent }) {
   const Icon = TOOL_ICONS[call.name] || Sparkles;
   const inFlight = call.phase === "start";
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, x: -8 }}
-      animate={{ opacity: 1, x: 0 }}
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-medium border w-fit ${
-        inFlight
-          ? "bg-indigo-50 border-indigo-100 text-indigo-600"
-          : call.isError
-          ? "bg-red-50 border-red-100 text-red-600"
-          : "bg-emerald-50 border-emerald-100 text-emerald-700"
-      }`}
+      className="flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit"
     >
       {inFlight ? (
-        <Loader2 size={11} className="animate-spin shrink-0" />
+        <Loader2 size={13} className="animate-spin shrink-0 text-slate-400" />
       ) : call.isError ? (
-        <X size={11} className="shrink-0" />
+        <X size={13} className="shrink-0 text-red-500" />
       ) : (
-        <Check size={11} className="shrink-0" />
+        <Check size={13} className="shrink-0 text-emerald-600" />
       )}
-      <Icon size={11} className="shrink-0 opacity-60" />
+      <Icon size={13} className="shrink-0 text-slate-400" />
       <span className="truncate">{toolLabel(call.name, call.input)}</span>
     </motion.div>
   );
 }
 
 // Shown while the assistant has produced neither text nor a tool call yet
-// for this turn -- deliberately NOT inside the bordered message-bubble
-// chrome (that's for actual content), just a pulsing sparkle, three
-// sequentially-bouncing dots, and a label naming what's actually happening,
-// so it reads as "in progress" rather than "here's an empty reply".
+// for this turn -- just a slow pulse and a label naming what's actually
+// happening, so it reads as "in progress" rather than "here's an empty
+// reply". Quiet by design (this app's own reasoning text, when the
+// provider returns any, replaces it -- see ThinkingBlock below).
 function ThinkingIndicator() {
   return (
-    <div className="flex items-center gap-2.5 py-1 pl-1">
+    <div className="flex items-center gap-2.5 py-1">
       <motion.div
-        className="flex items-center justify-center h-6 w-6 rounded-full bg-indigo-50 shrink-0"
-        animate={{ rotate: [0, 12, -12, 0] }}
+        animate={{ opacity: [0.4, 1, 0.4] }}
         transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
       >
-        <Sparkles size={12} className="text-indigo-500" />
+        <Sparkles size={15} className="text-slate-300" />
       </motion.div>
-      <span className="text-[12px] font-medium text-slate-400">Reading your request and deciding what to build</span>
-      <div className="flex items-center gap-1">
-        {[0, 1, 2].map((i) => (
-          <motion.span
-            key={i}
-            className="h-1.5 w-1.5 rounded-full bg-indigo-300"
-            animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }}
-            transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: "easeInOut" }}
-          />
-        ))}
-      </div>
+      <span className="text-[14px] text-slate-400">Thinking</span>
     </div>
   );
 }
@@ -155,21 +142,21 @@ function ThinkingIndicator() {
 // read, just available for anyone who wants to see the reasoning behind
 // what it's about to build. Plain whitespace-pre-wrap, not renderMarkdown --
 // chain-of-thought isn't reliably well-formed markdown, same reasoning the
-// user bubble above already renders raw text instead of markdown.
+// user bubble already renders raw text instead of markdown.
 function ThinkingBlock({ text, defaultExpanded }: { text: string; defaultExpanded: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
-    <div className="mb-2.5">
+    <div className="mb-3">
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+        className="flex items-center gap-1.5 text-[13px] text-slate-400 hover:text-slate-600 transition-colors"
       >
-        {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        <Brain size={11} />
+        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <Brain size={13} />
         {expanded ? "Hide thinking" : "Show thinking"}
       </button>
       {expanded && (
-        <div className="mt-1.5 pl-3 border-l-2 border-slate-100 text-[12px] text-slate-400 italic whitespace-pre-wrap">
+        <div className="mt-2 pl-3.5 border-l-2 border-slate-100 text-[14px] leading-relaxed text-slate-400 whitespace-pre-wrap">
           {text}
         </div>
       )}
@@ -252,6 +239,7 @@ export default function AiChatThread({
   const [usage, setUsage] = useState<Usage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // The job this thread is currently attached to (either one it just
   // created via send(), or one it found already running for
@@ -274,6 +262,16 @@ export default function AiChatThread({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Grows the textarea to fit what's typed (up to a cap, then it scrolls
+  // internally) instead of a fixed single-line input -- resets to "auto"
+  // first so it can shrink back down too, not just grow.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
 
   const capReached = usage ? usage.tokensUsed >= usage.tokenCap : false;
 
@@ -417,26 +415,26 @@ export default function AiChatThread({
   return (
     <div className={`flex flex-col ${compact ? "" : "h-full"}`}>
       {!compact && usage && (
-        <div className="shrink-0 mb-4">
-          <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-            <span>{usage.tokensUsed.toLocaleString()} / {usage.tokenCap.toLocaleString()} tokens this period</span>
+        <div className="shrink-0 mb-6 flex items-center justify-between text-[12px] text-slate-400">
+          <span>{usage.tokensUsed.toLocaleString()} / {usage.tokenCap.toLocaleString()} tokens this period</span>
+          <div className="flex items-center gap-2">
             <span>~${usage.estimatedCostUsd.toFixed(2)} spent</span>
-          </div>
-          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <motion.div
-              className={`h-full rounded-full ${capReached ? "bg-red-500" : "bg-indigo-500"}`}
-              initial={false}
-              animate={{ width: `${Math.min(100, (usage.tokensUsed / usage.tokenCap) * 100)}%` }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-            />
+            <div className="h-1 w-16 bg-slate-100 rounded-full overflow-hidden">
+              <motion.div
+                className={`h-full rounded-full ${capReached ? "bg-red-400" : "bg-slate-300"}`}
+                initial={false}
+                animate={{ width: `${Math.min(100, (usage.tokensUsed / usage.tokenCap) * 100)}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              />
+            </div>
           </div>
         </div>
       )}
 
-      <div className={`flex-1 ${compact ? "max-h-[420px]" : ""} overflow-y-auto`}>
-        <div className="space-y-4">
+      <div className={`flex-1 ${compact ? "max-h-[440px]" : ""} overflow-y-auto`}>
+        <div className={`mx-auto w-full ${compact ? "" : "max-w-[720px]"} space-y-8`}>
           {messages.length === 0 && emptyStateHint && (
-            <p className="text-[12px] text-slate-400 text-center py-12">{emptyStateHint}</p>
+            <p className="text-[15px] text-slate-400 text-center py-16">{emptyStateHint}</p>
           )}
           <AnimatePresence initial={false}>
             {messages.map((m, i) => {
@@ -462,21 +460,25 @@ export default function AiChatThread({
                   className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {m.role === "user" ? (
-                    <div className="max-w-[80%] rounded-[24px] px-5 py-3 text-[13px] bg-indigo-600 text-white whitespace-pre-wrap">
+                    // Soft neutral fill, not a saturated brand-color pill --
+                    // the point of a user bubble is just to mark "this is
+                    // what you typed," not to compete visually with the
+                    // reply underneath it.
+                    <div className="max-w-[75%] rounded-[22px] px-5 py-3 text-[15px] leading-relaxed bg-[#F0EFEA] text-slate-800 whitespace-pre-wrap">
                       {m.content}
                     </div>
                   ) : (
                     // No card/bubble on the assistant side -- tool activity
                     // and the reply itself sit directly on the page,
                     // distinguished from the user's messages by alignment
-                    // alone (ChatGPT-style), not a boxed container.
-                    <div className="max-w-[80%] text-[13px] text-slate-700 py-1">
+                    // alone (Claude/ChatGPT-style), not a boxed container.
+                    <div className="max-w-[85%] text-[15px] leading-7 text-slate-800 py-1">
                       {m.reasoning && (
                         <ThinkingBlock text={m.reasoning} defaultExpanded={isLast && sending && !m.content} />
                       )}
 
                       {hasToolCalls && (
-                        <div className="flex flex-col gap-1.5 mb-2.5">
+                        <div className="flex flex-col gap-1.5 mb-3">
                           <AnimatePresence initial={false}>
                             {m.toolCalls!.map((call, ci) => (
                               <ToolCallChip key={ci} call={call} />
@@ -490,7 +492,7 @@ export default function AiChatThread({
                       ) : m.content ? (
                         <>
                           <div className="ai-chat-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />
-                          {showCursor && <span className="inline-block w-[2px] h-[13px] bg-indigo-400 mt-0.5 animate-pulse" />}
+                          {showCursor && <span className="inline-block w-[2px] h-[15px] bg-slate-400 mt-0.5 animate-pulse align-middle" />}
                         </>
                       ) : null}
                     </div>
@@ -503,39 +505,49 @@ export default function AiChatThread({
         </div>
       </div>
 
-      <div className={compact ? "mt-4 shrink-0" : "shrink-0 pt-6"}>
+      <div className={`mx-auto w-full ${compact ? "mt-4 shrink-0" : "max-w-[720px] shrink-0 pt-6"}`}>
         <AnimatePresence>
           {error && (
             <motion.p
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-1.5 text-[11px] text-red-500 mb-2 overflow-hidden"
+              className="flex items-center gap-1.5 text-[13px] text-red-500 mb-2 overflow-hidden"
             >
-              <AlertTriangle size={12} /> {error}
+              <AlertTriangle size={13} /> {error}
             </motion.p>
           )}
         </AnimatePresence>
         {capReached && (
-          <p className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 rounded-2xl px-4 py-2 mb-2">
-            <AlertTriangle size={12} /> Monthly token cap reached -- ask a company admin to raise it in Admin → AI Assistant.
+          <p className="flex items-center gap-1.5 text-[13px] text-amber-700 bg-amber-50 rounded-2xl px-4 py-2 mb-2">
+            <AlertTriangle size={13} /> Monthly token cap reached -- ask a company admin to raise it in Admin → AI Assistant.
           </p>
         )}
-        <div className="flex gap-2">
-          <input
+        {/* Enter to send, shift+Enter for a newline -- an auto-growing
+            textarea rather than a fixed single-line input, so a longer
+            message doesn't get silently clipped from view while typing. */}
+        <div className="relative flex items-end border border-slate-200 rounded-[26px] bg-white shadow-sm focus-within:border-slate-300 transition-colors">
+          <textarea
+            ref={textareaRef}
+            rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
             disabled={capReached}
             placeholder={placeholder}
-            className="flex-1 px-4 py-3 border border-slate-200 rounded-full text-[13px] outline-none focus:border-indigo-400 transition-colors disabled:opacity-40"
+            className="flex-1 resize-none px-5 py-3.5 text-[15px] leading-relaxed outline-none disabled:opacity-40 bg-transparent max-h-[200px]"
           />
           <button
             onClick={send}
             disabled={sending || capReached || !input.trim()}
-            className="w-11 h-11 flex items-center justify-center bg-indigo-600 text-white rounded-full hover:bg-indigo-700 active:scale-[0.94] disabled:opacity-40 disabled:active:scale-100 transition-all shrink-0"
+            className="m-2 w-9 h-9 flex items-center justify-center bg-slate-800 text-white rounded-full hover:bg-slate-900 active:scale-[0.94] disabled:opacity-30 disabled:active:scale-100 transition-all shrink-0"
           >
-            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
           </button>
         </div>
       </div>
