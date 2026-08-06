@@ -91,14 +91,14 @@ async function findExactRelationMatch(table: string, nameColumn: string, company
 }
 
 async function resolveOrCreateRelation(
-  companyId: string, fieldType: string, name: string, createdBy: string | null
-): Promise<{ id: string; flagged: boolean }> {
+  companyId: string, fieldType: string, name: string, createdBy: string | null, fieldLabel: string | null
+): Promise<{ id: string; flagged: boolean; table: string }> {
   const config = RESOLVABLE_RELATION_TABLES[fieldType];
   if (!config) throw new Error(`Unsupported relation field type: ${fieldType}`);
   const trimmed = name.trim();
 
   const exact = await findExactRelationMatch(config.table, config.nameColumn, companyId, trimmed);
-  if (exact) return { id: exact.id, flagged: false };
+  if (exact) return { id: exact.id, flagged: false, table: config.table };
 
   const { data: candidates } = await db
     .from(config.table)
@@ -111,7 +111,7 @@ async function resolveOrCreateRelation(
   // No exact-match branch needed here any more (handled above) -- several
   // fuzzy candidates with none exact is genuinely ambiguous.
   const match = list.length === 1 ? list[0] : null;
-  if (match) return { id: match.id, flagged: false };
+  if (match) return { id: match.id, flagged: false, table: config.table };
 
   const reason = list.length > 1
     ? `Created from Gmail -- "${trimmed}" matched several existing records, none exactly: ${list.map((c) => c[config.nameColumn]).join(', ')}`
@@ -121,6 +121,8 @@ async function resolveOrCreateRelation(
     [config.nameColumn]: trimmed,
     needs_review: true,
     review_reason: reason,
+    review_created_by: createdBy,
+    review_field_label: fieldLabel,
   };
   if (fieldType === 'entity') insertRow.entity_type = 'Company';
   if (fieldType === 'project') { insertRow.status = 'active'; insertRow.created_by = createdBy; }
@@ -138,7 +140,7 @@ async function resolveOrCreateRelation(
     // error previously) rather than erroring: the row now exists, so use it
     // like a normal confident match.
     const retryExact = await findExactRelationMatch(config.table, config.nameColumn, companyId, trimmed);
-    if (retryExact) return { id: retryExact.id, flagged: false };
+    if (retryExact) return { id: retryExact.id, flagged: false, table: config.table };
   }
   if (error || !created) throw new Error(error?.message || `Failed to create ${fieldType}`);
 
@@ -162,7 +164,27 @@ async function resolveOrCreateRelation(
     });
   } catch (_) { /* best-effort */ }
 
-  return { id: created.id, flagged: true };
+  return { id: created.id, flagged: true, table: config.table };
+}
+
+// Fills in review_source_table/review_source_record_id on every relation
+// resolveOrCreateRelation flagged for this request, once the parent record
+// they were typed into actually exists -- it doesn't yet at the point
+// resolveOrCreateRelation runs (that insert happens before the parent
+// record's own insert), so this is a follow-up update rather than part of
+// the original insert. Best-effort: this is review-banner display metadata,
+// not something worth failing an otherwise-successful create over.
+async function linkFlaggedRelationsToSource(
+  flaggedRelations: { table: string; id: string }[], sourceTable: string, sourceRecordId: string
+): Promise<void> {
+  if (flaggedRelations.length === 0) return;
+  const idsByTable = new Map<string, string[]>();
+  for (const r of flaggedRelations) idsByTable.set(r.table, [...(idsByTable.get(r.table) || []), r.id]);
+  try {
+    await Promise.all([...idsByTable.entries()].map(([table, ids]) =>
+      db.from(table).update({ review_source_table: sourceTable, review_source_record_id: sourceRecordId }).in('id', ids)
+    ));
+  } catch (_) { /* best-effort */ }
 }
 
 async function logTaskActivity(params: { taskId: string; companyId: string; actorId: string | null; action: string; detail?: string | null }) {
@@ -1013,13 +1035,18 @@ Deno.serve(async (req) => {
       // company_custom_field_values insert further down, both of which
       // expect a real id.
       const flaggedNames: string[] = [];
+      // Which table/id each flagged row landed on -- the parent project
+      // doesn't exist yet at this point, so review_source_record_id can't
+      // be set here; it's filled in with a follow-up update once `project`
+      // is inserted below.
+      const flaggedRelations: { table: string; id: string }[] = [];
       for (const field of allFields) {
         if (!isResolvableRelationType(field.field_type)) continue;
         const typedName = fieldValues[field.id];
         if (isEmptyFieldValue(typedName)) continue;
-        const resolved = await resolveOrCreateRelation(companyId, field.field_type, typedName, profile.id);
+        const resolved = await resolveOrCreateRelation(companyId, field.field_type, typedName, profile.id, field.label);
         fieldValues[field.id] = resolved.id;
-        if (resolved.flagged) flaggedNames.push(typedName);
+        if (resolved.flagged) { flaggedNames.push(typedName); flaggedRelations.push({ table: resolved.table, id: resolved.id }); }
       }
 
       // Property is a base column (projects.property_id), not a custom
@@ -1028,9 +1055,9 @@ Deno.serve(async (req) => {
       // the same rule on the web-app side) -- optional otherwise.
       let propertyId: string | null = null;
       if (propertyAddress) {
-        const resolvedProperty = await resolveOrCreateRelation(companyId, 'property', propertyAddress, profile.id);
+        const resolvedProperty = await resolveOrCreateRelation(companyId, 'property', propertyAddress, profile.id, 'Property');
         propertyId = resolvedProperty.id;
-        if (resolvedProperty.flagged) flaggedNames.push(propertyAddress);
+        if (resolvedProperty.flagged) { flaggedNames.push(propertyAddress); flaggedRelations.push({ table: resolvedProperty.table, id: resolvedProperty.id }); }
       }
 
       const matterTypeField = allFields.find((f: any) =>
@@ -1079,6 +1106,7 @@ Deno.serve(async (req) => {
       if (projErr || !project) {
         return json({ error: projErr?.message || 'Failed to create project' }, 500, headers);
       }
+      await linkFlaggedRelationsToSource(flaggedRelations, 'projects', project.id);
 
       // Create custom field values
       const fieldById = new Map(allFields.map((f: any) => [f.id, f]));
@@ -1285,13 +1313,17 @@ Deno.serve(async (req) => {
       // expect a real id (see resolveOrCreateRelation for the matching
       // logic and why it creates-and-flags rather than guessing).
       const flaggedNames: string[] = [];
+      // See resolveOrCreateRelation's/linkFlaggedRelationsToSource's comment
+      // in the /create-project handler above -- the parent record doesn't
+      // exist yet here either.
+      const flaggedRelations: { table: string; id: string }[] = [];
       for (const field of allFields) {
         if (!isResolvableRelationType(field.field_type)) continue;
         const typedName = values[field.id];
         if (isEmptyFieldValue(typedName)) continue;
-        const resolved = await resolveOrCreateRelation(companyId, field.field_type, typedName, profile.id);
+        const resolved = await resolveOrCreateRelation(companyId, field.field_type, typedName, profile.id, field.label);
         values[field.id] = resolved.id;
-        if (resolved.flagged) flaggedNames.push(typedName);
+        if (resolved.flagged) { flaggedNames.push(typedName); flaggedRelations.push({ table: resolved.table, id: resolved.id }); }
       }
 
       const hasContent = allFields.some((f: any) => f.auto_number_prefix == null && !f.formula_type && !isEmptyFieldValue(values[f.id]));
@@ -1322,6 +1354,7 @@ Deno.serve(async (req) => {
         .insert({ table_id: tableId, company_id: companyId, created_by: profile.id })
         .select('id').single();
       if (recErr || !record) return json({ error: recErr?.message || 'Failed to create record' }, 500, headers);
+      await linkFlaggedRelationsToSource(flaggedRelations, tableId, record.id);
 
       // Atomically claim every is_unique field's value -- see
       // supabase/company_table_unique_locks.sql. On the first failure,

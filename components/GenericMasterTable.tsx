@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } fr
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import { Search, Settings2, Pencil, X, AlertTriangle, Check, Trash2 } from "lucide-react";
+import { Search, Settings2, Pencil, X, AlertTriangle, Check, Trash2, ChevronDown, ChevronUp, Merge, Loader2 } from "lucide-react";
 
 import MasterTable from "@/components/MasterTable";
 // Same deferral as CustomTableMasterPage.tsx's RecordDashboard/
@@ -1021,6 +1021,104 @@ function GenericMasterTableInner({
     t.setItems(prev => prev.filter(item => item.id !== id));
   }, [t.setItems, tableName]);
 
+  // Expanding a flagged row lazily resolves who was syncing when it was
+  // auto-created and which matter/table record it came from -- fetched on
+  // first expand rather than eagerly for every row on table load, since
+  // this only ever matters for the handful of rows actually in the banner.
+  // Rows flagged before review_created_by/review_source_table existed
+  // resolve to nulls here, same as any other pre-migration data.
+  const [expandedReviewId, setExpandedReviewId] = useState<string | null>(null);
+  const [reviewDetails, setReviewDetails] = useState<Record<string, { creatorName: string | null; sourceLabel: string | null; sourceUrl: string | null }>>({});
+  const [reviewDetailsLoading, setReviewDetailsLoading] = useState<string | null>(null);
+  const [mergeQuery, setMergeQuery] = useState<Record<string, string>>({});
+  const [mergeCandidates, setMergeCandidates] = useState<Record<string, { id: string; label: string }[]>>({});
+  const [mergingReviewId, setMergingReviewId] = useState<string | null>(null);
+
+  const toggleReviewExpand = useCallback(async (item: any) => {
+    const id = item.id;
+    if (expandedReviewId === id) { setExpandedReviewId(null); return; }
+    setExpandedReviewId(id);
+    if (reviewDetails[id]) return;
+    setReviewDetailsLoading(id);
+    try {
+      const [creatorRes, sourceRes] = await Promise.all([
+        item.review_created_by
+          ? supabase.from('profiles').select('full_name, email').eq('id', item.review_created_by).maybeSingle()
+          : Promise.resolve({ data: null as any }),
+        (async () => {
+          if (!item.review_source_record_id || !item.review_source_table) return { label: null as string | null, url: null as string | null };
+          if (item.review_source_table === 'projects') {
+            const { data } = await supabase.from('projects').select('id, name').eq('id', item.review_source_record_id).maybeSingle();
+            return { label: data?.name || null, url: data ? `/dashboard/projects?id=${data.id}` : null };
+          }
+          // A company_tables.id -- resolve the table's own name/slug for a
+          // label and working link; no generic "display name" column exists
+          // on company_table_records itself (see linkFlaggedRelationsToSource's
+          // comment in gmail-addon/index.ts), so this names the table, not
+          // the individual record.
+          const { data } = await supabase.from('company_tables').select('name, slug').eq('id', item.review_source_table).maybeSingle();
+          return {
+            label: data?.name ? `a record in "${data.name}"` : null,
+            url: data?.slug ? `/dashboard/${data.slug}?id=${item.review_source_record_id}` : null,
+          };
+        })(),
+      ]);
+      const creator = creatorRes.data as any;
+      setReviewDetails(prev => ({
+        ...prev,
+        [id]: {
+          creatorName: creator?.full_name || creator?.email || null,
+          sourceLabel: sourceRes.label,
+          sourceUrl: sourceRes.url,
+        },
+      }));
+    } finally {
+      setReviewDetailsLoading(null);
+    }
+  }, [expandedReviewId, reviewDetails]);
+
+  const searchMergeCandidates = useCallback(async (id: string, query: string) => {
+    setMergeQuery(prev => ({ ...prev, [id]: query }));
+    if (!query.trim()) { setMergeCandidates(prev => ({ ...prev, [id]: [] })); return; }
+    const nameCol = tableName === 'properties' ? 'street_address' : 'name';
+    const { data } = await supabase
+      .from(tableName)
+      .select(`id, ${nameCol}`)
+      .eq('company_id', ctxCompanyId)
+      .is('deleted_at', null)
+      .neq('id', id)
+      .ilike(nameCol, `%${query.trim()}%`)
+      .limit(8);
+    setMergeCandidates(prev => ({ ...prev, [id]: ((data || []) as any[]).map(d => ({ id: d.id, label: d[nameCol] || 'Untitled' })) }));
+  }, [tableName, ctxCompanyId]);
+
+  // Reuses the exact same RPC the Duplicate Records tool merges with (see
+  // supabase/migrations/20260729290000_duplicate_merge_rpc.sql) -- runs
+  // under the caller's own session so trg_prevent_non_admin_delete is what
+  // actually enforces admin-only, same as that tool.
+  const mergeReviewItem = useCallback(async (mergeId: string, keepId: string, keepLabel: string) => {
+    if (!window.confirm(`Merge this record into "${keepLabel}"? Anything referencing it will be repointed to "${keepLabel}", then this record will be archived.`)) return;
+    setMergingReviewId(mergeId);
+    try {
+      const { error } = await supabase.rpc('merge_duplicate_records', {
+        p_company_id: ctxCompanyId,
+        p_table_kind: 'system',
+        p_table: tableName,
+        p_table_id: null,
+        p_keep_id: keepId,
+        p_merge_id: mergeId,
+      });
+      if (error) {
+        window.alert(error.code === '42501' ? 'Only a company admin can merge records.' : (error.message || "Couldn't merge this record."));
+        return;
+      }
+      t.setItems(prev => prev.filter(item => item.id !== mergeId));
+      setExpandedReviewId(null);
+    } finally {
+      setMergingReviewId(null);
+    }
+  }, [ctxCompanyId, tableName, t.setItems]);
+
   // ── Early returns ──────────────────────────────────────────────────
 
   if (selectedId && renderDashboard) {
@@ -1163,36 +1261,106 @@ function GenericMasterTableInner({
                 </span>
               </div>
               <div className="space-y-2">
-                {needsReviewItems.slice(0, 5).map(item => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 bg-white rounded-xl px-4 py-2.5 border border-amber-100">
-                    <div className="min-w-0">
+                {needsReviewItems.slice(0, 5).map(item => {
+                  const isExpanded = expandedReviewId === item.id;
+                  const details = reviewDetails[item.id];
+                  const candidates = mergeCandidates[item.id] || [];
+                  return (
+                  <div key={item.id} className="bg-white rounded-xl border border-amber-100 overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
                       <button
-                        onClick={() => router.push(`/dashboard/${tableName}?id=${item.id}`)}
-                        className="text-[12px] font-bold text-slate-800 hover:text-indigo-600 transition-colors truncate block"
+                        onClick={() => toggleReviewExpand(item)}
+                        className="tactile-flat min-w-0 flex items-center gap-2 text-left flex-1 rounded-lg"
                       >
-                        {needsReviewDisplayName(item)}
+                        {isExpanded ? <ChevronUp size={13} className="text-amber-400 shrink-0" /> : <ChevronDown size={13} className="text-amber-400 shrink-0" />}
+                        <span className="min-w-0">
+                          <span className="text-[12px] font-bold text-slate-800 truncate block">
+                            {needsReviewDisplayName(item)}
+                          </span>
+                          {item.review_reason && (
+                            <span className="text-[10px] text-amber-600 truncate block">{item.review_reason}</span>
+                          )}
+                        </span>
                       </button>
-                      {item.review_reason && (
-                        <p className="text-[10px] text-amber-600 truncate">{item.review_reason}</p>
-                      )}
+                      <div className="shrink-0 flex items-center gap-2">
+                        <button
+                          onClick={() => router.push(`/dashboard/${tableName}?id=${item.id}`)}
+                          className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold transition-colors"
+                        >
+                          Open
+                        </button>
+                        <button
+                          onClick={() => markReviewed(item.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full text-[10px] font-bold transition-colors"
+                        >
+                          <Check size={11} /> Confirmed
+                        </button>
+                        <button
+                          onClick={() => discardReviewItem(item.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-full text-[10px] font-bold transition-colors"
+                          title="Discard this record"
+                        >
+                          <Trash2 size={11} /> Discard
+                        </button>
+                      </div>
                     </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                      <button
-                        onClick={() => markReviewed(item.id)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full text-[10px] font-bold transition-colors"
-                      >
-                        <Check size={11} /> Confirmed
-                      </button>
-                      <button
-                        onClick={() => discardReviewItem(item.id)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-500 rounded-full text-[10px] font-bold transition-colors"
-                        title="Discard this record"
-                      >
-                        <Trash2 size={11} /> Discard
-                      </button>
-                    </div>
+                    {isExpanded && (
+                      <div className="px-4 pb-3 pt-1 border-t border-amber-50 space-y-3">
+                        {reviewDetailsLoading === item.id ? (
+                          <p className="text-[10px] text-slate-400 flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading details...</p>
+                        ) : (
+                          <div className="text-[11px] text-slate-500 space-y-1">
+                            <p>
+                              <span className="font-bold text-slate-600">Created by: </span>
+                              {details?.creatorName || 'Unknown (pre-dates this tracking)'}
+                            </p>
+                            <p>
+                              <span className="font-bold text-slate-600">Field: </span>
+                              {item.review_field_label || 'Unknown'}
+                            </p>
+                            <p>
+                              <span className="font-bold text-slate-600">From: </span>
+                              {details?.sourceUrl ? (
+                                <button onClick={() => router.push(details.sourceUrl!)} className="text-indigo-600 hover:underline font-medium">
+                                  {details.sourceLabel}
+                                </button>
+                              ) : (details?.sourceLabel || 'Unknown (pre-dates this tracking)')}
+                            </p>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Merge into an existing record instead</p>
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={13} />
+                            <input
+                              value={mergeQuery[item.id] || ''}
+                              onChange={e => searchMergeCandidates(item.id, e.target.value)}
+                              placeholder={`Search existing ${pageTitle.toLowerCase()}...`}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 pl-8 pr-3 text-[11px] outline-none focus:ring-4 focus:ring-black/5"
+                            />
+                          </div>
+                          {candidates.length > 0 && (
+                            <div className="mt-1.5 space-y-1">
+                              {candidates.map(c => (
+                                <div key={c.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-lg px-3 py-1.5">
+                                  <span className="text-[11px] text-slate-700 truncate">{c.label}</span>
+                                  <button
+                                    onClick={() => mergeReviewItem(item.id, c.id, c.label)}
+                                    disabled={mergingReviewId === item.id}
+                                    className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full text-[10px] font-bold transition-colors"
+                                  >
+                                    {mergingReviewId === item.id ? <Loader2 size={10} className="animate-spin" /> : <Merge size={10} />} Merge
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               {needsReviewItems.length > 5 && (
                 <p className="text-[10px] text-amber-500 mt-2">+ {needsReviewItems.length - 5} more</p>
