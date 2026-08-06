@@ -34,9 +34,9 @@ export const DEEDS_BATCH_2: PrecedentSeed[] = [
     documentType: "deed",
     requiresReview: true,
     reviewNote:
-      "Cut the cascading ladders in clause 1 down to what is actually realistic for this restraint before sending -- four alternatives that are all implausibly wide protects nothing and just signals the drafting wasn't thought through. Identify the real legitimate interest in clause 4 with precision: goodwill actually paid for, genuine client connection, or confidential information actually held -- a restraint that protects nothing beyond keeping out competition is unenforceable regardless of how carefully it cascades. Confirm what consideration the Restrained Party is actually receiving -- a restraint on a departing employee with nothing given for it beyond past employment is far more likely to fail than one given in exchange for sale proceeds, a payment, or continued engagement. A restraint on a seller of a business is enforced far more readily than one on an employee or a minority shareholder -- weigh the drafting posture (how far to push the cascading ladders) against which of those this actually is.",
+      "Cut the cascading ladders in clause 1 down to what is actually realistic for this restraint before sending: four alternatives that are all implausibly wide protects nothing and just signals the drafting wasn't thought through. Identify the real legitimate interest in clause 4 with precision: goodwill actually paid for, genuine client connection, or confidential information actually held; a restraint that protects nothing beyond keeping out competition is unenforceable regardless of how carefully it cascades. Confirm what consideration the Restrained Party is actually receiving: a restraint on a departing employee with nothing given for it beyond past employment is far more likely to fail than one given in exchange for sale proceeds, a payment, or continued engagement. A restraint on a seller of a business is enforced far more readily than one on an employee or a minority shareholder; weigh the drafting posture (how far to push the cascading ladders) against which of those this actually is.",
     aiInstructions:
-      "Draft a standalone restraint of trade deed. The whole document turns on clause 1's cascading definitions of Restraint Period and Restraint Area -- draft each as a numbered list from widest to narrowest, at least three rungs, so that if a court rejects the widest it can still enforce a narrower one instead of striking the restraint out entirely. Cover four kinds of restriction: non-compete, non-solicitation of clients and customers, non-solicitation of employees and contractors, and non-interference with suppliers -- each measured against the same Restraint Period and Restraint Area so the cascade only needs to be defined once. Make clause 3 (construction) do the real work of explaining that each combination of restriction, period and area is a separate covenant, severable from the rest, because that is the mechanism that makes cascading drafting actually effective rather than decorative. Include an acknowledgments clause reciting that the restraint is no wider than reasonably necessary, that it protects a specific legitimate interest (name it as a field, not generically), and what consideration was given for it -- courts weigh acknowledgments like this as evidence, not as something that makes an otherwise unreasonable restraint enforceable by saying so.",
+      "Draft a standalone restraint of trade deed. The whole document turns on clause 1's cascading definitions of Restraint Period and Restraint Area: draft each as a numbered list from widest to narrowest, at least three rungs, so that if a court rejects the widest it can still enforce a narrower one instead of striking the restraint out entirely. Cover four kinds of restriction: non-compete, non-solicitation of clients and customers, non-solicitation of employees and contractors, and non-interference with suppliers, each measured against the same Restraint Period and Restraint Area so the cascade only needs to be defined once. Make clause 3 (construction) do the real work of explaining that each combination of restriction, period and area is a separate covenant, severable from the rest, because that is the mechanism that makes cascading drafting actually effective rather than decorative. Include an acknowledgments clause reciting that the restraint is no wider than reasonably necessary, that it protects a specific legitimate interest (name it as a field, not generically), and what consideration was given for it: courts weigh acknowledgments like this as evidence, not as something that makes an otherwise unreasonable restraint enforceable by saying so.",
     segments: [
       ...opening("RESTRAINT OF TRADE DEED", [
         ...L("DeedRecital", [
@@ -73,17 +73,17 @@ export const DEEDS_BATCH_2: PrecedentSeed[] = [
       ...L("DeedList-Level3", [
         "Restraint Area means, subject to clause 3, whichever of the following is the widest area found to be enforceable:",
       ]),
-      ...L("DeedList-Level4", [field("area_1", "Restraint area -- widest", "Australia")]),
-      ...L("DeedList-Level4", [field("area_2", "Restraint area -- next widest", "New South Wales")]),
-      ...L("DeedList-Level4", [field("area_3", "Restraint area -- narrower still", "within 50 kilometres of the Beneficiary's principal place of business")]),
-      ...L("DeedList-Level4", [field("area_4", "Restraint area -- narrowest", "within 10 kilometres of the Beneficiary's principal place of business")]),
+      ...L("DeedList-Level4", [field("area_1", "Restraint area: widest", "Australia")]),
+      ...L("DeedList-Level4", [field("area_2", "Restraint area: next widest", "New South Wales")]),
+      ...L("DeedList-Level4", [field("area_3", "Restraint area: narrower still", "within 50 kilometres of the Beneficiary's principal place of business")]),
+      ...L("DeedList-Level4", [field("area_4", "Restraint area: narrowest", "within 10 kilometres of the Beneficiary's principal place of business")]),
       ...L("DeedList-Level3", [
         "Restraint Period means, subject to clause 3, whichever of the following is the longest period found to be enforceable, running from the date of the Trigger Event:",
       ]),
-      ...L("DeedList-Level4", [field("period_1", "Restraint period -- longest", "3 years")]),
-      ...L("DeedList-Level4", [field("period_2", "Restraint period -- next longest", "2 years")]),
-      ...L("DeedList-Level4", [field("period_3", "Restraint period -- shorter still", "1 year")]),
-      ...L("DeedList-Level4", [field("period_4", "Restraint period -- shortest", "6 months")]),
+      ...L("DeedList-Level4", [field("period_1", "Restraint period: longest", "3 years")]),
+      ...L("DeedList-Level4", [field("period_2", "Restraint period: next longest", "2 years")]),
+      ...L("DeedList-Level4", [field("period_3", "Restraint period: shorter still", "1 year")]),
+      ...L("DeedList-Level4", [field("period_4", "Restraint period: shortest", "6 months")]),
 
       ...L("DeedList-Level1-Bold", ["Restraint"]),
       ...L("DeedList-Level2-Normal", [

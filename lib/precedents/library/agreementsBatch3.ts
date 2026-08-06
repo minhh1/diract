@@ -236,7 +236,7 @@ export const AGREEMENTS_BATCH_3: PrecedentSeed[] = [
         "The Buyer must notify the Seller promptly of any Tax audit, assessment or dispute that may give rise to a claim under the Tax Indemnity, and must not settle or compromise it without the Seller's consent, not to be unreasonably withheld, having regard to the Seller's right to control the conduct of a matter it is liable to indemnify.",
       ]),
 
-      ...L(null, ["[Delete clause 12 if a restraint was not agreed -- a restraint on a seller of a business is enforced far more readily than one on an employee, but it must still be no wider than reasonably necessary to protect the goodwill sold.]"]),
+      ...L(null, ["[Delete clause 12 if a restraint was not agreed: a restraint on a seller of a business is enforced far more readily than one on an employee, but it must still be no wider than reasonably necessary to protect the goodwill sold.]"]),
       ...L("DeedList-Level1-Bold", ["Restraint of trade"]),
       ...L("DeedList-Level2-Normal", [
         "For ",
@@ -258,12 +258,12 @@ export const AGREEMENTS_BATCH_3: PrecedentSeed[] = [
       ...execution("Seller", "Buyer"),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Sale Shares"]),
+      ...L("DeedHeading", ["Schedule 1: Sale Shares"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("sale_shares_particulars", "Sale Shares: class and number", "1,000 ordinary shares, being 100% of the issued share capital of the Company"),
       ]),
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 2 -- Completion Deliverables"]),
+      ...L("DeedHeading", ["Schedule 2: Completion Deliverables"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("completion_deliverables", "Any completion deliverables in addition to clause 7.1", "Deed of release from the Company's bank in respect of the Seller's personal guarantee of the Company's banking facilities, releasing the Seller on and from Completion."),
       ]),
@@ -449,7 +449,7 @@ export const AGREEMENTS_BATCH_3: PrecedentSeed[] = [
         ", except for a Claim arising from fraud or for the Warranty as to title to the Assets, to which no limitation in this clause 11 applies.",
       ]),
 
-      ...L(null, ["[Delete clause 12 if a restraint was not agreed -- a restraint on a seller of a business is enforced far more readily than one on an employee, but it must still be no wider than reasonably necessary to protect the goodwill sold.]"]),
+      ...L(null, ["[Delete clause 12 if a restraint was not agreed: a restraint on a seller of a business is enforced far more readily than one on an employee, but it must still be no wider than reasonably necessary to protect the goodwill sold.]"]),
       ...L("DeedList-Level1-Bold", ["Restraint of trade"]),
       ...L("DeedList-Level2-Normal", [
         "For ",
@@ -471,7 +471,7 @@ export const AGREEMENTS_BATCH_3: PrecedentSeed[] = [
       ...execution("Seller", "Buyer"),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Assets, Excluded Assets and Price Apportionment"]),
+      ...L("DeedHeading", ["Schedule 1: Assets, Excluded Assets and Price Apportionment"]),
       ...L("DeedList-Level2-Bold", ["Assets"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("assets_description", "Description of the Assets sold", "The goodwill of the Business; the plant, equipment and fittings listed in the attached inventory; the stock on hand at Completion; the Business's telephone numbers, domain name and social media accounts; and the benefit of the Material Contracts listed in Schedule 3."),
@@ -482,19 +482,19 @@ export const AGREEMENTS_BATCH_3: PrecedentSeed[] = [
       ]),
       ...L("DeedList-Level2-Bold", ["Assumed Liabilities"]),
       ...L("DeedList-Level2-NoNumbering", [
-        field("assumed_liabilities_description", "Assumed Liabilities (if any -- state 'None' if the Buyer assumes no liabilities)", "None -- the Buyer assumes no liability of the Seller other than its obligations under the Material Contracts arising after Completion."),
+        field("assumed_liabilities_description", "Assumed Liabilities (if any -- state 'None' if the Buyer assumes no liabilities)", "None. The Buyer assumes no liability of the Seller other than its obligations under the Material Contracts arising after Completion."),
       ]),
       ...L("DeedList-Level2-Bold", ["Price apportionment"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("price_apportionment", "How the Price is apportioned", "Goodwill $310,000; plant and equipment $85,000; stock at valuation on Completion, estimated at $25,000."),
       ]),
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 2 -- Employees"]),
+      ...L("DeedHeading", ["Schedule 2: Employees"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("employees_list", "Employees and their entitlements", "[Attach a list of each Employee's name, role, start date, and accrued annual and long service leave as at the date of this agreement.]"),
       ]),
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 3 -- Material Contracts"]),
+      ...L("DeedHeading", ["Schedule 3: Material Contracts"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("material_contracts_list", "Material Contracts", "Lease of the Business premises dated [ ]; supply agreement with [ ] dated [ ]."),
       ]),

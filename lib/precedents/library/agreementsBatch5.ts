@@ -153,7 +153,7 @@ export const AGREEMENTS_BATCH_5: PrecedentSeed[] = [
       ...L("DeedList-Level2-Normal", [
         "The Unitholders acknowledge that the Trust Deed requires the Trustee to distribute Distributable Income to the Unitholders each financial year, and nothing in this agreement authorises the Trustee to accumulate income or withhold a distribution the Trust Deed requires.",
       ]),
-      ...L(null, ["[Add a distribution-policy clause here only if the Trust Deed leaves the Trustee a genuine discretion over distributions that the Unitholders want to fetter -- the Trust Deed this agreement assumes does not.]"]),
+      ...L(null, ["[Add a distribution-policy clause here only if the Trust Deed leaves the Trustee a genuine discretion over distributions that the Unitholders want to fetter. The Trust Deed this agreement assumes does not.]"]),
 
       ...L("DeedList-Level1-Bold", ["Transfer restrictions and pre-emption"]),
       ...L("DeedList-Level2-Normal", [
@@ -284,12 +284,12 @@ export const AGREEMENTS_BATCH_5: PrecedentSeed[] = [
       ...executionLines("company_127_two_officers", "agreement", "Trustee"),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Unitholdings"]),
+      ...L("DeedHeading", ["Schedule 1: Unitholdings"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("unitholdings", "Each Unitholder's holding: number and percentage", "Jane: 60 Units (60%). John: 40 Units (40%)."),
       ]),
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 2 -- Reserved Matters"]),
+      ...L("DeedHeading", ["Schedule 2: Reserved Matters"]),
       ...L("DeedList-Level2-NoNumbering", ["Each of the following is a Reserved Matter:"]),
       ...L("DeedList-Level3", ["amending the Trust Deed;"]),
       ...L("DeedList-Level3", ["issuing further Units, or redeeming any Unit;"]),
@@ -469,7 +469,7 @@ export const AGREEMENTS_BATCH_5: PrecedentSeed[] = [
       ...execution("First Partner", "Second Partner"),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Capital and Profit Share"]),
+      ...L("DeedHeading", ["Schedule 1: Capital and Profit Share"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("capital_and_profit_share", "Each Partner's capital contribution and profit/loss share", "First Partner: capital $50,000, profit/loss share 60%. Second Partner: capital $50,000, profit/loss share 40%."),
       ]),
@@ -638,7 +638,7 @@ export const AGREEMENTS_BATCH_5: PrecedentSeed[] = [
       ...execution("First Participant", "Second Participant"),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Participating Interests and Contributions"]),
+      ...L("DeedHeading", ["Schedule 1: Participating Interests and Contributions"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("participating_interests", "Each Participant's Participating Interest and contribution", "First Participant: 50% Participating Interest; contributes the land at 100 Sample Road, Newtown NSW. Second Participant: 50% Participating Interest; contributes $800,000 in cash towards construction costs, drawn down against the Programme and Budget."),
       ]),

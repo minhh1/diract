@@ -22,7 +22,7 @@ const CRIME = ["Criminal"];
 export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "court.nsw.bail_application_submissions",
-    name: "Bail Application - Outline of Submissions (NSW)",
+    name: "Bail Application: Outline of Submissions (NSW)",
     description: "Written outline for a release application, structured to the Bail Act 2013 (NSW) tests.",
     category: "Criminal",
     subcategory: "Bail",
@@ -31,9 +31,9 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
     matterTypes: CRIME,
     requiresReview: true,
     reviewNote:
-      "Bail Act 2013 (NSW) is amended frequently, particularly the show cause offences in s 16B and the bail concerns in s 18. Confirm the current provisions and whether the offence is a show cause offence before settling this. There is no prescribed form -- this is an outline handed up, not a filed form.",
+      "Bail Act 2013 (NSW) is amended frequently, particularly the show cause offences in s 16B and the bail concerns in s 18. Confirm the current provisions and whether the offence is a show cause offence before settling this. There is no prescribed form: this is an outline handed up, not a filed form.",
     aiInstructions:
-      "Structure to the statute, in this order. First, whether s 16A applies: if the offence is a show cause offence under s 16B, the accused must show cause why detention is not justified, and that must be addressed and disposed of before anything else -- the unacceptable risk test is only reached once cause is shown. Second, the s 19 unacceptable risk test: identify each bail concern the prosecution raises under s 18 (failure to appear, commission of a serious offence, endangering safety, interference with witnesses), and answer it with the conditions proposed rather than by assertion. Third, s 18 matters relevant to the assessment -- background, criminal associations, prior compliance with bail, strength of the prosecution case, length of time on remand and delay to hearing. Address the strength of the Crown case only where it is genuinely weak; overstating it costs credibility. Finish with the precise conditions proposed, since a court is far more likely to grant bail on a concrete package (surety amount, residence, reporting, curfew, non-association, passport) than on a general submission.",
+      "Structure to the statute, in this order. First, whether s 16A applies: if the offence is a show cause offence under s 16B, the accused must show cause why detention is not justified, and that must be addressed and disposed of before anything else: the unacceptable risk test is only reached once cause is shown. Second, the s 19 unacceptable risk test: identify each bail concern the prosecution raises under s 18 (failure to appear, commission of a serious offence, endangering safety, interference with witnesses), and answer it with the conditions proposed rather than by assertion. Third, s 18 matters relevant to the assessment: background, criminal associations, prior compliance with bail, strength of the prosecution case, length of time on remand and delay to hearing. Address the strength of the Crown case only where it is genuinely weak; overstating it costs credibility. Finish with the precise conditions proposed, since a court is far more likely to grant bail on a concrete package (surety amount, residence, reporting, curfew, non-association, passport) than on a general submission.",
     segments: [
       text("OUTLINE OF SUBMISSIONS ON BAIL\n\nCourt: "),
       field("court", "Court", "Local Court of New South Wales at Parramatta"),
@@ -57,11 +57,11 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
         ".\n\nUNACCEPTABLE RISK\n\n3. The question under s 19 is whether there is an unacceptable risk that the applicant will fail to appear, commit a serious offence, endanger the safety of victims, individuals or the community, or interfere with witnesses or evidence.\n\n4. The prosecution identifies the following bail concerns:\n\n   (a) "
       ),
       field("concern_1", "First bail concern raised", "risk of failure to appear"),
-      text(" -- answered by "),
+      text(": answered by "),
       field("answer_1", "How that concern is answered", "the applicant's 14 years at the same address, his employment, and a proposed surety of $10,000 from his mother"),
       text(";\n   (b) "),
       field("concern_2", "Second bail concern raised", "risk of commission of a further offence"),
-      text(" -- answered by "),
+      text(": answered by "),
       field("answer_2", "How that concern is answered", "a proposed curfew and non-association condition, and the absence of any offending in the eight years since the applicant's last court appearance"),
       text(
         ".\n\nMATTERS UNDER s 18\n\n5. Background, community ties and prior compliance: "
@@ -90,7 +90,7 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
 
   {
     key: "court.nsw.plea_in_mitigation",
-    name: "Plea in Mitigation - Outline (NSW)",
+    name: "Plea in Mitigation: Outline (NSW)",
     description: "Outline on sentence, structured to the purposes and factors in the Crimes (Sentencing Procedure) Act 1999 (NSW).",
     category: "Criminal",
     subcategory: "Sentencing",
@@ -101,7 +101,7 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Check the current s 21A factors, the guideline judgments applying to the offence, and any standard non-parole period before settling. Discount for a guilty plea is governed by s 25D and depends on when the plea was indicated, so confirm the stage before submitting a figure.",
     aiInstructions:
-      "Deal with the objective seriousness of the offence first and the offender second; a plea that opens with the offender's hardship before confronting what was done reads as avoidance. Under s 3A identify which purposes of sentencing are engaged and which carry most weight on these facts. Work through the s 21A aggravating factors and meet each one that genuinely arises rather than ignoring it, then the mitigating factors, with evidence for each -- an assertion of remorse without a reference, a letter or restitution is worth little. Address the utilitarian discount for the plea under s 25D by reference to when it was indicated. If a non-custodial or intensive correction order is realistically available, say what it would look like in practice and why it meets the purposes identified; if it is not, do not pretend otherwise.",
+      "Deal with the objective seriousness of the offence first and the offender second; a plea that opens with the offender's hardship before confronting what was done reads as avoidance. Under s 3A identify which purposes of sentencing are engaged and which carry most weight on these facts. Work through the s 21A aggravating factors and meet each one that genuinely arises rather than ignoring it, then the mitigating factors, with evidence for each: an assertion of remorse without a reference, a letter or restitution is worth little. Address the utilitarian discount for the plea under s 25D by reference to when it was indicated. If a non-custodial or intensive correction order is realistically available, say what it would look like in practice and why it meets the purposes identified; if it is not, do not pretend otherwise.",
     segments: [
       text("OUTLINE OF SUBMISSIONS ON SENTENCE\n\nCourt: "),
       field("court", "Court", "Local Court of New South Wales at Parramatta"),
@@ -136,7 +136,7 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
 
   {
     key: "court.nsw.sentencing_submissions_local",
-    name: "Sentencing Submissions - Written Outline (NSW Local Court)",
+    name: "Sentencing Submissions: Written Outline (NSW Local Court)",
     description: "Short written outline handed up on sentence in the Local Court, where a full plea is not required.",
     category: "Criminal",
     subcategory: "Sentencing",
@@ -147,7 +147,7 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "A short outline for a Local Court list, not a substitute for a plea in mitigation in a contested or serious matter. Check any applicable guideline judgment and whether the offence attracts a mandatory disqualification or other automatic consequence before contending for a penalty.",
     aiInstructions:
-      "Keep it to one or two pages: a Local Court sentencing list moves quickly and a long document will not be read. State the charge and plea, the facts in a sentence or two, the offender's record, the matters relied on in mitigation with the evidence handed up for each, and the penalty contended for. Where a licence disqualification or other automatic consequence follows, address it directly and state what is sought -- the minimum period, or an application for it not to apply where that is available.",
+      "Keep it to one or two pages: a Local Court sentencing list moves quickly and a long document will not be read. State the charge and plea, the facts in a sentence or two, the offender's record, the matters relied on in mitigation with the evidence handed up for each, and the penalty contended for. Where a licence disqualification or other automatic consequence follows, address it directly and state what is sought: the minimum period, or an application for it not to apply where that is available.",
     segments: [
       text("SUBMISSIONS ON SENTENCE\n\nCourt: "),
       field("court", "Court", "Local Court of New South Wales at Parramatta"),
@@ -178,7 +178,7 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
 
   {
     key: "court.fcfcoa.case_outline",
-    name: "Case Outline - Interim Hearing (FCFCOA)",
+    name: "Case Outline: Interim Hearing (FCFCOA)",
     description: "Case outline handed up at an interim hearing in family law, summarising the issues, orders sought and evidence relied on.",
     category: "Family Law",
     subcategory: "Interim applications",
@@ -188,7 +188,7 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "The Central Practice Direction and the applicable National Contravention or parenting practice direction govern what must be filed before an interim hearing and by when, including page limits. Check the current practice direction and the judge's own requirements, which are often stated in the listing notice.",
     aiInstructions:
-      "This is read by a judge who has minutes per matter, so it must be navigable rather than complete. State the orders sought in the form the court could make them. Identify the issues genuinely in dispute and say what is agreed, since narrowing the dispute is the most useful thing the document can do. For each contested issue, point to the paragraph of the affidavit relied on rather than restating the evidence -- a case outline that reproduces the affidavit wastes the only advantage it has. Where there are risk allegations, deal with them first and identify what interim protective orders are proposed. Keep the chronology to events that bear on the orders sought.",
+      "This is read by a judge who has minutes per matter, so it must be navigable rather than complete. State the orders sought in the form the court could make them. Identify the issues genuinely in dispute and say what is agreed, since narrowing the dispute is the most useful thing the document can do. For each contested issue, point to the paragraph of the affidavit relied on rather than restating the evidence: a case outline that reproduces the affidavit wastes the only advantage it has. Where there are risk allegations, deal with them first and identify what interim protective orders are proposed. Keep the chronology to events that bear on the orders sought.",
     segments: [
       text("CASE OUTLINE\n\nCourt: "),
       field("court", "Court and division", "Federal Circuit and Family Court of Australia (Division 2)"),
@@ -217,7 +217,7 @@ export const COURT_SUBMISSIONS_PRECEDENTS: PrecedentSeed[] = [
       text("\n\nEVIDENCE RELIED ON\n\n7. "),
       field("evidence_relied_on", "Affidavits relied on, by paragraph", "Affidavit of the applicant sworn 10 August 2026, paragraphs 8 to 22 and 31 to 34; affidavit of Margaret Nguyen sworn 10 August 2026, paragraphs 4 to 9."),
       text("\n\nCHRONOLOGY\n\n8. "),
-      field("chronology", "Events bearing on the orders sought", "4 May 2012 - married. 3 March 2016 - first child born. 8 July 2019 - second child born. 2 February 2025 - separated. 5 August 2026 - respondent advised his intention to relocate to Melbourne."),
+      field("chronology", "Events bearing on the orders sought", "4 May 2012: married. 3 March 2016: first child born. 8 July 2019: second child born. 2 February 2025: separated. 5 August 2026: respondent advised his intention to relocate to Melbourne."),
       text("\n\n"),
       field("solicitor", "Name of solicitor or counsel", "Jane Smith, solicitor for the applicant"),
       text("\nDate: "),

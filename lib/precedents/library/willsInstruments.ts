@@ -41,7 +41,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
     documentType: "form",
     matterTypes: WILLS,
     aiInstructions:
-      "Draft a simple will: everything to the spouse if they survive by a stated period, otherwise to the children equally, with a substitution provision for a child who predeceases leaving issue. Include: revocation of earlier wills; appointment of executor and substitute; a survivorship period (commonly 30 days, which avoids the estate passing through a spouse's estate where both die in a common accident); the gift of residue; a contingent gift if no beneficiary survives; guardianship of minor children if applicable; trustee powers including power to postpone sale, to invest, and to apply income and capital for a minor's maintenance and education; and a direction as to debts, funeral and testamentary expenses. Draft gender-neutrally throughout -- 'executor', not 'executrix'. Do not include a testamentary trust in this precedent; that is a separate one.",
+      "Draft a simple will: everything to the spouse if they survive by a stated period, otherwise to the children equally, with a substitution provision for a child who predeceases leaving issue. Include: revocation of earlier wills; appointment of executor and substitute; a survivorship period (commonly 30 days, which avoids the estate passing through a spouse's estate where both die in a common accident); the gift of residue; a contingent gift if no beneficiary survives; guardianship of minor children if applicable; trustee powers including power to postpone sale, to invest, and to apply income and capital for a minor's maintenance and education; and a direction as to debts, funeral and testamentary expenses. Draft gender-neutrally throughout: 'executor', not 'executrix'. Do not include a testamentary trust in this precedent; that is a separate one.",
     segments: [
       text("WILL\n\nThis is the last will of "),
       field("testator", "Testator full name and address", "Robert James Citizen of 12 Example Street, Sydney NSW 2000"),
@@ -79,7 +79,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
     documentType: "form",
     matterTypes: WILLS,
     aiInstructions:
-      "Draft a codicil. It must: identify the will being amended by date with precision; state the amendments clearly, whether revoking a clause, substituting one, or adding one; and confirm the will is otherwise ratified and confirmed. Execute with the same formalities as a will. Keep amendments unambiguous -- a codicil that sits awkwardly against the original clause creates exactly the uncertainty it was meant to avoid. Note in the drafting guidance that a fresh will is usually preferable for anything beyond a trivial change.",
+      "Draft a codicil. It must: identify the will being amended by date with precision; state the amendments clearly, whether revoking a clause, substituting one, or adding one; and confirm the will is otherwise ratified and confirmed. Execute with the same formalities as a will. Keep amendments unambiguous: a codicil that sits awkwardly against the original clause creates exactly the uncertainty it was meant to avoid. Note in the drafting guidance that a fresh will is usually preferable for anything beyond a trivial change.",
     segments: [
       text("CODICIL\n\nThis is a codicil to the will of "),
       field("testator", "Testator", "Robert James Citizen of 12 Example Street, Sydney NSW 2000"),
@@ -109,7 +109,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
     documentType: "form",
     matterTypes: WILLS,
     aiInstructions:
-      "Produce the appropriate executor and trustee appointment clause for the arrangement described. This is a clause bank rather than a whole document -- the variants that matter are: a sole executor; a sole executor who is also the sole beneficiary; joint executors, with or without a mechanism for resolving disagreement; an appointment taking effect only when a beneficiary attains a stated age; a professional trustee (a firm, with a charging clause and a provision for the firm's successors); a lay person and a firm appointed together; and a substitute appointment. Draft gender-neutrally -- 'executor' is correct for any person and there is no need for a separate 'executrix' form. Where a firm is appointed, a charging clause is essential, because a professional trustee cannot charge for its services without express authority.",
+      "Produce the appropriate executor and trustee appointment clause for the arrangement described. This is a clause bank rather than a whole document; the variants that matter are: a sole executor; a sole executor who is also the sole beneficiary; joint executors, with or without a mechanism for resolving disagreement; an appointment taking effect only when a beneficiary attains a stated age; a professional trustee (a firm, with a charging clause and a provision for the firm's successors); a lay person and a firm appointed together; and a substitute appointment. Draft gender-neutrally: 'executor' is correct for any person and there is no need for a separate 'executrix' form. Where a firm is appointed, a charging clause is essential, because a professional trustee cannot charge for its services without express authority.",
     segments: [
       text("EXECUTOR AND TRUSTEE APPOINTMENT\n\nArrangement required: "),
       field("arrangement", "Which arrangement is needed", "Joint appointment of the testator's two adult children, with a mechanism for resolving disagreement, and a firm of solicitors as substitute"),
@@ -123,20 +123,20 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
   // ── Powers of attorney ──────────────────────────────────────────
   {
     key: "wins.general_power_of_attorney",
-    name: "General Power of Attorney - Advice and Execution",
+    name: "General Power of Attorney: Advice and Execution",
     description: "Non-enduring power of attorney for a defined period or purpose.",
     category: "Wills & Estates",
     subcategory: "Estate Planning",
     documentType: "form",
     matterTypes: WILLS,
     aiInstructions:
-      "Draft advice and execution guidance for a GENERAL (non-enduring) power of attorney. The key distinction from an enduring power must be stated plainly: a general power CEASES on loss of capacity, which is precisely when people assume it starts working. It is used for a defined purpose or period -- travelling overseas, a specific transaction, a period of hospitalisation -- not for incapacity planning. Cover the scope (general or limited to specified acts), the period, whether it must be registered for land dealings, revocation, and that the attorney must act in the principal's interests and keep the principal's money separate. Recommend an enduring power instead where incapacity is the concern.",
+      "Draft advice and execution guidance for a GENERAL (non-enduring) power of attorney. The key distinction from an enduring power must be stated plainly: a general power CEASES on loss of capacity, which is precisely when people assume it starts working. It is used for a defined purpose or period, such as travelling overseas, a specific transaction, or a period of hospitalisation, not for incapacity planning. Cover the scope (general or limited to specified acts), the period, whether it must be registered for land dealings, revocation, and that the attorney must act in the principal's interests and keep the principal's money separate. Recommend an enduring power instead where incapacity is the concern.",
     segments: [
       text("GENERAL POWER OF ATTORNEY\n\nPrincipal: "),
       field("principal", "Principal", "Robert James Citizen of 12 Example Street, Sydney NSW 2000"),
       text("\nAttorney: "),
       field("attorney", "Attorney", "Sarah Louise Citizen of 5 Sample Road, Parramatta NSW 2150"),
-      text("\n\nIMPORTANT - WHAT THIS DOES NOT DO\n\nA general power of attorney CEASES to have effect if you lose mental capacity.\n\nThis is the opposite of what most people assume. If your concern is who will manage your affairs if you become unable to, a general power is not the document you need -- you need an ENDURING power of attorney.\n\n"),
+      text("\n\nIMPORTANT: WHAT THIS DOES NOT DO\n\nA general power of attorney CEASES to have effect if you lose mental capacity.\n\nThis is the opposite of what most people assume. If your concern is who will manage your affairs if you become unable to, a general power is not the document you need: you need an ENDURING power of attorney.\n\n"),
       field("purpose", "Why a general power is being used here", "You have asked for a general power because you will be overseas from January to June 2027 and need your daughter to be able to deal with your investment property in your absence. That is exactly what a general power is for."),
       text("\n\nSCOPE\n\n"),
       field("scope", "Scope of the power", "This power is limited to matters concerning the property at 40 Sample Street, Newtown NSW 2042, including collecting rent, instructing the managing agent, paying outgoings, and arranging repairs. It does NOT authorise sale or mortgage of the property."),
@@ -144,7 +144,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
       field("period", "Period", "From 5 January 2027 until 30 June 2027, unless revoked earlier."),
       text("\n\nREGISTRATION\n\n"),
       field("registration", "Registration position", "Registration is not required as the power does not extend to dealing with the land itself. If you later want your attorney to be able to sell or mortgage, the power must be varied and registered."),
-      text("\n\nYOUR ATTORNEY'S OBLIGATIONS\n\nYour attorney must act in your interests, must keep your money separate from their own, must keep records, and must not obtain a benefit for themselves unless the power expressly allows it.\n\nHOW TO END IT\n\nYou may revoke this power at any time while you have capacity. Revocation must be in writing and, importantly, must be communicated to the attorney and to anyone who has been dealing with them -- a revocation is not effective against someone who does not know about it."),
+      text("\n\nYOUR ATTORNEY'S OBLIGATIONS\n\nYour attorney must act in your interests, must keep your money separate from their own, must keep records, and must not obtain a benefit for themselves unless the power expressly allows it.\n\nHOW TO END IT\n\nYou may revoke this power at any time while you have capacity. Revocation must be in writing and, importantly, must be communicated to the attorney and to anyone who has been dealing with them: a revocation is not effective against someone who does not know about it."),
     ],
     requiresReview: true,
     reviewNote:
@@ -169,7 +169,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
       field("attorney", "Attorney whose authority is revoked", "Thomas James Citizen"),
       text(" as my attorney.\n\nThat power is revoked with effect from the date of this instrument.\n\nSigned: ____________________________\n\nDate: "),
       field("date", "Date", "20 October 2026"),
-      text("\n\nWitness: ____________________________\n\n----------------------------------------\n\nNOTICE OF REVOCATION - WHY THIS PART MATTERS MORE THAN THE DOCUMENT\n\nA revocation is NOT effective against someone who does not know about it.\n\nIf your former attorney presents the original power to your bank, and the bank has not been told it is revoked, the bank may act on it in good faith and be protected. The document above achieves nothing on its own.\n\nNOTICE MUST BE GIVEN TO:\n\n1. THE FORMER ATTORNEY\n\n"),
+      text("\n\nWitness: ____________________________\n\n----------------------------------------\n\nNOTICE OF REVOCATION: WHY THIS PART MATTERS MORE THAN THE DOCUMENT\n\nA revocation is NOT effective against someone who does not know about it.\n\nIf your former attorney presents the original power to your bank, and the bank has not been told it is revoked, the bank may act on it in good faith and be protected. The document above achieves nothing on its own.\n\nNOTICE MUST BE GIVEN TO:\n\n1. THE FORMER ATTORNEY\n\n"),
       field("attorney_notice", "Notice to the attorney", "A letter enclosing the revocation, requiring the immediate return of the original power of attorney and every certified copy, and stating that they have no authority to act for you from the date of the revocation."),
       text("\n\n2. EVERY INSTITUTION AND PERSON WHO MAY DEAL WITH THEM\n\n"),
       field("third_parties", "Third parties to be notified", "- Commonwealth Bank (accounts 1234 5678 and 8765 4321)\n- AMP Superannuation\n- The managing agent for 40 Sample Street, Newtown\n- Your accountant, Example Accounting"),
@@ -180,20 +180,20 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
     ],
     requiresReview: true,
     reviewNote:
-      "Revocation requirements and whether registration of the revocation is required differ by state. Confirm the position, and ensure notice is actually given and evidenced -- a revocation not notified is ineffective against a third party without notice.",
+      "Revocation requirements and whether registration of the revocation is required differ by state. Confirm the position, and ensure notice is actually given and evidenced: a revocation not notified is ineffective against a third party without notice.",
   },
 
   // ── Guardianship ────────────────────────────────────────────────
   {
     key: "wins.enduring_guardian_appointment",
-    name: "Appointment of Enduring Guardian - Advice and Execution",
+    name: "Appointment of Enduring Guardian: Advice and Execution",
     description: "Appoints a substitute decision-maker for health and lifestyle decisions.",
     category: "Wills & Estates",
     subcategory: "Estate Planning",
     documentType: "form",
     matterTypes: WILLS,
     aiInstructions:
-      "Draft advice and execution guidance for an appointment of enduring guardian. Explain the distinction from an enduring power of attorney: a guardian makes HEALTH AND LIFESTYLE decisions -- where the person lives, what services they receive, what medical treatment they have -- while an attorney makes financial and legal decisions. Cover: when the appointment operates (only when the person lacks capacity for the particular decision); the functions that can be conferred and any limits or directions the appointor wishes to impose; that a guardian cannot override a valid refusal of treatment made by the person while capable; and that the terminology differs by state. Note the interaction with any advance care directive.",
+      "Draft advice and execution guidance for an appointment of enduring guardian. Explain the distinction from an enduring power of attorney: a guardian makes HEALTH AND LIFESTYLE decisions (where the person lives, what services they receive, what medical treatment they have) while an attorney makes financial and legal decisions. Cover: when the appointment operates (only when the person lacks capacity for the particular decision); the functions that can be conferred and any limits or directions the appointor wishes to impose; that a guardian cannot override a valid refusal of treatment made by the person while capable; and that the terminology differs by state. Note the interaction with any advance care directive.",
     segments: [
       text("APPOINTMENT OF ENDURING GUARDIAN\n\nAppointor: "),
       field("appointor", "Appointor", "Robert James Citizen of 12 Example Street, Sydney NSW 2000"),
@@ -201,7 +201,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
       field("guardian", "Guardian appointed", "Sarah Louise Citizen of 5 Sample Road, Parramatta NSW 2150"),
       text("\nSubstitute: "),
       field("substitute", "Substitute guardian", "Margaret Anne Citizen"),
-      text("\n\nWHAT A GUARDIAN DOES - AND HOW IT DIFFERS FROM AN ATTORNEY\n\nThis document is about HEALTH AND LIFESTYLE decisions:\n\n- where you live;\n- what health care and personal services you receive;\n- what medical and dental treatment you have.\n\nYour enduring power of attorney covers FINANCIAL AND LEGAL decisions. They are separate documents doing separate jobs, and most people need both.\n\nWHEN IT OPERATES\n\nOnly when you lack capacity to make the particular decision yourself. It does not operate while you can decide, and it does not operate for decisions you remain able to make.\n\nFUNCTIONS CONFERRED\n\n"),
+      text("\n\nWHAT A GUARDIAN DOES, AND HOW IT DIFFERS FROM AN ATTORNEY\n\nThis document is about HEALTH AND LIFESTYLE decisions:\n\n- where you live;\n- what health care and personal services you receive;\n- what medical and dental treatment you have.\n\nYour enduring power of attorney covers FINANCIAL AND LEGAL decisions. They are separate documents doing separate jobs, and most people need both.\n\nWHEN IT OPERATES\n\nOnly when you lack capacity to make the particular decision yourself. It does not operate while you can decide, and it does not operate for decisions you remain able to make.\n\nFUNCTIONS CONFERRED\n\n"),
       field("functions", "Functions conferred", "I authorise my guardian to decide where I live, to decide what health care and personal services I receive, and to consent to medical and dental treatment on my behalf."),
       text("\n\nLIMITS AND DIRECTIONS\n\n"),
       field("limits", "Limits or directions imposed", "I direct my guardian that it is my wish to remain living in my own home for as long as it is reasonably safe and practicable to do so, and that residential aged care be considered only when home-based care is no longer sufficient."),
@@ -213,7 +213,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
     ],
     requiresReview: true,
     reviewNote:
-      "The instrument name, prescribed form and witnessing requirements differ by state -- Appointment of Enduring Guardian (NSW, TAS), Enduring Power of Guardianship (WA), and in VIC, QLD and SA personal/health decisions are dealt with through the EPA or an advance care directive. Use the correct instrument for the state.",
+      "The instrument name, prescribed form and witnessing requirements differ by state: Appointment of Enduring Guardian (NSW, TAS), Enduring Power of Guardianship (WA), and in VIC, QLD and SA personal/health decisions are dealt with through the EPA or an advance care directive. Use the correct instrument for the state.",
   },
   {
     key: "wins.revocation_enduring_guardian",
@@ -224,7 +224,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
     documentType: "form",
     matterTypes: WILLS,
     aiInstructions:
-      "Draft a revocation of an appointment of enduring guardian, with the accompanying notices. As with a power of attorney, the revocation must be communicated -- a treating hospital that does not know of the revocation may act on the appointment. Cover the revocation instrument, notice to the former guardian requiring return of the original, notice to treating practitioners, any hospital or aged care facility, and any registry where the appointment was registered. Note the appointor must have capacity to revoke, and that where they do not, an application to the relevant tribunal is required instead.",
+      "Draft a revocation of an appointment of enduring guardian, with the accompanying notices. As with a power of attorney, the revocation must be communicated: a treating hospital that does not know of the revocation may act on the appointment. Cover the revocation instrument, notice to the former guardian requiring return of the original, notice to treating practitioners, any hospital or aged care facility, and any registry where the appointment was registered. Note the appointor must have capacity to revoke, and that where they do not, an application to the relevant tribunal is required instead.",
     segments: [
       text("REVOCATION OF APPOINTMENT OF ENDURING GUARDIAN\n\nI, "),
       field("appointor", "Appointor", "Robert James Citizen of 12 Example Street, Sydney NSW 2000"),
@@ -256,7 +256,7 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
     documentType: "form",
     matterTypes: WILLS,
     aiInstructions:
-      "Draft a notice of resignation by an attorney or enduring guardian, with advice on the constraints. The critical point: while the principal HAS capacity, an attorney or guardian may generally resign by giving written notice to the principal. Once the principal has LOST capacity, resignation usually requires the leave of the relevant tribunal or court -- an appointee cannot simply walk away from an incapacitated person, and attempting to do so may leave them still on the record and still exposed. Cover both situations, who must be notified, and the practical steps of handing over records and accounting for anything done.",
+      "Draft a notice of resignation by an attorney or enduring guardian, with advice on the constraints. The critical point: while the principal HAS capacity, an attorney or guardian may generally resign by giving written notice to the principal. Once the principal has LOST capacity, resignation usually requires the leave of the relevant tribunal or court: an appointee cannot simply walk away from an incapacitated person, and attempting to do so may leave them still on the record and still exposed. Cover both situations, who must be notified, and the practical steps of handing over records and accounting for anything done.",
     segments: [
       text("NOTICE OF RESIGNATION\n\nI, "),
       field("appointee", "Person resigning", "Thomas James Citizen of 22 Sample Avenue, Newcastle NSW 2300"),
@@ -271,12 +271,12 @@ export const WILLS_INSTRUMENTS_PRECEDENTS: PrecedentSeed[] = [
       text("\n\n----------------------------------------\n\nADVICE ON RESIGNING\n\nCAN YOU SIMPLY RESIGN?\n\nThat depends entirely on whether the principal still has capacity.\n\n"),
       field("capacity_position", "The principal's capacity position", "Mr Citizen currently has capacity. You may therefore resign by giving him written notice, which is what the document above does."),
       text("\n\nIF THE PRINCIPAL HAS LOST CAPACITY\n\nThis is the point that catches people out. Once the principal has lost capacity, you generally CANNOT simply resign. Resignation usually requires the leave of the relevant State tribunal or the Court.\n\nThe reason is obvious once stated: an incapacitated person cannot appoint a replacement, and allowing an appointee to walk away would leave them with nobody.\n\nIf you purport to resign in that situation without leave, you may remain on the record and remain exposed to the obligations of the role.\n\nWHO MUST BE NOTIFIED\n\n"),
-      field("notification", "Who must be notified", "1. The principal.\n2. Any co-attorney or co-guardian.\n3. The substitute appointee, so they know the role now falls to them.\n4. Any institution currently dealing with you in the role -- here, the Commonwealth Bank and the managing agent for the Newtown property."),
+      field("notification", "Who must be notified", "1. The principal.\n2. Any co-attorney or co-guardian.\n3. The substitute appointee, so they know the role now falls to them.\n4. Any institution currently dealing with you in the role: here, the Commonwealth Bank and the managing agent for the Newtown property."),
       text("\n\nWHAT YOU MUST DO ON RESIGNING\n\n"),
       field("handover", "Handover obligations", "1. Return the original instrument and all copies to the principal.\n2. Provide a full account of everything you have done in the role, with supporting records.\n3. Hand over any of the principal's property, documents or funds in your possession.\n\nYour obligation to account for what you did while acting does not end when you resign."),
     ],
     requiresReview: true,
     reviewNote:
-      "Whether an appointee may resign unilaterally, and the tribunal pathway where the principal lacks capacity, differ by state. Confirm the position before purporting to resign -- an ineffective resignation leaves the appointee still bound.",
+      "Whether an appointee may resign unilaterally, and the tribunal pathway where the principal lacks capacity, differ by state. Confirm the position before purporting to resign: an ineffective resignation leaves the appointee still bound.",
   },
 ];

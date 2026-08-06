@@ -16,7 +16,8 @@ const BASE_SYSTEM_PROMPT =
   "Respond in EXACTLY this format, nothing before or after it:\n" +
   "SUBJECT: <a short subject line for this letter>\n\n" +
   "<the full body of the letter, starting with the salutation's next line -- do NOT include a salutation " +
-  "('Dear ...') or a signoff/signature block, those are added separately>";
+  "('Dear ...') or a signoff/signature block, those are added separately>\n\n" +
+  "Never use an em dash, a double hyphen (\"--\"), or a spaced hyphen (\" - \") as a separator -- use a comma, colon, period, or just restructure the sentence instead.";
 
 const SUBJECT_LINE_RE = /^SUBJECT:\s*(.+?)\s*\n+([\s\S]*)$/i;
 
@@ -58,7 +59,8 @@ export async function draftPrecedentContent(
 
 const SUBJECT_ONLY_SYSTEM_PROMPT =
   "You write a single short subject line for a piece of formal business correspondence, based on the document type and details of the specific matter/record it's for. " +
-  "Respond with ONLY the subject line itself -- no quotes, no \"Subject:\" prefix, no explanation.";
+  "Respond with ONLY the subject line itself -- no quotes, no \"Subject:\" prefix, no explanation. " +
+  "Never use an em dash, a double hyphen (\"--\"), or a spaced hyphen (\" - \") as a separator -- use a comma, colon, period, or just restructure the sentence instead.";
 
 export interface SubjectDraft {
   subject: string;

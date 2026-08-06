@@ -115,9 +115,9 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
     documentType: "deed",
     requiresReview: true,
     reviewNote:
-      "Check whether the release should be mutual or one way, and whether it covers claims not yet known -- a release of unknown claims must say so expressly. Where a party is bankrupt, in liquidation or under administration, confirm who can bind it. Consider whether the settlement sum attracts GST and whether a tax invoice is required.",
+      "Check whether the release should be mutual or one way, and whether it covers claims not yet known: a release of unknown claims must say so expressly. Where a party is bankrupt, in liquidation or under administration, confirm who can bind it. Consider whether the settlement sum attracts GST and whether a tax invoice is required.",
     aiInstructions:
-      "The operative parts are the payment, the release and the bar. Get the release wording right: identify precisely what is released, by whom, in favour of whom, and whether it extends to claims the parties do not yet know about. A release that recites 'all claims' without defining the Dispute is worth little. Include the bar to proceedings so the deed can be pleaded in answer to any later claim. Keep 'no admission' -- it is what makes settlement possible.",
+      "The operative parts are the payment, the release and the bar. Get the release wording right: identify precisely what is released, by whom, in favour of whom, and whether it extends to claims the parties do not yet know about. A release that recites 'all claims' without defining the Dispute is worth little. Include the bar to proceedings so the deed can be pleaded in answer to any later claim. Keep 'no admission': it is what makes settlement possible.",
     segments: [
       // Cover page: title a third of the way down at 16pt with the parties
       // beneath at 10.5pt, and the document Title set so a footer that reads
@@ -192,9 +192,9 @@ export const DEEDS_BATCH_1: PrecedentSeed[] = [
     documentType: "deed",
     requiresReview: true,
     reviewNote:
-      "Decide whether the obligation is one way or mutual before sending -- the drafting below is mutual and needs cutting back if only one party discloses. Check the term: an indefinite obligation over ordinary commercial information is often unenforceable as an unreasonable restraint, whereas trade secrets can properly be protected without limit.",
+      "Decide whether the obligation is one way or mutual before sending: the drafting below is mutual and needs cutting back if only one party discloses. Check the term: an indefinite obligation over ordinary commercial information is often unenforceable as an unreasonable restraint, whereas trade secrets can properly be protected without limit.",
     aiInstructions:
-      "Define Confidential Information by reference to what is actually being disclosed rather than reciting a generic definition, and carve out what is already public, independently developed, or received from a third party without restriction -- without those carve-outs the obligation is unworkable. State the permitted purpose precisely, because everything else follows from it. Include the compelled-disclosure exception and the obligation to notify before disclosing.",
+      "Define Confidential Information by reference to what is actually being disclosed rather than reciting a generic definition, and carve out what is already public, independently developed, or received from a third party without restriction: without those carve-outs the obligation is unworkable. State the permitted purpose precisely, because everything else follows from it. Include the compelled-disclosure exception and the obligation to notify before disclosing.",
     segments: [
       // Cover page: title a third of the way down at 16pt with the parties
       // beneath at 10.5pt, and the document Title set so a footer that reads

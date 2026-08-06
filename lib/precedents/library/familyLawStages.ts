@@ -33,7 +33,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a short letter of submissions to accompany an application at filing. Identify the orders sought, why the matter warrants the listing sought (particularly if urgency or an abridged timetable is requested), the evidence filed, and any procedural direction requested. Where urgency is claimed, state the specific factual basis -- a general assertion of urgency without particulars is routinely refused and damages credibility for the next application.",
+      "Draft a short letter of submissions to accompany an application at filing. Identify the orders sought, why the matter warrants the listing sought (particularly if urgency or an abridged timetable is requested), the evidence filed, and any procedural direction requested. Where urgency is claimed, state the specific factual basis: a general assertion of urgency without particulars is routinely refused and damages credibility for the next application.",
     segments: [
       text("SUBMISSIONS ON FILING\n\nFEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA\nRegistry: "),
       field("registry", "Registry", "Sydney"),
@@ -64,15 +64,15 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a letter to a client reporting the outcome of a court event. State what was ordered in plain terms, explain what it means practically for the client and the children, set out the next steps and dates with anything the client must do, and give an updated costs position. Where the outcome was adverse, be straight about it and explain what it does and does not mean for the final outcome -- an interim order is not a prediction of the final result, and clients need to hear that.",
+      "Draft a letter to a client reporting the outcome of a court event. State what was ordered in plain terms, explain what it means practically for the client and the children, set out the next steps and dates with anything the client must do, and give an updated costs position. Where the outcome was adverse, be straight about it and explain what it does and does not mean for the final outcome: an interim order is not a prediction of the final result, and clients need to hear that.",
     segments: [
-      text("YOUR COURT DATE - OUTCOME\n\nEvent: "),
+      text("YOUR COURT DATE: OUTCOME\n\nEvent: "),
       field("event", "Event and date", "Interim hearing, 12 November 2026"),
       text("\n\nWHAT WAS ORDERED\n\n"),
       field("orders_made", "Orders made", "1. Pending further order, the children live with you and continue to attend Parramatta Public School.\n2. The children spend time with the Respondent each alternate weekend from after school Friday to Sunday 5:00pm.\n3. Neither party is to enrol the children at any other school without the written consent of the other or an order of the Court.\n4. The matter is listed for a dispute resolution conference on 3 February 2027."),
       text("\n\nWHAT THIS MEANS FOR YOU\n\n"),
       field("practical_effect", "Practical effect", "The children stay where they are for now, and the Respondent cannot move them. The weekend arrangement is broadly what you proposed. This is a good interim result."),
-      text("\n\nIMPORTANT - THIS IS AN INTERIM ORDER\n\n"),
+      text("\n\nIMPORTANT: THIS IS AN INTERIM ORDER\n\n"),
       field("interim_caveat", "Interim vs final explanation", "An interim order is made quickly, on limited and untested evidence, to hold a workable position until the case can be properly heard. It is not a prediction of the final outcome. The final hearing will consider all the evidence, including any family report."),
       text("\n\nWHAT HAPPENS NEXT\n\n"),
       field("next_steps", "Next steps and dates", "1. Dispute resolution conference: 3 February 2027.\n2. Before then, the Court has ordered both parties to complete financial disclosure by 15 December 2026.\n3. We will write to you separately about the family report process."),
@@ -95,7 +95,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft a letter briefing a private mediator. Confirm the appointment and arrangements (date, venue or platform, duration, whether shuttle is required), identify the parties and their representatives, summarise the issues in dispute and those already agreed, note any safety or family violence issue requiring separate rooms or staggered arrival, list the documents provided, and confirm the fee-sharing arrangement. Flag any power imbalance or capacity issue the mediator should know about before the day.",
     segments: [
-      text("MEDIATION - BRIEF TO MEDIATOR\n\nParties: "),
+      text("MEDIATION: BRIEF TO MEDIATOR\n\nParties: "),
       field("parties", "Parties", "Jane Citizen (Applicant) and Alex Partner (Respondent)"),
       text("\nProceedings: "),
       field("proceedings", "Proceedings", "FCFCOA Sydney Registry, SYC 1234 of 2026"),
@@ -123,7 +123,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft a letter to a client after mediation. Record precisely what was agreed and what was not, note whether the agreement is binding or subject to formal documentation, set out the steps to formalise it (consent orders, or a financial agreement), and if the matter did not resolve, explain what happens next and reassess prospects and costs in light of the other side's position as revealed at mediation. Where the client agreed to something at mediation they now seem uncertain about, address it directly rather than glossing over it.",
     segments: [
-      text("MEDIATION - OUTCOME\n\nMediation was held on "),
+      text("MEDIATION: OUTCOME\n\nMediation was held on "),
       field("date", "Mediation date", "3 February 2027"),
       text(".\n\nWHAT WAS AGREED\n\n"),
       field("agreed", "What was agreed", "1. The children live with you and spend time with the Respondent each alternate weekend, plus one mid-week overnight during school terms, and half of all school holidays.\n2. The former matrimonial home is to be sold, with the net proceeds divided 57% to you and 43% to the Respondent.\n3. Each party retains their own superannuation, vehicle and bank accounts."),
@@ -143,7 +143,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
   // ── Stage: trial preparation ────────────────────────────────────
   {
     key: "famst.trial_plan_proposal",
-    name: "Trial Plan - Proposal to Other Party",
+    name: "Trial Plan: Proposal to Other Party",
     description: "Proposes a trial plan for agreement before the compliance and readiness hearing.",
     category: "Family Law",
     subcategory: "Trial Preparation",
@@ -180,7 +180,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a letter notifying an expert that they are required for cross-examination. Give the hearing dates and the likely day and time they will be needed, note whether attendance is in person or by video, identify the topics on which they will be questioned so they can prepare and bring their file, ask them to confirm availability, and address their fee. Copy the other party. Be courteous -- single experts are doing a job for the Court and short notice makes them unavailable.",
+      "Draft a letter notifying an expert that they are required for cross-examination. Give the hearing dates and the likely day and time they will be needed, note whether attendance is in person or by video, identify the topics on which they will be questioned so they can prepare and bring their file, ask them to confirm availability, and address their fee. Copy the other party. Be courteous. Single experts are doing a job for the Court and short notice makes them unavailable.",
     segments: [
       text("REQUIREMENT FOR CROSS-EXAMINATION\n\nProceedings: "),
       field("proceedings", "Proceedings", "FCFCOA Sydney Registry, SYC 1234 of 2026"),
@@ -201,22 +201,22 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "famst.final_hearing_expectations",
-    name: "Letter to Client - Expectations for Final Hearing",
+    name: "Letter to Client: Expectations for Final Hearing",
     description: "Prepares the client for what a final hearing is actually like.",
     category: "Family Law",
     subcategory: "Trial Preparation",
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a letter preparing a client for a final hearing. Cover: what will happen on the day and the order of events; that their affidavit is their evidence in chief so they will not tell their story afresh; what cross-examination is like and how to handle it (listen to the question, answer only that question, say so if you do not know or do not recall, do not argue with the barrister, do not look to your lawyer); dress and conduct; that judgment is usually reserved rather than delivered on the day; and a realistic reminder that no outcome can be guaranteed. Also address the emotional reality -- hearing days are distressing and clients cope better when told so in advance.",
+      "Draft a letter preparing a client for a final hearing. Cover: what will happen on the day and the order of events; that their affidavit is their evidence in chief so they will not tell their story afresh; what cross-examination is like and how to handle it (listen to the question, answer only that question, say so if you do not know or do not recall, do not argue with the barrister, do not look to your lawyer); dress and conduct; that judgment is usually reserved rather than delivered on the day; and a realistic reminder that no outcome can be guaranteed. Also address the emotional reality: hearing days are distressing and clients cope better when told so in advance.",
     segments: [
-      text("YOUR FINAL HEARING - WHAT TO EXPECT\n\nHearing dates: "),
+      text("YOUR FINAL HEARING: WHAT TO EXPECT\n\nHearing dates: "),
       field("dates", "Hearing dates", "12 and 13 April 2027"),
       text("\nCourt: "),
       field("court", "Court and location", "FCFCOA, Sydney Registry, Level 4, 97-99 Goulburn Street"),
       text("\n\nWHAT HAPPENS ON THE DAY\n\nArrive by "),
       field("arrival", "Arrival time", "9:00am"),
-      text(" and meet us outside the courtroom. The hearing usually begins with brief opening remarks, then the Applicant's evidence, then the Respondent's, then submissions.\n\nYOUR EVIDENCE\n\nYour affidavit IS your evidence. You will not be asked to tell your story again from the beginning. You will be asked to confirm your affidavit is true, and then the other side's barrister will cross-examine you on it.\n\nCROSS-EXAMINATION - HOW TO HANDLE IT\n\nThis is the part clients find hardest. Some practical rules:\n\n1. LISTEN to the whole question before answering.\n2. ANSWER ONLY THE QUESTION ASKED. Do not volunteer extra information.\n3. If you do not know, say 'I don't know'. If you cannot recall, say so. These are perfectly acceptable answers and far better than guessing.\n4. Do not argue with the barrister or try to win the exchange. Their job is to test your evidence; yours is simply to answer honestly.\n5. Do not look at us for help. We cannot assist you while you are giving evidence.\n6. Take your time. Silence while you think is fine.\n7. If you need a break, say so.\n\nIF YOU MADE A MISTAKE IN YOUR AFFIDAVIT\n\nTell us NOW, before the hearing. A small error corrected in advance is nothing. The same error exposed in cross-examination damages your credibility on everything else.\n\nDRESS AND CONDUCT\n\nDress as you would for a job interview. Address the judge as 'Your Honour'. Do not react visibly to the other party's evidence, however much you disagree -- the judge notices.\n\nWHEN WILL YOU KNOW?\n\n"),
+      text(" and meet us outside the courtroom. The hearing usually begins with brief opening remarks, then the Applicant's evidence, then the Respondent's, then submissions.\n\nYOUR EVIDENCE\n\nYour affidavit IS your evidence. You will not be asked to tell your story again from the beginning. You will be asked to confirm your affidavit is true, and then the other side's barrister will cross-examine you on it.\n\nCROSS-EXAMINATION: HOW TO HANDLE IT\n\nThis is the part clients find hardest. Some practical rules:\n\n1. LISTEN to the whole question before answering.\n2. ANSWER ONLY THE QUESTION ASKED. Do not volunteer extra information.\n3. If you do not know, say 'I don't know'. If you cannot recall, say so. These are perfectly acceptable answers and far better than guessing.\n4. Do not argue with the barrister or try to win the exchange. Their job is to test your evidence; yours is simply to answer honestly.\n5. Do not look at us for help. We cannot assist you while you are giving evidence.\n6. Take your time. Silence while you think is fine.\n7. If you need a break, say so.\n\nIF YOU MADE A MISTAKE IN YOUR AFFIDAVIT\n\nTell us NOW, before the hearing. A small error corrected in advance is nothing. The same error exposed in cross-examination damages your credibility on everything else.\n\nDRESS AND CONDUCT\n\nDress as you would for a job interview. Address the judge as 'Your Honour'. Do not react visibly to the other party's evidence, however much you disagree; the judge notices.\n\nWHEN WILL YOU KNOW?\n\n"),
       field("judgment_timing", "Judgment timing expectation", "Judgment is usually reserved, meaning the judge will deliver it at a later date. In this registry that commonly takes 3 to 6 months, sometimes longer. You should prepare for a wait rather than expect an answer on the day."),
       text("\n\nA REALISTIC WORD\n\nWe have prepared your case thoroughly and we are confident in it. But no lawyer can guarantee an outcome. A judge may see the evidence differently from how we do.\n\nHearing days are also genuinely stressful. Most people find them harder than they expect. Arrange support for the evenings, and do not plan to work those days."),
     ],
@@ -230,9 +230,9 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a letter to a client on delivery of judgment. Summarise the orders made and the judge's key findings, explain what happens now in practical terms and by when, address appeal rights and the strict time limit if the outcome was adverse, note any steps required to implement the orders (transfers, superannuation splits, sale of property), and provide the final costs position. Where the outcome was adverse, be honest about whether an appeal has prospects rather than leaving the client with false hope -- appeals require identifiable error, not merely a different view of the facts.",
+      "Draft a letter to a client on delivery of judgment. Summarise the orders made and the judge's key findings, explain what happens now in practical terms and by when, address appeal rights and the strict time limit if the outcome was adverse, note any steps required to implement the orders (transfers, superannuation splits, sale of property), and provide the final costs position. Where the outcome was adverse, be honest about whether an appeal has prospects rather than leaving the client with false hope: appeals require identifiable error, not merely a different view of the facts.",
     segments: [
-      text("JUDGMENT - OUTCOME\n\nJudgment was delivered on "),
+      text("JUDGMENT: OUTCOME\n\nJudgment was delivered on "),
       field("judgment_date", "Judgment date", "14 August 2027"),
       text(".\n\nTHE ORDERS\n\n"),
       field("orders", "Orders made", "1. The children live with you and spend time with the Respondent each alternate weekend and half of all school holidays.\n2. The former matrimonial home be sold and the net proceeds divided 56% to you and 44% to the Respondent.\n3. Each party retain their own superannuation.\n4. No order as to costs."),
@@ -243,7 +243,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
       text("\n\nWHAT HAPPENS NOW\n\n"),
       field("implementation", "Implementation steps and dates", "1. The property must be listed within 30 days. We will write to you separately about agents.\n2. The parenting orders take effect immediately.\n3. We will prepare the sale documentation once an agent is appointed."),
       text("\n\nAPPEAL RIGHTS\n\n"),
-      field("appeal", "Appeal position", "Either party may appeal, but the time limit is strict and short. An appeal requires identifying an error of law or a finding not open on the evidence -- it is not an opportunity to re-argue the facts before a different judge. In our view the judgment is carefully reasoned and an appeal by the Respondent would face real difficulty. If you receive any notice of appeal, send it to us immediately."),
+      field("appeal", "Appeal position", "Either party may appeal, but the time limit is strict and short. An appeal requires identifying an error of law or a finding not open on the evidence; it is not an opportunity to re-argue the facts before a different judge. In our view the judgment is carefully reasoned and an appeal by the Respondent would face real difficulty. If you receive any notice of appeal, send it to us immediately."),
       text("\n\nFINAL COSTS\n\n"),
       field("costs", "Final costs position", "Total costs are $68,400, of which $61,000 has been paid. Our final invoice for $7,400 is enclosed. As no costs order was made, each party bears their own."),
       text("\n\nThis has been a long and difficult process and you have handled it well. Please contact us if anything about the orders is unclear."),
@@ -282,7 +282,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a counter offer responding to an offer received. Identify the offer being responded to, state clearly what is ACCEPTED from it and what is not, put the counter-proposal, and explain briefly why the difference is justified. Narrowing the issues expressly is valuable -- it shows good faith and reduces what remains in dispute. Mark it consistently with the basis of the original offer (without prejudice save as to costs, or open).",
+      "Draft a counter offer responding to an offer received. Identify the offer being responded to, state clearly what is ACCEPTED from it and what is not, put the counter-proposal, and explain briefly why the difference is justified. Narrowing the issues expressly is valuable: it shows good faith and reduces what remains in dispute. Mark it consistently with the basis of the original offer (without prejudice save as to costs, or open).",
     segments: [
       text("WITHOUT PREJUDICE SAVE AS TO COSTS\n\nCOUNTER OFFER\n\nWe refer to your client's offer dated "),
       field("their_offer_date", "Their offer date", "20 February 2027"),
@@ -308,7 +308,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft an acceptance of an offer. Acceptance must be UNEQUIVOCAL and must accept the offer as made -- any qualification or added condition is a counter offer, not an acceptance, and destroys the original offer. Identify the offer by date, state acceptance in plain terms, and propose the steps to formalise. Address what happens if the other side later refuses to sign the consent orders reflecting an accepted offer -- a concluded agreement may still be enforceable even without formal orders, and that possibility should be flagged rather than left unaddressed. Do not introduce new terms.",
+      "Draft an acceptance of an offer. Acceptance must be UNEQUIVOCAL and must accept the offer as made: any qualification or added condition is a counter offer, not an acceptance, and destroys the original offer. Identify the offer by date, state acceptance in plain terms, and propose the steps to formalise. Address what happens if the other side later refuses to sign the consent orders reflecting an accepted offer: a concluded agreement may still be enforceable even without formal orders, and that possibility should be flagged rather than left unaddressed. Do not introduce new terms.",
     segments: [
       text("ACCEPTANCE OF OFFER\n\nWe refer to your client's offer dated "),
       field("offer_date", "Offer date", "20 February 2027"),
@@ -321,7 +321,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     ],
     requiresReview: true,
     reviewNote:
-      "Acceptance must be unequivocal and must not introduce new terms -- any qualification is a counter offer and destroys the original. Check the offer has not lapsed or been withdrawn before sending.",
+      "Acceptance must be unequivocal and must not introduce new terms: any qualification is a counter offer and destroys the original. Check the offer has not lapsed or been withdrawn before sending.",
   },
   {
     key: "famst.withdrawal_of_offer",
@@ -332,7 +332,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a withdrawal of an outstanding offer. Identify the offer withdrawn and state clearly it is withdrawn and no longer capable of acceptance from the time of the letter. Explain briefly why (usually a change in circumstances or new information). If a replacement offer is made, set it out separately and clearly, with its own acceptance deadline. Note that withdrawing an offer may affect its costs consequences -- if it is withdrawn shortly before a hearing or without good reason, the other side may still rely on the withdrawn offer's terms as a costs benchmark -- so the reason given should be defensible and genuinely explain the change.",
+      "Draft a withdrawal of an outstanding offer. Identify the offer withdrawn and state clearly it is withdrawn and no longer capable of acceptance from the time of the letter. Explain briefly why (usually a change in circumstances or new information). If a replacement offer is made, set it out separately and clearly, with its own acceptance deadline. Note that withdrawing an offer may affect its costs consequences: if it is withdrawn shortly before a hearing or without good reason, the other side may still rely on the withdrawn offer's terms as a costs benchmark, so the reason given should be defensible and genuinely explain the change.",
     segments: [
       text("WITHDRAWAL OF OFFER\n\nWe refer to our client's offer dated "),
       field("offer_date", "Offer date", "20 February 2027"),
@@ -346,14 +346,14 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
   // ── Divorce ─────────────────────────────────────────────────────
   {
     key: "famst.divorce_joint_application_letter",
-    name: "Joint Application for Divorce - Letter to Other Party",
+    name: "Joint Application for Divorce: Letter to Other Party",
     description: "Sends a joint divorce application to the other party for signing.",
     category: "Family Law",
     subcategory: "Divorce",
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a letter to the other party (or their solicitor) enclosing a joint application for divorce for signing. Explain the advantage of a joint application -- neither party needs to serve the other, and if there are no children under 18 neither needs to attend the hearing. Set out what they need to do (sign, and have the affidavit sworn or affirmed), and the timeframe. Keep it neutral and businesslike; divorce applications are often the least contentious part of a matter and should stay that way.",
+      "Draft a letter to the other party (or their solicitor) enclosing a joint application for divorce for signing. Explain the advantage of a joint application: neither party needs to serve the other, and if there are no children under 18 neither needs to attend the hearing. Set out what they need to do (sign, and have the affidavit sworn or affirmed), and the timeframe. Keep it neutral and businesslike; divorce applications are often the least contentious part of a matter and should stay that way.",
     segments: [
       text("JOINT APPLICATION FOR DIVORCE\n\nWe act for "),
       field("client", "Our client", "Jane Citizen"),
@@ -368,7 +368,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "famst.divorce_separated_under_one_roof",
-    name: "Affidavit - Separated Under One Roof",
+    name: "Affidavit: Separated Under One Roof",
     description: "Affidavit evidence supporting separation while living at the same address.",
     category: "Family Law",
     subcategory: "Divorce",
@@ -380,7 +380,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft an affidavit supporting separation under one roof. It must address the matters the Court looks for: the change in the relationship and when it occurred; sleeping arrangements; cessation of any sexual relationship; separation of finances; whether household duties are performed for each other; whether the parties present publicly as separated; whether family and friends were told and when; and why the parties continued to live at the same address (usually financial necessity or the children). A corroborating affidavit from an independent person is generally also required.",
     segments: [
-      text("AFFIDAVIT - SEPARATION UNDER ONE ROOF\n\nFEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA\nFile number: "),
+      text("AFFIDAVIT: SEPARATION UNDER ONE ROOF\n\nFEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA\nFile number: "),
       field("file_number", "File number", "SYC 4321 of 2026"),
       text("\n\nDeponent: "),
       field("deponent", "Deponent", "Jane Citizen"),
@@ -399,7 +399,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "famst.substituted_service_application",
-    name: "Substituted Service - Application and Supporting Affidavit",
+    name: "Substituted Service: Application and Supporting Affidavit",
     description: "Seeks orders for substituted service where the other party cannot be located or evades service.",
     category: "Family Law",
     subcategory: "Court Documents",
@@ -409,7 +409,7 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "The Court requires evidence of genuine and thorough attempts at service before ordering substituted service, and will want the proposed alternative method shown to be likely to bring the document to the party's attention. Confirm the current requirements and the form of application.",
     aiInstructions:
-      "Draft an application and supporting affidavit for substituted service. The affidavit must show: every attempt made to serve personally, with dates, times and addresses; every enquiry made to locate the party (electoral roll, social media, last known employer, family, skip trace); and why the proposed alternative method is likely to actually bring the document to the party's attention -- this last point is what applications fail on. Propose a specific method rather than leaving it to the Court.",
+      "Draft an application and supporting affidavit for substituted service. The affidavit must show: every attempt made to serve personally, with dates, times and addresses; every enquiry made to locate the party (electoral roll, social media, last known employer, family, skip trace); and why the proposed alternative method is likely to actually bring the document to the party's attention: this last point is what applications fail on. Propose a specific method rather than leaving it to the Court.",
     segments: [
       text("APPLICATION FOR SUBSTITUTED SERVICE\n\nFEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA\nFile number: "),
       field("file_number", "File number", "SYC 4321 of 2026"),
@@ -432,14 +432,14 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
   // ── Defaulters list ─────────────────────────────────────────────
   {
     key: "famst.defaulters_list_advice",
-    name: "Defaulters List - Advice to Client",
+    name: "Defaulters List: Advice to Client",
     description: "Explains why the matter is in the defaulters list and what must be done.",
     category: "Family Law",
     subcategory: "Compliance",
     documentType: "advice",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft advice to a client whose matter has been referred to a defaulters or non-compliance list. Explain what caused the referral (usually failure to comply with orders or directions, or failure to file documents), the consequences the Court can impose including costs orders, dismissal of the application, or orders being made in their absence, what must be done to remedy the default and by when, and that attendance is required. Be clear and slightly urgent without being alarming -- most defaults are remediable if acted on promptly.",
+      "Draft advice to a client whose matter has been referred to a defaulters or non-compliance list. Explain what caused the referral (usually failure to comply with orders or directions, or failure to file documents), the consequences the Court can impose including costs orders, dismissal of the application, or orders being made in their absence, what must be done to remedy the default and by when, and that attendance is required. Be clear and slightly urgent without being alarming: most defaults are remediable if acted on promptly.",
     segments: [
       text("YOUR MATTER HAS BEEN LISTED FOR NON-COMPLIANCE\n\nListing: "),
       field("listing", "Listing details", "Defaulters list, 3 December 2026 at 9:30am"),
@@ -454,14 +454,14 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "famst.notice_of_ceasing_to_act",
-    name: "Notice of Ceasing to Act - Letter to Client",
+    name: "Notice of Ceasing to Act: Letter to Client",
     description: "Serves the client with notice that the firm will cease acting, with critical dates flagged.",
     category: "Family Law",
     subcategory: "Compliance",
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a letter to a client serving a notice of ceasing to act in family law proceedings. State the reason neutrally, the date from which the firm will cease acting, and CRITICALLY set out every imminent court date and deadline the client must now attend to personally -- in family law a missed date can result in orders being made in their absence. Recommend they obtain alternative representation immediately, explain what happens to the file and any trust money, and confirm the notice will be filed and served on the other party. Never disparage the client.",
+      "Draft a letter to a client serving a notice of ceasing to act in family law proceedings. State the reason neutrally, the date from which the firm will cease acting, and CRITICALLY set out every imminent court date and deadline the client must now attend to personally: in family law a missed date can result in orders being made in their absence. Recommend they obtain alternative representation immediately, explain what happens to the file and any trust money, and confirm the notice will be filed and served on the other party. Never disparage the client.",
     segments: [
       text("NOTICE OF CEASING TO ACT\n\nWe write to confirm that we will cease acting for you in these proceedings with effect from "),
       field("effective_date", "Effective date", "10 December 2026"),
@@ -475,6 +475,6 @@ export const FAMILY_LAW_STAGES_PRECEDENTS: PrecedentSeed[] = [
     ],
     requiresReview: true,
     reviewNote:
-      "Confirm the notice period required before ceasing to act, and that the notice is filed and served in accordance with the Rules. Ensure every imminent date is identified -- a client left unaware of a listing after the firm ceases to act is a serious risk.",
+      "Confirm the notice period required before ceasing to act, and that the notice is filed and served in accordance with the Rules. Ensure every imminent date is identified: a client left unaware of a listing after the firm ceases to act is a serious risk.",
   },
 ];

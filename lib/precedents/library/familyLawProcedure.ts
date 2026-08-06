@@ -31,20 +31,20 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
   // ── Pre-action ──────────────────────────────────────────────────
   {
     key: "famp.preaction_advice_to_client",
-    name: "Pre-Action Procedures - Advice to Client",
+    name: "Pre-Action Procedures: Advice to Client",
     description: "Explains the pre-action procedures that must be complied with before filing.",
     category: "Family Law",
     subcategory: "Pre-action",
     documentType: "advice",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft advice to a client on the pre-action procedures required by the Family Law Rules before filing. Cover: the requirement to make a genuine attempt to resolve the dispute; exchanging a notice of intention to commence proceedings and correspondence setting out the issues; the duty of disclosure which begins before filing, not on filing; participation in dispute resolution; and the exceptions (urgency, family violence, risk to a child, fraud, or where a party would be unduly prejudiced). Explain plainly that failing to comply can result in a costs order against the client and starts the case badly. Do not cite specific rule numbers -- refer to the Rules generally and confirm before filing.",
+      "Draft advice to a client on the pre-action procedures required by the Family Law Rules before filing. Cover: the requirement to make a genuine attempt to resolve the dispute; exchanging a notice of intention to commence proceedings and correspondence setting out the issues; the duty of disclosure which begins before filing, not on filing; participation in dispute resolution; and the exceptions (urgency, family violence, risk to a child, fraud, or where a party would be unduly prejudiced). Explain plainly that failing to comply can result in a costs order against the client and starts the case badly. Do not cite specific rule numbers: refer to the Rules generally and confirm before filing.",
     segments: [
-      text("BEFORE WE CAN FILE - PRE-ACTION PROCEDURES\n\nThe Family Law Rules require both parties to take certain steps BEFORE proceedings are started. These are not optional formalities.\n\nWHAT IS REQUIRED\n\n1. A GENUINE ATTEMPT TO RESOLVE. You must genuinely try to resolve the dispute, usually through dispute resolution, before asking a court to decide it.\n\n2. WRITTEN NOTICE. We must write to the other party setting out the issues, the orders we would seek, and a genuine offer to resolve, and give them a reasonable opportunity to respond.\n\n3. DISCLOSURE. The duty of disclosure starts NOW, not when proceedings are filed. Both parties must exchange relevant financial documents.\n\n4. DISPUTE RESOLUTION. For parenting matters this generally means family dispute resolution and a s 60I certificate.\n\nWHAT HAPPENS IF WE DON'T COMPLY\n\nA party who files without complying can be ordered to pay the other side's costs, even if they ultimately succeed on the substance. It also sets a poor tone with the judge from the first return.\n\nWHEN THESE STEPS ARE NOT REQUIRED\n\nThere are exceptions -- urgency, family violence or risk to a child, fraud, or where compliance would unduly prejudice a party.\n\n"),
+      text("BEFORE WE CAN FILE: PRE-ACTION PROCEDURES\n\nThe Family Law Rules require both parties to take certain steps BEFORE proceedings are started. These are not optional formalities.\n\nWHAT IS REQUIRED\n\n1. A GENUINE ATTEMPT TO RESOLVE. You must genuinely try to resolve the dispute, usually through dispute resolution, before asking a court to decide it.\n\n2. WRITTEN NOTICE. We must write to the other party setting out the issues, the orders we would seek, and a genuine offer to resolve, and give them a reasonable opportunity to respond.\n\n3. DISCLOSURE. The duty of disclosure starts NOW, not when proceedings are filed. Both parties must exchange relevant financial documents.\n\n4. DISPUTE RESOLUTION. For parenting matters this generally means family dispute resolution and a s 60I certificate.\n\nWHAT HAPPENS IF WE DON'T COMPLY\n\nA party who files without complying can be ordered to pay the other side's costs, even if they ultimately succeed on the substance. It also sets a poor tone with the judge from the first return.\n\nWHEN THESE STEPS ARE NOT REQUIRED\n\nThere are exceptions: urgency, family violence or risk to a child, fraud, or where compliance would unduly prejudice a party.\n\n"),
       field("exception_position", "Whether an exception applies", "In our view no exception applies here, so we should comply fully before filing."),
       text("\n\nWHAT WE PROPOSE\n\n"),
       field("proposed_steps", "Proposed steps and timetable", "1. Write to the other party this week setting out the issues and proposing mediation.\n2. Exchange financial disclosure over the following 4 weeks.\n3. Attend mediation in November.\n4. If unresolved, serve a notice of intention to commence and file thereafter."),
-      text("\n\nThis takes time, but it is time well spent -- most matters resolve at or before mediation, and those that do not are better prepared for having gone through it."),
+      text("\n\nThis takes time, but it is time well spent: most matters resolve at or before mediation, and those that do not are better prepared for having gone through it."),
     ],
     requiresReview: true,
     reviewNote:
@@ -59,7 +59,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a first notice of intention to commence proceedings under the pre-action procedures. It must: identify the issues in dispute; set out the orders that would be sought; make a genuine offer to resolve; invite the other party to participate in dispute resolution; nominate a reasonable time for a response; and note that if no response is received, proceedings may be commenced and this correspondence produced to the Court on costs. Keep the tone constructive -- this letter will be read by a judge and an aggressive one damages the sender.",
+      "Draft a first notice of intention to commence proceedings under the pre-action procedures. It must: identify the issues in dispute; set out the orders that would be sought; make a genuine offer to resolve; invite the other party to participate in dispute resolution; nominate a reasonable time for a response; and note that if no response is received, proceedings may be commenced and this correspondence produced to the Court on costs. Keep the tone constructive: this letter will be read by a judge and an aggressive one damages the sender.",
     segments: [
       text("NOTICE OF INTENTION TO COMMENCE PROCEEDINGS\n\nWe act for "),
       field("client", "Our client", "Jane Citizen"),
@@ -85,7 +85,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: FAMILY,
     aiInstructions:
-      "Draft a final notice of intention to commence proceedings, sent either where earlier notices went unanswered or where negotiations have been exhausted. Refer to the earlier correspondence and its dates, summarise what has and has not been resolved, state that proceedings will now be commenced, and record that the client has complied with the pre-action procedures. Keep it factual and restrained -- this letter is likely to be annexed to an affidavit.",
+      "Draft a final notice of intention to commence proceedings, sent either where earlier notices went unanswered or where negotiations have been exhausted. Refer to the earlier correspondence and its dates, summarise what has and has not been resolved, state that proceedings will now be commenced, and record that the client has complied with the pre-action procedures. Keep it factual and restrained: this letter is likely to be annexed to an affidavit.",
     segments: [
       text("FINAL NOTICE OF INTENTION TO COMMENCE PROCEEDINGS\n\nWe refer to our correspondence of "),
       field("earlier_correspondence", "Earlier correspondence dates", "16 September 2026 and 14 October 2026"),
@@ -102,7 +102,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
   // ── Costs notices, recurring at each stage ──────────────────────
   {
     key: "famp.costs_notice_to_client",
-    name: "Costs Notice - Letter to Client",
+    name: "Costs Notice: Letter to Client",
     description: "Advises the client of costs incurred and estimated to the next stage.",
     category: "Family Law",
     subcategory: "Costs",
@@ -122,7 +122,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "famp.costs_notice_to_court",
-    name: "Costs Notice - Letter to Court and Other Party",
+    name: "Costs Notice: Letter to Court and Other Party",
     description: "Serves the costs notice on the Court and the other party.",
     category: "Family Law",
     subcategory: "Costs",
@@ -166,9 +166,9 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft a short letter to a client before a court event confirming that nothing material has changed since the last event. Ask them to confirm: their circumstances (income, employment, housing, health, new relationship), the children's circumstances and arrangements, whether any new incident or risk issue has arisen, and whether their instructions are unchanged. Explain that the Court and the other side will be told the case is ready on the basis of what they confirm, so anything that has changed must be raised now rather than at the door of the court.",
     segments: [
-      text("BEFORE YOUR COURT DATE - PLEASE CONFIRM\n\nYour matter is listed for "),
+      text("BEFORE YOUR COURT DATE: PLEASE CONFIRM\n\nYour matter is listed for "),
       field("event", "Court event and date", "an interim hearing on 12 November 2026"),
-      text(".\n\nBefore then we need you to confirm that nothing material has changed since we last updated the Court.\n\nPLEASE CONFIRM WHETHER ANY OF THE FOLLOWING HAS CHANGED\n\n1. Your income, employment or financial position.\n2. Your housing -- where you are living and with whom.\n3. Your health, including any new diagnosis or treatment.\n4. Whether you have entered a new relationship, or are cohabiting.\n5. The children's schooling, health, or routine.\n6. The actual arrangements for the children -- what is happening in practice, not what the orders say.\n7. Any new incident, safety concern, or contact from police or child protection.\n8. Any new asset, liability, gift, inheritance or windfall.\n\n"),
+      text(".\n\nBefore then we need you to confirm that nothing material has changed since we last updated the Court.\n\nPLEASE CONFIRM WHETHER ANY OF THE FOLLOWING HAS CHANGED\n\n1. Your income, employment or financial position.\n2. Your housing: where you are living and with whom.\n3. Your health, including any new diagnosis or treatment.\n4. Whether you have entered a new relationship, or are cohabiting.\n5. The children's schooling, health, or routine.\n6. The actual arrangements for the children: what is happening in practice, not what the orders say.\n7. Any new incident, safety concern, or contact from police or child protection.\n8. Any new asset, liability, gift, inheritance or windfall.\n\n"),
       field("specific_queries", "Anything specific to confirm in this matter", "In particular, please confirm whether the other party has yet enrolled the children at the Newcastle school, and whether the mid-week overnight has been occurring."),
       text("\n\nWHY THIS MATTERS\n\nWe will tell the Court and the other side that the matter is ready to proceed on the basis of what you confirm. If something has changed and we do not know, it can emerge at the hearing in the worst possible way.\n\nIf ANYTHING has changed, tell us now. Nothing is too small to mention.\n\nPlease reply by "),
       field("reply_by", "Reply by", "5 November 2026"),
@@ -187,7 +187,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "The FCFCOA prescribes the form and page limits for case outlines and summaries, and they differ by event type and division. Confirm the current form and limit before filing.",
     aiInstructions:
-      "Draft a case outline for a listed court event. Structure: the orders sought at this event; the issues the Court must determine; a concise chronology of relevant facts; the evidence relied upon with document references; the applicable legal principles stated briefly; and the other party's position as understood. Discipline is everything -- an outline is a navigation aid for the judge, not a submission. Keep it tight and neutral in tone.",
+      "Draft a case outline for a listed court event. Structure: the orders sought at this event; the issues the Court must determine; a concise chronology of relevant facts; the evidence relied upon with document references; the applicable legal principles stated briefly; and the other party's position as understood. Discipline is everything: an outline is a navigation aid for the judge, not a submission. Keep it tight and neutral in tone.",
     segments: [
       text("CASE OUTLINE\n\nFEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA\nFile number: "),
       field("file_number", "File number", "SYC 1234 of 2026"),
@@ -231,7 +231,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "famp.superannuation_procedural_fairness",
-    name: "Letter to Superannuation Fund - Procedural Fairness",
+    name: "Letter to Superannuation Fund: Procedural Fairness",
     description: "Gives the trustee procedural fairness before a splitting order is sought.",
     category: "Family Law",
     subcategory: "Property",
@@ -240,7 +240,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft a letter to a superannuation fund trustee giving procedural fairness before a splitting order is sought. Identify the member, the fund and account, enclose the proposed orders, and invite the trustee to indicate whether it objects to the orders or requires them to be expressed differently to be administrable. Explain that the Court will not make a splitting order without the trustee having been accorded procedural fairness. Request confirmation and any standard wording the fund requires.",
     segments: [
-      text("SUPERANNUATION SPLITTING ORDER - PROCEDURAL FAIRNESS\n\nMember: "),
+      text("SUPERANNUATION SPLITTING ORDER: PROCEDURAL FAIRNESS\n\nMember: "),
       field("member", "Member name and details", "Alex Partner, date of birth 8 July 1984"),
       text("\nFund: "),
       field("fund", "Fund", "Example Superannuation Fund"),
@@ -269,7 +269,7 @@ export const FAMILY_LAW_PROCEDURE_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft a joint letter of instruction to a valuer engaged as a single expert by both parties. Identify the asset to be valued, the valuation date, the basis of valuation, the material provided, and the questions to be answered. State that the valuer is engaged as a single expert, owes their duty to the Court, and must not communicate with one party without the other. Set out how fees are shared and how any questions to the expert will be handled.",
     segments: [
-      text("JOINT LETTER OF INSTRUCTION - SINGLE EXPERT VALUER\n\nWe write jointly with "),
+      text("JOINT LETTER OF INSTRUCTION: SINGLE EXPERT VALUER\n\nWe write jointly with "),
       field("other_solicitors", "Other party's solicitors", "Example Family Lawyers, solicitors for the Respondent"),
       text(", instructing you as a single expert.\n\nASSET TO BE VALUED\n\n"),
       field("asset", "Asset to be valued", "The residential property at 5 Sample Road, Parramatta NSW 2150."),

@@ -32,9 +32,9 @@ export const DEEDS_BATCH_4: PrecedentSeed[] = [
     matterTypes: COMMERCIAL,
     requiresReview: true,
     reviewNote:
-      "Confirm whether the assignment is with or without goodwill before sending -- an assignment of a registered mark without the goodwill of the business it distinguishes can leave the mark vulnerable to removal for non-use or to a finding it has become deceptive in the assignee's hands, because the mark no longer points to the business the public associates it with. Check the mark is free of any registered security interest on the Personal Property Securities Register and any licence that would survive the assignment, and record the assignment with IP Australia promptly -- an unrecorded assignment can create real difficulties for the assignee enforcing the mark against a later infringer or a later registered interest.",
+      "Confirm whether the assignment is with or without goodwill before sending: an assignment of a registered mark without the goodwill of the business it distinguishes can leave the mark vulnerable to removal for non-use or to a finding it has become deceptive in the assignee's hands, because the mark no longer points to the business the public associates it with. Check the mark is free of any registered security interest on the Personal Property Securities Register and any licence that would survive the assignment, and record the assignment with IP Australia promptly: an unrecorded assignment can create real difficulties for the assignee enforcing the mark against a later infringer or a later registered interest.",
     aiInstructions:
-      "Draft a trade mark assignment. Identify the marks precisely -- registration number and class if registered, or a description of the mark and the goods or services it's used for if not. Make the goodwill choice an explicit clause, not an assumption: assigning WITH the goodwill of the business associated with the mark, or WITHOUT it, are different transactions with different risks, and the assignment should say which. Assign the right to sue for infringements that occurred before the assignment date, since that right doesn't pass automatically. Include warranties that the assignor owns the mark, that it isn't subject to an encumbrance or a licence inconsistent with the assignment, and an obligation to sign whatever IP Australia needs to record the change of ownership.",
+      "Draft a trade mark assignment. Identify the marks precisely: registration number and class if registered, or a description of the mark and the goods or services it's used for if not. Make the goodwill choice an explicit clause, not an assumption: assigning WITH the goodwill of the business associated with the mark, or WITHOUT it, are different transactions with different risks, and the assignment should say which. Assign the right to sue for infringements that occurred before the assignment date, since that right doesn't pass automatically. Include warranties that the assignor owns the mark, that it isn't subject to an encumbrance or a licence inconsistent with the assignment, and an obligation to sign whatever IP Australia needs to record the change of ownership.",
     segments: [
       ...opening("TRADE MARK ASSIGNMENT", [
         ...L("DeedRecital", [
@@ -70,7 +70,7 @@ export const DEEDS_BATCH_4: PrecedentSeed[] = [
       ...generalProvisions(),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Marks"]),
+      ...L("DeedHeading", ["Schedule 1: Marks"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("marks_schedule", "The Marks: registration number(s) and class(es), or a description if unregistered", "Australian Trade Mark Registration No. 1234567, word mark \"ACME\", class 25 (clothing)."),
       ]),
@@ -82,16 +82,16 @@ export const DEEDS_BATCH_4: PrecedentSeed[] = [
     key: "deed.copyright_assignment",
     name: "Copyright Assignment",
     description:
-      "Assigns copyright in full, including future works where agreed, with a genuine moral rights consent -- the step most copyright assignments skip and the reason many don't achieve what the client assumed.",
+      "Assigns copyright in full, including future works where agreed, with a genuine moral rights consent: the step most copyright assignments skip and the reason many don't achieve what the client assumed.",
     category: "Commercial",
     subcategory: "Intellectual Property",
     documentType: "deed",
     matterTypes: COMMERCIAL,
     requiresReview: true,
     reviewNote:
-      "Moral rights cannot be assigned in Australia under any circumstances -- clause 2 is a consent to specified acts or omissions, which is the only mechanism the Copyright Act 1968 (Cth) allows, and it is only effective to the extent the consent is genuinely informed and the acts are specified with enough particularity. A blanket, unspecific consent risks being found ineffective. If the assignment is meant to cover works the assignor hasn't created yet, confirm clause 1.2 is actually needed and wanted -- an assignment of future copyright binds works created after this deed but has no effect on copyright the assignor no longer owns at the time of creation (for example, if the assignor is by then an employee of someone else, in which case the employer owns it under s 35(6)).",
+      "Moral rights cannot be assigned in Australia under any circumstances: clause 2 is a consent to specified acts or omissions, which is the only mechanism the Copyright Act 1968 (Cth) allows, and it is only effective to the extent the consent is genuinely informed and the acts are specified with enough particularity. A blanket, unspecific consent risks being found ineffective. If the assignment is meant to cover works the assignor hasn't created yet, confirm clause 1.2 is actually needed and wanted: an assignment of future copyright binds works created after this deed but has no effect on copyright the assignor no longer owns at the time of creation (for example, if the assignor is by then an employee of someone else, in which case the employer owns it under s 35(6)).",
     aiInstructions:
-      "Draft a copyright assignment. Identify the works precisely by description. Assign all copyright in the identified works, including the right to sue for infringement occurring before the assignment date. If the parties want future works covered, include an express assignment of future copyright -- this needs explicit words, since an assignment of existing copyright does not automatically extend to works not yet created. Treat moral rights as their own clause, not folded into the general assignment: draft a written consent, specific about what acts or omissions it covers (not attributing the assignee as author, allowing the work to be modified, and so on), because that specificity is what makes the consent effective. Include warranties of ownership and originality (that the work is the assignor's own and doesn't infringe a third party's copyright), and a further assurance obligation.",
+      "Draft a copyright assignment. Identify the works precisely by description. Assign all copyright in the identified works, including the right to sue for infringement occurring before the assignment date. If the parties want future works covered, include an express assignment of future copyright: this needs explicit words, since an assignment of existing copyright does not automatically extend to works not yet created. Treat moral rights as their own clause, not folded into the general assignment: draft a written consent, specific about what acts or omissions it covers (not attributing the assignee as author, allowing the work to be modified, and so on), because that specificity is what makes the consent effective. Include warranties of ownership and originality (that the work is the assignor's own and doesn't infringe a third party's copyright), and a further assurance obligation.",
     segments: [
       ...opening("COPYRIGHT ASSIGNMENT", [
         ...L("DeedRecital", [
@@ -138,7 +138,7 @@ export const DEEDS_BATCH_4: PrecedentSeed[] = [
       ...generalProvisions(),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Works"]),
+      ...L("DeedHeading", ["Schedule 1: Works"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("works_schedule", "Description of the Works", "The website design, source code and content for acmetrading.com.au, created between 1 March 2026 and 30 April 2026."),
       ]),

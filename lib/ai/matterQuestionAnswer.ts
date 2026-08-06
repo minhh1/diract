@@ -19,7 +19,7 @@ export type AskScope = "emails" | "emails_notes" | "all";
 export interface MatterNoteForAi { body: string; source: "staff" | "client"; noteDate: string; }
 export interface MatterFieldForAi { label: string; value: string; }
 
-const SYSTEM_PROMPT = `You answer a specific question about a property conveyancing matter, using ONLY the context given below. Be direct and concise -- two or three sentences at most, naming dates and who said what where relevant. If the context doesn't contain enough information to answer confidently, say so plainly rather than guessing or inventing detail.`;
+const SYSTEM_PROMPT = `You answer a specific question about a property conveyancing matter, using ONLY the context given below. Be direct and concise -- two or three sentences at most, naming dates and who said what where relevant. If the context doesn't contain enough information to answer confidently, say so plainly rather than guessing or inventing detail. Never use an em dash, a double hyphen ("--"), or a spaced hyphen (" - ") as a separator -- use a comma, colon, period, or just restructure the sentence instead.`;
 
 export async function answerMatterQuestion(
   admin: any, companyId: string, modelId: string,

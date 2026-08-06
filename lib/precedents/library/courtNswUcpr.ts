@@ -156,7 +156,7 @@ export const COURT_NSW_UCPR_PRECEDENTS: PrecedentSeed[] = [
         filedForRole: "plaintiff",
       }),
       text("\n\nTYPE OF CLAIM\n\n"),
-      field("type_of_claim", "Type of claim", "Commercial - contract"),
+      field("type_of_claim", "Type of claim", "Commercial: contract"),
       text(
         "\n\n[Select the type of claim from the list in the Guide to preparing documents on the UCPR website.]" +
         "\n\nRELIEF CLAIMED\n\n1. "
@@ -284,7 +284,7 @@ export const COURT_NSW_UCPR_PRECEDENTS: PrecedentSeed[] = [
       field("denial_reason", "Reason for the denial (UCPR 14.26)", "it paid the sum of $250,000 to the plaintiff on 20 May 2025 by electronic transfer"),
       text(
         ".\n\n[UCPR 14.26: a denial must be accompanied by the reason for denying. An allegation not traversed is taken to be admitted.]\n\n" +
-        "AFFIRMATIVE DEFENCE\n\n[Plead any matter that must be pleaded specifically under UCPR 14.14 -- limitation, release, accord and satisfaction, set-off, contributory negligence, illegality. Delete this section if none is relied on.]\n\n4. "
+        "AFFIRMATIVE DEFENCE\n\n[Plead any matter that must be pleaded specifically under UCPR 14.14: limitation, release, accord and satisfaction, set-off, contributory negligence, illegality. Delete this section if none is relied on.]\n\n4. "
       ),
       field("affirmative_defence", "Affirmative defence", "Further, the proceedings were commenced more than six years after the cause of action first accrued and are statute-barred by s 14(1)(a) of the Limitation Act 1969 (NSW)."),
       text("\n\nPARTICULARS\n\n"),
@@ -488,15 +488,15 @@ export const COURT_NSW_UCPR_PRECEDENTS: PrecedentSeed[] = [
       text("\n\nORDER FOR DISCOVERY\n\nMade on "),
       field("order_date", "Date of the discovery order", "5 August 2026"),
       text(
-        "\n\nPART 1 - DOCUMENTS IN THE PARTY'S POSSESSION THAT IT DOES NOT OBJECT TO PRODUCING\n\n1. "
+        "\n\nPART 1: DOCUMENTS IN THE PARTY'S POSSESSION THAT IT DOES NOT OBJECT TO PRODUCING\n\n1. "
       ),
       field("part1_documents", "Documents, numbered and described", "Quotation from the plaintiff to the defendant dated 1 March 2025.\n2. Written acceptance from the defendant dated 3 March 2025.\n3. Invoice 1043 dated 15 April 2025."),
       text(
-        "\n\nPART 2 - DOCUMENTS IN THE PARTY'S POSSESSION THAT IT OBJECTS TO PRODUCING\n\n1. "
+        "\n\nPART 2: DOCUMENTS IN THE PARTY'S POSSESSION THAT IT OBJECTS TO PRODUCING\n\n1. "
       ),
       field("part2_documents", "Documents and the ground of objection for each", "File notes of advice between the plaintiff and its solicitors dated 2 to 20 June 2025. Ground: legal professional privilege (legal advice privilege)."),
       text(
-        "\n\nPART 3 - DOCUMENTS NO LONGER IN THE PARTY'S POSSESSION\n\n1. "
+        "\n\nPART 3: DOCUMENTS NO LONGER IN THE PARTY'S POSSESSION\n\n1. "
       ),
       field("part3_documents", "Documents, what became of them, and who has them now", "Original signed quotation, provided to the defendant on 3 March 2025 and now in the defendant's possession."),
       text(
@@ -673,7 +673,7 @@ export const COURT_NSW_UCPR_PRECEDENTS: PrecedentSeed[] = [
 
   {
     key: "court.nsw.ucpr.form_38_default_judgment",
-    name: "Default Judgment - Liquidated Claim (NSW UCPR Form 38)",
+    name: "Default Judgment: Liquidated Claim (NSW UCPR Form 38)",
     description: "Notice of motion and supporting affidavit for default judgment on a liquidated claim, dealt with in the absence of the parties.",
     category: "Litigation",
     subcategory: "Enforcement",
@@ -688,7 +688,7 @@ export const COURT_NSW_UCPR_PRECEDENTS: PrecedentSeed[] = [
     segments: [
       ...ucprShell({
         formLine: "Form 38 (version 4)\nUCPR 16.3 and 16.6",
-        heading: "NOTICE OF MOTION - DEFAULT JUDGMENT FOR LIQUIDATED CLAIM",
+        heading: "NOTICE OF MOTION: DEFAULT JUDGMENT FOR LIQUIDATED CLAIM",
         filedForRole: "plaintiff",
       }),
       text("\n\nPERSON AFFECTED BY ORDERS SOUGHT\n\n"),

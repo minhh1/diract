@@ -26,7 +26,7 @@ const CRIMINAL = ["Criminal"];
 export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "scnsw.forum_advice",
-    name: "Choice of Forum Advice - Small Claim (NSW)",
+    name: "Choice of Forum Advice: Small Claim (NSW)",
     description: "Advises whether a small claim belongs in NCAT or the Local Court, and the cost consequences.",
     category: "Litigation",
     subcategory: "Small Claims",
@@ -34,15 +34,15 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CIVIL,
     aiInstructions:
-      "Draft advice on where a small claim should be brought in NSW. Compare NCAT (Consumer and Commercial Division) with the Local Court Small Claims Division: subject matter each covers, the general position on legal costs (NCAT ordinarily does not award costs and representation usually requires leave, whereas the Local Court can award limited costs), enforcement (NCAT orders generally need to be registered in a court to be enforced), and speed. Recommend a forum and explain the practical cost trade-off -- in small claims the recoverable costs are often less than the cost of running the case, which is the single most important thing for the client to understand.",
+      "Draft advice on where a small claim should be brought in NSW. Compare NCAT (Consumer and Commercial Division) with the Local Court Small Claims Division: subject matter each covers, the general position on legal costs (NCAT ordinarily does not award costs and representation usually requires leave, whereas the Local Court can award limited costs), enforcement (NCAT orders generally need to be registered in a court to be enforced), and speed. Recommend a forum and explain the practical cost trade-off: in small claims the recoverable costs are often less than the cost of running the case, which is the single most important thing for the client to understand.",
     segments: [
       text("WHERE TO BRING YOUR CLAIM\n\nAmount in dispute: "),
       field("amount", "Amount in dispute", "$14,200"),
       text("\nNature of claim: "),
       field("nature", "Nature of the claim", "Defective bathroom renovation work performed by a licensed builder."),
-      text("\n\nYOUR TWO OPTIONS\n\n1. NCAT - CONSUMER AND COMMERCIAL DIVISION\n\nNCAT handles consumer contracts, building work, residential tenancy and similar disputes.\n\n- Costs: NCAT ordinarily does NOT award legal costs. Each side usually bears its own.\n- Representation: you generally need the Tribunal's leave to be legally represented.\n- Enforcement: an NCAT order usually must be registered in a court before it can be enforced.\n- Speed: generally faster and less formal.\n\n2. LOCAL COURT - SMALL CLAIMS DIVISION\n\nThe Small Claims Division handles general debt and damages claims.\n\n- Costs: limited costs can be awarded to a successful party.\n- Procedure: more formal, with rules of evidence relaxed.\n- Enforcement: judgment is directly enforceable.\n\nOUR RECOMMENDATION\n\n"),
+      text("\n\nYOUR TWO OPTIONS\n\n1. NCAT: CONSUMER AND COMMERCIAL DIVISION\n\nNCAT handles consumer contracts, building work, residential tenancy and similar disputes.\n\n- Costs: NCAT ordinarily does NOT award legal costs. Each side usually bears its own.\n- Representation: you generally need the Tribunal's leave to be legally represented.\n- Enforcement: an NCAT order usually must be registered in a court before it can be enforced.\n- Speed: generally faster and less formal.\n\n2. LOCAL COURT: SMALL CLAIMS DIVISION\n\nThe Small Claims Division handles general debt and damages claims.\n\n- Costs: limited costs can be awarded to a successful party.\n- Procedure: more formal, with rules of evidence relaxed.\n- Enforcement: judgment is directly enforceable.\n\nOUR RECOMMENDATION\n\n"),
       field("recommendation", "Recommended forum and why", "Because your claim concerns residential building work by a licensed builder, NCAT's Consumer and Commercial Division is the appropriate forum and has specific power to order rectification work, not just money."),
-      text("\n\nTHE COST REALITY - PLEASE READ\n\n"),
+      text("\n\nTHE COST REALITY: PLEASE READ\n\n"),
       field("cost_reality", "Cost trade-off", "Our fees to run this matter to hearing would likely be $6,000 to $9,000. In NCAT you would not recover those costs even if you win. On a $14,200 claim that materially changes what a win is actually worth to you."),
       text("\n\nFor that reason we recommend "),
       field("strategy", "Recommended strategy", "a carefully drafted letter of demand first, and treating NCAT as the fallback if it is not met"),
@@ -64,7 +64,7 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft a covering letter for an NCAT application. Identify the division, the parties, the nature of the dispute, the orders sought, and list the documents lodged. Note the filing fee paid and, if the party is legally represented, that representation in the Consumer and Commercial Division does not require leave below the relevant threshold but may above it. Briefly note what the applicant should expect next (typically a first directions hearing before any final hearing). Keep it otherwise brief and administrative.",
     segments: [
-      text("APPLICATION - NSW CIVIL AND ADMINISTRATIVE TRIBUNAL\n\nDivision: "),
+      text("APPLICATION: NSW CIVIL AND ADMINISTRATIVE TRIBUNAL\n\nDivision: "),
       field("division", "Division", "Consumer and Commercial Division"),
       text("\nApplicant: "),
       field("applicant", "Applicant", "Jane Citizen"),
@@ -102,7 +102,7 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("proceedings_number", "Proceedings number", "2026/00123456"),
       text("\nAmount claimed: "),
       field("amount", "Amount claimed", "$18,450.00 plus interest and costs"),
-      text("\n\nWHAT YOU MUST DO\n\nIf you dispute the claim, you must file a Defence within the period stated in the Statement of Claim, and serve a copy on us. If you do not, our client may enter default judgment against you without further notice to you.\n\nA judgment may affect your credit rating and can be enforced against your property, wages or bank accounts. It also generally attracts interest until paid.\n\nIF YOU DISPUTE ONLY PART OF THE CLAIM\n\nIf you accept some of the claim but dispute the rest, you should still file a Defence addressing each part -- silence on any part will generally be treated as an admission of it.\n\nIF YOU WISH TO RESOLVE THIS\n\nThe matter can still be resolved. If you pay the amount claimed, or wish to discuss a payment arrangement, contact us promptly -- doing so does not require you to file a Defence if agreement is reached before the defence period expires."),
+      text("\n\nWHAT YOU MUST DO\n\nIf you dispute the claim, you must file a Defence within the period stated in the Statement of Claim, and serve a copy on us. If you do not, our client may enter default judgment against you without further notice to you.\n\nA judgment may affect your credit rating and can be enforced against your property, wages or bank accounts. It also generally attracts interest until paid.\n\nIF YOU DISPUTE ONLY PART OF THE CLAIM\n\nIf you accept some of the claim but dispute the rest, you should still file a Defence addressing each part: silence on any part will generally be treated as an admission of it.\n\nIF YOU WISH TO RESOLVE THIS\n\nThe matter can still be resolved. If you pay the amount claimed, or wish to discuss a payment arrangement, contact us promptly; doing so does not require you to file a Defence if agreement is reached before the defence period expires."),
     ],
     requiresReview: true,
     reviewNote:
@@ -121,7 +121,7 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Default judgment requires proof of proper service and that the time for defence has expired. Verify the current form, the service evidence required, and that no defence has in fact been filed before applying.",
     aiInstructions:
-      "Draft a request for default judgment. Identify the proceedings, confirm the statement of claim was served and how, confirm the time for filing a defence has expired and none has been filed, and set out the calculation of the judgment sought (liquidated claim, interest and costs). Precision matters -- a default judgment entered on defective service will be set aside and the costs thrown away.",
+      "Draft a request for default judgment. Identify the proceedings, confirm the statement of claim was served and how, confirm the time for filing a defence has expired and none has been filed, and set out the calculation of the judgment sought (liquidated claim, interest and costs). Precision matters: a default judgment entered on defective service will be set aside and the costs thrown away.",
     segments: [
       text("REQUEST FOR DEFAULT JUDGMENT\n\nCourt: Local Court of New South Wales, "),
       field("registry", "Registry", "Parramatta"),
@@ -154,11 +154,11 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CIVIL,
     aiInstructions:
-      "Draft advice to a judgment creditor on enforcement options in NSW: examination of the judgment debtor to find out what they have; writ for the levy of property; garnishee of wages or bank accounts; charging order over land; and, for companies, a statutory demand and winding up. For each, note the cost and when it is worth doing. Be blunt that a judgment against a debtor with no assets is worth nothing, and that enforcement costs are thrown away if the debtor is insolvent -- investigate before spending.",
+      "Draft advice to a judgment creditor on enforcement options in NSW: examination of the judgment debtor to find out what they have; writ for the levy of property; garnishee of wages or bank accounts; charging order over land; and, for companies, a statutory demand and winding up. For each, note the cost and when it is worth doing. Be blunt that a judgment against a debtor with no assets is worth nothing, and that enforcement costs are thrown away if the debtor is insolvent: investigate before spending.",
     segments: [
       text("ENFORCING YOUR JUDGMENT\n\nYou now have judgment for "),
       field("judgment_amount", "Judgment amount", "$20,179.40"),
-      text(". A judgment is not payment -- the following options exist to recover it.\n\nFIRST: FIND OUT WHAT THEY HAVE\n\nAn examination requires the debtor to attend court and answer questions about their assets, income and liabilities. This is usually the sensible first step, because every other option costs money and is wasted if there is nothing to recover from.\n\nYOUR OPTIONS\n\n1. WRIT FOR THE LEVY OF PROPERTY - the Sheriff seizes and sells the debtor's goods. Effective against a debtor with valuable equipment or vehicles; useless against one with nothing.\n\n2. GARNISHEE ORDER - directs a third party holding money for the debtor (an employer, or their bank) to pay you instead. Often the most effective option where the debtor is employed or has a known bank account.\n\n3. WRIT AGAINST LAND / CHARGING ORDER - registers your judgment against the debtor's real property. Slow, but secure, and often paid out when they refinance or sell.\n\n4. FOR COMPANIES - a statutory demand, followed by a winding up application if unmet. A powerful lever, but a blunt one: if the company is wound up you become an unsecured creditor and may recover little.\n\nOUR RECOMMENDATION\n\n"),
+      text(". A judgment is not payment: the following options exist to recover it.\n\nFIRST: FIND OUT WHAT THEY HAVE\n\nAn examination requires the debtor to attend court and answer questions about their assets, income and liabilities. This is usually the sensible first step, because every other option costs money and is wasted if there is nothing to recover from.\n\nYOUR OPTIONS\n\n1. WRIT FOR THE LEVY OF PROPERTY: the Sheriff seizes and sells the debtor's goods. Effective against a debtor with valuable equipment or vehicles; useless against one with nothing.\n\n2. GARNISHEE ORDER: directs a third party holding money for the debtor (an employer, or their bank) to pay you instead. Often the most effective option where the debtor is employed or has a known bank account.\n\n3. WRIT AGAINST LAND / CHARGING ORDER: registers your judgment against the debtor's real property. Slow, but secure, and often paid out when they refinance or sell.\n\n4. FOR COMPANIES: a statutory demand, followed by a winding up application if unmet. A powerful lever, but a blunt one: if the company is wound up you become an unsecured creditor and may recover little.\n\nOUR RECOMMENDATION\n\n"),
       field("recommendation", "Recommendation", "The debtor company appears to still be trading and holds a business account with a bank we can identify. We recommend a garnishee order against that account, which is comparatively cheap and can be effective immediately."),
       text("\n\nA WORD OF CAUTION\n\n"),
       field("caution", "Cost caution", "Each enforcement step carries its own filing and service costs, which are added to the judgment but only recovered if you actually recover. If the debtor is insolvent, further expenditure will simply increase your loss."),
@@ -169,7 +169,7 @@ export const SMALL_CLAIMS_NSW_PRECEDENTS: PrecedentSeed[] = [
 export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "crimnsw.initial_advice_local_court",
-    name: "Initial Advice - Local Court Matter (NSW)",
+    name: "Initial Advice: Local Court Matter (NSW)",
     description: "First advice to a client charged with a summary offence in the Local Court.",
     category: "Criminal",
     subcategory: "Local Court",
@@ -177,9 +177,9 @@ export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: CRIMINAL,
     aiInstructions:
-      "Draft initial advice to a client charged with an offence dealt with in the NSW Local Court. Explain the charge in plain terms, the elements the prosecution must prove beyond reasonable doubt, the realistic range of penalties, the plea options and the discount available for an early plea of guilty, the value of character references and any rehabilitation steps, and the possible non-conviction outcomes. Emphasise the client should not discuss the matter with anyone but their lawyer, and must attend court. Be realistic rather than reassuring -- a client who expects a non-conviction and receives a conviction will feel misled.",
+      "Draft initial advice to a client charged with an offence dealt with in the NSW Local Court. Explain the charge in plain terms, the elements the prosecution must prove beyond reasonable doubt, the realistic range of penalties, the plea options and the discount available for an early plea of guilty, the value of character references and any rehabilitation steps, and the possible non-conviction outcomes. Emphasise the client should not discuss the matter with anyone but their lawyer, and must attend court. Be realistic rather than reassuring: a client who expects a non-conviction and receives a conviction will feel misled.",
     segments: [
-      text("YOUR COURT MATTER - INITIAL ADVICE\n\nCharge: "),
+      text("YOUR COURT MATTER: INITIAL ADVICE\n\nCharge: "),
       field("charge", "Charge", "Drive with mid range prescribed concentration of alcohol, contrary to s 110(4) Road Transport Act 2013 (NSW)"),
       text("\nCourt and date: "),
       field("court_date", "Court and date", "Parramatta Local Court, 12 October 2026"),
@@ -192,12 +192,12 @@ export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
       text("\n\nLIKELY OUTCOME\n\n"),
       field("likely_outcome", "Realistic likely outcome", "For a first offence of this kind, the realistic range is a conviction with a fine and a period of licence disqualification, together with an interlock order. A non-conviction order is possible but should not be assumed, and would require strong subjective material."),
       text("\n\nWHAT WILL HELP\n\n"),
-      field("mitigation_steps", "Steps to take before court", "1. Complete the Traffic Offenders Intervention Program before your court date -- this carries real weight.\n2. Obtain two or three character references from people who know of the charge (we will send you guidance on what these must say).\n3. Write a short letter of apology to the Court in your own words."),
+      field("mitigation_steps", "Steps to take before court", "1. Complete the Traffic Offenders Intervention Program before your court date: this carries real weight.\n2. Obtain two or three character references from people who know of the charge (we will send you guidance on what these must say).\n3. Write a short letter of apology to the Court in your own words."),
       text("\n\nIMPORTANT\n\nDo not discuss this matter with anyone other than us. You must attend court on the date above; failure to appear can result in a warrant."),
     ],
     requiresReview: true,
     reviewNote:
-      "Confirm the current maximum penalties, disqualification periods and interlock requirements for the specific offence before advising on likely outcome -- these are amended regularly.",
+      "Confirm the current maximum penalties, disqualification periods and interlock requirements for the specific offence before advising on likely outcome: these are amended regularly.",
   },
   {
     key: "crimnsw.brief_request_to_prosecution",
@@ -221,7 +221,7 @@ export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
       field("reference", "CAN or court reference", "H12345678"),
       text("\n\nWe act for the accused. "),
       field("plea_position", "Plea position", "A plea of not guilty has been entered and the matter has been adjourned for service of the brief."),
-      text("\n\nPlease serve the brief of evidence, including:\n\n1. all statements of witnesses the prosecution intends to call;\n2. the accused's criminal history;\n3. any recorded interview with the accused and a transcript;\n4. custody records;\n5. any CCTV, body-worn video or other electronic material;\n6. any photographs, medical records or expert reports relied upon;\n7. any material in the prosecution's possession that may assist the defence.\n\nWe also remind the prosecution of its continuing duty of disclosure -- if further relevant material comes into the prosecution's possession after the brief is served, including material that may assist the defence, it must be disclosed as it arises rather than withheld until requested again.\n\nPlease serve the brief in accordance with the Court's directions and in any event before the next mention. If the brief is not served in time, we will raise the delay with the Court at that mention and may seek an order or a further adjournment on that basis."),
+      text("\n\nPlease serve the brief of evidence, including:\n\n1. all statements of witnesses the prosecution intends to call;\n2. the accused's criminal history;\n3. any recorded interview with the accused and a transcript;\n4. custody records;\n5. any CCTV, body-worn video or other electronic material;\n6. any photographs, medical records or expert reports relied upon;\n7. any material in the prosecution's possession that may assist the defence.\n\nWe also remind the prosecution of its continuing duty of disclosure: if further relevant material comes into the prosecution's possession after the brief is served, including material that may assist the defence, it must be disclosed as it arises rather than withheld until requested again.\n\nPlease serve the brief in accordance with the Court's directions and in any event before the next mention. If the brief is not served in time, we will raise the delay with the Court at that mention and may seek an order or a further adjournment on that basis."),
     ],
   },
   {
@@ -238,11 +238,11 @@ export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
     segments: [
       text("WRITING A CHARACTER REFERENCE\n\nThank you for agreeing to provide a reference for "),
       field("defendant", "Defendant", "John Citizen"),
-      text(". Please follow this guidance -- a reference that misses these points carries little weight.\n\nADDRESS IT TO\n\n'To the Presiding Magistrate' and, if known, the court: "),
+      text(". Please follow this guidance: a reference that misses these points carries little weight.\n\nADDRESS IT TO\n\n'To the Presiding Magistrate' and, if known, the court: "),
       field("court", "Court", "Parramatta Local Court"),
       text("\n\nWHAT TO INCLUDE\n\n1. HOW YOU KNOW THEM. How long, and in what capacity (employer, friend, colleague, coach).\n\n2. THAT YOU KNOW ABOUT THE CHARGES. This is essential. State expressly that you are aware they are before the Court charged with "),
       field("charges", "Charges", "assault occasioning actual bodily harm"),
-      text(", and that your view of their character is unchanged. A reference that does not say this is often given no weight at all.\n\n3. SPECIFIC EXAMPLES. Not 'he is a good person', but what he actually does -- reliability at work, care for a family member, volunteering, how he responded in a difficult situation.\n\n4. THEIR CIRCUMSTANCES. Employment, family responsibilities, community involvement.\n\n5. REMORSE. If you have seen genuine remorse or steps taken to address what happened, say so and describe it.\n\nWHAT NOT TO DO\n\n- Do not suggest what penalty the Court should impose. That is the Magistrate's decision and it reads poorly.\n- Do not minimise the offence, blame the victim, or suggest it was out of character in a way that excuses it.\n- Do not say anything you do not actually believe.\n\nFINALLY\n\nSign and date it, and put it on letterhead if you have it. Please provide it to us by "),
+      text(", and that your view of their character is unchanged. A reference that does not say this is often given no weight at all.\n\n3. SPECIFIC EXAMPLES. Not 'he is a good person', but what he actually does: reliability at work, care for a family member, volunteering, how he responded in a difficult situation.\n\n4. THEIR CIRCUMSTANCES. Employment, family responsibilities, community involvement.\n\n5. REMORSE. If you have seen genuine remorse or steps taken to address what happened, say so and describe it.\n\nWHAT NOT TO DO\n\n- Do not suggest what penalty the Court should impose. That is the Magistrate's decision and it reads poorly.\n- Do not minimise the offence, blame the victim, or suggest it was out of character in a way that excuses it.\n- Do not say anything you do not actually believe.\n\nFINALLY\n\nSign and date it, and put it on letterhead if you have it. Please provide it to us by "),
       field("deadline", "Provide by", "5 October 2026"),
       text("."),
     ],
@@ -260,7 +260,7 @@ export const CRIMINAL_NSW_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Sentencing options and their statutory preconditions under the Crimes (Sentencing Procedure) Act 1999 (NSW) have been substantially amended. Confirm the current options and the discount available for the plea before submitting.",
     aiInstructions:
-      "Draft an outline of sentencing submissions for the NSW Local Court following a plea of guilty. Structure: the objective seriousness of the offence (candidly assessed -- overstating mitigation destroys credibility); the subjective case (background, employment, family, health, prior record or lack of it); the utilitarian discount for the plea and its timing; remorse and steps taken toward rehabilitation; the sentencing options realistically available and why the one contended for is appropriate; and any specific consequence the Court should weigh, such as licence or employment impact. Do not overstate -- a Magistrate who distrusts one submission distrusts them all.",
+      "Draft an outline of sentencing submissions for the NSW Local Court following a plea of guilty. Structure: the objective seriousness of the offence (candidly assessed: overstating mitigation destroys credibility); the subjective case (background, employment, family, health, prior record or lack of it); the utilitarian discount for the plea and its timing; remorse and steps taken toward rehabilitation; the sentencing options realistically available and why the one contended for is appropriate; and any specific consequence the Court should weigh, such as licence or employment impact. Do not overstate: a Magistrate who distrusts one submission distrusts them all.",
     segments: [
       text("SUBMISSIONS ON SENTENCE\n\nAccused: "),
       field("accused", "Accused", "John Citizen"),

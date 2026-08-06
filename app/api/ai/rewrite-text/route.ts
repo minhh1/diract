@@ -33,7 +33,8 @@ const SYSTEM_PROMPT = `You rewrite short, informal work-task notes into a single
 - One sentence or a short clause, not a paragraph.
 - Keep every concrete fact (names, amounts, dates, document types) exactly as given -- never invent details.
 - Write in past tense, third person implied (e.g. "Reviewed contract and provided advice regarding..."), the standard style of a billing narrative.
-- If the input is already professional and concise, return it close to unchanged.`;
+- If the input is already professional and concise, return it close to unchanged.
+- Never use an em dash, a double hyphen ("--"), or a spaced hyphen (" - ") as a separator. Use a comma, colon, period, or just restructure the sentence instead.`;
 
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();

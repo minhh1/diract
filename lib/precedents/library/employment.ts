@@ -19,7 +19,7 @@ const EMPLOYMENT = ["Commercial", "Other"];
 export const EMPLOYMENT_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "emp.employment_contract_advice",
-    name: "Employment Contract - Advice to Employer",
+    name: "Employment Contract: Advice to Employer",
     description: "Advises an employer on the key terms of an employment contract and award coverage.",
     category: "Commercial",
     subcategory: "Employment",
@@ -28,17 +28,17 @@ export const EMPLOYMENT_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft advice to an employer on an employment contract. Cover: whether a modern award applies and the consequences if it does (minimum rates, penalties, allowances, and that a contract cannot undercut the award); the National Employment Standards as a floor that cannot be contracted out of; the probation period and how it interacts with the unfair dismissal minimum employment period; whether the role is genuinely full-time, part-time or casual and the risk of misclassification; annualised salary arrangements and the need to reconcile them against award entitlements; confidentiality and IP assignment; and post-employment restraints and their enforceability. Flag that set-off clauses must be drafted carefully to be effective.",
     segments: [
-      text("EMPLOYMENT CONTRACT - ADVICE\n\nPosition: "),
+      text("EMPLOYMENT CONTRACT: ADVICE\n\nPosition: "),
       field("position", "Position", "Operations Manager"),
       text("\nEmployee: "),
       field("employee", "Employee", "Sam Taylor"),
       text("\n\nAWARD COVERAGE\n\n"),
-      field("award", "Award coverage", "In our view this role is covered by the Clerks -- Private Sector Award 2020 at Level 5. Award coverage turns on the duties actually performed, not the job title, so it should be reviewed if the role changes materially."),
-      text("\n\nIf an award applies, the contract cannot provide less than the award on any term. An annualised salary can absorb award entitlements, but only if the contract says so clearly and the salary is in fact sufficient -- you should reconcile annually and keep the records.\n\nMINIMUM ENTITLEMENTS\n\nThe National Employment Standards apply regardless of what the contract says. They cannot be contracted out of, and an attempt to do so is simply void.\n\nPROBATION\n\n"),
+      field("award", "Award coverage", "In our view this role is covered by the Clerks: Private Sector Award 2020 at Level 5. Award coverage turns on the duties actually performed, not the job title, so it should be reviewed if the role changes materially."),
+      text("\n\nIf an award applies, the contract cannot provide less than the award on any term. An annualised salary can absorb award entitlements, but only if the contract says so clearly and the salary is in fact sufficient: you should reconcile annually and keep the records.\n\nMINIMUM ENTITLEMENTS\n\nThe National Employment Standards apply regardless of what the contract says. They cannot be contracted out of, and an attempt to do so is simply void.\n\nPROBATION\n\n"),
       field("probation", "Probation period", "A 6 month probation period is proposed."),
-      text("\n\nNote that probation is a contractual concept, not a statutory one. What actually protects you is the minimum employment period before an employee can bring an unfair dismissal claim -- 6 months, or 12 months for a small business employer. Align the probation period with that, not with some other figure.\n\nCLASSIFICATION\n\n"),
+      text("\n\nNote that probation is a contractual concept, not a statutory one. What actually protects you is the minimum employment period before an employee can bring an unfair dismissal claim: 6 months, or 12 months for a small business employer. Align the probation period with that, not with some other figure.\n\nCLASSIFICATION\n\n"),
       field("classification", "Employment type", "Full-time, ongoing."),
-      text("\n\nMisclassifying an employee as a casual or a contractor when the substance of the relationship is otherwise creates real exposure -- back-payment of leave, superannuation and potentially penalties.\n\nCONFIDENTIALITY AND IP\n\n"),
+      text("\n\nMisclassifying an employee as a casual or a contractor when the substance of the relationship is otherwise creates real exposure: back-payment of leave, superannuation and potentially penalties.\n\nCONFIDENTIALITY AND IP\n\n"),
       field("confidentiality_ip", "Confidentiality and IP terms", "The contract includes confidentiality obligations continuing after employment, and assignment of intellectual property created in the course of employment. Given this role involves developing internal systems, the IP clause should be express rather than left to the default position."),
       text("\n\nRESTRAINTS\n\n"),
       field("restraints", "Restraint provisions", "A 6 month non-solicitation of clients and staff, and a 3 month non-compete within 20km. Restraints are enforceable only so far as reasonably necessary to protect a legitimate business interest. We have drafted them as cascading periods and areas so that if the widest is struck down, a narrower one survives."),
@@ -56,7 +56,7 @@ export const EMPLOYMENT_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: EMPLOYMENT,
     aiInstructions:
-      "Draft a formal performance warning letter. It must: identify the specific performance concerns with dates and examples (not vague generalities); refer to any earlier discussions; state clearly what improvement is required and by when; identify the support or training being provided; state the consequence of failure to improve, including that termination may result; and record that the employee was given an opportunity to respond and had the right to a support person. This letter is the evidence in any later unfair dismissal claim -- specificity is what makes a subsequent dismissal defensible.",
+      "Draft a formal performance warning letter. It must: identify the specific performance concerns with dates and examples (not vague generalities); refer to any earlier discussions; state clearly what improvement is required and by when; identify the support or training being provided; state the consequence of failure to improve, including that termination may result; and record that the employee was given an opportunity to respond and had the right to a support person. This letter is the evidence in any later unfair dismissal claim: specificity is what makes a subsequent dismissal defensible.",
     segments: [
       text("FORMAL WARNING\n\nEmployee: "),
       field("employee", "Employee", "Sam Taylor"),
@@ -90,7 +90,7 @@ export const EMPLOYMENT_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: EMPLOYMENT,
     aiInstructions:
-      "Draft a termination of employment letter. State the reason for termination clearly and consistently with what was put to the employee, the effective date, whether notice is worked or paid in lieu, and itemise the final payment (wages to termination, accrued annual leave, any long service leave, notice in lieu, and superannuation). Confirm return of company property and remind the employee of continuing obligations of confidentiality and any restraint. Keep the tone neutral and factual -- this letter will be scrutinised if a claim follows, and any inconsistency between the reason given here and the reason given earlier is damaging.",
+      "Draft a termination of employment letter. State the reason for termination clearly and consistently with what was put to the employee, the effective date, whether notice is worked or paid in lieu, and itemise the final payment (wages to termination, accrued annual leave, any long service leave, notice in lieu, and superannuation). Confirm return of company property and remind the employee of continuing obligations of confidentiality and any restraint. Keep the tone neutral and factual: this letter will be scrutinised if a claim follows, and any inconsistency between the reason given here and the reason given earlier is damaging.",
     segments: [
       text("TERMINATION OF EMPLOYMENT\n\nEmployee: "),
       field("employee", "Employee", "Sam Taylor"),
@@ -125,9 +125,9 @@ export const EMPLOYMENT_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: EMPLOYMENT,
     aiInstructions:
-      "Draft a letter opening redundancy consultation. Critically, it must be framed as a PROPOSAL, not a decision -- consultation obligations under modern awards and enterprise agreements require genuine consultation before a decision is made, and a letter that announces a concluded outcome defeats the genuine redundancy defence. Explain the business reason, that the position (not the person) is proposed to be redundant, invite the employee to a consultation meeting with a support person, invite suggestions including redeployment, and state that no decision has been made. Set out what would follow if the proposal proceeds.",
+      "Draft a letter opening redundancy consultation. Critically, it must be framed as a PROPOSAL, not a decision: consultation obligations under modern awards and enterprise agreements require genuine consultation before a decision is made, and a letter that announces a concluded outcome defeats the genuine redundancy defence. Explain the business reason, that the position (not the person) is proposed to be redundant, invite the employee to a consultation meeting with a support person, invite suggestions including redeployment, and state that no decision has been made. Set out what would follow if the proposal proceeds.",
     segments: [
-      text("PROPOSED REDUNDANCY - CONSULTATION\n\nEmployee: "),
+      text("PROPOSED REDUNDANCY: CONSULTATION\n\nEmployee: "),
       field("employee", "Employee", "Sam Taylor"),
       text("\nPosition: "),
       field("position", "Position", "Operations Manager"),
@@ -169,7 +169,7 @@ export const EMPLOYMENT_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "emp.long_service_leave_note",
-    name: "Long Service Leave - Entitlement by State (file note)",
+    name: "Long Service Leave: Entitlement by State (file note)",
     description: "Internal note that long service leave remains state-based, unlike most employment entitlements.",
     category: "Commercial",
     subcategory: "Employment",
@@ -178,7 +178,7 @@ export const EMPLOYMENT_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft an internal file note recording that long service leave is state-based rather than federal, that qualifying periods and accrual rates differ between states, that pro-rata entitlements on termination differ, and that portable long service leave schemes operate in some industries (notably construction) in most states. State plainly it is a prompt to check the applicable state Act, not a substitute for doing so.",
     segments: [
-      text("LONG SERVICE LEAVE - CHECK THE STATE\n\nInternal aide-memoire.\n\nUnlike almost everything else in employment law, long service leave is NOT federal. It is governed by a separate Act in each state and territory, and the entitlements genuinely differ:\n\n- the qualifying period before an entitlement arises;\n- the rate of accrual;\n- whether and when a pro-rata entitlement is payable on termination, and whether it depends on the reason for termination;\n- how a period of parental or unpaid leave affects continuity.\n\nAlso check whether a PORTABLE long service leave scheme applies. These operate in the construction industry in most states, and in some states also in contract cleaning and community services. Where a portable scheme applies, entitlements follow the worker across employers within the industry, which changes the analysis entirely.\n\nWHICH STATE\n\nGenerally the state in which the employee is based, but this can be genuinely difficult where an employee has worked across states during their service. Take instructions on the full service history before advising.\n\n"),
+      text("LONG SERVICE LEAVE: CHECK THE STATE\n\nInternal aide-memoire.\n\nUnlike almost everything else in employment law, long service leave is NOT federal. It is governed by a separate Act in each state and territory, and the entitlements genuinely differ:\n\n- the qualifying period before an entitlement arises;\n- the rate of accrual;\n- whether and when a pro-rata entitlement is payable on termination, and whether it depends on the reason for termination;\n- how a period of parental or unpaid leave affects continuity.\n\nAlso check whether a PORTABLE long service leave scheme applies. These operate in the construction industry in most states, and in some states also in contract cleaning and community services. Where a portable scheme applies, entitlements follow the worker across employers within the industry, which changes the analysis entirely.\n\nWHICH STATE\n\nGenerally the state in which the employee is based, but this can be genuinely difficult where an employee has worked across states during their service. Take instructions on the full service history before advising.\n\n"),
       field("matter_note", "Note for this matter", "Employee based in NSW throughout. Long Service Leave Act 1955 (NSW) applies. Service from 3 February 2014."),
     ],
     requiresReview: true,

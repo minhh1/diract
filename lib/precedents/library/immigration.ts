@@ -27,12 +27,12 @@ export const IMMIGRATION_PRECEDENTS: PrecedentSeed[] = [
     documentType: "advice",
     matterTypes: MIGRATION,
     aiInstructions:
-      "Draft initial visa advice. Identify the client's current status and any visa expiry, the visa options realistically open to them, the key criteria for the recommended option, the evidence required, likely processing times, and the risks (including refusal consequences, any exclusion period, and the effect on status of applying while onshore or offshore). Be candid about prospects. Do not state specific points-test scores, occupation list contents or processing times as settled facts -- these change constantly and must be confirmed.",
+      "Draft initial visa advice. Identify the client's current status and any visa expiry, the visa options realistically open to them, the key criteria for the recommended option, the evidence required, likely processing times, and the risks (including refusal consequences, any exclusion period, and the effect on status of applying while onshore or offshore). Be candid about prospects. Do not state specific points-test scores, occupation list contents or processing times as settled facts: these change constantly and must be confirmed.",
     segments: [
       text("VISA ADVICE\n\nCLIENT'S CURRENT POSITION\n\n"),
       field("current_status", "Current visa status", "You currently hold a subclass 500 Student visa expiring 15 March 2027. You have completed a Master of Information Technology and are working 20 hours per week."),
       text("\n\nOPTIONS AVAILABLE\n\n"),
-      field("options", "Visa options", "1. Subclass 485 Temporary Graduate visa - available on the strength of your recent qualification, providing full work rights for a limited period.\n2. Employer-sponsored options, if your current employer is willing and able to sponsor.\n3. Skilled independent or state-nominated pathways, subject to the points test and your occupation's status."),
+      field("options", "Visa options", "1. Subclass 485 Temporary Graduate visa: available on the strength of your recent qualification, providing full work rights for a limited period.\n2. Employer-sponsored options, if your current employer is willing and able to sponsor.\n3. Skilled independent or state-nominated pathways, subject to the points test and your occupation's status."),
       text("\n\nOUR RECOMMENDATION\n\n"),
       field("recommendation", "Recommended pathway", "We recommend applying for the subclass 485 first. It secures your work rights and buys time to pursue a permanent pathway without the pressure of an expiring student visa."),
       text("\n\nKEY CRITERIA YOU MUST MEET\n\n"),
@@ -66,7 +66,7 @@ export const IMMIGRATION_PRECEDENTS: PrecedentSeed[] = [
       field("english", "English evidence", "7. IELTS, PTE or equivalent test results, taken within the validity period."),
       text("\n\nHEALTH AND CHARACTER\n\n8. Police certificates for every country in which you have lived for 12 months or more in the last 10 years.\n9. We will arrange your health examination and provide the referral.\n\n"),
       field("additional", "Additional documents", "10. Evidence of adequate health insurance covering the full visa period."),
-      text("\n\nCERTIFICATION AND TRANSLATION\n\nCopies must be certified. Any document not in English must be accompanied by a translation prepared by an accredited translator -- a translation by a friend or relative will not be accepted.\n\nPLEASE PROVIDE BY: "),
+      text("\n\nCERTIFICATION AND TRANSLATION\n\nCopies must be certified. Any document not in English must be accompanied by a translation prepared by an accredited translator: a translation by a friend or relative will not be accepted.\n\nPLEASE PROVIDE BY: "),
       field("deadline", "Deadline", "20 October 2026"),
       text("\n\nA word of caution: an incomplete application may simply be refused rather than held while further documents are sought. It is far better to lodge complete."),
     ],
@@ -80,9 +80,9 @@ export const IMMIGRATION_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: MIGRATION,
     aiInstructions:
-      "Draft a covering letter for an application to the Administrative Review Tribunal for review of a visa decision. Identify the decision, its date, the applicant, the visa in question, and the grounds on which review is sought. Note that the application is made within the prescribed period, and state that period expressly (the date it expires) so compliance is transparent, not merely asserted. List documents lodged. Address the applicant's status while the review is on foot -- typically a bridging visa continues or is applied for -- since that is usually the client's most pressing practical concern. Warn that ART time limits are strict and generally cannot be extended.",
+      "Draft a covering letter for an application to the Administrative Review Tribunal for review of a visa decision. Identify the decision, its date, the applicant, the visa in question, and the grounds on which review is sought. Note that the application is made within the prescribed period, and state that period expressly (the date it expires) so compliance is transparent, not merely asserted. List documents lodged. Address the applicant's status while the review is on foot, typically that a bridging visa continues or is applied for, since that is usually the client's most pressing practical concern. Warn that ART time limits are strict and generally cannot be extended.",
     segments: [
-      text("APPLICATION FOR REVIEW - ADMINISTRATIVE REVIEW TRIBUNAL\n\nApplicant: "),
+      text("APPLICATION FOR REVIEW: ADMINISTRATIVE REVIEW TRIBUNAL\n\nApplicant: "),
       field("applicant", "Applicant", "Priya Sharma"),
       text("\nVisa: "),
       field("visa", "Visa", "Subclass 485 Temporary Graduate visa"),
@@ -113,7 +113,7 @@ export const IMMIGRATION_PRECEDENTS: PrecedentSeed[] = [
     documentType: "letter",
     matterTypes: MIGRATION,
     aiInstructions:
-      "Draft a response to a departmental request for further information. Address each matter raised specifically and in order, provide the documents sought, and where an adverse inference has been foreshadowed, respond to it directly with evidence rather than assertion. Confirm the response is within the period allowed. These requests are often the last opportunity to save an application -- the response must be complete.",
+      "Draft a response to a departmental request for further information. Address each matter raised specifically and in order, provide the documents sought, and where an adverse inference has been foreshadowed, respond to it directly with evidence rather than assertion. Confirm the response is within the period allowed. These requests are often the last opportunity to save an application: the response must be complete.",
     segments: [
       text("RESPONSE TO REQUEST FOR INFORMATION\n\nApplicant: "),
       field("applicant", "Applicant", "Priya Sharma"),
@@ -135,11 +135,11 @@ export const IMMIGRATION_PRECEDENTS: PrecedentSeed[] = [
     documentType: "advice",
     matterTypes: MIGRATION,
     aiInstructions:
-      "Draft advice to a business sponsor on its sponsorship obligations: paying the sponsored worker at least the agreed rate and at market rates, ensuring the worker works only in the nominated occupation, keeping prescribed records, notifying the Department of prescribed events within the required period, cooperating with inspectors, and not recovering sponsorship costs from the worker. Explain the consequences of breach -- bars, civil penalties and cancellation of sponsorship. Be direct: sponsor monitoring is active and breaches are commonly detected through routine data matching.",
+      "Draft advice to a business sponsor on its sponsorship obligations: paying the sponsored worker at least the agreed rate and at market rates, ensuring the worker works only in the nominated occupation, keeping prescribed records, notifying the Department of prescribed events within the required period, cooperating with inspectors, and not recovering sponsorship costs from the worker. Explain the consequences of breach: bars, civil penalties and cancellation of sponsorship. Be direct: sponsor monitoring is active and breaches are commonly detected through routine data matching.",
     segments: [
       text("YOUR OBLIGATIONS AS AN APPROVED SPONSOR\n\nSponsor: "),
       field("sponsor", "Sponsor", "Example Logistics Pty Ltd"),
-      text("\n\nApproval as a sponsor carries continuing legal obligations. The principal ones are set out below.\n\n1. PAY THE AGREED RATE\n\nYou must pay the sponsored worker at least the salary specified in the nomination, and at least the market rate for the position. You cannot reduce the salary, or move the worker to part-time, without addressing the nomination.\n\n2. NOMINATED OCCUPATION ONLY\n\nThe worker must work in the occupation nominated. Using a sponsored worker in a different role, even a more senior one, is a breach.\n\n3. KEEP RECORDS\n\nYou must keep prescribed records, including of the worker's duties, pay and hours, in a form that can be produced to the Department.\n\n4. NOTIFY CHANGES\n\nYou must notify the Department of prescribed events within the required period -- including if the worker's employment ends, their duties change, or your business changes ownership or ceases trading.\n\n5. DO NOT PASS ON COSTS\n\nYou must not recover from the worker any cost of sponsorship or nomination. This includes indirect recovery through deductions or reduced pay. This is one of the most commonly breached obligations and one of the most heavily penalised.\n\n6. COOPERATE WITH INSPECTORS\n\n"),
+      text("\n\nApproval as a sponsor carries continuing legal obligations. The principal ones are set out below.\n\n1. PAY THE AGREED RATE\n\nYou must pay the sponsored worker at least the salary specified in the nomination, and at least the market rate for the position. You cannot reduce the salary, or move the worker to part-time, without addressing the nomination.\n\n2. NOMINATED OCCUPATION ONLY\n\nThe worker must work in the occupation nominated. Using a sponsored worker in a different role, even a more senior one, is a breach.\n\n3. KEEP RECORDS\n\nYou must keep prescribed records, including of the worker's duties, pay and hours, in a form that can be produced to the Department.\n\n4. NOTIFY CHANGES\n\nYou must notify the Department of prescribed events within the required period, including if the worker's employment ends, their duties change, or your business changes ownership or ceases trading.\n\n5. DO NOT PASS ON COSTS\n\nYou must not recover from the worker any cost of sponsorship or nomination. This includes indirect recovery through deductions or reduced pay. This is one of the most commonly breached obligations and one of the most heavily penalised.\n\n6. COOPERATE WITH INSPECTORS\n\n"),
       field("specific_obligations", "Any obligations specific to this sponsor", "As you sponsor multiple workers, we recommend a single register recording each worker's nominated occupation, salary and key dates."),
       text("\n\nIF YOU BREACH\n\nConsequences include being barred from sponsoring further workers, civil penalties, cancellation of existing sponsorships, and publication of the breach. Departmental monitoring is active and breaches are frequently identified through data matching with the ATO and Services Australia.\n\nPlease contact us before making any change to a sponsored worker's role, pay or hours."),
     ],

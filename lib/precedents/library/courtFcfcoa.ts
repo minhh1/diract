@@ -39,7 +39,7 @@ const FORMAL_REQUIREMENTS =
 function fcfcoaShell(): BodyTemplateSegment[] {
   return [
     text(
-      "Federal Circuit and Family Court of Australia (Family Law) Rules 2021 - RULE 8.15\n\n" +
+      "Federal Circuit and Family Court of Australia (Family Law) Rules 2021: RULE 8.15\n\n" +
       "AFFIDAVIT\n\n" +
       "Filed in: [ ] Federal Circuit and Family Court of Australia (Division 1)  [ ] Federal Circuit and Family Court of Australia (Division 2)\n\n" +
       "Name of person swearing/affirming this affidavit: "
@@ -132,7 +132,7 @@ const REVIEW =
 export const COURT_FCFCOA_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "court.fcfcoa.affidavit_general",
-    name: "Affidavit - Family Law (FCFCOA approved form)",
+    name: "Affidavit: Family Law (FCFCOA approved form)",
     description: "Affidavit in family law or child support proceedings, in the court's approved form with Parts A to F.",
     category: "Family Law",
     subcategory: "Evidence",
@@ -178,7 +178,7 @@ export const COURT_FCFCOA_PRECEDENTS: PrecedentSeed[] = [
       text("\n\n4. "),
       field("orders_basis", "The facts supporting the orders sought", "The children have attended their current school since 2021 and both have treating practitioners in Sydney."),
       text(
-        "\n\n[Continue in numbered paragraphs, confined to the interim orders sought. Watch the page limit -- Part D is what counts.]"
+        "\n\n[Continue in numbered paragraphs, confined to the interim orders sought. Watch the page limit: Part D is what counts.]"
       ),
       ...FCFCOA_JURAT,
     ],
@@ -186,7 +186,7 @@ export const COURT_FCFCOA_PRECEDENTS: PrecedentSeed[] = [
 
   {
     key: "court.fcfcoa.affidavit_separated_under_one_roof",
-    name: "Affidavit - Separated Under One Roof (FCFCOA)",
+    name: "Affidavit: Separated Under One Roof (FCFCOA)",
     description: "Affidavit required for a divorce where the parties lived under the same roof during the 12 months of separation.",
     category: "Family Law",
     subcategory: "Divorce",

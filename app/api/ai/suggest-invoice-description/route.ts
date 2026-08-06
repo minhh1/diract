@@ -22,7 +22,8 @@ const SYSTEM_PROMPT = `You draft the single summary description of professional 
 - One concise paragraph (1-3 sentences), not a list.
 - Base it ONLY on the matter name and fee entry descriptions given -- never invent facts, names, dates or amounts not present in the input.
 - Write in the standard style of a legal invoice narrative, e.g. "For professional services rendered in connection with...".
-- If the fee entries cover clearly distinct kinds of work, summarise the main themes rather than listing every entry.`;
+- If the fee entries cover clearly distinct kinds of work, summarise the main themes rather than listing every entry.
+- Never use an em dash, a double hyphen ("--"), or a spaced hyphen (" - ") as a separator. Use a comma, colon, period, or just restructure the sentence instead.`;
 
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();

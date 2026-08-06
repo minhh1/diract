@@ -16,7 +16,8 @@ const SYSTEM_PROMPT =
   "correspondence. This sentence is shown directly to the firm's client on a matter status page -- write it in " +
   "plain, neutral, factual language suitable for a client to read. Do not mention internal staff discussion, " +
   "other clients, or anything not appropriate to share externally; if the emails don't clearly show progress, " +
-  "describe the most recent concrete step instead. Respond with ONLY the one sentence -- no preamble, no quotes.";
+  "describe the most recent concrete step instead. Respond with ONLY the one sentence -- no preamble, no quotes. " +
+  "Never use an em dash, a double hyphen (\"--\"), or a spaced hyphen (\" - \") as a separator -- use a comma, colon, period, or just restructure the sentence instead.";
 
 export interface MatterEmailSummary { summary: string; inputTokens: number; outputTokens: number; }
 

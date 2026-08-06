@@ -9,7 +9,8 @@ import { retrieveGroundingContext } from "./retrieval";
 import { callHostedModel, callSelfHostedModel } from "./modelCall";
 
 const DRAFT_SYSTEM_PROMPT =
-  "You are drafting a document based on the user's instructions. Write clear, professional content. Output ONLY the document's content itself -- no preamble like \"Here's the document:\", no meta-commentary, no markdown code fences.";
+  "You are drafting a document based on the user's instructions. Write clear, professional content. Output ONLY the document's content itself -- no preamble like \"Here's the document:\", no meta-commentary, no markdown code fences. " +
+  "Never use an em dash, a double hyphen (\"--\"), or a spaced hyphen (\" - \") as a separator -- use a comma, colon, period, or just restructure the sentence instead.";
 
 export async function draftFileContent(
   admin: any,

@@ -22,7 +22,7 @@ const CRIMINAL = ["Criminal"];
 export const CRIMINAL_STATES_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "crimstates.magistrates_initial_advice",
-    name: "Initial Advice - Magistrates Court (VIC/QLD/SA/WA/TAS)",
+    name: "Initial Advice: Magistrates Court (VIC/QLD/SA/WA/TAS)",
     description: "First advice on a summary matter in a Magistrates Court outside NSW.",
     category: "Criminal",
     subcategory: "Magistrates Court",
@@ -30,9 +30,9 @@ export const CRIMINAL_STATES_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["VIC", "QLD", "SA", "WA", "TAS"],
     matterTypes: CRIMINAL,
     aiInstructions:
-      "Draft initial advice to a client charged with a summary offence in a Magistrates Court. Explain the charge and what the prosecution must prove, the plea options and the discount for an early plea, the realistic penalty range, and the diversionary or non-conviction options available in that state (naming the state's sentencing Act). Cover what will help at sentence -- character references, counselling or courses completed, restitution. Stress attendance and not discussing the matter with anyone but their lawyer. Be realistic rather than reassuring about outcome.",
+      "Draft initial advice to a client charged with a summary offence in a Magistrates Court. Explain the charge and what the prosecution must prove, the plea options and the discount for an early plea, the realistic penalty range, and the diversionary or non-conviction options available in that state (naming the state's sentencing Act). Cover what will help at sentence: character references, counselling or courses completed, restitution. Stress attendance and not discussing the matter with anyone but their lawyer. Be realistic rather than reassuring about outcome.",
     segments: [
-      text("YOUR COURT MATTER - INITIAL ADVICE\n\nCharge: "),
+      text("YOUR COURT MATTER: INITIAL ADVICE\n\nCharge: "),
       field("charge", "Charge", "Unlawful assault"),
       text("\nCourt and date: "),
       field("court_date", "Court and date", "Melbourne Magistrates' Court, 14 October 2026"),
@@ -64,11 +64,11 @@ export const CRIMINAL_STATES_PRECEDENTS: PrecedentSeed[] = [
     matterTypes: CRIMINAL,
     requiresReview: true,
     reviewNote:
-      "Bail legislation differs materially by state, including whether a show cause or exceptional circumstances test applies to the particular offence. Confirm the applicable test and any presumption against bail before making the application -- getting the test wrong wastes the application and may prejudice a later one.",
+      "Bail legislation differs materially by state, including whether a show cause or exceptional circumstances test applies to the particular offence. Confirm the applicable test and any presumption against bail before making the application: getting the test wrong wastes the application and may prejudice a later one.",
     aiInstructions:
-      "Draft an outline of submissions supporting a bail application. Address, in order: whether any show cause or exceptional circumstances requirement applies to the offence and how it is met; then the unacceptable risk considerations -- failure to appear, commission of further offences, interference with witnesses, and endangering safety -- and what conditions would mitigate each. Set out the applicant's ties to the community, accommodation, employment, health, and any responsibilities for dependants. Propose specific conditions rather than leaving it to the Court. Address the strength of the prosecution case and any delay to hearing, since time on remand may exceed any likely sentence.",
+      "Draft an outline of submissions supporting a bail application. Address, in order: whether any show cause or exceptional circumstances requirement applies to the offence and how it is met; then the unacceptable risk considerations (failure to appear, commission of further offences, interference with witnesses, and endangering safety) and what conditions would mitigate each. Set out the applicant's ties to the community, accommodation, employment, health, and any responsibilities for dependants. Propose specific conditions rather than leaving it to the Court. Address the strength of the prosecution case and any delay to hearing, since time on remand may exceed any likely sentence.",
     segments: [
-      text("BAIL APPLICATION - OUTLINE OF SUBMISSIONS\n\nApplicant: "),
+      text("BAIL APPLICATION: OUTLINE OF SUBMISSIONS\n\nApplicant: "),
       field("applicant", "Applicant", "John Citizen"),
       text("\nCharges: "),
       field("charges", "Charges", "Aggravated burglary; theft"),
@@ -92,7 +92,7 @@ export const CRIMINAL_STATES_PRECEDENTS: PrecedentSeed[] = [
   },
   {
     key: "crimstates.plea_in_mitigation",
-    name: "Plea in Mitigation - Outline",
+    name: "Plea in Mitigation: Outline",
     description: "Outline of a plea in mitigation, structured for oral delivery.",
     category: "Criminal",
     subcategory: "Sentencing",
@@ -102,9 +102,9 @@ export const CRIMINAL_STATES_PRECEDENTS: PrecedentSeed[] = [
     reviewNote:
       "Confirm the sentencing options available under the applicable state Sentencing Act, and the current discount available for the plea and its timing, before settling what is contended for.",
     aiInstructions:
-      "Draft an outline of a plea in mitigation for oral delivery. Structure: the objective circumstances of the offending, assessed candidly; the plea and its timing; the offender's personal circumstances and background, including any deprivation, mental health or addiction and how it bears on moral culpability; remorse and any steps taken (restitution, counselling, courses); prior record or its absence; the impact of a conviction on employment, travel or licensing; and the specific order contended for. Warn against overstatement -- a magistrate who disbelieves one submission discounts them all.",
+      "Draft an outline of a plea in mitigation for oral delivery. Structure: the objective circumstances of the offending, assessed candidly; the plea and its timing; the offender's personal circumstances and background, including any deprivation, mental health or addiction and how it bears on moral culpability; remorse and any steps taken (restitution, counselling, courses); prior record or its absence; the impact of a conviction on employment, travel or licensing; and the specific order contended for. Warn against overstatement: a magistrate who disbelieves one submission discounts them all.",
     segments: [
-      text("PLEA IN MITIGATION - OUTLINE\n\nAccused: "),
+      text("PLEA IN MITIGATION: OUTLINE\n\nAccused: "),
       field("accused", "Accused", "John Citizen"),
       text("\nOffence: "),
       field("offence", "Offence", "Theft"),
@@ -135,9 +135,9 @@ export const CRIMINAL_STATES_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft advice to a client who has been asked to attend a police interview. Explain the right to silence and that in most circumstances no adverse inference can be drawn from exercising it, the right to legal advice before and during questioning, that anything said is recorded and can be used in evidence, and that they are not obliged to participate in an interview at all unless required to provide identifying particulars. Explain the limited circumstances where an answer is compelled. Advise strongly against attending without a lawyer, and against 'explaining their side' informally, which is the single most common way clients damage their own position.",
     segments: [
-      text("BEFORE YOU ARE INTERVIEWED - YOUR RIGHTS\n\nYou have been asked to attend an interview with police in relation to "),
+      text("BEFORE YOU ARE INTERVIEWED: YOUR RIGHTS\n\nYou have been asked to attend an interview with police in relation to "),
       field("matter", "Matter", "an allegation of assault said to have occurred on 12 September 2026"),
-      text(".\n\nTHE MOST IMPORTANT THING\n\nDo not attend an interview, or discuss the allegation with police in any way, before speaking with us. That includes informal conversation at the door, in a car, or over the phone. There is no such thing as an off-the-record conversation with an investigator.\n\nYOUR RIGHT TO SILENCE\n\nYou are not obliged to answer questions about the allegation. In most circumstances no adverse inference can be drawn against you at trial from exercising that right.\n\nYou must generally provide your name and address when lawfully required to do so, and there are limited statutory situations where an answer is compelled -- we will tell you if any applies here.\n\nWHAT AN INTERVIEW ACTUALLY IS\n\nAn interview is recorded and is evidence. It is not an opportunity to clear things up. Investigators conduct interviews to gather evidence, and an account given without knowing what the evidence is can lock you into a version that later proves inconsistent with something you did not know existed.\n\nEven a truthful account, given badly or under pressure, can do real damage.\n\nOUR ADVICE\n\n"),
+      text(".\n\nTHE MOST IMPORTANT THING\n\nDo not attend an interview, or discuss the allegation with police in any way, before speaking with us. That includes informal conversation at the door, in a car, or over the phone. There is no such thing as an off-the-record conversation with an investigator.\n\nYOUR RIGHT TO SILENCE\n\nYou are not obliged to answer questions about the allegation. In most circumstances no adverse inference can be drawn against you at trial from exercising that right.\n\nYou must generally provide your name and address when lawfully required to do so, and there are limited statutory situations where an answer is compelled: we will tell you if any applies here.\n\nWHAT AN INTERVIEW ACTUALLY IS\n\nAn interview is recorded and is evidence. It is not an opportunity to clear things up. Investigators conduct interviews to gather evidence, and an account given without knowing what the evidence is can lock you into a version that later proves inconsistent with something you did not know existed.\n\nEven a truthful account, given badly or under pressure, can do real damage.\n\nOUR ADVICE\n\n"),
       field("advice", "Our advice in this matter", "We advise that you decline to participate in an interview at this stage. We do not yet know what the police case is. If, once we have seen the evidence, an account would assist you, it can be provided later in a controlled way."),
       text("\n\nIF POLICE ATTEND\n\nBe polite. Provide your name and address. Say clearly: 'I do not wish to answer any questions and I want to speak to my lawyer.' Then telephone us on "),
       field("contact", "Contact number", "(02) 0000 0000, or after hours 0400 000 000"),

@@ -37,10 +37,10 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
   // ── Victoria ────────────────────────────────────────────────────
   {
     key: "convvic.contract_advice",
-    name: "Contract Advice - Residential Purchase (VIC)",
+    name: "Contract Advice: Residential Purchase (VIC)",
     description: "Contract and Section 32 advice for a Victorian residential purchase.",
     category: "Conveyancing",
-    subcategory: "Purchase - Pre-exchange",
+    subcategory: "Purchase: Pre-exchange",
     documentType: "advice",
     jurisdictions: ["VIC"],
     matterTypes: CONVEYANCING,
@@ -71,10 +71,10 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
   // ── Queensland ──────────────────────────────────────────────────
   {
     key: "convqld.contract_advice",
-    name: "Contract Advice - Residential Purchase (QLD)",
+    name: "Contract Advice: Residential Purchase (QLD)",
     description: "Contract advice for a Queensland purchase, covering the warning statement and cooling off.",
     category: "Conveyancing",
-    subcategory: "Purchase - Pre-exchange",
+    subcategory: "Purchase: Pre-exchange",
     documentType: "advice",
     jurisdictions: ["QLD"],
     matterTypes: CONVEYANCING,
@@ -88,15 +88,15 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
       text("\nContract date: "),
       field("contract_date", "Contract date", "14 August 2026"),
       text("\n\nEVERY DATE RUNS FROM THE CONTRACT DATE\n\nIn Queensland the contract date drives the cooling-off period, the finance date, the building and pest date and settlement. It is critical that it is recorded correctly.\n\nCOOLING OFF\n\nYou have a cooling-off period of 5 business days from the contract date. If you terminate during it, the seller may retain a penalty of 0.25% of the purchase price.\n\nCooling off does NOT apply if you buy at auction.\n\nCONDITIONS\n\n"),
-      field("conditions", "Finance and building and pest conditions", "Finance approval is due by 4 September 2026. Building and pest inspection is due by 28 August 2026. These dates are strict -- if you are not in a position to satisfy or terminate by 5pm on the due date, you lose the benefit of the condition and are bound to complete."),
+      field("conditions", "Finance and building and pest conditions", "Finance approval is due by 4 September 2026. Building and pest inspection is due by 28 August 2026. These dates are strict: if you are not in a position to satisfy or terminate by 5pm on the due date, you lose the benefit of the condition and are bound to complete."),
       text("\n\nTITLE AND DISCLOSURE\n\n"),
       field("title_disclosure", "Title and disclosure position", "Queensland has no general vendor's disclosure statement. Our searches disclose a registered easement for sewerage along the rear boundary and no encumbrances other than the seller's mortgage, which will be released at settlement."),
       text("\n\n"),
-      field("body_corporate", "Body corporate position (if applicable)", "Not applicable - freehold standard format lot."),
+      field("body_corporate", "Body corporate position (if applicable)", "Not applicable: freehold standard format lot."),
       text("\n\nSETTLEMENT AND DUTY\n\n"),
       field("settlement_duty", "Settlement and duty", "Settlement is 30 days from the contract date. Transfer duty is payable to the Queensland Revenue Office. We will confirm the amount and whether the first home or home concession applies to you."),
       text("\n\nOUR RECOMMENDATIONS\n\n"),
-      field("recommendations", "Recommendations", "1. Book your building and pest inspection immediately -- the window is short.\n2. Press your broker for written unconditional finance approval before 4 September.\n3. Tell us the moment anything looks like slipping; extensions must be agreed in writing before the date passes."),
+      field("recommendations", "Recommendations", "1. Book your building and pest inspection immediately; the window is short.\n2. Press your broker for written unconditional finance approval before 4 September.\n3. Tell us the moment anything looks like slipping; extensions must be agreed in writing before the date passes."),
     ],
     requiresReview: true,
     reviewNote:
@@ -105,10 +105,10 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
   // ── South Australia ─────────────────────────────────────────────
   {
     key: "convsa.contract_advice",
-    name: "Contract Advice - Residential Purchase (SA)",
+    name: "Contract Advice: Residential Purchase (SA)",
     description: "Contract and Form 1 advice for a South Australian purchase.",
     category: "Conveyancing",
-    subcategory: "Purchase - Pre-exchange",
+    subcategory: "Purchase: Pre-exchange",
     documentType: "advice",
     jurisdictions: ["SA"],
     matterTypes: CONVEYANCING,
@@ -121,7 +121,7 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
       field("price", "Purchase price", "$860,000"),
       text("\n\nTHE FORM 1 VENDOR'S STATEMENT\n\nThe Form 1 is the seller's compulsory disclosure statement. It discloses title particulars, encumbrances, rates and taxes, and prescribed particulars about the property.\n\n"),
       field("form1_review", "Form 1 review", "The Form 1 discloses the certificate of title, a mortgage to be discharged at settlement, council rates of $1,940 per annum, and an easement for drainage. No land tax is currently assessed."),
-      text("\n\nCOOLING OFF - IMPORTANT TIMING POINT\n\nYou have 2 clear business days to cool off. That period runs from the LATER of:\n\n(a) the date the contract was made; and\n(b) the date the Form 1 was served on you.\n\nSo if the Form 1 is served late, your cooling-off rights are extended accordingly. This matters and is frequently misunderstood.\n\n"),
+      text("\n\nCOOLING OFF: IMPORTANT TIMING POINT\n\nYou have 2 clear business days to cool off. That period runs from the LATER of:\n\n(a) the date the contract was made; and\n(b) the date the Form 1 was served on you.\n\nSo if the Form 1 is served late, your cooling-off rights are extended accordingly. This matters and is frequently misunderstood.\n\n"),
       field("cooling_off_position", "Cooling-off position in this matter", "The contract was made on 14 August 2026 and the Form 1 served on 16 August 2026. Your cooling-off period therefore runs from 16 August."),
       text("\n\nCooling off does NOT apply if you buy at auction.\n\nSETTLEMENT AND DUTY\n\n"),
       field("settlement_duty", "Settlement and duty", "Settlement is 45 days from the contract date. Stamp duty is payable to RevenueSA and we will confirm the amount."),
@@ -135,10 +135,10 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
   // ── Western Australia ───────────────────────────────────────────
   {
     key: "convwa.contract_advice",
-    name: "Contract Advice - Residential Purchase (WA)",
+    name: "Contract Advice: Residential Purchase (WA)",
     description: "WA purchase advice, including that there is NO statutory cooling-off period.",
     category: "Conveyancing",
-    subcategory: "Purchase - Pre-exchange",
+    subcategory: "Purchase: Pre-exchange",
     documentType: "advice",
     jurisdictions: ["WA"],
     matterTypes: CONVEYANCING,
@@ -165,10 +165,10 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
   // ── Tasmania ────────────────────────────────────────────────────
   {
     key: "convtas.contract_advice",
-    name: "Contract Advice - Residential Purchase (TAS)",
+    name: "Contract Advice: Residential Purchase (TAS)",
     description: "Tasmanian purchase advice, covering vendor disclosure and the absence of cooling off.",
     category: "Conveyancing",
-    subcategory: "Purchase - Pre-exchange",
+    subcategory: "Purchase: Pre-exchange",
     documentType: "advice",
     jurisdictions: ["TAS"],
     matterTypes: CONVEYANCING,
@@ -197,7 +197,7 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
   // ── Cross-border warning ────────────────────────────────────────
   {
     key: "conv.interstate_warning_note",
-    name: "Interstate Conveyancing - Key Differences (file note)",
+    name: "Interstate Conveyancing: Key Differences (file note)",
     description: "Internal reminder of the differences that most often catch out a practitioner acting across state lines.",
     category: "Conveyancing",
     subcategory: "Practice Notes",
@@ -206,7 +206,7 @@ export const CONVEYANCING_STATES_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft an internal file note summarising the differences between the states that most often cause errors when acting across borders: vendor disclosure regimes, cooling-off periods, and which revenue office administers duty. This is an internal aide-memoire, not client correspondence. Present it as a comparison so a practitioner can check at a glance, and state plainly that it is a prompt to verify, not a substitute for checking the current position in the relevant state.",
     segments: [
-      text("INTERSTATE CONVEYANCING - CHECK BEFORE YOU ADVISE\n\nThis note is an aide-memoire only. Always confirm the current position in the relevant state.\n\nCOOLING OFF (all waived on auction purchase)\n\n  NSW   5 business days\n  VIC   3 business days\n  QLD   5 business days\n  SA    2 clear business days, running from the LATER of contract date\n        and service of the Form 1\n  WA    NONE\n  TAS   NONE\n\nVENDOR DISCLOSURE\n\n  NSW   Prescribed documents attached to the contract (s 10.7 certificate,\n        title, plan, drainage diagram)\n  VIC   Section 32 Vendor's Statement -- defects can give rescission rights\n  SA    Form 1 Vendor's Statement -- also drives the cooling-off start date\n  TAS   Vendor disclosure statement before contract\n  QLD   No general vendor's statement; warning statement in the contract,\n        plus disclosure for community-title lots\n  WA    No general vendor's statement\n\nDUTY ADMINISTERED BY\n\n  NSW Revenue NSW    VIC State Revenue Office    QLD Queensland Revenue Office\n  SA  RevenueSA      WA  RevenueWA               TAS State Revenue Office\n\nTHE TWO THAT CATCH PEOPLE OUT\n\n1. WA and TAS have no cooling off at all. A client who signs there is bound.\n   Every protection must be a contract condition, agreed before signing.\n\n2. In SA, late service of the Form 1 EXTENDS the cooling-off period. Check\n   the service date, not just the contract date.\n\n"),
+      text("INTERSTATE CONVEYANCING: CHECK BEFORE YOU ADVISE\n\nThis note is an aide-memoire only. Always confirm the current position in the relevant state.\n\nCOOLING OFF (all waived on auction purchase)\n\n  NSW   5 business days\n  VIC   3 business days\n  QLD   5 business days\n  SA    2 clear business days, running from the LATER of contract date\n        and service of the Form 1\n  WA    NONE\n  TAS   NONE\n\nVENDOR DISCLOSURE\n\n  NSW   Prescribed documents attached to the contract (s 10.7 certificate,\n        title, plan, drainage diagram)\n  VIC   Section 32 Vendor's Statement; defects can give rescission rights\n  SA    Form 1 Vendor's Statement; also drives the cooling-off start date\n  TAS   Vendor disclosure statement before contract\n  QLD   No general vendor's statement; warning statement in the contract,\n        plus disclosure for community-title lots\n  WA    No general vendor's statement\n\nDUTY ADMINISTERED BY\n\n  NSW Revenue NSW    VIC State Revenue Office    QLD Queensland Revenue Office\n  SA  RevenueSA      WA  RevenueWA               TAS State Revenue Office\n\nTHE TWO THAT CATCH PEOPLE OUT\n\n1. WA and TAS have no cooling off at all. A client who signs there is bound.\n   Every protection must be a contract condition, agreed before signing.\n\n2. In SA, late service of the Form 1 EXTENDS the cooling-off period. Check\n   the service date, not just the contract date.\n\n"),
       field("matter_note", "Note for this matter", "This matter concerns a Victorian property. Section 32 obtained and reviewed; cooling-off expiry diarised."),
     ],
     requiresReview: true,

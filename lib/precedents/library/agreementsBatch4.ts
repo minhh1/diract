@@ -304,12 +304,12 @@ export const AGREEMENTS_BATCH_4: PrecedentSeed[] = [
       ...executionLines("company_127_two_officers", "agreement", "Company"),
 
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 1 -- Shareholdings"]),
+      ...L("DeedHeading", ["Schedule 1: Shareholdings"]),
       ...L("DeedList-Level2-NoNumbering", [
         field("shareholdings", "Each Shareholder's holding: class, number and percentage", "Jane: 60 ordinary shares (60%). John: 40 ordinary shares (40%)."),
       ]),
       ...L(null, [""]),
-      ...L("DeedHeading", ["Schedule 2 -- Reserved Matters"]),
+      ...L("DeedHeading", ["Schedule 2: Reserved Matters"]),
       ...L("DeedList-Level2-NoNumbering", [
         "Each of the following is a Reserved Matter:",
       ]),

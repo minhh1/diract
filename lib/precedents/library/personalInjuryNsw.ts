@@ -31,7 +31,7 @@ const PI = ["Litigation", "Other"];
 export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
   {
     key: "pinsw.initial_advice_motor",
-    name: "Initial Advice - Motor Accident (NSW)",
+    name: "Initial Advice: Motor Accident (NSW)",
     description: "First advice to an injured person on the CTP scheme, statutory benefits and damages.",
     category: "Personal Injury",
     subcategory: "Motor Accident",
@@ -39,18 +39,18 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: PI,
     aiInstructions:
-      "Draft initial advice to a person injured in a NSW motor accident. Explain the two limbs: statutory benefits (weekly payments and treatment expenses, largely no-fault, available regardless of who caused the accident but time-limited), and a common law damages claim (fault-based, and only available where the injury threshold is met). Explain that the applicable scheme depends on the accident date. Stress the urgency of lodging with the insurer. Explain the role of the Personal Injury Commission if a dispute arises. Do NOT state limitation periods, benefit durations or threshold percentages as settled figures -- confirm each against current legislation.",
+      "Draft initial advice to a person injured in a NSW motor accident. Explain the two limbs: statutory benefits (weekly payments and treatment expenses, largely no-fault, available regardless of who caused the accident but time-limited), and a common law damages claim (fault-based, and only available where the injury threshold is met). Explain that the applicable scheme depends on the accident date. Stress the urgency of lodging with the insurer. Explain the role of the Personal Injury Commission if a dispute arises. Do NOT state limitation periods, benefit durations or threshold percentages as settled figures: confirm each against current legislation.",
     segments: [
-      text("MOTOR ACCIDENT CLAIM - INITIAL ADVICE\n\nAccident date: "),
+      text("MOTOR ACCIDENT CLAIM: INITIAL ADVICE\n\nAccident date: "),
       field("accident_date", "Accident date", "14 June 2026"),
       text("\n\nWHICH SCHEME APPLIES\n\n"),
       field("scheme", "Applicable scheme", "As your accident occurred after 1 December 2017, your claim falls under the Motor Accidents Injuries Act 2017 (NSW)."),
-      text("\n\nTHERE ARE TWO SEPARATE ENTITLEMENTS\n\n1. STATUTORY BENEFITS\n\nThese cover weekly income support and reasonable and necessary medical treatment. They are largely no-fault -- you can claim even if the accident was partly your own fault, though there are exceptions for serious offences and for wholly-at-fault drivers after an initial period.\n\nThese benefits are time-limited in duration, and continuing entitlement depends on the degree of your injury.\n\n2. COMMON LAW DAMAGES\n\nA damages claim is fault-based -- someone else must have been negligent -- and is only available if your injury meets the threshold set by the legislation. Damages can include past and future economic loss and, if the threshold is met, non-economic loss.\n\nYOUR POSITION\n\n"),
+      text("\n\nTHERE ARE TWO SEPARATE ENTITLEMENTS\n\n1. STATUTORY BENEFITS\n\nThese cover weekly income support and reasonable and necessary medical treatment. They are largely no-fault: you can claim even if the accident was partly your own fault, though there are exceptions for serious offences and for wholly-at-fault drivers after an initial period.\n\nThese benefits are time-limited in duration, and continuing entitlement depends on the degree of your injury.\n\n2. COMMON LAW DAMAGES\n\nA damages claim is fault-based, meaning someone else must have been negligent, and is only available if your injury meets the threshold set by the legislation. Damages can include past and future economic loss and, if the threshold is met, non-economic loss.\n\nYOUR POSITION\n\n"),
       field("position", "Assessment of the client's position", "Liability appears clear: the other driver failed to give way at a roundabout and was issued an infringement. Your injuries include a cervical spine injury and an ongoing shoulder impairment which may meet the threshold, though that will require medical assessment."),
-      text("\n\nURGENT - LODGING YOUR CLAIM\n\nYou must lodge a claim with the at-fault vehicle's CTP insurer promptly. Late lodgement can reduce or defeat your entitlement and requires a full and satisfactory explanation.\n\n"),
+      text("\n\nURGENT: LODGING YOUR CLAIM\n\nYou must lodge a claim with the at-fault vehicle's CTP insurer promptly. Late lodgement can reduce or defeat your entitlement and requires a full and satisfactory explanation.\n\n"),
       field("lodgement_status", "Lodgement status", "We will lodge your claim this week. Please provide the police event number and the other vehicle's registration."),
       text("\n\nIF THERE IS A DISPUTE\n\nDisputes about statutory benefits, treatment approval or the degree of impairment are determined by the Personal Injury Commission, not the courts.\n\nWHAT WE NEED FROM YOU\n\n"),
-      field("client_actions", "What the client should do", "1. See your GP and make sure every symptom is recorded -- gaps in the medical record are used against claimants later.\n2. Keep all receipts for treatment, medication and travel.\n3. Do not give a recorded statement to any insurer before speaking to us."),
+      field("client_actions", "What the client should do", "1. See your GP and make sure every symptom is recorded: gaps in the medical record are used against claimants later.\n2. Keep all receipts for treatment, medication and travel.\n3. Do not give a recorded statement to any insurer before speaking to us."),
     ],
     requiresReview: true,
     reviewNote:
@@ -68,7 +68,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     aiInstructions:
       "Draft a claim notification letter to a CTP insurer. Include the accident date, time and location, the vehicles and drivers involved, the police event number, a short factual account of how the accident happened, the injuries sustained, treatment to date, and the claimant's employment and income position. Enclose the completed claim form and any medical certificates. Ask the insurer to confirm receipt, acceptance of provisional liability and the commencement of weekly payments.",
     segments: [
-      text("PERSONAL INJURY CLAIM - MOTOR ACCIDENT\n\nWe act for "),
+      text("PERSONAL INJURY CLAIM: MOTOR ACCIDENT\n\nWe act for "),
       field("client_name", "Our client", "Jane Citizen"),
       text(", who was injured in a motor accident.\n\nACCIDENT DETAILS\n\nDate and time: "),
       field("accident_datetime", "Date and time", "14 June 2026 at approximately 8:15am"),
@@ -125,7 +125,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     ],
     requiresReview: true,
     reviewNote:
-      "Confirm the current claim notification deadline and the definition of pre-injury average weekly earnings under NSW workers compensation legislation -- both affect entitlement and have been amended.",
+      "Confirm the current claim notification deadline and the definition of pre-injury average weekly earnings under NSW workers compensation legislation: both affect entitlement and have been amended.",
   },
   {
     key: "pinsw.request_medical_records",
@@ -162,7 +162,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: PI,
     aiInstructions:
-      "Draft a letter briefing a medical specialist for a medico-legal report. Set out the client's details, the accident or injury circumstances, the injuries claimed, the treatment history, and the specific questions the expert is asked to address (diagnosis, causation, treatment reasonableness, capacity for work, permanence, and whole person impairment where relevant). Enclose an index of the materials provided. Ask about fees and timeframe. Emphasise the expert's overriding duty is to the Court, not to the party paying -- an expert steered toward a conclusion is worthless.",
+      "Draft a letter briefing a medical specialist for a medico-legal report. Set out the client's details, the accident or injury circumstances, the injuries claimed, the treatment history, and the specific questions the expert is asked to address (diagnosis, causation, treatment reasonableness, capacity for work, permanence, and whole person impairment where relevant). Enclose an index of the materials provided. Ask about fees and timeframe. Emphasise the expert's overriding duty is to the Court, not to the party paying: an expert steered toward a conclusion is worthless.",
     segments: [
       text("REQUEST FOR MEDICO-LEGAL REPORT\n\nPatient: "),
       field("patient", "Patient", "Jane Citizen, date of birth 4 April 1988"),
@@ -189,9 +189,9 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: PI,
     aiInstructions:
-      "Draft a letter warning the client of an approaching limitation period. State the date the period expires, what must be done before it, what happens if it is missed (the claim is generally lost entirely and an extension requires the Court's permission which is not readily given), what instructions are needed and by when, and how the client should confirm receipt of the warning (so there is a clear record they were told, protecting both client and firm). Note what the firm will do if instructions are not received in time -- typically that the firm cannot act to protect the claim without them, and may need to cease acting if the deadline is genuinely at risk. This letter protects both the client and the firm -- it must be unambiguous, and it should be sent well before the deadline, not on its eve.",
+      "Draft a letter warning the client of an approaching limitation period. State the date the period expires, what must be done before it, what happens if it is missed (the claim is generally lost entirely and an extension requires the Court's permission which is not readily given), what instructions are needed and by when, and how the client should confirm receipt of the warning (so there is a clear record they were told, protecting both client and firm). Note what the firm will do if instructions are not received in time: typically that the firm cannot act to protect the claim without them, and may need to cease acting if the deadline is genuinely at risk. This letter protects both the client and the firm; it must be unambiguous, and it should be sent well before the deadline, not on its eve.",
     segments: [
-      text("URGENT - LIMITATION PERIOD\n\nWe write to put you on clear notice of a deadline affecting your claim.\n\nYOUR LIMITATION PERIOD EXPIRES ON: "),
+      text("URGENT: LIMITATION PERIOD\n\nWe write to put you on clear notice of a deadline affecting your claim.\n\nYOUR LIMITATION PERIOD EXPIRES ON: "),
       field("expiry_date", "Limitation expiry date", "14 June 2029"),
       text("\n\nWHAT THIS MEANS\n\nIf proceedings are not commenced before that date, your claim will in most circumstances be lost entirely, no matter how strong it is. An extension requires the Court's permission, which is not readily granted.\n\nWHAT MUST HAPPEN BEFORE THEN\n\n"),
       field("required_steps", "Steps required before expiry", "1. Completion of the medico-legal assessment.\n2. Resolution of the statutory benefits dispute currently before the Personal Injury Commission.\n3. Your instructions to commence proceedings."),
@@ -213,7 +213,7 @@ export const PERSONAL_INJURY_NSW_PRECEDENTS: PrecedentSeed[] = [
     jurisdictions: ["NSW"],
     matterTypes: PI,
     aiInstructions:
-      "Draft a covering letter for an application to the Personal Injury Commission. Identify the division (Motor Accidents or Workers Compensation), the nature of the dispute, the decision under challenge and its date, the outcome sought, list the documents lodged, and confirm the application is within the time limit for disputing that decision (stating the date by which it had to be lodged). Note whether the matter will proceed to the Commission's informal telephone conference / mediation stage or straight to a merit review, since that affects what the claimant should expect next. Keep it otherwise administrative and precise -- the substance belongs in the application and supporting statements.",
+      "Draft a covering letter for an application to the Personal Injury Commission. Identify the division (Motor Accidents or Workers Compensation), the nature of the dispute, the decision under challenge and its date, the outcome sought, list the documents lodged, and confirm the application is within the time limit for disputing that decision (stating the date by which it had to be lodged). Note whether the matter will proceed to the Commission's informal telephone conference / mediation stage or straight to a merit review, since that affects what the claimant should expect next. Keep it otherwise administrative and precise: the substance belongs in the application and supporting statements.",
     segments: [
       text("APPLICATION TO THE PERSONAL INJURY COMMISSION\n\nDivision: "),
       field("division", "Division", "Motor Accidents Division"),
