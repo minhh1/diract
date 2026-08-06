@@ -1,0 +1,19 @@
+-- Fourth bug in the same family, found via the diagnostic logging added
+-- alongside this migration (see gmail-migration-worker/gmail-sync-recovery-
+-- worker's importMessage and its two call sites): when a message's filer
+-- HAS a valid Gmail connection but has since deleted their own copy of that
+-- specific message, importMessage's read_raw stage 404s -- permanently,
+-- since there's no other copy to read. The code released the import claim
+-- and moved on, but never recorded the message as resolved, so every tick
+-- re-ran a real network call (read_raw) on it forever. Confirmed live
+-- 2026-08-06 via the new import_message_failed logging: this, not a fifth
+-- distinct bug, was what kept two email_sync items ("33 Moore Street",
+-- "Purchase - 23 Chidgey Street") plateaued even after the three earlier
+-- fixes in this family (user-scoping, already-claimed-import, orphaned-
+-- filer) were deployed. Fixed by recording confirmed_applied_ids on a 404
+-- specifically (a non-404 failure -- rate limit, transient 5xx -- is left
+-- alone to retry as before).
+--
+-- No requeue needed here: persistent_failure was already back to 0 for
+-- job_type='email_sync' by the time this was verified (the two previously-
+-- stuck items cleared on their own once the fix was live).

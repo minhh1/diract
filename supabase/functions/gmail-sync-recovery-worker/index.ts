@@ -220,19 +220,31 @@ async function userHasMessage(token: string, msgId: string): Promise<boolean> {
   return res.ok;
 }
 
-async function importMessage(sourceToken: string, targetToken: string, msgId: string, labelId: string): Promise<boolean> {
+// Return shape carries the failure reason -- see the matching fix/comment
+// in gmail-migration-worker's importMessage. Neither failure branch here
+// nor the caller previously logged anything, unlike label_sync's
+// apply_label_failed, so a message that consistently fails to import was
+// silently retried forever with zero visibility into why.
+async function importMessage(sourceToken: string, targetToken: string, msgId: string, labelId: string): Promise<{ ok: boolean; stage?: string; status?: number; error?: string }> {
   const rawRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=raw`,
     { headers: { Authorization: `Bearer ${sourceToken}` }, signal: withTimeout() }
   );
-  if (!rawRes.ok) return false;
+  if (!rawRes.ok) {
+    const error = await rawRes.text().catch(() => "");
+    return { ok: false, stage: "read_raw", status: rawRes.status, error: error.slice(0, 300) };
+  }
   const { raw } = await rawRes.json();
-  if (!raw) return false;
+  if (!raw) return { ok: false, stage: "read_raw", error: "Response had no raw content" };
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/import", {
     method: "POST", headers: { Authorization: `Bearer ${targetToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ raw, labelIds: [labelId] }), signal: withTimeout(),
   });
-  return res.ok;
+  if (!res.ok) {
+    const error = await res.text().catch(() => "");
+    return { ok: false, stage: "import", status: res.status, error: error.slice(0, 300) };
+  }
+  return { ok: true };
 }
 
 // ── Job / logging helpers ──────────────────────────────────────────
@@ -514,6 +526,12 @@ async function runRecovery(t0: number): Promise<Response> {
                 madeProgressThisTick = true;
                 await db.from("gmail_sync_failures")
                   .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
+              } else {
+                await logActivity({
+                  company_id: companyId, triggered_by: null, action: "apply_label_failed",
+                  project_id: projectId, gmail_label_name: gmailLabelName, target_user_id: userId,
+                  details: { job_type: jobType, msgId, status: result.status, error: result.error },
+                });
               }
               continue;
             }
@@ -555,14 +573,30 @@ async function runRecovery(t0: number): Promise<Response> {
                 .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
               continue;
             }
-            const ok = await importMessage(filerToken, token, msgId, labelId);
-            if (ok) {
+            const importResult = await importMessage(filerToken, token, msgId, labelId);
+            if (importResult.ok) {
               confirmedAppliedIds.add(msgId);
               madeProgressThisTick = true;
               await db.from("gmail_sync_failures")
                 .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
             } else {
               await releaseImportClaim(userId, msgId);
+              await logActivity({
+                company_id: companyId, triggered_by: null, action: "import_message_failed",
+                project_id: projectId, gmail_label_name: gmailLabelName, target_user_id: userId,
+                details: { job_type: jobType, msgId, filer: filerByMsgId[msgId], stage: importResult.stage, status: importResult.status, error: importResult.error },
+              });
+              // A 404 reading the raw content means the FILER's own copy is
+              // gone (they deleted it from Gmail) -- permanent, not
+              // transient. See the matching fix/comment in
+              // gmail-migration-worker's email_sync branch, which is where
+              // this was actually diagnosed live.
+              if (importResult.status === 404) {
+                confirmedAppliedIds.add(msgId);
+                madeProgressThisTick = true;
+                await db.from("gmail_sync_failures")
+                  .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
+              }
             }
           }
           await db.from("project_emails").update({ gmail_label_applied: true })
