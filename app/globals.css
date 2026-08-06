@@ -9,6 +9,14 @@
    component file. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Used by marketing mockups' auto-cycling content (e.g. the Auto Time
+   Recording drawer's Brief/Standard/Detailed self-playing demo) via
+   Tailwind's animate-[fadein_...] arbitrary value. */
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* In v4, we define base styles like this */
 @layer base {
   body {

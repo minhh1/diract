@@ -426,16 +426,33 @@ export const AUTO_TIME_ENTRY_EXAMPLES: {
 // count the same way the real panel does when you deselect an entry, and
 // the button label itself flips to "Push" in the admin/everyone scope,
 // same as the real panel's own `scope === "all" ? "Push" : "Submit"` copy.
-export function MockAutoTimeEntries() {
+const DETAIL_CYCLE = ["brief", "standard", "detailed"] as const;
+
+export function MockAutoTimeEntries({ autoPlay = true }: { autoPlay?: boolean } = {}) {
   const [scope, setScope] = useState<"mine" | "everyone">("mine");
-  const [detail, setDetail] = useState<"brief" | "standard" | "detailed">("detailed");
+  const [detail, setDetail] = useState<"brief" | "standard" | "detailed">(autoPlay ? "brief" : "detailed");
   const [selected, setSelected] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(AUTO_TIME_ENTRY_EXAMPLES.map((e) => [e.matter, true]))
   );
+  const [playing, setPlaying] = useState(autoPlay);
+
+  // Auto-cycles Brief -> Standard -> Detailed on a loop so this reads as a
+  // self-playing "how it works" demo without needing a real screen
+  // recording -- any click hands control back to the visitor permanently.
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => {
+      setDetail((d) => DETAIL_CYCLE[(DETAIL_CYCLE.indexOf(d) + 1) % DETAIL_CYCLE.length]);
+    }, 2400);
+    return () => clearInterval(id);
+  }, [playing]);
+
+  const stopAutoPlay = () => setPlaying(false);
+
   const visibleEntries = scope === "mine" ? AUTO_TIME_ENTRY_EXAMPLES.filter((e) => e.mine) : AUTO_TIME_ENTRY_EXAMPLES;
   const selectedCount = visibleEntries.filter((e) => selected[e.matter]).length;
   return (
-    <div className="w-full max-w-sm rounded-[20px] border border-slate-200 bg-white shadow-xl overflow-hidden">
+    <div onClickCapture={stopAutoPlay} className="w-full max-w-sm rounded-[20px] border border-slate-200 bg-white shadow-xl overflow-hidden">
       <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
         <h3 className="text-[12px] font-bold text-slate-800 uppercase tracking-wide">Auto Time Recording</h3>
         <X size={16} className="text-slate-300" />
@@ -474,7 +491,7 @@ export function MockAutoTimeEntries() {
               <span className="text-[10px] text-slate-400">·</span>
               <span className="text-[10px] font-bold text-slate-500">Matter: {e.matter}</span>
             </div>
-            <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-slate-700">
+            <div key={detail} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] font-medium text-slate-700 animate-[fadein_0.4s_ease-out]">
               {e.description[detail]}
             </div>
             <div className="flex items-center gap-2">

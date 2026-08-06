@@ -12,6 +12,7 @@
 // project mapping in supabase/functions/gmail-push/index.ts (matching).
 import { Sparkles, ListChecks, ChevronDown } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
+import { MockAutoTimeEntries } from "@/components/marketing/mockups";
 import { DetailHero, Section } from "./Section";
 
 export default function AiTimeEntriesDetail() {
@@ -40,6 +41,16 @@ export default function AiTimeEntriesDetail() {
             <div className="flex-1 h-14 flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-[12px] font-bold text-slate-700">
               <ListChecks size={16} /> My Tasks
             </div>
+          </div>
+        </Section>
+
+        <Section eyebrow="See it in action" title="Watch the descriptions redraft themselves">
+          <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
+            This is the real drawer, cycling through Brief, Standard, and Detailed on its own so you can see the difference at a
+            glance. Click anywhere in it to take over and switch levels yourself.
+          </p>
+          <div className={isDark ? "dark" : ""}>
+            <MockAutoTimeEntries />
           </div>
         </Section>
 
