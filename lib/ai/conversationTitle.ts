@@ -34,7 +34,8 @@ export async function generateConversationTitle(firstMessage: string): Promise<s
     );
     const title = usage.content.trim().replace(/^["'“”]+|["'“”]+$/g, "").replace(/[.!?]+$/, "").trim();
     return title ? title.slice(0, 60) : null;
-  } catch {
+  } catch (err) {
+    console.error("[generateConversationTitle] failed:", err);
     return null;
   }
 }
