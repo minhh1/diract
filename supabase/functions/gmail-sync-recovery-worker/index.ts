@@ -19,6 +19,10 @@ const db = createClient(
 const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
 const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
 const RECOVERY_MAX_ATTEMPTS = 3;
+// Consecutive (not cumulative) zero-progress deferrals before escalating to
+// persistent_failure -- same fix as gmail-migration-worker's identical
+// constant/incident.
+const STALL_THRESHOLD = 3;
 // Same chunk size deleteGmailLabel already parallelises removeLabelFromMessage
 // calls in below -- applying labels in chunks like this instead of one at a
 // time is what actually lets a fair-share slice make a real dent.
@@ -387,6 +391,7 @@ async function runRecovery(t0: number): Promise<Response> {
     const {
       id: failureId, company_id: companyId, job_id: jobId, job_type: jobType,
       project_id: projectId, user_id: userId, attempts, confirmed_applied_ids: confirmedAppliedIdsRaw,
+      consecutive_stall_count: consecutiveStallCount,
     } = failure;
     // Same fix as gmail-migration-worker's identical variable -- a message
     // this failure already succeeded on in a prior tick stays excluded from
@@ -394,6 +399,15 @@ async function runRecovery(t0: number): Promise<Response> {
     const confirmedAppliedIds = new Set<string>(Array.isArray(confirmedAppliedIdsRaw) ? confirmedAppliedIdsRaw : []);
     retried++;
     console.log(`[sync-recovery-worker] Retrying failure=${failureId} job=${jobId} user=${userId} type=${jobType} attempt=${attempts + 1}/${RECOVERY_MAX_ATTEMPTS} budget=${Math.round(itemBudgetMs / 1000)}s`);
+
+    // Same fix as gmail-migration-worker's identical variables/incident -- a
+    // deferral that confirmed zero real progress this tick increments its
+    // OWN consecutive-stall counter (separate from `attempts`, which real
+    // thrown errors still use independently); STALL_THRESHOLD of these in a
+    // row with no progress in between escalates to persistent_failure,
+    // resetting to 0 the instant any tick makes real progress.
+    let madeProgressThisTick = false;
+    let stallCount = consecutiveStallCount || 0;
 
     let job: any = null;
     try {
@@ -442,7 +456,7 @@ async function runRecovery(t0: number): Promise<Response> {
               if (Date.now() > itemDeadline) throw new BudgetDeferredError(`Item's fair-share budget (${Math.round(itemBudgetMs / 1000)}s) reached mid-mailbox (${toApply.length - c} of ${toApply.length} messages remaining) -- will resume next tick`);
               const results = await Promise.all(toApply.slice(c, c + APPLY_CHUNK_SIZE).map(msgId => applyLabel(token, msgId, labelId)));
               let chunkHadNewConfirmations = false;
-              for (const r of results) if (r.ok) { confirmedAppliedIds.add(r.msgId); chunkHadNewConfirmations = true; }
+              for (const r of results) if (r.ok) { confirmedAppliedIds.add(r.msgId); chunkHadNewConfirmations = true; madeProgressThisTick = true; }
               if (chunkHadNewConfirmations) {
                 await db.from("gmail_sync_failures")
                   .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
@@ -490,6 +504,7 @@ async function runRecovery(t0: number): Promise<Response> {
               const result = await applyLabel(token, msgId, labelId);
               if (result.ok) {
                 confirmedAppliedIds.add(msgId);
+                madeProgressThisTick = true;
                 await db.from("gmail_sync_failures")
                   .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
               }
@@ -502,7 +517,14 @@ async function runRecovery(t0: number): Promise<Response> {
             // importing this exact (user, message) pair concurrently.
             if (!(await claimImport(companyId, projectId, userId, msgId))) continue;
             const ok = await importMessage(filerToken, token, msgId, labelId);
-            if (!ok) await releaseImportClaim(userId, msgId);
+            if (ok) {
+              confirmedAppliedIds.add(msgId);
+              madeProgressThisTick = true;
+              await db.from("gmail_sync_failures")
+                .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
+            } else {
+              await releaseImportClaim(userId, msgId);
+            }
           }
           await db.from("project_emails").update({ gmail_label_applied: true })
             .eq("project_id", projectId).eq("company_id", companyId).eq("user_id", userId);
@@ -525,15 +547,41 @@ async function runRecovery(t0: number): Promise<Response> {
       console.log(`[sync-recovery-worker] ✓ Resolved failure ${failureId}`);
 
     } catch (err: any) {
-      if (err?.deferred) {
+      if (err?.deferred && madeProgressThisTick) {
         // Real progress was made (Gmail's own label state is the checkpoint)
         // but this item alone ran out of time -- retry it next tick without
-        // burning one of its RECOVERY_MAX_ATTEMPTS.
+        // burning one of its RECOVERY_MAX_ATTEMPTS, and reset the stall streak.
         await db.from("gmail_sync_failures").update({
-          last_error: err.message || "Deferred -- resuming next tick", last_attempted_at: new Date().toISOString(),
+          last_error: err.message || "Deferred -- resuming next tick", consecutive_stall_count: 0,
+          last_attempted_at: new Date().toISOString(),
         }).eq("id", failureId);
         deferred++;
-        console.log(`[sync-recovery-worker] ⏸ Deferred (not counted as a failed attempt): ${failureId} -- ${err.message}`);
+        console.log(`[sync-recovery-worker] ⏸ Deferred (not counted as a failed attempt -- made real progress this tick, stall streak reset): ${failureId} -- ${err.message}`);
+        continue;
+      }
+      if (err?.deferred) {
+        // Deferred with confirmed zero real progress this tick -- own
+        // consecutive-stall counter, separate from `attempts`, same fix as
+        // gmail-migration-worker's identical branch.
+        stallCount += 1;
+        const stalled = stallCount >= STALL_THRESHOLD;
+        await db.from("gmail_sync_failures").update({
+          status: stalled ? "persistent_failure" : "pending_retry",
+          consecutive_stall_count: stallCount, last_error: err.message || "Deferred -- resuming next tick",
+          last_attempted_at: new Date().toISOString(),
+        }).eq("id", failureId);
+        if (stalled) {
+          escalated++;
+          await logActivity({
+            company_id: companyId, triggered_by: null, action: "sync_failed",
+            project_id: projectId, gmail_label_name: job?.gmail_label_name || null,
+            target_user_id: userId, details: { job_type: jobType, error: err.message, reason: "consecutive_stall" },
+          });
+          console.error(`[sync-recovery-worker] ✗ Escalated to persistent_failure after ${stallCount} consecutive zero-progress ticks: ${failureId} -- ${err.message}`);
+        } else {
+          deferred++;
+          console.log(`[sync-recovery-worker] ⏸ Deferred with ZERO progress (stall ${stallCount}/${STALL_THRESHOLD}): ${failureId} -- ${err.message}`);
+        }
         continue;
       }
 

@@ -30,6 +30,11 @@ const db = createClient(
 const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
 const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
 const MAX_ATTEMPTS = 3;
+// Consecutive (not cumulative) zero-progress deferrals before escalating to
+// persistent_failure -- see runMigration's own comment on
+// consecutiveStallCount for why this needs to be its own counter, separate
+// from MAX_ATTEMPTS.
+const STALL_THRESHOLD = 3;
 // Same chunk size deleteGmailLabel already parallelises removeLabelFromMessage
 // calls in below -- applying labels in chunks like this instead of one at a
 // time is what actually lets a fair-share slice make a real dent.
@@ -373,7 +378,7 @@ async function runMigration(t0: number): Promise<Response> {
     const {
       id: itemId, company_id: companyId, source_job_id: sourceJobId, job_type: jobType,
       project_id: projectId, user_id: userId, label_code: labelCode, total_users: totalUsers, attempts,
-      confirmed_applied_ids: confirmedAppliedIdsRaw,
+      confirmed_applied_ids: confirmedAppliedIdsRaw, consecutive_stall_count: consecutiveStallCount,
     } = item;
     // Message ids this item has already successfully called applyLabel on
     // in a PRIOR tick -- excluded from toApply below regardless of what a
@@ -386,6 +391,29 @@ async function runMigration(t0: number): Promise<Response> {
     console.log(`[migration-worker] Processing item=${itemId} job=${sourceJobId} user=${userId} type=${jobType} messages=${item.message_count} attempt=${attempts + 1}/${MAX_ATTEMPTS} budget=${Math.round(itemBudgetMs / 1000)}s`);
 
     await db.from("gmail_migration_jobs").update({ status: "processing", updated_at: new Date().toISOString() }).eq("id", itemId);
+
+    // Whether THIS tick's attempt actually confirmed applying the label to
+    // at least one message before deferring -- a defer that made real
+    // (even slow) progress keeps the unlimited free-retry treatment below
+    // AND resets consecutiveStallCount to 0, since punishing a genuinely
+    // large mailbox for being slow was the whole reason deferrals don't
+    // burn attempts in the first place. A defer that accomplished NOTHING
+    // increments consecutiveStallCount instead; STALL_THRESHOLD consecutive
+    // (not cumulative) zero-progress ticks with no progress in between
+    // escalates to persistent_failure, using its OWN counter, entirely
+    // separate from `attempts` (real thrown errors still escalate via their
+    // existing independent MAX_ATTEMPTS path, unaffected by this).
+    //
+    // First version of this fix used `attempts` itself for both, counting
+    // cumulatively over the item's whole multi-hour history -- confirmed
+    // live: 24 large-but-otherwise-healthy (300-365 message) jobs escalated
+    // within 20 minutes, every one of them having made SOME real progress
+    // along the way, just not on 3 of their (non-consecutive) ticks. The
+    // 3 originally-stuck items this was meant to catch (zero progress ever,
+    // every single tick) needed a consecutive-run counter, not a cumulative
+    // one shared with genuine API failures.
+    let madeProgressThisTick = false;
+    let stallCount = consecutiveStallCount || 0;
 
     try {
       const { data: job } = await db.from("gmail_sync_jobs").select("*").eq("id", sourceJobId).maybeSingle();
@@ -445,7 +473,7 @@ async function runMigration(t0: number): Promise<Response> {
               const results = await Promise.all(toApply.slice(c, c + APPLY_CHUNK_SIZE).map(msgId => applyLabel(token, msgId, labelId)));
               let chunkHadNewConfirmations = false;
               for (const r of results) {
-                if (r.ok) { confirmedAppliedIds.add(r.msgId); chunkHadNewConfirmations = true; }
+                if (r.ok) { confirmedAppliedIds.add(r.msgId); chunkHadNewConfirmations = true; madeProgressThisTick = true; }
                 else applyFailures.push(r);
               }
               // Persisted after every chunk (not just once at the end) so a
@@ -504,6 +532,7 @@ async function runMigration(t0: number): Promise<Response> {
               const result = await applyLabel(token, msgId, labelId);
               if (result.ok) {
                 confirmedAppliedIds.add(msgId);
+                madeProgressThisTick = true;
                 await db.from("gmail_migration_jobs")
                   .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", itemId);
               }
@@ -513,7 +542,14 @@ async function runMigration(t0: number): Promise<Response> {
             if (!filerToken) continue;
             if (!(await claimImport(companyId, projectId, userId, msgId))) continue;
             const ok = await importMessage(filerToken, token, msgId, labelId);
-            if (!ok) await releaseImportClaim(userId, msgId);
+            if (ok) {
+              confirmedAppliedIds.add(msgId);
+              madeProgressThisTick = true;
+              await db.from("gmail_migration_jobs")
+                .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", itemId);
+            } else {
+              await releaseImportClaim(userId, msgId);
+            }
           }
           await db.from("project_emails").update({ gmail_label_applied: true })
             .eq("project_id", projectId).eq("company_id", companyId).eq("user_id", userId);
@@ -538,12 +574,42 @@ async function runMigration(t0: number): Promise<Response> {
       console.log(`[migration-worker] ✓ Done item ${itemId}`);
 
     } catch (err: any) {
-      if (err?.deferred) {
+      if (err?.deferred && madeProgressThisTick) {
         await db.from("gmail_migration_jobs").update({
-          status: "pending", last_error: err.message || "Deferred -- resuming next tick", updated_at: new Date().toISOString(),
+          status: "pending", last_error: err.message || "Deferred -- resuming next tick",
+          consecutive_stall_count: 0, updated_at: new Date().toISOString(),
         }).eq("id", itemId);
         deferred++;
-        console.log(`[migration-worker] ⏸ Deferred (not counted as a failed attempt): ${itemId} -- ${err.message}`);
+        console.log(`[migration-worker] ⏸ Deferred (not counted as a failed attempt -- made real progress this tick, stall streak reset): ${itemId} -- ${err.message}`);
+        continue;
+      }
+      if (err?.deferred) {
+        // Deferred with confirmed zero real progress this tick -- unlike a
+        // genuinely large mailbox slowly working through its budget every
+        // tick, this item accomplished nothing at all (setup alone likely
+        // ate the whole fair-share slice). Doesn't touch `attempts` (real
+        // thrown errors keep their own independent count/escalation below)
+        // -- only escalates once STALL_THRESHOLD of these happen in a row
+        // with no progress in between, via this item's own separate counter.
+        stallCount += 1;
+        const stalled = stallCount >= STALL_THRESHOLD;
+        await db.from("gmail_migration_jobs").update({
+          status: stalled ? "persistent_failure" : "pending",
+          consecutive_stall_count: stallCount, last_error: err.message || "Deferred -- resuming next tick",
+          updated_at: new Date().toISOString(),
+        }).eq("id", itemId);
+        if (stalled) {
+          escalated++;
+          await logActivity({
+            company_id: companyId, triggered_by: null, action: "sync_failed",
+            project_id: projectId, gmail_label_name: item.gmail_label_name,
+            target_user_id: userId, details: { job_type: jobType, error: err.message, lane: "migration", reason: "consecutive_stall" },
+          });
+          console.error(`[migration-worker] ✗ Escalated to persistent_failure after ${stallCount} consecutive zero-progress ticks: ${itemId} -- ${err.message}`);
+        } else {
+          deferred++;
+          console.log(`[migration-worker] ⏸ Deferred with ZERO progress (stall ${stallCount}/${STALL_THRESHOLD}): ${itemId} -- ${err.message}`);
+        }
         continue;
       }
 

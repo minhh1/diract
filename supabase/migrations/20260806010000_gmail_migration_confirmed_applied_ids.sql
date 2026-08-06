@@ -1,0 +1,14 @@
+-- Persists which message ids a migration item has already successfully
+-- applied its label to, across ticks -- previously the worker re-derived
+-- "which messages still need the label" from a fresh Gmail
+-- messages.list?labelIds=X call on every single tick, with nothing
+-- remembering a prior tick's own successful applyLabel calls. Confirmed
+-- live: that list endpoint isn't strongly consistent under sustained
+-- repeated polling (same label, every ~5 min, for hours) -- several jobs
+-- oscillated between two "remaining" counts indefinitely instead of
+-- converging, because a message the worker had already successfully
+-- labelled could still show as "missing" on a later read, putting it back
+-- into toApply and never letting the count settle. Once a message's own
+-- applyLabel call returns 200, this now remembers that permanently for the
+-- item, independent of what any later list read says.
+ALTER TABLE gmail_migration_jobs ADD COLUMN IF NOT EXISTS confirmed_applied_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
