@@ -48,13 +48,17 @@ function formatDate(d: string | null): string {
   try { return new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return d; }
 }
 
+// Widths sum to PAGE_W - 2*MARGIN (751.89) so the table's left/right edges
+// line up with the Reconciliation Summary box and the horizontal rule
+// below it, rather than stopping well short of the page like the old
+// narrower columns did.
 const COLS: { key: keyof TrustTrialBalanceRow; label: string; width: number; align: 'left' | 'right' }[] = [
-  { key: 'matterNumber', label: 'Matter Ref', width: 60, align: 'left' },
-  { key: 'description', label: 'Description', width: 130, align: 'left' },
-  { key: 'matterType', label: 'Type', width: 70, align: 'left' },
-  { key: 'clientName', label: 'Client(s)', width: 105, align: 'left' },
-  { key: 'lastTransactionDate', label: 'Last Txn Date', width: 62, align: 'left' },
-  { key: 'balance', label: 'Balance', width: 78, align: 'right' },
+  { key: 'matterNumber', label: 'Matter Ref', width: 72, align: 'left' },
+  { key: 'description', label: 'Description', width: 195, align: 'left' },
+  { key: 'matterType', label: 'Type', width: 88, align: 'left' },
+  { key: 'clientName', label: 'Client(s)', width: 165, align: 'left' },
+  { key: 'lastTransactionDate', label: 'Last Transaction Date', width: 130, align: 'left' },
+  { key: 'balance', label: 'Balance', width: 102, align: 'right' },
 ];
 
 export async function generateTrustTrialBalancePdf(input: GenerateTrustTrialBalancePdfInput): Promise<Uint8Array> {
