@@ -22,6 +22,13 @@ export interface HostedModel {
   contextWindow: number;
 }
 
+// Single source of truth for "what model the table/dashboard-builder
+// assistant (and its research sub-agent, see lib/ai/tableBuilderTools.ts's
+// researchTopic) uses" -- app/api/ai/chat/route.ts imports this instead of
+// hardcoding its own copy of the string, so the main assistant and its
+// research sub-agent can't silently drift onto different models.
+export const TABLE_BUILDER_MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro";
+
 export const HOSTED_MODELS: HostedModel[] = [
   // Used by lib/ai/modelCall.ts's callTogetherModelWithTools (see
   // app/api/ai/chat/route.ts's table/dashboard-builder assistant) -- picked
@@ -29,7 +36,7 @@ export const HOSTED_MODELS: HostedModel[] = [
   // shows a confirmed "Function Calling" badge for Pro and not for Flash,
   // which matters since this route only exists to call tools.
   {
-    id: "deepseek-ai/DeepSeek-V4-Pro",
+    id: TABLE_BUILDER_MODEL_ID,
     label: "DeepSeek V4 Pro",
     inputUsdPer1kTokens: 0.00174,
     outputUsdPer1kTokens: 0.00348,

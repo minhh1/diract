@@ -189,13 +189,20 @@ export interface HostedToolChatResult extends TokenUsage {
   // null only if the loop never got a response at all (shouldn't happen; a
   // request failure throws instead).
   finishReason: string | null;
-  // True when the loop exited because MAX_TOOL_LOOP_ITERATIONS was reached
-  // while the model still wanted to keep calling tools (finish_reason was
+  // True when the loop exited because the iteration cap was reached while
+  // the model still wanted to keep calling tools (finish_reason was
   // "tool_calls" on every iteration, never naturally settling) -- distinct
   // from hitting the cap on a turn that was actually done. Without this, a
   // long multi-step build just silently stops mid-task with no indication
   // anything was cut short.
   hitIterationLimit: boolean;
+  // The model's own chain-of-thought for whichever turn produced it (see
+  // reasoningEffort param below) -- empty string if reasoning wasn't
+  // requested, or if the provider didn't return any (e.g. possibly
+  // suppressed on a turn that's also making tool calls -- unconfirmed,
+  // callers should treat an empty value as "nothing to show", not an
+  // error).
+  reasoning: string;
 }
 
 function toOpenAiTools(tools: ToolSchema[]): Record<string, unknown>[] {
@@ -224,7 +231,19 @@ export async function callTogetherModelWithTools(
   tools: ToolSchema[],
   executeTool: HostedToolExecutor,
   onDelta?: (delta: string) => void,
-  onToolCall?: HostedToolCallListener
+  onToolCall?: HostedToolCallListener,
+  onReasoning?: (text: string) => void,
+  maxIterations: number = MAX_TOOL_LOOP_ITERATIONS,
+  // Confirmed live (Together AI's own chat-completions reference) that
+  // deepseek-ai/DeepSeek-V4-Pro supports this, returning real chain-of-
+  // thought in message.reasoning (separate from message.content) -- only
+  // applied on the FIRST iteration (i === 0), not every turn: reasoning
+  // tokens bill as output tokens at the same rate as everything else, and
+  // a build can run up to maxIterations turns, so requesting it on every
+  // mechanical create_field turn would multiply cost for little value. The
+  // first turn -- deciding what to build -- is the one actually worth
+  // seeing the model think through.
+  reasoningEffort?: "low" | "medium" | "high"
 ): Promise<HostedToolChatResult> {
   const openAiTools = toOpenAiTools(tools);
   const messages: Record<string, unknown>[] = [
@@ -233,12 +252,15 @@ export async function callTogetherModelWithTools(
   ];
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, content: "" };
   let finishReason: string | null = null;
+  let reasoning = "";
 
-  for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
+  for (let i = 0; i < maxIterations; i++) {
+    const body: Record<string, unknown> = { model: modelId, messages, tools: openAiTools, tool_choice: "auto", stream: false };
+    if (i === 0 && reasoningEffort) body.reasoning_effort = reasoningEffort;
     const res = await fetch("https://api.together.xyz/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
-      body: JSON.stringify({ model: modelId, messages, tools: openAiTools, tool_choice: "auto", stream: false }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
@@ -255,6 +277,10 @@ export async function callTogetherModelWithTools(
     if (message.content) {
       onDelta?.(message.content);
       usage.content += message.content;
+    }
+    if (typeof message.reasoning === "string" && message.reasoning) {
+      reasoning = message.reasoning;
+      onReasoning?.(reasoning);
     }
 
     messages.push({ role: "assistant", content: message.content ?? null, tool_calls: message.tool_calls });
@@ -285,5 +311,5 @@ export async function callTogetherModelWithTools(
   // ever naturally settled (stop/length/...), finishReason holds that real
   // reason instead, whichever iteration produced it.
   const hitIterationLimit = finishReason === "tool_calls";
-  return { ...usage, finishReason, hitIterationLimit };
+  return { ...usage, finishReason, hitIterationLimit, reasoning };
 }

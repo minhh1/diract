@@ -30,7 +30,7 @@ import { after } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { callTogetherModelWithTools } from "@/lib/ai/modelCall";
 import { TABLE_BUILDER_TOOLS, executeTableBuilderTool } from "@/lib/ai/tableBuilderTools";
-import { costUsd } from "@/lib/billing/aiModels";
+import { costUsd, TABLE_BUILDER_MODEL_ID as MODEL_ID } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 
 // Together-hosted, not Claude -- has a confirmed "Function Calling" badge
@@ -39,8 +39,9 @@ import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
 // 512K context (not the full 1M DeepSeek V4 Flash claims), ~$1.74/$3.48
 // per 1M tokens -- far cheaper than Claude, no separate Anthropic billing
 // relationship needed since TOGETHER_API_KEY is already configured for
-// this app's other AI features.
-const MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro";
+// this app's other AI features. Imported (not a local const) so the
+// research sub-agent in lib/ai/tableBuilderTools.ts's researchTopic stays
+// on the exact same model -- see TABLE_BUILDER_MODEL_ID's own comment.
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -58,6 +59,7 @@ Guidelines:
 - If the user wants to print/export/email records as a PDF (e.g. an invoice, a letter), add a document_export widget (add_widget's document_export_style + field-mapping params) instead of saying you can't -- 'invoice' style renders a billing-document layout (invoice number/date, bill-to, one line item per record from its own description/amount fields, subtotal/tax/total); 'letter' style renders a text field's contents onto the company's letterhead (mention it needs a letterhead uploaded first in Settings → Precedents if the export later fails for that reason). Map whichever of the widget's fields make sense to the table's own fields; leave the rest unset. For 'invoice' style, ask which tax scheme applies (add_widget's tax_scheme, e.g. Australia -> GST, EU/UK/Vietnam -> VAT, US -> Sales Tax) if the company's location isn't already obvious from context, and ask whether they want payment details (bank/account info, a payment link, etc.) printed on the invoice (add_widget's payment_details) -- don't invent either.
 - If the user wants to import data from a PDF invoice/receipt into a table (turning an uploaded PDF into new records), add an invoice_import widget (add_widget's description_field_label + amount_field_label required, plus optional supplier_name_field_label/invoice_number_field_label/invoice_date_field_label) instead of saying you can't. You never parse a PDF yourself mid-conversation -- there's no file-upload path into this chat -- the widget just gives a human their own upload button to do that afterward.
 - Only propose building/changing something when the user's message actually calls for it. For casual questions or small talk, just answer in plain text.
+- If you're genuinely unsure how to proceed (ambiguous requirements, unclear how a new table should relate to what already exists, or a non-obvious design tradeoff) call research with a specific question first, and use its findings before proposing your plan. Don't call it for straightforward builds where the answer is already obvious; it costs extra time and tokens.
 - Before calling delete_table, delete_field, remove_widget, or delete_dashboard: first state in your own words exactly what will be deleted and any consequences (e.g. "This will remove the Payroll table and its 3 fields"), and wait for the user's explicit confirmation in their next message. Only then call the tool with confirm=true. If you call a delete tool without the user having agreed first, it will be rejected.
 - When you do delete something, mention in your reply that it's restorable afterward via Settings → Trash or Settings → Schema History.
 - Keep replies brief and focused on what you did or need to know next.
@@ -90,13 +92,14 @@ interface RunJobParams {
 // transitions that would look wrong dropped or delayed.
 async function runJob({ jobId, admin, companyId, userId, conversationId, question, history }: RunJobParams): Promise<void> {
   let content = "";
+  let reasoning = "";
   const toolCalls: ToolCallEvent[] = [];
   let lastWriteAt = 0;
   const writeProgress = (force = false) => {
     const now = Date.now();
     if (!force && now - lastWriteAt < 300) return;
     lastWriteAt = now;
-    admin.from("ai_chat_jobs").update({ content, tool_calls: toolCalls, updated_at: new Date().toISOString() }).eq("id", jobId)
+    admin.from("ai_chat_jobs").update({ content, reasoning, tool_calls: toolCalls, updated_at: new Date().toISOString() }).eq("id", jobId)
       .then(() => {}, (err: unknown) => console.error("[ai chat job] progress write failed:", err));
   };
 
@@ -104,6 +107,13 @@ async function runJob({ jobId, admin, companyId, userId, conversationId, questio
     const onDelta = (delta: string) => {
       content += delta;
       writeProgress();
+    };
+    // Fires at most once (see callTogetherModelWithTools's own comment --
+    // reasoning is only requested on the tool loop's first iteration), so
+    // this is a plain assignment, not an accumulation.
+    const onReasoning = (text: string) => {
+      reasoning = text;
+      writeProgress(true);
     };
     const onToolCall = (name: string, input: Record<string, unknown>, phase: "start" | "done", isError?: boolean) => {
       if (phase === "start") {
@@ -126,7 +136,10 @@ async function runJob({ jobId, admin, companyId, userId, conversationId, questio
       TABLE_BUILDER_TOOLS,
       (name, input) => executeTableBuilderTool(admin, companyId, userId, name, input),
       onDelta,
-      onToolCall
+      onToolCall,
+      onReasoning,
+      undefined,
+      "medium"
     );
 
     if (result.content) {
@@ -148,6 +161,7 @@ async function runJob({ jobId, admin, companyId, userId, conversationId, questio
     await admin.from("ai_chat_jobs").update({
       status: "done",
       content: result.content,
+      reasoning: result.reasoning,
       tool_calls: toolCalls,
       hit_iteration_limit: result.hitIterationLimit,
       updated_at: new Date().toISOString(),

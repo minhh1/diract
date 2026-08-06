@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Send, Loader2, AlertTriangle, Check, X, Table2, LayoutDashboard, ListChecks, PlusSquare, Trash2,
+  Search, ChevronDown, ChevronRight, Brain,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { renderMarkdown } from "@/lib/renderMarkdown";
@@ -41,11 +42,17 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   toolCalls?: ToolCallEvent[];
+  // The model's own chain-of-thought for this turn (see
+  // app/api/ai/chat/route.ts's runJob / lib/ai/modelCall.ts's
+  // reasoningEffort param) -- only ever set on the first turn of a build,
+  // not accumulated across the whole conversation.
+  reasoning?: string;
 }
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
   list_existing_tables: ListChecks,
   list_existing_dashboards: ListChecks,
+  research: Search,
   create_table: Table2,
   create_field: PlusSquare,
   create_dashboard: LayoutDashboard,
@@ -64,6 +71,7 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case "list_existing_tables": return "Checking existing tables";
     case "list_existing_dashboards": return "Checking existing dashboards";
+    case "research": return `Researching: ${input.question ?? ""}`;
     case "create_table": return `Creating table "${input.name ?? ""}"`;
     case "create_field": {
       const type = typeof input.field_type === "string" ? ` (${input.field_type})` : "";
@@ -138,6 +146,33 @@ function ThinkingIndicator() {
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+// The model's real chain-of-thought for a turn (see ChatMessage.reasoning's
+// own doc) -- collapsible since it's not meant to be the main thing you
+// read, just available for anyone who wants to see the reasoning behind
+// what it's about to build. Plain whitespace-pre-wrap, not renderMarkdown --
+// chain-of-thought isn't reliably well-formed markdown, same reasoning the
+// user bubble above already renders raw text instead of markdown.
+function ThinkingBlock({ text, defaultExpanded }: { text: string; defaultExpanded: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  return (
+    <div className="mb-2.5">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+      >
+        {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        <Brain size={11} />
+        {expanded ? "Hide thinking" : "Show thinking"}
+      </button>
+      {expanded && (
+        <div className="mt-1.5 pl-3 border-l-2 border-slate-100 text-[12px] text-slate-400 italic whitespace-pre-wrap">
+          {text}
+        </div>
+      )}
     </div>
   );
 }
@@ -253,7 +288,7 @@ export default function AiChatThread({
     setMessages((prev) => {
       if (prev.length === 0) return prev;
       const next = [...prev];
-      next[next.length - 1] = { ...next[next.length - 1], content: row.content ?? "", toolCalls };
+      next[next.length - 1] = { ...next[next.length - 1], content: row.content ?? "", toolCalls, reasoning: row.reasoning || undefined };
       return next;
     });
 
@@ -309,7 +344,7 @@ export default function AiChatThread({
     let cancelled = false;
     supabase
       .from("ai_chat_jobs")
-      .select("id, content, tool_calls, status, error, hit_iteration_limit, updated_at")
+      .select("id, content, reasoning, tool_calls, status, error, hit_iteration_limit, updated_at")
       .eq("conversation_id", initialConversationId)
       .eq("status", "running")
       .order("created_at", { ascending: false })
@@ -319,7 +354,7 @@ export default function AiChatThread({
         if (cancelled || !data) return;
         firedBuildIndicesRef.current = new Set();
         jobUpdatedAtRef.current = data.updated_at ? new Date(data.updated_at).getTime() : Date.now();
-        setMessages((prev) => [...prev, { role: "assistant", content: data.content ?? "", toolCalls: data.tool_calls ?? [] }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: data.content ?? "", toolCalls: data.tool_calls ?? [], reasoning: data.reasoning || undefined }]);
         setSending(true);
         onSendingChange?.(true);
         setActiveJobId(data.id);
@@ -408,14 +443,14 @@ export default function AiChatThread({
               const isLast = i === messages.length - 1;
               const hasToolCalls = (m.toolCalls?.length ?? 0) > 0;
               const toolsInFlight = (m.toolCalls ?? []).some((t) => t.phase === "start");
-              const showThinking = m.role === "assistant" && !m.content && sending && isLast && !toolsInFlight;
+              const showThinking = m.role === "assistant" && !m.content && sending && isLast && !toolsInFlight && !m.reasoning;
               const showCursor = m.role === "assistant" && !!m.content && sending && isLast;
 
               // An assistant turn that ended up with nothing at all (no
               // text, no tool calls, no longer sending -- e.g. the request
               // errored before producing anything) has nothing worth
               // showing; the error banner below already explains why.
-              if (m.role === "assistant" && !m.content && !hasToolCalls && !sending) return null;
+              if (m.role === "assistant" && !m.content && !hasToolCalls && !m.reasoning && !sending) return null;
 
               return (
                 <motion.div
@@ -436,6 +471,10 @@ export default function AiChatThread({
                     // distinguished from the user's messages by alignment
                     // alone (ChatGPT-style), not a boxed container.
                     <div className="max-w-[80%] text-[13px] text-slate-700 py-1">
+                      {m.reasoning && (
+                        <ThinkingBlock text={m.reasoning} defaultExpanded={isLast && sending && !m.content} />
+                      )}
+
                       {hasToolCalls && (
                         <div className="flex flex-col gap-1.5 mb-2.5">
                           <AnimatePresence initial={false}>

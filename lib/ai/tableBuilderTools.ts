@@ -20,8 +20,9 @@
 // has no valid session here; this file has its own admin-client insert.
 import { createWidget } from "@/lib/dashboardWidgets/defaults";
 import type { DashboardWidget, DashboardWidgetType } from "@/lib/dashboardWidgets/types";
-import type { ToolSchema } from "@/lib/ai/modelCall";
+import { callTogetherModelWithTools, type ToolSchema } from "@/lib/ai/modelCall";
 import { TAX_SCHEMES } from "@/lib/invoices/taxSchemes";
+import { costUsd, TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
 
 const FIELD_TYPES = ["text", "number", "date", "boolean", "select", "email", "url", "currency", "table_relation"] as const;
 type FieldType = (typeof FIELD_TYPES)[number];
@@ -73,6 +74,17 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
     name: "list_existing_dashboards",
     description: "List this company's existing dashboards, their source table, and their widgets. Call before creating a new dashboard to avoid duplicates.",
     input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "research",
+    description: "Investigate a specific question before proposing a plan or acting, when you're genuinely unsure how to proceed -- e.g. how a new table should relate to existing ones, which of several existing tables/dashboards is the right fit, or a non-obvious design tradeoff. Runs its own focused, read-only investigation (it can look at existing tables and dashboards) and returns findings as plain text. Don't use it for straightforward builds where the answer is already obvious; it costs extra time and tokens.",
+    input_schema: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The specific question to investigate." },
+      },
+      required: ["question"],
+    },
   },
   {
     name: "create_table",
@@ -261,6 +273,69 @@ async function listExistingDashboards(admin: any, companyId: string): Promise<To
     widgets: (d.widgets ?? []).map((w: any) => ({ id: w.id, type: w.type })),
   }));
   return { content: JSON.stringify(result) };
+}
+
+// The research tool's own sub-agent only ever gets these two -- filtered
+// from TABLE_BUILDER_TOOLS (not hand-duplicated) so it always sees the
+// exact same schemas the main assistant does, with zero drift risk.
+const RESEARCH_TOOLS: ToolSchema[] = TABLE_BUILDER_TOOLS.filter(
+  (t) => t.name === "list_existing_tables" || t.name === "list_existing_dashboards"
+);
+
+const RESEARCH_SYSTEM_PROMPT = `You are a research assistant investigating a specific question about this company's existing custom-table schema, on behalf of another assistant that's about to design or build something and needs your findings first. Use the tools available to look up real data -- don't guess or speculate. Answer concisely and concretely: name the actual tables/fields/dashboards involved. If you find nothing relevant, say so plainly rather than inventing an answer.`;
+
+// A bounded, structurally read-only sub-agent -- dispatches ONLY to
+// listExistingTables/listExistingDashboards directly (not through
+// executeTableBuilderTool's full switch below), so it's incapable of
+// mutating anything even if the model tried. Capped at a small iteration
+// count (this is meant to be a focused lookup, not a full build) and logs
+// its own ai_usage_events row since it spends real tokens the outer job's
+// single final usage-event insert (see app/api/ai/chat/route.ts's runJob)
+// wouldn't otherwise capture -- same pattern already used by
+// lib/clientUpdatePageAskQuestion.ts and friends for their own nested
+// model calls.
+async function researchTopic(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  const question = String(input.question || "").trim();
+  if (!question) return { content: "question is required", isError: true };
+
+  const executeReadOnly = async (name: string): Promise<ToolExecutionResult> => {
+    if (name === "list_existing_tables") return listExistingTables(admin, companyId);
+    if (name === "list_existing_dashboards") return listExistingDashboards(admin, companyId);
+    return { content: `Unknown tool: ${name}`, isError: true };
+  };
+
+  const result = await callTogetherModelWithTools(
+    TABLE_BUILDER_MODEL_ID,
+    RESEARCH_SYSTEM_PROMPT,
+    [{ role: "user", content: question }],
+    RESEARCH_TOOLS,
+    executeReadOnly,
+    undefined,
+    undefined,
+    undefined,
+    4,
+    "medium"
+  );
+
+  const cost = costUsd("hosted", TABLE_BUILDER_MODEL_ID, result);
+  await admin.from("ai_usage_events").insert({
+    company_id: companyId,
+    user_id: userId,
+    model_id: TABLE_BUILDER_MODEL_ID,
+    provider: "hosted",
+    input_tokens: result.inputTokens,
+    output_tokens: result.outputTokens,
+    cost_usd: cost,
+  });
+
+  // Same "don't let a truncated result look authoritative" concern
+  // hit_iteration_limit already exists to solve for the outer loop --
+  // this sub-agent's own cap is much smaller (4 vs 12), so hitting it is
+  // more likely.
+  const content = result.hitIterationLimit
+    ? `[research was cut short, may be incomplete] ${result.content}`
+    : result.content || "No findings.";
+  return { content };
 }
 
 async function createTable(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
@@ -627,6 +702,7 @@ export async function executeTableBuilderTool(
     switch (name) {
       case "list_existing_tables": return await listExistingTables(admin, companyId);
       case "list_existing_dashboards": return await listExistingDashboards(admin, companyId);
+      case "research": return await researchTopic(admin, companyId, userId, input);
       case "create_table": return await createTable(admin, companyId, userId, input);
       case "create_field": return await createField(admin, companyId, userId, input);
       case "create_dashboard": return await createDashboard(admin, companyId, userId, input);
