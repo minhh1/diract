@@ -34,6 +34,7 @@ export interface ParsedGenericInvoice {
 export interface ParseGenericInvoiceResult {
   parsed: ParsedGenericInvoice;
   usage: { inputTokens: number; outputTokens: number };
+  debug?: { finishReason: unknown; rawMessage: unknown };
 }
 
 // Kimi-K2.6's structured-output support is unconfirmed for response_format
@@ -96,5 +97,6 @@ export async function parseGenericInvoicePdf(pdfBytes: Uint8Array): Promise<Pars
       inputTokens: json.usage?.prompt_tokens ?? 0,
       outputTokens: json.usage?.completion_tokens ?? 0,
     },
+    debug: { finishReason: json.choices?.[0]?.finish_reason, rawMessage: json.choices?.[0]?.message },
   };
 }

@@ -48,12 +48,17 @@ export async function POST(req: NextRequest) {
   const buffer = new Uint8Array(await file.arrayBuffer());
 
   try {
-    const { parsed, usage } = await parseGenericInvoicePdf(buffer);
+    const { parsed, usage, debug } = await parseGenericInvoicePdf(buffer);
     const cost = costUsd("hosted", MODEL_ID, usage);
     await admin.from("ai_usage_events").insert({
       company_id: companyId, user_id: user.id, model_id: MODEL_ID, provider: "hosted",
       input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cost_usd: cost,
     });
+    // TEMP: surface the raw model response for live debugging of a blank
+    // extraction result -- remove before considering this route finished.
+    if (new URL(req.url).searchParams.get("debug") === "1") {
+      return NextResponse.json({ ...parsed, _debug: debug });
+    }
     return NextResponse.json(parsed);
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Couldn't read this invoice" }, { status: 502 });
