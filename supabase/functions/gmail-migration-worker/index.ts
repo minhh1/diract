@@ -568,7 +568,15 @@ async function runMigration(t0: number): Promise<Response> {
               // (plus the label_sync user-scoping fix alongside it) is
               // what actually caused email_sync jobs to also get stuck at
               // a fixed "X messages" remaining count indefinitely.
+              //
+              // madeProgressThisTick=true here too -- confirmed live
+              // 2026-08-06: without it, a tick whose only advancement was
+              // resolving already-claimed ids (confirmed_applied_ids
+              // genuinely growing, e.g. 0 -> 65 of 235) still got counted
+              // as a zero-progress stall by the outer catch, wrongly
+              // re-escalating jobs that were actually converging fine.
               confirmedAppliedIds.add(msgId);
+              madeProgressThisTick = true;
               await db.from("gmail_migration_jobs")
                 .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", itemId);
               continue;

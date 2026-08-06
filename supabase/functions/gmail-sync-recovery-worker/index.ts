@@ -531,7 +531,14 @@ async function runRecovery(t0: number): Promise<Response> {
               // learns), which is what let email_sync items get stuck at a
               // fixed "X messages" remaining count alongside the
               // label_sync user-scoping bug.
+              //
+              // madeProgressThisTick=true here too -- confirmed live
+              // 2026-08-06: without it, a tick whose only advancement was
+              // resolving already-claimed ids (confirmed_applied_ids
+              // genuinely growing) still got counted as a zero-progress
+              // stall, wrongly re-escalating jobs that were converging fine.
               confirmedAppliedIds.add(msgId);
+              madeProgressThisTick = true;
               await db.from("gmail_sync_failures")
                 .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
               continue;
