@@ -120,7 +120,15 @@ export default function AiAssistantPage() {
   );
 
   return (
-    <div className="flex h-screen bg-[#FAF9F6] font-sans antialiased text-slate-600 overflow-hidden">
+    // h-full, not h-screen -- this already sits inside DashboardLayout's own
+    // height-constrained content column (100vh minus the trial-workspace
+    // banner, when one's showing). h-screen here would re-claim a full
+    // 100vh that doesn't actually fit, overflowing that column by the
+    // banner's height; AiChatThread's own bottomRef.scrollIntoView() then
+    // drags that ancestor scroll container down to compensate, which
+    // visually shoves this page's header up behind the banner. Confirmed
+    // live: this is what caused it, not the header restyle itself.
+    <div className="flex h-full bg-[#FAF9F6] font-sans antialiased text-slate-600 overflow-hidden">
       {/* Conversation list */}
       <div className="w-64 shrink-0 border-r border-slate-200/70 flex flex-col">
         <div className="p-4">
