@@ -11,7 +11,20 @@
 // entities_multi_role.sql) is hidden from the generic field list on
 // purpose -- RecordDashboard.tsx special-cases entity_type instead to edit
 // it directly as a multi-select, so it never needs its own separate field.
-export const SYSTEM_TABLE_HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id', 'roles'];
+//
+// The review_*/needs_review/reviewed_at columns (supabase/migrations/
+// 20260725025253_entities_needs_review.sql, 20260726010000_properties_
+// projects_needs_review.sql, 20260806120000_needs_review_provenance.sql)
+// are internal provenance for the Gmail-sync "needs review" banner
+// (components/GenericMasterTable.tsx) -- not something anyone should be
+// hand-editing as a free-text Details field, and there's no
+// company_table_fields row / section_name for them to opt out of the AI
+// section classifier's catch-all "Details" bucket the normal way.
+export const SYSTEM_TABLE_HIDDEN_COLS = [
+  'access_mode', 'deleted_at', 'company_id', 'roles',
+  'needs_review', 'review_reason', 'reviewed_at',
+  'review_created_by', 'review_field_label', 'review_source_table', 'review_source_record_id',
+];
 
 export interface SystemRelationConfig {
   table: string;

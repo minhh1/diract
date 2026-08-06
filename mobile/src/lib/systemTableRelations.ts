@@ -2,7 +2,11 @@
 // pure data, no framework dependency, kept identical so the two apps never
 // disagree about what a given native column on a system table points to.
 
-export const SYSTEM_TABLE_HIDDEN_COLS = ['access_mode', 'deleted_at', 'company_id'];
+export const SYSTEM_TABLE_HIDDEN_COLS = [
+  'access_mode', 'deleted_at', 'company_id', 'roles',
+  'needs_review', 'review_reason', 'reviewed_at',
+  'review_created_by', 'review_field_label', 'review_source_table', 'review_source_record_id',
+];
 
 export const SYSTEM_TABLE_RELATION_MAP: Record<string, { table: string; displayCol: string }> = {
   holding_entity_id: { table: 'entities', displayCol: 'name' },
