@@ -38,9 +38,13 @@ export type RenderLetterheadPdfResult =
   | { ok: false; error: string; status: number };
 
 export async function renderLetterheadPdf(admin: any, input: RenderLetterheadPdfInput): Promise<RenderLetterheadPdfResult> {
+  // Unlike issuePrecedentDocument (which always requires a subject line for
+  // a real matter letter), a subject is optional here -- an arbitrary
+  // record's mapped fields might not include anything subject-shaped, and
+  // plenty of real letters don't have one. Body is the only hard
+  // requirement: a letter with nothing to say isn't worth rendering.
   const subject = (input.subject || "").trim();
   const body = (input.body || "").trim();
-  if (!subject) return { ok: false, error: "A subject line is required", status: 400 };
   if (!body) return { ok: false, error: "The document's body text is required", status: 400 };
 
   const { data: letterhead } = await admin
@@ -65,10 +69,10 @@ export async function renderLetterheadPdf(admin: any, input: RenderLetterheadPdf
       ? recipientBlock.address
       : formatAddressBlock(input.recipientName, input.recipientAddress),
   };
-  const formattedSubject = formatSubjectLine(subject, "sentence_case");
+  const formattedSubject = subject ? formatSubjectLine(subject, "sentence_case") : null;
   if (detectedRoles.has("date")) fillData.date = formatLetterDate("D MMMM YYYY");
   if (detectedRoles.has("recipient_name")) fillData.recipient_name = recipientBlock.name;
-  if (detectedRoles.has("subject")) fillData.subject = formattedSubject;
+  if (detectedRoles.has("subject")) fillData.subject = formattedSubject || "";
   // No salutation/delivery_mode/our_ref context for an arbitrary record --
   // a letterhead with dedicated tags for these just renders them blank.
   if (detectedRoles.has("salutation")) fillData.salutation = "";
