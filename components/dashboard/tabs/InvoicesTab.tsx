@@ -8,7 +8,7 @@
 // (multi-select and date-range are both new here, not just unwired).
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Maximize2, Minimize2, Plus, Eye, Download, FileText, Pencil, Ban, Loader2, X, Check, Settings2 } from "lucide-react";
+import { Maximize2, Minimize2, Plus, Eye, Download, FileText, Pencil, Ban, Loader2, X, Check, Settings2, Send } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { createRecord as createCustomRecord, updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
@@ -68,6 +68,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [finalizingId, setFinalizingId] = useState<string | null>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [receiptPreviewId, setReceiptPreviewId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -240,6 +241,26 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
     loadInvoices();
   };
 
+  // Under Review otherwise had no dedicated way out -- only the generic
+  // Edit modal's free-form status dropdown, unlike the purpose-built
+  // Record payment/Void actions. Same optimistic-then-rollback shape as
+  // handleVoid, just without any line-item side effects to undo.
+  const handleFinalize = async (invoiceId: string) => {
+    const previousInvoices = invoices;
+    setInvoices(prev => prev.map(i => i.id === invoiceId ? { ...i, status: 'Sent' } : i));
+    setFinalizingId(invoiceId);
+
+    const result = await updateCustomRecord(invoiceId, linkedTableId, companyId, { status: 'Sent' }, invoiceFields);
+    setFinalizingId(null);
+
+    if (result && 'error' in result) {
+      setInvoices(previousInvoices);
+      window.alert(`Could not finalize this invoice: ${result.error}`);
+      return;
+    }
+    loadInvoices();
+  };
+
   const editingInvoice = invoices.find(i => i.id === editingId) || null;
   const payingInvoice = invoices.find(i => i.id === payingId) || null;
 
@@ -331,6 +352,15 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
                       <a href={`/api/invoices/${inv.id}/pdf?download=1`} title="Download PDF" className="p-1.5 text-slate-300 hover:text-indigo-600"><Download size={14} /></a>
                       <a href={`/api/invoices/${inv.id}/docx?download=1`} title="Download Word" className="p-1.5 text-slate-300 hover:text-indigo-600"><FileText size={14} /></a>
                       <button onClick={() => setEditingId(inv.id)} title="Edit" className="p-1.5 text-slate-300 hover:text-slate-700"><Pencil size={14} /></button>
+                      {inv.status === 'Under Review' && (
+                        <button
+                          onClick={() => handleFinalize(inv.id)}
+                          disabled={finalizingId === inv.id}
+                          className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 transition-all whitespace-nowrap"
+                        >
+                          {finalizingId === inv.id ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} Finalize
+                        </button>
+                      )}
                       {inv.status !== 'Void' && inv.amountDue > 0 && receiptsTableId && (
                         <button
                           onClick={() => setPayingId(inv.id)}
