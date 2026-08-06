@@ -9,11 +9,16 @@
 // written back to ai_conversations.title so the model only ever gets
 // called once per conversation.
 import { callHostedModel } from "@/lib/ai/modelCall";
+import { TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
 
-// Llama 3.1 8B ("fast, cheap" in lib/billing/aiModels.ts's own catalog) --
-// summarizing one sentence into a few words doesn't need the table-
-// builder's much pricier tool-calling model.
-const TITLE_MODEL_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo";
+// Confirmed live (2026-08-06): lib/billing/aiModels.ts's "fast, cheap"
+// Llama 3.1 8B entry is stale -- Together now rejects it with
+// "Unable to access non-serverless model ... create a dedicated endpoint",
+// i.e. it's no longer actually in their serverless catalog despite still
+// being listed here. Reusing the table-builder's own model instead, which
+// is confirmed working -- the price difference is irrelevant at the ~20
+// output tokens a title costs.
+const TITLE_MODEL_ID = TABLE_BUILDER_MODEL_ID;
 
 const TITLE_SYSTEM_PROMPT = "Summarize the user's message as a short conversation title, 3 to 6 words, for a sidebar list. Describe what they want, not a greeting. Plain text only -- no quotes, no trailing punctuation, no markdown.";
 
