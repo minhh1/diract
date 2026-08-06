@@ -41,12 +41,14 @@ const MODEL_INPUT_USD_PER_1K = 0.00174;
 const MODEL_OUTPUT_USD_PER_1K = 0.00348;
 
 const MAX_ATTEMPTS = 5;
-// Realtime jobs only, capped low -- each job can fan out into several AI
-// calls (one per reviewable field on the matter), and this function shares
-// the platform's ~150s execution ceiling with every other worker. Anything
-// left over just waits for the next tick, 2 minutes later -- fine for a
-// background re-check nobody's actively watching a spinner for.
-const MAX_JOBS_PER_TICK = 3;
+// Realtime jobs only, ONE per tick -- confirmed live that a single matter
+// with 10 reviewable fields alone took ~124s (a real Together.ai call per
+// field, sequential), already most of this function's ~150s execution
+// ceiling. Looping through even 2-3 such jobs in one invocation risked
+// running out the clock mid-job. Anything left over just waits for the
+// next tick, 2 minutes later -- fine for a background re-check nobody's
+// actively watching a spinner for.
+const MAX_JOBS_PER_TICK = 1;
 
 function respond(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
