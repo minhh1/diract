@@ -1,13 +1,25 @@
 "use client";
 
-// The actual message-list + input + streaming/tool-call rendering for the
+// The actual message-list + input + tool-call rendering for the
 // table/dashboard-builder assistant (see app/api/ai/chat/route.ts) --
 // shared by app/(app)/dashboard/ai/page.tsx (the full page, with its own
 // conversation-list sidebar around this) and AiAssistantWidget.tsx (a
 // compact, single-conversation embed as an ordinary Quick Glance widget for
 // a templateless company). Pulled out of the AI page rather than
-// duplicated, since the streaming/tool-call-chip logic is the least
-// trivial part of either.
+// duplicated, since the tool-call-chip logic is the least trivial part of
+// either.
+//
+// A turn doesn't stream over a held-open connection anymore -- the route
+// creates an ai_chat_jobs row and hands the real work to Next's after(),
+// which keeps running even if this component (or the whole tab) goes away
+// mid-turn (see that route's own header comment). This component instead
+// subscribes to that one job row via Supabase Realtime (useTableRealtime)
+// and patches the last assistant message's content/toolCalls from each
+// update, same shape components/dashboard/AutoTimeRecordingPanel.tsx
+// already uses for auto_time_entry_generation_jobs. On mount, it also
+// checks for an already-running job on the conversation it was opened
+// with, so reopening a chat whose turn is still going (closed the tab,
+// came back) resumes live instead of showing a stale/incomplete thread.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,6 +27,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { renderMarkdown } from "@/lib/renderMarkdown";
+import { supabase } from "@/lib/supabase";
+import { useTableRealtime } from "@/lib/hooks/useTableRealtime";
 
 export interface ToolCallEvent {
   name: string;
@@ -175,6 +189,13 @@ export interface AiChatThreadProps {
 
 const BUILD_TOOL_NAMES = new Set(["create_table", "create_field", "create_dashboard", "add_widget"]);
 
+// A job whose progress hasn't moved in a while is presumed stalled (e.g.
+// killed mid-way by Vercel's execution ceiling on the after() invocation --
+// see app/api/ai/chat/route.ts's own header comment) -- same threshold and
+// "checked on an interval, not a single timeout" shape
+// AutoTimeRecordingPanel.tsx already uses for the identical concern.
+const STALL_TIMEOUT_MS = 5 * 60 * 1000;
+
 export default function AiChatThread({
   compact = false,
   initialAssistantMessage,
@@ -197,6 +218,19 @@ export default function AiChatThread({
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // The job this thread is currently attached to (either one it just
+  // created via send(), or one it found already running for
+  // initialConversationId on mount -- see the attach effect below). Both
+  // paths converge on the same applyJobRow handling.
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const jobUpdatedAtRef = useRef<number>(0);
+  // Indices within the CURRENT turn's toolCalls array that have already
+  // fired onBuildProgress -- realtime delivers the whole array on every
+  // update (not a diff), so without this a build tool that was already
+  // "done" on a prior update would re-fire every subsequent update too.
+  // Reset at the start of every new/attached turn.
+  const firedBuildIndicesRef = useRef<Set<number>>(new Set());
+
   useEffect(() => {
     if (compact) return; // onboarding embed skips the usage bar -- see prop doc
     fetch("/api/ai/usage").then(res => res.ok ? res.json() : null).then(json => { if (json) setUsage(json); });
@@ -207,6 +241,107 @@ export default function AiChatThread({
   }, [messages]);
 
   const capReached = usage ? usage.tokensUsed >= usage.tokenCap : false;
+
+  // Applies one ai_chat_jobs row (from the attach-on-mount lookup or a
+  // realtime update) to the last (assistant) message, and finalizes the
+  // turn once the job leaves 'running' -- same shape
+  // AutoTimeRecordingPanel.tsx's own applyJobRow uses.
+  const applyJobRow = useCallback((row: any) => {
+    jobUpdatedAtRef.current = row.updated_at ? new Date(row.updated_at).getTime() : Date.now();
+    const toolCalls: ToolCallEvent[] = row.tool_calls ?? [];
+
+    setMessages((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...next[next.length - 1], content: row.content ?? "", toolCalls };
+      return next;
+    });
+
+    toolCalls.forEach((call, i) => {
+      if (call.phase === "done" && !call.isError && BUILD_TOOL_NAMES.has(call.name) && !firedBuildIndicesRef.current.has(i)) {
+        firedBuildIndicesRef.current.add(i);
+        onBuildProgress?.();
+      }
+    });
+
+    if (row.status === "error") {
+      setError(row.error || "Something went wrong");
+    } else if (row.status === "done" && row.hit_iteration_limit) {
+      // A cut-short multi-step build looks, from the client's point of
+      // view, like the assistant just stopped talking mid-task -- this
+      // tells the user why, rather than leaving it looking finished when
+      // it isn't. (Together/OpenAI-style APIs have no distinct "refusal"
+      // signal the way Anthropic's does -- a decline just comes back as
+      // normal assistant text with finish_reason "stop".)
+      setError("This is taking more steps than I can do in one go -- ask me to continue and I'll pick up from here.");
+    }
+
+    if (row.status !== "running") {
+      setActiveJobId(null);
+      setSending(false);
+      onSendingChange?.(false);
+      if (!compact) fetch("/api/ai/usage").then(res => res.ok ? res.json() : null).then(json => { if (json) setUsage(json); });
+      onTurnComplete?.();
+    }
+  }, [compact, onBuildProgress, onSendingChange, onTurnComplete]);
+
+  // Live progress for the job this thread is currently attached to --
+  // filtered to that one row, not the whole table, same as
+  // AutoTimeRecordingPanel.tsx.
+  useTableRealtime({
+    tableName: "ai_chat_jobs",
+    companyId: null,
+    filterColumn: "id",
+    filterValue: activeJobId,
+    onInsert: () => {},
+    onUpdate: applyJobRow,
+    onDelete: () => {},
+  });
+
+  // Runs once, on mount -- this component already remounts per-conversation
+  // via the hosting page's key={conversationId} (see this file's own prop
+  // docs), so "on mount" already means "whenever a different conversation
+  // is opened." Finds a job still 'running' for initialConversationId (left
+  // going when the tab/component last went away) and resumes it live
+  // instead of the conversation just sitting there looking finished.
+  useEffect(() => {
+    if (!initialConversationId) return;
+    let cancelled = false;
+    supabase
+      .from("ai_chat_jobs")
+      .select("id, content, tool_calls, status, error, hit_iteration_limit, updated_at")
+      .eq("conversation_id", initialConversationId)
+      .eq("status", "running")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        firedBuildIndicesRef.current = new Set();
+        jobUpdatedAtRef.current = data.updated_at ? new Date(data.updated_at).getTime() : Date.now();
+        setMessages((prev) => [...prev, { role: "assistant", content: data.content ?? "", toolCalls: data.tool_calls ?? [] }]);
+        setSending(true);
+        onSendingChange?.(true);
+        setActiveJobId(data.id);
+      });
+    return () => { cancelled = true; };
+    // Intentionally mount-only -- see comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!sending || !activeJobId) return;
+    const interval = setInterval(() => {
+      if (Date.now() - jobUpdatedAtRef.current > STALL_TIMEOUT_MS) {
+        setError("This is taking much longer than expected and may have stalled -- please try again.");
+        setActiveJobId(null);
+        setSending(false);
+        onSendingChange?.(false);
+        onTurnComplete?.();
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [sending, activeJobId, onSendingChange, onTurnComplete]);
 
   const send = useCallback(async () => {
     const question = input.trim();
@@ -224,6 +359,7 @@ export default function AiChatThread({
     setMessages((prev) => [...prev, { role: "user", content: question }, { role: "assistant", content: "" }]);
     setSending(true);
     onSendingChange?.(true);
+    firedBuildIndicesRef.current = new Set();
 
     try {
       const res = await fetch("/api/ai/chat", {
@@ -231,59 +367,17 @@ export default function AiChatThread({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question, history, conversationId: activeConversationId }),
       });
-      if (!res.ok || !res.body) throw new Error((await res.json().catch(() => null))?.error || "Request failed");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const evt = JSON.parse(line);
-          if (evt.delta) {
-            setMessages((prev) => {
-              const next = [...prev];
-              next[next.length - 1] = { ...next[next.length - 1], content: next[next.length - 1].content + evt.delta };
-              return next;
-            });
-          }
-          if (evt.tool) {
-            setMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              const toolCalls = [...(last.toolCalls ?? [])];
-              if (evt.phase === "start") {
-                toolCalls.push({ name: evt.tool, input: evt.input ?? {}, phase: "start" });
-              } else {
-                for (let i = toolCalls.length - 1; i >= 0; i--) {
-                  if (toolCalls[i].name === evt.tool && toolCalls[i].phase === "start") {
-                    toolCalls[i] = { ...toolCalls[i], phase: "done", isError: evt.isError };
-                    break;
-                  }
-                }
-              }
-              next[next.length - 1] = { ...last, toolCalls };
-              return next;
-            });
-            if (evt.phase === "done" && !evt.isError && BUILD_TOOL_NAMES.has(evt.tool)) onBuildProgress?.();
-          }
-          if (evt.error) setError(evt.error);
-        }
-      }
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.jobId) throw new Error(json?.error || "Request failed");
+      jobUpdatedAtRef.current = Date.now();
+      setActiveJobId(json.jobId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
       setSending(false);
       onSendingChange?.(false);
-      if (!compact) fetch("/api/ai/usage").then(res => res.ok ? res.json() : null).then(json => { if (json) setUsage(json); });
       onTurnComplete?.();
     }
-  }, [input, sending, capReached, conversationId, messages, compact, onBuildProgress, onConversationCreated, onTurnComplete, onSendingChange]);
+  }, [input, sending, capReached, conversationId, messages, onConversationCreated, onSendingChange, onTurnComplete]);
 
   return (
     <div className={`flex flex-col ${compact ? "" : "h-full"}`}>

@@ -13,15 +13,22 @@
 // SQL lookups) replace semantic search as the "what does this company
 // already have" mechanism.
 //
-// Response body is newline-delimited JSON: `{"delta": "..."}` lines as
-// tokens arrive, `{"tool": name, "input": {...}, "phase": "start"|"done", "isError"?}`
-// lines around each tool call (see lib/ai/modelCall.ts's onToolCall) so the
-// UI can show live "Creating table 'Invoices'..." progress instead of going
-// silent for however long a multi-step build takes, ending with
-// `{"done": true}`.
-import { NextRequest } from "next/server";
+// This POST only creates an ai_chat_jobs row (supabase/migrations/
+// 20260807000000_ai_chat_jobs.sql) and returns its id immediately -- the
+// actual model/tool-calling turn (below, in runJob) is handed to Next's
+// after(), which Vercel keeps the invocation alive for via waitUntil() even
+// once the response has been sent. That's what lets the caller close the
+// tab mid-build and come back later to find the turn finished -- nothing
+// about it depends on the browser staying connected the way a streamed
+// response used to. Same shape as app/api/time-entries/auto-generate/route.ts's
+// auto_time_entry_generation_jobs (see that file's own header comment).
+// AiChatThread.tsx finds/attaches to the job by subscribing to this one row
+// via Supabase Realtime for live progress (content/tool_calls, throttled
+// writes -- see writeProgress below).
+import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { callTogetherModelWithTools, type TokenUsage } from "@/lib/ai/modelCall";
+import { callTogetherModelWithTools } from "@/lib/ai/modelCall";
 import { TABLE_BUILDER_TOOLS, executeTableBuilderTool } from "@/lib/ai/tableBuilderTools";
 import { costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
@@ -53,10 +60,108 @@ Guidelines:
 - Only propose building/changing something when the user's message actually calls for it. For casual questions or small talk, just answer in plain text.
 - Before calling delete_table, delete_field, remove_widget, or delete_dashboard: first state in your own words exactly what will be deleted and any consequences (e.g. "This will remove the Payroll table and its 3 fields"), and wait for the user's explicit confirmation in their next message. Only then call the tool with confirm=true. If you call a delete tool without the user having agreed first, it will be rejected.
 - When you do delete something, mention in your reply that it's restorable afterward via Settings → Trash or Settings → Schema History.
-- Keep replies brief and focused on what you did or need to know next.`;
+- Keep replies brief and focused on what you did or need to know next.
+- In your replies to the user, never use an em dash, a double hyphen ("--"), or a spaced hyphen (" - ") as a separator. Use a comma, colon, period, or just restructure the sentence instead.`;
 
-function ndjson(obj: unknown): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(obj) + "\n");
+interface ToolCallEvent {
+  name: string;
+  input: Record<string, unknown>;
+  phase: "start" | "done";
+  isError?: boolean;
+}
+
+interface RunJobParams {
+  jobId: string;
+  admin: any;
+  companyId: string;
+  userId: string;
+  conversationId: string;
+  question: string;
+  history: ChatMessage[];
+}
+
+// Does the actual model/tool-calling turn -- called from after() below, so
+// this runs with no live request/response around it at all (nothing here
+// may depend on req/res). Writes progress into the job row as it goes
+// (throttled, same ~300ms window app/api/time-entries/auto-generate/route.ts's
+// writeProgress already uses) so AiChatThread.tsx's Realtime subscription
+// sees live content/tool-call updates; a tool call's start/done is always
+// force-written regardless of the throttle since those are rare, meaningful
+// transitions that would look wrong dropped or delayed.
+async function runJob({ jobId, admin, companyId, userId, conversationId, question, history }: RunJobParams): Promise<void> {
+  let content = "";
+  const toolCalls: ToolCallEvent[] = [];
+  let lastWriteAt = 0;
+  const writeProgress = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastWriteAt < 300) return;
+    lastWriteAt = now;
+    admin.from("ai_chat_jobs").update({ content, tool_calls: toolCalls, updated_at: new Date().toISOString() }).eq("id", jobId)
+      .then(() => {}, (err: unknown) => console.error("[ai chat job] progress write failed:", err));
+  };
+
+  try {
+    const onDelta = (delta: string) => {
+      content += delta;
+      writeProgress();
+    };
+    const onToolCall = (name: string, input: Record<string, unknown>, phase: "start" | "done", isError?: boolean) => {
+      if (phase === "start") {
+        toolCalls.push({ name, input, phase: "start" });
+      } else {
+        for (let i = toolCalls.length - 1; i >= 0; i--) {
+          if (toolCalls[i].name === name && toolCalls[i].phase === "start") {
+            toolCalls[i] = { ...toolCalls[i], phase: "done", isError };
+            break;
+          }
+        }
+      }
+      writeProgress(true);
+    };
+
+    const result = await callTogetherModelWithTools(
+      MODEL_ID,
+      SYSTEM_PROMPT,
+      [...history, { role: "user", content: question }],
+      TABLE_BUILDER_TOOLS,
+      (name, input) => executeTableBuilderTool(admin, companyId, userId, name, input),
+      onDelta,
+      onToolCall
+    );
+
+    if (result.content) {
+      await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "assistant", content: result.content });
+    }
+    await admin.from("ai_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+
+    const cost = costUsd("hosted", MODEL_ID, result);
+    await admin.from("ai_usage_events").insert({
+      company_id: companyId,
+      user_id: userId,
+      model_id: MODEL_ID,
+      provider: "hosted",
+      input_tokens: result.inputTokens,
+      output_tokens: result.outputTokens,
+      cost_usd: cost,
+    });
+
+    await admin.from("ai_chat_jobs").update({
+      status: "done",
+      content: result.content,
+      tool_calls: toolCalls,
+      hit_iteration_limit: result.hitIterationLimit,
+      updated_at: new Date().toISOString(),
+    }).eq("id", jobId);
+  } catch (err) {
+    // callTogetherModelWithTools already translates request failures into a
+    // message meant for an end user -- don't fall back to String(err) here,
+    // which would print raw internals for any non-Error throw.
+    await admin.from("ai_chat_jobs").update({
+      status: "error",
+      error: err instanceof Error ? err.message : "Something went wrong talking to the assistant. Please try again.",
+      updated_at: new Date().toISOString(),
+    }).eq("id", jobId);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -74,7 +179,10 @@ export async function POST(req: NextRequest) {
   const conversationId: string | undefined = body?.conversationId;
 
   if (!question) {
-    return new Response(JSON.stringify({ error: "question is required" }), { status: 400 });
+    return NextResponse.json({ error: "question is required" }, { status: 400 });
+  }
+  if (!conversationId) {
+    return NextResponse.json({ error: "conversationId is required" }, { status: 400 });
   }
 
   // Persisted so a conversation survives a refresh/reopen (see
@@ -88,22 +196,20 @@ export async function POST(req: NextRequest) {
   // load, but a stale conversationId reused across that switch (e.g. a
   // replayed/retried request) must not silently reassign an existing
   // conversation from one company to another. Reject instead.
-  if (conversationId) {
-    const { data: existing } = await admin
-      .from("ai_conversations")
-      .select("company_id, user_id")
-      .eq("id", conversationId)
-      .maybeSingle();
-    if (existing && (existing.company_id !== companyId || existing.user_id !== user.id)) {
-      return new Response(JSON.stringify({ error: "This conversation belongs to a different company or user" }), { status: 403 });
-    }
-    if (existing) {
-      await admin.from("ai_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-    } else {
-      await admin.from("ai_conversations").insert({ id: conversationId, company_id: companyId, user_id: user.id });
-    }
-    await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "user", content: question });
+  const { data: existingConversation } = await admin
+    .from("ai_conversations")
+    .select("company_id, user_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (existingConversation && (existingConversation.company_id !== companyId || existingConversation.user_id !== user.id)) {
+    return NextResponse.json({ error: "This conversation belongs to a different company or user" }, { status: 403 });
   }
+  if (existingConversation) {
+    await admin.from("ai_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+  } else {
+    await admin.from("ai_conversations").insert({ id: conversationId, company_id: companyId, user_id: user.id });
+  }
+  await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "user", content: question });
 
   const { data: settings } = await admin
     .from("ai_chat_settings")
@@ -112,68 +218,30 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (settings?.ai_enabled === false) {
-    return new Response(JSON.stringify({ error: "AI features are disabled for this company" }), { status: 403 });
+    return NextResponse.json({ error: "AI features are disabled for this company" }, { status: 403 });
   }
 
   const tokenCap = settings?.monthly_token_cap ?? 1000000;
   if (await isTokenCapReached(admin, companyId, tokenCap)) {
-    return new Response(JSON.stringify({ error: "Monthly token cap reached for this company" }), { status: 429 });
+    return NextResponse.json({ error: "Monthly token cap reached for this company" }, { status: 429 });
   }
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, content: "" };
-      try {
-        const onDelta = (delta: string) => controller.enqueue(ndjson({ delta }));
-        const onToolCall = (name: string, input: Record<string, unknown>, phase: "start" | "done", isError?: boolean) =>
-          controller.enqueue(ndjson({ tool: name, input, phase, isError }));
-        const result = await callTogetherModelWithTools(
-          MODEL_ID,
-          SYSTEM_PROMPT,
-          [...history, { role: "user", content: question }],
-          TABLE_BUILDER_TOOLS,
-          (name, input) => executeTableBuilderTool(admin, companyId, user.id, name, input),
-          onDelta,
-          onToolCall
-        );
-        usage = result;
+  // Deliberately minimal before responding -- the actual model/tool-calling
+  // turn now happens in runJob via after(), not here, so creating a job
+  // (and therefore this response) is near-instant regardless of how many
+  // steps the turn ends up taking.
+  const { data: job, error: jobError } = await admin
+    .from("ai_chat_jobs")
+    .insert({ conversation_id: conversationId, company_id: companyId, user_id: user.id, status: "running" })
+    .select("id")
+    .single();
+  if (jobError || !job) return NextResponse.json({ error: "Could not start the assistant" }, { status: 500 });
 
-        // A cut-short multi-step build looks, from the client's point of
-        // view, like the assistant just stopped talking mid-task -- this
-        // tells the user why, rather than leaving it looking finished when
-        // it isn't. (Together/OpenAI-style APIs have no distinct "refusal"
-        // signal the way Anthropic's does -- a decline just comes back as
-        // normal assistant text with finish_reason "stop".)
-        if (result.hitIterationLimit) {
-          controller.enqueue(ndjson({ error: "This is taking more steps than I can do in one go -- ask me to continue and I'll pick up from here." }));
-        }
-      } catch (err) {
-        // callTogetherModelWithTools already translates request failures
-        // into a message meant for an end user -- don't fall back to
-        // String(err) here, which would print raw internals for any
-        // non-Error throw.
-        controller.enqueue(ndjson({ error: err instanceof Error ? err.message : "Something went wrong talking to the assistant. Please try again." }));
-      }
+  // Scheduled to run after this response is sent -- Vercel's waitUntil
+  // (which this platform's `after` uses under the hood, see this file's
+  // header comment) keeps the invocation alive until it finishes, so the
+  // caller doesn't have to hold a connection open or stay on this page.
+  after(() => runJob({ jobId: job.id, admin, companyId, userId: user.id, conversationId, question, history }));
 
-      if (conversationId && usage.content) {
-        await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "assistant", content: usage.content });
-      }
-
-      const cost = costUsd("hosted", MODEL_ID, usage);
-      await admin.from("ai_usage_events").insert({
-        company_id: companyId,
-        user_id: user.id,
-        model_id: MODEL_ID,
-        provider: "hosted",
-        input_tokens: usage.inputTokens,
-        output_tokens: usage.outputTokens,
-        cost_usd: cost,
-      });
-
-      controller.enqueue(ndjson({ done: true, usage, costUsd: cost }));
-      controller.close();
-    },
-  });
-
-  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson" } });
+  return NextResponse.json({ jobId: job.id });
 }

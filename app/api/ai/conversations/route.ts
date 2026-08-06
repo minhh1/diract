@@ -1,8 +1,9 @@
 // app/api/ai/conversations/route.ts
 // Lists the current user's AI assistant conversation threads (personal,
-// not shared with teammates -- see supabase/ai_conversations.sql). No
-// stored title -- derives a display label from each thread's first user
-// message instead.
+// not shared with teammates -- see supabase/ai_conversations.sql). A
+// thread's title is a stored override (set via this route's PATCH sibling,
+// [id]/route.ts) when present, falling back to a display label derived
+// from its first user message otherwise. Pinned threads sort first.
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
@@ -22,9 +23,10 @@ export async function GET() {
   // started anywhere.
   const { data: conversations, error } = await admin
     .from("ai_conversations")
-    .select("id, created_at, updated_at")
+    .select("id, title, pinned, created_at, updated_at")
     .eq("user_id", user.id)
     .eq("company_id", companyId)
+    .order("pinned", { ascending: false })
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!conversations || conversations.length === 0) return NextResponse.json({ conversations: [] });
@@ -36,16 +38,17 @@ export async function GET() {
     .eq("role", "user")
     .order("created_at", { ascending: true });
 
-  const titleByConversation = new Map<string, string>();
+  const derivedTitleByConversation = new Map<string, string>();
   for (const m of firstMessages ?? []) {
-    if (!titleByConversation.has(m.conversation_id)) titleByConversation.set(m.conversation_id, m.content);
+    if (!derivedTitleByConversation.has(m.conversation_id)) derivedTitleByConversation.set(m.conversation_id, m.content);
   }
 
   return NextResponse.json({
     conversations: conversations.map((c) => ({
       id: c.id,
       updatedAt: c.updated_at,
-      title: (titleByConversation.get(c.id) ?? "New chat").slice(0, 60),
+      pinned: c.pinned,
+      title: (c.title?.trim() || derivedTitleByConversation.get(c.id) || "New chat").slice(0, 60),
     })),
   });
 }
