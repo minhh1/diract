@@ -14,7 +14,7 @@ import {
 
 const VALUE_PROPS = [
   "Build the tables and workflow your business runs on",
-  "Set rules that sort new records automatically",
+  "Send invoices, texts, and emails straight from your workflow",
   "Manage multiple companies under one login",
 ];
 

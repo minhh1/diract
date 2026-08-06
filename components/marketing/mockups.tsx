@@ -8,16 +8,20 @@
 // comment. All utility classes here are ones app/globals.css's `.dark`
 // block already remaps, so wrapping any of these in a `<div className="dark">`
 // (see MockupThemeProvider.tsx) renders correctly in dark mode for free --
-// except where noted (border-l-* has a real, pre-existing gap in the app's
-// own dark CSS, see MockClientUpdates).
+// except where noted (MockClientUpdates picks its own explicit dark
+// background per accent color instead, since the app's own dark CSS leaves
+// that specific tint unreadably pale -- see that function's comment).
 "use client";
 
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
-  FileOutput, Users, Crown, Calendar, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge, Flag,
+  FileOutput, Users, Crown, Calendar, CalendarClock, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge, Flag,
   type LucideIcon,
 } from "lucide-react";
+import { useMockupTheme } from "./MockupThemeProvider";
+import { solveResidualLandValue } from "@/lib/residualLandValue";
+import type { FeasibilityInputs } from "@/lib/feasibilityCalculator";
 
 type TagColor = "indigo" | "sky" | "violet" | "emerald" | "amber" | "rose" | "slate";
 
@@ -380,29 +384,29 @@ export const AUTO_TIME_ENTRY_EXAMPLES: {
   hours: string; emails: number;
 }[] = [
   { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0187 -- Smith Family Trust", hours: "0.3", emails: 3, description: {
-    brief: "Reviewed Deed of Variation.",
-    standard: "Reviewed Deed of Variation and drafted a short covering note to the trustee.",
-    detailed: "Reviewed Deed of Variation and drafted a short covering note to the trustee confirming the updated distribution schedule.",
+    brief: "Deed of Variation review.",
+    standard: "Reviewed the Deed of Variation and sent a covering note to the trustee.",
+    detailed: "Reviewed the Deed of Variation, found the vesting date needed correcting from 2045 to 2050, and sent the trustee a covering note flagging the change for sign-off.",
   } },
   { initials: "SL", mine: true, date: "22 Jul", matter: "2024/0212 -- 88 Riverside Ave", hours: "0.2", emails: 1, description: {
-    brief: "Reviewed Section 32 statement.",
-    standard: "Reviewed Section 32 disclosure statement ahead of exchange.",
-    detailed: "Reviewed Section 32 disclosure statement ahead of exchange, noting the easement disclosure and confirming no further vendor amendments required.",
+    brief: "Section 32 review.",
+    standard: "Reviewed the Section 32 statement ahead of exchange.",
+    detailed: "Reviewed the Section 32 statement, confirmed the easement disclosure was accurate, and advised the vendor no further amendments were needed before exchange.",
   } },
   { initials: "PS", mine: false, date: "21 Jul", matter: "2024/0201 -- Nguyen Trust Deed", hours: "0.2", emails: 2, description: {
-    brief: "Drafted covering letter to settlor.",
-    standard: "Drafted covering letter to settlor for execution.",
-    detailed: "Drafted covering letter to settlor for execution, enclosing the trust deed and explaining the signing requirements for each trustee.",
+    brief: "Covering letter to settlor.",
+    standard: "Drafted the covering letter to the settlor for execution.",
+    detailed: "Drafted the covering letter to the settlor enclosing the trust deed, and set out the signing order each trustee needs to follow.",
   } },
   { initials: "TW", mine: false, date: "21 Jul", matter: "2024/0164 -- Harbord Property Co.", hours: "0.1", emails: 4, description: {
-    brief: "Confirmed settlement figures.",
-    standard: "Confirmed settlement figure adjustments with purchaser's solicitor.",
-    detailed: "Confirmed settlement figure adjustments with purchaser's solicitor, reconciling rates and water usage apportionments ahead of settlement.",
+    brief: "Settlement figures confirmed.",
+    standard: "Confirmed settlement figures with the purchaser's solicitor.",
+    detailed: "Confirmed settlement figures with the purchaser's solicitor and reconciled the rates and water usage apportionment to the settlement date.",
   } },
   { initials: "AK", mine: false, date: "20 Jul", matter: "2024/0225 -- Walsh Discretionary Trust", hours: "0.1", emails: 1, description: {
-    brief: "Reviewed trustee resolution.",
-    standard: "Reviewed trustee resolution ahead of registration.",
-    detailed: "Reviewed trustee resolution ahead of registration, confirming appointor consent was correctly recorded before lodgement.",
+    brief: "Trustee resolution reviewed.",
+    standard: "Reviewed the trustee resolution ahead of registration.",
+    detailed: "Reviewed the trustee resolution, confirmed the appointor's consent was properly recorded, and cleared it for lodgement.",
   } },
 ];
 
@@ -707,11 +711,15 @@ export function MockTeamsManagement() {
 // six status colors the app actually defines (red/amber/green/blue/purple/
 // slate -- "green" is emerald-400 in the real FORMAT_COLORS map, indigo is
 // not one of the options), plus the real italic AI-summary line
-// (`ai_summary`) shown under a matter name when one exists. Note: the app's
-// own `.dark` CSS has no override for border-l-*/bg-*-50\/40 utilities
-// (only whole-side border-*), so this card's accent doesn't re-theme in
-// the dark preview -- reproducing that faithfully rather than working
-// around it, since it's the real product's real behavior today.
+// (`ai_summary`) shown under a matter name when one exists. The app's own
+// `.dark` CSS has no override for these bg-*-50/40 tints (only whole-side
+// border-*), which in the dark preview left this card's TEXT correctly
+// re-themed light while its background stayed pale -- light text on a
+// still-pale background, the worst-case contrast pairing, and exactly what
+// made this unreadable in dark mode. Given a legible marketing demo matters
+// more than faithfully reproducing a real app CSS gap, this mockup picks
+// its own explicit dark background per accent color instead of relying on
+// that cascade, via useMockupTheme() directly.
 // Literal classes (not template-interpolated) -- Tailwind's build-time
 // scanner can't see a dynamically-constructed `border-l-${color}-400`
 // class string, so it would get purged from the production bundle.
@@ -721,6 +729,13 @@ const CLIENT_CARD_COLORS = {
   emerald: "border-l-emerald-400 bg-emerald-50/40",
   purple: "border-l-purple-400 bg-purple-50/40",
   red: "border-l-red-400 bg-red-50/40",
+} as const;
+const CLIENT_CARD_COLORS_DARK = {
+  amber: "border-l-amber-400 bg-amber-950/40",
+  blue: "border-l-blue-400 bg-blue-950/40",
+  emerald: "border-l-emerald-400 bg-emerald-950/40",
+  purple: "border-l-purple-400 bg-purple-950/40",
+  red: "border-l-red-400 bg-red-950/40",
 } as const;
 
 const CLIENT_UPDATE_CARDS: { color: keyof typeof CLIENT_CARD_COLORS; matter: string; summary?: string; stage: string; settlementDate: string }[] = [
@@ -734,6 +749,7 @@ const CLIENT_UPDATE_CARDS: { color: keyof typeof CLIENT_CARD_COLORS; matter: str
 // client update board -- the blue card starts expanded since that's the
 // one with an ai_summary line worth showing by default.
 export function MockClientUpdates() {
+  const isDark = useMockupTheme();
   const [expanded, setExpanded] = useState<string | null>("2024/0212 -- 88 Riverside Ave");
   return (
     <div className="w-full max-w-sm space-y-2.5">
@@ -743,7 +759,7 @@ export function MockClientUpdates() {
           <button
             key={c.matter}
             onClick={() => setExpanded((e) => (e === c.matter ? null : c.matter))}
-            className={`w-full text-left border rounded-2xl border-l-4 ${CLIENT_CARD_COLORS[c.color]} border-y-slate-200 border-r-slate-200 overflow-hidden`}
+            className={`w-full text-left border rounded-2xl border-l-4 ${isDark ? CLIENT_CARD_COLORS_DARK[c.color] : CLIENT_CARD_COLORS[c.color]} border-y-slate-200 border-r-slate-200 overflow-hidden`}
           >
             <div className={isExpanded ? "px-4 py-3 border-b border-slate-100" : "px-4 py-3"}>
               <p className="text-[12px] font-medium text-slate-700">{c.matter}</p>
@@ -797,6 +813,7 @@ function TaskFollowUpButton({ entries, onAdd, onMarkDone, onRemove }: {
   onRemove: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [date, setDate] = useState(mockTodayStr());
   const containerRef = useRef<HTMLDivElement>(null);
   const doneEntries = entries.filter((e) => e.isDone);
@@ -814,10 +831,23 @@ function TaskFollowUpButton({ entries, onAdd, onMarkDone, onRemove }: {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  // Flip upward when there isn't comfortable room below -- same idea as the
+  // real popover's reposition logic (components/FollowUpToggle.tsx), just
+  // measured once on open rather than tracked on scroll/resize, since this
+  // mockup's card doesn't scroll internally.
+  const toggleOpen = () => {
+    if (!open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const estimatedHeight = 220;
+      setOpenUpward(window.innerHeight - rect.bottom < estimatedHeight && rect.top > estimatedHeight);
+    }
+    setOpen((v) => !v);
+  };
+
   return (
     <div ref={containerRef} className="relative shrink-0">
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        onClick={(e) => { e.stopPropagation(); toggleOpen(); }}
         title={hasScheduled ? `${scheduledEntries.length} follow-up(s) scheduled, click to manage` : doneEntries.length > 0 ? `Followed up ${doneEntries.length}x, click to manage` : "Log a follow-up"}
         className={`h-5 min-w-[20px] px-1 rounded-full border-2 flex items-center justify-center gap-0.5 transition-all ${
           hasScheduled ? "bg-sky-400 border-sky-400" : doneEntries.length > 0 ? "bg-amber-400 border-amber-400" : "border-slate-300 hover:border-amber-400"
@@ -829,7 +859,7 @@ function TaskFollowUpButton({ entries, onAdd, onMarkDone, onRemove }: {
         )}
       </button>
       {open && (
-        <div onClick={(e) => e.stopPropagation()} className="absolute z-20 top-6 left-0 w-64 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 space-y-2.5">
+        <div onClick={(e) => e.stopPropagation()} className={`absolute z-20 left-0 w-64 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 space-y-2.5 ${openUpward ? "bottom-6" : "top-6"}`}>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
             Follow-ups {hasScheduled ? `(${doneEntries.length} done, ${scheduledEntries.length} scheduled)` : `(${doneEntries.length})`}
           </p>
@@ -993,49 +1023,122 @@ export function MockFinanceModel() {
 }
 
 // Recreates the real computed repayment schedule inside a loan's Loans-
-// subtab detail view (lib/loanCalculator.ts's calculateLoanSchedule,
-// rendered at components/public/financeModel/LoansSubtab.tsx:537-561) --
-// Period/Opening/Interest/Principal/Payment/Closing, not the simplified
-// 3-column version this mockup showed before.
+// subtab detail view exactly (components/public/financeModel/
+// LoansSubtab.tsx:537-561): all six real columns (Period as the real
+// "start → end" date range, not a bare "Q1" label, then Opening/Interest/
+// Principal/Payment/Closing), right-aligned numeric cells, same as that
+// table's own layout. FeatureSpotlight renders this one full-width below
+// its copy rather than side by side (see the "loan-schedule" audience
+// entry's wideVisual flag) since six real columns don't fit legibly in a
+// half-width row without truncating headers down to "OPE…"/"INT…".
 export function MockLoanSchedule() {
   return (
-    <TableFrame
-      label="Loan schedule"
-      columns={["Period", "Opening", "Interest", "Principal", "Closing"]}
-      rows={[
-        ["Q1", "$1.2M", "$18k", "-", "$1.2M"],
-        ["Q2", "$1.2M", "$18k", "-", "$1.2M"],
-        ["Q3", "$1.2M", "$18k", "$200k", "$1.0M"],
-        ["Q4", "$1.0M", "$15k", "$300k", "$700k"],
-        ["Q5", "$700k", "$10.5k", "$700k", "$0"],
-      ]}
-    />
+    <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+      <IconHeader icon={CalendarClock} tint="bg-sky-50" iconColor="text-sky-700" title="Repayment schedule" subtitle="Opening balance to closing balance, every period" />
+      <div className="rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
+        <DetailedTable
+          columns={[
+            { label: "Period" }, { label: "Opening", align: "right" }, { label: "Interest", align: "right" },
+            { label: "Principal", align: "right" }, { label: "Payment", align: "right" }, { label: "Closing", align: "right" },
+          ]}
+          rows={[
+            ["1 Jan → 31 Mar 2026", "$1.2M", "$18k", "-", "$18k", "$1.2M"],
+            ["1 Apr → 30 Jun 2026", "$1.2M", "$18k", "-", "$18k", "$1.2M"],
+            ["1 Jul → 30 Sep 2026", "$1.2M", "$18k", "$200k", "$218k", "$1.0M"],
+            ["1 Oct → 31 Dec 2026", "$1.0M", "$15k", "$300k", "$315k", "$700k"],
+            ["1 Jan → 31 Mar 2027", "$700k", "$10.5k", "$700k", "$710.5k", "$0"],
+          ]}
+        />
+      </div>
+    </div>
   );
 }
 
+// The actual calculator, not a static result card: every field here is a
+// real editable input feeding lib/residualLandValue.ts's solveResidualLandValue
+// (the same bisection solver components/public/ResidualLandSolverContent.tsx
+// itself calls -- imported directly, not reimplemented), so the Residual
+// land value above genuinely recomputes as the numbers change. Nine of the
+// real page's inputs are shown (its own three groups: Revenue/Costs/
+// Finance); the rest (project duration, marketing & selling %, other
+// acquisition costs, holding costs, the construction-facility fields) are
+// held at sane fixed defaults below rather than cluttering a compact
+// mockup, and state is fixed to VIC / GST method to Margin Scheme -- the
+// real page lets all of those vary too, just not shown here.
+const RESIDUAL_LAND_FIELD_GROUPS: { title: string; fields: { key: keyof FeasibilityInputs; label: string; suffix: string }[] }[] = [
+  { title: "Revenue", fields: [
+    { key: "dwellingsCount", label: "Dwellings", suffix: "" },
+    { key: "avgDwellingSizeSqm", label: "Avg size", suffix: "sqm" },
+    { key: "expectedSalePricePerDwelling", label: "Sale price / dwelling", suffix: "$" },
+  ] },
+  { title: "Costs", fields: [
+    { key: "constructionRatePerSqm", label: "Construction rate", suffix: "$/sqm" },
+    { key: "professionalFeesPct", label: "Professional fees", suffix: "%" },
+    { key: "contingencyPct", label: "Contingency", suffix: "%" },
+  ] },
+  { title: "Finance", fields: [
+    { key: "interestRatePct", label: "Interest rate", suffix: "% p.a." },
+    { key: "loanToCostPct", label: "Loan to cost", suffix: "%" },
+    { key: "targetMarginPct", label: "Target margin", suffix: "%" },
+  ] },
+];
+
+const RESIDUAL_LAND_DEFAULTS: Record<string, number> = {
+  dwellingsCount: 12, avgDwellingSizeSqm: 95, expectedSalePricePerDwelling: 720000,
+  constructionRatePerSqm: 4300, professionalFeesPct: 12, contingencyPct: 8,
+  interestRatePct: 7.5, loanToCostPct: 65, targetMarginPct: 20,
+};
+
+function moneyShort(n: number): string {
+  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(n) >= 1_000) return `$${Math.round(n / 1000)}k`;
+  return `$${Math.round(n)}`;
+}
+
 export function MockResidualLand() {
+  const [values, setValues] = useState<Record<string, number>>(RESIDUAL_LAND_DEFAULTS);
+
+  const solved = useMemo(() => {
+    const inputs: FeasibilityInputs = {
+      dwellingsCount: values.dwellingsCount, avgDwellingSizeSqm: values.avgDwellingSizeSqm, siteAreaSqm: null,
+      expectedSalePricePerDwelling: values.expectedSalePricePerDwelling, constructionRatePerSqm: values.constructionRatePerSqm,
+      professionalFeesPct: values.professionalFeesPct, contingencyPct: values.contingencyPct, marketingSellingPct: 3,
+      otherAcquisitionCosts: 0, holdingCostsAnnual: 0, projectDurationMonths: 18,
+      interestRatePct: values.interestRatePct, loanToCostPct: values.loanToCostPct, targetMarginPct: values.targetMarginPct,
+      facilityLimit: null, facilityInterestRatePct: null, maxLvrPct: null,
+      preferredReturnPct: null, promotePct: null,
+    };
+    return solveResidualLandValue(inputs, "VIC", "Margin Scheme");
+  }, [values]);
+
   return (
-    <WidgetCard label="Residual land solver">
-      <Stat label="Residual land value" value="$2.14M" />
-      <div className="mt-2.5 space-y-2">
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2.5">
-          <span className="text-[12px] font-medium text-slate-700">GRV</span>
-          <span className="text-[12px] font-semibold text-slate-500">$8.6M</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2.5">
-          <span className="text-[12px] font-medium text-slate-700">Construction costs</span>
-          <span className="text-[12px] font-semibold text-slate-500">$4.9M</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2.5">
-          <span className="text-[12px] font-medium text-slate-700">Professional fees</span>
-          <span className="text-[12px] font-semibold text-slate-500">$620k</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2.5">
-          <span className="text-[12px] font-medium text-slate-700">Contingency & selling costs</span>
-          <span className="text-[12px] font-semibold text-slate-500">$580k</span>
-        </div>
+    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Residual land solver</p>
+      <div className="rounded-xl bg-indigo-50 px-4 py-3 mb-3">
+        <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">Residual land value</p>
+        <p className="text-[20px] font-bold text-indigo-700">{solved ? moneyShort(solved.landPrice) : "-"}</p>
       </div>
-    </WidgetCard>
+      <div className="space-y-3">
+        {RESIDUAL_LAND_FIELD_GROUPS.map((group) => (
+          <div key={group.title}>
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">{group.title}</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {group.fields.map((f) => (
+                <div key={f.key} className="rounded-lg border border-slate-200 px-2 py-1.5">
+                  <label className="text-[7px] font-bold text-slate-400 uppercase tracking-wide block truncate">{f.label}</label>
+                  <input
+                    type="number"
+                    value={values[f.key] ?? 0}
+                    onChange={(e) => setValues((v) => ({ ...v, [f.key]: Number(e.target.value) }))}
+                    className="w-full text-[11px] font-semibold text-slate-700 outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -13,6 +13,10 @@ export interface AudienceFeature {
   body: string;
   accent: SpotlightAccent;
   visual: MockupName;
+  // See FeatureSpotlight.tsx's SpotlightFeature -- renders full-width below
+  // the copy instead of side by side, for a mockup too wide to stay legible
+  // squeezed into half a row.
+  wideVisual?: boolean;
 }
 
 export interface AudienceContent {
@@ -161,6 +165,7 @@ export const AUDIENCES: Record<string, AudienceContent> = {
         body: "A computed repayment schedule against the same finance model, with opening balance, interest, principal, and closing balance, period by period.",
         accent: "sky",
         visual: "loanSchedule",
+        wideVisual: true,
       },
       {
         slug: "residual-land-solver",

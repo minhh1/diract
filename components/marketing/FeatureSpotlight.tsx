@@ -30,6 +30,10 @@ export interface SpotlightFeature {
   body: string;
   accent: SpotlightAccent;
   visual: MockupName;
+  // Renders the visual full-width below the copy instead of side by side --
+  // for a mockup with too many real columns/fields to stay legible
+  // squeezed into half a row (e.g. the loan schedule's six real columns).
+  wideVisual?: boolean;
 }
 
 // Tailwind v4 needs literal class strings to keep them in the build --
@@ -84,7 +88,7 @@ export default function FeatureSpotlight({
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-80px" }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
-                className={`grid md:grid-cols-2 gap-10 items-center ${reversed ? "md:[&>*:first-child]:order-2" : ""}`}
+                className={f.wideVisual ? "space-y-8" : `grid md:grid-cols-2 gap-10 items-center ${reversed ? "md:[&>*:first-child]:order-2" : ""}`}
               >
                 <div>
                   <div className={`w-11 h-11 rounded-2xl ${a.bg} flex items-center justify-center mb-5`}>

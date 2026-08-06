@@ -169,18 +169,18 @@ export default function PublicFeasibilitySandbox() {
         ))}
 
         <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-4">
-          <Tile big label="Return on Equity" value={r.returnOnEquityPct != null ? `${r.returnOnEquityPct.toFixed(1)}%` : "—"} tone={r.returnOnEquityPct != null ? (r.returnOnEquityPct >= 0 ? "good" : "bad") : undefined} />
+          <Tile big label="Return on Equity" value={r.returnOnEquityPct != null ? `${r.returnOnEquityPct.toFixed(1)}%` : "-"} tone={r.returnOnEquityPct != null ? (r.returnOnEquityPct >= 0 ? "good" : "bad") : undefined} />
           <Tile big label="Net Profit" value={money(r.netProfit)} tone={r.netProfit >= 0 ? "good" : "bad"} />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Tile label="Verdict" value={r.feasible == null ? "—" : r.feasible ? "Feasible" : "Below target"} tone={r.feasible == null ? undefined : r.feasible ? "good" : "bad"} />
-          <Tile label="Margin on Cost" value={r.marginOnCostPct != null ? `${r.marginOnCostPct.toFixed(1)}%` : "—"} />
+          <Tile label="Verdict" value={r.feasible == null ? "-" : r.feasible ? "Feasible" : "Below target"} tone={r.feasible == null ? undefined : r.feasible ? "good" : "bad"} />
+          <Tile label="Margin on Cost" value={r.marginOnCostPct != null ? `${r.marginOnCostPct.toFixed(1)}%` : "-"} />
           <Tile label="Gross Revenue" value={money(r.revenue)} />
           <Tile label="Total Dev. Cost" value={money(r.totalDevelopmentCost)} />
           <Tile label="Required Equity" value={money(r.requiredEquity)} />
           <Tile label="Peak Debt" value={money(r.peakDebt)} />
-          <Tile label="Break-even Price Each" value={breakEven != null ? money(breakEven) : "—"} />
-          <Tile label="Max Land Price" value={maxLand != null ? money(maxLand) : "— not achievable"} />
+          <Tile label="Break-even Price Each" value={breakEven != null ? money(breakEven) : "-"} />
+          <Tile label="Max Land Price" value={maxLand != null ? money(maxLand) : "- not achievable"} />
         </div>
 
         <div className="border-t border-slate-100 pt-4">
@@ -206,8 +206,8 @@ export default function PublicFeasibilitySandbox() {
           </tr></thead>
           <tbody>
             <tr><td className="py-1 text-slate-500">Net profit</td>{scenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{money(s.result.netProfit)}</td>)}</tr>
-            <tr><td className="py-1 text-slate-500">Margin on cost</td>{scenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.marginOnCostPct != null ? `${s.result.marginOnCostPct.toFixed(1)}%` : "—"}</td>)}</tr>
-            <tr><td className="py-1 text-slate-500">Return on equity</td>{scenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.returnOnEquityPct != null ? `${s.result.returnOnEquityPct.toFixed(1)}%` : "—"}</td>)}</tr>
+            <tr><td className="py-1 text-slate-500">Margin on cost</td>{scenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.marginOnCostPct != null ? `${s.result.marginOnCostPct.toFixed(1)}%` : "-"}</td>)}</tr>
+            <tr><td className="py-1 text-slate-500">Return on equity</td>{scenarios.map(s => <td key={s.label} className="py-1 text-right px-3">{s.result.returnOnEquityPct != null ? `${s.result.returnOnEquityPct.toFixed(1)}%` : "-"}</td>)}</tr>
           </tbody>
         </table>
       </div>
@@ -225,7 +225,7 @@ export default function PublicFeasibilitySandbox() {
                 <td className="text-slate-400 font-bold pr-2">{row.salePriceDeltaPct > 0 ? "+" : ""}{row.salePriceDeltaPct}%</td>
                 {row.cells.map(c => (
                   <td key={c.constructionDeltaPct} className={`py-1 ${c.marginOnCostPct == null ? "text-slate-300" : c.marginOnCostPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                    {c.marginOnCostPct != null ? c.marginOnCostPct.toFixed(1) : "—"}
+                    {c.marginOnCostPct != null ? c.marginOnCostPct.toFixed(1) : "-"}
                   </td>
                 ))}
               </tr>
@@ -235,7 +235,7 @@ export default function PublicFeasibilitySandbox() {
       </div>
 
       <div className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-[11px] text-slate-400">
-        Simplified IRR at these inputs: {irr != null ? `${irr.toFixed(1)}%` : "—"} &mdash; a single equity injection at the
+        Simplified IRR at these inputs: {irr != null ? `${irr.toFixed(1)}%` : "-"} &mdash; a single equity injection at the
         start and a single return at completion, not a dated cash-flow IRR. Finance cost assumes a progressively drawn
         loan averaging ~50% of peak debt. The full version adds a dated monthly cash flow, a real drawdown and
         capitalised-interest schedule, leveraged IRR, equity waterfall and an IC memo.
