@@ -47,18 +47,9 @@ export default function MoreScreen() {
           <Text style={[styles.rowLabel, { color: theme.text }]}>Properties</Text>
         </View>
       </Pressable>
-      <Pressable
-        onPress={() => router.push('/more/ai' as never)}
-        style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-      >
-        <View style={styles.rowLeft}>
-          <Bot size={18} color={theme.textSecondary} />
-          <Text style={[styles.rowLabel, { color: theme.text }]}>AI assistant</Text>
-        </View>
-      </Pressable>
-
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>OPEN ON THE WEB</Text>
       <View style={{ gap: 8 }}>
+        <OpenInBrowserRow label="AI assistant" path="/dashboard/ai" icon={Bot} />
         <OpenInBrowserRow label="Custom tables & boards" path="/dashboard/boards" icon={LayoutTemplate} />
         <OpenInBrowserRow label="Schema builder" path="/dashboard/schema" icon={Settings} />
         <OpenInBrowserRow label="Document templates" path="/dashboard/templates" icon={FileEdit} />

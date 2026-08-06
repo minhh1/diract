@@ -58,18 +58,17 @@ notifications, you'll also need to:
   app's cookie session, so every route built on `createSupabaseServerClient()`
   / `authorizeCompanyMember()` (~40 routes) already works from mobile
   (`src/lib/api.ts` is the client-side helper that attaches the header).
-- **AI assistant** (More -> AI assistant, `src/app/(app)/more/ai.tsx`) --
-  a native chat screen calling the same `app/api/ai/chat/route.ts` the web
-  dashboard uses via the Bearer-auth path above. That route streams
-  newline-delimited JSON; React Native's `fetch` streaming support is
-  inconsistent enough across RN/Expo versions that this awaits the full
-  response and replays it rather than rendering token-by-token -- correct,
-  just not a token-streaming UI yet. Only typechecked, not run against a
-  real backend (no Supabase project was available in this environment).
-- **"Open in browser" fallbacks** (More tab) for schema builder, PDF
-  editor, templates, Outlook/Gmail inboxes, billing, virtual computers,
-  marketplace, admin, and settings -- these open the responsive web
-  dashboard in an in-app browser rather than a half-native rebuild.
+- **"Open in browser" fallbacks** (More tab) for the AI assistant, schema
+  builder, PDF editor, templates, Outlook/Gmail inboxes, billing, virtual
+  computers, marketplace, admin, and settings -- these open the responsive
+  web dashboard in an in-app browser rather than a half-native rebuild.
+  The AI assistant used to be a native chat screen here
+  (`src/app/(app)/more/ai.tsx`, since removed) calling
+  `app/api/ai/chat/route.ts` directly, but that route was repurposed
+  web-side into an admin-only table/dashboard-builder assistant (job-based,
+  driven by Supabase Realtime, tool-call/confirmation UI) -- an inherently
+  desktop-oriented builder workflow, not a general Q&A chat, so it now
+  belongs in this list instead of a native reimplementation.
 
 ## What's not built yet (backlog)
 
@@ -80,7 +79,7 @@ notifications, you'll also need to:
   multi-day effort and wasn't attempted here beyond the plain record
   list/detail views above.
 - **Outlook/Gmail, SMS, billing, marketplace screens** -- the Bearer-auth
-  plumbing (`src/lib/api.ts`) and the AI assistant screen above prove the
+  plumbing (`src/lib/api.ts`) and the Core CRM screens above prove the
   pattern works; these four still just open the web dashboard.
 - **App Store / Play Store submission** -- needs your own Apple Developer
   Program and Google Play Console accounts/credentials; `eas.json` is set
