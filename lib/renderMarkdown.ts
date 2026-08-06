@@ -10,7 +10,7 @@ import DOMPurify from "isomorphic-dompurify";
 
 marked.setOptions({ breaks: true });
 
-const ALLOWED_TAGS = ["p", "br", "strong", "em", "b", "i", "u", "ul", "ol", "li", "a", "h1", "h2", "h3", "blockquote", "code", "pre"];
+const ALLOWED_TAGS = ["p", "br", "strong", "em", "b", "i", "u", "ul", "ol", "li", "a", "h1", "h2", "h3", "blockquote", "code", "pre", "table", "thead", "tbody", "tr", "th", "td"];
 const ALLOWED_ATTR = ["href", "target", "rel"];
 
 export function renderMarkdown(text: string | null | undefined): string {
