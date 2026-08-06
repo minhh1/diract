@@ -168,6 +168,7 @@ export interface GenerateInvoicePdfInput {
     trustApplied: number;
     payments: number;
     waivedAmount: number;
+    discountAmount: number;
     amountDue: number;
     priorBalance: number;
     // Detailed-template-only fields (generateDetailedInvoicePdf.ts) -- the
@@ -480,6 +481,14 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
   totalRow('Subtotal (ex. GST)', input.invoice.subtotal);
   totalRow('GST', input.invoice.gst);
   totalRow('Total (inc. GST)', input.invoice.totalIncGst, { bold: true });
+  if (input.invoice.discountAmount > 0.004) {
+    totalRow('Discount', -input.invoice.discountAmount);
+    // The payment-summary block below always ends with its own Amount due
+    // line -- only need one here when that block is switched off for this
+    // template, since a discount changes what's actually owed and the
+    // client needs to see that somewhere.
+    if (!input.display.showPaymentSummary) totalRow('Amount due', input.invoice.amountDue, { bold: true });
+  }
   if (input.display.showPaymentSummary) {
     y -= 4;
     if (input.invoice.trustApplied) totalRow('Trust funds applied', -input.invoice.trustApplied);

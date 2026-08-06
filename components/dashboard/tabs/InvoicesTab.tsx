@@ -35,6 +35,7 @@ interface InvoiceRow {
   payments: number;
   trustApplied: number;
   waivedAmount: number;
+  discountAmount: number;
 }
 
 const STATUS_OPTIONS = ['Under Review', 'Sent', 'Paid', 'Overdue', 'Void'];
@@ -134,6 +135,7 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
       payments: Number(row.payments) || 0,
       trustApplied: Number(row.trust_applied) || 0,
       waivedAmount: Number(row.waived_amount) || 0,
+      discountAmount: Number(row.discount_amount) || 0,
     }));
     rows.sort((a, b) => String(b.issueDate || '').localeCompare(String(a.issueDate || '')));
     setInvoices(rows);
@@ -433,7 +435,7 @@ function EditInvoiceModal({
     const result = await updateCustomRecord(invoice.id, invoiceTableId, companyId, {
       status, due_date: dueDate || null,
       payments: paymentsNum, trust_applied: trustAppliedNum, waived_amount: waivedNum,
-      amount_due: invoice.totalIncGst - trustAppliedNum - paymentsNum - waivedNum,
+      amount_due: invoice.totalIncGst - invoice.discountAmount - trustAppliedNum - paymentsNum - waivedNum,
     }, invoiceFields);
     setSaving(false);
     if (result && 'error' in result) { setError(result.error); return; }

@@ -15,7 +15,7 @@
 // InvoicesTab.tsx, all three passing the same matterId/companyId/userId.
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { X, Loader2, Check, ExternalLink, Sparkles } from "lucide-react";
+import { X, Loader2, ExternalLink, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import RelationPicker from "./RelationPicker";
@@ -23,6 +23,7 @@ import { createRecord as createCustomRecord, updateRecord as updateCustomRecord 
 import { scaleToTarget, applyToSelectedLines, applyPercentOrAmount, splitGst, type ApportionLine, type ApportionedLine } from "@/lib/invoices/apportionment";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
 import { companyTodayStr, companyYmd } from "@/lib/companyLocalDate";
+import { startBackgroundTask, updateBackgroundTask } from "@/lib/backgroundTasks";
 
 interface FeeRow { id: string; tableId: string; date: string | null; description: string; staffLabel: string; staffPosition: string | null; rate: number; hours: number; amount: number; gstStatus: string; isFixedFee: boolean }
 interface DisbRow { id: string; tableId: string; date: string | null; description: string; amount: number; gstStatus: string }
@@ -44,7 +45,6 @@ function money(n: number): string {
 export default function CreateInvoiceModal({ matterId, companyId, userId, onClose, onCreated }: Props) {
   const { invoiceSettings, companyType } = useCompany();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notReady, setNotReady] = useState(false);
 
@@ -64,6 +64,17 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const [targetTotal, setTargetTotal] = useState('');
   const [targetDistribution, setTargetDistribution] = useState<'all' | 'largest'>('all');
   const [largestSelectedIds, setLargestSelectedIds] = useState<Set<string>>(new Set());
+
+  // Separate from fee apportionment above -- that only discounts SELECTED
+  // FEE lines, pre-GST. This is a further discretionary discount off the
+  // whole invoice total (fees + disbursements, post-GST), e.g. a goodwill
+  // write-down agreed after the fee breakdown is already set. Applied to
+  // amount_due only, not to subtotal/gst/total_inc_gst (those stay the
+  // formula-computed, undiscounted figures -- see supabase/template_law_firm_seed.sql's
+  // fees_total -> subtotal -> gst -> total_inc_gst cascade), same relationship
+  // waived_amount/trust_applied/payments already have to amount_due.
+  const [totalDiscountType, setTotalDiscountType] = useState<'percent' | 'amount'>('amount');
+  const [totalDiscountValue, setTotalDiscountValue] = useState('');
 
   // Multiple debtors (e.g. joint purchasers/co-borrowers) -- see
   // supabase/invoices_debtor_multi.sql, which flipped this field to the
@@ -88,9 +99,11 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   // let one specific invoice deviate from it without changing the
   // template or any other invoice). Re-defaulted from the selected
   // template's own setting whenever the template changes, see the effect
-  // below.
-  const [showProfessionalFeesTable, setShowProfessionalFeesTable] = useState(true);
-  const [showSummaryFeesByLawyerTable, setShowSummaryFeesByLawyerTable] = useState(true);
+  // below. Off unless a template explicitly opts in -- these tables add a
+  // lot of page-1 detail most invoices don't need; ticking them per-invoice
+  // (or turning them on for a whole template) is the exception, not the norm.
+  const [showProfessionalFeesTable, setShowProfessionalFeesTable] = useState(false);
+  const [showSummaryFeesByLawyerTable, setShowSummaryFeesByLawyerTable] = useState(false);
   const [templateId, setTemplateId] = useState('');
   const [issueDate, setIssueDate] = useState(() => companyTodayStr(companyType));
   const [dueDate, setDueDate] = useState('');
@@ -114,14 +127,13 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
 
   // Re-default the two per-invoice table overrides from whichever template
   // is selected -- switching templates mid-modal shouldn't carry over a
-  // previous template's setting.
+  // previous template's setting. Off unless the template explicitly turned
+  // it on (=== true, not the old "on unless explicitly off" !== false).
   useEffect(() => {
     const t = invoiceSettings.templates.find(x => x.id === templateId);
-    setShowProfessionalFeesTable(t?.display?.showProfessionalFeesTable !== false);
-    setShowSummaryFeesByLawyerTable(t?.display?.showSummaryFeesByLawyerTable !== false);
+    setShowProfessionalFeesTable(t?.display?.showProfessionalFeesTable === true);
+    setShowSummaryFeesByLawyerTable(t?.display?.showSummaryFeesByLawyerTable === true);
   }, [templateId, invoiceSettings.templates]);
-
-  const [success, setSuccess] = useState<{ id: string; invoiceNumber: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -335,6 +347,13 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const gst = Math.round(allGstSplits.reduce((s, l) => s + l.gst, 0) * 100) / 100;
   const totalIncGst = Math.round((subtotal + gst) * 100) / 100;
 
+  const rawTotalDiscount = parseFloat(totalDiscountValue) || 0;
+  const totalDiscountAmount = Math.round(Math.max(0, Math.min(
+    totalDiscountType === 'percent' ? totalIncGst * rawTotalDiscount / 100 : rawTotalDiscount,
+    totalIncGst
+  )) * 100) / 100;
+  const amountDueAfterDiscount = Math.round((totalIncGst - totalDiscountAmount) * 100) / 100;
+
   const toggleFee = (id: string) => setSelectedFeeIds(prev => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
@@ -378,6 +397,16 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
     }
   };
 
+  // Runs as a background task (lib/backgroundTasks.ts) rather than blocking
+  // this modal -- an invoice with many fee/disbursement lines visibly took a
+  // long time to create (each line's updateCustomRecord call triggers its
+  // own rollup recompute on the invoice header, see customTableService.ts's
+  // recomputeRelatedRollups), and there's no reason the user has to sit and
+  // watch that happen. Validation stays synchronous/inline above so a bad
+  // input is still caught before the modal closes; everything after that is
+  // snapshotted into local variables and handed to the background task,
+  // since the task outlives this component (closing the modal, or
+  // navigating away, unmounts it, but doesn't cancel in-flight promises).
   const handleSave = async () => {
     if (!invoicesTableId) return;
     if (selectedFeeIds.size === 0 && selectedDisbIds.size === 0) {
@@ -392,143 +421,132 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
       setError('This template excludes the itemised Professional Fees table. Describe the fees for the client.');
       return;
     }
-    setSaving(true);
     setError('');
 
-    const record = await createCustomRecord(invoicesTableId, companyId, userId, {
-      matter: matterId,
-      debtor: debtorIds,
-      responsible_partner: responsiblePartnerId,
-      our_reference: ourReference || null,
-      your_reference: yourReference || null,
-      professional_fees_description: professionalFeesDescription.trim() || null,
-      show_professional_fees_table: isDetailedTemplate ? showProfessionalFeesTable : null,
-      show_summary_fees_by_lawyer_table: isDetailedTemplate ? showSummaryFeesByLawyerTable : null,
-      issue_date: issueDate,
-      due_date: dueDate || null,
-      status: 'Under Review',
-      template_id: templateId || null,
-    }, invoiceFields);
+    const invTableId = invoicesTableId;
+    const invFields = invoiceFields;
+    const srcFieldsByTable = sourceFieldsByTable;
+    const feesToBill = apportionedFees;
+    const feeRowsSnapshot = feeRows;
+    const disbRowsToBill = disbRows.filter(r => selectedDisbIds.has(r.id));
+    const finalAmountDue = amountDueAfterDiscount;
+    const discountToSave = totalDiscountAmount > 0.004 ? totalDiscountAmount : null;
 
-    if (!record || 'error' in record) {
-      setError((record as any)?.error || 'Could not create the invoice.');
-      setSaving(false);
-      return;
-    }
+    const taskId = crypto.randomUUID();
+    const totalSteps = 1 /* header */ + feesToBill.length + disbRowsToBill.length + 1 /* line items */ + 1 /* finalize */;
+    startBackgroundTask(taskId, `Creating invoice${matterName ? ` for ${matterName}` : ''}...`, totalSteps);
+    onClose();
 
-    // Both invoiced_amount (feeds fees_total/disbursements_total ->
-    // subtotal) and invoice_line_items' original_amount/billed_amount are
-    // the EX-GST portion of each figure -- see lib/invoices/apportionment.ts's
-    // splitGst(). For a GST Exclusive/Free line this equals the raw dollar
-    // amount as before; for GST Inclusive it's the amount with GST backed
-    // out, with gst_amount carrying the difference separately (what
-    // InvoiceTemplateDisplay.showAmountAndGstPerLine is for).
-    // Building lineItemRows and firing every source record's own update are
-    // independent per row (different record ids, no shared state between
-    // them) -- this used to await each updateCustomRecord one at a time in
-    // the same loop, so an invoice with many entries took visibly longer to
-    // create the more fees/disbursements it billed. Now every update fires
-    // together and the loop only does synchronous work.
-    const lineItemRows: any[] = [];
-    const updatePromises: Promise<{ error: string } | void | null>[] = [];
-    for (const line of apportionedFees) {
-      const row = feeRows.find(r => r.id === line.id);
-      if (!row) continue;
-      const fields = sourceFieldsByTable.get(row.tableId) || [];
-      const originalSplit = splitGst(line.originalAmount, row.gstStatus);
-      const billedSplit = splitGst(line.billedAmount, row.gstStatus);
-      updatePromises.push(updateCustomRecord(row.id, row.tableId, companyId, {
-        invoice: record.id, invoiced_amount: billedSplit.exGst, invoiced_gst_amount: billedSplit.gst,
-      }, fields));
-      lineItemRows.push({
-        company_id: companyId, invoice_record_id: record.id, source_type: 'fee', source_record_id: row.id,
-        description: row.description, original_amount: originalSplit.exGst, billed_amount: billedSplit.exGst,
-        entry_date: row.date, staff_name: row.staffLabel || null, staff_position: row.staffPosition, rate: row.rate, hours: row.hours,
-        gst_status: row.gstStatus, gst_amount: billedSplit.gst, is_fixed_fee: row.isFixedFee,
+    let done = 0;
+    const bump = () => updateBackgroundTask(taskId, { done: ++done });
+
+    try {
+      const record = await createCustomRecord(invTableId, companyId, userId, {
+        matter: matterId,
+        debtor: debtorIds,
+        responsible_partner: responsiblePartnerId,
+        our_reference: ourReference || null,
+        your_reference: yourReference || null,
+        professional_fees_description: professionalFeesDescription.trim() || null,
+        show_professional_fees_table: isDetailedTemplate ? showProfessionalFeesTable : null,
+        show_summary_fees_by_lawyer_table: isDetailedTemplate ? showSummaryFeesByLawyerTable : null,
+        issue_date: issueDate,
+        due_date: dueDate || null,
+        status: 'Under Review',
+        template_id: templateId || null,
+        discount_amount: discountToSave,
+      }, invFields);
+
+      if (!record || 'error' in record) {
+        throw new Error((record as any)?.error || 'Could not create the invoice.');
+      }
+      bump();
+
+      // Both invoiced_amount (feeds fees_total/disbursements_total ->
+      // subtotal) and invoice_line_items' original_amount/billed_amount are
+      // the EX-GST portion of each figure -- see lib/invoices/apportionment.ts's
+      // splitGst(). For a GST Exclusive/Free line this equals the raw dollar
+      // amount as before; for GST Inclusive it's the amount with GST backed
+      // out, with gst_amount carrying the difference separately (what
+      // InvoiceTemplateDisplay.showAmountAndGstPerLine is for).
+      const lineItemRows: any[] = [];
+      const updatePromises: Promise<{ error: string } | void | null>[] = [];
+      for (const line of feesToBill) {
+        const row = feeRowsSnapshot.find(r => r.id === line.id);
+        if (!row) continue;
+        const fields = srcFieldsByTable.get(row.tableId) || [];
+        const originalSplit = splitGst(line.originalAmount, row.gstStatus);
+        const billedSplit = splitGst(line.billedAmount, row.gstStatus);
+        updatePromises.push(updateCustomRecord(row.id, row.tableId, companyId, {
+          invoice: record.id, invoiced_amount: billedSplit.exGst, invoiced_gst_amount: billedSplit.gst,
+        }, fields).then(r => { bump(); return r; }));
+        lineItemRows.push({
+          company_id: companyId, invoice_record_id: record.id, source_type: 'fee', source_record_id: row.id,
+          description: row.description, original_amount: originalSplit.exGst, billed_amount: billedSplit.exGst,
+          entry_date: row.date, staff_name: row.staffLabel || null, staff_position: row.staffPosition, rate: row.rate, hours: row.hours,
+          gst_status: row.gstStatus, gst_amount: billedSplit.gst, is_fixed_fee: row.isFixedFee,
+        });
+      }
+      for (const row of disbRowsToBill) {
+        const fields = srcFieldsByTable.get(row.tableId) || [];
+        const split = splitGst(row.amount, row.gstStatus);
+        updatePromises.push(updateCustomRecord(row.id, row.tableId, companyId, {
+          invoice: record.id, invoiced_amount: split.exGst, invoiced_gst_amount: split.gst,
+        }, fields).then(r => { bump(); return r; }));
+        lineItemRows.push({
+          company_id: companyId, invoice_record_id: record.id, source_type: 'disbursement', source_record_id: row.id,
+          description: row.description, original_amount: split.exGst, billed_amount: split.exGst,
+          entry_date: row.date, staff_name: null, rate: null, hours: null,
+          gst_status: row.gstStatus, gst_amount: split.gst,
+        });
+      }
+      const updateResults = await Promise.all(updatePromises);
+      const updateError = updateResults.find(r => r && 'error' in r) as { error: string } | undefined;
+      if (updateError) throw new Error(updateError.error);
+      if (lineItemRows.length) {
+        const { error: liError } = await supabase.from('invoice_line_items').insert(lineItemRows);
+        if (liError) throw new Error(liError.message);
+      }
+      bump();
+
+      // amount_due isn't a formula field (unlike subtotal/gst/total_inc_gst,
+      // which cascade via the sum_related rollups the invoice/invoiced_amount
+      // updates above trigger) -- set it from `finalAmountDue` (totalIncGst
+      // less any invoice-level discount), the exact value already shown in
+      // this modal's own Totals preview, rather than reading total_inc_gst
+      // back from the DB. That read used to race the rollup cascade itself
+      // (confirmed live: total_inc_gst ends up correct but this read could
+      // still see 0 first), and total_inc_gst is computed from the SAME
+      // apportioned/GST-split numbers as `finalAmountDue` here, so there's
+      // nothing the DB round trip could tell us that isn't already in scope.
+      // payments/trust_applied are both 0 at creation time; edited later via
+      // InvoicesTab's Edit action, which recomputes amount_due itself.
+      const invNumberField = invFields.find(f => f.field_key === 'invoice_number');
+      const amountDueField = invFields.find(f => f.field_key === 'amount_due');
+      let invoiceNumber = '';
+      if (invNumberField) {
+        const { data: numRow } = await supabase
+          .from('company_table_values').select('value_text').eq('record_id', record.id).eq('field_id', invNumberField.id).maybeSingle();
+        invoiceNumber = numRow?.value_text || '';
+      }
+      if (amountDueField) {
+        await updateCustomRecord(record.id, invTableId, companyId, { amount_due: finalAmountDue }, invFields);
+      }
+      bump();
+
+      updateBackgroundTask(taskId, {
+        status: 'done',
+        resultLabel: `${invoiceNumber || 'Invoice'} created`,
+        resultHref: `/api/invoices/${record.id}/pdf`,
+      });
+      onCreated(record.id);
+    } catch (err) {
+      updateBackgroundTask(taskId, {
+        status: 'error',
+        errorMessage: err instanceof Error ? err.message : 'Could not create the invoice.',
       });
     }
-    for (const row of disbRows.filter(r => selectedDisbIds.has(r.id))) {
-      const fields = sourceFieldsByTable.get(row.tableId) || [];
-      const split = splitGst(row.amount, row.gstStatus);
-      updatePromises.push(updateCustomRecord(row.id, row.tableId, companyId, {
-        invoice: record.id, invoiced_amount: split.exGst, invoiced_gst_amount: split.gst,
-      }, fields));
-      lineItemRows.push({
-        company_id: companyId, invoice_record_id: record.id, source_type: 'disbursement', source_record_id: row.id,
-        description: row.description, original_amount: split.exGst, billed_amount: split.exGst,
-        entry_date: row.date, staff_name: null, rate: null, hours: null,
-        gst_status: row.gstStatus, gst_amount: split.gst,
-      });
-    }
-    const updateResults = await Promise.all(updatePromises);
-    const updateError = updateResults.find(r => r && 'error' in r) as { error: string } | undefined;
-    if (updateError) { setError(updateError.error); setSaving(false); return; }
-    if (lineItemRows.length) {
-      const { error: liError } = await supabase.from('invoice_line_items').insert(lineItemRows);
-      if (liError) { setError(liError.message); setSaving(false); return; }
-    }
-
-    // amount_due isn't a formula field (unlike subtotal/gst/total_inc_gst,
-    // which cascade via the sum_related rollups the invoice/invoiced_amount
-    // updates above trigger) -- set it from `totalIncGst`, the exact value
-    // already shown in this modal's own Totals preview, rather than reading
-    // total_inc_gst back from the DB. That read used to race the rollup
-    // cascade itself (confirmed live: total_inc_gst ends up correct but
-    // this read could still see 0 first), and total_inc_gst is computed
-    // from the SAME apportioned/GST-split numbers as `totalIncGst` here, so
-    // there's nothing the DB round trip could tell us that isn't already in
-    // scope. payments/trust_applied are both 0 at creation time; edited
-    // later via InvoicesTab's Edit action, which recomputes amount_due itself.
-    const invNumberField = invoiceFields.find(f => f.field_key === 'invoice_number');
-    const amountDueField = invoiceFields.find(f => f.field_key === 'amount_due');
-    let invoiceNumber = '';
-    if (invNumberField) {
-      const { data: numRow } = await supabase
-        .from('company_table_values').select('value_text').eq('record_id', record.id).eq('field_id', invNumberField.id).maybeSingle();
-      invoiceNumber = numRow?.value_text || '';
-    }
-    if (amountDueField) {
-      await updateCustomRecord(record.id, invoicesTableId, companyId, { amount_due: totalIncGst }, invoiceFields);
-    }
-
-    setSaving(false);
-    setSuccess({ id: record.id, invoiceNumber });
-    onCreated(record.id);
   };
-
-  if (success) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
-        <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-8 text-center space-y-5">
-          <div className="mx-auto h-14 w-14 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center">
-            <Check size={26} />
-          </div>
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Invoice created</h3>
-            <p className="text-[12px] text-slate-400 mt-1">{success.invoiceNumber || 'Invoice'} is ready.</p>
-          </div>
-          <div className="flex gap-3">
-            <a
-              href={`/api/invoices/${success.id}/pdf`}
-              target="_blank" rel="noreferrer"
-              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-lg text-[11px] font-bold hover:bg-slate-100 transition-all"
-            >
-              Preview PDF
-            </a>
-            <a
-              href={`/api/invoices/${success.id}/docx?download=1`}
-              className="flex-1 py-3 bg-slate-50 text-slate-600 rounded-lg text-[11px] font-bold hover:bg-slate-100 transition-all"
-            >
-              Word
-            </a>
-            <button onClick={onClose} className="flex-1 py-3 bg-slate-900 text-white rounded-lg text-[11px] font-bold hover:bg-slate-800 transition-all">
-              Done
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-6">
@@ -802,7 +820,28 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                 <div className="p-4 bg-slate-50 rounded-2xl space-y-1.5">
                   <div className="flex justify-between text-[12px] text-slate-500"><span>Subtotal (ex. GST)</span><span>{money(subtotal)}</span></div>
                   <div className="flex justify-between text-[12px] text-slate-500"><span>GST</span><span>{money(gst)}</span></div>
-                  <div className="flex justify-between text-[13px] font-bold text-slate-800"><span>Total (inc. GST)</span><span>{money(totalIncGst)}</span></div>
+                  <div className="flex justify-between text-[13px] font-bold text-slate-800 pb-1"><span>Total (inc. GST)</span><span>{money(totalIncGst)}</span></div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                    <span className="text-[12px] text-slate-500">Additional discount on total</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number" step="0.01" value={totalDiscountValue} onChange={e => setTotalDiscountValue(e.target.value)}
+                        placeholder="0" className="w-20 bg-white border border-slate-200 rounded-lg py-1.5 px-2 text-[12px] font-medium outline-none text-right"
+                      />
+                      <select
+                        value={totalDiscountType} onChange={e => setTotalDiscountType(e.target.value as any)}
+                        className="bg-white border border-slate-200 rounded-lg py-1.5 px-2 text-[12px] font-medium outline-none appearance-none"
+                      >
+                        <option value="amount">$</option>
+                        <option value="percent">%</option>
+                      </select>
+                    </div>
+                  </div>
+                  {totalDiscountAmount > 0.004 && (
+                    <div className="flex justify-between text-[12px] text-rose-500 font-medium"><span>Discount applied</span><span>-{money(totalDiscountAmount)}</span></div>
+                  )}
+                  <div className="flex justify-between text-[13px] font-bold text-slate-800 pt-1.5 border-t border-slate-200"><span>Amount due</span><span>{money(amountDueAfterDiscount)}</span></div>
                 </div>
               )}
             </>
@@ -819,10 +858,10 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || loading || notReady || (feeRows.length === 0 && disbRows.length === 0)}
+            disabled={loading || notReady || (feeRows.length === 0 && disbRows.length === 0)}
             className="flex-1 py-3.5 bg-indigo-600 text-white rounded-lg text-[11px] font-medium disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : 'Create invoice'}
+            Create invoice
           </button>
         </div>
       </div>

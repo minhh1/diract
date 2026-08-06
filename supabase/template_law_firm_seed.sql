@@ -196,6 +196,12 @@ BEGIN
   UPDATE template_definition_table_fields SET display_order = 16
     WHERE template_table_id = v_invoices_table_id AND field_key = 'amount_due' AND display_order = 15;
 
+  -- discount_amount -- see supabase/migrations/20260806100000_invoice_discount_amount.sql.
+  INSERT INTO template_definition_table_fields
+    (template_table_id, field_key, label, field_type, display_order)
+  SELECT v_invoices_table_id, 'discount_amount', 'Discount', 'currency', 17
+  WHERE NOT EXISTS (SELECT 1 FROM template_definition_table_fields WHERE template_table_id = v_invoices_table_id AND field_key = 'discount_amount');
+
   -- ── Time & Fee Entries ───────────────────────────────────────────────
   -- Billed vs unbilled from the source export = Invoice link present/absent.
   -- disable_record_dashboard=true: this is pure line-item data, meaningfully
