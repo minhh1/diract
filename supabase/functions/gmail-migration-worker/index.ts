@@ -552,7 +552,26 @@ async function runMigration(t0: number): Promise<Response> {
               continue;
             }
             const filerToken = sourceTokensByUserId[filerByMsgId[msgId]];
-            if (!filerToken) continue;
+            if (!filerToken) {
+              // The filer has no usable Gmail connection -- most commonly a
+              // removed/disconnected member (see app/api/admin/members'
+              // token cleanup on removal) whose project_emails rows are
+              // otherwise kept for history. There's no other mailbox this
+              // message could be read from, so it can never be imported;
+              // recording it resolved is the same "stop re-litigating a
+              // permanent fact" fix as the already-claimed branch below --
+              // confirmed live 2026-08-06: 25 orphaned-filer messages on
+              // one matter, silently `continue`d with no confirmedAppliedIds
+              // entry, cost a real userHasMessage network call EVERY tick
+              // forever and were enough on their own to keep tripping the
+              // consecutive-stall detector even though the other ~200
+              // messages on the same item were resolving fine.
+              confirmedAppliedIds.add(msgId);
+              madeProgressThisTick = true;
+              await db.from("gmail_migration_jobs")
+                .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", itemId);
+              continue;
+            }
             if (!(await claimImport(companyId, projectId, userId, msgId))) {
               // Already claimed -- an earlier tick of this same item, the
               // regular processor, or another migration item already

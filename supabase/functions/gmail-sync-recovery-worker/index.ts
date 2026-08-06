@@ -518,7 +518,19 @@ async function runRecovery(t0: number): Promise<Response> {
               continue;
             }
             const filerToken = sourceTokensByUserId[filerByMsgId[msgId]];
-            if (!filerToken) continue;
+            if (!filerToken) {
+              // No usable Gmail connection for the filer (most commonly a
+              // removed/disconnected member) -- see the matching fix/comment
+              // in gmail-migration-worker's email_sync branch. There's no
+              // other mailbox to read this message from, so record it
+              // resolved instead of re-running a real userHasMessage network
+              // call on it every tick forever.
+              confirmedAppliedIds.add(msgId);
+              madeProgressThisTick = true;
+              await db.from("gmail_sync_failures")
+                .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
+              continue;
+            }
             // Claim BEFORE importing -- the actual race-proof guard against
             // gmail-email-sync-processor (or another recovery tick) also
             // importing this exact (user, message) pair concurrently.
