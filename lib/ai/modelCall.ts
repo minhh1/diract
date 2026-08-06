@@ -281,7 +281,17 @@ export async function callTogetherModelWithTools(
   let reasoning = "";
 
   for (let i = 0; i < maxIterations; i++) {
-    const body: Record<string, unknown> = { model: modelId, messages, tools: openAiTools, tool_choice: "auto", stream: false };
+    // Confirmed live: Together sometimes returns a message.reasoning blob
+    // on iterations OTHER than i===0 too, even though reasoning_effort is
+    // only ever requested on the first one below -- and reasoning tokens
+    // count against the same per-call output budget as content. Without an
+    // explicit max_tokens, a verbose unrequested reasoning trace on a later
+    // iteration once consumed the whole default budget and left content
+    // truncated to empty, silently ending the turn (finish_reason "length"
+    // isn't "tool_calls", so the loop below just breaks). 6000 is generous
+    // enough to cover a large reasoning trace plus a full multi-table plan
+    // in the same call.
+    const body: Record<string, unknown> = { model: modelId, messages, tools: openAiTools, tool_choice: "auto", stream: false, max_tokens: 6000 };
     if (i === 0 && reasoningEffort) body.reasoning_effort = reasoningEffort;
     const res = await fetchTogetherWithRetry("https://api.together.xyz/v1/chat/completions", {
       method: "POST",
