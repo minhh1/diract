@@ -304,6 +304,25 @@ async function resetJobsForNewEmail(companyId: string, projectId: string): Promi
   }
 }
 
+// Flags this matter for an AI field-review pass (see field_review_jobs's
+// own migration and field-review-worker/index.ts, the dispatcher this
+// feeds) -- called alongside resetJobsForNewEmail at every one of its call
+// sites below, unconditionally regardless of central-email-enabled (unlike
+// resetJobsForNewEmail, which only matters for pushing labels to OTHER
+// team members' mailboxes -- field review only cares that a genuinely new
+// email landed on this project at all, which happens in both branches).
+// Upserted (one row per project) rather than inserted -- a project with
+// several new emails in quick succession collapses onto the same pending
+// job instead of piling up duplicates, same as gmail_sync_jobs' own
+// one-row-per-(job_type,project) shape above.
+async function enqueueFieldReviewJob(companyId: string, projectId: string): Promise<void> {
+  try {
+    await db.from("field_review_jobs")
+      .upsert({ company_id: companyId, project_id: projectId, status: "pending", is_realtime: true, updated_at: new Date().toISOString() },
+        { onConflict: "company_id,project_id" });
+  } catch (_) { /* never break the real sync work over this side channel */ }
+}
+
 async function isCompanyAdmin(companyId: string, userId: string): Promise<boolean> {
   const { data } = await db.from("company_memberships")
     .select("role").eq("company_id", companyId).eq("user_id", userId).maybeSingle();
@@ -508,6 +527,7 @@ Deno.serve(async (req) => {
           target_user_id: userId, details: { label_code: labelCode, count: items.length },
         });
 
+        await enqueueFieldReviewJob(companyId, dbLabel.project_id);
         if (!companiesCentralEmail.get(companyId)) await resetJobsForNewEmail(companyId, dbLabel.project_id);
         continue;
       }
@@ -531,6 +551,7 @@ Deno.serve(async (req) => {
           // A skipped duplicate (already tracked) returns no row -- only a
           // genuinely new message needs to propagate to the rest of the team.
           if (d1 && d1.length > 0) {
+            await enqueueFieldReviewJob(companyId, dbLabel.project_id);
             if (companiesCentralEmail.get(companyId)) await captureBodyForCentralEmail(token, msgId, d1[0].content_id);
             else await resetJobsForNewEmail(companyId, dbLabel.project_id);
           }
@@ -658,6 +679,7 @@ Deno.serve(async (req) => {
             if (e2) console.error(`[push] upsert error:`, e2.message);
             else {
               console.log(`[push] ✓ Saved labelled email ${msgId} [${matchedCode}]`);
+              if (isNewMessage2) await enqueueFieldReviewJob(matchedCompanyId, dbLabel.project_id);
               if (isNewMessage2 && !companiesCentralEmail.get(matchedCompanyId)) await resetJobsForNewEmail(matchedCompanyId, dbLabel.project_id);
             }
             const meta2 = extractEmailMeta(md2);
@@ -831,6 +853,7 @@ Deno.serve(async (req) => {
             date: meta3.date, snippet: meta3.snippet, gmail_label_applied: true,
           }, { onConflict: "user_id,gmail_message_id", ignoreDuplicates: true }).select();
           if (d3 && d3.length > 0) {
+            await enqueueFieldReviewJob(subjectMatch.company_id, subjectMatch.project_id);
             if (companiesCentralEmail.get(subjectMatch.company_id)) await captureBodyForCentralEmail(token, msgId, d3[0].content_id);
             else await resetJobsForNewEmail(subjectMatch.company_id, subjectMatch.project_id);
           }
