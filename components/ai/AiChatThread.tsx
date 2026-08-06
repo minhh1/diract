@@ -415,8 +415,9 @@ export default function AiChatThread({
   return (
     <div className={`flex flex-col ${compact ? "" : "h-full"}`}>
       {!compact && usage && (
-        <div className="shrink-0 mb-6 flex items-center justify-between text-[12px] text-slate-400">
+        <div className="shrink-0 mb-6 flex items-center gap-2 text-[12px] text-slate-400">
           <span>{usage.tokensUsed.toLocaleString()} / {usage.tokenCap.toLocaleString()} tokens this period</span>
+          <span className="text-slate-300">&middot;</span>
           <div className="flex items-center gap-2">
             <span>~${usage.estimatedCostUsd.toFixed(2)} spent</span>
             <div className="h-1 w-16 bg-slate-100 rounded-full overflow-hidden">
