@@ -28,7 +28,7 @@
 // which is itself a useful, ruled-out data point).
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AlertTriangle, RefreshCw, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -101,6 +101,46 @@ async function forceReauth(pathname: string) {
   window.location.href = `/login?reason=session_expired&redirect=${redirect}`;
 }
 
+// Everything above this line only catches a dead session at the SDK/token
+// level (getSession() polling, SIGNED_OUT events) -- neither one fires the
+// moment an ordinary in-app API call gets rejected mid-use. That's exactly
+// the "left it open, came back, clicked something, nothing happens" case:
+// the request 401s, the calling component's own try/catch (if it has one)
+// just swallows or logs it, and the user is left staring at a page that
+// looks alive but responds to nothing, with zero indication why. Patching
+// fetch once, globally, catches that 401 regardless of which of the app's
+// many unwrapped call sites made the request, without having to touch each
+// one individually.
+//
+// Only reacts to same-origin /api/* calls, and only while the CURRENT page
+// is an authenticated one -- several /public/* API routes (see
+// app/api/public-tasks/.../route.ts, app/api/client-update-pages/public/
+// [slug]/route.ts) legitimately return 401 for "wrong password on this
+// share link", which has nothing to do with this app's own session and
+// must not trigger a forced sign-out of a user who was never signed in.
+let fetchPatched = false;
+function installFetchInterceptor(
+  isCurrentPathPublic: () => boolean,
+  justLoggedInUntilRef: { current: number },
+  onExpired: (message: string) => void
+) {
+  if (fetchPatched || typeof window === "undefined") return;
+  fetchPatched = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (...args: Parameters<typeof fetch>) => {
+    const response = await originalFetch(...args);
+    if (response.status === 401 && !isCurrentPathPublic() && Date.now() >= justLoggedInUntilRef.current) {
+      const input = args[0];
+      const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+      if (url.startsWith("/api/") || url.includes(`${window.location.origin}/api/`)) {
+        onExpired("Your session expired -- signing you out...");
+        forceReauth(window.location.pathname);
+      }
+    }
+    return response;
+  };
+}
+
 export default function SessionHealthBanner() {
   const pathname = usePathname();
   const [problem, setProblem] = useState<string | null>(null);
@@ -110,6 +150,19 @@ export default function SessionHealthBanner() {
   // clears this same cookie) gets a chance to run, so this reliably
   // captures the flag regardless of mount-order timing between the two.
   const [justLoggedInUntil] = useState(() => (typeof document !== "undefined" && hasJustLoggedInCookie()) ? Date.now() + JUST_LOGGED_IN_GRACE_MS : 0);
+
+  // Read by the fetch interceptor below, which is installed once and stays
+  // installed across every navigation -- it needs the CURRENT path/grace-
+  // window value at the moment each response comes back, not whatever
+  // pathname was in scope when it was installed.
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
+  const justLoggedInUntilRef = useRef(justLoggedInUntil);
+  justLoggedInUntilRef.current = justLoggedInUntil;
+
+  useEffect(() => {
+    installFetchInterceptor(() => isPublicPath(pathnameRef.current), justLoggedInUntilRef, setProblem);
+  }, []);
 
   useEffect(() => {
     // A genuinely anonymous /public/* (or /login) visitor never had a
