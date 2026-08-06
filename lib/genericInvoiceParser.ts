@@ -1,18 +1,20 @@
 // lib/genericInvoiceParser.ts
 // A flatter, generic sibling to lib/disbursementInvoiceParser.ts -- extracts
-// a generic invoice/receipt PDF's header fields + line items via Claude's
-// native PDF document input, same call shape (model, thinking, structured
-// output schema) as the disbursement parser, just without that one's
-// law-firm-specific "group by matter number" schema/prompt or its
-// dealing-number/order-date fields. Used by the invoice_import dashboard
-// widget (see lib/dashboardWidgets/types.ts's InvoiceImportWidget) to
-// import PDF invoices into ANY custom table, not just the fixed
-// 'disbursements' table the law-firm feature writes to.
-import Anthropic from "@anthropic-ai/sdk";
+// a generic invoice/receipt PDF's header fields + line items. Unlike the
+// disbursement parser (Claude's native PDF document input), this goes
+// through Together's OpenAI-compatible vision endpoint: no Together model
+// accepts a PDF directly, so the PDF is rasterized to page images first
+// (lib/pdf/rasterizePdfPages.ts) and sent as image_url content blocks to
+// moonshotai/Kimi-K2.6, the vision-capable model in Together's serverless
+// catalog (deepseek-ai/DeepSeek-V4-Pro, used elsewhere in this app, is
+// text-only). Used by the invoice_import dashboard widget (see
+// lib/dashboardWidgets/types.ts's InvoiceImportWidget) to import PDF
+// invoices into ANY custom table, not just the fixed 'disbursements' table
+// the law-firm feature writes to.
+import { rasterizePdfPages } from "@/lib/pdf/rasterizePdfPages";
 
-function getClient(): Anthropic {
-  return new Anthropic();
-}
+const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
+export const GENERIC_INVOICE_MODEL_ID = "moonshotai/Kimi-K2.6";
 
 export interface ParsedGenericLineItem {
   description: string;
@@ -34,65 +36,65 @@ export interface ParseGenericInvoiceResult {
   usage: { inputTokens: number; outputTokens: number };
 }
 
-const EXTRACTION_SCHEMA = {
-  type: "object",
-  properties: {
-    supplierName: { type: "string", description: "The name of the company that issued this invoice (who it should be paid to), not the recipient." },
-    invoiceNumber: { type: "string" },
-    invoiceDate: { type: "string", description: "The invoice's own issue date, as YYYY-MM-DD." },
-    subtotal: { type: ["number", "null"], description: "The pre-tax subtotal, if printed. Null if not shown separately." },
-    tax: { type: ["number", "null"], description: "The tax/GST amount, if printed. Null if not shown separately." },
-    total: { type: ["number", "null"], description: "The final total amount due, if printed." },
-    lineItems: {
-      type: "array",
-      description: "Every line item on the invoice.",
-      items: {
-        type: "object",
-        properties: {
-          description: { type: "string", description: "The full line item description, exactly as printed." },
-          amount: { type: "number", description: "This line's amount." },
-        },
-        required: ["description", "amount"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["supplierName", "invoiceNumber", "invoiceDate", "subtotal", "tax", "total", "lineItems"],
-  additionalProperties: false,
-} as const;
+// Kimi-K2.6's structured-output support is unconfirmed for response_format
+// json_schema (DeepSeek-family models on Together only reliably document
+// json_object) -- describing the exact shape in the prompt alongside plain
+// json_object mode is the safer, well-precedented combination.
+const EXTRACTION_PROMPT = `This is a generic invoice or receipt, shown to you as one or more page images. Extract its data as a single JSON object with EXACTLY these keys and no others:
 
-export async function parseGenericInvoicePdf(pdfBase64: string): Promise<ParseGenericInvoiceResult> {
-  const response = await getClient().messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 8192,
-    thinking: { type: "adaptive" },
-    output_config: {
-      effort: "high",
-      format: { type: "json_schema", schema: EXTRACTION_SCHEMA },
-    },
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-          {
-            type: "text",
-            text: "This is a generic invoice or receipt. Extract the supplier/vendor name, invoice number, invoice date, subtotal, tax, and total (null for any that aren't printed), and every line item (description + amount) exactly as printed. There's no matter/project grouping here -- just extract the invoice as a whole.",
-          },
-        ],
-      },
-    ],
-  });
+{
+  "supplierName": string -- the company that issued this invoice (who it should be paid to), not the recipient,
+  "invoiceNumber": string,
+  "invoiceDate": string -- the invoice's own issue date, as YYYY-MM-DD,
+  "subtotal": number or null -- the pre-tax subtotal, if printed, else null,
+  "tax": number or null -- the tax/GST amount, if printed, else null,
+  "total": number or null -- the final total amount due, if printed, else null,
+  "lineItems": [ { "description": string, "amount": number }, ... ] -- every line item on the invoice, description exactly as printed
+}
 
-  if (response.stop_reason === "refusal") {
-    throw new Error("Claude declined to process this document.");
+There's no matter/project grouping here -- just extract the invoice as a whole. Respond with ONLY the JSON object, no other text, no markdown code fences.`;
+
+export async function parseGenericInvoicePdf(pdfBytes: Uint8Array): Promise<ParseGenericInvoiceResult> {
+  const pageImages = await rasterizePdfPages(pdfBytes);
+  if (!pageImages.length) throw new Error("Couldn't read any pages from this PDF.");
+
+  const content: Record<string, unknown>[] = [{ type: "text", text: EXTRACTION_PROMPT }];
+  for (const dataUrl of pageImages) {
+    content.push({ type: "image_url", image_url: { url: dataUrl } });
   }
 
-  const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === "text");
-  if (!textBlock) throw new Error("No structured output returned.");
+  const res = await fetch("https://api.together.xyz/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
+    body: JSON.stringify({
+      model: GENERIC_INVOICE_MODEL_ID,
+      messages: [{ role: "user", content }],
+      response_format: { type: "json_object" },
+      stream: false,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Couldn't read this invoice (${res.status}): ${errText.slice(0, 300)}`);
+  }
+
+  const json = await res.json();
+  const text: string | undefined = json.choices?.[0]?.message?.content;
+  if (!text) throw new Error("No structured output returned.");
+
+  let parsed: ParsedGenericInvoice;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Couldn't parse the extracted invoice data.");
+  }
+  if (!Array.isArray(parsed.lineItems)) parsed.lineItems = [];
 
   return {
-    parsed: JSON.parse(textBlock.text) as ParsedGenericInvoice,
-    usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens },
+    parsed,
+    usage: {
+      inputTokens: json.usage?.prompt_tokens ?? 0,
+      outputTokens: json.usage?.completion_tokens ?? 0,
+    },
   };
 }

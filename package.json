@@ -15,6 +15,7 @@
     "@aws-sdk/client-ec2": "^3.1090.0",
     "@aws-sdk/client-ssm": "^3.1090.0",
     "@aws-sdk/client-sts": "^3.1093.0",
+    "@napi-rs/canvas": "^1.0.3",
     "@pdf-lib/fontkit": "^1.1.1",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
@@ -41,6 +42,7 @@
     "react-grid-layout": "^2.2.3",
     "react-leaflet": "^5.0.0",
     "stripe": "^22.3.2",
+    "unpdf": "^1.8.0",
     "ws": "^8.21.1"
   },
   "devDependencies": {

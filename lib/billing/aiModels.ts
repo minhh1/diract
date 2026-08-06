@@ -70,6 +70,16 @@ export const HOSTED_MODELS: HostedModel[] = [
     outputUsdPer1kTokens: 0.0012,
     contextWindow: 65536,
   },
+  // The one vision-capable model in Together's serverless catalog (used by
+  // lib/genericInvoiceParser.ts to read rasterized PDF invoice pages --
+  // DeepSeek V4 Pro above is text-only). Last checked 2026-08-06.
+  {
+    id: "moonshotai/Kimi-K2.6",
+    label: "Kimi K2.6 (vision)",
+    inputUsdPer1kTokens: 0.0012,
+    outputUsdPer1kTokens: 0.0045,
+    contextWindow: 256000,
+  },
 ];
 
 export function findHostedModel(id: string): HostedModel | undefined {
@@ -77,12 +87,14 @@ export function findHostedModel(id: string): HostedModel | undefined {
 }
 
 // Claude models called directly (not through Together) -- e.g.
-// lib/disbursementInvoiceParser.ts / lib/genericInvoiceParser.ts's PDF
-// document-input extraction, which needs Claude's native PDF support (no
-// Together/Ollama model has one). Materially pricier than the hosted
-// catalog above ($5/$25 per MTok vs ~$1.74/$3.48 for the table-builder
-// chat's own DeepSeek V4 Pro) -- real cost, not billed at the flat
-// self-hosted service fee.
+// lib/disbursementInvoiceParser.ts's PDF document-input extraction, which
+// needs Claude's native PDF support (no Together/Ollama model has one;
+// lib/genericInvoiceParser.ts, the table-agnostic sibling, instead
+// rasterizes pages and uses Together's own vision model, billed via the
+// "hosted" catalog above). Materially pricier than the hosted catalog
+// ($5/$25 per MTok vs ~$1.74/$3.48 for the table-builder chat's own
+// DeepSeek V4 Pro) -- real cost, not billed at the flat self-hosted
+// service fee.
 export const ANTHROPIC_MODELS: Record<string, { inputUsdPer1kTokens: number; outputUsdPer1kTokens: number }> = {
   "claude-opus-4-8": { inputUsdPer1kTokens: 0.005, outputUsdPer1kTokens: 0.025 },
 };
