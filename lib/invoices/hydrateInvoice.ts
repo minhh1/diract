@@ -12,7 +12,7 @@ import {
   DEFAULT_INVOICE_DISPLAY, DEFAULT_INVOICE_LAYOUT,
   type GenerateInvoicePdfInput, type InvoiceTemplateDisplay, type InvoiceLayout,
 } from "./generateInvoicePdf";
-import type { InvoiceTemplateConfig } from "./types";
+import { DEFAULT_INVOICE_RIGHTS_CLAUSE, type InvoiceTemplateConfig } from "./types";
 
 type ValueRow = { record_id: string; field_id: string; value_text: string | null; value_number: number | null; value_date: string | null; value_boolean: boolean | null; value_record_id: string | null };
 
@@ -155,6 +155,7 @@ export async function hydrateInvoiceForRender(
     },
     creditTerms: invoiceSettings.creditTerms || '',
     otherTerms: invoiceSettings.otherTerms || '',
+    rightsClause: invoiceSettings.rightsClause || DEFAULT_INVOICE_RIGHTS_CLAUSE,
     bankDetails: invoiceSettings.bankDetails || null,
     display,
     layout,

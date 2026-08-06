@@ -1,9 +1,11 @@
 // app/api/invoices/[invoiceId]/docx/route.ts
 // GET -> a .docx version of the invoice, same hydration as the PDF route
 // (lib/invoices/hydrateInvoice.ts). Always renders via
-// generateInvoiceDocx.ts's flexible-template content, regardless of the
-// selected template's `style` -- see that file's header comment for why a
-// Detailed-style Word document isn't attempted this pass.
+// generateInvoiceDocx.ts's flexible-template content/layout, regardless of
+// the selected template's `style` -- see that file's header comment for why
+// a Detailed-style Word document isn't attempted this pass (it does still
+// honour the one display toggle that affects actual content, not just
+// styling: showProfessionalFeesTable).
 // `?download=1` forces a Content-Disposition attachment; otherwise served
 // inline (most browsers will still prompt to download/open in Word either
 // way, unlike a PDF).

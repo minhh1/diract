@@ -407,12 +407,12 @@ export async function generateDetailedInvoicePdf(input: GenerateInvoicePdfInput)
 
   text('YOUR RIGHTS CONCERNING THIS INVOICE', MARGIN, 10, { bold: true, color: [0.4, 0.4, 0.45] });
   y -= 16;
-  const notice = [
-    'Please raise any concerns about this invoice with us directly in the first instance. If a concern cannot be resolved between us, you may, depending on your circumstances, have the following options:',
-    '1. Apply to the costs assessor of the relevant jurisdiction for a costs assessment under the Legal Profession Uniform Law. This application must generally be made within 12 months of the bill being given to you, of payment being requested, or, where no bill or request was made, within 12 months of the legal costs being paid. A costs assessor has discretion to accept a later application, taking into account the length of and reasons for the delay.',
-    '2. Lodge a costs complaint with the Legal Services Commissioner of the relevant jurisdiction. This must generally be done within 60 days of the legal costs becoming payable, or within 30 days of receiving an itemised bill you requested. The Commissioner\'s role is limited to disputes where the total legal costs are under the applicable indexed threshold, and a complaint made outside these timeframes may still be accepted at the Commissioner\'s discretion, provided we have not already commenced proceedings to recover the costs.',
-  ];
-  for (const para of notice) {
+  // Admin-editable (Settings -> Invoice template -> Terms, see
+  // InvoiceTemplateSettingsTab.tsx) via input.rightsClause -- paragraphs
+  // split on blank lines, same convention as the DEFAULT_INVOICE_RIGHTS_CLAUSE
+  // fallback in types.ts uses.
+  const noticeParagraphs = input.rightsClause.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  for (const para of noticeParagraphs) {
     for (const line of wrapText(para, regular, 8.5, CONTENT_W)) { text(line, MARGIN, 8.5, { color: [0.4, 0.4, 0.45] }); y -= 12; }
     y -= 8;
   }

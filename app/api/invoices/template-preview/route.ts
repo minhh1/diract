@@ -13,6 +13,7 @@ import {
 } from "@/lib/invoices/generateInvoicePdf";
 import { generateDetailedInvoicePdf } from "@/lib/invoices/generateDetailedInvoicePdf";
 import { splitGst } from "@/lib/invoices/apportionment";
+import { DEFAULT_INVOICE_RIGHTS_CLAUSE } from "@/lib/invoices/types";
 
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
     },
     creditTerms: invoiceSettings.creditTerms || '',
     otherTerms: invoiceSettings.otherTerms || '',
+    rightsClause: invoiceSettings.rightsClause || DEFAULT_INVOICE_RIGHTS_CLAUSE,
     bankDetails: invoiceSettings.bankDetails || null,
     display, layout,
     invoice: {

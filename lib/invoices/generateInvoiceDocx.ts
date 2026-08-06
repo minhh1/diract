@@ -1,7 +1,12 @@
-// Builds a .docx version of the FLEXIBLE invoice template's content (same
-// numbers/fields as generateInvoicePdf.ts, a plain single-document layout --
-// not an attempt to replicate the Detailed style's 4-page structure in Word
-// form too, see the plan). Uses the `docx` npm package to build the OOXML
+// Builds a .docx version of the invoice's content (same numbers/fields as
+// generateInvoicePdf.ts, a plain single-document layout -- not an attempt
+// to replicate the Detailed style's 4-page structure in Word form, e.g. no
+// remittance advice/notice-of-rights pages). One exception:
+// display.showProfessionalFeesTable is still honoured (see the fees
+// section below) so a Detailed invoice created without the itemised
+// breakdown doesn't get one back just because the download format
+// changed -- everything else in `display` is a flexible-layout-only toggle
+// and genuinely doesn't apply here. Uses the `docx` npm package to build the OOXML
 // programmatically from this data, the same way pdf-lib is used for the PDF
 // -- chosen over this app's existing docxtemplater/pizzip path (used by
 // Precedents) because that path only ever fills merge tags into an
@@ -94,44 +99,79 @@ export async function generateInvoiceDocx(input: GenerateInvoicePdfInput): Promi
   });
   children.push(p(''));
 
-  // Professional fees table -- same column set/toggles as generateInvoicePdf.ts.
+  // Professional fees -- same column set/toggles as generateInvoicePdf.ts,
+  // EXCEPT display.showProfessionalFeesTable: that one toggle is honoured
+  // here too (unlike the rest of this file's Detailed-specific display
+  // flags, which don't apply to the flexible layout at all) because
+  // showing the full itemised breakdown when the invoice was explicitly
+  // created without it produced a docx whose content contradicted the PDF
+  // for the same invoice -- confirmed live (2026-08-06) on a real Detailed
+  // invoice created with the table off: PDF correctly showed the typed
+  // professionalFeesDescription as a single summary row, docx showed every
+  // line item anyway. Collapsed-row shape mirrors
+  // generateDetailedInvoicePdf.ts's own showFeesTable-off branch.
   if (input.feeLines.length) {
     children.push(p('PROFESSIONAL FEES', { bold: true, size: 10 }));
-    const cols: { key: string; header: string; width: number; align?: typeof AlignmentType.RIGHT }[] = [
-      { key: 'date', header: 'Date', width: 12 },
-    ];
-    if (input.display.showStaffInitials) cols.push({ key: 'staff', header: 'Staff', width: 8 });
-    if (input.display.showLineDescriptions) cols.push({ key: 'desc', header: 'Description', width: 40 });
-    if (input.display.showRatePerLine) cols.push({ key: 'rate', header: 'Rate', width: 10, align: AlignmentType.RIGHT });
-    if (input.display.showHoursPerLine) cols.push({ key: 'hours', header: 'Hours', width: 10, align: AlignmentType.RIGHT });
-    if (input.display.showAmountAndGstPerLine) {
-      cols.push({ key: 'gst', header: 'GST', width: 10, align: AlignmentType.RIGHT });
-      cols.push({ key: 'amount', header: 'Amount', width: 10, align: AlignmentType.RIGHT });
-    }
-    const valueFor = (l: GenerateInvoicePdfInput['feeLines'][number], key: string) => {
-      switch (key) {
-        case 'date': return formatDate(l.date);
-        case 'staff': return l.staffInitials || '';
-        case 'desc': return l.description || '';
-        case 'rate': return l.rate != null ? money(l.rate) : '';
-        case 'hours': return l.isFixedFee ? 'Fixed Fee' : (l.hours != null ? l.hours.toFixed(2) : '');
-        case 'gst': return money(l.gstAmount);
-        case 'amount': return money(l.billedAmount);
-        default: return '';
+    if (input.display.showProfessionalFeesTable === false) {
+      const feesExGst = input.feeLines.reduce((s, l) => s + l.billedAmount, 0);
+      const feesGst = input.feeLines.reduce((s, l) => s + l.gstAmount, 0);
+      const feesLabel = input.invoice.professionalFeesDescription || 'Professional Services Rendered';
+      children.push(new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({ children: [
+            cell('', { bold: true, shade: 'EEEEEE', width: 60 }),
+            cell('Fees', { bold: true, align: AlignmentType.RIGHT, shade: 'EEEEEE', width: 13 }),
+            cell('GST', { bold: true, align: AlignmentType.RIGHT, shade: 'EEEEEE', width: 13 }),
+            cell('Total', { bold: true, align: AlignmentType.RIGHT, shade: 'EEEEEE', width: 14 }),
+          ] }),
+          new TableRow({ children: [
+            cell(feesLabel, { width: 60 }),
+            cell(money(feesExGst), { align: AlignmentType.RIGHT, width: 13 }),
+            cell(money(feesGst), { align: AlignmentType.RIGHT, width: 13 }),
+            cell(money(feesExGst + feesGst), { align: AlignmentType.RIGHT, width: 14 }),
+          ] }),
+        ],
+      }));
+      children.push(p(`Total Professional Fees Rendered: ${money(feesExGst + feesGst)}`, { bold: true, size: 10, align: AlignmentType.RIGHT }));
+      children.push(p(''));
+    } else {
+      const cols: { key: string; header: string; width: number; align?: typeof AlignmentType.RIGHT }[] = [
+        { key: 'date', header: 'Date', width: 12 },
+      ];
+      if (input.display.showStaffInitials) cols.push({ key: 'staff', header: 'Staff', width: 8 });
+      if (input.display.showLineDescriptions) cols.push({ key: 'desc', header: 'Description', width: 40 });
+      if (input.display.showRatePerLine) cols.push({ key: 'rate', header: 'Rate', width: 10, align: AlignmentType.RIGHT });
+      if (input.display.showHoursPerLine) cols.push({ key: 'hours', header: 'Hours', width: 10, align: AlignmentType.RIGHT });
+      if (input.display.showAmountAndGstPerLine) {
+        cols.push({ key: 'gst', header: 'GST', width: 10, align: AlignmentType.RIGHT });
+        cols.push({ key: 'amount', header: 'Amount', width: 10, align: AlignmentType.RIGHT });
       }
-    };
-    children.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: [
-        new TableRow({ children: cols.map(c => cell(c.header, { bold: true, align: c.align, width: c.width, shade: 'EEEEEE' })) }),
-        ...input.feeLines.map(l => new TableRow({ children: cols.map(c => cell(valueFor(l, c.key), { align: c.align, width: c.width })) })),
-      ],
-    }));
-    if (input.display.showFeeSubtotal) {
-      const feesTotal = input.feeLines.reduce((s, l) => s + l.billedAmount, 0);
-      children.push(p(`Fees subtotal: ${money(feesTotal)}`, { bold: true, size: 10, align: AlignmentType.RIGHT }));
+      const valueFor = (l: GenerateInvoicePdfInput['feeLines'][number], key: string) => {
+        switch (key) {
+          case 'date': return formatDate(l.date);
+          case 'staff': return l.staffInitials || '';
+          case 'desc': return l.description || '';
+          case 'rate': return l.rate != null ? money(l.rate) : '';
+          case 'hours': return l.isFixedFee ? 'Fixed Fee' : (l.hours != null ? l.hours.toFixed(2) : '');
+          case 'gst': return money(l.gstAmount);
+          case 'amount': return money(l.billedAmount);
+          default: return '';
+        }
+      };
+      children.push(new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({ children: cols.map(c => cell(c.header, { bold: true, align: c.align, width: c.width, shade: 'EEEEEE' })) }),
+          ...input.feeLines.map(l => new TableRow({ children: cols.map(c => cell(valueFor(l, c.key), { align: c.align, width: c.width })) })),
+        ],
+      }));
+      if (input.display.showFeeSubtotal) {
+        const feesTotal = input.feeLines.reduce((s, l) => s + l.billedAmount, 0);
+        children.push(p(`Fees subtotal: ${money(feesTotal)}`, { bold: true, size: 10, align: AlignmentType.RIGHT }));
+      }
+      children.push(p(''));
     }
-    children.push(p(''));
   }
 
   // Disbursements table.

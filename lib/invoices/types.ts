@@ -30,10 +30,26 @@ export interface InvoiceTemplateConfig {
   style?: 'flexible' | 'detailed';
 }
 
+// The Detailed template's (generateDetailedInvoicePdf.ts) "YOUR RIGHTS
+// CONCERNING THIS INVOICE" clause used to be a hardcoded string with no
+// company override -- this is that same text, now just the fallback used
+// when a company hasn't set InvoiceSettings.rightsClause of its own (every
+// company before this setting existed, and any that clears the field back
+// to blank). Paragraphs are split on blank lines wherever this is rendered.
+export const DEFAULT_INVOICE_RIGHTS_CLAUSE =
+  "Please raise any concerns about this invoice with us directly in the first instance. If a concern cannot be resolved between us, you may, depending on your circumstances, have the following options:\n\n" +
+  "1. Apply to the costs assessor of the relevant jurisdiction for a costs assessment under the Legal Profession Uniform Law. This application must generally be made within 12 months of the bill being given to you, of payment being requested, or, where no bill or request was made, within 12 months of the legal costs being paid. A costs assessor has discretion to accept a later application, taking into account the length of and reasons for the delay.\n\n" +
+  "2. Lodge a costs complaint with the Legal Services Commissioner of the relevant jurisdiction. This must generally be done within 60 days of the legal costs becoming payable, or within 30 days of receiving an itemised bill you requested. The Commissioner's role is limited to disputes where the total legal costs are under the applicable indexed threshold, and a complaint made outside these timeframes may still be accepted at the Commissioner's discretion, provided we have not already commenced proceedings to recover the costs.";
+
 export interface InvoiceSettings {
   firmAddress?: string;
   creditTerms?: string;
   otherTerms?: string;
+  // Detailed template only (see DEFAULT_INVOICE_RIGHTS_CLAUSE) -- unset/
+  // empty falls back to that default, not to no clause at all, so leaving
+  // this blank in settings doesn't silently drop a statutorily-relevant
+  // notice off every invoice.
+  rightsClause?: string;
   bankDetails?: InvoiceBankDetails | null;
   // Days from issue date to default due date -- company-wide business
   // policy, not a per-template visual concern (unlike `layout`). Defaults

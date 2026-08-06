@@ -7,7 +7,8 @@
 // status/date filtering the generic DashboardFilterBar doesn't support
 // (multi-select and date-range are both new here, not just unwired).
 import { useState, useEffect, useCallback } from "react";
-import { Maximize2, Minimize2, Plus, Eye, Download, FileText, Pencil, Ban, Loader2, X, Check } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Maximize2, Minimize2, Plus, Eye, Download, FileText, Pencil, Ban, Loader2, X, Check, Settings2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { createRecord as createCustomRecord, updateRecord as updateCustomRecord } from "@/lib/services/customTableService";
 import type { CustomTableField } from "@/lib/hooks/useCustomTable";
@@ -57,6 +58,7 @@ function money(n: number): string {
 }
 
 export default function InvoicesTab({ linkedTableId, recordId, companyId }: Props) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState('');
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
@@ -265,6 +267,13 @@ export default function InvoicesTab({ linkedTableId, recordId, companyId }: Prop
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => router.push('/dashboard/settings?view=invoice_template')}
+            title="Invoice template settings (admin only to amend)"
+            className="p-2.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all"
+          >
+            <Settings2 size={15} />
+          </button>
           <button
             onClick={() => setFullscreen(p => !p)}
             title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}

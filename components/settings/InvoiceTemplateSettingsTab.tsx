@@ -16,7 +16,7 @@ import { Upload, Trash2, Loader2, Check, Plus, Lock, LayoutTemplate } from "luci
 import { useCompany } from "@/components/CompanyContext";
 import { supabase } from "@/lib/supabase";
 import { DEFAULT_INVOICE_DISPLAY, INVOICE_LAYOUT_PRESETS, type InvoiceTemplateDisplay } from "@/lib/invoices/generateInvoicePdf";
-import type { InvoiceTemplateConfig } from "@/lib/invoices/types";
+import { DEFAULT_INVOICE_RIGHTS_CLAUSE, type InvoiceTemplateConfig } from "@/lib/invoices/types";
 import InvoiceLayoutEditor from "./InvoiceLayoutEditor";
 
 const DISPLAY_TOGGLES: { key: keyof InvoiceTemplateDisplay; label: string }[] = [
@@ -155,6 +155,11 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
   const { invoiceSettings, refreshInvoiceSettings, companyId } = useCompany();
   const [creditTerms, setCreditTerms] = useState(invoiceSettings.creditTerms || '');
   const [otherTerms, setOtherTerms] = useState(invoiceSettings.otherTerms || '');
+  // Pre-filled with the real current text (the same default the PDF falls
+  // back to, see DEFAULT_INVOICE_RIGHTS_CLAUSE) rather than left blank --
+  // this was a hardcoded, un-editable clause on every Detailed invoice
+  // until now, so "blank" would misleadingly suggest nothing is there.
+  const [rightsClause, setRightsClause] = useState(invoiceSettings.rightsClause || DEFAULT_INVOICE_RIGHTS_CLAUSE);
   const [paymentTermsDays, setPaymentTermsDays] = useState(invoiceSettings.paymentTermsDays ?? 14);
   const [ourReferenceFieldKey, setOurReferenceFieldKey] = useState(invoiceSettings.ourReferenceFieldKey || '');
   const [debtorFieldKey, setDebtorFieldKey] = useState(invoiceSettings.debtorFieldKey || '');
@@ -212,7 +217,7 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
     setSaved(false);
     setError(null);
     const patch = {
-      creditTerms, otherTerms, paymentTermsDays,
+      creditTerms, otherTerms, rightsClause, paymentTermsDays,
       ourReferenceFieldKey: ourReferenceFieldKey || null,
       debtorFieldKey: debtorFieldKey || null,
       bankDetails: { accountName, bsb, accountNumber, reference },
@@ -257,6 +262,16 @@ function TermsSection({ isAdmin }: { isAdmin: boolean }) {
           <textarea value={otherTerms} onChange={e => onField(setOtherTerms)(e.target.value)} rows={2}
             placeholder="Any additional notices to include on every invoice."
             className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-none" />
+        </div>
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+            "Your rights concerning this invoice" clause
+          </label>
+          <p className="text-[10px] text-slate-400 mb-1.5">
+            Detailed template only -- shown on the remittance advice page. Leave a blank line between paragraphs.
+          </p>
+          <textarea value={rightsClause} onChange={e => onField(setRightsClause)(e.target.value)} rows={8}
+            className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-[12px] outline-none focus:border-indigo-400 resize-y font-mono" />
         </div>
         <div>
           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Payment terms (days)</label>
@@ -456,20 +471,20 @@ function TemplatesSection({ isAdmin }: { isAdmin: boolean }) {
                   <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={t.display.showProfessionalFeesTable !== false}
-                      onChange={() => updateTemplate(t.id, { display: { ...t.display, showProfessionalFeesTable: t.display.showProfessionalFeesTable === false } })}
+                      checked={t.display.showProfessionalFeesTable === true}
+                      onChange={() => updateTemplate(t.id, { display: { ...t.display, showProfessionalFeesTable: t.display.showProfessionalFeesTable !== true } })}
                     />
                     Include the itemised "Professional Fees" table
                   </label>
                   <label className="flex items-center gap-2 text-[12px] text-slate-600 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={t.display.showSummaryFeesByLawyerTable !== false}
-                      onChange={() => updateTemplate(t.id, { display: { ...t.display, showSummaryFeesByLawyerTable: t.display.showSummaryFeesByLawyerTable === false } })}
+                      checked={t.display.showSummaryFeesByLawyerTable === true}
+                      onChange={() => updateTemplate(t.id, { display: { ...t.display, showSummaryFeesByLawyerTable: t.display.showSummaryFeesByLawyerTable !== true } })}
                     />
                     Include the "Summary Fees by Lawyer" table
                   </label>
-                  {t.display.showProfessionalFeesTable === false && (
+                  {t.display.showProfessionalFeesTable !== true && (
                     <p className="text-[10px] text-amber-600 pl-6">
                       When this is off, whoever creates an invoice on this template must type a description of the fees for page 1; there's no itemised breakdown left for the client to read.
                     </p>

@@ -150,6 +150,12 @@ export interface GenerateInvoicePdfInput {
   company: { name: string; abn: string | null; address: string | null; logoBytes: Uint8Array | null; logoIsPng: boolean };
   creditTerms: string;
   otherTerms: string;
+  // Detailed template only (generateDetailedInvoicePdf.ts) -- see
+  // DEFAULT_INVOICE_RIGHTS_CLAUSE in ./types.ts for the fallback text used
+  // when this is empty. Kept on the shared input type (like creditTerms/
+  // otherTerms) even though the flexible renderer doesn't read it, same as
+  // `layout` is here but Detailed-only in the other direction.
+  rightsClause: string;
   bankDetails: { accountName?: string; bsb?: string; accountNumber?: string; reference?: string } | null;
   display: InvoiceTemplateDisplay;
   layout?: InvoiceLayout;
