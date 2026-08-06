@@ -23,6 +23,7 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   time_fees_report: { label: 'Time & Fees report', icon: 'Clock' },
   time_aging_report: { label: 'Old Time (unbilled) report', icon: 'AlertTriangle' },
   document_export: { label: 'Document export', icon: 'FileOutput' },
+  invoice_import: { label: 'Invoice import (PDF)', icon: 'FileUp' },
 };
 
 // Sensible default size (grid units) for a freshly-added widget of each type;
@@ -53,6 +54,7 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   time_fees_report: { w: 12, h: 8 },
   time_aging_report: { w: 12, h: 8 },
   document_export: { w: 12, h: 6 },
+  invoice_import: { w: 3, h: 2 },
 };
 
 // The only widget types that render meaningfully with no bound source table
@@ -105,5 +107,6 @@ export function createWidget(type: DashboardWidgetType, existingWidgets: Dashboa
     case 'time_fees_report': return { ...base, type, config: {} };
     case 'time_aging_report': return { ...base, type, config: { agingDays: 30 } };
     case 'document_export': return { ...base, type, config: { style: 'letter' } };
+    case 'invoice_import': return { ...base, type, config: { descriptionFieldId: null, amountFieldId: null } };
   }
 }

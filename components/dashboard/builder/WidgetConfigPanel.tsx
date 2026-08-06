@@ -1450,6 +1450,29 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
           </div>
         )}
 
+        {draft.type === 'invoice_import' && (
+          <div className="space-y-2">
+            <p className="text-[10px] text-slate-400 px-1">Each imported PDF line item becomes its own row on this table.</p>
+            {([
+              ['descriptionFieldId', 'Description field (required)'],
+              ['amountFieldId', 'Amount field (required)'],
+              ['supplierNameFieldId', 'Supplier name field'],
+              ['invoiceNumberFieldId', 'Invoice number field'],
+              ['invoiceDateFieldId', 'Invoice date field'],
+            ] as const).map(([key, placeholder]) => (
+              <select
+                key={key}
+                value={(draft.config as any)[key] || ''}
+                onChange={e => updateConfig({ [key]: e.target.value || null })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+              >
+                <option value="">{placeholder}...</option>
+                {fields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+              </select>
+            ))}
+          </div>
+        )}
+
         {draft.type === 'public_task_page' && (
           <PublicTaskPageConfig
             pageId={draft.config.pageId}

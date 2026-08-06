@@ -36,6 +36,7 @@ const TimeAgingReportWidget = dynamic(() => import("./TimeAgingReportWidget"));
 const FinanceModelSearchWidget = dynamic(() => import("./FinanceModelSearchWidget"));
 const ResidualLandSolverContent = dynamic(() => import("@/components/public/ResidualLandSolverContent"));
 const DocumentExportWidget = dynamic(() => import("./DocumentExportWidget"));
+const InvoiceImportWidget = dynamic(() => import("./InvoiceImportWidget"));
 import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
@@ -291,6 +292,9 @@ export default function DashboardWidgetRenderer({
 
     case 'document_export':
       return <DocumentExportWidget records={allRecords} config={widget.config} dashboardId={dashboardId} widgetId={widget.id} primaryFieldKey={primaryFieldKey} />;
+
+    case 'invoice_import':
+      return <InvoiceImportWidget config={widget.config} dashboardId={dashboardId} widgetId={widget.id} onChanged={onChanged} />;
 
     case 'public_task_page':
       return <PublicTaskPageWidget pageId={widget.config.pageId} />;

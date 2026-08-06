@@ -34,7 +34,7 @@ type FormulaType = (typeof FORMULA_TYPES)[number];
 // which need context this assistant doesn't have and aren't broadly
 // applicable. A user can add those manually afterward.
 const GENERAL_WIDGET_TYPES: DashboardWidgetType[] = [
-  "heading", "text", "filter_bar", "quick_add_form", "grid", "summary_tile", "chart", "document_export",
+  "heading", "text", "filter_bar", "quick_add_form", "grid", "summary_tile", "chart", "document_export", "invoice_import",
 ];
 
 function slugify(name: string): string {
@@ -138,7 +138,7 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
   },
   {
     name: "add_widget",
-    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers. 'document_export' gives records a working PDF download (letter or invoice style) -- see its own params. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this widget.",
+    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers. 'document_export' gives records a working PDF download (letter or invoice style); 'invoice_import' lets someone upload a PDF invoice and import its line items as new records -- see each one's own params. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this widget.",
     input_schema: {
       type: "object",
       properties: {
@@ -156,13 +156,14 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         recipient_address_field_label: { type: "string", description: "document_export style 'letter': field holding the recipient's mailing address." },
         subject_field_label: { type: "string", description: "document_export style 'letter': field holding the letter's subject line." },
         body_field_label: { type: "string", description: "document_export style 'letter' (required): a text field holding the letter's body copy." },
-        invoice_number_field_label: { type: "string", description: "document_export style 'invoice': field holding the invoice number." },
-        invoice_date_field_label: { type: "string", description: "document_export style 'invoice': field holding the invoice date." },
+        invoice_number_field_label: { type: "string", description: "document_export style 'invoice' or invoice_import: field holding the invoice number." },
+        invoice_date_field_label: { type: "string", description: "document_export style 'invoice' or invoice_import: field holding the invoice date." },
         due_date_field_label: { type: "string", description: "document_export style 'invoice': field holding the due date." },
         customer_name_field_label: { type: "string", description: "document_export style 'invoice': field holding who's being billed." },
         customer_address_field_label: { type: "string", description: "document_export style 'invoice': field holding the customer's address." },
-        description_field_label: { type: "string", description: "document_export style 'invoice': field holding this record's own line-item description." },
-        amount_field_label: { type: "string", description: "document_export style 'invoice': field holding this record's own line-item amount." },
+        supplier_name_field_label: { type: "string", description: "invoice_import only: field holding the invoice's supplier/vendor name." },
+        description_field_label: { type: "string", description: "document_export style 'invoice' or invoice_import (required for invoice_import): field holding this record's own line-item description." },
+        amount_field_label: { type: "string", description: "document_export style 'invoice' or invoice_import (required for invoice_import): field holding this record's own line-item amount." },
         subtotal_field_label: { type: "string", description: "document_export style 'invoice': field holding the subtotal." },
         tax_field_label: { type: "string", description: "document_export style 'invoice': field holding the tax amount." },
         total_field_label: { type: "string", description: "document_export style 'invoice': field holding the total." },
@@ -525,6 +526,17 @@ async function addWidget(admin: any, companyId: string, userId: string, input: R
         totalFieldId: input.total_field_label ? resolveLabel(String(input.total_field_label)) : null,
       };
     }
+  } else if (widget.type === "invoice_import") {
+    const descriptionFieldId = input.description_field_label ? resolveLabel(String(input.description_field_label)) : null;
+    const amountFieldId = input.amount_field_label ? resolveLabel(String(input.amount_field_label)) : null;
+    if (!descriptionFieldId || !amountFieldId) {
+      return { content: "invoice_import widgets need description_field_label and amount_field_label to match existing fields on the dashboard's table", isError: true };
+    }
+    widget.config.descriptionFieldId = descriptionFieldId;
+    widget.config.amountFieldId = amountFieldId;
+    widget.config.supplierNameFieldId = input.supplier_name_field_label ? resolveLabel(String(input.supplier_name_field_label)) : null;
+    widget.config.invoiceNumberFieldId = input.invoice_number_field_label ? resolveLabel(String(input.invoice_number_field_label)) : null;
+    widget.config.invoiceDateFieldId = input.invoice_date_field_label ? resolveLabel(String(input.invoice_date_field_label)) : null;
   }
 
   const nextWidgets = [...existingWidgets, widget];

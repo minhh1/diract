@@ -422,6 +422,27 @@ export interface DocumentExportWidget extends BaseWidget {
   };
 }
 
+// Upload-a-PDF-invoice-and-review-before-committing widget for ANY custom
+// table (see components/dashboard/InvoiceImportWidget.tsx) -- a generalized
+// sibling to the Law-Firm-specific disbursement invoice import
+// (DisbursementInvoiceImportModal.tsx/lib/disbursementInvoiceParser.ts):
+// same Claude PDF-document-input extraction, but a flatter schema (no
+// matter-grouping, no duplicate detection) and writes each parsed line item
+// as its own row directly on the dashboard's bound table (v1 -- no
+// header/detail child-table split) instead of one fixed 'disbursements'
+// table. Field ids resolved from labels at add-widget time, same
+// convention as every other configurable widget.
+export interface InvoiceImportWidget extends BaseWidget {
+  type: 'invoice_import';
+  config: {
+    descriptionFieldId: string | null; // required for the widget to do anything
+    amountFieldId: string | null; // required
+    supplierNameFieldId?: string | null;
+    invoiceNumberFieldId?: string | null;
+    invoiceDateFieldId?: string | null;
+  };
+}
+
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
   | GridWidget | SummaryTileWidget | ChartWidget
@@ -429,6 +450,6 @@ export type DashboardWidget =
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
   | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget
   | FinanceModelWidget | ResidualLandSolverWidget | AutoTimeRecordingButtonWidget
-  | TimeFeesReportWidget | TimeAgingReportWidget | DocumentExportWidget;
+  | TimeFeesReportWidget | TimeAgingReportWidget | DocumentExportWidget | InvoiceImportWidget;
 
 export type DashboardWidgetType = DashboardWidget['type'];
