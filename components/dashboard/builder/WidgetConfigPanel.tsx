@@ -17,6 +17,7 @@ import { PILL_SIZE_LABELS, PILL_GAP_LABELS, type PillSize, type PillGap, type Fi
 import { RELATIVE_DATE_RANGES, RELATIVE_DATE_LABELS } from "@/lib/dashboardWidgets/relativeDates";
 import { PUBLIC_TASK_COLUMNS, SCOPE_LABELS } from "@/lib/publicTaskColumns";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
+import { TAX_SCHEMES } from "@/lib/invoices/taxSchemes";
 
 // Grid columns store a raw pixel width (GridWidget.config.columnWidths),
 // unlike filter_bar/quick_add_form's category-based fieldLayout -- these
@@ -1480,6 +1481,31 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
                     {fields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                   </select>
                 ))}
+
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Tax terminology</label>
+                  <select
+                    value={draft.config.invoice?.taxScheme || ''}
+                    onChange={e => setDraft(prev => ({ ...prev, config: { ...(prev as any).config, invoice: { ...(prev as any).config.invoice, taxScheme: e.target.value || null } } } as DashboardWidget))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+                  >
+                    <option value="">Tax (generic)...</option>
+                    {TAX_SCHEMES.map(s => <option key={s.value} value={s.value}>{s.region} -- {s.taxLabel}</option>)}
+                  </select>
+                  <p className="text-[10px] text-slate-400 px-1 mt-1">Only changes the printed label (e.g. "GST"); the amount still comes from the Tax field above.</p>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Payment details</label>
+                  <textarea
+                    value={draft.config.invoice?.paymentDetails || ''}
+                    onChange={e => setDraft(prev => ({ ...prev, config: { ...(prev as any).config, invoice: { ...(prev as any).config.invoice, paymentDetails: e.target.value || null } } } as DashboardWidget))}
+                    placeholder={'Bank: ...\nBSB / Routing: ...\nAccount: ...'}
+                    rows={4}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-2.5 px-4 text-sm font-medium outline-none resize-none"
+                  />
+                  <p className="text-[10px] text-slate-400 px-1 mt-1">Printed below the totals on every export from this widget.</p>
+                </div>
               </div>
             )}
           </div>

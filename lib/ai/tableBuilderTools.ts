@@ -21,6 +21,7 @@
 import { createWidget } from "@/lib/dashboardWidgets/defaults";
 import type { DashboardWidget, DashboardWidgetType } from "@/lib/dashboardWidgets/types";
 import type { ToolSchema } from "@/lib/ai/modelCall";
+import { TAX_SCHEMES } from "@/lib/invoices/taxSchemes";
 
 const FIELD_TYPES = ["text", "number", "date", "boolean", "select", "email", "url", "currency", "table_relation"] as const;
 type FieldType = (typeof FIELD_TYPES)[number];
@@ -167,6 +168,8 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         subtotal_field_label: { type: "string", description: "document_export style 'invoice': field holding the subtotal." },
         tax_field_label: { type: "string", description: "document_export style 'invoice': field holding the tax amount." },
         total_field_label: { type: "string", description: "document_export style 'invoice': field holding the total." },
+        tax_scheme: { type: "string", enum: TAX_SCHEMES.map((s) => s.value), description: "document_export style 'invoice': which region's tax terminology to print next to the tax amount (e.g. 'au' -> \"GST\", 'eu'/'uk'/'vn' -> \"VAT\", 'us' -> \"Sales Tax\"). Only changes the printed label -- the amount still comes from tax_field_label. Ask the user which applies if unclear; omit for a generic \"Tax\" label." },
+        payment_details: { type: "string", description: "document_export style 'invoice': static payment instructions (bank name, account/BSB/routing number, payment link, etc.), the same on every export from this widget. Printed below the totals. Ask the user for these if they want them included -- don't invent bank details." },
         confirm: { type: "boolean", description: "Must be true, and only after you've presented the full plan and the user has explicitly agreed to it in this conversation." },
       },
       required: ["dashboard_id", "widget_type", "confirm"],
@@ -524,6 +527,8 @@ async function addWidget(admin: any, companyId: string, userId: string, input: R
         subtotalFieldId: input.subtotal_field_label ? resolveLabel(String(input.subtotal_field_label)) : null,
         taxFieldId: input.tax_field_label ? resolveLabel(String(input.tax_field_label)) : null,
         totalFieldId: input.total_field_label ? resolveLabel(String(input.total_field_label)) : null,
+        taxScheme: input.tax_scheme ? String(input.tax_scheme) : null,
+        paymentDetails: input.payment_details ? String(input.payment_details) : null,
       };
     }
   } else if (widget.type === "invoice_import") {

@@ -11,6 +11,7 @@
 // drawLine, StandardFonts) since those are the right tool for tabular
 // financial layout, just none of that file's configurability.
 import { PDFDocument, PDFFont, StandardFonts, rgb } from "pdf-lib";
+import { taxLabelForScheme } from "./taxSchemes";
 
 export interface GenericInvoiceLineItem {
   description: string;
@@ -28,6 +29,8 @@ export interface GenericInvoiceInput {
   subtotal: number | null;
   tax: number | null;
   total: number | null;
+  taxScheme?: string | null;
+  paymentDetails?: string | null;
 }
 
 const PAGE_W = 595.28, PAGE_H = 841.89; // A4, points
@@ -121,25 +124,50 @@ export async function generateGenericInvoicePdf(input: GenericInvoiceInput): Pro
   hr(y);
   y -= 20;
 
-  // Totals block, right-aligned.
-  ensureSpace(80);
-  const totalsLabelX = PAGE_W - MARGIN - 160;
-  if (input.subtotal != null) {
-    text("Subtotal", totalsLabelX, 10, regular, gray);
-    rightText(money(input.subtotal), PAGE_W - MARGIN, 10, regular);
-    y -= 16;
+  // Totals block -- two right-aligned columns (labels ending at
+  // totalsLabelRight, values ending at the same PAGE_W - MARGIN edge every
+  // line-item amount above uses) so every number in the document, line
+  // items and totals alike, sits flush on one shared right edge. A light
+  // background box groups the block visually as its own mini-table.
+  const totalsValueRight = PAGE_W - MARGIN;
+  const totalsLabelRight = totalsValueRight - 90;
+  const totalsBoxLeft = totalsLabelRight - 70;
+  const totalsRowH = 17;
+  const totalsRows: { label: string; value: string; bold?: boolean; ruleAbove?: boolean }[] = [];
+  if (input.subtotal != null) totalsRows.push({ label: "Subtotal", value: money(input.subtotal) });
+  if (input.tax != null) totalsRows.push({ label: taxLabelForScheme(input.taxScheme), value: money(input.tax) });
+  if (input.total != null) totalsRows.push({ label: "Total", value: money(input.total), bold: true, ruleAbove: totalsRows.length > 0 });
+
+  if (totalsRows.length) {
+    ensureSpace(totalsRows.length * totalsRowH + 26);
+    const boxHeight = totalsRows.length * totalsRowH + 12;
+    page.drawRectangle({ x: totalsBoxLeft, y: y - boxHeight + 6, width: totalsValueRight - totalsBoxLeft, height: boxHeight, color: rgb(0.97, 0.97, 0.98) });
+    y -= 8;
+    for (const row of totalsRows) {
+      if (row.ruleAbove) {
+        page.drawLine({ start: { x: totalsBoxLeft + 10, y: y + 12 }, end: { x: totalsValueRight - 10, y: y + 12 }, thickness: 0.75, color: rgb(0.8, 0.8, 0.83) });
+      }
+      const size = row.bold ? 12 : 10;
+      const font = row.bold ? bold : regular;
+      rightText(row.label, totalsLabelRight, size, font, row.bold ? dark : gray);
+      rightText(row.value, totalsValueRight, size, font, dark);
+      y -= totalsRowH;
+    }
+    y -= 14;
   }
-  if (input.tax != null) {
-    text("Tax", totalsLabelX, 10, regular, gray);
-    rightText(money(input.tax), PAGE_W - MARGIN, 10, regular);
-    y -= 16;
-  }
-  if (input.total != null) {
-    y -= 4;
-    hr(y + 12);
-    text("Total", totalsLabelX, 12, bold);
-    rightText(money(input.total), PAGE_W - MARGIN, 12, bold);
-    y -= 20;
+
+  // Payment details -- static text set once in the widget's own settings
+  // (not sourced from the record), printed below the totals so it's the
+  // last thing on the page, matching where this appears on most invoices.
+  if (input.paymentDetails) {
+    ensureSpace(40);
+    text("PAYMENT DETAILS", MARGIN, 9, bold, gray);
+    y -= 14;
+    for (const line of input.paymentDetails.split("\n")) {
+      ensureSpace(14);
+      text(line, MARGIN, 10, regular);
+      y -= 14;
+    }
   }
 
   const bytes = await pdfDoc.save();

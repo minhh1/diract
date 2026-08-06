@@ -91,6 +91,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ das
     subtotal: num(get(cfg.subtotalFieldId)),
     tax: num(get(cfg.taxFieldId)),
     total: num(get(cfg.totalFieldId)),
+    taxScheme: cfg.taxScheme ?? null,
+    paymentDetails: cfg.paymentDetails ?? null,
   });
   return new NextResponse(new Uint8Array(pdfBuffer), {
     headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="invoice.pdf"` },

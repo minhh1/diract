@@ -426,6 +426,16 @@ export interface DocumentExportWidget extends BaseWidget {
       subtotalFieldId?: string | null;
       taxFieldId?: string | null;
       totalFieldId?: string | null;
+      // Which region's tax terminology to print next to the tax amount --
+      // see lib/invoices/generateGenericInvoicePdf.ts's TAX_SCHEMES for the
+      // value -> label mapping (e.g. 'au' -> "GST", 'eu' -> "VAT"). The tax
+      // AMOUNT itself always comes from taxFieldId above (this app doesn't
+      // compute tax); this only controls the printed label.
+      taxScheme?: string | null;
+      // Static free text (bank details, payment link, etc.), the same on
+      // every export from this widget -- entered once in widget settings,
+      // not sourced from a record field.
+      paymentDetails?: string | null;
     };
   };
 }
