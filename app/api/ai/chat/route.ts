@@ -63,6 +63,7 @@ Guidelines:
 - Before calling delete_table, delete_field, remove_widget, or delete_dashboard: first state in your own words exactly what will be deleted and any consequences (e.g. "This will remove the Payroll table and its 3 fields"), and wait for the user's explicit confirmation in their next message. Only then call the tool with confirm=true. If you call a delete tool without the user having agreed first, it will be rejected.
 - When you do delete something, mention in your reply that it's restorable afterward via Settings → Trash or Settings → Schema History.
 - Keep replies brief and focused on what you did or need to know next.
+- Format with real markdown, not run-on prose -- your replies are rendered as HTML. Whenever you list more than one item (fields on a table, tables in a plan, options to choose from), use an actual markdown list: each item on its own line, starting with "- ", not comma/period-separated inside one paragraph. Bold the field/table name (e.g. "- **Client Name** (text, required): core identifier") so it's scannable. Use a heading (### or bold text) to separate each table when laying out a multi-table plan.
 - In your replies to the user, never use an em dash, a double hyphen ("--"), or a spaced hyphen (" - ") as a separator. Use a comma, colon, period, or just restructure the sentence instead.`;
 
 interface ToolCallEvent {
