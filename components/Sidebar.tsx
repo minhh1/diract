@@ -18,6 +18,7 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
+import CreateCompanyModal from "./CreateCompanyModal";
 import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
 import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
@@ -687,6 +688,7 @@ export default function Sidebar() {
   const [memberships, setMemberships] = useState<any[]>([]);
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false);
   const [switchingCompany, setSwitchingCompany] = useState(false);
+  const [showCreateCompany, setShowCreateCompany] = useState(false);
   // next-themes' `theme` reads as undefined until after mount (it doesn't
   // know the persisted/system preference during SSR) -- `mounted` gates the
   // active-option highlight below so the very first client render matches
@@ -1358,6 +1360,16 @@ export default function Sidebar() {
                 </>
               )}
 
+              <button
+                onClick={() => { setShowCompanySwitcher(false); setShowCreateCompany(true); }}
+                className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 transition-colors border-t border-slate-100"
+              >
+                <div className="h-7 w-7 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                  <Plus size={13} />
+                </div>
+                <p className="text-[12px] font-bold text-slate-600">Create new company</p>
+              </button>
+
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-5 pt-4 pb-2 border-t border-slate-100 mt-1">
                 Theme
               </p>
@@ -1966,6 +1978,13 @@ export default function Sidebar() {
         onClose={() => setIsEntOpen(false)}
         onRefresh={fetchTreeData}
       />
+      {showCreateCompany && ctxUserId && (
+        <CreateCompanyModal
+          userId={ctxUserId}
+          currentFullName={profile?.full_name || null}
+          onClose={() => setShowCreateCompany(false)}
+        />
+      )}
       </div>
     </>
   );
