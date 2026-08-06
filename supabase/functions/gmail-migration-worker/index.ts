@@ -433,8 +433,21 @@ async function runMigration(t0: number): Promise<Response> {
           .select("removed_at").eq("project_id", projectId).eq("company_id", companyId).maybeSingle();
         const isRemoved = !!dbLabel?.removed_at;
 
+        // Scoped to THIS user -- each mailbox has its own copy of a shared
+        // thread with its own Gmail message id (one project_emails row per
+        // project+message+user, not one shared row per message). Without
+        // this filter, dbMsgIds pulled every user's ids on the project and
+        // applyLabel below tried them all against this one mailbox's token
+        // -- confirmed live 2026-08-06: on a 7-member project this meant
+        // 6/7 of every "toApply" list 404'd ("Requested entity was not
+        // found") every single tick, forever, since a 404'd id never joins
+        // gmailMsgSet/confirmed_applied_ids and so never leaves toApply
+        // either. That's what actually caused the 2+ hour, 6+ matter
+        // migration stall, not any of the mailbox/size/duplicate-job
+        // theories chased before finding this in gmail_sync_log's
+        // apply_label_failed entries.
         const { data: dbEmails } = await db.from("project_emails")
-          .select("gmail_message_id").eq("project_id", projectId).eq("company_id", companyId);
+          .select("gmail_message_id").eq("project_id", projectId).eq("company_id", companyId).eq("user_id", userId);
         const dbMsgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
 
         const gmailLabels = await getGmailLabels(token);
@@ -540,7 +553,26 @@ async function runMigration(t0: number): Promise<Response> {
             }
             const filerToken = sourceTokensByUserId[filerByMsgId[msgId]];
             if (!filerToken) continue;
-            if (!(await claimImport(companyId, projectId, userId, msgId))) continue;
+            if (!(await claimImport(companyId, projectId, userId, msgId))) {
+              // Already claimed -- an earlier tick of this same item, the
+              // regular processor, or another migration item already
+              // imported this message for this user. There's no new
+              // message id to look up from here (the import created one,
+              // but this loop only knows the OLD foreign id), so
+              // userHasMessage(msgId) will keep returning false and this
+              // claim attempt will keep failing for this msgId forever --
+              // every tick re-running both calls on it with nothing to
+              // show. Recording it as resolved mirrors the label_sync
+              // branch's confirmed_applied_ids fix: don't re-litigate a
+              // fact this item already effectively confirmed once. This
+              // (plus the label_sync user-scoping fix alongside it) is
+              // what actually caused email_sync jobs to also get stuck at
+              // a fixed "X messages" remaining count indefinitely.
+              confirmedAppliedIds.add(msgId);
+              await db.from("gmail_migration_jobs")
+                .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", itemId);
+              continue;
+            }
             const ok = await importMessage(filerToken, token, msgId, labelId);
             if (ok) {
               confirmedAppliedIds.add(msgId);

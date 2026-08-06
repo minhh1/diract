@@ -429,8 +429,15 @@ async function runRecovery(t0: number): Promise<Response> {
           .select("removed_at").eq("project_id", projectId).eq("company_id", companyId).maybeSingle();
         const isRemoved = !!dbLabel?.removed_at;
 
+        // Scoped to THIS user -- see the matching fix/comment in
+        // gmail-migration-worker's label_sync branch. Each mailbox has its
+        // own copy of a shared thread with its own Gmail message id; an
+        // unscoped query here hands applyLabel other users' ids, which
+        // 404 ("Requested entity was not found") against this token every
+        // time and never leave toApply since a 404 never joins
+        // gmailMsgSet/confirmed_applied_ids.
         const { data: dbEmails } = await db.from("project_emails")
-          .select("gmail_message_id").eq("project_id", projectId).eq("company_id", companyId);
+          .select("gmail_message_id").eq("project_id", projectId).eq("company_id", companyId).eq("user_id", userId);
         const dbMsgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
 
         const gmailLabels = await getGmailLabels(token);
@@ -515,7 +522,20 @@ async function runRecovery(t0: number): Promise<Response> {
             // Claim BEFORE importing -- the actual race-proof guard against
             // gmail-email-sync-processor (or another recovery tick) also
             // importing this exact (user, message) pair concurrently.
-            if (!(await claimImport(companyId, projectId, userId, msgId))) continue;
+            if (!(await claimImport(companyId, projectId, userId, msgId))) {
+              // Already claimed by an earlier tick/processor -- see the
+              // matching fix/comment in gmail-migration-worker's email_sync
+              // branch. Without this, userHasMessage(msgId) and this same
+              // failed claim attempt repeat on this id every tick forever
+              // (the import created a NEW message id this loop never
+              // learns), which is what let email_sync items get stuck at a
+              // fixed "X messages" remaining count alongside the
+              // label_sync user-scoping bug.
+              confirmedAppliedIds.add(msgId);
+              await db.from("gmail_sync_failures")
+                .update({ confirmed_applied_ids: [...confirmedAppliedIds] }).eq("id", failureId);
+              continue;
+            }
             const ok = await importMessage(filerToken, token, msgId, labelId);
             if (ok) {
               confirmedAppliedIds.add(msgId);

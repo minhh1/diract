@@ -328,8 +328,30 @@ async function runDispatch(t0: number): Promise<Response> {
       .select("removed_at").eq("project_id", projectId).eq("company_id", companyId).maybeSingle();
     const isRemoved = !!dbLabel?.removed_at;
 
+    // Each user has their OWN copy of a shared thread with its OWN Gmail
+    // message id -- one project_emails row per (project, message, user),
+    // not one shared row per message. Grouping by user_id here (instead of
+    // handing every dispatched unit the full project-wide id list, as this
+    // used to) is what makes applyLabel below only ever try ids that
+    // actually exist in the mailbox it's calling against. Confirmed live
+    // 2026-08-06: the ungrouped version was calling modify with OTHER
+    // users' message ids on a project with 7 members and ~34 messages
+    // each -- 6/7 of every "toApply" list 404'd ("Requested entity was not
+    // found") on every single tick, forever, since a 404'd id never enters
+    // gmailMsgSet/confirmed_applied_ids and so is never excluded from the
+    // next tick's toApply either. That's the real cause of the migration
+    // backlog that stopped draining for 2+ hours across 6+ matters, not any
+    // of the mailbox/size/duplicate-job theories chased before this.
     const { data: dbEmails } = await db.from("project_emails")
-      .select("gmail_message_id").eq("project_id", projectId).eq("company_id", companyId);
+      .select("gmail_message_id, user_id").eq("project_id", projectId).eq("company_id", companyId);
+    const msgIdsByUser = new Map<string, string[]>();
+    for (const e of (dbEmails || [])) {
+      if (!msgIdsByUser.has(e.user_id)) msgIdsByUser.set(e.user_id, []);
+      msgIdsByUser.get(e.user_id)!.push(e.gmail_message_id);
+    }
+    // Project-wide total -- still the right measure for "is this label
+    // migration-scale" (MIGRATION_THRESHOLD below) and for fastPath (a
+    // project with genuinely zero synced emails yet, for anyone).
     const dbMsgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
     const fastPath = !isRemoved && dbMsgIds.length === 0;
 
@@ -340,7 +362,13 @@ async function runDispatch(t0: number): Promise<Response> {
         company_id: companyId, source_job_id: jobId, job_type: "label_sync",
         project_id: projectId, user_id: userId, label_code: labelCode,
         gmail_label_name: gmailLabelName, total_users: total_users || allUserIds.length,
-        message_count: dbMsgIds.length, status: "pending",
+        // Per-user count, not the project-wide total -- this is what the
+        // migration worker actually has to apply for THIS mailbox, and
+        // what its "order by message_count asc" sizing/pacing assumes it
+        // means. The project-wide total overstated true per-user work by
+        // ~totalUsers-fold and skewed both the processing order and the
+        // "X remaining" progress readout.
+        message_count: (msgIdsByUser.get(userId) || []).length, status: "pending",
       }));
       const { error: migrationInsertErr } = await db.from("gmail_migration_jobs")
         .upsert(rows, { onConflict: "source_job_id,user_id", ignoreDuplicates: true });
@@ -364,7 +392,8 @@ async function runDispatch(t0: number): Promise<Response> {
     for (const userId of pendingUsers) {
       units.push({
         jobId, userId, companyId, projectId, labelCode, gmailLabelName,
-        totalUsers: total_users || allUserIds.length, isRemoved, dbMsgIds, fastPath,
+        totalUsers: total_users || allUserIds.length, isRemoved,
+        dbMsgIds: msgIdsByUser.get(userId) || [], fastPath,
       });
     }
   }
