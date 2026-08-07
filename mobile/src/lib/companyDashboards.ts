@@ -104,6 +104,14 @@ export function useCompanyDashboard(slug: string, companyId: string | null) {
     dashboard: dashboardQuery.data,
     isLoading: dashboardQuery.isLoading || (supported && (fieldsQuery.isLoading || recordsQuery.isLoading)),
     sourceSupported: supported,
+    // The raw RecordField[] (native/custom source tag intact) alongside the
+    // derived CustomTableField[] above -- quick_add_form needs the former
+    // (src/lib/recordsWrite.ts's createRecord splits on field.source),
+    // compute.ts's aggregate math needs the latter. Same underlying fields,
+    // two shapes for two different consumers.
+    rawFields: fieldsQuery.data ?? [],
+    tableName: supported ? tableName : null,
+    companyId: effectiveCompanyId,
     fields,
     fieldById,
     records,

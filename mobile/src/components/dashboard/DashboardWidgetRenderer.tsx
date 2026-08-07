@@ -7,14 +7,16 @@ import { APP_URL } from '@/lib/config';
 import { computeChartSeries, computeSummaryTileValue, filterByConditions } from '@/lib/dashboardWidgets/compute';
 import type { DashboardWidget } from '@/lib/dashboardWidgets/types';
 import type { CustomTableField, CustomTableRecord } from '@/lib/dashboardWidgets/customTableTypes';
+import type { RecordField, SystemTableName } from '@/lib/records';
 import { DashboardActivityChart } from './DashboardActivityChart';
+import { QuickAddFormWidget } from './QuickAddFormWidget';
 
 // Native port of components/dashboard/DashboardWidgetRenderer.tsx -- only
 // renders the subset actually reachable from mobile/src/app/(app)/dashboards/
-// today (heading, text, summary_tile, grid, chart), matching the widget
-// coverage described in mobile/README.md's dashboards section. Every other
-// DashboardWidget type (the trust-accounting reports, document export/
-// import, the public-page shortcuts, quick-add forms, filter bars, ...)
+// today (heading, text, summary_tile, grid, chart, quick_add_form),
+// matching the widget coverage described in mobile/README.md's dashboards
+// section. Every other DashboardWidget type (the trust-accounting reports,
+// document export/import, the public-page shortcuts, filter bars, ...)
 // renders as an "open on web" fallback card instead of a blank gap or a
 // crash -- a dashboard mixing supported and unsupported widgets still
 // mostly works natively, one widget at a time, rather than being
@@ -58,11 +60,23 @@ export function DashboardWidgetRenderer({
   records,
   fieldById,
   dashboardSlug,
+  tableName,
+  companyId,
+  rawFields,
+  onRecordAdded,
 }: {
   widget: DashboardWidget;
   records: CustomTableRecord[];
   fieldById: Map<string, CustomTableField>;
   dashboardSlug: string;
+  // Only set when the dashboard's source table is one of the 3 supported
+  // system tables (see companyDashboards.ts) -- quick_add_form needs these
+  // to actually create a record; anything else falls back to "open on web"
+  // exactly like an unsupported widget type would.
+  tableName: SystemTableName | null;
+  companyId: string | null;
+  rawFields: RecordField[];
+  onRecordAdded?: () => void;
 }) {
   const theme = useTheme();
 
@@ -121,6 +135,19 @@ export function DashboardWidgetRenderer({
     case 'chart': {
       const series = computeChartSeries(widget.config, records, fieldById);
       return <DashboardActivityChart series={series} granularity={widget.config.granularity ?? 'day'} chartType={widget.config.chartType} />;
+    }
+
+    case 'quick_add_form': {
+      if (!tableName || !companyId) return <OpenOnWebFallback label="This widget only renders on the web dashboard" path={`/dashboard/boards/${dashboardSlug}`} />;
+      return (
+        <QuickAddFormWidget
+          tableName={tableName}
+          companyId={companyId}
+          allFields={rawFields}
+          fieldIds={widget.config.fieldIds}
+          onAdded={() => onRecordAdded?.()}
+        />
+      );
     }
 
     default:

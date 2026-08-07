@@ -90,9 +90,9 @@ notifications, you'll also need to:
   ("boards") sourced from one of the 3 system tables the builder itself
   allows as a board source (Matters/Properties/Leads & Contacts, not
   Tasks -- see `../lib/hooks/useSystemTableAsCustomTable.ts`). Renders
-  `heading`/`text`/`summary_tile`/`grid`/`chart` widgets; everything else
-  (the trust-accounting widgets, document export/import, the public-page
-  shortcuts, quick-add forms, filter bars) shows an "open on web" card
+  `heading`/`text`/`summary_tile`/`grid`/`chart`/`quick_add_form` widgets;
+  everything else (the trust-accounting widgets, document export/import,
+  the public-page shortcuts, filter bars) shows an "open on web" card
   instead of a blank gap, so a dashboard mixing supported and unsupported
   widgets still mostly works. `chart` (`src/components/dashboard/DashboardActivityChart.tsx`)
   is a simplified native port of its web counterpart: bar/line/area,
@@ -101,9 +101,15 @@ notifications, you'll also need to:
   month pager, hover tooltips (tap a bar/point instead), and the axis-tag
   toggle-group selector for a chart like Billable/Non-billable x
   Hours/Amount (falls back to the flat legend every other multi-series
-  chart already uses). A board sourced from a genuine custom table (not a
-  system table) falls back to "open on web" entirely, since there's no
-  mobile port yet of `../lib/hooks/useCustomTable.ts`'s schema resolution.
+  chart already uses). `quick_add_form` (`src/components/dashboard/QuickAddFormWidget.tsx`)
+  creates a record via `src/lib/recordsWrite.ts`'s `createRecord` (mirrors
+  `lib/services/systemTableRecordService.ts`'s own native/custom field
+  split); it drops the web version's formula-field live preview,
+  drag-to-reorder, and prefill/fixedValues (the last two only matter for a
+  record-scoped sub-dashboard, which mobile doesn't have yet). A board
+  sourced from a genuine custom table (not a system table) falls back to
+  "open on web" entirely, since there's no mobile port yet of
+  `../lib/hooks/useCustomTable.ts`'s schema resolution.
   `src/lib/dashboardWidgets/{types,compute,relativeDates}.ts` are verbatim
   copies of their web counterparts (pure logic, zero React/Next.js deps)
   kept byte-for-byte identical for easy re-syncing; `src/lib/companyDashboards.ts`
@@ -116,9 +122,9 @@ notifications, you'll also need to:
 
 - **The rest of the dashboard-widget engine** -- the ~10 trust-accounting
   report widgets, document export/import, the public-page shortcuts (task/
-  document/client-update pages), quick-add forms, filter bars, and any
-  board sourced from a genuine custom table rather than a system table.
-  See the Dashboards entry above for exactly what's covered today and
+  document/client-update pages), filter bars, and any board sourced from a
+  genuine custom table rather than a system table. See the Dashboards
+  entry above for exactly what's covered today and
   where the seams are; porting the rest is incremental from
   here, not a rewrite.
 - **Outlook/Gmail, SMS, billing, marketplace screens** -- the Bearer-auth

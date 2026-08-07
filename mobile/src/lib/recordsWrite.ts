@@ -49,3 +49,38 @@ export async function saveFieldValue(
   );
   if (error) return { error: error.message };
 }
+
+function isEmptyValue(v: unknown): boolean {
+  return v == null || v === '';
+}
+
+// Mirrors lib/services/systemTableRecordService.ts's createRecord: native
+// fields go straight into the insert payload, custom fields are saved via
+// saveFieldValue right after (same upsert it already uses for edits) --
+// used by the quick_add_form dashboard widget (see
+// src/components/dashboard/QuickAddFormWidget.tsx).
+export async function createRecord(
+  tableName: SystemTableName,
+  companyId: string,
+  fields: RecordField[],
+  values: Record<string, unknown>,
+): Promise<{ id: string } | { error: string }> {
+  const nonEmptyFields = fields.filter((f) => !isEmptyValue(values[f.key]));
+  if (nonEmptyFields.length === 0) return { error: 'Fill in at least one field before creating a record.' };
+
+  const native: Record<string, unknown> = { company_id: companyId };
+  for (const f of nonEmptyFields) {
+    if (f.source === 'native') native[f.key] = values[f.key];
+  }
+
+  const { data, error } = await supabase.from(tableName).insert(native).select('id').single();
+  if (error || !data) return { error: error?.message ?? 'Could not create this record.' };
+
+  for (const f of nonEmptyFields) {
+    if (f.source !== 'custom') continue;
+    const result = await saveFieldValue(tableName, companyId, data.id, f, values[f.key]);
+    if (result?.error) return { error: result.error };
+  }
+
+  return { id: data.id };
+}

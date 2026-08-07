@@ -17,7 +17,10 @@ export default function DashboardViewScreen() {
   const theme = useTheme();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { profile } = useSession();
-  const { dashboard, isLoading, sourceSupported, fieldById, records } = useCompanyDashboard(slug, profile?.active_company_id ?? null);
+  const { dashboard, isLoading, sourceSupported, fieldById, records, tableName, companyId, rawFields } = useCompanyDashboard(
+    slug,
+    profile?.active_company_id ?? null,
+  );
 
   if (isLoading) {
     return (
@@ -69,7 +72,15 @@ export default function DashboardViewScreen() {
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={styles.content}>
       {sortedWidgets.map((widget) => (
         <View key={widget.id} style={widget.type === 'summary_tile' ? undefined : styles.fullWidth}>
-          <DashboardWidgetRenderer widget={widget} records={records} fieldById={fieldById} dashboardSlug={slug} />
+          <DashboardWidgetRenderer
+            widget={widget}
+            records={records}
+            fieldById={fieldById}
+            dashboardSlug={slug}
+            tableName={tableName}
+            companyId={companyId}
+            rawFields={rawFields}
+          />
         </View>
       ))}
     </ScrollView>
