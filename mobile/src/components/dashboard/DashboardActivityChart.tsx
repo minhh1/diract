@@ -81,6 +81,18 @@ export function DashboardActivityChart({
     );
   }
 
+  // Distinct from "every series hidden" above -- this is no bucket having
+  // any data at all yet (e.g. every record's date field is empty), found
+  // live testing a fresh dashboard whose one record hadn't been dated yet:
+  // the bar/line row rendered as a blank box with no explanation.
+  if (slots.length === 0) {
+    return (
+      <Text style={{ color: theme.textSecondary, fontStyle: 'italic', fontSize: 12, textAlign: 'center', paddingVertical: 20 }}>
+        No dated records yet.
+      </Text>
+    );
+  }
+
   return (
     <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
       {!isSingleSeries && (
