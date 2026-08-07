@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { perfLog } from "@/lib/perfLog";
 import { fetchScopedDefaultResourceIds } from "@/lib/hooks/scopedDefaultResources";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useIsomorphicLayoutEffect } from "@/lib/hooks/useIsomorphicLayoutEffect";
 
 export interface CustomTable {
   id: string;
@@ -78,6 +80,22 @@ function isCacheWarm(userId: string | null): boolean {
   return cachedTables !== null && cachedForUserId === userId && cacheExpiresAt > Date.now();
 }
 
+// The module cache above is purely in-memory -- gone the instant a hard
+// reload/new tab re-executes this module from scratch, which is exactly
+// what a real user hitting the app fresh (not just clicking between pages
+// in an already-open tab) does every time. Safe to key by userId alone,
+// same as the module cache above and useCustomDashboards.ts's own sidebar
+// list -- every identity-change point (Sidebar.tsx's company switch,
+// sign-out, ...) already calls clearAllClientCaches(), which wipes every
+// nk_shell:-prefixed key regardless of scoping (see that file's own header
+// comment on why a userId-only key here is deliberately NOT a
+// cross-tenant leak risk). Reported live: Quick Glance -- which needs this
+// hook's tables before it even knows whether to show its own canvas --
+// sat on a spinner for ~2s on a cold page load despite CompanyContext's
+// own identity resolving instantly from ITS localStorage cache, because
+// this hook's cache didn't survive the reload at all.
+const tablesShellKey = (userId: string) => `custom-tables:${userId}`;
+
 async function resolveUserId(providedUserId?: string | null): Promise<string | null> {
   if (providedUserId) return providedUserId;
   const { data: { user } } = await supabase.auth.getUser();
@@ -110,6 +128,12 @@ function fetchTables(userId: string | null): Promise<CustomTable[]> {
     cachedForUserId = userId;
     cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     inFlight = null;
+    // Every caller of fetchTables (warmCustomTables from CompanyContext,
+    // this hook's own effects below) funnels through here, so writing
+    // through in this one place keeps the reload-durable cache warm as
+    // early as possible -- often before Quick Glance/any table page has
+    // even mounted to ask for it.
+    if (userId) writeShellCache(tablesShellKey(userId), tables);
     return tables;
   })();
   inFlight = promise;
@@ -156,6 +180,25 @@ export function useCustomTables(userId?: string | null): {
   // synchronous benefit; others fall back to the effect below.
   const [tables, setTables] = useState<CustomTable[]>(() => (userId && isCacheWarm(userId)) ? cachedTables! : []);
   const [loading, setLoading] = useState<boolean>(() => !(userId && isCacheWarm(userId)));
+
+  // Closes the gap the lazy initializers above can't: on a hard reload the
+  // module cache is empty regardless of userId (fresh JS execution), so
+  // isCacheWarm() is always false on that very first render even though a
+  // perfectly good localStorage copy exists from before the reload. Runs
+  // before paint (useIsomorphicLayoutEffect) and re-fires once userId goes
+  // from null to its real value (CompanyContext resolves that in its own
+  // layout effect one render earlier), landing in the same pre-paint
+  // cascade -- see QuickGlanceDashboard.tsx's identical pattern for its own
+  // widgets cache.
+  useIsomorphicLayoutEffect(() => {
+    if (!userId || isCacheWarm(userId)) return;
+    const cached = readShellCache<CustomTable[]>(tablesShellKey(userId));
+    if (cached) {
+      setTables(cached);
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   useEffect(() => {
     let active = true;
