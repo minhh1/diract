@@ -17,7 +17,9 @@ import { X, Loader2, Building2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 import { ensureStaffEntity } from "@/lib/services/staffEntityService";
-import { clearActiveIdentityCache } from "@/lib/clearClientCaches";
+import { clearAllClientCaches } from "@/lib/clearClientCaches";
+import { invalidateCustomTables } from "@/lib/hooks/useCustomTables";
+import { invalidateCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 
 interface Props {
   userId: string;
@@ -61,11 +63,16 @@ export default function CreateCompanyModal({ userId, currentFullName, onClose }:
     // invalidation + hard redirect as Sidebar.tsx's own handleSwitchCompany
     // (a full reload rather than a client nav so every companyId-scoped
     // hook/query remounts against the new company instead of serving stale
-    // cached data for the old one).
+    // cached data for the old one). Full clearAllClientCaches(), not just
+    // the identity cache -- see handleSwitchCompany's own comment: without
+    // this, useCustomTables/useCustomDashboards' userId-keyed module
+    // caches could still hold the PREVIOUS company's list.
     const { invalidateSchemaCache, clearCompanyIdCache } = await import('@/lib/services/schemaService');
     invalidateSchemaCache();
     clearCompanyIdCache();
-    clearActiveIdentityCache();
+    invalidateCustomTables();
+    invalidateCustomDashboards();
+    clearAllClientCaches();
     window.location.replace('/dashboard/quick-glance');
   };
 

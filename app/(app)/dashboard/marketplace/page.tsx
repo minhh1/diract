@@ -11,7 +11,9 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import TemplateTableBuilder from "@/components/marketplace/TemplateTableBuilder";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
-import { clearActiveIdentityCache } from "@/lib/clearClientCaches";
+import { clearAllClientCaches } from "@/lib/clearClientCaches";
+import { invalidateCustomTables } from "@/lib/hooks/useCustomTables";
+import { invalidateCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 
@@ -325,7 +327,12 @@ export default function MarketplacePage() {
     const { invalidateSchemaCache, clearCompanyIdCache } = await import('@/lib/services/schemaService');
     invalidateSchemaCache();
     clearCompanyIdCache();
-    clearActiveIdentityCache();
+    invalidateCustomTables();
+    invalidateCustomDashboards();
+    // Full wipe, not just the identity cache -- see Sidebar.tsx's
+    // handleSwitchCompany for why (useCustomTables/useCustomDashboards'
+    // module caches are keyed by userId alone, not companyId).
+    clearAllClientCaches();
     window.location.replace('/dashboard/properties');
   };
 

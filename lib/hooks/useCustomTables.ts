@@ -124,6 +124,24 @@ export function warmCustomTables(userId?: string | null): Promise<void> {
   })();
 }
 
+// Mirrors useCustomDashboards.ts's invalidateCustomDashboards() -- this
+// cache is keyed by userId alone (see the module comment above: results
+// only ever differ per SIGNED-IN user, not per active company, since a
+// single tab only ever has one signed-in user at a time), which is exactly
+// why it's safe for a userId-only key to also silently hold the WRONG
+// company's tables if the active company changes without this being
+// called: `isCacheWarm(uid)` would still match on userId alone. In
+// practice components/Sidebar.tsx's handleSwitchCompany forces a full page
+// reload today, which already resets this module's state for free -- this
+// export exists as the explicit, structural belt-and-suspenders companion
+// to that reload (called from the same place clearAllClientCaches() is),
+// not because the reload alone leaves a gap today.
+export function invalidateCustomTables(): void {
+  cachedTables = null;
+  cacheExpiresAt = 0;
+  inFlight = null;
+}
+
 export function useCustomTables(userId?: string | null): {
   tables: CustomTable[];
   loading: boolean;

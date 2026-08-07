@@ -19,10 +19,10 @@ import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
 import CreateCompanyModal from "./CreateCompanyModal";
-import { useCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
-import { useCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
+import { useCustomTables, invalidateCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
+import { useCustomDashboards, invalidateCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
-import { clearAllClientCaches, clearActiveIdentityCache } from "@/lib/clearClientCaches";
+import { clearAllClientCaches } from "@/lib/clearClientCaches";
 import { markIntentionalSignOut } from "@/components/SessionHealthBanner";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import type { ActiveFilter } from "@/lib/types/filters";
@@ -1127,14 +1127,24 @@ export default function Sidebar() {
     const { invalidateSchemaCache, clearCompanyIdCache } = await import('@/lib/services/schemaService');
     invalidateSchemaCache();
     clearCompanyIdCache();
-    // Just the identity cache, not a full wipe -- see
-    // lib/clearClientCaches.ts's own doc comment on clearActiveIdentityCache
-    // for why: every OTHER cache is now genuinely companyId-scoped, so a
-    // full clearAllClientCaches() here was only throwing away legitimately
-    // reusable data for a company already visited this session, forcing a
-    // full cold bootstrap on every single switch (confirmed live: switching
-    // back and forth repeatedly never got any faster).
-    clearActiveIdentityCache();
+    invalidateCustomTables();
+    invalidateCustomDashboards();
+    // Full wipe, not just the identity cache -- a previous version of this
+    // handler used clearActiveIdentityCache() alone on the theory that
+    // every OTHER cache is genuinely companyId-scoped, so a full
+    // clearAllClientCaches() here was only throwing away legitimately
+    // reusable data for a company already visited this session (confirmed
+    // live at the time: switching back and forth repeatedly never got any
+    // faster with the full wipe). That theory holds for the localStorage
+    // layers (queryCache/shellCache row+schema+field caches are all keyed
+    // by companyId), but useCustomTables.ts/useCustomDashboards.ts's
+    // module-level caches are keyed by userId ALONE -- harmless only
+    // because the reload below already resets that module state for free,
+    // which made it easy to trust the "everything's scoped" theory without
+    // it actually being true everywhere. Explicit correctness over the
+    // warm-reswitch speedup: reported live as stale other-company data
+    // still visible after a switch.
+    clearAllClientCaches();
     setSwitchingCompany(false);
     setShowCompanySwitcher(false);
     window.location.replace('/dashboard/quick-glance');
@@ -1627,10 +1637,10 @@ export default function Sidebar() {
                   // yet" text below rendered immediately (before this hook
                   // had actually resolved anything), then got replaced by
                   // the real list a moment later, shifting everything below
-                  // it. Right after switching company especially (the list
-                  // is never warm for a company you're just landing in --
-                  // see lib/clearClientCaches.ts's clearActiveIdentityCache),
-                  // a click aimed at where a dashboard button was about to
+                  // it. Right after switching company especially (see
+                  // handleSwitchCompany's full clearAllClientCaches() --
+                  // this list is never warm right after a switch), a click
+                  // aimed at where a dashboard button was about to
                   // appear could land on whatever that shift put there
                   // instead once real content popped in.
                   <div className="space-y-1 px-1">

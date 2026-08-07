@@ -14,13 +14,20 @@ import { useState } from "react";
 import { FlaskConical, Loader2 } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { supabase } from "@/lib/supabase";
-import { clearActiveIdentityCache } from "@/lib/clearClientCaches";
+import { clearAllClientCaches } from "@/lib/clearClientCaches";
+import { invalidateCustomTables } from "@/lib/hooks/useCustomTables";
+import { invalidateCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 
 async function clearCompanySwitchCaches() {
   const { invalidateSchemaCache, clearCompanyIdCache } = await import("@/lib/services/schemaService");
   invalidateSchemaCache();
   clearCompanyIdCache();
-  clearActiveIdentityCache();
+  invalidateCustomTables();
+  invalidateCustomDashboards();
+  // Full wipe, not just the identity cache -- see Sidebar.tsx's
+  // handleSwitchCompany for why (useCustomTables/useCustomDashboards'
+  // module caches are keyed by userId alone, not companyId).
+  clearAllClientCaches();
 }
 
 export default function TrialWorkspaceBanner() {
