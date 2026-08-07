@@ -3,11 +3,12 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View, Press
 import { useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
-import { CheckCircle2, Download, Lock } from 'lucide-react-native';
+import { CheckCircle2, Download, FileSignature, Lock } from 'lucide-react-native';
 
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { GradientButton } from '@/components/ui/GradientButton';
+import { IconBadge } from '@/components/ui/IconBadge';
 import {
   fetchDocumentFillPage,
   saveDocumentFillDraft,
@@ -112,8 +113,10 @@ export default function DocumentFillPageScreen() {
   if (query.data?.requiresCode) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background, paddingHorizontal: 32, gap: 16 }]}>
-        <Lock size={28} color={theme.textSecondary} />
-        <Text style={{ color: theme.text, fontSize: 16, fontWeight: '800', textAlign: 'center' }}>{query.data.title}</Text>
+        <IconBadge index={1} size={56}>
+          <Lock size={24} color="#fff" />
+        </IconBadge>
+        <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800', textAlign: 'center' }}>{query.data.title}</Text>
         <Text style={{ color: theme.textSecondary, textAlign: 'center' }}>Enter the access code to continue.</Text>
         <TextInput
           value={code}
@@ -134,7 +137,12 @@ export default function DocumentFillPageScreen() {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={styles.content}>
-      <Text style={[styles.heading, { color: theme.text }]}>{query.data?.heading}</Text>
+      <View style={styles.headingRow}>
+        <IconBadge index={1} size={44}>
+          <FileSignature size={20} color="#fff" />
+        </IconBadge>
+        <Text style={[styles.heading, { color: theme.text }]}>{query.data?.heading}</Text>
+      </View>
 
       {(query.data?.documents.length ?? 0) > 1 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
@@ -150,55 +158,61 @@ export default function DocumentFillPageScreen() {
         </ScrollView>
       )}
 
-      {visibleFields.map((field) => {
-        const isNa = naFields.has(field.tagKey);
-        return (
-          <View key={field.tagKey} style={styles.fieldBlock}>
-            <View style={styles.fieldLabelRow}>
-              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
-                {field.label}
-                {field.isRequired ? ' *' : ''}
-              </Text>
-              <Pressable onPress={() => toggleNa(field.tagKey)}>
-                <Text style={{ color: isNa ? theme.accent : theme.textSecondary, fontSize: 11, fontWeight: '700' }}>N/A</Text>
-              </Pressable>
-            </View>
-            {field.fieldType === 'select' || field.fieldType === 'multiselect' ? (
-              <View style={styles.chipRow}>
-                {(field.selectOptions ?? []).map((opt) => {
-                  const selected = field.fieldType === 'multiselect' ? (values[field.tagKey] ?? '').split(', ').includes(opt) : values[field.tagKey] === opt;
-                  return (
-                    <Pressable
-                      key={opt}
-                      disabled={isNa}
-                      onPress={() => {
-                        if (field.fieldType === 'multiselect') {
-                          const current = (values[field.tagKey] ?? '').split(', ').filter(Boolean);
-                          const next = current.includes(opt) ? current.filter((v) => v !== opt) : [...current, opt];
-                          setValue(field.tagKey, next.join(', '));
-                        } else {
-                          setValue(field.tagKey, opt);
-                        }
-                      }}
-                      style={[styles.chip, { backgroundColor: selected ? theme.accent : theme.backgroundSelected, opacity: isNa ? 0.4 : 1 }]}
-                    >
-                      <Text style={{ color: selected ? '#fff' : theme.text, fontWeight: '700', fontSize: 12 }}>{opt}</Text>
-                    </Pressable>
-                  );
-                })}
+      <View style={[styles.fieldsCard, { backgroundColor: theme.backgroundElement }]}>
+        {visibleFields.map((field, i) => {
+          const isNa = naFields.has(field.tagKey);
+          const isCurrency = field.fieldType === 'currency';
+          return (
+            <View key={field.tagKey} style={[styles.fieldBlock, i > 0 && { borderTopWidth: 1, borderTopColor: theme.border }]}>
+              <View style={styles.fieldLabelRow}>
+                <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
+                  {field.label}
+                  {field.isRequired ? ' *' : ''}
+                </Text>
+                <Pressable onPress={() => toggleNa(field.tagKey)} hitSlop={6} style={styles.naToggle}>
+                  <Text style={{ color: isNa ? theme.accent : theme.textSecondary, fontSize: 11, fontWeight: '700' }}>N/A</Text>
+                </Pressable>
               </View>
-            ) : (
-              <TextInput
-                value={isNa ? '' : values[field.tagKey] ?? ''}
-                onChangeText={(v) => setValue(field.tagKey, v)}
-                editable={!isNa}
-                keyboardType={field.fieldType === 'number' || field.fieldType === 'currency' ? 'decimal-pad' : 'default'}
-                style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text, opacity: isNa ? 0.4 : 1 }]}
-              />
-            )}
-          </View>
-        );
-      })}
+              {field.fieldType === 'select' || field.fieldType === 'multiselect' ? (
+                <View style={styles.chipRow}>
+                  {(field.selectOptions ?? []).map((opt) => {
+                    const selected = field.fieldType === 'multiselect' ? (values[field.tagKey] ?? '').split(', ').includes(opt) : values[field.tagKey] === opt;
+                    return (
+                      <Pressable
+                        key={opt}
+                        disabled={isNa}
+                        onPress={() => {
+                          if (field.fieldType === 'multiselect') {
+                            const current = (values[field.tagKey] ?? '').split(', ').filter(Boolean);
+                            const next = current.includes(opt) ? current.filter((v) => v !== opt) : [...current, opt];
+                            setValue(field.tagKey, next.join(', '));
+                          } else {
+                            setValue(field.tagKey, opt);
+                          }
+                        }}
+                        style={[styles.chip, { backgroundColor: selected ? theme.accent : theme.backgroundSelected, opacity: isNa ? 0.4 : 1 }]}
+                      >
+                        <Text style={{ color: selected ? '#fff' : theme.text, fontWeight: '700', fontSize: 12 }}>{opt}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={[styles.inputRow, { backgroundColor: theme.background, opacity: isNa ? 0.4 : 1 }]}>
+                  {isCurrency && <Text style={[styles.currencyPrefix, { color: theme.textSecondary }]}>$</Text>}
+                  <TextInput
+                    value={isNa ? '' : values[field.tagKey] ?? ''}
+                    onChangeText={(v) => setValue(field.tagKey, v)}
+                    editable={!isNa}
+                    keyboardType={field.fieldType === 'number' || isCurrency ? 'decimal-pad' : 'default'}
+                    style={[styles.input, { color: theme.text }]}
+                  />
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </View>
 
       {error && <Text style={{ color: theme.danger, fontSize: 12, fontWeight: '600' }}>{error}</Text>}
 
@@ -234,13 +248,18 @@ export default function DocumentFillPageScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 16, gap: 14, paddingBottom: 48 },
-  heading: { fontSize: 20, fontWeight: '800' },
+  headingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  heading: { fontSize: 19, fontWeight: '800', flex: 1 },
   codeInput: { width: '100%', padding: 14, borderRadius: Radii.pill, fontSize: 16, fontWeight: '700', textAlign: 'center', letterSpacing: 2 },
   docTab: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radii.pill },
-  fieldBlock: { gap: 6 },
-  fieldLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  fieldLabel: { fontSize: 12, fontWeight: '700' },
-  input: { padding: 12, borderRadius: Radii.input, fontSize: 14, fontWeight: '600' },
+  fieldsCard: { borderRadius: Radii.card, overflow: 'hidden' },
+  fieldBlock: { gap: 8, padding: 16 },
+  fieldLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
+  fieldLabel: { fontSize: 12, fontWeight: '700', flex: 1 },
+  naToggle: { paddingTop: 1 },
+  inputRow: { flexDirection: 'row', alignItems: 'center', borderRadius: Radii.input, paddingHorizontal: 12 },
+  currencyPrefix: { fontSize: 14, fontWeight: '700' },
+  input: { flex: 1, paddingVertical: 12, paddingLeft: 4, fontSize: 14, fontWeight: '600' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.pill },
   resultCard: { flexDirection: 'row', gap: 10, padding: 14, borderRadius: Radii.badge, alignItems: 'flex-start' },

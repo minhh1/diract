@@ -8,6 +8,7 @@ import { computeChartSeries, computeSummaryTileValue, filterByConditions } from 
 import type { DashboardWidget } from '@/lib/dashboardWidgets/types';
 import type { CustomTableField, CustomTableRecord } from '@/lib/dashboardWidgets/customTableTypes';
 import type { RecordField, SystemTableName } from '@/lib/records';
+import { formatCurrency, formatNumber } from '@/lib/format';
 import { DashboardActivityChart } from './DashboardActivityChart';
 import { QuickAddFormWidget } from './QuickAddFormWidget';
 
@@ -22,17 +23,14 @@ import { QuickAddFormWidget } from './QuickAddFormWidget';
 // mostly works natively, one widget at a time, rather than being
 // all-or-nothing.
 function formatTileValue(value: number, fieldType: string): string {
-  if (fieldType === 'currency') {
-    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return fieldType === 'currency' ? formatCurrency(value) : formatNumber(value);
 }
 
 function formatCellValue(value: unknown, field: CustomTableField | undefined): string {
   if (value == null || value === '') return '-';
   if (field?.field_type === 'boolean') return value ? 'Yes' : 'No';
   if (field?.field_type === 'date') return new Date(String(value)).toLocaleDateString('en-AU');
-  if (field?.field_type === 'currency') return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (field?.field_type === 'currency') return formatCurrency(value);
   // Relation fields hold a linked record's id here, not a resolved label --
   // resolving one per cell would mean one query per row per relation
   // column, which doesn't scale to a grid of any real size. Known v1 gap;

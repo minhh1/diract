@@ -6,6 +6,7 @@ import { Search, Send, Sparkles, X } from 'lucide-react-native';
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDate } from '@/lib/dateFormat';
+import { formatCurrency } from '@/lib/format';
 import {
   askAboutClientUpdateItem,
   useAddClientUpdateNote,
@@ -45,6 +46,7 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 // only a genuinely date-typed field with a plain YYYY-MM-DD value gets
 // reformatted; everything else renders as-is.
 function formatFieldValue(value: unknown, field: ClientUpdateField, dateFormat: string): string {
+  if (field.field_type === 'currency') return formatCurrency(value);
   const str = String(value);
   return field.field_type === 'date' && DATE_ONLY.test(str) ? formatDate(str, dateFormat) : str;
 }

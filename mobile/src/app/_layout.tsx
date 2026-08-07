@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { queryClient } from '@/lib/queryClient';
 import { SessionProvider, useSession } from '@/lib/session';
@@ -43,13 +44,18 @@ function ThemedStatusBar() {
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeModeProvider>
-        <SessionProvider>
-          <ThemedStatusBar />
-          <RootNavigator />
-        </SessionProvider>
-      </ThemeModeProvider>
-    </QueryClientProvider>
+    // Required by react-native-gesture-handler's Swipeable (used for the
+    // Task Page's swipe-to-complete/delete row actions) -- without this,
+    // gestures at the very edge of the screen can be swallowed by the OS.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <ThemeModeProvider>
+          <SessionProvider>
+            <ThemedStatusBar />
+            <RootNavigator />
+          </SessionProvider>
+        </ThemeModeProvider>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -5,6 +5,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { formatCurrency } from '@/lib/format';
 import { useSession } from '@/lib/session';
 import { useRelationLabel } from '@/lib/relationLabels';
 import { useRecord, useRecordFields, type RecordField, type SystemTableName } from '@/lib/records';
@@ -141,7 +142,7 @@ function FieldRow({
       <Pressable onPress={() => setEditing(true)} style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
         <Text style={[styles.value, { color: theme.text }]} numberOfLines={2}>
-          {value == null || value === '' ? '-' : String(value)}
+          {value == null || value === '' ? '-' : field.fieldType === 'currency' ? formatCurrency(value) : String(value)}
         </Text>
       </Pressable>
     );
