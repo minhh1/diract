@@ -3,9 +3,11 @@ import { useRouter } from 'expo-router';
 import {
   Bot,
   Building2,
+  ChevronRight,
   Clapperboard,
   CreditCard,
   FileEdit,
+  Home,
   Inbox,
   LayoutTemplate,
   LogOut,
@@ -19,6 +21,7 @@ import {
 import { OpenInBrowserRow } from '@/components/OpenInBrowserRow';
 import { useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
+import { useCompanyMemberships } from '@/lib/companies';
 import { PushNotificationSettingsRow } from '@/components/PushNotificationSettingsRow';
 import { VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID } from '@/lib/allowedCompany';
 
@@ -26,7 +29,9 @@ export default function MoreScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { profile, signOut } = useSession();
+  const { data: memberships } = useCompanyMemberships(profile?.id ?? null);
   const canUseVirtualComputers = profile?.active_company_id === VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID;
+  const activeCompanyName = memberships?.find((m) => m.company_id === profile?.active_company_id)?.company?.name;
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={styles.content}>
@@ -34,6 +39,22 @@ export default function MoreScreen() {
         <Text style={[styles.name, { color: theme.text }]}>{profile?.full_name || profile?.email}</Text>
         <Text style={[styles.email, { color: theme.textSecondary }]}>{profile?.email}</Text>
       </View>
+
+      <Pressable
+        onPress={() => router.push('/more/switch-company' as never)}
+        style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+      >
+        <View style={styles.rowLeft}>
+          <Building2 size={18} color={theme.textSecondary} />
+          <View>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{activeCompanyName || 'Switch company'}</Text>
+            {!!activeCompanyName && (memberships?.length ?? 0) > 1 && (
+              <Text style={[styles.companyHint, { color: theme.textSecondary }]}>Tap to switch company</Text>
+            )}
+          </View>
+        </View>
+        <ChevronRight size={18} color={theme.textSecondary} />
+      </Pressable>
 
       <PushNotificationSettingsRow />
 
@@ -43,13 +64,21 @@ export default function MoreScreen() {
         style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
       >
         <View style={styles.rowLeft}>
-          <Building2 size={18} color={theme.textSecondary} />
+          <Home size={18} color={theme.textSecondary} />
           <Text style={[styles.rowLabel, { color: theme.text }]}>Properties</Text>
+        </View>
+      </Pressable>
+      <Pressable
+        onPress={() => router.push('/more/ai' as never)}
+        style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+      >
+        <View style={styles.rowLeft}>
+          <Bot size={18} color={theme.textSecondary} />
+          <Text style={[styles.rowLabel, { color: theme.text }]}>AI assistant</Text>
         </View>
       </Pressable>
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>OPEN ON THE WEB</Text>
       <View style={{ gap: 8 }}>
-        <OpenInBrowserRow label="AI assistant" path="/dashboard/ai" icon={Bot} />
         <OpenInBrowserRow label="Custom tables & boards" path="/dashboard/boards" icon={LayoutTemplate} />
         <OpenInBrowserRow label="Schema builder" path="/dashboard/schema" icon={Settings} />
         <OpenInBrowserRow label="Document templates" path="/dashboard/templates" icon={FileEdit} />
@@ -82,6 +111,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 14, borderWidth: 1 },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowLabel: { fontSize: 14, fontWeight: '600' },
+  companyHint: { fontSize: 11, fontWeight: '500', marginTop: 1 },
   signOutButton: {
     flexDirection: 'row',
     gap: 8,

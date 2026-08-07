@@ -58,17 +58,32 @@ notifications, you'll also need to:
   app's cookie session, so every route built on `createSupabaseServerClient()`
   / `authorizeCompanyMember()` (~40 routes) already works from mobile
   (`src/lib/api.ts` is the client-side helper that attaches the header).
-- **"Open in browser" fallbacks** (More tab) for the AI assistant, schema
-  builder, PDF editor, templates, Outlook/Gmail inboxes, billing, virtual
-  computers, marketplace, admin, and settings -- these open the responsive
-  web dashboard in an in-app browser rather than a half-native rebuild.
-  The AI assistant used to be a native chat screen here
-  (`src/app/(app)/more/ai.tsx`, since removed) calling
-  `app/api/ai/chat/route.ts` directly, but that route was repurposed
-  web-side into an admin-only table/dashboard-builder assistant (job-based,
-  driven by Supabase Realtime, tool-call/confirmation UI) -- an inherently
-  desktop-oriented builder workflow, not a general Q&A chat, so it now
-  belongs in this list instead of a native reimplementation.
+- **AI assistant** (More -> AI assistant, `src/app/(app)/more/ai/`) -- a
+  native port of `components/ai/AiChatThread.tsx`'s table/dashboard-builder
+  chat, calling the same admin-only, job-based `app/api/ai/chat/route.ts`.
+  `src/components/ai/AiChatThread.tsx` subscribes to the `ai_chat_jobs` row
+  directly via Supabase Realtime (`supabase.channel(...).on('postgres_changes', ...)`,
+  no generic hook needed for just one caller) instead of a held-open stream,
+  resumes an in-flight job on reopen the same way the web app does, and
+  renders tool-call chips, a collapsible reasoning block, and markdown
+  replies (`src/components/ai/SimpleMarkdown.tsx` walks `marked`'s token
+  tree directly -- pure JS, no native dependency -- rather than pulling in
+  a full markdown-rendering package for the handful of block types
+  `app/api/ai/chat/route.ts`'s system prompt ever actually produces).
+  `src/app/(app)/more/ai/index.tsx` is the conversation list (pin/rename/
+  delete via `app/api/ai/conversations*`); tapping one or starting a new
+  chat opens `src/app/(app)/more/ai/[id].tsx`. Confirm-before-building is
+  purely conversational on both platforms (the assistant asks in plain
+  chat and waits for the next message), so there's no separate confirm UI.
+  Non-admins see an "Admin access required" message in place of the chat,
+  matching the web page's own gate. This used to be a much simpler screen
+  built against the AI route's previous general-Q&A behavior, which the
+  web app had already moved on from by the time this was rebuilt -- see
+  git history on this file if you need the old version's shape.
+- **"Open in browser" fallbacks** (More tab) for the schema builder, PDF
+  editor, templates, Outlook/Gmail inboxes, billing, virtual computers,
+  marketplace, admin, and settings -- these open the responsive web
+  dashboard in an in-app browser rather than a half-native rebuild.
 
 ## What's not built yet (backlog)
 

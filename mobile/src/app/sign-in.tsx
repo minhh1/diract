@@ -18,6 +18,7 @@ import { APP_URL } from '@/lib/config';
 import { isValidABN, isValidACN } from '@/lib/auEntityIds';
 import { signInWithGoogle } from '@/lib/googleOAuth';
 import { joinCompanyWithToken, validateInviteToken, type InviteTokenData } from '@/lib/inviteJoin';
+import { ensureStaffEntity } from '@/lib/staffEntityService';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -178,6 +179,13 @@ export default function SignInScreen() {
         );
         await joinCompanyWithToken(userId, inviteData);
       } else {
+        // register_company_and_profile's real signature (confirmed against
+        // the live database, untracked in any migration in this repo) never
+        // accepted a p_invite_token param -- passing one makes PostgREST
+        // unable to match any function overload at all, silently breaking
+        // every fresh self-signup with "Could not find the function ... in
+        // the schema cache". See app/(marketing)/login/page.tsx's own
+        // handleRegister for the same fix on the web app (commit 3d41f3d).
         const { data: result, error: rpcError } = await supabase.rpc('register_company_and_profile', {
           p_user_id: userId,
           p_full_name: fullName || email.split('@')[0],
@@ -185,10 +193,22 @@ export default function SignInScreen() {
           p_company_name: companyName.trim(),
           p_abn: abn.trim() || null,
           p_acn: acn.trim() || null,
-          p_invite_token: inviteTokenInput.trim() || null,
         });
         if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
-        if (result && !result.success) throw new Error(result.error || 'Registration failed');
+        if (result && !result.success) {
+          if (result.error_code === 'duplicate_email') {
+            throw new Error('An account with this email already exists. Please sign in instead.');
+          }
+          throw new Error(result.error || 'Registration failed');
+        }
+
+        // register_company_and_profile's own return shape isn't relied on
+        // elsewhere -- reading the company id back off the profile it just
+        // set avoids assuming one, matching the web app's own approach.
+        const { data: newProfile } = await supabase.from('profiles').select('active_company_id').eq('id', userId).maybeSingle();
+        if (newProfile?.active_company_id) {
+          await ensureStaffEntity(supabase, newProfile.active_company_id, userId);
+        }
       }
 
       if (!authData.session) {

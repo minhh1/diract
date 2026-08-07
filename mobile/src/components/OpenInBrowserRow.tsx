@@ -7,11 +7,13 @@ import { APP_URL } from '@/lib/config';
 
 // A handful of Diract features (the low-code schema/dashboard builder, the
 // PDF editor, virtual-computer provisioning, billing, site-wide admin
-// tools, the AI assistant) are either desktop-oriented editing surfaces or
-// not yet ported natively. Rather than a native screen that's a worse copy
-// of the real thing, these open the already-responsive web dashboard in an
-// in-app browser, authenticated via the same Supabase session cookie once
-// the user signs in there once.
+// tools) are either desktop-oriented editing surfaces or not yet ported
+// natively. Rather than a native screen that's a worse copy of the real
+// thing, these open the already-responsive web dashboard in an in-app
+// browser, authenticated via the same Supabase session cookie once the
+// user signs in there once. (The AI assistant used to be in this list too
+// -- see src/app/(app)/more/ai/ and its own README section for why it's a
+// native screen now.)
 export function OpenInBrowserRow({ label, path, icon: Icon }: { label: string; path: string; icon: LucideIcon }) {
   const theme = useTheme();
   return (
