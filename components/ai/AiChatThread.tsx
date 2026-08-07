@@ -249,7 +249,7 @@ export default function AiChatThread({
   const [sending, setSending] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // The job this thread is currently attached to (either one it just
@@ -277,8 +277,20 @@ export default function AiChatThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usage]);
 
+  // Scrolls the LOCAL message list only -- not Element.scrollIntoView(),
+  // which walks every scrollable ancestor (including overflow:hidden ones,
+  // per spec) looking for room to satisfy visibility. On the full page
+  // that ancestor chain dead-ends harmlessly, but embedded as a Quick
+  // Glance widget (AiAssistantWidget.tsx) this component sits inside a
+  // tall, fixed-height grid cell with plenty of its own overflow:hidden
+  // wrappers -- scrollIntoView happily scrolled the Quick Glance PAGE's own
+  // <main overflow-y-auto> container instead, on first mount, dragging the
+  // freshly-seeded welcome message hundreds of pixels off-screen before
+  // anyone saw it. Confirmed live via getBoundingClientRect + walking
+  // scrollTop up the ancestor chain.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   // Grows the textarea to fit what's typed (up to a cap, then it scrolls
@@ -437,7 +449,7 @@ export default function AiChatThread({
     // area's flex-1 below has something concrete to grow into instead of
     // collapsing to its own tiny natural size.
     <div className="flex flex-col h-full">
-      <div className={`flex-1 ${compact ? "max-h-[440px]" : ""} overflow-y-auto`}>
+      <div ref={messagesContainerRef} className={`flex-1 ${compact ? "max-h-[440px]" : ""} overflow-y-auto`}>
         <div className={`mx-auto w-full ${compact ? "" : "max-w-[720px]"} space-y-8`}>
           {messages.length === 0 && emptyStateHint && (
             <p className="text-[15px] text-slate-400 text-center py-16">{emptyStateHint}</p>
@@ -507,7 +519,6 @@ export default function AiChatThread({
               );
             })}
           </AnimatePresence>
-          <div ref={bottomRef} />
         </div>
       </div>
 
