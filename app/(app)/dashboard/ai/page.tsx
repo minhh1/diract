@@ -142,10 +142,9 @@ export default function AiAssistantPage() {
         <main className="flex-1 overflow-y-auto px-8 pb-8">
           <div className="h-full">
             {/* Gated on conversationsLoading (not just companyLoading) --
-                AiChatThread's initialAssistantMessage only seeds its
-                internal useState once at mount, so mounting before
-                nav.welcomeMessage's real value (first-time vs personalized
-                "welcome back") is known would bake in the wrong one
+                AiChatThread's initialMessages only seeds its internal
+                useState once at mount, so mounting before nav's own fetch
+                of past messages resolves would bake in an empty thread
                 permanently for this instance. This fetch is fast; the
                 spinner is brief. */}
             {nav.conversationsLoading ? (
@@ -157,7 +156,7 @@ export default function AiAssistantPage() {
                 key={nav.openedConversationId ?? "new"}
                 initialConversationId={nav.openedConversationId}
                 initialMessages={nav.initialMessages}
-                initialAssistantMessage={nav.initialMessages.length === 0 ? nav.welcomeMessage : undefined}
+                welcomeMessage={nav.initialMessages.length === 0 ? nav.welcomeMessage : undefined}
                 onConversationCreated={nav.setConversationId}
                 onTurnComplete={nav.loadConversations}
                 onSendingChange={setSending}

@@ -100,10 +100,9 @@ export default function AiAssistantWidget() {
           )}
           <div className="flex-1 min-w-0 p-4 overflow-hidden">
             {/* Gated on conversationsLoading -- see page.tsx's identical
-                comment: initialAssistantMessage only seeds AiChatThread's
-                internal state once at mount, so mounting before
-                nav.welcomeMessage's real value is known would bake in the
-                wrong one (first-time pitch vs personalized "welcome back")
+                comment: initialMessages only seeds AiChatThread's internal
+                state once at mount, so mounting before nav's own fetch of
+                past messages resolves would bake in an empty thread
                 permanently for this instance. */}
             {nav.conversationsLoading ? (
               <div className="flex items-center justify-center h-full">
@@ -115,7 +114,7 @@ export default function AiAssistantWidget() {
                 compact
                 initialConversationId={nav.openedConversationId}
                 initialMessages={nav.initialMessages}
-                initialAssistantMessage={nav.initialMessages.length === 0 ? nav.welcomeMessage : undefined}
+                welcomeMessage={nav.initialMessages.length === 0 ? nav.welcomeMessage : undefined}
                 placeholder="Add or change something..."
                 onConversationCreated={nav.setConversationId}
                 onBuildProgress={refetch}

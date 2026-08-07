@@ -106,7 +106,7 @@ export function useAiConversationNav() {
 
   const cancelRename = useCallback(() => setRenamingId(null), []);
 
-  // Seeded as AiChatThread's initialAssistantMessage for a brand-new chat
+  // Seeded as AiChatThread's welcomeMessage for a brand-new chat
   // (never shown once initialMessages is non-empty -- see that component's
   // own gating). A genuine first-timer (zero conversations ever) gets the
   // "what do you do" onboarding pitch; anyone who's already talked to this

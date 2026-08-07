@@ -177,18 +177,21 @@ export interface AiChatThreadProps {
   // (AiAssistantWidget) rather than own the whole viewport the way
   // app/(app)/dashboard/ai/page.tsx's chat pane does.
   compact?: boolean;
-  // Seeds the thread with an assistant message that's already there on
-  // load, no API round trip -- e.g. a welcome greeting. Purely local state;
-  // doesn't get persisted until the user actually sends their first
-  // message (same as every other turn).
-  initialAssistantMessage?: string;
+  // Shown in its own dedicated greeting block above the (empty) message
+  // list -- NOT seeded into `messages` as a fake first assistant turn the
+  // way this used to work. That earlier approach had it rendered exactly
+  // like a real reply (same markdown/bubble treatment) and, worse, got
+  // included in `history` sent to the model on the user's actual first
+  // message, fabricating a turn the assistant never produced. Reported
+  // live: it also just read as another line of chat, not a welcome.
+  // Cleared the moment there's a real message (see the render below).
+  welcomeMessage?: string;
   // For app/(app)/dashboard/ai/page.tsx's "open a past conversation" --
   // pass both alongside a `key` prop that changes per conversation (see
   // that page) so switching conversations remounts this component fresh
   // rather than needing conversationId/messages lifted into shared state.
   initialConversationId?: string | null;
   initialMessages?: ChatMessage[];
-  emptyStateHint?: string;
   placeholder?: string;
   // Bumped every time a create_table/create_dashboard/add_widget tool call
   // completes -- AiAssistantWidget uses this to refetch the tables list so
@@ -226,10 +229,9 @@ const STALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 export default function AiChatThread({
   compact = false,
-  initialAssistantMessage,
+  welcomeMessage,
   initialConversationId = null,
   initialMessages,
-  emptyStateHint,
   placeholder = "Describe your business...",
   onBuildProgress,
   onConversationCreated,
@@ -238,12 +240,8 @@ export default function AiChatThread({
   onUsageChange,
 }: AiChatThreadProps) {
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId);
-  // initialMessages?.length, not just `initialMessages ??` -- both current
-  // callers always pass a real (possibly empty) array, never undefined, so
-  // `??` never actually fell through to initialAssistantMessage. Confirmed
-  // live: the welcome message silently never rendered for either caller.
   const [messages, setMessages] = useState<ChatMessage[]>(
-    initialMessages && initialMessages.length > 0 ? initialMessages : (initialAssistantMessage ? [{ role: "assistant", content: initialAssistantMessage }] : [])
+    initialMessages ?? []
   );
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -455,9 +453,18 @@ export default function AiChatThread({
     <div className="flex flex-col h-full">
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto">
         <div className={`mx-auto w-full ${compact ? "" : "max-w-[720px]"} space-y-8`}>
-          {messages.length === 0 && emptyStateHint && (
-            <p className="text-[15px] text-slate-400 text-center py-16">{emptyStateHint}</p>
-          )}
+          {messages.length === 0 && welcomeMessage ? (
+            // A dedicated greeting, not a fake first chat bubble -- see
+            // this prop's own doc for why that used to be the shape here.
+            // Centered/iconed instead of just another line of left-aligned
+            // text so it actually reads as a welcome, not chat content.
+            <div className="flex flex-col items-center justify-center text-center gap-3 h-full min-h-[240px] py-10 px-6">
+              <div className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center">
+                <Sparkles size={18} className="text-slate-400" />
+              </div>
+              <p className="text-[17px] font-medium text-slate-700 leading-relaxed max-w-[440px]">{welcomeMessage}</p>
+            </div>
+          ) : (
           <AnimatePresence initial={false}>
             {messages.map((m, i) => {
               const isLast = i === messages.length - 1;
@@ -523,6 +530,7 @@ export default function AiChatThread({
               );
             })}
           </AnimatePresence>
+          )}
         </div>
       </div>
 
