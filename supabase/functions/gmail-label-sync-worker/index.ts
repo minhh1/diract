@@ -300,6 +300,23 @@ async function runDispatch(t0: number): Promise<Response> {
     migratingByJob.get(m.source_job_id)!.add(m.user_id);
   }
 
+  // See the matching fix/comment in gmail-email-sync-worker -- a migration
+  // item finishing (status 'done') was never reflected back onto its own
+  // source job's completed_users, so the job kept re-selecting forever
+  // (re-upserting the same already-done migration row, a no-op) and any mail
+  // that landed for a user AFTER their item finished could never get a
+  // fresh migration cycle, since the existing 'done' row blocks it under
+  // ignoreDuplicates. Staleness here is per-user, not project-wide -- unlike
+  // email_sync, label_sync only cares whether THIS user's own native
+  // message set grew, not whether anyone else's did.
+  const { data: doneMigratingRows } = await db.from("gmail_migration_jobs")
+    .select("id, source_job_id, user_id, updated_at").in("source_job_id", jobIds).eq("status", "done");
+  const doneMigratingByJob = new Map<string, Map<string, { id: string; updatedAt: string }>>();
+  for (const m of (doneMigratingRows || [])) {
+    if (!doneMigratingByJob.has(m.source_job_id)) doneMigratingByJob.set(m.source_job_id, new Map());
+    doneMigratingByJob.get(m.source_job_id)!.set(m.user_id, { id: m.id, updatedAt: m.updated_at });
+  }
+
   for (const job of jobs) {
     if (units.length >= MAX_UNITS_PER_TICK) break;
     const { id: jobId, company_id: companyId, project_id: projectId, label_code: labelCode, gmail_label_name: rawLabelName, completed_users, total_users } = job;
@@ -321,8 +338,7 @@ async function runDispatch(t0: number): Promise<Response> {
 
     const quarantinedSet = quarantinedByJob.get(jobId) || new Set();
     const migratingSet = migratingByJob.get(jobId) || new Set();
-    const pendingUsers = stillNeeded.filter(id => !quarantinedSet.has(id) && !migratingSet.has(id));
-    if (!pendingUsers.length) continue;
+    const doneMigrating = doneMigratingByJob.get(jobId) || new Map();
 
     const { data: dbLabel } = await db.from("project_gmail_labels")
       .select("removed_at").eq("project_id", projectId).eq("company_id", companyId).maybeSingle();
@@ -343,17 +359,51 @@ async function runDispatch(t0: number): Promise<Response> {
     // backlog that stopped draining for 2+ hours across 6+ matters, not any
     // of the mailbox/size/duplicate-job theories chased before this.
     const { data: dbEmails } = await db.from("project_emails")
-      .select("gmail_message_id, user_id").eq("project_id", projectId).eq("company_id", companyId);
+      .select("gmail_message_id, user_id, created_at").eq("project_id", projectId).eq("company_id", companyId);
     const msgIdsByUser = new Map<string, string[]>();
+    const newestByUser = new Map<string, string>();
     for (const e of (dbEmails || [])) {
       if (!msgIdsByUser.has(e.user_id)) msgIdsByUser.set(e.user_id, []);
       msgIdsByUser.get(e.user_id)!.push(e.gmail_message_id);
+      if (e.created_at && (!newestByUser.has(e.user_id) || e.created_at > newestByUser.get(e.user_id)!)) {
+        newestByUser.set(e.user_id, e.created_at);
+      }
     }
     // Project-wide total -- still the right measure for "is this label
     // migration-scale" (MIGRATION_THRESHOLD below) and for fastPath (a
     // project with genuinely zero synced emails yet, for anyone).
     const dbMsgIds = (dbEmails || []).map((e: any) => e.gmail_message_id);
     const fastPath = !isRemoved && dbMsgIds.length === 0;
+
+    // Reconcile users whose migration item already finished -- see the
+    // matching fix/comment above where doneMigratingByJob is built.
+    const reconciledUsers = new Set<string>();
+    if (!isRemoved) {
+      const newlyCompleted: string[] = [];
+      for (const userId of stillNeeded) {
+        const done = doneMigrating.get(userId);
+        if (!done) continue;
+        reconciledUsers.add(userId);
+        const newestForUser = newestByUser.get(userId) || "1970-01-01T00:00:00Z";
+        if (done.updatedAt >= newestForUser) {
+          newlyCompleted.push(userId);
+        } else {
+          await db.from("gmail_migration_jobs").update({
+            status: "pending", message_count: (msgIdsByUser.get(userId) || []).length, updated_at: new Date().toISOString(),
+          }).eq("id", done.id);
+        }
+      }
+      if (newlyCompleted.length) {
+        const updated = Array.from(new Set([...(completed_users || []), ...newlyCompleted]));
+        const allDone = updated.length >= (total_users || allUserIds.length);
+        await db.from("gmail_sync_jobs").update({
+          completed_users: updated, status: allDone ? "done" : "processing", updated_at: new Date().toISOString(),
+        }).eq("id", jobId);
+      }
+    }
+
+    const pendingUsers = stillNeeded.filter(id => !quarantinedSet.has(id) && !migratingSet.has(id) && !reconciledUsers.has(id));
+    if (!pendingUsers.length) continue;
 
     // Large backlog on an active (non-removed) label -- hand every
     // still-pending user for this job to the migration lane instead.
