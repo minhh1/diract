@@ -266,6 +266,66 @@ async function fetchCustomTableRecordLabels(
   });
 }
 
+// Every Matter picker across the app should show both the matter number
+// and the matter name, not just the name -- a name/address alone is
+// ambiguous once a firm has more than a handful of matters, and doesn't
+// match how a matter is referenced everywhere else (trust reports,
+// invoices, cheques). Resolved once and cached (RLS already scopes
+// company_custom_fields to the caller's own company, so no explicit
+// company_id filter is needed here) -- null for a company with no Matter
+// Number field at all (not using the Law Firm template), in which case
+// every call site below is a no-op.
+async function resolveMatterNumberFieldId(): Promise<string | null> {
+  return dedupedFetch('matter-number-field-id', async () => {
+    const { data } = await supabase
+      .from('company_custom_fields')
+      .select('id')
+      .eq('table_name', 'projects')
+      .eq('field_key', 'matter_number')
+      .is('deleted_at', null)
+      .maybeSingle();
+    return data?.id ?? null;
+  }, OPTIONS_CACHE_TTL_MS);
+}
+
+// Prepends each row's Matter Number onto its label ("<number>, <label>")
+// and into its searchText (so typing a matter number finds it too) --
+// comma-separated, not a dash, per AGENTS.md's "no em dash" rule (which
+// also covers ASCII dash-style separators in user-facing text). No-op for
+// a company with no Matter Number field, or for a row missing a value.
+async function prependMatterNumbers(rows: RelationOption[]): Promise<RelationOption[]> {
+  if (!rows.length) return rows;
+  const fieldId = await resolveMatterNumberFieldId();
+  if (!fieldId) return rows;
+  const ids = rows.map(r => r.id);
+  const { data } = await supabase
+    .from('company_custom_field_values')
+    .select('record_id, value_text')
+    .eq('field_id', fieldId)
+    .in('record_id', ids);
+  const byId = new Map((data || []).map((v: any) => [v.record_id, v.value_text as string]));
+  return rows.map(r => {
+    const num = byId.get(r.id);
+    if (!num) return r;
+    return {
+      ...r,
+      label: `${num}, ${r.label}`,
+      searchText: r.searchText ? `${num.toLowerCase()} ${r.searchText}` : num.toLowerCase(),
+    };
+  });
+}
+
+// Wraps appendDisplayField2 with the same auto matter-number prepending --
+// every single-value/multi-select label resolution path below goes through
+// this instead of calling appendDisplayField2 directly, so a Matter picker
+// gets its number without any of those call sites needing to know about it.
+async function resolveLabels(
+  rows: RelationOption[], linkedSystemTable: string, displayField2: string | null | undefined
+): Promise<RelationOption[]> {
+  const withSecondary = await appendDisplayField2(rows, linkedSystemTable, displayField2);
+  return linkedSystemTable === 'projects' ? prependMatterNumbers(withSecondary) : withSecondary;
+}
+
 // Resolves displayField2's value for a batch of system-table rows and
 // appends it onto each row's already-resolved label -- separate from the
 // primary field's own resolution since a 'cf:<id>' second field lives in
@@ -367,7 +427,7 @@ async function fetchAllSystemTableOptions(
     });
   }
 
-  return (rows || []).map((r: any) => {
+  const built = (rows || []).map((r: any) => {
     const primary = String(r[col] ?? 'Untitled');
     const secondary = col2IsCf ? cfByField.get(displayField2!.slice(3))?.get(r.id) : (col2Native ? r[col2Native] : null);
     const label = secondary ? `${primary} -- ${secondary}` : primary;
@@ -381,6 +441,7 @@ async function fetchAllSystemTableOptions(
       ...(isEntities ? { hasTrusteeRole: (r.roles || []).some((role: string) => TRUSTEE_ROLE_TYPES.includes(role)) } : {}),
     };
   });
+  return linkedSystemTable === 'projects' ? prependMatterNumbers(built) : built;
 }
 
 // Builds the exact same cache key the "fetch full list on open" effect
@@ -565,8 +626,8 @@ export default function RelationPicker({
         const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).eq('id', value).is('deleted_at', null).maybeSingle();
         const primary = data ? String((data as any)[col] ?? '') : '';
         if (!primary) return '';
-        const [withSecondary] = await appendDisplayField2([{ id: value, label: primary }], linkedSystemTable, displayField2);
-        return withSecondary.label;
+        const [resolved] = await resolveLabels([{ id: value, label: primary }], linkedSystemTable, displayField2);
+        return resolved.label;
       } else if (linkedTableId) {
         const [opt] = await fetchCustomTableRecordLabels(linkedTableId, [value], displayField2);
         return opt?.label || '';
@@ -594,7 +655,7 @@ export default function RelationPicker({
       if (linkedSystemTable) {
         const col = displayField || 'name';
         const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).in('id', unresolved).is('deleted_at', null);
-        resolved = await appendDisplayField2(
+        resolved = await resolveLabels(
           (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') })),
           linkedSystemTable, displayField2
         );
@@ -646,8 +707,8 @@ export default function RelationPicker({
       const { data } = await q.maybeSingle();
       if (!data) return null;
       const primary = String((data as any)[col] ?? '');
-      const [withSecondary] = await appendDisplayField2([{ id: (data as any).id, label: primary }], linkedSystemTable, displayField2);
-      return { id: (data as any).id, label: withSecondary.label };
+      const [resolved] = await resolveLabels([{ id: (data as any).id, label: primary }], linkedSystemTable, displayField2);
+      return { id: (data as any).id, label: resolved.label };
     }).then(row => {
       if (active && row) {
         setCurrentLabel(row.label);

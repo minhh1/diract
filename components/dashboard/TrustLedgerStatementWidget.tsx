@@ -12,6 +12,7 @@
 import { useState, useMemo } from "react";
 import { FileText, Printer } from "lucide-react";
 import { useRecordNames } from "@/lib/hooks/useRecordNames";
+import { useMatterNumbers } from "@/lib/hooks/useMatterNumbers";
 import { formatDateAU } from "@/lib/formatDate";
 import type { CustomTableRecord } from "@/lib/hooks/useCustomTable";
 
@@ -20,7 +21,17 @@ const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' 
 export default function TrustLedgerStatementWidget({ records }: { records: CustomTableRecord[] }) {
   const matterIds = useMemo(() => [...new Set(records.map(r => String(r.values.matter || '')).filter(Boolean))], [records]);
   const matterNames = useRecordNames('projects', matterIds);
+  const matterNumbers = useMatterNumbers(matterIds);
   const [selectedMatter, setSelectedMatter] = useState('');
+
+  // "<number>, <name>" -- matches every other Matter picker in the app
+  // (RelationPicker.tsx auto-prepends the same way); comma-separated, not a
+  // dash, per AGENTS.md's "no em dash" rule.
+  const matterLabel = (id: string) => {
+    const num = matterNumbers.get(id);
+    const name = matterNames.get(id) || id.slice(0, 8);
+    return num ? `${num}, ${name}` : name;
+  };
 
   const sortedMatterIds = useMemo(
     () => [...matterIds].sort((a, b) => (matterNames.get(a) || '').localeCompare(matterNames.get(b) || '')),
@@ -63,7 +74,7 @@ export default function TrustLedgerStatementWidget({ records }: { records: Custo
             className="bg-slate-50 border border-slate-200 rounded-full py-2 px-4 text-sm font-medium outline-none focus:ring-4 focus:ring-violet-100 appearance-none min-w-[200px]"
           >
             <option value="">Select a matter...</option>
-            {sortedMatterIds.map(id => <option key={id} value={id}>{matterNames.get(id) || id.slice(0, 8)}</option>)}
+            {sortedMatterIds.map(id => <option key={id} value={id}>{matterLabel(id)}</option>)}
           </select>
           {selectedMatter && (
             <button
@@ -82,7 +93,7 @@ export default function TrustLedgerStatementWidget({ records }: { records: Custo
         <div className="space-y-3">
           <div className="hidden print:block">
             <p className="text-lg font-bold text-slate-900">Trust Ledger Statement</p>
-            <p className="text-[13px] text-slate-600">Matter: {matterNames.get(selectedMatter) || selectedMatter}</p>
+            <p className="text-[13px] text-slate-600">Matter: {matterLabel(selectedMatter)}</p>
             {clientNames.get(clientId) && <p className="text-[13px] text-slate-600">Client: {clientNames.get(clientId)}</p>}
           </div>
 

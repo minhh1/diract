@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getAccessibleProjectIds } from "@/lib/projectAccess";
+import { prependMatterNumbers } from "@/lib/prependMatterNumbers";
 
 export async function GET(_req: NextRequest) {
   const auth = await authorizeCompanyMember();
@@ -33,7 +34,7 @@ export async function GET(_req: NextRequest) {
     .map(id => byId.get(id))
     .filter((p: any) => p && (accessible === "all" || accessible.has(p.id)));
 
-  return NextResponse.json({ projects: ordered });
+  return NextResponse.json({ projects: await prependMatterNumbers(admin, companyId, ordered) });
 }
 
 export async function POST(req: NextRequest) {

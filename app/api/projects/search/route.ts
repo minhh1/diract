@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getAccessibleProjectIds } from "@/lib/projectAccess";
+import { prependMatterNumbers } from "@/lib/prependMatterNumbers";
 
 export async function GET(req: NextRequest) {
   const auth = await authorizeCompanyMember();
@@ -21,5 +22,5 @@ export async function GET(req: NextRequest) {
   const accessible = await getAccessibleProjectIds(admin, companyId, user.id, isAdmin);
   const filtered = accessible === "all" ? (projects || []) : (projects || []).filter((p: any) => accessible.has(p.id));
 
-  return NextResponse.json({ projects: filtered });
+  return NextResponse.json({ projects: await prependMatterNumbers(admin, companyId, filtered) });
 }

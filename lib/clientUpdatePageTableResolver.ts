@@ -281,7 +281,35 @@ export async function searchRecords(
       }
     }
 
-    return [...(nameMatches || []), ...extraRecords].slice(0, 20).map((r: any) => ({ id: r.id, name: r[col] ?? "" }));
+    const results = [...(nameMatches || []), ...extraRecords].slice(0, 20).map((r: any) => ({ id: r.id, name: r[col] ?? "" }));
+
+    // Every Matter picker across the app shows both the matter number and
+    // the name, not just the name -- see RelationPicker.tsx's
+    // prependMatterNumbers for the same rule (comma-separated, not a dash,
+    // per AGENTS.md's "no em dash" rule).
+    if (recordTable === "projects" && results.length) {
+      const { data: matterNumberField } = await admin
+        .from("company_custom_fields")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("table_name", "projects")
+        .eq("field_key", "matter_number")
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (matterNumberField) {
+        const { data: numberValues } = await admin
+          .from("company_custom_field_values")
+          .select("record_id, value_text")
+          .eq("field_id", matterNumberField.id)
+          .in("record_id", results.map((r: any) => r.id));
+        const byId = new Map((numberValues || []).map((v: any) => [v.record_id, v.value_text]));
+        return results.map((r: any) => {
+          const num = byId.get(r.id);
+          return num ? { id: r.id, name: `${num}, ${r.name}` } : r;
+        });
+      }
+    }
+    return results;
   }
 
   const { data: table } = await admin.from("company_tables").select("primary_field_key").eq("id", recordTable).eq("company_id", companyId).maybeSingle();
