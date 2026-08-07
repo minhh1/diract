@@ -103,21 +103,20 @@ export default function AiAssistantWidget() {
   };
 
   return (
-    // Not h-full/flex-1 -- react-grid-layout (QuickGlanceCanvas.tsx) gives
-    // every cell a fixed PIXEL height (rowHeight * h) regardless of
-    // viewport width, with no responsive/mobile breakpoint handling at
-    // all. On a narrow phone that same fixed height (this widget's default
-    // layout is h:12, ~612px -- lib/dashboardWidgets/quickGlanceTypes.ts)
-    // is squarish on desktop but absurdly tall next to the shrunk mobile
-    // width. Every other widget already tolerates this by sizing to its
-    // own intrinsic content and leaving quiet background whitespace below
-    // -- this one was the outlier, explicitly stretching its bordered card
-    // to fill the whole oversized cell (confirmed live: a mostly-empty
-    // white rounded box with the input stranded near the top). Sizing to
-    // content instead, matching the others, rather than fixing the grid's
-    // actual sizing system (a much larger change affecting every widget).
-    <div className="space-y-3">
-      <div className="flex items-center gap-2.5">
+    // h-full/flex-1 again -- fills whatever height the grid cell actually
+    // is (its default h:12 row-count, or bigger/smaller if the widget's
+    // been resized -- lib/dashboardWidgets/quickGlanceTypes.ts), same as
+    // a normal chat surface covering its container rather than floating a
+    // fixed-size card inside it. This previously produced a mostly-empty
+    // box with the input stranded near the top, but that was because
+    // AiChatThread's OWN compact-mode root didn't have h-full either --
+    // its content just sat at natural size inside a stretched wrapper.
+    // Now that AiChatThread.tsx's root is unconditionally h-full, its
+    // internal flex-1 message area actually grows to fill whatever it's
+    // given and the input correctly lands at the bottom, so this is safe
+    // to fill again instead of being capped at a fixed pixel height.
+    <div className="h-full flex flex-col gap-3">
+      <div className="flex items-center gap-2.5 shrink-0">
         <Sparkles size={15} className="text-slate-400 shrink-0" />
         <p className="text-[13px] font-medium text-slate-700 flex-1">AI Assistant</p>
         {isAdmin && (
@@ -197,14 +196,10 @@ export default function AiAssistantWidget() {
       </div>
 
       {isAdmin ? (
-        // A fixed height WE pick (not h-full stretching to fill
-        // react-grid-layout's own oversized cell, the original mostly-
-        // empty-box bug) -- flex flex-col so AiChatThread's own h-full
-        // root can fill it and its message area actually grows into the
-        // space (via its internal flex-1) instead of collapsing to
-        // whatever's shortest. overflow-hidden here since AiChatThread's
-        // own message area is the one that scrolls internally.
-        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl overflow-hidden p-4 h-[420px] flex flex-col">
+        // flex-1 min-h-0 fills whatever's left after the header above --
+        // overflow-hidden since AiChatThread's own message area is the one
+        // that scrolls internally, not this card.
+        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl overflow-hidden p-4 flex-1 min-h-0 flex flex-col">
           <AiChatThread
             key={openedConversationId ?? "new"}
             compact
@@ -222,7 +217,7 @@ export default function AiAssistantWidget() {
           />
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl flex items-center justify-center p-8 text-center">
+        <div className="bg-white border border-slate-200 rounded-2xl flex-1 min-h-0 flex items-center justify-center p-8 text-center">
           <p className="text-[12px] text-slate-400">
             Ask a company admin to describe your business to the AI assistant to set up tables, fields, and dashboards.
           </p>
