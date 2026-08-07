@@ -765,6 +765,16 @@ export default function Sidebar() {
   // app/api/precedents/route.ts's matching server-side guard).
   const hasLawFirmTemplate = customTables.some(t => t.slug === 'trust-accounts');
 
+  // Mirrors QuickGlanceDashboard.tsx's own showCanvas logic exactly -- a
+  // templateless company (no is_from_template table yet) lands on Quick
+  // Glance too (the AI-assistant-widget canvas), not just Law Firm/Property
+  // Developer, so the nav button that gets it there needs the same
+  // condition. Only a company that installed some OTHER marketplace
+  // template (is_from_template true, but not one of the two purpose-built
+  // types) has nothing there to link to.
+  const hasTemplateTable = customTables.some(t => t.is_from_template);
+  const showsQuickGlance = ctxCompanyType === 'Law Firm' || ctxCompanyType === 'Property Developer' || !hasTemplateTable;
+
   // Whether to show the Precedents row in the table list. Also gated on the
   // company actually having a precedent library so a tenant without one
   // doesn't get a link to an empty page -- same reasoning as the Trust
@@ -1166,6 +1176,15 @@ export default function Sidebar() {
   const visibleCustomTables = customTables.filter(t =>
     !TRUST_PAGE_MANAGED_SLUGS.has(t.slug) && (t.effectiveDefault || visibleTables.includes(t.slug))
   );
+  // A brand-new company: system tables are hidden by default for
+  // templateless companies (see supabase/migrations/
+  // 20260805070000_hide_system_tables_for_templateless_companies.sql), so
+  // this stays true until the user either builds something (via Ask AI or
+  // the dashboard builder) or manually re-enables a system table via the
+  // visibility eye toggle. Not scoped to the loading flags -- once loaded,
+  // an empty result is a real empty result, not something to wait out.
+  const sidebarIsBlank = !profileLoading && !dashboardsLoading &&
+    visibleSystemTables.length === 0 && customTables.length === 0 && dashboards.length === 0;
   const isTableActive = (slug: string) =>
     pathname.includes(slug) &&
     !pathname.includes('gmail') &&
@@ -1440,10 +1459,13 @@ export default function Sidebar() {
 
           {activeRailSection === 'tables' && (
             <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-              {/* Quick Glance -- the landing page for company types that have
-                  a widget set built for them (see QuickGlanceDashboard.tsx);
-                  nothing to show/land on for any other company type. */}
-              {(ctxCompanyType === 'Law Firm' || ctxCompanyType === 'Property Developer') && (
+              {/* Quick Glance -- the landing page for Law Firm/Property
+                  Developer (a purpose-built widget set) AND any templateless
+                  company (the AI-assistant-widget canvas -- see
+                  QuickGlanceDashboard.tsx's own showCanvas, mirrored in
+                  showsQuickGlance above). Only a company on some OTHER
+                  installed template has nothing here to land on. */}
+              {showsQuickGlance && (
                 <button
                   onClick={() => { startNavigation(); router.push('/dashboard/quick-glance'); }}
                   aria-label="Quick Glance"
@@ -1458,6 +1480,31 @@ export default function Sidebar() {
                 </button>
               )}
 
+              {sidebarIsBlank ? (
+                // A brand-new company has nothing to browse yet -- Tables/
+                // Dashboards/saved views/the record tree would all just be
+                // a wall of "no X yet" placeholders. Point straight at Ask
+                // AI instead of showing that, since it's the intended way
+                // to actually get a first table built.
+                <div className="px-1">
+                  <button
+                    onClick={() => { startNavigation(); router.push('/dashboard/ai'); }}
+                    aria-label="Build your process"
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-[13px] font-medium transition-all ${
+                      pathname === '/dashboard/ai'
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <Sparkles size={16} className="shrink-0" />
+                    <span className="truncate">Build your process</span>
+                  </button>
+                  <p className="px-3 pt-2 text-[11px] text-slate-300 italic">
+                    Your tables and dashboards will appear here after you've created them.
+                  </p>
+                </div>
+              ) : (
+              <>
               {/* Tables */}
               <div className="mb-2">
                 <div className="relative" onClick={e => e.stopPropagation()}>
@@ -1879,6 +1926,8 @@ export default function Sidebar() {
                   </>
                 )}
               </div>
+              </>
+              )}
             </nav>
           )}
 
