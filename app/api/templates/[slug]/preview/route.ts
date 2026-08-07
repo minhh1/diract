@@ -39,6 +39,7 @@ function formulaDescription(
   switch (f.formula_type) {
     case 'multiply': return `${a} × ${b}`;
     case 'add': return `${a} + ${b}`;
+    case 'subtract': return `${a} - ${b}`;
     case 'percentage_of': return `${f.formula_percent ?? 0}% of ${a}`;
     case 'sum_related': {
       const rel = f.formula_related_table_slug

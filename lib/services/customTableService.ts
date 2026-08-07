@@ -314,16 +314,24 @@ function computeFormulaFields(fields: CustomTableField[], values: Record<string,
     // subtotal/gst/total_inc_gst permanently null, since this used to NaN
     // out and skip the add entirely the moment either side was untouched.
     // 'multiply'/'percentage_of' keep the stricter behavior -- a missing
-    // factor there genuinely can't be treated as a no-op.
+    // factor there genuinely can't be treated as a no-op. 'subtract' only
+    // extends the zero-default to its SECOND operand (b) below, not a
+    // (the minuend) here -- e.g. a Profit Margin = Price - Total Cost is
+    // meaningless with no Price at all, but a Total Cost that's still
+    // zero/unset is a legitimate "no cost recorded yet" reading of 0.
     const rawA = fieldA ? result[fieldA.field_key] : undefined;
     const a = rawA == null ? (field.formula_type === 'add' ? 0 : NaN) : Number(rawA);
     if (Number.isNaN(a)) continue;
 
-    if (field.formula_type === 'multiply' || field.formula_type === 'add') {
+    if (field.formula_type === 'multiply' || field.formula_type === 'add' || field.formula_type === 'subtract') {
       const fieldB = field.formula_field_b_id ? byId.get(field.formula_field_b_id) : null;
       const rawB = fieldB ? result[fieldB.field_key] : undefined;
-      const b = rawB == null ? (field.formula_type === 'add' ? 0 : NaN) : Number(rawB);
-      if (!Number.isNaN(b)) result[field.field_key] = field.formula_type === 'add' ? a + b : a * b;
+      const b = rawB == null ? (field.formula_type === 'add' || field.formula_type === 'subtract' ? 0 : NaN) : Number(rawB);
+      if (!Number.isNaN(b)) {
+        result[field.field_key] = field.formula_type === 'add' ? a + b
+          : field.formula_type === 'subtract' ? a - b
+          : a * b;
+      }
     } else if (field.formula_type === 'percentage_of') {
       result[field.field_key] = a * ((field.formula_percent ?? 0) / 100);
     }
