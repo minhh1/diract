@@ -238,8 +238,12 @@ export default function AiChatThread({
   onUsageChange,
 }: AiChatThreadProps) {
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId);
+  // initialMessages?.length, not just `initialMessages ??` -- both current
+  // callers always pass a real (possibly empty) array, never undefined, so
+  // `??` never actually fell through to initialAssistantMessage. Confirmed
+  // live: the welcome message silently never rendered for either caller.
   const [messages, setMessages] = useState<ChatMessage[]>(
-    initialMessages ?? (initialAssistantMessage ? [{ role: "assistant", content: initialAssistantMessage }] : [])
+    initialMessages && initialMessages.length > 0 ? initialMessages : (initialAssistantMessage ? [{ role: "assistant", content: initialAssistantMessage }] : [])
   );
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
