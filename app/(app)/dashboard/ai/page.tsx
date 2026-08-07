@@ -27,7 +27,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sparkles, Shield } from "lucide-react";
+import { Sparkles, Shield, Loader2 } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { useAiConversationNav } from "@/lib/hooks/useAiConversationNav";
 import AiConversationSidebar from "@/components/ai/AiConversationSidebar";
@@ -113,16 +113,29 @@ export default function AiAssistantPage() {
 
         <main className="flex-1 overflow-y-auto px-8 pb-8">
           <div className="h-full">
-            <AiChatThread
-              key={nav.openedConversationId ?? "new"}
-              initialConversationId={nav.openedConversationId}
-              initialMessages={nav.initialMessages}
-              emptyStateHint={'Tell it about your business, e.g. "I run a plumbing company with 10 employees, I want to create invoices and manage payroll" -- it\'ll set up the tables, fields, and dashboards for you.'}
-              onConversationCreated={nav.setConversationId}
-              onTurnComplete={nav.loadConversations}
-              onSendingChange={setSending}
-              onUsageChange={setUsage}
-            />
+            {/* Gated on conversationsLoading (not just companyLoading) --
+                AiChatThread's initialAssistantMessage only seeds its
+                internal useState once at mount, so mounting before
+                nav.welcomeMessage's real value (first-time vs personalized
+                "welcome back") is known would bake in the wrong one
+                permanently for this instance. This fetch is fast; the
+                spinner is brief. */}
+            {nav.conversationsLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 size={18} className="animate-spin text-slate-300" />
+              </div>
+            ) : (
+              <AiChatThread
+                key={nav.openedConversationId ?? "new"}
+                initialConversationId={nav.openedConversationId}
+                initialMessages={nav.initialMessages}
+                initialAssistantMessage={nav.initialMessages.length === 0 ? nav.welcomeMessage : undefined}
+                onConversationCreated={nav.setConversationId}
+                onTurnComplete={nav.loadConversations}
+                onSendingChange={setSending}
+                onUsageChange={setUsage}
+              />
+            )}
           </div>
         </main>
       </div>

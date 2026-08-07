@@ -8,12 +8,16 @@
 // not just visually similar -- keeping the mid-turn-remount and stale-open
 // fixes below (both found live, see their own comments) in one place means
 // a future third surface can't reintroduce either bug by copying stale code.
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useAiConversations } from "./useAiConversations";
+import { useProfile } from "./useProfile";
 import type { ChatMessage } from "@/components/ai/AiChatThread";
 
+const FIRST_TIME_WELCOME = 'Tell me what you do, and I\'ll help set your database up -- e.g. "I run a plumbing company with 10 employees, I want to track jobs, invoices, and payroll."';
+
 export function useAiConversationNav() {
-  const { conversations, refetch: loadConversations, rename, togglePin, remove } = useAiConversations();
+  const { conversations, loading: conversationsLoading, refetch: loadConversations, rename, togglePin, remove } = useAiConversations();
+  const { data: profile } = useProfile();
   // conversationId is for sidebar highlighting + telling AiChatThread which
   // conversation to POST against next; openedConversationId is what
   // actually drives AiChatThread's key/remount. They start in sync, but
@@ -82,9 +86,21 @@ export function useAiConversationNav() {
 
   const cancelRename = useCallback(() => setRenamingId(null), []);
 
+  // Seeded as AiChatThread's initialAssistantMessage for a brand-new chat
+  // (never shown once initialMessages is non-empty -- see that component's
+  // own gating). A genuine first-timer (zero conversations ever) gets the
+  // "what do you do" onboarding pitch; anyone who's already talked to this
+  // assistant before doesn't need re-onboarding every time they hit New
+  // chat, so they get a short personal greeting instead.
+  const welcomeMessage = useMemo(() => {
+    if (conversations.length === 0) return FIRST_TIME_WELCOME;
+    const firstName = profile?.full_name?.trim().split(/\s+/)[0];
+    return firstName ? `Welcome back, ${firstName}! What would you like to add or change?` : "Welcome back! What would you like to add or change?";
+  }, [conversations.length, profile?.full_name]);
+
   return {
-    conversations, loadConversations, togglePin,
-    conversationId, openedConversationId, initialMessages,
+    conversations, conversationsLoading, loadConversations, togglePin,
+    conversationId, openedConversationId, initialMessages, welcomeMessage,
     renamingId, renameValue, setRenameValue,
     startNewChat, openConversation, deleteConversation, startRename, confirmRename, cancelRename,
     setConversationId,

@@ -17,7 +17,7 @@
 // same nav state/handlers (lib/hooks/useAiConversationNav.ts) and the same
 // sidebar UI (AiConversationSidebar.tsx) so there's one copy of the
 // mid-turn-remount and stale-open fixes, not a third divergent one.
-import { Sparkles } from "lucide-react";
+import { Sparkles, Loader2 } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { useAiConversationNav } from "@/lib/hooks/useAiConversationNav";
@@ -59,21 +59,29 @@ export default function AiAssistantWidget() {
             onDelete={nav.deleteConversation}
           />
           <div className="flex-1 min-w-0 p-4 overflow-hidden">
-            <AiChatThread
-              key={nav.openedConversationId ?? "new"}
-              compact
-              initialConversationId={nav.openedConversationId}
-              initialMessages={nav.initialMessages}
-              initialAssistantMessage={
-                nav.initialMessages.length === 0
-                  ? 'Tell me what you do, and I\'ll help set your database up -- e.g. "I run a plumbing company with 10 employees, I want to track jobs, invoices, and payroll."'
-                  : undefined
-              }
-              placeholder="Add or change something..."
-              onConversationCreated={nav.setConversationId}
-              onBuildProgress={refetch}
-              onTurnComplete={nav.loadConversations}
-            />
+            {/* Gated on conversationsLoading -- see page.tsx's identical
+                comment: initialAssistantMessage only seeds AiChatThread's
+                internal state once at mount, so mounting before
+                nav.welcomeMessage's real value is known would bake in the
+                wrong one (first-time pitch vs personalized "welcome back")
+                permanently for this instance. */}
+            {nav.conversationsLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 size={18} className="animate-spin text-slate-300" />
+              </div>
+            ) : (
+              <AiChatThread
+                key={nav.openedConversationId ?? "new"}
+                compact
+                initialConversationId={nav.openedConversationId}
+                initialMessages={nav.initialMessages}
+                initialAssistantMessage={nav.initialMessages.length === 0 ? nav.welcomeMessage : undefined}
+                placeholder="Add or change something..."
+                onConversationCreated={nav.setConversationId}
+                onBuildProgress={refetch}
+                onTurnComplete={nav.loadConversations}
+              />
+            )}
           </div>
         </div>
       ) : (
