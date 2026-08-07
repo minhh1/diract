@@ -4,19 +4,21 @@ import { ExternalLink } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/use-theme';
 import { APP_URL } from '@/lib/config';
-import { computeSummaryTileValue, filterByConditions } from '@/lib/dashboardWidgets/compute';
+import { computeChartSeries, computeSummaryTileValue, filterByConditions } from '@/lib/dashboardWidgets/compute';
 import type { DashboardWidget } from '@/lib/dashboardWidgets/types';
 import type { CustomTableField, CustomTableRecord } from '@/lib/dashboardWidgets/customTableTypes';
+import { DashboardActivityChart } from './DashboardActivityChart';
 
 // Native port of components/dashboard/DashboardWidgetRenderer.tsx -- only
 // renders the subset actually reachable from mobile/src/app/(app)/dashboards/
-// today (heading, text, summary_tile, grid), matching the "core widgets
-// only" wedge described in mobile/README.md's dashboards section. Every
-// other DashboardWidget type (charts, the trust-accounting reports,
-// document export/import, the public-page shortcuts, ...) renders as an
-// "open on web" fallback card instead of a blank gap or a crash -- a
-// dashboard mixing supported and unsupported widgets still mostly works
-// natively, one widget at a time, rather than being all-or-nothing.
+// today (heading, text, summary_tile, grid, chart), matching the widget
+// coverage described in mobile/README.md's dashboards section. Every other
+// DashboardWidget type (the trust-accounting reports, document export/
+// import, the public-page shortcuts, quick-add forms, filter bars, ...)
+// renders as an "open on web" fallback card instead of a blank gap or a
+// crash -- a dashboard mixing supported and unsupported widgets still
+// mostly works natively, one widget at a time, rather than being
+// all-or-nothing.
 function formatTileValue(value: number, fieldType: string): string {
   if (fieldType === 'currency') {
     return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -114,6 +116,11 @@ export function DashboardWidgetRenderer({
           </View>
         </ScrollView>
       );
+    }
+
+    case 'chart': {
+      const series = computeChartSeries(widget.config, records, fieldById);
+      return <DashboardActivityChart series={series} granularity={widget.config.granularity ?? 'day'} chartType={widget.config.chartType} />;
     }
 
     default:
