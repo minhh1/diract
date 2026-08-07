@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -10,6 +10,16 @@ import type { RecordField, SystemTableName } from '@/lib/records';
 import { RelationPickerSheet } from '@/components/records/RelationPickerSheet';
 
 const RELATION_TYPES = new Set(['entity', 'project', 'property', 'table_relation']);
+
+// Whether a field renders as the plain TextInput at the bottom of
+// FieldInput (as opposed to a Pressable-driven relation/date/select picker
+// or a Switch) -- decides whether keyboard-return can chain focus to it.
+function isPlainTextField(field: RecordField): boolean {
+  if (RELATION_TYPES.has(field.fieldType)) return false;
+  if (field.fieldType === 'boolean' || field.fieldType === 'date') return false;
+  if (field.fieldType === 'select' && field.selectOptions?.length) return false;
+  return true;
+}
 
 function RelationInput({ field, value, onChange }: { field: RecordField; value: unknown; onChange: (v: unknown) => void }) {
   const theme = useTheme();
@@ -39,7 +49,21 @@ function RelationInput({ field, value, onChange }: { field: RecordField; value: 
   );
 }
 
-function FieldInput({ field, value, onChange }: { field: RecordField; value: unknown; onChange: (v: unknown) => void }) {
+function FieldInput({
+  field,
+  value,
+  onChange,
+  inputRef,
+  returnKeyType,
+  onSubmitEditing,
+}: {
+  field: RecordField;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  inputRef?: (el: TextInput | null) => void;
+  returnKeyType?: 'next' | 'done';
+  onSubmitEditing?: () => void;
+}) {
   const theme = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -99,11 +123,15 @@ function FieldInput({ field, value, onChange }: { field: RecordField; value: unk
 
   return (
     <TextInput
+      ref={inputRef}
       value={value == null ? '' : String(value)}
       onChangeText={(text) => onChange(field.fieldType === 'number' || field.fieldType === 'currency' ? (text === '' ? null : Number(text) || 0) : text)}
       placeholder={field.label}
       placeholderTextColor={theme.textSecondary}
       keyboardType={field.fieldType === 'number' || field.fieldType === 'currency' ? 'decimal-pad' : 'default'}
+      returnKeyType={returnKeyType}
+      onSubmitEditing={onSubmitEditing}
+      blurOnSubmit={returnKeyType === 'done'}
       style={[styles.input, { borderColor: theme.border, backgroundColor: theme.background, color: theme.text }]}
     />
   );
@@ -136,6 +164,7 @@ export function QuickAddFormWidget({
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const textInputRefs = useRef<Record<string, TextInput | null>>({});
 
   const fieldById = new Map(allFields.map((f) => [f.key, f]));
   const fields = fieldIds.map((id) => fieldById.get(id)).filter((f): f is RecordField => !!f);
@@ -158,9 +187,30 @@ export function QuickAddFormWidget({
 
   return (
     <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-      {fields.map((field) => (
-        <FieldInput key={field.key} field={field} value={values[field.key]} onChange={(v) => setValues((prev) => ({ ...prev, [field.key]: v }))} />
-      ))}
+      {fields.map((field, i) => {
+        if (!isPlainTextField(field)) {
+          return <FieldInput key={field.key} field={field} value={values[field.key]} onChange={(v) => setValues((prev) => ({ ...prev, [field.key]: v }))} />;
+        }
+        // Chains the keyboard's return key to the next plain-text field
+        // instead of leaving the user to tap it directly -- a field further
+        // down the form can end up rendered behind the keyboard with no
+        // way to scroll it into view until it's actually focused (found
+        // live: untappable, taps landed on the keyboard's own keys).
+        const nextField = fields.slice(i + 1).find(isPlainTextField);
+        return (
+          <FieldInput
+            key={field.key}
+            field={field}
+            value={values[field.key]}
+            onChange={(v) => setValues((prev) => ({ ...prev, [field.key]: v }))}
+            inputRef={(el) => {
+              textInputRefs.current[field.key] = el;
+            }}
+            returnKeyType={nextField ? 'next' : 'done'}
+            onSubmitEditing={() => (nextField ? textInputRefs.current[nextField.key]?.focus() : Keyboard.dismiss())}
+          />
+        );
+      })}
       {error && <Text style={{ color: theme.danger, fontSize: 12, fontWeight: '600' }}>{error}</Text>}
       <Pressable onPress={submit} disabled={saving} style={[styles.submitButton, { backgroundColor: theme.accent, opacity: saving ? 0.6 : 1 }]}>
         {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.submitButtonText}>Add</Text>}

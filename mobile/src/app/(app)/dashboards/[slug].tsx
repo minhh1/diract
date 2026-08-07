@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { ExternalLink } from 'lucide-react-native';
@@ -69,7 +69,12 @@ export default function DashboardViewScreen() {
   const sortedWidgets = [...widgets].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+    >
       {sortedWidgets.map((widget) => (
         <View key={widget.id} style={widget.type === 'summary_tile' ? undefined : styles.fullWidth}>
           <DashboardWidgetRenderer

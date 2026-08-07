@@ -103,12 +103,19 @@ export function DashboardWidgetRenderer({
       const columns = widget.config.fieldIds.map((id) => fieldById.get(id)).filter((f): f is CustomTableField => !!f);
       const rows = filterByConditions(records, widget.config.conditions, fieldById);
       if (columns.length === 0) return <Text style={{ color: theme.textSecondary, fontSize: 12 }}>This grid has no columns configured.</Text>;
+      // Fixed per-column width (config.columnWidths, else DashboardGrid's
+      // web default of 140px) applied identically to the header AND every
+      // row -- each cell used to size itself off its own text content, so
+      // a longer value in one row (e.g. "Acme Corp Merger" vs "Estate of
+      // Doe") pushed that row's later columns out of line with every other
+      // row's, found live comparing two rows' cell bounds side by side.
+      const columnWidth = (f: CustomTableField) => widget.config.columnWidths?.[f.id] ?? 140;
       return (
         <ScrollView horizontal showsHorizontalScrollIndicator style={[styles.gridBorder, { borderColor: theme.border }]}>
           <View>
             <View style={[styles.gridRow, styles.gridHeaderRow, { borderColor: theme.border, backgroundColor: theme.backgroundSelected }]}>
               {columns.map((f) => (
-                <Text key={f.id} style={[styles.gridCell, styles.gridHeaderCell, { color: theme.textSecondary }]}>
+                <Text key={f.id} numberOfLines={1} style={[styles.gridCell, styles.gridHeaderCell, { width: columnWidth(f), color: theme.textSecondary }]}>
                   {f.label}
                 </Text>
               ))}
@@ -116,7 +123,7 @@ export function DashboardWidgetRenderer({
             {rows.map((r) => (
               <View key={r.id} style={[styles.gridRow, { borderColor: theme.border }]}>
                 {columns.map((f) => (
-                  <Text key={f.id} numberOfLines={1} style={[styles.gridCell, { color: theme.text }]}>
+                  <Text key={f.id} numberOfLines={1} style={[styles.gridCell, { width: columnWidth(f), color: theme.text }]}>
                     {formatCellValue(r.values[f.field_key], f)}
                   </Text>
                 ))}
@@ -163,6 +170,6 @@ const styles = StyleSheet.create({
   gridBorder: { borderWidth: 1, borderRadius: 12 },
   gridRow: { flexDirection: 'row', borderBottomWidth: 1 },
   gridHeaderRow: { borderBottomWidth: 1 },
-  gridCell: { minWidth: 120, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13 },
+  gridCell: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 13 },
   gridHeaderCell: { fontWeight: '800', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3 },
 });
