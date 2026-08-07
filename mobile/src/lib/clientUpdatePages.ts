@@ -62,6 +62,15 @@ export type ClientUpdateItem = {
   notes: ClientUpdateNote[];
 };
 
+// Admin-set, company-wide default sort/filter for one group (see
+// app/api/client-update-pages/[id]/view-defaults/route.ts) -- a viewer's
+// own choice always overrides this, it's only the starting point.
+export type ClientUpdateViewDefault = {
+  group_id: string;
+  filters: { fieldId: string; values: string[] }[];
+  sort: { fieldId: string; dir: 'asc' | 'desc' }[];
+};
+
 export type ClientUpdateBoard = {
   page: {
     id: string;
@@ -74,6 +83,7 @@ export type ClientUpdateBoard = {
   groups: ClientUpdateGroup[];
   fields: ClientUpdateField[];
   items: ClientUpdateItem[];
+  viewDefaults: ClientUpdateViewDefault[];
 };
 
 async function unwrap<T>(res: Response): Promise<T> {
