@@ -25,11 +25,25 @@ export type DashboardSummary = {
   sourceTableType: string;
 };
 
+// A dashboard with restricted_to_team_id set (the "Irregularities"-style
+// admin-team dashboard, see AdminTeamsTab.tsx on web) only belongs in the
+// list for company_admin or that team's leader -- mirrors
+// lib/hooks/useCustomDashboards.ts's isVisibleRestrictedDashboard exactly.
+async function isVisibleRestrictedDashboard(userId: string | null, companyId: string, teamId: string): Promise<boolean> {
+  if (!userId) return false;
+  const { data: membership } = await supabase
+    .from('company_memberships')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (membership?.role === 'company_admin') return true;
+  const { data: team } = await supabase.from('teams').select('leader_id').eq('id', teamId).maybeSingle();
+  return team?.leader_id === userId;
+}
+
 // Mirrors lib/hooks/useCustomDashboards.ts's query and shared-or-mine
-// filter exactly. Unlike that hook, a team-restricted dashboard
-// (restricted_to_team_id set) is dropped entirely here rather than resolved
-// against team-leader membership -- an admin can still see/manage it on
-// web; this just isn't wired up to reproduce that one narrow gate yet.
+// filter exactly, including team-restricted dashboard visibility.
 export function useCompanyDashboardsList(userId: string | null, companyId: string | null) {
   return useQuery({
     queryKey: ['company-dashboards', companyId, userId],
@@ -45,8 +59,12 @@ export function useCompanyDashboardsList(userId: string | null, companyId: strin
         console.error('[useCompanyDashboardsList]', error.message);
         return [];
       }
-      return (data ?? [])
-        .filter((d) => !d.restricted_to_team_id)
+      const rows = data ?? [];
+      const visibility = await Promise.all(
+        rows.map((d) => (d.restricted_to_team_id && companyId ? isVisibleRestrictedDashboard(userId, companyId, d.restricted_to_team_id) : Promise.resolve(true))),
+      );
+      return rows
+        .filter((_, i) => visibility[i])
         .map((d) => ({ id: d.id, name: d.name, slug: d.slug, icon: d.icon, color: d.color, sourceTableType: d.source_table_type }));
     },
   });

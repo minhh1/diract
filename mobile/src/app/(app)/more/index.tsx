@@ -19,6 +19,7 @@ import {
   Monitor,
   Moon,
   Settings,
+  Share2,
   ShieldCheck,
   Sparkles,
   Store,
@@ -164,6 +165,17 @@ export default function MoreScreen() {
               <Bot size={17} color="#fff" />
             </IconBadge>
             <Text style={[styles.rowLabel, { color: theme.text }]}>AI assistant</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push('/more/public' as never)}
+          style={[styles.row, { backgroundColor: theme.backgroundElement }]}
+        >
+          <View style={styles.rowLeft}>
+            <IconBadge index={5} size={38}>
+              <Share2 size={17} color="#fff" />
+            </IconBadge>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>Shared pages</Text>
           </View>
         </Pressable>
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>OPEN ON THE WEB</Text>

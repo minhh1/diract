@@ -126,9 +126,12 @@ text sent immediately -- see `AiChatThread`'s `initialQuery` prop and
   Tasks -- see `../lib/hooks/useSystemTableAsCustomTable.ts`). Renders
   `heading`/`text`/`summary_tile`/`grid`/`chart`/`quick_add_form` widgets;
   everything else (the trust-accounting widgets, document export/import,
-  the public-page shortcuts, filter bars) shows an "open on web" card
-  instead of a blank gap, so a dashboard mixing supported and unsupported
-  widgets still mostly works. `chart` (`src/components/dashboard/DashboardActivityChart.tsx`)
+  filter bars) shows an "open on web" card instead of a blank gap, so a
+  dashboard mixing supported and unsupported widgets still mostly works.
+  A team-restricted dashboard (`restricted_to_team_id` set) is only listed
+  for `company_admin` or that team's leader, mirroring
+  `../lib/hooks/useCustomDashboards.ts`'s `isVisibleRestrictedDashboard`
+  exactly. `chart` (`src/components/dashboard/DashboardActivityChart.tsx`)
   is a simplified native port of its web counterpart: bar/line/area,
   multi-series with a tap-to-toggle legend, always the last 12 buckets
   regardless of granularity -- it drops the web version's day-granularity
@@ -151,12 +154,43 @@ text sent immediately -- see `AiChatThread`'s `initialQuery` prop and
   shape that logic expects, reusing rather than re-deriving mobile's own
   schema plumbing. Building/editing a dashboard is still web-only (see
   "Custom tables & boards" above).
+- **Shared pages** (More -> Shared pages, `src/app/(app)/more/public/`) --
+  native staff-side views of the three "public page" features that are
+  actually used in production (see `src/lib/publicTaskPages.ts`,
+  `documentFillPages.ts`, `clientUpdatePages.ts` for the full API-shape
+  notes; `finance_model_pages`/`residual_land_solver_pages` have zero rows
+  in production and aren't ported). Despite the shared "public" naming
+  these are three independent, differently-gated features, not one:
+  - **Task pages** (`public/tasks/[pageId].tsx`) -- genuinely requires a
+    signed-in session server-side (no PIN/anonymous path exists), scoped
+    by the page's `scope` (self/team/company/my_and_unassigned); per-
+    assignee tabs, tap to toggle a task complete. Editing/creating a task,
+    follow-ups, and checklist-template bulk-apply are still web-only.
+  - **Document pages** (`public/documents/[pageId].tsx`) -- genuinely
+    anonymous/PIN-gated even for a logged-in staff member (matching
+    `components/dashboard/DocumentPublicPageWidget.tsx`'s embed on web,
+    which hits the exact same code-gated endpoint); renders the template's
+    fields (respecting conditional trigger-field visibility and N/A), and
+    downloads the generated .docx/.zip via a signed URL opened in the
+    system browser.
+  - **Client update pages** (`public/updates/[slug].tsx`) -- the staff
+    ("by-slug") board, not the anonymous client one: every group/field
+    regardless of `client_visible`, not just what a client would see.
+    Groups nest one level (parent_group_id), shown as "Parent / Child"
+    section headers. Supports viewing field values (respecting the page's
+    `date_format` via `src/lib/dateFormat.ts`, a port of
+    `components/clientUpdatePages/dateFormat.ts`), the AI summary, adding
+    notes, and "ask AI about this matter" (`ai_ask_enabled`). Editing
+    values, groups, fields, and format rules is still web-only.
 
 ## What's not built yet (backlog)
 
 - **The rest of the dashboard-widget engine** -- the ~10 trust-accounting
-  report widgets, document export/import, the public-page shortcuts (task/
-  document/client-update pages), filter bars, and any board sourced from a
+  report widgets, document export/import, embedding a shared page as a
+  dashboard-canvas widget (the standalone screens themselves are built,
+  see "Shared pages" below -- just not the `public_task_page`/
+  `public_document_page`/`public_client_update_page` widget types that
+  embed one inline on a board), filter bars, and any board sourced from a
   genuine custom table rather than a system table. See the Dashboards
   entry above for exactly what's covered today and
   where the seams are; porting the rest is incremental from

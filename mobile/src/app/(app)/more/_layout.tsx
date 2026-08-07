@@ -12,6 +12,10 @@ export default function MoreStackLayout() {
       <Stack.Screen name="switch-company" options={{ title: 'Switch Company' }} />
       <Stack.Screen name="ai/index" options={{ title: 'AI Assistant' }} />
       <Stack.Screen name="ai/[id]" options={{ title: 'AI Assistant' }} />
+      <Stack.Screen name="public/index" options={{ title: 'Shared Pages' }} />
+      <Stack.Screen name="public/tasks/[pageId]" options={{ title: 'Task Page' }} />
+      <Stack.Screen name="public/documents/[pageId]" options={{ title: 'Document Page' }} />
+      <Stack.Screen name="public/updates/[slug]" options={{ title: 'Client Update' }} />
     </Stack>
   );
 }
