@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, Vie
 import { useQueryClient } from '@tanstack/react-query';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
 import { useRelationLabel } from '@/lib/relationLabels';
@@ -205,7 +206,7 @@ export function RecordDetailView({ tableName, recordId }: { tableName: SystemTab
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: 16, gap: 10 }}>
       <Text style={[styles.title, { color: theme.text }]}>{record.title}</Text>
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+      <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
         {fields.map((field) => (
           <FieldRow
             key={field.key}
@@ -223,7 +224,7 @@ export function RecordDetailView({ tableName, recordId }: { tableName: SystemTab
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  card: { borderRadius: 20, borderWidth: 1, overflow: 'hidden' },
+  card: { borderRadius: Radii.card, overflow: 'hidden' },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -236,5 +237,5 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
   value: { fontSize: 14, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
   input: { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 14, fontWeight: '600' },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.pill },
 });

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Check, FlaskConical } from 'lucide-react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { useTheme } from '@/hooks/use-theme';
+import { Radii } from '@/constants/theme';
+import { useGradients, useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
 import { useCompanyMemberships, switchActiveCompany, type CompanyMembership } from '@/lib/companies';
 
@@ -16,6 +18,7 @@ import { useCompanyMemberships, switchActiveCompany, type CompanyMembership } fr
 // comment on this (a company already visited this session stays cached).
 export default function SwitchCompanyScreen() {
   const theme = useTheme();
+  const gradients = useGradients();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { profile, refreshProfile } = useSession();
@@ -55,14 +58,20 @@ export default function SwitchCompanyScreen() {
               <Pressable
                 onPress={() => onSwitch(item.company_id)}
                 disabled={isActive || !!switchingTo}
-                style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement, opacity: switchingTo && !isActive ? 0.5 : 1 }]}
+                style={[styles.row, { backgroundColor: theme.backgroundElement, opacity: switchingTo && !isActive ? 0.5 : 1 }]}
               >
                 <View style={styles.rowLeft}>
-                  <View style={[styles.avatar, { backgroundColor: isActive ? theme.accent : theme.backgroundSelected }]}>
-                    <Text style={{ color: isActive ? '#fff' : theme.textSecondary, fontSize: 11, fontWeight: '800' }}>
-                      {item.company?.name?.substring(0, 2)?.toUpperCase() || '??'}
-                    </Text>
-                  </View>
+                  {isActive ? (
+                    <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.avatar}>
+                      <Text style={styles.avatarTextActive}>{item.company?.name?.substring(0, 2)?.toUpperCase() || '??'}</Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.avatar, { backgroundColor: theme.backgroundSelected }]}>
+                      <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '800' }}>
+                        {item.company?.name?.substring(0, 2)?.toUpperCase() || '??'}
+                      </Text>
+                    </View>
+                  )}
                   <View>
                     <View style={styles.nameRow}>
                       {item.company?.company_type === 'trial_sandbox' && <FlaskConical size={12} color={theme.textSecondary} />}
@@ -88,9 +97,10 @@ export default function SwitchCompanyScreen() {
 
 const styles = StyleSheet.create({
   list: { padding: 16, gap: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 14, borderWidth: 1 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: Radii.badge },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  avatarTextActive: { color: '#fff', fontSize: 11, fontWeight: '800' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   name: { fontSize: 14, fontWeight: '700' },
   role: { fontSize: 11, fontWeight: '600', marginTop: 2, textTransform: 'capitalize' },

@@ -5,6 +5,7 @@ import * as Crypto from 'expo-crypto';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Pin, Plus, Trash2 } from 'lucide-react-native';
 
+import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
 import { deleteConversation, fetchConversations, patchConversation, type ConversationSummary } from '@/lib/aiChat';
@@ -61,7 +62,7 @@ export default function AiConversationsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
-      <Pressable onPress={startNewChat} style={[styles.newChatRow, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+      <Pressable onPress={startNewChat} style={[styles.newChatRow, { backgroundColor: theme.backgroundSelected }]}>
         <Plus size={18} color={theme.accent} />
         <Text style={{ color: theme.accent, fontWeight: '700', fontSize: 14 }}>New chat</Text>
       </Pressable>
@@ -75,7 +76,7 @@ export default function AiConversationsScreen() {
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={{ color: theme.textSecondary, textAlign: 'center', marginTop: 40 }}>No conversations yet.</Text>}
           renderItem={({ item }) => (
-            <Pressable onPress={() => openConversation(item.id)} style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+            <Pressable onPress={() => openConversation(item.id)} style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={[styles.title, { color: theme.text }]}>
                   {item.title}
@@ -111,7 +112,7 @@ export default function AiConversationsScreen() {
 
       <Modal visible={!!renaming} transparent animationType="fade" onRequestClose={() => setRenaming(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+          <View style={[styles.modalCard, { backgroundColor: theme.backgroundElement }]}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Rename conversation</Text>
             <TextInput
               value={renameValue}
@@ -136,13 +137,13 @@ export default function AiConversationsScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  newChatRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, margin: 16, marginBottom: 8, padding: 14, borderRadius: 16, borderWidth: 1 },
+  newChatRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, margin: 16, marginBottom: 8, padding: 14, borderRadius: Radii.pill },
   list: { padding: 16, paddingTop: 8, gap: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 14, borderRadius: 14, borderWidth: 1 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 14, borderRadius: Radii.badge },
   title: { fontSize: 14, fontWeight: '700' },
   iconButton: { padding: 6, borderRadius: 10 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  modalCard: { width: '100%', borderRadius: 20, borderWidth: 1, padding: 20, gap: 14 },
+  modalCard: { width: '100%', borderRadius: Radii.card, padding: 20, gap: 14 },
   modalTitle: { fontSize: 15, fontWeight: '800' },
   modalInput: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 20 },

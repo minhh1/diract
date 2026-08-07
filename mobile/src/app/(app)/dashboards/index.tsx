@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import * as LucideIcons from 'lucide-react-native';
 import { LayoutDashboard, type LucideIcon } from 'lucide-react-native';
 
+import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
 import { useCompanyDashboardsList, type DashboardSummary } from '@/lib/companyDashboards';
@@ -37,10 +38,10 @@ export default function DashboardsListScreen() {
         return (
           <Pressable
             onPress={() => router.push({ pathname: '/dashboards/[slug]', params: { slug: item.slug } } as never)}
-            style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+            style={[styles.row, { backgroundColor: theme.backgroundElement }]}
           >
-            <View style={[styles.iconCircle, { backgroundColor: `${item.color}20` }]}>
-              <Icon size={18} color={item.color} />
+            <View style={[styles.iconCircle, { backgroundColor: item.color }]}>
+              <Icon size={18} color="#fff" />
             </View>
             <Text style={[styles.name, { color: theme.text }]}>{item.name}</Text>
           </Pressable>
@@ -53,7 +54,7 @@ export default function DashboardsListScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   list: { padding: 16, gap: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, borderWidth: 1 },
-  iconCircle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, paddingRight: 16, borderRadius: Radii.badge },
+  iconCircle: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   name: { fontSize: 15, fontWeight: '700' },
 });
