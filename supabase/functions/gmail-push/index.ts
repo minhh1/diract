@@ -19,6 +19,21 @@ async function logActivity(row: Record<string, unknown>): Promise<void> {
   try { await db.from("gmail_sync_log").insert(row); } catch (_) { /* never break sync over logging */ }
 }
 
+// A reply drafted inside an already-labelled thread inherits that thread's
+// label on every autosave, each of which gets its OWN message id (confirmed
+// live 2026-08-07: 8 distinct ids for one in-progress reply, snippet
+// growing longer each time). Without this check, every autosave got
+// tracked as a real project email, and each time the next autosave
+// superseded the last, the vanished id looked exactly like a non-admin
+// deleting a shared matter email -- triggering the auto-restore policy
+// over and over while the user was simply still typing. Gmail's history
+// API always includes labelIds on the embedded message object, so this
+// needs no extra fetch. Only a message that's actually been sent (no
+// longer carries DRAFT) should ever reach project_emails.
+function isDraftMessage(labelIds: string[] | null | undefined): boolean {
+  return !!labelIds?.includes("DRAFT");
+}
+
 async function heartbeat(name: string, durationMs: number, result: unknown): Promise<void> {
   try {
     await db.from("cron_heartbeats").upsert(
@@ -478,6 +493,7 @@ Deno.serve(async (req) => {
       for (const item of (event.labelsAdded || [])) {
         const msgId = item.message?.id;
         if (!msgId) continue;
+        if (isDraftMessage(item.message?.labelIds)) continue;
         for (const addedLabelId of (item.labelIds || [])) {
           const gmailLabel = gmailLabels.find(l => l.id === addedLabelId);
           if (!gmailLabel) continue;
@@ -595,6 +611,7 @@ Deno.serve(async (req) => {
       for (const item of (event.labelsRemoved || [])) {
         const msgId = item.message?.id;
         if (!msgId) continue;
+        if (isDraftMessage(item.message?.labelIds)) continue;
         for (const removedLabelId of (item.labelIds || [])) {
           const gmailLabel = gmailLabels.find(l => l.id === removedLabelId);
           if (!gmailLabel) { wholeLabelDeletionSuspected = true; continue; }
@@ -653,6 +670,7 @@ Deno.serve(async (req) => {
         if (!msg) continue;
         const msgId = msg.id;
         const msgLabelIds: string[] = msg.labelIds || [];
+        if (isDraftMessage(msgLabelIds)) continue;
 
         // Check if already has a company label
         let matchedCode: string | null = null;
