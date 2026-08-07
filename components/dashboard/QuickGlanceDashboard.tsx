@@ -19,12 +19,25 @@ import { Loader2, Pencil, Check, X } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { supabase } from "@/lib/supabase";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { useIsomorphicLayoutEffect } from "@/lib/hooks/useIsomorphicLayoutEffect";
 import { defaultQuickGlanceWidgets } from "@/lib/dashboardWidgets/defaultQuickGlanceLayout";
 import type { QuickGlanceWidget } from "@/lib/dashboardWidgets/quickGlanceTypes";
 
 const QuickGlanceCanvas = dynamic(() => import("./quickGlance/QuickGlanceCanvas"));
 
 const KNOWN_TYPES = ['Law Firm', 'Property Developer'];
+
+// Unlike company/table data (both already warmed elsewhere -- CompanyContext
+// primes its own shell cache right after auth resolves, useCustomTables.ts
+// has its own module-level warm cache), this widget arrangement had NO
+// caching at all: a fresh network round trip on every single visit before
+// anything painted, gated behind the plain Loader2 screen below. Reported
+// live: a warm return visit still sat on a spinner (should have painted
+// instantly the way the rest of the app does on a repeat visit). Same
+// stale-while-revalidate shape useDashboardData.ts already uses for a
+// company_dashboards row.
+const quickGlanceShellKey = (companyId: string) => `quick-glance:${companyId}`;
 
 export default function QuickGlanceDashboard() {
   const { companyId, companyType, userId, loading: companyLoading } = useCompany();
@@ -56,6 +69,19 @@ export default function QuickGlanceDashboard() {
   const [draft, setDraft] = useState<QuickGlanceWidget[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // Paints from the last-seen layout on the very first render (before the
+  // browser paints at all -- useIsomorphicLayoutEffect, not useEffect) so a
+  // repeat visit skips the widgets===null spinner entirely, same as a
+  // dashboard page already does via useDashboardData.ts. load() below still
+  // runs regardless and silently corrects/updates both this state and the
+  // cache -- this is a paint shortcut, not a substitute for the real fetch.
+  useIsomorphicLayoutEffect(() => {
+    if (!companyId) return;
+    const cached = readShellCache<QuickGlanceWidget[]>(quickGlanceShellKey(companyId));
+    if (cached) setWidgets(cached);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
+
   const load = useCallback(async () => {
     // companyType may be null here (a templateless company) --
     // defaultQuickGlanceWidgets(null, ...) has its own fallback arrangement
@@ -63,7 +89,9 @@ export default function QuickGlanceDashboard() {
     if (!companyId) return;
     const { data } = await supabase.from('company_quick_glance_layout').select('widgets').eq('company_id', companyId).maybeSingle();
     if (data) {
-      setWidgets(data.widgets || []);
+      const loaded = data.widgets || [];
+      setWidgets(loaded);
+      writeShellCache(quickGlanceShellKey(companyId), loaded);
       return;
     }
     // No row yet -- seed one with the default arrangement for this
@@ -72,6 +100,7 @@ export default function QuickGlanceDashboard() {
     const seeded = defaultQuickGlanceWidgets(companyType, timeFeeEntries?.id || null);
     await supabase.from('company_quick_glance_layout').upsert({ company_id: companyId, widgets: seeded });
     setWidgets(seeded);
+    writeShellCache(quickGlanceShellKey(companyId), seeded);
   }, [companyId, companyType, tables]);
 
   useEffect(() => {
@@ -110,6 +139,11 @@ export default function QuickGlanceDashboard() {
     await supabase.from('company_quick_glance_layout').update({ widgets: draft, updated_at: new Date().toISOString() }).eq('company_id', companyId);
     setSaving(false);
     setWidgets(draft);
+    // Keeps the cache in step with an explicit save -- without this, the
+    // NEXT visit's instant-paint effect above would hand back the layout
+    // from before this edit, looking silently reverted until load()'s own
+    // background fetch quietly corrected it a moment later.
+    writeShellCache(quickGlanceShellKey(companyId), draft);
     setEditing(false);
   };
 
