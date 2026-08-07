@@ -25,6 +25,15 @@ import { ymdInSydney } from "@/lib/companyLocalDate";
 
 const aud = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
 
+// "Pham, Huy" -> "PH" -- works regardless of "Last, First" vs "First Last"
+// ordering, just takes the first letter of the first two words.
+function initials(name: string): string {
+  const parts = name.split(/[\s,]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 type RangePreset = "this_month" | "this_week" | "all_time" | "custom";
 const PRESET_LABELS: Record<RangePreset, string> = {
   this_month: "This month", this_week: "This week", all_time: "All time", custom: "Custom",
@@ -172,32 +181,55 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
   // ('timekeeper'/'time' modes) and directly in the flat 'entries' table.
   // showStaff is false in 'timekeeper' mode, where the group header above
   // it already names the staff member.
-  const EntryRow = ({ entry, showStaff }: { entry: CustomTableRecord; showStaff: boolean }) => (
-    <div className="flex items-center gap-3 px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-[11px]">
-      <span className="text-slate-400 w-20 shrink-0">{String(entry.values.date || "").slice(0, 10)}</span>
-      {showStaff && (
-        <span className="text-slate-600 font-medium w-24 shrink-0 truncate">
-          {staffNames.get(String(entry.values.staff || "")) || "-"}
-        </span>
-      )}
-      <span className="flex-1 min-w-0 truncate text-slate-600">{entry.values.description || <span className="italic text-slate-300">No description</span>}</span>
-      <span className="text-slate-500 shrink-0">{Number(entry.values.duration_hours) || 0}h</span>
-      <span className="text-slate-500 shrink-0">${Number(entry.values.rate) || 0}/hr</span>
-      <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${entry.values.billable ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-        {entry.values.billable ? 'Billable' : 'Non-billable'}
-      </span>
-      <span className="font-semibold text-slate-900 w-16 text-right shrink-0">{aud.format(Number(entry.values.amount) || 0)}</span>
-      {canEdit && (
-        <button
-          onClick={e => { e.stopPropagation(); setEditingEntry(entry); }}
-          className="p-1 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all shrink-0"
-          title="Adjust this entry"
-        >
-          <Pencil size={11} />
-        </button>
-      )}
-    </div>
-  );
+  //
+  // Two lines, not one packed flex row -- the old single-row layout (date,
+  // full staff name, description, hours, rate, billable badge, amount, edit
+  // button all shrink-0 except description) didn't fit a narrow mobile
+  // widget: once the shrink-0 items alone exceeded the container width,
+  // description's flex-1 min-w-0 collapsed to zero and silently vanished,
+  // reported live as the whole row "breaking". Description is now the
+  // primary line (what the entry was actually for is the point of looking
+  // at it), with staff shrunk to a two-letter initials badge instead of the
+  // full "Last, First" name to make room -- both requested directly, not
+  // just the layout fix.
+  const EntryRow = ({ entry, showStaff }: { entry: CustomTableRecord; showStaff: boolean }) => {
+    const staffName = staffNames.get(String(entry.values.staff || "")) || "";
+    return (
+      <div className="flex flex-col gap-1 px-3 py-2 bg-white border border-slate-100 rounded-xl text-[11px]">
+        <div className="flex items-center gap-2">
+          <span className="flex-1 min-w-0 truncate text-slate-700 font-medium">
+            {entry.values.description || <span className="italic text-slate-300 font-normal">No description</span>}
+          </span>
+          <span className="font-semibold text-slate-900 shrink-0">{aud.format(Number(entry.values.amount) || 0)}</span>
+          {canEdit && (
+            <button
+              onClick={e => { e.stopPropagation(); setEditingEntry(entry); }}
+              className="p-1 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all shrink-0"
+              title="Adjust this entry"
+            >
+              <Pencil size={11} />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-slate-400">
+          {showStaff && staffName && (
+            <span
+              className="shrink-0 w-5 h-5 rounded-full bg-slate-100 text-slate-500 font-bold flex items-center justify-center text-[9px]"
+              title={staffName}
+            >
+              {initials(staffName)}
+            </span>
+          )}
+          <span className="shrink-0">{String(entry.values.date || "").slice(0, 10)}</span>
+          <span className="shrink-0">{Number(entry.values.duration_hours) || 0}h</span>
+          <span className="shrink-0">${Number(entry.values.rate) || 0}/hr</span>
+          <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${entry.values.billable ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+            {entry.values.billable ? 'Billable' : 'Non-billable'}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
