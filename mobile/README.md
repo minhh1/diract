@@ -84,15 +84,36 @@ notifications, you'll also need to:
   editor, templates, Outlook/Gmail inboxes, billing, virtual computers,
   marketplace, admin, and settings -- these open the responsive web
   dashboard in an in-app browser rather than a half-native rebuild.
+- **Dashboards** (Dashboards tab, `src/app/(app)/dashboards/`) -- a first,
+  intentionally partial native port of the web app's dashboard-widget
+  engine (`../lib/dashboardWidgets/`), viewing `company_dashboards`
+  ("boards") sourced from one of the 3 system tables the builder itself
+  allows as a board source (Matters/Properties/Leads & Contacts, not
+  Tasks -- see `../lib/hooks/useSystemTableAsCustomTable.ts`). Renders
+  `heading`/`text`/`summary_tile`/`grid` widgets; everything else (charts,
+  the trust-accounting widgets, document export/import, the public-page
+  shortcuts, quick-add forms, filter bars) shows an "open on web" card
+  instead of a blank gap, so a dashboard mixing supported and unsupported
+  widgets still mostly works. A board sourced from a genuine custom table
+  (not a system table) falls back to "open on web" entirely, since there's
+  no mobile port yet of `../lib/hooks/useCustomTable.ts`'s schema
+  resolution. `src/lib/dashboardWidgets/{types,compute,relativeDates}.ts`
+  are verbatim copies of their web counterparts (pure logic, zero
+  React/Next.js deps) kept byte-for-byte identical for easy re-syncing;
+  `src/lib/companyDashboards.ts` adapts `src/lib/records.ts`'s existing
+  field/record fetching into the shape that logic expects, reusing rather
+  than re-deriving mobile's own schema plumbing. Building/editing a
+  dashboard is still web-only (see "Custom tables & boards" above).
 
 ## What's not built yet (backlog)
 
-- **The dashboard-widget renderer** (data grids, summary tiles, charts,
-  the trust-accounting widgets, the schema/canvas builder) -- this is a
-  large, actively-evolving engine on the web side
-  (`../lib/dashboardWidgets/`); porting even a subset natively is its own
-  multi-day effort and wasn't attempted here beyond the plain record
-  list/detail views above.
+- **The rest of the dashboard-widget engine** -- charts, the ~10
+  trust-accounting report widgets, document export/import, the public-page
+  shortcuts (task/document/client-update pages), quick-add forms, filter
+  bars, and any board sourced from a genuine custom table rather than a
+  system table. See the Dashboards entry above for exactly what's covered
+  today and where the seams are; porting the rest is incremental from
+  here, not a rewrite.
 - **Outlook/Gmail, SMS, billing, marketplace screens** -- the Bearer-auth
   plumbing (`src/lib/api.ts`) and the Core CRM screens above prove the
   pattern works; these four still just open the web dashboard.

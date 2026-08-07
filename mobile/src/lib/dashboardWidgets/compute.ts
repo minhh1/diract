@@ -1,0 +1,223 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- verbatim copy, see header comment below */
+// Verbatim copy of lib/dashboardWidgets/compute.ts on the web app -- pure
+// per-widget aggregate math with zero React/Next.js/DOM dependencies, so
+// portable as-is. The only change from the original is the CustomTableField/
+// CustomTableRecord import, which points at this directory's own minimal
+// subset (see customTableTypes.ts's header comment) instead of the web
+// app's useCustomTable.ts.
+import type { CustomTableField, CustomTableRecord } from "./customTableTypes";
+import type { SummaryTileWidget, ChartWidget, ChartSeriesConfig, ChartGranularity, TileCondition } from "./types";
+import { matchesRelativeDate, type RelativeDateRange } from "./relativeDates";
+
+function isEmptyValue(v: any): boolean {
+  if (Array.isArray(v)) return v.length === 0; // allow_multiple relation fields
+  return v === undefined || v === null || v === '';
+}
+
+// Loose-typed on purpose (matches this DSL/widget system's existing
+// "never throw on mismatched input" posture -- see dsl.ts's error-collecting
+// parser): 'gt'/'gte'/'lt'/'lte' against a non-numeric value just compare as
+// NaN (always false) rather than throwing. Exported -- used directly by
+// DashboardGrid for per-column highlight rules (a single row's match/no-match,
+// not a whole-set filter, so it doesn't go through filterByConditions below).
+//
+// An allow_multiple relation field's rawValue is a string[] instead of a
+// scalar -- eq/neq/contains become membership checks against the array
+// ("is linked to X" / "is not linked to X"), is_set/is_empty check length,
+// and gt/gte/lt/lte (meaningless on a set of ids) fall through to the
+// default `true` like any other operator/type mismatch in this function.
+export function evaluateCondition(cond: TileCondition, rawValue: any): boolean {
+  if (Array.isArray(rawValue)) {
+    const asStrings = rawValue.map(v => String(v));
+    switch (cond.operator) {
+      case 'is_set': return asStrings.length > 0;
+      case 'is_empty': return asStrings.length === 0;
+      case 'eq': return asStrings.includes(String(cond.value ?? ''));
+      case 'neq': return !asStrings.includes(String(cond.value ?? ''));
+      case 'contains': return asStrings.some(v => v.toLowerCase().includes(String(cond.value ?? '').toLowerCase()));
+      default: return true;
+    }
+  }
+  switch (cond.operator) {
+    case 'is_set': return !isEmptyValue(rawValue);
+    case 'is_empty': return isEmptyValue(rawValue);
+    case 'eq': return String(rawValue ?? '') === String(cond.value ?? '');
+    case 'neq': return String(rawValue ?? '') !== String(cond.value ?? '');
+    case 'contains': return String(rawValue ?? '').toLowerCase().includes(String(cond.value ?? '').toLowerCase());
+    case 'gt': return Number(rawValue) > Number(cond.value);
+    case 'gte': return Number(rawValue) >= Number(cond.value);
+    case 'lt': return Number(rawValue) < Number(cond.value);
+    case 'lte': return Number(rawValue) <= Number(cond.value);
+    case 'date_relative': return matchesRelativeDate(rawValue, cond.value as RelativeDateRange);
+    default: return true;
+  }
+}
+
+// Keeps only rows matching every condition (AND) -- shared by
+// computeSummaryTileValue's own conditions below and GridWidget's
+// row-filter conditions (see DashboardWidgetRenderer's 'grid' case).
+// A condition referencing a deleted field silently drops (doesn't zero
+// every row), matching every other condition consumer in this file.
+export function filterByConditions(
+  records: CustomTableRecord[], conditions: TileCondition[] | undefined, fieldById: Map<string, CustomTableField>
+): CustomTableRecord[] {
+  if (!conditions?.length) return records;
+  let rows = records;
+  for (const cond of conditions) {
+    const condField = fieldById.get(cond.fieldId);
+    if (!condField) continue;
+    rows = rows.filter(r => evaluateCondition(cond, r.values[condField.field_key]));
+  }
+  return rows;
+}
+
+// Normalizes a tile's conditions, preferring the new array but falling back
+// to the old single filterFieldId/filterValue shape (an implicit `eq`) for
+// widgets saved before multi-condition support -- see the deprecation notes
+// on SummaryTileWidget in lib/dashboardWidgets/types.ts.
+function resolveConditions(config: SummaryTileWidget['config']): TileCondition[] {
+  if (config.conditions?.length) return config.conditions;
+  if (config.filterFieldId) return [{ fieldId: config.filterFieldId, operator: 'eq', value: config.filterValue ?? true }];
+  return [];
+}
+
+// Number of distinct non-empty values of `f` across `rows` -- lets a tile
+// target any field type, not just numeric ones (e.g. "4 distinct Statuses"
+// on a select field). For an allow_multiple relation field, `v` is a
+// string[] of linked ids per row -- flattened into the same set, so this
+// naturally becomes "N distinct linked records across every matched row"
+// (e.g. "3 linked Matters" summed across every row's own links) rather than
+// treating each row's whole array as one opaque value.
+function countDistinctOf(rows: CustomTableRecord[], f: CustomTableField | undefined): number {
+  if (!f) return 0;
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const v = r.values[f.field_key];
+    if (Array.isArray(v)) { v.forEach(x => { if (!isEmptyValue(x)) seen.add(String(x)); }); continue; }
+    if (!isEmptyValue(v)) seen.add(String(v));
+  }
+  return seen.size;
+}
+
+export function computeSummaryTileValue(
+  config: SummaryTileWidget['config'],
+  records: CustomTableRecord[],
+  fieldById: Map<string, CustomTableField>
+): { value: number; fieldType: string } {
+  const field = config.fieldId ? fieldById.get(config.fieldId) : undefined;
+  const rows = filterByConditions(records, resolveConditions(config), fieldById);
+  const sumOf = (f: CustomTableField | undefined) =>
+    rows.reduce((sum, r) => sum + (f ? Number(r.values[f.field_key]) || 0 : 0), 0);
+  const value = config.aggregate === 'count'
+    ? rows.length
+    : config.aggregate === 'count-distinct'
+      ? countDistinctOf(rows, field)
+      : config.aggregate === 'net'
+        ? sumOf(field) - sumOf(config.fieldBId ? fieldById.get(config.fieldBId) : undefined)
+        : sumOf(field);
+  return { value, fieldType: field?.field_type || 'number' };
+}
+
+// Normalizes a chart's series, preferring the new array but falling back to
+// the old singular valueFieldId/aggregate shape (one implicit, unlabeled,
+// unconditioned series) for widgets saved before multi-series support.
+// Unlike resolveConditions above, this resolves whole series objects, not
+// just a conditions array -- tile's and chart's legacy shapes are unrelated,
+// so this is a sibling function, not a generalization.
+// Note: `config.series?.length` is falsy for BOTH an absent series array
+// and a deliberately emptied one (e.g. every series row removed in the UI)
+// -- both fall to the legacy fallback, so a chart with zero configured
+// series still renders one flat (all-zero, since valueFieldId is usually
+// null then) series rather than genuinely none. Harmless -- matches the
+// builder's own "No series yet" empty state -- not distinguished further.
+function resolveChartSeries(config: ChartWidget['config']): ChartSeriesConfig[] {
+  if (config.series?.length) return config.series;
+  return [{ label: '', valueFieldId: config.valueFieldId ?? null, aggregate: config.aggregate ?? 'sum', conditions: [] }];
+}
+
+// 'YYYY-MM-DD' for day (unchanged), Monday-of-week for week, 1st-of-month
+// for month -- vanilla Date math, no library. `${day}T00:00:00` (no `Z`) is
+// load-bearing: it forces LOCAL midnight parsing, so a bare date string
+// doesn't shift a day backward in any negative-UTC-offset timezone (the
+// bug a naive `new Date('YYYY-MM-DD')` -- which parses as UTC midnight --
+// would introduce here).
+export function bucketKey(dateVal: any, granularity: ChartGranularity): string {
+  const day = String(dateVal).slice(0, 10);
+  if (granularity === 'day') return day;
+  const d = new Date(`${day}T00:00:00`);
+  if (granularity === 'month') {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+  // week: Monday-of-week. getDay(): 0=Sun..6=Sat. Days back to Monday:
+  // Sun->6, Mon->0, Tue->1, ... Sat->5, i.e. (dow + 6) % 7.
+  const diffToMonday = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - diffToMonday);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export interface ChartSeriesResult {
+  label: string;
+  fieldType: string; // lets the renderer format per-series (e.g. currency), not chart-wide
+  points: { bucket: string; value: number }[];
+  // Passed straight through from ChartSeriesConfig.axis -- see its doc
+  // comment in lib/dashboardWidgets/types.ts. Computation doesn't care about
+  // it at all; it's purely how DashboardActivityChart decides which series
+  // to show for the current axis-selector choice.
+  axis?: { name: string; choice: string }[];
+}
+
+export function computeChartSeries(
+  config: ChartWidget['config'],
+  records: CustomTableRecord[],
+  fieldById: Map<string, CustomTableField>
+): ChartSeriesResult[] {
+  const dateField = config.dateFieldId ? fieldById.get(config.dateFieldId) : undefined;
+  if (!dateField) return [];
+  const granularity = config.granularity ?? 'day';
+
+  return resolveChartSeries(config).map(series => {
+    const valueField = series.valueFieldId ? fieldById.get(series.valueFieldId) : undefined;
+    const byBucket = new Map<string, number>();
+    // Only populated for 'count-distinct' -- tracks each bucket's distinct
+    // values so the final count is per-bucket-unique, not a running total.
+    const distinctByBucket = new Map<string, Set<string>>();
+    for (const r of records) {
+      const dateVal = r.values[dateField.field_key];
+      if (!dateVal) continue;
+      const matches = (series.conditions || []).every(cond => {
+        const condField = fieldById.get(cond.fieldId);
+        // Referenced field deleted -- drop the condition (don't zero the row).
+        return !condField || evaluateCondition(cond, r.values[condField.field_key]);
+      });
+      if (!matches) continue;
+      const bucket = bucketKey(dateVal, granularity);
+      if (series.aggregate === 'count-distinct') {
+        const v = valueField ? r.values[valueField.field_key] : undefined;
+        if (!isEmptyValue(v)) {
+          if (!distinctByBucket.has(bucket)) distinctByBucket.set(bucket, new Set());
+          const set = distinctByBucket.get(bucket)!;
+          // allow_multiple relation field -- flatten this row's links into
+          // the bucket's set instead of treating the whole array as one
+          // opaque value (mirrors countDistinctOf's summary-tile version).
+          if (Array.isArray(v)) v.forEach(x => { if (!isEmptyValue(x)) set.add(String(x)); });
+          else set.add(String(v));
+        }
+        continue;
+      }
+      const amount = series.aggregate === 'count' ? 1 : (valueField ? Number(r.values[valueField.field_key]) || 0 : 0);
+      byBucket.set(bucket, (byBucket.get(bucket) || 0) + amount);
+    }
+    if (series.aggregate === 'count-distinct') {
+      for (const [bucket, values] of distinctByBucket) byBucket.set(bucket, values.size);
+    }
+    const points = Array.from(byBucket.entries())
+      .map(([bucket, value]) => ({ bucket, value }))
+      .sort((a, b) => a.bucket.localeCompare(b.bucket)); // lexicographic == chronological for all 3 key formats
+    return {
+      label: series.label || valueField?.label || (series.aggregate === 'count' ? 'Entries' : 'Value'),
+      fieldType: valueField?.field_type || 'number',
+      points,
+      axis: series.axis,
+    };
+  });
+}

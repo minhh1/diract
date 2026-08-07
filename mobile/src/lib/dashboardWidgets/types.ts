@@ -1,0 +1,483 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type -- verbatim copy, see header comment below */
+// Verbatim copy of lib/dashboardWidgets/types.ts on the web app -- pure type
+// definitions, no runtime code, so kept byte-for-byte identical rather than
+// re-derived, to make it easy to diff and re-sync when the web app adds a
+// new widget type. `mobile/src/components/dashboard/DashboardWidgetRenderer.tsx`
+// only actually renders a subset (see its own header comment); everything
+// else here still needs to type-check the full `DashboardWidget` union so a
+// dashboard mixing supported and unsupported widgets doesn't need special
+// casing to just parse.
+//
+// Canonical, ordered array of typed, positioned dashboard widgets -- the one
+// shape both Canvas (react-grid-layout) and Code (DSL) authoring modes read/
+// write, and the one shape the view page renders from. See
+// lib/dashboardWidgets/dsl.ts (DSL <-> widgets), lib/dashboardWidgets/legacyConvert.ts
+// (old company_dashboards columns -> widgets), and
+// components/dashboard/DashboardWidgetRenderer.tsx (widget -> presentational
+// component dispatch).
+//
+// Field references inside widget config are company_table_fields.id (uuid) --
+// the SAME convention as today's quick_add_field_ids/grid_field_ids/
+// filter_field_ids/summary_tiles/chart_config -- not field_key text. The DSL
+// is a human-typable *view* onto this: it parses field_key/label text down to
+// ids at parse time and serializes ids back to the field's *current*
+// field_key at serialize time, so canvas-mode widgets stay robust across a
+// field rename (id doesn't change) while code-mode text always reflects
+// current field_keys when regenerated.
+
+export interface WidgetLayout {
+  x: number; // 0-11, react-grid-layout grid units (12-column grid)
+  y: number; // row index, stacking order in code mode
+  w: number; // column span, 1-12
+  h: number; // row span, in rowHeight units
+}
+
+interface BaseWidget {
+  id: string; // crypto.randomUUID(), client-generated
+  layout: WidgetLayout;
+}
+
+export interface HeadingWidget extends BaseWidget {
+  type: 'heading';
+  config: { text: string; level: 1 | 2 | 3 };
+}
+
+export interface TextWidget extends BaseWidget {
+  type: 'text';
+  config: { text: string };
+}
+
+export interface FilterBarWidget extends BaseWidget {
+  type: 'filter_bar';
+  config: {
+    fieldIds: string[]; // max 2, mirrors filter_field_ids today -- also this widget's field POSITION (render order)
+    // Visual size/spacing of this widget's controls (RelationPicker/date/
+    // select/text inputs) -- see lib/dashboardWidgets/pillSize.ts. Undefined
+    // means 'md'/'normal', today's only look.
+    pillSize?: 'sm' | 'md' | 'lg';
+    pillGap?: 'tight' | 'normal' | 'loose';
+    // Per-field SIZE override, keyed by field id -- lets one pill run wider/
+    // narrower than pillSize's widget-wide default without changing every
+    // other field. Absent entry (or absent width) falls back to
+    // defaultFieldWidth(field.field_type) in pillSize.ts.
+    fieldLayout?: Record<string, { width?: 'sm' | 'md' | 'lg' | 'full' }>;
+  };
+}
+
+export interface QuickAddFormWidget extends BaseWidget {
+  type: 'quick_add_form';
+  config: {
+    fieldIds: string[]; // ordered, mirrors quick_add_field_ids -- also this widget's field POSITION (render order)
+    // See FilterBarWidget.config.pillSize/pillGap/fieldLayout above -- same meaning.
+    pillSize?: 'sm' | 'md' | 'lg';
+    pillGap?: 'tight' | 'normal' | 'loose';
+    fieldLayout?: Record<string, { width?: 'sm' | 'md' | 'lg' | 'full' }>;
+  };
+}
+
+export interface GridWidget extends BaseWidget {
+  type: 'grid';
+  config: {
+    fieldIds: string[]; // ordered, mirrors grid_field_ids -- column order
+    // Extra blank rows always kept at the bottom for fast spreadsheet-style
+    // entry -- typing into any cell of one creates a new record from it.
+    // Undefined/0 means none (today's behavior). Not offered on ledger
+    // tables (see DashboardGrid's readOnly).
+    emptyRowCount?: number;
+    // Per-column pixel width, keyed by field id. Missing entries fall back
+    // to DashboardGrid's default (140px) -- mirrors company_default_views'
+    // column_widths for the system-table master grid (see MasterTable.tsx/
+    // usePresetTable.ts), just stored on the widget instead of a separate
+    // per-table-slug row, since a grid widget's columns are already
+    // per-dashboard, not shared across every view of the source table.
+    columnWidths?: Record<string, number>;
+    // Only shows rows matching every condition (AND) -- a static, saved-with-
+    // the-widget filter, distinct from the interactive filter bar (which the
+    // viewer changes at will). Identical shape/semantics to a summary tile's
+    // conditions -- see TileCondition below and computeSummaryTileValue's
+    // sibling `filterByConditions` in compute.ts, which this reuses.
+    conditions?: TileCondition[];
+    // Per-column conditional highlight: when `condition` matches a row,
+    // that row's cell in this column gets `color`'s background instead of
+    // filtering rows out (that's `conditions` above) -- e.g. highlight
+    // Duration red when it's over 8 hours, or Status amber when Overdue.
+    // Condition can reference ANY field, not just the column it's attached
+    // to (e.g. highlight Amount when Status = Overdue). One rule per
+    // column; canvas-only (like columnWidths) -- not part of the DSL
+    // grammar, dropped like any other visual-only setting on a code-mode
+    // round-trip.
+    columnHighlights?: Record<string, { condition: TileCondition; color: 'red' | 'amber' | 'emerald' }>;
+    // Appends a footer row summing every visible number/currency column
+    // across the grid's current (filtered) records -- draft/empty rows
+    // never contribute, since they're not real records yet. Undefined/false
+    // means no footer (today's behavior).
+    showTotalsRow?: boolean;
+    // Restricts the totals footer to just these columns (field ids) -- e.g.
+    // sum Amount and count Billable but skip Rate, which is a per-unit price
+    // and meaningless summed across rows. Undefined falls back to every
+    // number/currency column (the original all-or-nothing behavior, kept so
+    // widgets saved before this existed don't silently go blank). A
+    // `boolean` column here counts checked rows instead of summing, since
+    // there's nothing to sum.
+    totalsColumns?: string[];
+  };
+}
+
+// One condition in a summary tile's "only count/sum rows where..." filter.
+// Multiple conditions on one tile are ANDed together. `value` is unused for
+// is_set/is_empty. Operator eligibility depends on the referenced field's
+// type -- see OPERATORS_BY_FIELD_TYPE in
+// components/dashboard/builder/WidgetConfigPanel.tsx -- but nothing here
+// enforces that at the data level, so a hand-written DSL script (or old
+// saved data) with a mismatched operator/type just evaluates loosely
+// (e.g. 'gt' on a text field does a numeric compare that's always false for
+// non-numeric text) rather than erroring.
+export interface TileCondition {
+  fieldId: string;
+  // 'date_relative' is date-field-only: `value` is a RelativeDateRange
+  // token from lib/dashboardWidgets/relativeDates.ts (e.g. "$this_week")
+  // instead of a literal 'YYYY-MM-DD' string -- see that module's doc
+  // comment for why a token, not a new value shape.
+  operator: 'eq' | 'neq' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_empty' | 'date_relative';
+  value?: any;
+}
+
+// One tile per widget now (was one entry in a summary_tiles array) --
+// independently positionable.
+export interface SummaryTileWidget extends BaseWidget {
+  type: 'summary_tile';
+  config: {
+    label: string;
+    fieldId: string | null;
+    // 'net' = sum(fieldId) - sum(fieldBId), e.g. a trust ledger's live
+    // balance from Amount In / Amount Out columns. 'count-distinct' = number
+    // of distinct non-empty values of fieldId across matched rows -- lets a
+    // tile target any field type, not just numeric ones (e.g. "4 distinct
+    // Statuses" on a select field). See lib/schema/fieldCapabilities.ts's
+    // aggregatesForType, which decides which of these a given field type
+    // offers.
+    aggregate: 'sum' | 'count' | 'net' | 'count-distinct';
+    fieldBId?: string | null;
+    // Every condition must match (AND) for a record to count. Preferred
+    // going forward over filterFieldId/filterValue below, which are kept
+    // only so widgets saved before multi-condition support still compute
+    // correctly -- see computeSummaryTileValue in
+    // lib/dashboardWidgets/compute.ts, which falls back to them as a single
+    // implicit `eq` condition when `conditions` is absent.
+    conditions?: TileCondition[];
+    /** @deprecated superseded by `conditions` -- read as a fallback only */
+    filterFieldId?: string | null;
+    /** @deprecated superseded by `conditions` -- read as a fallback only */
+    filterValue?: any;
+  };
+}
+
+export type ChartGranularity = 'day' | 'week' | 'month';
+
+// One measure plotted on a chart. Multiple series share the chart's single
+// dateFieldId/granularity (one x-axis) but each independently filters its
+// own rows via `conditions` -- identical shape/semantics to a summary
+// tile's conditions (every condition ANDed) -- and aggregates its own
+// value. Intended use: multiple measures of the SAME unit (e.g. billable
+// vs non-billable hours, both hours) -- see the hint text in
+// WidgetConfigPanel. Nothing here technically prevents mixing units on one
+// chart; per the dataviz skill, that belongs on a second chart widget
+// instead. Addressed by array index everywhere (no id field), matching how
+// tile conditions are addressed.
+export interface ChartSeriesConfig {
+  label: string;
+  valueFieldId: string | null;
+  aggregate: 'sum' | 'count' | 'count-distinct';
+  conditions?: TileCondition[];
+  // Tags this series into one labeled choice per named axis (e.g. axis
+  // "Type": choice "Billable"; axis "Metric": choice "Hours") -- when 2+
+  // series share an axis name with different choices, the chart renders
+  // that axis as a toggle-group selector and shows only the series whose
+  // choice matches the current selection on every axis it's tagged with
+  // (a series tagged on 2 axes needs both to match; the classic case is a
+  // 2x2 grid like Billable/Non-billable x Amount/Hours -- 4 series, 2 axes,
+  // exactly one visible at a time). A series with no axis tags is always
+  // shown and keeps the older click-a-legend-item-to-hide behavior instead.
+  // Axis/choice order in series config order is what decides the DEFAULT
+  // selection (first-seen choice per axis), so put the intended default
+  // first when authoring a tagged chart.
+  axis?: { name: string; choice: string }[];
+}
+
+export type ChartType = 'bar' | 'line' | 'area';
+
+export interface ChartWidget extends BaseWidget {
+  type: 'chart';
+  config: {
+    dateFieldId: string; // shared x-axis across every series -- never per-series
+    // Absent/undefined = 'bar' (today's only behavior, zero migration needed).
+    // 'line'/'area' plot the same bucketed points as an SVG path instead of
+    // bars -- same data, same interactive per-bucket hover/click, just a
+    // different mark. No 'pie' -- this chart's x-axis is always the date
+    // field bucketed by granularity, a shape pie charts don't represent.
+    chartType?: ChartType;
+    // Absent/undefined = 'day' (today's only behavior, zero migration needed).
+    granularity?: ChartGranularity;
+    // Preferred going forward. Absent/empty falls back to the deprecated
+    // valueFieldId/aggregate pair below as one implicit, unlabeled,
+    // unconditioned series -- see resolveChartSeries in compute.ts, which
+    // mirrors SummaryTileWidget's conditions/filterFieldId fallback (a
+    // sibling function, not a generalization -- chart's legacy fallback is
+    // a whole-series shape, not just a conditions-array shape).
+    series?: ChartSeriesConfig[];
+    /** @deprecated superseded by `series` -- read as a fallback only */
+    valueFieldId?: string | null;
+    /** @deprecated superseded by `series` -- read as a fallback only */
+    aggregate?: 'sum' | 'count';
+  };
+}
+
+// Trust three-way reconciliation (see components/dashboard/TrustReconciliationWidget.tsx).
+// No config: it always reconciles the dashboard's own bound table, reading
+// date/matter/amount_in/amount_out by field_key convention -- meaningful on
+// an append-only ledger table, an empty state on any other table.
+export interface TrustReconciliationWidget extends BaseWidget {
+  type: 'trust_reconciliation';
+  config: {};
+}
+
+// LEDES 1998B export list (see components/dashboard/LedesExportWidget.tsx).
+// No config: lists the dashboard's bound table's records with a per-row
+// LEDES download link, reading invoice_number/issue_date/status/
+// total_inc_gst by field_key convention.
+export interface LedesExportWidget extends BaseWidget {
+  type: 'ledes_export';
+  config: {};
+}
+
+// Per-matter trust ledger statement (see
+// components/dashboard/TrustLedgerStatementWidget.tsx) -- every transaction
+// for one matter, in date order, with running balance; printable. No
+// config: the matter is picked interactively within the widget.
+export interface TrustLedgerStatementWidget extends BaseWidget {
+  type: 'trust_ledger_statement';
+  config: {};
+}
+
+// Trust cash book (see components/dashboard/TrustCashBookWidget.tsx) --
+// every transaction across every matter, in date order, with a
+// whole-account running total. No config: date range is picked
+// interactively within the widget.
+export interface TrustCashBookWidget extends BaseWidget {
+  type: 'trust_cash_book';
+  config: {};
+}
+
+// Dormant/aged trust balances (see
+// components/dashboard/TrustAgedBalancesWidget.tsx) -- matters with a live
+// (non-zero) trust balance whose last transaction is older than
+// dormantDays, a common trust-compliance check for unclaimed money.
+export interface TrustAgedBalancesWidget extends BaseWidget {
+  type: 'trust_aged_balances';
+  config: { dormantDays: number };
+}
+
+// Generates (or manages) a shareable public_task_pages link scoped to
+// "assigned to me, plus unallocated" (see app/api/public-tasks/create/route.ts
+// and app/api/public-tasks/[pageId]/route.ts's 'my_and_unassigned' scope) --
+// unlike the self/team/company scopes creatable from Settings -> Public task
+// pages, this one lets the viewer assign new tasks to anyone, not just
+// themself, while still only ever showing/accepting projects they actually
+// have access to. pageId is null until the widget's own "Create" action
+// makes one; from then on it just links to/manages that one page, so it's
+// canvas state worth persisting, not re-derivable from anything else.
+export interface PublicTaskPageWidget extends BaseWidget {
+  type: 'public_task_page';
+  config: { pageId: string | null };
+}
+
+// Shortcut card for an EXISTING document_fill_pages link (see
+// app/api/document-templates/create-page/route.ts and
+// components/dashboard/tabs/DocumentTemplatesTab.tsx's "Client links",
+// which is still the only place one is actually created -- a fill page
+// needs a project + selected templates chosen up front, which a
+// standalone/record-scoped dashboard widget has no context for). Unlike
+// PublicTaskPageWidget this never creates a page itself; the config panel
+// just picks one of the company's existing active pages by id, company-wide
+// (not limited to whatever record this dashboard happens to be scoped to).
+export interface PublicDocumentPageWidget extends BaseWidget {
+  type: 'public_document_page';
+  config: { pageId: string | null };
+}
+
+// Generates (or picks an existing) client_update_pages board -- a
+// matter-status board a firm shares with a client (see
+// app/api/client-update-pages/create/route.ts and
+// components/settings/ClientUpdatePagesTab.tsx, still the other place one
+// can be created). Keyed by slug, not id -- that's what the public route
+// (app/public/updates/[slug]) and this widget's embedded content
+// (components/public/PublicClientUpdateContent.tsx) both address it by.
+// Unlike PublicDocumentPageWidget this CAN create a fresh one itself (only
+// a title is required up front -- matters/columns/groups are all added
+// afterward directly on the board, same as Settings' own create flow), so
+// it mirrors PublicTaskPageWidget's create-or-pick config shape instead.
+export interface PublicClientUpdatePageWidget extends BaseWidget {
+  type: 'public_client_update_page';
+  config: { slug: string | null };
+}
+
+// A button that opens a drawer listing the viewer's own assigned tasks
+// (tasks.assignee_id = the signed-in user, not company-wide) and lets them
+// turn one into a record on THIS dashboard's bound table in one click --
+// e.g. a lawyer's task "Draft caveat letter for Smith matter" becomes a
+// Time Entry with that text as the Description. descriptionFieldId is
+// which field on this table receives the task's (optionally AI-rewritten)
+// text; matterFieldId is an optional relation field that receives the
+// task's linked project id when both the task has one and this table has
+// somewhere to put it (e.g. a Matter field). Neither is resolved/validated
+// here -- see MyTasksButtonWidget's own handling of a null/deleted field.
+export interface MyTasksButtonWidget extends BaseWidget {
+  type: 'my_tasks_button';
+  config: {
+    label?: string; // undefined/empty means "My Tasks", the default
+    descriptionFieldId: string | null;
+    matterFieldId: string | null;
+  };
+}
+
+// A search box for any Project the signed-in viewer has access to (see
+// lib/projectAccess.ts's getAccessibleProjectIds, enforced server-side by
+// app/api/projects/search/route.ts), rendering that project's Finance
+// Model (components/public/PublicFinanceModelContent.tsx) below once
+// picked. No config -- unlike PublicTaskPageWidget/PublicClientUpdatePageWidget's
+// "create or pick one specific resource" shape, this is a session-local
+// lookup tool (same ephemeral-select precedent as
+// components/dashboard/TrustLedgerStatementWidget.tsx's matter picker):
+// whoever's viewing the dashboard searches whatever project they want to
+// look at right now, not a single project pinned to this widget instance.
+export interface FinanceModelWidget extends BaseWidget {
+  type: 'finance_model_search';
+  config: Record<string, never>;
+}
+
+// The Residual Land Value Solver as a dashboard widget
+// (components/public/ResidualLandSolverContent.tsx with allowProjectLink).
+// Inverse flow to FinanceModelWidget above: the GENERIC calculator renders
+// immediately (usable with nothing picked), and the viewer can then "Link
+// to a project" via the shared ProjectSearchPicker -- linking pushes their
+// entered values into that project's feasibility-inputs row and enables
+// persistence + customer share links. The link is session-local, no config.
+export interface ResidualLandSolverWidget extends BaseWidget {
+  type: 'residual_land_solver';
+  config: Record<string, never>;
+}
+
+// A button that opens a panel drafting Time & Fee Entries from the viewer's
+// own completed tasks + matter-linked emails for a chosen day (see
+// app/api/time-entries/auto-generate, .../submit) -- an AI-assisted
+// alternative to MyTasksButtonWidget's manual one-at-a-time convert flow,
+// purpose-built for the Time & Fee Entries table specifically (hardcoded
+// field_keys server-side, not configurable per-table like MyTasksButtonWidget
+// is), so there's no field-mapping config here at all. A company admin gets
+// an extra in-panel toggle to draft/push every staff member's day at once;
+// no separate widget type or config needed for that -- see
+// components/dashboard/AutoTimeRecordingPanel.tsx.
+export interface AutoTimeRecordingButtonWidget extends BaseWidget {
+  type: 'auto_time_recording_button';
+  config: { label?: string }; // undefined/empty means "Auto Time Recording"
+}
+
+// Time recorded per staff member over a chosen period (this month/this
+// week/all time/custom, picked in the widget itself) -- see
+// components/dashboard/TimeFeesReportWidget.tsx. Fed `allRecords` like the
+// trust_* report widgets above (ignores the dashboard's own filter bar),
+// which is already RLS-scoped per viewer (see that file's header comment),
+// so there's no separate admin/user config here either.
+export interface TimeFeesReportWidget extends BaseWidget {
+  type: 'time_fees_report';
+  config: Record<string, never>;
+}
+
+// Time & Fee Entries with no Invoice link (unbilled) whose own date is more
+// than config.agingDays old -- see components/dashboard/
+// TimeAgingReportWidget.tsx. Same RLS-scoped `allRecords` shape as
+// TimeFeesReportWidget above; agingDays mirrors TrustAgedBalancesWidget's
+// own dormantDays config.
+export interface TimeAgingReportWidget extends BaseWidget {
+  type: 'time_aging_report';
+  config: { agingDays: number };
+}
+
+// A per-row "export PDF" widget for ANY custom table (unlike ledes_export's
+// fixed field_key contract) -- lets the AI-assisted table/dashboard-builder
+// (see lib/ai/tableBuilderTools.ts's add_widget) give a freshly-built table
+// a working document output without needing it to match any fixed
+// industry template. 'letter' style renders the record's mapped fields onto
+// the company's own letterhead (see lib/precedents/renderLetterheadPdf.ts);
+// 'invoice' style renders a generic billing-document layout (see
+// lib/invoices/generateGenericInvoicePdf.ts) -- neither reuses the
+// Law-Firm-specific precedent/invoice pipelines, which are both tied to a
+// fixed field/relation contract this widget can't assume. Field ids are
+// resolved from labels at add-widget time (same convention as every other
+// configurable widget here), editable afterward via WidgetConfigPanel.
+export interface DocumentExportWidget extends BaseWidget {
+  type: 'document_export';
+  config: {
+    style: 'letter' | 'invoice';
+    letter?: {
+      recipientNameFieldId: string | null;
+      recipientAddressFieldId: string | null;
+      subjectFieldId: string | null;
+      bodyFieldId: string | null; // a text field holding the letter's flat body copy
+    };
+    invoice?: {
+      invoiceNumberFieldId?: string | null;
+      invoiceDateFieldId?: string | null;
+      dueDateFieldId?: string | null;
+      customerNameFieldId?: string | null;
+      customerAddressFieldId?: string | null;
+      descriptionFieldId?: string | null; // v1: one line item per record, from its own fields
+      amountFieldId?: string | null;
+      subtotalFieldId?: string | null;
+      taxFieldId?: string | null;
+      totalFieldId?: string | null;
+      // Which region's tax terminology to print next to the tax amount --
+      // see lib/invoices/generateGenericInvoicePdf.ts's TAX_SCHEMES for the
+      // value -> label mapping (e.g. 'au' -> "GST", 'eu' -> "VAT"). The tax
+      // AMOUNT itself always comes from taxFieldId above (this app doesn't
+      // compute tax); this only controls the printed label.
+      taxScheme?: string | null;
+      // Static free text (bank details, payment link, etc.), the same on
+      // every export from this widget -- entered once in widget settings,
+      // not sourced from a record field.
+      paymentDetails?: string | null;
+    };
+  };
+}
+
+// Upload-a-PDF-invoice-and-review-before-committing widget for ANY custom
+// table (see components/dashboard/InvoiceImportWidget.tsx) -- a generalized
+// sibling to the Law-Firm-specific disbursement invoice import
+// (DisbursementInvoiceImportModal.tsx/lib/disbursementInvoiceParser.ts):
+// same Claude PDF-document-input extraction, but a flatter schema (no
+// matter-grouping, no duplicate detection) and writes each parsed line item
+// as its own row directly on the dashboard's bound table (v1 -- no
+// header/detail child-table split) instead of one fixed 'disbursements'
+// table. Field ids resolved from labels at add-widget time, same
+// convention as every other configurable widget.
+export interface InvoiceImportWidget extends BaseWidget {
+  type: 'invoice_import';
+  config: {
+    descriptionFieldId: string | null; // required for the widget to do anything
+    amountFieldId: string | null; // required
+    supplierNameFieldId?: string | null;
+    invoiceNumberFieldId?: string | null;
+    invoiceDateFieldId?: string | null;
+  };
+}
+
+export type DashboardWidget =
+  | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
+  | GridWidget | SummaryTileWidget | ChartWidget
+  | TrustReconciliationWidget | LedesExportWidget
+  | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
+  | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget
+  | FinanceModelWidget | ResidualLandSolverWidget | AutoTimeRecordingButtonWidget
+  | TimeFeesReportWidget | TimeAgingReportWidget | DocumentExportWidget | InvoiceImportWidget;
+
+export type DashboardWidgetType = DashboardWidget['type'];
