@@ -197,7 +197,14 @@ export default function AiAssistantWidget() {
       </div>
 
       {isAdmin ? (
-        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl overflow-y-auto p-4">
+        // A fixed height WE pick (not h-full stretching to fill
+        // react-grid-layout's own oversized cell, the original mostly-
+        // empty-box bug) -- flex flex-col so AiChatThread's own h-full
+        // root can fill it and its message area actually grows into the
+        // space (via its internal flex-1) instead of collapsing to
+        // whatever's shortest. overflow-hidden here since AiChatThread's
+        // own message area is the one that scrolls internally.
+        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl overflow-hidden p-4 h-[420px] flex flex-col">
           <AiChatThread
             key={openedConversationId ?? "new"}
             compact

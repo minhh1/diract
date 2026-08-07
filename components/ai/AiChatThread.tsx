@@ -427,7 +427,12 @@ export default function AiChatThread({
   }, [input, sending, capReached, conversationId, messages, onConversationCreated, onSendingChange, onTurnComplete]);
 
   return (
-    <div className={`flex flex-col ${compact ? "" : "h-full"}`}>
+    // h-full unconditionally -- both callers now explicitly own a real
+    // bounding height for this to fill (the full page's own h-full chain,
+    // or AiAssistantWidget.tsx's fixed h-[420px] card), so the message
+    // area's flex-1 below has something concrete to grow into instead of
+    // collapsing to its own tiny natural size.
+    <div className="flex flex-col h-full">
       <div className={`flex-1 ${compact ? "max-h-[440px]" : ""} overflow-y-auto`}>
         <div className={`mx-auto w-full ${compact ? "" : "max-w-[720px]"} space-y-8`}>
           {messages.length === 0 && emptyStateHint && (
