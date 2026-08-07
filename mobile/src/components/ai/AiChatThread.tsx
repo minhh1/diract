@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { KeyboardEvent } from 'react-native';
 import { AlertTriangle, Brain, ChevronDown, ChevronRight, Send, Sparkles } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/use-theme';
@@ -48,9 +49,43 @@ export function AiChatThread({
   const [error, setError] = useState<string | null>(null);
   const [expandedThinking, setExpandedThinking] = useState<Record<number, boolean>>({});
   const scrollRef = useRef<ScrollView>(null);
+  const containerRef = useRef<View>(null);
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
 
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const jobUpdatedAtRef = useRef<number>(0);
+
+  // KeyboardAvoidingView's behavior="padding" under-compensates here (it
+  // measures its own frame via onLayout, which is stale/wrong when this
+  // screen sits inside a Stack nested in a bottom Tabs navigator -- the
+  // input row still ends up partly under the keyboard). Measuring the
+  // actual on-window position fresh at keyboard-show time and padding by
+  // the real overlap sidesteps that instead of guessing at header/tab-bar
+  // heights.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const applyOverlap = (e: KeyboardEvent) => {
+      containerRef.current?.measureInWindow((_x, y, _width, height) => {
+        const viewBottom = y + height;
+        const keyboardTop = e.endCoordinates.screenY;
+        const overlap = Math.max(0, viewBottom - keyboardTop);
+        LayoutAnimation.configureNext(LayoutAnimation.create(e.duration || 250, LayoutAnimation.Types.keyboard, LayoutAnimation.Properties.opacity));
+        setKeyboardOverlap(overlap);
+      });
+    };
+    const clearOverlap = (e: KeyboardEvent) => {
+      LayoutAnimation.configureNext(LayoutAnimation.create(e.duration || 250, LayoutAnimation.Types.keyboard, LayoutAnimation.Properties.opacity));
+      setKeyboardOverlap(0);
+    };
+    const showSub = Keyboard.addListener('keyboardWillShow', applyOverlap);
+    const frameSub = Keyboard.addListener('keyboardWillChangeFrame', applyOverlap);
+    const hideSub = Keyboard.addListener('keyboardWillHide', clearOverlap);
+    return () => {
+      showSub.remove();
+      frameSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     fetchUsage()
@@ -164,7 +199,7 @@ export function AiChatThread({
   }, [input, sending, capReached, messages, conversationId, onTurnComplete]);
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View ref={containerRef} style={{ flex: 1, backgroundColor: theme.background, paddingBottom: keyboardOverlap }}>
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
@@ -255,12 +290,17 @@ export function AiChatThread({
             multiline
             editable={!capReached}
           />
-          <Pressable onPress={send} disabled={sending || capReached || !input.trim()} style={{ opacity: sending || capReached || !input.trim() ? 0.4 : 1 }}>
+          <Pressable
+            onPress={send}
+            disabled={sending || capReached || !input.trim()}
+            accessibilityLabel="Send message"
+            style={{ opacity: sending || capReached || !input.trim() ? 0.4 : 1 }}
+          >
             {sending ? <ActivityIndicator size="small" color={theme.accent} /> : <Send size={20} color={theme.accent} />}
           </Pressable>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

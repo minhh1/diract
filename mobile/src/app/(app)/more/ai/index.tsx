@@ -85,6 +85,7 @@ export default function AiConversationsScreen() {
               <Pressable
                 hitSlop={8}
                 onPress={() => togglePin(item)}
+                accessibilityLabel={item.pinned ? 'Unpin conversation' : 'Pin conversation'}
                 style={[styles.iconButton, item.pinned && { backgroundColor: theme.backgroundSelected }]}
               >
                 <Pin size={15} color={item.pinned ? theme.accent : theme.textSecondary} fill={item.pinned ? theme.accent : 'transparent'} />
@@ -95,11 +96,12 @@ export default function AiConversationsScreen() {
                   setRenaming(item);
                   setRenameValue(item.title);
                 }}
+                accessibilityLabel="Rename conversation"
                 style={styles.iconButton}
               >
                 <Pencil size={15} color={theme.textSecondary} />
               </Pressable>
-              <Pressable hitSlop={8} onPress={() => confirmDelete(item)} style={styles.iconButton}>
+              <Pressable hitSlop={8} onPress={() => confirmDelete(item)} accessibilityLabel="Delete conversation" style={styles.iconButton}>
                 <Trash2 size={15} color={theme.danger} />
               </Pressable>
             </Pressable>

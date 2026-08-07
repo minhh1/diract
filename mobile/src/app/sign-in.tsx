@@ -378,7 +378,11 @@ export default function SignInScreen() {
               }}
               style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
             />
-            <Pressable style={styles.eyeButton} onPress={() => setShowPassword((v) => !v)}>
+            <Pressable
+              style={styles.eyeButton}
+              onPress={() => setShowPassword((v) => !v)}
+              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            >
               {showPassword ? <EyeOff color={theme.textSecondary} size={16} /> : <Eye color={theme.textSecondary} size={16} />}
             </Pressable>
           </View>
