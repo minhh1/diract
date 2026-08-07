@@ -1,8 +1,11 @@
 import { Stack } from 'expo-router';
 
+import { useThemedStackScreenOptions } from '@/hooks/use-theme';
+
 export default function MoreStackLayout() {
+  const screenOptions = useThemedStackScreenOptions();
   return (
-    <Stack>
+    <Stack screenOptions={screenOptions}>
       <Stack.Screen name="index" options={{ title: 'More' }} />
       <Stack.Screen name="properties/index" options={{ title: 'Properties' }} />
       <Stack.Screen name="properties/[id]" options={{ title: 'Property' }} />

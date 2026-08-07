@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { LinearGradient } from 'expo-linear-gradient';
 import { AlertCircle, CheckCircle2, Eye, EyeOff, Fingerprint, Globe } from 'lucide-react-native';
 
 import { APP_URL } from '@/lib/config';
@@ -20,12 +21,17 @@ import { signInWithGoogle } from '@/lib/googleOAuth';
 import { joinCompanyWithToken, validateInviteToken, type InviteTokenData } from '@/lib/inviteJoin';
 import { ensureStaffEntity } from '@/lib/staffEntityService';
 import { supabase } from '@/lib/supabase';
-import { useTheme } from '@/hooks/use-theme';
+import { Radii } from '@/constants/theme';
+import { useGradients, useTheme } from '@/hooks/use-theme';
+import { GradientButton } from '@/components/ui/GradientButton';
+import { GradientText } from '@/components/ui/GradientText';
+import { HeroBackground } from '@/components/ui/HeroBackground';
 
 type AuthMode = 'login' | 'register';
 
 export default function SignInScreen() {
   const theme = useTheme();
+  const gradients = useGradients();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -229,16 +235,17 @@ export default function SignInScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: theme.background }}
+      style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <HeroBackground>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+        <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
           <View style={styles.brandRow}>
-            <View style={styles.brandIcon}>
+            <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.brandIcon}>
               <Fingerprint color="#fff" size={26} />
-            </View>
-            <Text style={[styles.brandTitle, { color: theme.text }]}>Diract</Text>
+            </LinearGradient>
+            <GradientText style={styles.brandTitle}>Diract</GradientText>
             <Text style={[styles.brandSubtitle, { color: theme.textSecondary }]}>
               {mode === 'register'
                 ? isJoinInvite
@@ -255,7 +262,7 @@ export default function SignInScreen() {
               style={[
                 styles.banner,
                 {
-                  backgroundColor: inviteInvalid ? '#FEF2F2' : inviteData ? '#ECFDF5' : theme.backgroundSelected,
+                  backgroundColor: inviteInvalid ? theme.dangerBackground : inviteData ? theme.successBackground : theme.backgroundSelected,
                 },
               ]}
             >
@@ -281,24 +288,24 @@ export default function SignInScreen() {
           )}
 
           {error && (
-            <View style={[styles.banner, { backgroundColor: '#FEF2F2' }]}>
+            <View style={[styles.banner, { backgroundColor: theme.dangerBackground }]}>
               <AlertCircle color={theme.danger} size={14} />
               <Text style={[styles.bannerText, { color: theme.danger }]}>{error}</Text>
             </View>
           )}
           {success && (
-            <View style={[styles.banner, { backgroundColor: '#ECFDF5' }]}>
+            <View style={[styles.banner, { backgroundColor: theme.successBackground }]}>
               <CheckCircle2 color={theme.success} size={14} />
               <Text style={[styles.bannerText, { color: theme.success }]}>{success}</Text>
             </View>
           )}
 
           <Pressable
-            style={[styles.googleButton, { borderColor: theme.border }]}
+            style={[styles.googleButton, { borderColor: theme.border, backgroundColor: theme.backgroundSelected }]}
             disabled={googleLoading || loading || inviteInvalid}
             onPress={handleGoogle}
           >
-            {googleLoading ? <ActivityIndicator size="small" /> : <Globe color="#3B82F6" size={18} />}
+            {googleLoading ? <ActivityIndicator size="small" /> : <Globe color={theme.accentSecondary} size={18} />}
             <Text style={[styles.googleButtonText, { color: theme.text }]}>Continue with Google</Text>
           </Pressable>
 
@@ -416,25 +423,20 @@ export default function SignInScreen() {
             </Pressable>
           )}
 
-          <Pressable
-            style={[styles.submitButton, { opacity: loading || googleLoading || inviteInvalid ? 0.6 : 1 }]}
-            disabled={loading || googleLoading || inviteInvalid}
+          <GradientButton
+            style={styles.submitButton}
+            loading={loading}
+            disabled={googleLoading || inviteInvalid}
             onPress={mode === 'login' ? handleLogin : handleRegister}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitButtonText}>
-                {mode === 'login'
-                  ? isJoinInvite
-                    ? `Sign in & join ${inviteData?.company_name ?? 'company'}`
-                    : 'Sign in'
-                  : isJoinInvite
-                  ? `Create account & join ${inviteData?.company_name ?? 'company'}`
-                  : 'Create account'}
-              </Text>
-            )}
-          </Pressable>
+            {mode === 'login'
+              ? isJoinInvite
+                ? `Sign in & join ${inviteData?.company_name ?? 'company'}`
+                : 'Sign in'
+              : isJoinInvite
+              ? `Create account & join ${inviteData?.company_name ?? 'company'}`
+              : 'Create account'}
+          </GradientButton>
 
           <Pressable
             onPress={() => {
@@ -451,19 +453,19 @@ export default function SignInScreen() {
           </Pressable>
         </View>
       </ScrollView>
+      </HeroBackground>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 20 },
-  card: { borderRadius: 32, padding: 24, borderWidth: 1, gap: 12 },
+  card: { borderRadius: Radii.card, padding: 24, gap: 12 },
   brandRow: { alignItems: 'center', marginBottom: 8 },
   brandIcon: {
     width: 56,
     height: 56,
     borderRadius: 18,
-    backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
@@ -478,29 +480,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
-    borderRadius: 24,
+    borderRadius: Radii.pill,
     borderWidth: 1,
   },
   googleButtonText: { fontWeight: '700', fontSize: 14 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 4 },
   dividerLine: { flex: 1, height: 1 },
   dividerText: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  input: { padding: 14, borderRadius: 20, borderWidth: 1, fontSize: 14, fontWeight: '600' },
+  input: { padding: 14, borderRadius: Radii.input, borderWidth: 1, fontSize: 14, fontWeight: '600' },
   row: { flexDirection: 'row', gap: 8 },
   rowInput: { flex: 1 },
-  companyBlock: { borderWidth: 1, borderRadius: 20, padding: 12, gap: 8 },
+  companyBlock: { borderWidth: 1, borderRadius: Radii.input, padding: 12, gap: 8 },
   sectionLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   eyeButton: { position: 'absolute', right: 16, top: 14 },
   forgotRow: { alignItems: 'flex-end', marginTop: -4 },
   forgotText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-  submitButton: {
-    backgroundColor: '#0F172A',
-    paddingVertical: 16,
-    borderRadius: 24,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  submitButtonText: { color: '#fff', fontWeight: '800', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 },
+  submitButton: { marginTop: 6 },
   switchModeRow: { alignItems: 'center', marginTop: 6 },
   switchModeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
 });

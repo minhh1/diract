@@ -32,6 +32,26 @@ notifications, you'll also need to:
 2. Run `eas init` (needs an Expo account) to set `extra.eas.projectId` --
    push notifications no-op with a clear error until this exists.
 
+## Design system
+
+A vivid, gradient-accented look (dark-mode-first, drawing on Canva's mobile
+app) replaced the earlier flat corporate palette -- see
+`src/constants/theme.ts` (`Colors`, `Gradients`, `IconBadgeColors`, `Radii`)
+and `src/hooks/use-theme.ts` (`useTheme`, `useGradients`,
+`useThemedStackScreenOptions` -- the last one is required on every nested
+`Stack`'s `screenOptions`, or its header reverts to the system's white
+default regardless of app theme). Shared pieces live in `src/components/ui/`:
+`GradientButton` (primary CTAs), `GradientText` (hero headings, via
+`@react-native-masked-view/masked-view` + `expo-linear-gradient`),
+`IconBadge` (colorful circular icon backgrounds for quick-action rows,
+cycling through `IconBadgeColors` by index), `HeroBackground` (the soft
+gradient wash across a screen's top, fading into the flat theme
+background). New screens/components should reach for these instead of a
+one-off flat color or square icon. Not yet carried through: the AI
+assistant chat screen, dashboards' own widget cards, and detail-view
+screens (matter/lead/task) -- still on the old flat style pending a
+follow-up pass.
+
 ## What's built
 
 - **Auth** (`src/app/sign-in.tsx`) -- email/password, Google OAuth, invite

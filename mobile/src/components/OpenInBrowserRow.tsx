@@ -2,8 +2,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { ExternalLink, type LucideIcon } from 'lucide-react-native';
 
+import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { APP_URL } from '@/lib/config';
+import { IconBadge } from '@/components/ui/IconBadge';
 
 // A handful of Diract features (the low-code schema/dashboard builder, the
 // PDF editor, virtual-computer provisioning, billing, site-wide admin
@@ -14,15 +16,17 @@ import { APP_URL } from '@/lib/config';
 // user signs in there once. (The AI assistant used to be in this list too
 // -- see src/app/(app)/more/ai/ and its own README section for why it's a
 // native screen now.)
-export function OpenInBrowserRow({ label, path, icon: Icon }: { label: string; path: string; icon: LucideIcon }) {
+export function OpenInBrowserRow({ label, path, icon: Icon, index = 0 }: { label: string; path: string; icon: LucideIcon; index?: number }) {
   const theme = useTheme();
   return (
     <Pressable
       onPress={() => WebBrowser.openBrowserAsync(`${APP_URL}${path}`)}
-      style={[styles.row, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+      style={[styles.row, { backgroundColor: theme.backgroundElement }]}
     >
       <View style={styles.left}>
-        <Icon size={18} color={theme.textSecondary} />
+        <IconBadge index={index} size={38}>
+          <Icon size={17} color="#fff" />
+        </IconBadge>
         <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
       </View>
       <ExternalLink size={16} color={theme.textSecondary} />
@@ -35,10 +39,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
+    padding: 10,
+    paddingRight: 16,
+    borderRadius: Radii.badge,
   },
-  left: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  left: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   label: { fontSize: 14, fontWeight: '600' },
 });
