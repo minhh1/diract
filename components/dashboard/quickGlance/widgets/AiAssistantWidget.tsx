@@ -40,19 +40,24 @@ export default function AiAssistantWidget() {
   const nav = useAiConversationNav();
 
   return (
-    // max-h-[70dvh] alongside h-full -- the used height is whichever is
+    // max-h-[55dvh] alongside h-full -- the used height is whichever is
     // SMALLER, so this only ever clamps down, never forces growth. On a
-    // normal desktop monitor 70dvh comfortably exceeds this widget's
+    // normal desktop monitor 55dvh comfortably exceeds this widget's
     // grid-allocated height (h:20 in defaultQuickGlanceLayout.ts, a fixed
     // 800px), so nothing changes there. On a phone, that same fixed 800px
     // grid cell is TALLER than the entire visible screen -- combined with
     // AiChatThread's message area no longer being capped (see its own
     // max-h-440px removal), the input row ended up stranded below the
     // fold, invisible without a scroll a user had no reason to expect.
-    // Confirmed live via a real phone screenshot: welcome text visible,
-    // input nowhere on screen. This self-adjusts to the actual viewport
-    // instead of a guessed fixed breakpoint.
-    <div className="h-full max-h-[70dvh] flex flex-col">
+    // Confirmed via a real phone screenshot: welcome text visible, input
+    // nowhere on screen. 55dvh (not a rounder 50/60) was picked by
+    // measuring live against the setup_checklist widget's own real height
+    // above this one (fixed regardless of viewport) -- it's the value that
+    // keeps the input on-screen down to a ~650px visible viewport, close
+    // to the shortest a phone browser tab realistically gets once its own
+    // chrome is subtracted. This self-adjusts to the actual viewport
+    // instead of a guessed fixed breakpoint either way.
+    <div className="h-full max-h-[55dvh] flex flex-col">
       <div className="flex items-center gap-2.5 shrink-0 px-1 pb-3">
         <button
           onClick={() => setMobileNavOpen(true)}
