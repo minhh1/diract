@@ -40,6 +40,9 @@ yarn-error.log*
 # playwright mcp debug artifacts
 .playwright-mcp/
 
+# stray screenshots/duplicate files dropped at the repo root during work
+/local-files/
+
 # perf test suite -- real session cookies/tokens, never commit
 scripts/perf/auth-state.json
 
