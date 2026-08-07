@@ -22,6 +22,7 @@ import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomT
 import { updateRecord } from "@/lib/services/customTableService";
 import FieldValueInput from "./FieldValueInput";
 import { ymdInSydney } from "@/lib/companyLocalDate";
+import { formatDateAU } from "@/lib/formatDate";
 
 const aud = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
 
@@ -220,7 +221,7 @@ export default function TimeFeesReportWidget({ records, fields, tableId, company
               {initials(staffName)}
             </span>
           )}
-          <span className="shrink-0">{String(entry.values.date || "").slice(0, 10)}</span>
+          <span className="shrink-0">{formatDateAU(String(entry.values.date || "").slice(0, 10))}</span>
           <span className="shrink-0">{Number(entry.values.duration_hours) || 0}h</span>
           <span className="shrink-0">${Number(entry.values.rate) || 0}/hr</span>
           <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${entry.values.billable ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
