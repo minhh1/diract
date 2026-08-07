@@ -13,7 +13,7 @@ import {
   Database, Clock, Copy, ArrowLeft,
   ChevronRight, AlertCircle,
   Trash2, Building2, MapPin, LayoutGrid, CheckSquare, Table2, Upload, Wand2, X, ChevronDown, ChevronUp, Share2, Maximize2, PenSquare, Receipt,
-  Loader2, ArrowLeftRight,
+  Loader2, ArrowLeftRight, Mail,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
@@ -30,9 +30,10 @@ const PublicTaskPagesTab = dynamic(() => import("@/components/settings/PublicTas
 const ClientUpdatePagesTab = dynamic(() => import("@/components/settings/ClientUpdatePagesTab"));
 const PrecedentsSettingsTab = dynamic(() => import("@/components/settings/PrecedentsSettingsTab"));
 const InvoiceTemplateSettingsTab = dynamic(() => import("@/components/settings/InvoiceTemplateSettingsTab"));
+const EmailSignatureSettingsTab = dynamic(() => import("@/components/settings/EmailSignatureSettingsTab"));
 
 
-type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents" | "invoice_template";
+type SettingsView = "menu" | "history" | "schema" | "duplicates_menu" | "duplicates_view" | "public_pages" | "precedents" | "invoice_template" | "email_signature";
 
 type SystemDupTable = "properties" | "entities" | "projects" | "tasks";
 
@@ -130,7 +131,7 @@ function SettingsPageInner() {
   // button/menu clicks inside this page still just call setView directly.
   useEffect(() => {
     const v = searchParams.get("view");
-    if (v && ["menu", "history", "schema", "duplicates_menu", "duplicates_view", "public_pages", "precedents", "invoice_template"].includes(v)) {
+    if (v && ["menu", "history", "schema", "duplicates_menu", "duplicates_view", "public_pages", "precedents", "invoice_template", "email_signature"].includes(v)) {
       setView(v as SettingsView);
     }
   }, [searchParams.get("view")]);
@@ -336,6 +337,7 @@ function SettingsPageInner() {
     if (view === 'public_pages') return 'Public pages';
     if (view === 'precedents') return 'Precedents';
     if (view === 'invoice_template') return 'Invoice template';
+    if (view === 'email_signature') return 'Email signature';
     return 'Settings';
   };
 
@@ -436,6 +438,14 @@ function SettingsPageInner() {
                 </div>
                 <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
               </button>
+
+              <button onClick={() => setView("email_signature")} className="flex items-center justify-between p-6 bg-white border border-slate-200 rounded-[32px] hover:border-indigo-500 transition-all group shadow-sm">
+                <div className="flex items-center gap-5">
+                  <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-colors"><Mail size={20} /></div>
+                  <span className="text-[15px] font-medium text-slate-700">Email signature</span>
+                </div>
+                <ChevronRight size={18} className="text-slate-200 group-hover:text-indigo-600 transition-all"/>
+              </button>
             </div>
           )}
 
@@ -444,6 +454,9 @@ function SettingsPageInner() {
 
           {/* ── INVOICE TEMPLATE ── */}
           {view === 'invoice_template' && <InvoiceTemplateSettingsTab />}
+
+          {/* ── EMAIL SIGNATURE ── */}
+          {view === 'email_signature' && <EmailSignatureSettingsTab />}
 
           {/* ── IMPORT HISTORY ── */}
           {view === "history" && (

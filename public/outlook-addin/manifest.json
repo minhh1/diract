@@ -1,0 +1,69 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.25/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.25",
+  "id": "8f2c9c3e-6b4a-4f0a-9b2e-3a1c5d7e9f10",
+  "version": "1.0.0",
+  "name": {
+    "short": "Diract Signature",
+    "full": "Diract Email Signature"
+  },
+  "description": {
+    "short": "Applies your firm's standard email signature automatically.",
+    "full": "Automatically inserts your firm's standard email signature (managed in Diract's Settings) into every new message you compose, so it matches Gmail and looks the same across every platform your firm sends from."
+  },
+  "icons": {
+    "outline": "https://diract.io/outlook-addin/assets/icon-outline.png",
+    "color": "https://diract.io/outlook-addin/assets/icon-color.png"
+  },
+  "accentColor": "#4f46e5",
+  "developer": {
+    "name": "Diract",
+    "websiteUrl": "https://diract.io",
+    "privacyUrl": "https://diract.io/privacy",
+    "termsOfUseUrl": "https://diract.io/terms"
+  },
+  "localizationInfo": {
+    "defaultLanguageTag": "en-us"
+  },
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [
+        { "name": "Mailbox.ReadWrite.User", "type": "Delegated" }
+      ]
+    }
+  },
+  "validDomains": ["https://diract.io"],
+  "extensions": [
+    {
+      "requirements": {
+        "capabilities": [{ "name": "Mailbox", "minVersion": "1.10" }],
+        "scopes": ["mail"]
+      },
+      "runtimes": [
+        {
+          "id": "signature_runtime",
+          "type": "general",
+          "code": {
+            "page": "https://diract.io/outlook-addin/runtime/commands.html",
+            "script": "https://diract.io/outlook-addin/runtime/commands.js"
+          },
+          "lifetime": "short",
+          "actions": [
+            { "id": "insertSignature", "type": "executeFunction" }
+          ]
+        }
+      ],
+      "autoRunEvents": [
+        {
+          "requirements": {
+            "capabilities": [{ "name": "Mailbox", "minVersion": "1.10" }],
+            "scopes": ["mail"]
+          },
+          "events": [
+            { "type": "newMessageComposeCreated", "actionId": "insertSignature" }
+          ]
+        }
+      ]
+    }
+  ]
+}

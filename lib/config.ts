@@ -10,6 +10,12 @@ export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.labels',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.send',
+  // Added for the native email-signature feature (users.settings.sendAs.
+  // patch -- see lib/gmail/client.ts's setNativeSignature) -- every
+  // already-connected user predates this scope and needs a one-time
+  // reconnect before their signature can be pushed natively; see
+  // app/api/gmail/signature/route.ts's scope-missing handling.
+  'https://www.googleapis.com/auth/gmail.settings.basic',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/calendar.events',
 ].join(' ');

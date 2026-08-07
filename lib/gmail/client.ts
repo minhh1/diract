@@ -314,3 +314,37 @@ export async function sendEmail(
     }),
   });
 }
+
+// ── Native signature ───────────────────────────────────────────────
+// Sets the signature Gmail itself applies to every new message the user
+// composes -- web, mobile, desktop, not just through this app. Needs the
+// gmail.settings.basic scope (see lib/config.ts's GMAIL_SCOPES); a
+// currently-connected user predates it and gets a 403 here until they
+// reconnect (see the "scope missing" handling in app/api/gmail/signature/
+// route.ts, the only caller).
+export async function setNativeSignature(userId: string, signatureHtml: string, supabase: any): Promise<void> {
+  const token = await refreshTokenIfNeeded(userId, supabase);
+
+  const { data: tokenRow } = await supabase
+    .from('user_gmail_tokens')
+    .select('email')
+    .eq('user_id', userId)
+    .single();
+  if (!tokenRow?.email) throw new Error('Gmail not connected');
+
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs/${encodeURIComponent(tokenRow.email)}`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature: signatureHtml }),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err: any = new Error(body?.error?.message || `Gmail settings update failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+}
