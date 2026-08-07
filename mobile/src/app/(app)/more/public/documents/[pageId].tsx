@@ -104,7 +104,7 @@ export default function DocumentFillPageScreen() {
 
   if (query.isLoading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.background }]}>
+      <View style={[styles.center, { backgroundColor: theme.backgroundElement }]}>
         <ActivityIndicator />
       </View>
     );
@@ -112,7 +112,7 @@ export default function DocumentFillPageScreen() {
 
   if (query.data?.requiresCode) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.background, paddingHorizontal: 32, gap: 16 }]}>
+      <View style={[styles.center, { backgroundColor: theme.backgroundElement, paddingHorizontal: 32, gap: 16 }]}>
         <IconBadge index={1} size={56}>
           <Lock size={24} color="#fff" />
         </IconBadge>
@@ -126,7 +126,7 @@ export default function DocumentFillPageScreen() {
           placeholderTextColor={theme.textSecondary}
           returnKeyType="done"
           onSubmitEditing={() => setCodeAttempt(code.trim())}
-          style={[styles.codeInput, { backgroundColor: theme.backgroundElement, color: theme.text }]}
+          style={[styles.codeInput, { backgroundColor: theme.background, color: theme.text }]}
         />
         <GradientButton onPress={() => setCodeAttempt(code.trim())} style={{ alignSelf: 'stretch' }}>
           Continue
@@ -136,7 +136,7 @@ export default function DocumentFillPageScreen() {
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={styles.content}>
+    <ScrollView style={{ flex: 1, backgroundColor: theme.backgroundElement }} contentContainerStyle={styles.content}>
       <View style={styles.headingRow}>
         <IconBadge index={1} size={44}>
           <FileSignature size={20} color="#fff" />
