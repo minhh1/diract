@@ -27,7 +27,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sparkles, Shield, Loader2 } from "lucide-react";
+import { Sparkles, Shield, Loader2, PanelLeft } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { useAiConversationNav } from "@/lib/hooks/useAiConversationNav";
 import AiConversationSidebar from "@/components/ai/AiConversationSidebar";
@@ -39,6 +39,10 @@ export default function AiAssistantPage() {
   const nav = useAiConversationNav();
   const [sending, setSending] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
+  // Sidebar starts hidden below md (see the wrapper's own comment) --
+  // reported live: on a phone the 64-wide conversation list ate the whole
+  // screen, leaving no room for the chat itself.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   if (companyLoading) return null;
 
@@ -66,26 +70,50 @@ export default function AiAssistantPage() {
     // drags that ancestor scroll container down to compensate, which
     // visually shoves this page's header up behind the banner. Confirmed
     // live: this is what caused it, not the header restyle itself.
-    <div className="flex h-full bg-[#FAF9F6] font-sans antialiased text-slate-600 overflow-hidden">
-      <AiConversationSidebar
-        conversations={nav.conversations}
-        activeId={nav.conversationId}
-        renamingId={nav.renamingId}
-        renameValue={nav.renameValue}
-        onRenameValueChange={nav.setRenameValue}
-        onNew={nav.startNewChat}
-        onSelect={nav.openConversation}
-        onStartRename={nav.startRename}
-        onConfirmRename={nav.confirmRename}
-        onCancelRename={nav.cancelRename}
-        onTogglePin={nav.togglePin}
-        onDelete={nav.deleteConversation}
-      />
+    <div className="relative flex h-full bg-[#FAF9F6] font-sans antialiased text-slate-600 overflow-hidden">
+      {/* Below md, the sidebar is an off-canvas drawer (only the chat shows
+          by default) rather than a permanent column -- toggled via the
+          header button, and a tap on the backdrop or picking/starting a
+          chat closes it again. md: resets it back to a normal in-flow
+          column, same as before this existed. */}
+      <div
+        className={`absolute inset-y-0 left-0 z-20 bg-[#FAF9F6] shadow-xl md:shadow-none transition-transform duration-200 ease-out md:static md:translate-x-0 md:z-auto ${
+          mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <AiConversationSidebar
+          conversations={nav.conversations}
+          activeId={nav.conversationId}
+          renamingId={nav.renamingId}
+          renameValue={nav.renameValue}
+          onRenameValueChange={nav.setRenameValue}
+          onNew={() => { nav.startNewChat(); setMobileNavOpen(false); }}
+          onSelect={(id) => { nav.openConversation(id); setMobileNavOpen(false); }}
+          onStartRename={nav.startRename}
+          onConfirmRename={nav.confirmRename}
+          onCancelRename={nav.cancelRename}
+          onTogglePin={nav.togglePin}
+          onDelete={nav.deleteConversation}
+        />
+      </div>
+      {mobileNavOpen && (
+        <div
+          onClick={() => setMobileNavOpen(false)}
+          className="absolute inset-0 z-10 bg-black/30 md:hidden"
+        />
+      )}
 
       {/* Chat */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="shrink-0 px-8 py-5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Show conversations"
+              className="md:hidden -ml-1.5 p-1.5 text-slate-500 hover:text-slate-700"
+            >
+              <PanelLeft size={17} />
+            </button>
             <motion.div
               animate={sending ? { opacity: [0.5, 1, 0.5] } : { opacity: 1 }}
               transition={sending ? { repeat: Infinity, duration: 1.2, ease: "easeInOut" } : undefined}
