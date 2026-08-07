@@ -49,9 +49,13 @@ export function defaultQuickGlanceWidgets(
   // somewhere to go build the schema out from, instead of an empty canvas.
   // See QuickGlanceDashboard.tsx's is_from_template gating for why this
   // company still lands on the normal Quick Glance canvas (not a dead end)
-  // even before it's built anything.
+  // even before it's built anything. AI assistant is full-width (w:12,
+  // not half) and tall (h:20) -- reported live as feeling cramped at half
+  // width next to an empty other half; this is the only thing a brand-new
+  // company actually has to do here, so it should read as the primary
+  // surface, not one card among others.
   return [
     { kind: "bespoke", id: uid(), type: "setup_checklist", layout: { x: 0, y: 0, w: 12, h: 3 }, config: {} },
-    { kind: "bespoke", id: uid(), type: "ai_assistant", layout: { x: 0, y: 3, w: 6, h: 12 }, config: {} },
+    { kind: "bespoke", id: uid(), type: "ai_assistant", layout: { x: 0, y: 3, w: 12, h: 20 }, config: {} },
   ];
 }
