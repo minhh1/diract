@@ -369,7 +369,7 @@ async function getProjectFieldsCore(companyId: string): Promise<{ fields: any[] 
       isResolvableRelation: isResolvableRelationType(f.field_type),
       // Assigned server-side on creation (see /create-project below and
       // supabase/migrations/20260730180000_custom_field_auto_numbering.sql)
-      // -- the add-on's own create-project card (gmail-addon.gs) uses this
+      // -- the add-on's own create-project card (GmailAddon.js) uses this
       // to hide/replace this field's input with an "auto-assigned" note.
       autoNumber: f.auto_number_prefix != null, // != null, not truthiness: '' is a valid prefix (bare numbers)
     })),
@@ -618,7 +618,7 @@ Deno.serve(async (req) => {
 
     // ── GET /warm-cache ─────────────────────────────────────────────
     // Called by the add-on's own time-based trigger (warmAddonCaches in
-    // gmail-addon.gs), not by any user action -- bulk-fetches the
+    // GmailAddon.js), not by any user action -- bulk-fetches the
     // company-scoped (never per-calling-user) data every real card build
     // reads, for every company with at least one connected Gmail user, so
     // the trigger's script-wide cache is warm before anyone opens the

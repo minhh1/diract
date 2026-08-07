@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  body { background: #f8fafc; color: #1e293b; font-size: 13px; }
+
+  /* ── Header ── */
+  .header {
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-back {
+    width: 28px; height: 28px;
+    background: none; border: none; cursor: pointer;
+    color: #64748b; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+  }
+  .header-back:hover { background: #f1f5f9; }
+  .header-title { font-weight: 700; font-size: 14px; flex: 1; }
+  .header-sub { font-size: 11px; color: #94a3b8; }
+  .company-badge {
+    background: #ede9fe; color: #7c3aed;
+    padding: 2px 8px; border-radius: 99px;
+    font-size: 10px; font-weight: 700;
+  }
+
+  /* ── Views ── */
+  .view { display: none; padding: 16px; }
+  .view.active { display: block; }
+
+  /* ── Loading ── */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px; color: #94a3b8; gap: 8px;
+  }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid #e2e8f0;
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Cards ── */
+  .card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .card-header {
+    padding: 10px 14px;
+    background: #f8fafc;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-body { padding: 12px 14px; }
+
+  /* ── Project list ── */
+  .project-item {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.1s;
+  }
+  .project-item:last-child { border-bottom: none; }
+  .project-item:hover { background: #f8fafc; }
+  .project-name { font-weight: 600; font-size: 12px; }
+  .project-meta { font-size: 10px; color: #94a3b8; margin-top: 1px; }
+  .project-arrow { color: #cbd5e1; font-size: 16px; margin-left: auto; }
+
+  /* ── Status badge ── */
+  .badge {
+    padding: 2px 7px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #f1f5f9;
+    color: #64748b;
+  }
+  .badge.open { background: #dcfce7; color: #16a34a; }
+  .badge.active { background: #dbeafe; color: #2563eb; }
+  .badge.closed { background: #f1f5f9; color: #94a3b8; }
+
+  /* ── Tasks ── */
+  .task-item {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .task-item:last-child { border-bottom: none; }
+  .task-check {
+    width: 18px; height: 18px;
+    border: 2px solid #cbd5e1;
+    border-radius: 50%;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .task-check.done { background: #6366f1; border-color: #6366f1; }
+  .task-check.done::after { content: '✓'; color: #fff; font-size: 10px; font-weight: 700; }
+  .task-check.overdue { border-color: #ef4444; }
+  .task-info { flex: 1; min-width: 0; }
+  .task-name { font-weight: 500; font-size: 12px; line-height: 1.4; }
+  .task-name.done { text-decoration: line-through; color: #94a3b8; }
+  .task-meta { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+  .task-meta.overdue { color: #ef4444; }
+
+  /* ── Form ── */
+  .form-group { margin-bottom: 12px; }
+  .form-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; display: block; }
+  .form-input, .form-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 12px;
+    outline: none;
+    background: #fff;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus, .form-select:focus { border-color: #6366f1; }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 8px 16px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-primary:disabled { background: #a5b4fc; cursor: not-allowed; }
+  .btn-outline { background: #fff; color: #64748b; border: 1.5px solid #e2e8f0; }
+  .btn-outline:hover { border-color: #6366f1; color: #6366f1; }
+  .btn-danger { background: #fff; color: #ef4444; border: 1.5px solid #fee2e2; }
+  .btn-danger:hover { background: #fef2f2; }
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* ── Search ── */
+  .search-wrap { position: relative; margin-bottom: 12px; }
+  .search-input {
+    width: 100%;
+    padding: 8px 12px 8px 34px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 99px;
+    font-size: 12px;
+    outline: none;
+  }
+  .search-input:focus { border-color: #6366f1; }
+  .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 14px; }
+
+  /* ── URL display ── */
+  .url-info {
+    background: #ede9fe;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 10px;
+    color: #7c3aed;
+    margin-bottom: 12px;
+    word-break: break-all;
+  }
+
+  /* ── Empty state ── */
+  .empty { text-align: center; padding: 24px 16px; color: #94a3b8; }
+  .empty-icon { font-size: 28px; margin-bottom: 8px; }
+  .empty-text { font-size: 12px; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: #1e293b; color: #fff;
+    padding: 8px 16px; border-radius: 99px;
+    font-size: 11px; font-weight: 600;
+    opacity: 0; transition: opacity 0.2s;
+    pointer-events: none; white-space: nowrap;
+    z-index: 1000;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── Label action menu ── */
+  .label-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .label-chip {
+    padding: 4px 10px;
+    background: #ede9fe;
+    color: #7c3aed;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header" id="header">
+  <button class="header-back" id="backBtn" onclick="goBack()" style="display:none">←</button>
+  <div style="flex:1">
+    <div class="header-title" id="headerTitle">Flow</div>
+    <div class="header-sub" id="headerSub"></div>
+  </div>
+  <span class="company-badge" id="companyBadge"></span>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ── View: Loading ── -->
+<div class="view active" id="viewLoading">
+  <div class="loading"><div class="spinner"></div> Loading...</div>
+</div>
+
+<!-- ── View: Main ── -->
+<div class="view" id="viewMain">
+  <!-- Auto-detected project -->
+  <div id="labelDetected" style="display:none">
+    <div class="card">
+      <div class="card-header">📋 Detected project</div>
+      <div class="card-body" id="labelDetectedBody"></div>
+    </div>
+  </div>
+
+  <!-- Label code entry -->
+  <div class="card">
+    <div class="card-header">Open project tasks</div>
+    <div class="card-body">
+      <p style="font-size:11px;color:#64748b;margin-bottom:10px">
+        Enter the code from the Gmail label name.<br>
+        e.g. <span style="font-family:monospace;background:#f1f5f9;padding:1px 4px;border-radius:4px">Huynh Lawyers/260547 — 106 Constellation [I2LU6]</span>
+      </p>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="codeInput"
+          placeholder="e.g. I2LU6"
+          maxlength="6"
+          style="flex:1;font-size:15px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase"
+          oninput="this.value=this.value.toUpperCase()"
+          onkeydown="if(event.key==='Enter')openByCode()">
+        <button class="btn btn-primary" onclick="openByCode()">Open →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Browse all -->
+  <div class="card">
+    <div class="project-item" onclick="showView('viewProjects')">
+      <div>
+        <div class="project-name">🔍 Browse all projects</div>
+        <div class="project-meta">Search by name or matter number</div>
+      </div>
+      <div class="project-arrow">›</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── View: Projects (for tasks) ── -->
+<div class="view" id="viewProjects">
+  <div class="search-wrap">
+    <span class="search-icon">⌕</span>
+    <input class="search-input" id="projectSearch" placeholder="Search projects..." oninput="filterProjects(this.value)">
+  </div>
+  <div id="projectsList"><div class="loading"><div class="spinner"></div> Loading...</div></div>
+</div>
+
+<!-- ── View: Tasks ── -->
+<div class="view" id="viewTasks">
+  <div id="tasksList"></div>
+  <div class="card" id="addTaskCard">
+    <div class="card-header">
+      Add task
+      <button class="btn btn-outline" style="padding:2px 8px;font-size:10px" onclick="toggleAddTask()">+ Add</button>
+    </div>
+    <div id="addTaskForm" style="display:none; padding:12px 14px">
+      <div class="form-group">
+        <label class="form-label">Task name *</label>
+        <input class="form-input" id="taskName" placeholder="e.g. File court documents">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Due date</label>
+        <input class="form-input" id="taskDue" type="date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-select" id="taskStatus"></select>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="createTask()" id="createTaskBtn">Add task</button>
+        <button class="btn btn-outline" onclick="toggleAddTask()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────
+var state = {
+  ctx: null,
+  view: 'viewLoading',
+  viewStack: [],
+  projects: [],
+  currentProject: null,
+  tasks: [],
+  statuses: [],
+  detectedLabelCode: null,
+};
+
+// ── Init ───────────────────────────────────────────────────────────
+window.onload = function() {
+  // Detect label code from URL hash
+  detectLabelFromUrl();
+  // Load user context
+  google.script.run
+    .withSuccessHandler(onContextLoaded)
+    .withFailureHandler(onError)
+    .apiCall('GET', '/user-context', null);
+};
+
+function detectLabelFromUrl() {
+  console.log('[flow] href:', window.location.href);
+  console.log('[flow] search:', window.location.search);
+  console.log('[flow] hash:', window.location.hash);
+  console.log('[flow] referrer:', document.referrer);
+
+  try {
+    // Primary: ?code= param passed from universal action
+    var search = window.location.search || '';
+    var codeMatch = search.match(/[?&]code=([A-Z0-9]{4,6})/i);
+    if (codeMatch) {
+      state.detectedLabelCode = codeMatch[1].toUpperCase();
+      console.log('[flow] ✓ code from ?code= param:', state.detectedLabelCode);
+      return;
+    }
+
+    // Check referrer (Gmail URL when opening overlay)
+    var sources = [
+      document.referrer,
+      window.location.href,
+      window.location.hash,
+    ];
+
+    for (var i = 0; i < sources.length; i++) {
+      if (!sources[i]) continue;
+      // Match [I2LU6] or %5BI2LU6%5D
+      var m = sources[i].match(/%5B([A-Z0-9]{4,6})%5D/i) ||
+              sources[i].match(/\[([A-Z0-9]{4,6})\]/i);
+      if (m) {
+        state.detectedLabelCode = m[1].toUpperCase();
+        console.log('[flow] ✓ code from source[' + i + ']:', state.detectedLabelCode);
+        return;
+      }
+    }
+
+    // Try parent (will fail cross-origin but worth trying)
+    try {
+      var parentHref = window.parent.location.href;
+      console.log('[flow] parent href:', parentHref);
+      var pm = parentHref.match(/%5B([A-Z0-9]{4,6})%5D/i) ||
+               parentHref.match(/\[([A-Z0-9]{4,6})\]/i);
+      if (pm) {
+        state.detectedLabelCode = pm[1].toUpperCase();
+        console.log('[flow] ✓ code from parent:', state.detectedLabelCode);
+        return;
+      }
+    } catch(e) {
+      console.log('[flow] parent blocked:', e.message);
+    }
+
+    console.log('[flow] ✗ no code detected');
+  } catch(e) {
+    console.log('[flow] detection error:', e.message);
+  }
+}
+
+function onContextLoaded(ctx) {
+  if (!ctx || !ctx.activeCompanyId) {
+    showError('Not connected to Flow. Make sure your account is set up.');
+    return;
+  }
+  state.ctx = ctx;
+  document.getElementById('companyBadge').textContent = ctx.activeCompanyName || '';
+  document.getElementById('headerSub').textContent = ctx.email || '';
+
+  // If we detected a label code from URL, load that project directly
+  if (state.detectedLabelCode) {
+    loadProjectByLabelCode(state.detectedLabelCode);
+  } else {
+    showView('viewMain');  // show code input + browse option
+  }
+
+  // Pre-load projects in background
+  loadProjects();
+}
+
+// ── Navigation ─────────────────────────────────────────────────────
+function showView(viewId, title, sub) {
+  // Hide current
+  document.getElementById(state.view).classList.remove('active');
+  // Show new
+  document.getElementById(viewId).classList.add('active');
+
+  if (state.view !== viewId) {
+    state.viewStack.push(state.view);
+  }
+  state.view = viewId;
+
+  // Update header
+  var titles = {
+    viewMain: 'Flow',
+    viewProjects: 'Browse projects',
+    viewTasks: state.currentProject ? state.currentProject.name : 'Tasks',
+    viewImport: 'Import labels',
+    viewCreateProject: 'Create project',
+  };
+  document.getElementById('headerTitle').textContent = title || titles[viewId] || 'Flow';
+  document.getElementById('headerSub').textContent = sub || (state.ctx ? state.ctx.email : '');
+  document.getElementById('backBtn').style.display = state.viewStack.length > 0 ? 'flex' : 'none';
+
+  // View-specific init
+  if (viewId === 'viewProjects') renderProjects('');
+  if (viewId === 'viewImport') checkImportStatus();
+}
+
+function goBack() {
+  if (state.viewStack.length === 0) return;
+  var prev = state.viewStack.pop();
+  document.getElementById(state.view).classList.remove('active');
+  document.getElementById(prev).classList.add('active');
+  state.view = prev;
+
+  var titles = { viewMain: 'Flow', viewProjects: 'Browse projects', viewTasks: state.currentProject ? state.currentProject.name : 'Tasks', viewImport: 'Import labels', viewCreateProject: 'Create project' };
+  document.getElementById('headerTitle').textContent = titles[prev] || 'Flow';
+  document.getElementById('backBtn').style.display = state.viewStack.length > 0 ? 'flex' : 'none';
+}
+
+// ── Projects ───────────────────────────────────────────────────────
+function loadProjects() {
+  google.script.run
+    .withSuccessHandler(function(data) {
+      state.projects = data.projects || [];
+      state.statuses = data.statuses || [];
+      // Populate task status select
+      var sel = document.getElementById('taskStatus');
+      sel.innerHTML = '';
+      state.statuses.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s.id; opt.textContent = s.label;
+        sel.appendChild(opt);
+      });
+      if (state.view === 'viewProjects') renderProjects('');
+    })
+    .withFailureHandler(onError)
+    .apiCall('GET', '/search-projects?labelled=true&companyId=' + state.ctx.activeCompanyId, null);
+}
+
+function filterProjects(q) {
+  renderProjects(q.toLowerCase());
+}
+
+function renderProjects(q) {
+  var list = document.getElementById('projectsList');
+  var filtered = state.projects.filter(function(p) {
+    return !q || p.name.toLowerCase().includes(q);
+  });
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📁</div><div class="empty-text">' + (q ? 'No projects found' : 'No labelled projects yet') + '</div></div>';
+    return;
+  }
+  list.innerHTML = filtered.map(function(p) {
+    var statusClass = (p.status || '').toLowerCase().replace(' ', '');
+    return '<div class="project-item" onclick="openProject(' + JSON.stringify(p).replace(/"/g, '&quot;') + ')">' +
+      '<div style="flex:1">' +
+        '<div class="project-name">' + escHtml(p.name) + '</div>' +
+        '<div class="project-meta">' + (p.labelName || '') + '</div>' +
+      '</div>' +
+      '<span class="badge ' + statusClass + '">' + escHtml(p.status || '') + '</span>' +
+      '<div class="project-arrow">›</div>' +
+    '</div>';
+  }).join('');
+}
+
+function openProject(project) {
+  state.currentProject = project;
+  showView('viewTasks', project.name, project.status || '');
+  loadTasks(project.id);
+}
+
+function openByCode() {
+  var input = document.getElementById('codeInput');
+  var code = (input ? input.value : '').trim().toUpperCase();
+  if (code.length < 4 || code.length > 6) { showToast('Enter the 4-6 character code from the label'); return; }
+  loadProjectByLabelCode(code);
+}
+
+function loadProjectByLabelCode(code) {
+  google.script.run
+    .withSuccessHandler(function(data) {
+      if (data.project) {
+        openProject(data.project);
+        showDetectedLabel(data.project);
+      } else {
+        showView('viewMain');
+      }
+    })
+    .withFailureHandler(function() { showView('viewMain'); })
+    .apiCall('GET', '/project-by-label?code=' + code + '&companyId=' + state.ctx.activeCompanyId, null);
+}
+
+function showDetectedLabel(project) {
+  var el = document.getElementById('labelDetected');
+  var body = document.getElementById('labelDetectedBody');
+  body.innerHTML = '<div class="project-name">' + escHtml(project.name) + '</div>' +
+    '<div class="label-actions">' +
+      '<span class="label-chip">🏷 ' + escHtml(project.labelName || project.labelCode || '') + '</span>' +
+    '</div>' +
+    '<div class="btn-row">' +
+      '<button class="btn btn-primary" onclick="openProject(' + JSON.stringify(project).replace(/"/g, '&quot;') + ')">📋 View tasks</button>' +
+    '</div>';
+  el.style.display = 'block';
+}
+
+// ── Tasks ──────────────────────────────────────────────────────────
+function loadTasks(projectId) {
+  document.getElementById('tasksList').innerHTML = '<div class="loading"><div class="spinner"></div> Loading tasks...</div>';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      state.tasks = data.tasks || [];
+      if (data.statuses && data.statuses.length) {
+        state.statuses = data.statuses;
+        var sel = document.getElementById('taskStatus');
+        sel.innerHTML = '';
+        state.statuses.forEach(function(s) {
+          var opt = document.createElement('option');
+          opt.value = s.id; opt.textContent = s.label;
+          sel.appendChild(opt);
+        });
+      }
+      renderTasks();
+    })
+    .withFailureHandler(onError)
+    .apiCall('GET', '/project-tasks?projectId=' + projectId, null);
+}
+
+function renderTasks() {
+  var list = document.getElementById('tasksList');
+  var tasks = state.tasks;
+
+  if (!tasks.length) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">No tasks yet — add one below</div></div>';
+    return;
+  }
+
+  var active = tasks.filter(function(t) { return !t.isCompleted; });
+  var done = tasks.filter(function(t) { return t.isCompleted; });
+
+  var html = '';
+  if (active.length) {
+    html += '<div class="card"><div class="card-header">In progress (' + active.length + ')</div>';
+    active.forEach(function(t) { html += renderTask(t); });
+    html += '</div>';
+  }
+  if (done.length) {
+    html += '<div class="card"><div class="card-header">Completed (' + done.length + ')</div>';
+    done.forEach(function(t) { html += renderTask(t); });
+    html += '</div>';
+  }
+  list.innerHTML = html;
+}
+
+function renderTask(t) {
+  var now = new Date();
+  var overdue = t.dueDate && !t.isCompleted && new Date(t.dueDate) < now;
+  var checkClass = t.isCompleted ? 'done' : overdue ? 'overdue' : '';
+  var meta = [];
+  if (t.dueDate) meta.push((overdue ? '⚠ Overdue: ' : 'Due: ') + t.dueDate);
+  if (t.assignee) meta.push(t.assignee);
+  if (t.status) meta.push(t.status);
+
+  return '<div class="task-item">' +
+    '<div class="task-check ' + checkClass + '" onclick="toggleTask(\'' + t.id + '\', ' + !t.isCompleted + ')"></div>' +
+    '<div class="task-info">' +
+      '<div class="task-name ' + (t.isCompleted ? 'done' : '') + '">' + escHtml(t.name) + '</div>' +
+      (meta.length ? '<div class="task-meta ' + (overdue ? 'overdue' : '') + '">' + meta.join(' · ') + '</div>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function toggleTask(taskId, isCompleted) {
+  google.script.run
+    .withSuccessHandler(function() {
+      // Update locally
+      state.tasks = state.tasks.map(function(t) {
+        return t.id === taskId ? Object.assign({}, t, { isCompleted: isCompleted }) : t;
+      });
+      renderTasks();
+      showToast(isCompleted ? '✓ Task completed' : 'Task reopened');
+    })
+    .withFailureHandler(onError)
+    .apiCall('POST', '/toggle-task', { taskId: taskId, isCompleted: isCompleted });
+}
+
+function toggleAddTask() {
+  var form = document.getElementById('addTaskForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') {
+    document.getElementById('taskName').focus();
+    document.getElementById('taskDue').value = '';
+  }
+}
+
+function createTask() {
+  var name = document.getElementById('taskName').value.trim();
+  if (!name) { showToast('Task name is required'); return; }
+  var dueDate = document.getElementById('taskDue').value;
+  var statusId = document.getElementById('taskStatus').value;
+  var btn = document.getElementById('createTaskBtn');
+  btn.disabled = true; btn.textContent = 'Adding...';
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      btn.disabled = false; btn.textContent = 'Add task';
+      document.getElementById('taskName').value = '';
+      document.getElementById('taskDue').value = '';
+      loadTasks(state.currentProject.id);
+      toggleAddTask();
+      showToast('✓ Task added');
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false; btn.textContent = 'Add task';
+      onError(err);
+    })
+    .apiCall('POST', '/create-task', {
+      projectId: state.currentProject.id,
+      companyId: state.ctx.activeCompanyId,
+      name: name,
+      dueDate: dueDate || null,
+      statusId: statusId || null,
+    });
+}
+
+// ── Utils ──────────────────────────────────────────────────────────
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showError(msg) {
+  document.getElementById('viewLoading').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">' + msg + '</div></div>';
+}
+
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 2500);
+}
+
+function onError(err) {
+  showToast('Error: ' + (err.message || err));
+  console.error(err);
+}
+</script>
+</body>
+</html>
