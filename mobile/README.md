@@ -47,10 +47,24 @@ default regardless of app theme). Shared pieces live in `src/components/ui/`:
 cycling through `IconBadgeColors` by index), `HeroBackground` (the soft
 gradient wash across a screen's top, fading into the flat theme
 background). New screens/components should reach for these instead of a
-one-off flat color or square icon. Not yet carried through: the AI
-assistant chat screen, dashboards' own widget cards, and detail-view
-screens (matter/lead/task) -- still on the old flat style pending a
-follow-up pass.
+one-off flat color or square icon. Not yet carried through: dashboards'
+own widget cards and the AI chat thread's own message bubbles (its
+conversation list and the More screen's new "Ask AI" entry point are
+themed) -- still on the old flat style pending a follow-up pass.
+
+Light/dark isn't purely system-driven -- `src/lib/themeMode.tsx`
+(`ThemeModeProvider`/`useThemeMode`) adds an explicit Auto/Light/Dark
+override, persisted to `@react-native-async-storage/async-storage` and
+exposed via the More screen's "Appearance" row (a `GradientButton`-styled
+segmented control). `useTheme`/`useGradients` read the *resolved* scheme
+from this context, not `useColorScheme()` directly -- anything needing the
+current scheme should go through those two hooks, not react-native's own
+`useColorScheme`, so it stays consistent with the override.
+
+The More screen also has a top "Ask AI anything..." bar (admin-gated, same
+as the AI assistant itself) that starts a new conversation with the typed
+text sent immediately -- see `AiChatThread`'s `initialQuery` prop and
+`ai/[id].tsx`'s `q` search param, which is how that shortcut gets there.
 
 ## What's built
 

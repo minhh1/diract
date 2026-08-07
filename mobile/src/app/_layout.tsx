@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 
 import { queryClient } from '@/lib/queryClient';
 import { SessionProvider, useSession } from '@/lib/session';
+import { ThemeModeProvider, useThemeMode } from '@/lib/themeMode';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -31,13 +32,24 @@ function RootNavigator() {
   );
 }
 
+// StatusBar's own "auto" tracks the OS appearance, not our resolved
+// scheme -- with an explicit light/dark override active, "auto" would
+// pick the wrong icon color (e.g. dark status bar icons over our dark
+// background when the OS itself is still in light mode).
+function ThemedStatusBar() {
+  const { resolvedScheme } = useThemeMode();
+  return <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />;
+}
+
 export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
-      <SessionProvider>
-        <StatusBar style="auto" />
-        <RootNavigator />
-      </SessionProvider>
+      <ThemeModeProvider>
+        <SessionProvider>
+          <ThemedStatusBar />
+          <RootNavigator />
+        </SessionProvider>
+      </ThemeModeProvider>
     </QueryClientProvider>
   );
 }

@@ -4,13 +4,11 @@
  */
 
 import { Colors, Gradients } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeMode } from '@/lib/themeMode';
 
 export function useTheme() {
-  const scheme = useColorScheme();
-  const theme = scheme === 'unspecified' ? 'light' : scheme;
-
-  return Colors[theme];
+  const { resolvedScheme } = useThemeMode();
+  return Colors[resolvedScheme];
 }
 
 // Separate from useTheme() (rather than merged onto it) since gradient
@@ -18,10 +16,8 @@ export function useTheme() {
 // -- keeping them apart means every existing `theme.foo` color lookup
 // stays untyped-string-safe.
 export function useGradients() {
-  const scheme = useColorScheme();
-  const theme = scheme === 'unspecified' ? 'light' : scheme;
-
-  return Gradients[theme];
+  const { resolvedScheme } = useThemeMode();
+  return Gradients[resolvedScheme];
 }
 
 // expo-router's native-stack header defaults to the system's light

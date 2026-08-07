@@ -35,10 +35,16 @@ type AiChatJobRow = {
 export function AiChatThread({
   conversationId,
   initialMessages,
+  initialQuery,
   onTurnComplete,
 }: {
   conversationId: string;
   initialMessages: ChatMessage[];
+  // Pre-typed elsewhere (the More screen's top "Ask AI" bar) and sent
+  // automatically the moment this fresh conversation mounts, rather than
+  // just prefilling the input and making the user tap Send again --
+  // matches what typing into that bar and hitting enter implies.
+  initialQuery?: string;
   onTurnComplete?: () => void;
 }) {
   const theme = useTheme();
@@ -177,26 +183,41 @@ export function AiChatThread({
     return () => clearInterval(interval);
   }, [sending, activeJobId, onTurnComplete]);
 
-  const send = useCallback(async () => {
-    const question = input.trim();
-    if (!question || sending || capReached) return;
+  const send = useCallback(
+    async (overrideText?: string) => {
+      const question = (overrideText ?? input).trim();
+      if (!question || sending || capReached) return;
 
-    setError(null);
-    setInput('');
-    const history = messages.map((m) => ({ role: m.role, content: m.content }));
-    setMessages((prev) => [...prev, { role: 'user', content: question }, { role: 'assistant', content: '' }]);
-    setSending(true);
+      setError(null);
+      if (overrideText === undefined) setInput('');
+      const history = messages.map((m) => ({ role: m.role, content: m.content }));
+      setMessages((prev) => [...prev, { role: 'user', content: question }, { role: 'assistant', content: '' }]);
+      setSending(true);
 
-    try {
-      const { jobId } = await sendChatMessage(question, history, conversationId);
-      jobUpdatedAtRef.current = Date.now();
-      setActiveJobId(jobId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-      setSending(false);
-      onTurnComplete?.();
-    }
-  }, [input, sending, capReached, messages, conversationId, onTurnComplete]);
+      try {
+        const { jobId } = await sendChatMessage(question, history, conversationId);
+        jobUpdatedAtRef.current = Date.now();
+        setActiveJobId(jobId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Something went wrong');
+        setSending(false);
+        onTurnComplete?.();
+      }
+    },
+    [input, sending, capReached, messages, conversationId, onTurnComplete],
+  );
+
+  // Mount-only, same reasoning as the "resume a running job" effect above --
+  // fires once for a brand-new conversation carrying a pre-typed query, not
+  // on every re-render (a second run would resend once messages/sending
+  // update from the first).
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (autoSentRef.current || !initialQuery?.trim() || initialMessages.length > 0) return;
+    autoSentRef.current = true;
+    send(initialQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <View ref={containerRef} style={{ flex: 1, backgroundColor: theme.background, paddingBottom: keyboardOverlap }}>
@@ -291,7 +312,7 @@ export function AiChatThread({
             editable={!capReached}
           />
           <Pressable
-            onPress={send}
+            onPress={() => send()}
             disabled={sending || capReached || !input.trim()}
             accessibilityLabel="Send message"
             style={{ opacity: sending || capReached || !input.trim() ? 0.4 : 1 }}

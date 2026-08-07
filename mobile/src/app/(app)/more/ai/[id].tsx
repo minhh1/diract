@@ -13,7 +13,7 @@ import { AiChatThread } from '@/components/ai/AiChatThread';
 // queries and just treats "no messages" the same as "brand new."
 export default function AiConversationScreen() {
   const theme = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, q } = useLocalSearchParams<{ id: string; q?: string }>();
   const queryClient = useQueryClient();
 
   const { data: messages, isLoading } = useQuery({
@@ -34,6 +34,7 @@ export default function AiConversationScreen() {
     <AiChatThread
       conversationId={id}
       initialMessages={messages ?? []}
+      initialQuery={q}
       onTurnComplete={() => queryClient.invalidateQueries({ queryKey: ['ai-conversations'] })}
     />
   );

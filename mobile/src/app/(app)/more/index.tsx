@@ -1,7 +1,10 @@
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Crypto from 'expo-crypto';
 import {
+  ArrowUp,
   Bot,
   Building2,
   ChevronRight,
@@ -14,8 +17,10 @@ import {
   LogOut,
   MailCheck,
   Monitor,
+  Moon,
   Settings,
   ShieldCheck,
+  Sparkles,
   Store,
 } from 'lucide-react-native';
 
@@ -24,24 +29,65 @@ import { Radii } from '@/constants/theme';
 import { useGradients, useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
 import { useCompanyMemberships } from '@/lib/companies';
+import { useThemeMode, type ThemeMode } from '@/lib/themeMode';
 import { PushNotificationSettingsRow } from '@/components/PushNotificationSettingsRow';
 import { VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID } from '@/lib/allowedCompany';
 import { IconBadge } from '@/components/ui/IconBadge';
 import { HeroBackground } from '@/components/ui/HeroBackground';
 
+const APPEARANCE_OPTIONS: { mode: ThemeMode; label: string }[] = [
+  { mode: 'system', label: 'Auto' },
+  { mode: 'light', label: 'Light' },
+  { mode: 'dark', label: 'Dark' },
+];
+
 export default function MoreScreen() {
   const theme = useTheme();
   const gradients = useGradients();
+  const { mode, setMode } = useThemeMode();
   const router = useRouter();
   const { profile, signOut } = useSession();
   const { data: memberships } = useCompanyMemberships(profile?.id ?? null);
   const canUseVirtualComputers = profile?.active_company_id === VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID;
   const activeCompanyName = memberships?.find((m) => m.company_id === profile?.active_company_id)?.company?.name;
   const initial = (profile?.full_name || profile?.email || '?').charAt(0).toUpperCase();
+  const [askQuery, setAskQuery] = useState('');
+
+  // Same admin gate as ai/index.tsx -- this bar is just a shortcut into that
+  // screen's "new chat" flow with the query pre-typed, not a separate
+  // feature, so it can't be open to non-admins either.
+  const askAi = () => {
+    const q = askQuery.trim();
+    if (!q) return;
+    setAskQuery('');
+    router.push({ pathname: '/more/ai/[id]', params: { id: Crypto.randomUUID(), q } } as never);
+  };
 
   return (
     <HeroBackground height={220}>
       <ScrollView contentContainerStyle={styles.content}>
+        {profile?.is_admin && (
+          <View style={[styles.askRow, { backgroundColor: theme.backgroundElement }]}>
+            <Sparkles size={16} color={theme.accent} />
+            <TextInput
+              value={askQuery}
+              onChangeText={setAskQuery}
+              onSubmitEditing={askAi}
+              returnKeyType="send"
+              placeholder="Ask AI anything..."
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.askInput, { color: theme.text }]}
+            />
+            {!!askQuery.trim() && (
+              <Pressable onPress={askAi} accessibilityLabel="Send to AI assistant">
+                <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.askSend}>
+                  <ArrowUp size={15} color="#fff" />
+                </LinearGradient>
+              </Pressable>
+            )}
+          </View>
+        )}
+
         <View style={[styles.profileCard, { backgroundColor: theme.backgroundElement }]}>
           <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.avatar}>
             <Text style={styles.avatarText}>{initial}</Text>
@@ -71,6 +117,31 @@ export default function MoreScreen() {
         </Pressable>
 
         <PushNotificationSettingsRow />
+
+        <View style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
+          <View style={styles.rowLeft}>
+            <IconBadge index={4} size={38}>
+              <Moon size={17} color="#fff" />
+            </IconBadge>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>Appearance</Text>
+          </View>
+          <View style={[styles.segmented, { backgroundColor: theme.backgroundSelected }]}>
+            {APPEARANCE_OPTIONS.map((opt) => {
+              const active = mode === opt.mode;
+              return (
+                <Pressable key={opt.mode} onPress={() => setMode(opt.mode)} style={styles.segmentHitArea}>
+                  {active ? (
+                    <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.segmentActive}>
+                      <Text style={styles.segmentTextActive}>{opt.label}</Text>
+                    </LinearGradient>
+                  ) : (
+                    <Text style={[styles.segmentText, { color: theme.textSecondary }]}>{opt.label}</Text>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>RECORDS</Text>
         <Pressable
@@ -123,6 +194,22 @@ export default function MoreScreen() {
 
 const styles = StyleSheet.create({
   content: { padding: 16, gap: 12, paddingBottom: 48 },
+  askRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: Radii.pill,
+    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  askInput: { flex: 1, fontSize: 15, fontWeight: '500' },
+  askSend: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   profileCard: { padding: 16, borderRadius: Radii.card, gap: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   avatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
@@ -133,6 +220,11 @@ const styles = StyleSheet.create({
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rowLabel: { fontSize: 14, fontWeight: '600' },
   companyHint: { fontSize: 11, fontWeight: '500', marginTop: 1 },
+  segmented: { flexDirection: 'row', borderRadius: Radii.pill, padding: 3, gap: 2 },
+  segmentHitArea: { borderRadius: Radii.pill },
+  segmentActive: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.pill },
+  segmentText: { fontSize: 12, fontWeight: '700', paddingHorizontal: 12, paddingVertical: 6 },
+  segmentTextActive: { fontSize: 12, fontWeight: '700', color: '#fff' },
   signOutButton: {
     flexDirection: 'row',
     gap: 8,
