@@ -23,6 +23,7 @@ interface SubmitEntry {
   date: string;
   sourceTaskIds: string[];
   sourceEmailIds: string[];
+  sourceSegmentIds: string[];
 }
 
 export async function POST(req: NextRequest) {
@@ -63,8 +64,8 @@ export async function POST(req: NextRequest) {
       results.push({ key: entry.key, ok: false, error: "Missing matter, description, hours, or date" });
       continue;
     }
-    if (!entry.sourceTaskIds?.length && !entry.sourceEmailIds?.length) {
-      results.push({ key: entry.key, ok: false, error: "No source task/email attached" });
+    if (!entry.sourceTaskIds?.length && !entry.sourceEmailIds?.length && !entry.sourceSegmentIds?.length) {
+      results.push({ key: entry.key, ok: false, error: "No source task/email/segment attached" });
       continue;
     }
 
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
     const sources = [
       ...(entry.sourceTaskIds || []).map(id => ({ source_type: "task", source_id: id })),
       ...(entry.sourceEmailIds || []).map(id => ({ source_type: "email", source_id: id })),
+      ...(entry.sourceSegmentIds || []).map(id => ({ source_type: "time_tracking_segment", source_id: id })),
     ];
 
     const { data: recordId, error } = await admin.rpc("submit_auto_time_entry", {

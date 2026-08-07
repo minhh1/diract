@@ -51,7 +51,7 @@ import { dayRangeInTimezone } from "@/lib/dayRangeInTimezone";
 import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 import { HOSTED_MODELS, costUsd } from "@/lib/billing/aiModels";
 import { isTokenCapReached } from "@/lib/billing/aiUsageCap";
-import { draftAutoTimeEntries, type AutoTimeEntryTaskInput, type AutoTimeEntryEmailInput, type DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
+import { draftAutoTimeEntries, type AutoTimeEntryTaskInput, type AutoTimeEntryEmailInput, type AutoTimeEntrySegmentInput, type DescriptionDetailLevel } from "@/lib/ai/autoTimeEntryDraft";
 import { dedupeAndAttributeEmails, type RawProjectEmail, type StaffMember } from "@/lib/ai/emailTimekeeperAttribution";
 import { refreshTokenIfNeeded } from "@/lib/gmail/client";
 
@@ -182,6 +182,7 @@ async function runJob(p: JobParams): Promise<void> {
     const { data: existingSources } = await admin.from("time_entry_ai_sources").select("source_type, source_id").eq("company_id", companyId);
     const excludedTaskIds = new Set((existingSources || []).filter((s: any) => s.source_type === "task").map((s: any) => s.source_id));
     const excludedEmailIds = new Set<string>((existingSources || []).filter((s: any) => s.source_type === "email").map((s: any) => s.source_id));
+    const excludedSegmentIds = new Set<string>((existingSources || []).filter((s: any) => s.source_type === "time_tracking_segment").map((s: any) => s.source_id));
 
     // Every company member -- needed up front for email attribution
     // (sender/salutation/thread-walk all match against this list), not
@@ -200,6 +201,26 @@ async function runJob(p: JobParams): Promise<void> {
       .gte("completed_at", startIso).lt("completed_at", endIso);
     if (scope === "mine") taskQuery = taskQuery.eq("assignee_id", userId);
     const { data: rawTasks } = await taskQuery;
+
+    // Third input alongside tasks/emails (see app/api/time-tracking/sync
+    // and this file's own header comment) -- only fetched at all when the
+    // company has explicitly opted in, so a company that's never touched
+    // this feature sees byte-identical behavior to before it existed.
+    // Already real, per-user, matter-matched rows by the time they land
+    // here (see the sync route), unlike emails which need attribution --
+    // scope='mine' filters to the caller's own user_id the same way tasks
+    // filter to assignee_id; scope='all' is every member's segments.
+    const { data: timeTrackingSettings } = await admin.from("time_tracking_settings").select("enabled").eq("company_id", companyId).maybeSingle();
+    let rawSegments: any[] = [];
+    if (timeTrackingSettings?.enabled) {
+      let segmentQuery = admin.from("time_tracking_segments")
+        .select("id, user_id, title, domain, started_at, ended_at, matched_project_id")
+        .eq("company_id", companyId).not("matched_project_id", "is", null)
+        .gte("started_at", startIso).lt("started_at", endIso);
+      if (scope === "mine") segmentQuery = segmentQuery.eq("user_id", userId);
+      const { data } = await segmentQuery;
+      rawSegments = (data || []).filter((s: any) => !excludedSegmentIds.has(s.id));
+    }
 
     // `date` (the email's own sent/received timestamp) is nullable -- some
     // rows land in project_emails with it unset even though they're
@@ -260,7 +281,7 @@ async function runJob(p: JobParams): Promise<void> {
 
     const tasks = (rawTasks || []).filter((t: any) => t.project_id && t.assignee_id && !excludedTaskIds.has(t.id));
 
-    if (!tasks.length && !scopedResolvedEmails.length && !unresolvedEmails.length) {
+    if (!tasks.length && !scopedResolvedEmails.length && !unresolvedEmails.length && !rawSegments.length) {
       await admin.from("auto_time_entry_generation_jobs").update({
         status: "done", processed: emailsProcessed, total: emailsProcessed, entries: [], updated_at: new Date().toISOString(),
       }).eq("id", jobId);
@@ -272,7 +293,7 @@ async function runJob(p: JobParams): Promise<void> {
     total = phaseOneTotal + scopedResolvedEmails.length + unresolvedEmails.length;
     writeProgress(true);
 
-    const projectIds = Array.from(new Set([...tasks.map((t: any) => t.project_id), ...scopedResolvedEmails.map(e => e.projectId), ...unresolvedEmails.map(e => e.projectId)]));
+    const projectIds = Array.from(new Set([...tasks.map((t: any) => t.project_id), ...scopedResolvedEmails.map(e => e.projectId), ...unresolvedEmails.map(e => e.projectId), ...rawSegments.map((s: any) => s.matched_project_id)]));
     const { data: projects } = await admin.from("projects").select("id, name").in("id", projectIds);
     const projectNameById = new Map<string, string>((projects || []).map((p: any) => [p.id, p.name]));
 
@@ -289,7 +310,7 @@ async function runJob(p: JobParams): Promise<void> {
     }
     const matterLabel = (projectId: string) => matterNumberByProjectId.get(projectId) || projectNameById.get(projectId) || "Unknown matter";
 
-    const userIds = Array.from(new Set([...tasks.map((t: any) => t.assignee_id), ...scopedResolvedEmails.map(e => e.timekeeperUserId as string)]));
+    const userIds = Array.from(new Set([...tasks.map((t: any) => t.assignee_id), ...scopedResolvedEmails.map(e => e.timekeeperUserId as string), ...rawSegments.map((s: any) => s.user_id)]));
 
     const { data: aiSettings } = await admin.from("ai_chat_settings").select("monthly_token_cap").eq("company_id", companyId).maybeSingle();
     const tokenCap = aiSettings?.monthly_token_cap ?? 2000000;
@@ -314,7 +335,13 @@ async function runJob(p: JobParams): Promise<void> {
         .map((t: any) => ({ id: t.id, name: t.name, notes: t.notes, matterId: t.project_id, matterLabel: matterLabel(t.project_id) }));
       const userEmails: AutoTimeEntryEmailInput[] = scopedResolvedEmails.filter(e => e.timekeeperUserId === uid)
         .map(e => ({ id: e.id, subject: e.subject, snippet: e.snippet, fromName: e.fromName, matterId: e.projectId, matterLabel: matterLabel(e.projectId) }));
-      if (!userTasks.length && !userEmails.length) return;
+      const userSegmentRows = rawSegments.filter((s: any) => s.user_id === uid);
+      const userSegments: AutoTimeEntrySegmentInput[] = userSegmentRows.map((s: any) => ({
+        id: s.id, title: s.title, domain: s.domain, matterId: s.matched_project_id, matterLabel: matterLabel(s.matched_project_id),
+        durationMinutes: Math.max(1, Math.round((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 60000)),
+      }));
+      const segmentPreviewById = new Map(userSegmentRows.map((s: any) => [s.id, { title: s.title, domain: s.domain }]));
+      if (!userTasks.length && !userEmails.length && !userSegments.length) return;
       if (capReached) { emailsProcessed += userEmails.length; writeProgress(); return; }
 
       try {
@@ -322,7 +349,7 @@ async function runJob(p: JobParams): Promise<void> {
         const { data: staffEntity } = await admin.from("entities")
           .select("id, default_rate").eq("company_id", companyId).eq("linked_profile_id", uid).is("deleted_at", null).maybeSingle();
 
-        const result = await draftAutoTimeEntries(MODEL_ID, userTasks, userEmails, detailLevel);
+        const result = await draftAutoTimeEntries(MODEL_ID, userTasks, userEmails, detailLevel, userSegments);
         if (!result) return;
 
         const cost = costUsd("hosted", MODEL_ID, result);
@@ -341,6 +368,9 @@ async function runJob(p: JobParams): Promise<void> {
             .map(repId => attributedEmailById.get(repId))
             .filter((e): e is NonNullable<typeof e> => !!e)
             .map(e => ({ subject: e.subject, snippet: e.snippet, fromName: e.fromName }));
+          const segmentPreviews = d.sourceSegmentIds
+            .map(id => segmentPreviewById.get(id))
+            .filter((s): s is NonNullable<typeof s> => !!s);
           entries.push({
             key: `${uid}-${idx + 1}`,
             userId: uid,
@@ -355,7 +385,9 @@ async function runJob(p: JobParams): Promise<void> {
             hours: d.hours,
             sourceTaskIds: d.sourceTaskIds,
             sourceEmailIds,
+            sourceSegmentIds: d.sourceSegmentIds,
             emailPreviews,
+            segmentPreviews,
             detailLevel,
           });
         });
@@ -405,7 +437,9 @@ async function runJob(p: JobParams): Promise<void> {
               hours: d.hours,
               sourceTaskIds: d.sourceTaskIds,
               sourceEmailIds,
+              sourceSegmentIds: [],
               emailPreviews,
+              segmentPreviews: [],
               detailLevel,
             });
           });

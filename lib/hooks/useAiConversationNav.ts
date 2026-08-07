@@ -80,7 +80,9 @@ export function useAiConversationNav() {
     if (!res.ok) return;
     const json = await res.json();
     setInitialMessages(
-      (json.messages ?? []).map((m: { role: "user" | "assistant"; content: string }) => ({ role: m.role, content: m.content }))
+      (json.messages ?? []).map((m: { role: "user" | "assistant"; content: string; proposed_records?: unknown }) => ({
+        role: m.role, content: m.content, proposedRecords: m.proposed_records ?? undefined,
+      }))
     );
     setOpenedConversationId(id);
   }, []);

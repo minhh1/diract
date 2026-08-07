@@ -37,6 +37,8 @@ const AdminPerfTab = dynamic(() => import("@/components/admin/AdminPerfTab"));
 const AdminPlatformHealthTab = dynamic(() => import("@/components/admin/AdminPlatformHealthTab"));
 const AdminArchiveRequestsTab = dynamic(() => import("@/components/admin/AdminArchiveRequestsTab"));
 const AdminLeadEmailAssignmentsTab = dynamic(() => import("@/components/admin/AdminLeadEmailAssignmentsTab"));
+const AdminAiDataAccessTab = dynamic(() => import("@/components/admin/AdminAiDataAccessTab"));
+const AdminTimeTrackingTab = dynamic(() => import("@/components/admin/AdminTimeTrackingTab"));
 const AdminPropertyAutoLinkTab = dynamic(() => import("@/components/admin/AdminPropertyAutoLinkTab"));
 
 interface Member {
@@ -265,15 +267,15 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'permissions' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'permissions', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink'];
+type AdminTab = 'members' | 'teams' | 'permissions' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink' | 'aiDataAccess' | 'timeTracking';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'permissions', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink', 'aiDataAccess', 'timeTracking'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', permissions: 'Permissions', defaults: 'Default Settings', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
   oneDrive: 'OneDrive', xero: 'Xero', email: 'Email',
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
   platformHealth: 'Platform health', archiveRequests: 'Archive requests', leadEmailAssignments: 'Lead email assignments',
-  propertyAutoLink: 'Property auto-link',
+  propertyAutoLink: 'Property auto-link', aiDataAccess: 'AI data access', timeTracking: 'Time tracking',
 };
 
 export default function AdminPage() {
@@ -1109,6 +1111,16 @@ function AdminPageInner() {
           {/* ── Lead email assignments ── */}
           {activeTab === 'leadEmailAssignments' && companyId && (
             <AdminLeadEmailAssignmentsTab companyId={companyId} />
+          )}
+
+          {/* ── AI data access requests ── */}
+          {activeTab === 'aiDataAccess' && companyId && (
+            <AdminAiDataAccessTab companyId={companyId} />
+          )}
+
+          {/* ── Time tracking ── */}
+          {activeTab === 'timeTracking' && companyId && (
+            <AdminTimeTrackingTab companyId={companyId} />
           )}
 
           {/* ── Property auto-link ── */}

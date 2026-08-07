@@ -236,6 +236,56 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
       required: ["dashboard_id", "confirm"],
     },
   },
+  {
+    name: "query_records",
+    description: "Read actual business records (not schema) from a table, so you can answer questions about the company's real data or propose specific records for an action (see propose_records). Use table_id 'projects' for the built-in Matters/Projects system table; otherwise pass a custom table's id from list_existing_tables. Reading real data always requires the user's (or an admin's) explicit consent first -- if it hasn't been granted yet, this returns instructions instead of data; follow them exactly rather than guessing or making up an answer.",
+    input_schema: {
+      type: "object",
+      properties: {
+        table_id: { type: "string", description: "'projects' for the Matters system table, or a custom table's id." },
+        field_labels: { type: "array", items: { type: "string" }, description: "Custom tables only: which fields to return, by label. Omit for all fields." },
+        filter_field_label: { type: "string", description: "Optional: a field label to filter on (for 'projects', use 'status'). Pair with filter_value." },
+        filter_value: { type: "string", description: "Required if filter_field_label is set -- the value that field must equal." },
+      },
+      required: ["table_id"],
+    },
+  },
+  {
+    name: "grant_ai_data_access",
+    description: "Records the user's consent for you to read this company's business data, after you've explained what data you need it for and they've explicitly agreed in chat, including confirming whether they want one-time access or a standing 30-day grant. Only call this after that explicit agreement (never preemptively), and only ever on behalf of a company admin -- if the person you're talking to isn't an admin, use query_records instead, which will route their request to one.",
+    input_schema: {
+      type: "object",
+      properties: {
+        duration: { type: "string", enum: ["one_time", "30_days"], description: "'one_time' covers just this conversation; '30_days' keeps access open for a rolling 30 days without asking again." },
+      },
+      required: ["duration"],
+    },
+  },
+  {
+    name: "propose_records",
+    description: "Present a specific list of records (from a prior query_records call) to the user as selectable candidates for an action, e.g. matters you think should be archived. Renders as an interactive checklist in the chat -- the user can review each one and choose to act on all, some, one, or none of them, right there, without you needing to take any further action yourself. Use this instead of just listing candidates as plain text whenever you're suggesting the user act on specific records.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "One short sentence introducing the list, e.g. 'These matters have had no activity in over a year:'" },
+        action_label: { type: "string", description: "What selecting records and confirming will do, e.g. 'Archive selected'." },
+        candidates: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              record_id: { type: "string", description: "The record's real id, from query_records." },
+              table_id: { type: "string", description: "'projects', or the custom table id this record belongs to." },
+              label: { type: "string", description: "Display name for this record, e.g. the matter name." },
+              reason: { type: "string", description: "One short phrase on why this record is being proposed, e.g. 'No activity since Jan 2025'." },
+            },
+            required: ["record_id", "table_id", "label", "reason"],
+          },
+        },
+      },
+      required: ["summary", "action_label", "candidates"],
+    },
+  },
 ];
 
 export interface ToolExecutionResult {
@@ -691,13 +741,182 @@ async function deleteDashboard(admin: any, companyId: string, userId: string, in
   return { content: `Deleted dashboard "${dashboard.name}". Restorable via Settings → Trash or Settings → Schema History.` };
 }
 
+// The Matters/Projects system table's fixed field set, returned by
+// query_records for table_id 'projects' -- it isn't a company_tables row
+// (see supabase/migrations/20260726110000_projects_active_index.sql), so it
+// has no company_table_fields to look up field_labels/filter against the
+// way a custom table does. status <> 'Closed' is this app's actual,
+// currently-unrestricted definition of "active" -- see that same migration.
+const PROJECT_SYSTEM_FIELDS = ["id", "name", "status", "description", "created_at", "updated_at"];
+
+// Every read this file's tools can reach is capped here -- this is meant to
+// ground a conversational answer or a short proposal list, not export a
+// company's entire dataset in one call. A question that genuinely needs
+// more than this should be narrowed (a filter, a specific table) rather
+// than raising the cap.
+const QUERY_RECORDS_LIMIT = 200;
+
+async function hasDataAccessGrant(admin: any, companyId: string): Promise<boolean> {
+  const { data } = await admin.from("ai_chat_settings").select("data_access_granted_until").eq("company_id", companyId).maybeSingle();
+  if (!data?.data_access_granted_until) return false;
+  return new Date(data.data_access_granted_until) > new Date();
+}
+
+async function queryRecords(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  const tableId = String(input.table_id || "").trim();
+  if (!tableId) return { content: "table_id is required", isError: true };
+
+  if (!(await hasDataAccessGrant(admin, companyId))) {
+    const { data: membership } = await admin.from("company_memberships").select("role").eq("company_id", companyId).eq("user_id", userId).maybeSingle();
+    const requesterIsAdmin = membership?.role === "company_admin";
+
+    if (requesterIsAdmin) {
+      return {
+        content:
+          "NEEDS_CONSENT: You do not have permission to read this company's business data yet. Do not call query_records again until the user has explicitly agreed. " +
+          "In your reply: explain plainly what data you need (this table) and why, state clearly that nothing sent to the AI is retained or used to retrain any model (it's auto-deleted after 90 days, per this app's real privacy policy), " +
+          "and ask them to choose between one-time access (just for this conversation) or a standing 30-day grant. Once they reply with their choice, call grant_ai_data_access with that duration, then retry query_records.",
+        isError: true,
+      };
+    }
+
+    const { data: requester } = await admin.from("profiles").select("full_name").eq("id", userId).maybeSingle();
+    const requesterName = requester?.full_name?.trim() || "A team member";
+    const { data: request, error: requestError } = await admin.from("ai_data_access_requests").insert({
+      company_id: companyId, requested_by: userId,
+      question: `Read access to "${tableId}"`,
+      data_scope: tableId,
+    }).select("id").single();
+    if (requestError || !request) return { content: `Could not send the access request: ${requestError?.message}`, isError: true };
+
+    await admin.rpc("notify_company_admins", {
+      p_company_id: companyId,
+      p_event_type: "ai_data_access_requested",
+      p_title: `${requesterName} is requesting AI data access`,
+      p_body: `${requesterName} asked the AI assistant a question that needs read access to "${tableId}". Approve to let it answer.`,
+      p_link_url: "/dashboard/admin?tab=aiDataAccess",
+      p_entity_table: "ai_data_access_requests",
+      p_entity_id: request.id,
+    });
+
+    return {
+      content: "A request for data access has been sent to a company admin for approval. Tell the user this plainly, and that you'll be able to answer once it's approved -- don't guess at an answer in the meantime.",
+      isError: true,
+    };
+  }
+
+  if (tableId === "projects") {
+    let query = admin.from("projects").select(PROJECT_SYSTEM_FIELDS.join(", ")).eq("company_id", companyId).is("deleted_at", null).limit(QUERY_RECORDS_LIMIT);
+    const filterField = String(input.filter_field_label || "").toLowerCase();
+    if (filterField && input.filter_value !== undefined) {
+      if (!PROJECT_SYSTEM_FIELDS.includes(filterField)) return { content: `filter_field_label must be one of: ${PROJECT_SYSTEM_FIELDS.join(", ")}`, isError: true };
+      query = query.eq(filterField, String(input.filter_value));
+    }
+    const { data, error } = await query;
+    if (error) return { content: `Failed to read matters: ${error.message}`, isError: true };
+    return { content: JSON.stringify(data ?? []) };
+  }
+
+  const { data: table } = await admin.from("company_tables").select("id, name").eq("id", tableId).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
+  if (!table) return { content: "Table not found", isError: true };
+
+  const { data: fields } = await admin.from("company_table_fields").select("id, field_key, label").eq("table_id", tableId).is("deleted_at", null);
+  const allFields: { id: string; field_key: string; label: string }[] = fields ?? [];
+  const requestedLabels: string[] = Array.isArray(input.field_labels) ? input.field_labels.map(String) : [];
+  const selectedFields = requestedLabels.length
+    ? allFields.filter((f) => requestedLabels.some((l) => l.toLowerCase() === f.label.toLowerCase()))
+    : allFields;
+
+  let recordsQuery = admin
+    .from("company_table_records")
+    .select("id, created_at, values:company_table_values(field_id, value_text, value_number, value_date, value_boolean, value_record_id)")
+    .eq("table_id", tableId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(QUERY_RECORDS_LIMIT);
+
+  const filterLabel = String(input.filter_field_label || "");
+  if (filterLabel && input.filter_value !== undefined) {
+    const filterField = allFields.find((f) => f.label.toLowerCase() === filterLabel.toLowerCase());
+    if (!filterField) return { content: `filter_field_label "${filterLabel}" not found on this table`, isError: true };
+    const { data: matchingValues } = await admin.from("company_table_values").select("record_id").eq("field_id", filterField.id).eq("value_text", String(input.filter_value));
+    const matchingIds = (matchingValues ?? []).map((v: any) => v.record_id);
+    if (!matchingIds.length) return { content: "[]" };
+    recordsQuery = recordsQuery.in("id", matchingIds);
+  }
+
+  const { data: records, error } = await recordsQuery;
+  if (error) return { content: `Failed to read records: ${error.message}`, isError: true };
+
+  const fieldById = new Map(selectedFields.map((f) => [f.id, f]));
+  const result = (records ?? []).map((rec: any) => {
+    const values: Record<string, any> = { id: rec.id };
+    (rec.values || []).forEach((v: any) => {
+      const field = fieldById.get(v.field_id);
+      if (!field) return;
+      values[field.label] = v.value_record_id ?? v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
+    });
+    return values;
+  });
+  return { content: JSON.stringify(result) };
+}
+
+async function grantAiDataAccess(admin: any, companyId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  const duration = String(input.duration || "");
+  if (duration !== "one_time" && duration !== "30_days") return { content: "duration must be 'one_time' or '30_days'", isError: true };
+
+  // 'one_time' isn't set to an already-past timestamp -- this same tool
+  // loop's very next query_records call (the whole point of calling this)
+  // would then immediately find itself unauthorized again. A short window
+  // covers the rest of this turn (and any quick follow-up in the same
+  // conversation) without leaving standing access open the way 30_days
+  // deliberately does.
+  const grantedUntil = duration === "30_days"
+    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    : new Date(Date.now() + 10 * 60 * 1000);
+
+  const { error } = await admin.from("ai_chat_settings").upsert(
+    { company_id: companyId, data_access_granted_until: grantedUntil.toISOString() },
+    { onConflict: "company_id" }
+  );
+  if (error) return { content: `Failed to record access grant: ${error.message}`, isError: true };
+  return { content: duration === "30_days" ? "Access granted for 30 days." : "Access granted for this conversation." };
+}
+
+async function proposeRecords(input: Record<string, any>): Promise<ToolExecutionResult> {
+  const candidates = Array.isArray(input.candidates) ? input.candidates : [];
+  if (!candidates.length) return { content: "candidates must be a non-empty array", isError: true };
+  // The caller (app/api/ai/chat/route.ts) captures this call's raw `input`
+  // directly for the interactive checklist -- this result is just the
+  // model's own tool-result message, a short ack, not a data channel.
+  return { content: `Presented ${candidates.length} record(s) for review.` };
+}
+
+// Schema-mutating tools stay admin-only even though the chat route itself
+// (app/api/ai/chat/route.ts) is now open to any company member -- checked
+// here, not just in the system prompt, so a non-admin can't reach these by
+// steering the model, only by an admin actually being the one chatting.
+// query_records/propose_records are available to any member (query_records
+// gates itself on the data-access grant/relay flow above); grant_ai_data_access
+// only makes sense for whoever the model is actively walking through the
+// direct consent flow, which the system prompt restricts to an admin.
+const ADMIN_ONLY_TOOLS = new Set([
+  "create_table", "create_field", "create_dashboard", "add_widget",
+  "delete_table", "delete_field", "remove_widget", "delete_dashboard",
+  "grant_ai_data_access",
+]);
+
 export async function executeTableBuilderTool(
   admin: any,
   companyId: string,
   userId: string,
+  isAdmin: boolean,
   name: string,
   input: Record<string, any>
 ): Promise<ToolExecutionResult> {
+  if (ADMIN_ONLY_TOOLS.has(name) && !isAdmin) {
+    return { content: "Only a company admin can do this. Ask an admin to make this change, or to grant the access you need.", isError: true };
+  }
   try {
     switch (name) {
       case "list_existing_tables": return await listExistingTables(admin, companyId);
@@ -711,6 +930,9 @@ export async function executeTableBuilderTool(
       case "delete_field": return await deleteField(admin, companyId, userId, input);
       case "remove_widget": return await removeWidget(admin, companyId, userId, input);
       case "delete_dashboard": return await deleteDashboard(admin, companyId, userId, input);
+      case "query_records": return await queryRecords(admin, companyId, userId, input);
+      case "grant_ai_data_access": return await grantAiDataAccess(admin, companyId, input);
+      case "propose_records": return await proposeRecords(input);
       default: return { content: `Unknown tool: ${name}`, isError: true };
     }
   } catch (err) {

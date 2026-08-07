@@ -26,8 +26,9 @@ export async function POST(req: NextRequest) {
   const detailLevel: DescriptionDetailLevel = VALID_LEVELS.includes(body.detailLevel) ? body.detailLevel : "standard";
   const sourceTaskIds: string[] = Array.isArray(body.sourceTaskIds) ? body.sourceTaskIds.filter((id: any) => typeof id === "string") : [];
   const sourceEmailIds: string[] = Array.isArray(body.sourceEmailIds) ? body.sourceEmailIds.filter((id: any) => typeof id === "string") : [];
-  if (!sourceTaskIds.length && !sourceEmailIds.length) {
-    return NextResponse.json({ error: "No source task or email ids provided" }, { status: 400 });
+  const sourceSegmentIds: string[] = Array.isArray(body.sourceSegmentIds) ? body.sourceSegmentIds.filter((id: any) => typeof id === "string") : [];
+  if (!sourceTaskIds.length && !sourceEmailIds.length && !sourceSegmentIds.length) {
+    return NextResponse.json({ error: "No source task, email, or segment ids provided" }, { status: 400 });
   }
 
   const { data: aiSettings } = await admin.from("ai_chat_settings").select("monthly_token_cap").eq("company_id", companyId).maybeSingle();
@@ -36,22 +37,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Monthly AI usage cap reached" }, { status: 429 });
   }
 
-  const [{ data: tasks }, { data: emails }] = await Promise.all([
+  const [{ data: tasks }, { data: emails }, { data: segments }] = await Promise.all([
     sourceTaskIds.length
       ? admin.from("tasks").select("id, name, notes").eq("company_id", companyId).in("id", sourceTaskIds)
       : Promise.resolve({ data: [] as any[] }),
     sourceEmailIds.length
       ? admin.from("project_emails").select("id, subject, snippet, from_name").eq("company_id", companyId).in("id", sourceEmailIds)
       : Promise.resolve({ data: [] as any[] }),
+    sourceSegmentIds.length
+      ? admin.from("time_tracking_segments").select("id, title, domain").eq("company_id", companyId).in("id", sourceSegmentIds)
+      : Promise.resolve({ data: [] as any[] }),
   ]);
 
   const taskInputs = (tasks || []).map((t: any) => ({ name: t.name, notes: t.notes }));
   const emailInputs = (emails || []).map((e: any) => ({ subject: e.subject, snippet: e.snippet, fromName: e.from_name }));
-  if (!taskInputs.length && !emailInputs.length) {
+  const segmentInputs = (segments || []).map((s: any) => ({ title: s.title, domain: s.domain }));
+  if (!taskInputs.length && !emailInputs.length && !segmentInputs.length) {
     return NextResponse.json({ error: "Source items not found" }, { status: 404 });
   }
 
-  const result = await redraftEntryDescription(MODEL_ID, taskInputs, emailInputs, detailLevel);
+  const result = await redraftEntryDescription(MODEL_ID, taskInputs, emailInputs, detailLevel, segmentInputs);
   if (!result) return NextResponse.json({ error: "Could not generate a description" }, { status: 500 });
 
   const cost = costUsd("hosted", MODEL_ID, result);

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Diract Time Tracking",
+  "version": "0.1.0",
+  "description": "Passively tracks your active browser tab and turns it into draft time entries in Diract.",
+  "permissions": ["tabs", "idle", "storage", "alarms"],
+  "host_permissions": [
+    "https://txzzgtwrrokomiphairy.supabase.co/*",
+    "https://diract.io/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Diract Time Tracking"
+  },
+  "externally_connectable": {
+    "matches": ["https://diract.io/*"]
+  }
+}

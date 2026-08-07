@@ -1,9 +1,12 @@
 // app/api/ai/chat/route.ts
 // Chat endpoint backing app/dashboard/ai/page.tsx -- the table/dashboard-
-// builder assistant. Admin-only (see the isAdmin check below): every tool
-// call in lib/ai/tableBuilderTools.ts runs with admin-equivalent rights
-// regardless of who's chatting, so access to the chat itself is gated the
-// same way any other admin-level action in this app is.
+// builder assistant. Open to any company member: schema-mutating tools
+// (create_table, delete_field, ...) still run with admin-equivalent rights
+// and are rejected server-side for a non-admin caller (see tableBuilderTools.ts's
+// ADMIN_ONLY_TOOLS), but a non-admin can chat, ask questions, and use the
+// read-only query_records/propose_records tools -- query_records gates
+// itself on a per-company data-access grant, relaying to an admin for
+// approval if none exists yet (see that tool's own handler).
 //
 // This used to be a general RAG Q&A assistant grounded in CRM/Gmail/
 // WhatsApp/Teams/OneDrive data (see lib/ai/retrieval.ts, still used by the
@@ -64,6 +67,7 @@ Guidelines:
 - If you're genuinely unsure how to proceed (ambiguous requirements, unclear how a new table should relate to what already exists, or a non-obvious design tradeoff) call research with a specific question first, and use its findings before proposing your plan. Don't call it for straightforward builds where the answer is already obvious; it costs extra time and tokens.
 - Before calling delete_table, delete_field, remove_widget, or delete_dashboard: first state in your own words exactly what will be deleted and any consequences (e.g. "This will remove the Payroll table and its 3 fields"), and wait for the user's explicit confirmation in their next message. Only then call the tool with confirm=true. If you call a delete tool without the user having agreed first, it will be rejected.
 - When you do delete something, mention in your reply that it's restorable afterward via Settings → Trash or Settings → Schema History.
+- If asked something that needs real business data (not schema) to answer -- e.g. "should any matters be archived?", "which invoices are overdue?" -- use query_records to actually look, rather than guessing or saying you can't. Reading data always needs consent first; query_records tells you exactly what to do when it hasn't been granted yet (either walk an admin through a direct yes/no, or it'll relay the request to one automatically if the person you're talking to isn't an admin) -- follow those instructions precisely. When proposing specific records for the user to act on (e.g. matters to archive), use propose_records rather than listing them as plain text -- it renders as a selectable checklist the user can act on right in the chat.
 - Keep replies brief and focused on what you did or need to know next.
 - Format with real markdown, not run-on prose -- your replies are rendered as HTML. Whenever you list more than one item (fields on a table, tables in a plan, options to choose from), use an actual markdown list: each item on its own line, starting with "- ", not comma/period-separated inside one paragraph. Bold the field/table name (e.g. "- **Client Name** (text, required): core identifier") so it's scannable. Use a heading (### or bold text) to separate each table when laying out a multi-table plan.
 - In your replies to the user, never use an em dash, a double hyphen ("--"), or a spaced hyphen (" - ") as a separator. Use a comma, colon, period, or just restructure the sentence instead.`;
@@ -80,6 +84,7 @@ interface RunJobParams {
   admin: any;
   companyId: string;
   userId: string;
+  isAdmin: boolean;
   conversationId: string;
   question: string;
   history: ChatMessage[];
@@ -93,7 +98,7 @@ interface RunJobParams {
 // sees live content/tool-call updates; a tool call's start/done is always
 // force-written regardless of the throttle since those are rare, meaningful
 // transitions that would look wrong dropped or delayed.
-async function runJob({ jobId, admin, companyId, userId, conversationId, question, history }: RunJobParams): Promise<void> {
+async function runJob({ jobId, admin, companyId, userId, isAdmin, conversationId, question, history }: RunJobParams): Promise<void> {
   let content = "";
   let reasoning = "";
   const toolCalls: ToolCallEvent[] = [];
@@ -132,12 +137,29 @@ async function runJob({ jobId, admin, companyId, userId, conversationId, questio
       writeProgress(true);
     };
 
+    // Captured here as the model's raw call input, at the actual
+    // tool-execution call site -- the onToolCall listener below only ever
+    // receives phase/isError, never the input back (well, it does receive
+    // input too, but reading it there would mean re-deriving "was this the
+    // LAST successful call" logic twice). Storing the same raw input shape
+    // {summary, action_label, candidates} the model passed in (not the
+    // tool's own result content, just a short ack) means this matches
+    // exactly what a live-streaming client already sees in this turn's
+    // toolCalls[].input -- components/ai/AiChatThread.tsx can treat both the
+    // same way, whether reading it live or after a reload from ai_messages.
+    let proposedRecords: unknown = null;
+    const executeTool = async (name: string, input: Record<string, unknown>) => {
+      const toolResult = await executeTableBuilderTool(admin, companyId, userId, isAdmin, name, input);
+      if (name === "propose_records" && !toolResult.isError) proposedRecords = input;
+      return toolResult;
+    };
+
     const result = await callTogetherModelWithTools(
       MODEL_ID,
       SYSTEM_PROMPT,
       [...history, { role: "user", content: question }],
       TABLE_BUILDER_TOOLS,
-      (name, input) => executeTableBuilderTool(admin, companyId, userId, name, input),
+      executeTool,
       onDelta,
       onToolCall,
       onReasoning,
@@ -145,8 +167,11 @@ async function runJob({ jobId, admin, companyId, userId, conversationId, questio
       "medium"
     );
 
-    if (result.content) {
-      await admin.from("ai_messages").insert({ conversation_id: conversationId, role: "assistant", content: result.content });
+    if (result.content || proposedRecords) {
+      await admin.from("ai_messages").insert({
+        conversation_id: conversationId, role: "assistant", content: result.content,
+        proposed_records: proposedRecords,
+      });
     }
     await admin.from("ai_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
 
@@ -194,10 +219,6 @@ export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
   const { admin, companyId, user, isAdmin } = auth;
-
-  if (!isAdmin) {
-    return new Response(JSON.stringify({ error: "Admin access required" }), { status: 403 });
-  }
 
   const body = await req.json().catch(() => null);
   const question: string | undefined = body?.question;
@@ -267,7 +288,7 @@ export async function POST(req: NextRequest) {
   // (which this platform's `after` uses under the hood, see this file's
   // header comment) keeps the invocation alive until it finishes, so the
   // caller doesn't have to hold a connection open or stay on this page.
-  after(() => runJob({ jobId: job.id, admin, companyId, userId: user.id, conversationId, question, history }));
+  after(() => runJob({ jobId: job.id, admin, companyId, userId: user.id, isAdmin, conversationId, question, history }));
 
   return NextResponse.json({ jobId: job.id });
 }

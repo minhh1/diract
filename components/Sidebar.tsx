@@ -9,7 +9,7 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, MessageSquare, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet,
+  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet, Timer,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -130,6 +130,7 @@ const SETTINGS_LINKS = [
   { href: '/dashboard/settings/history', icon: Clock, label: 'Schema history' },
   { href: '/dashboard/settings?view=precedents', icon: PenSquare, label: 'Precedents' },
   { href: '/dashboard/settings?view=invoice_template', icon: Receipt, label: 'Invoice template' },
+  { href: '/dashboard/settings/extension', icon: Timer, label: 'Time-tracking extension' },
 ];
 
 const ADMIN_LINKS = [
@@ -149,6 +150,8 @@ const ADMIN_LINKS = [
   { tab: 'virtualComputers', icon: Monitor, label: 'Virtual computers' },
   { tab: 'archiveRequests', icon: Archive, label: 'Archive requests' },
   { tab: 'leadEmailAssignments', icon: UserPlus, label: 'Lead email assignments' },
+  { tab: 'aiDataAccess', icon: Database, label: 'AI data access' },
+  { tab: 'timeTracking', icon: Timer, label: 'Time tracking' },
   { tab: 'propertyAutoLink', icon: Building2, label: 'Property auto-link' },
   { tab: 'company', icon: Settings, label: 'Company' },
 ] as const;

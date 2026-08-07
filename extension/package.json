@@ -1,0 +1,15 @@
+{
+  "name": "diract-time-tracking-extension",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "esbuild src/background.js --bundle --outfile=background.js --format=esm --target=chrome110 --define:__SUPABASE_ANON_KEY__=\\\"$SUPABASE_ANON_KEY\\\" && esbuild src/popup.js --bundle --outfile=popup.js --format=esm --target=chrome110",
+    "watch": "npm run build -- --watch"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

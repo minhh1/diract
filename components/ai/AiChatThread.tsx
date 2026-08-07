@@ -30,6 +30,7 @@ import type { LucideIcon } from "lucide-react";
 import { renderMarkdown } from "@/lib/renderMarkdown";
 import { supabase } from "@/lib/supabase";
 import { useTableRealtime } from "@/lib/hooks/useTableRealtime";
+import ProposedRecordsList, { type ProposedRecordsData } from "@/components/ai/ProposedRecordsList";
 
 export interface ToolCallEvent {
   name: string;
@@ -47,6 +48,30 @@ export interface ChatMessage {
   // reasoningEffort param) -- only ever set on the first turn of a build,
   // not accumulated across the whole conversation.
   reasoning?: string;
+  // Set from a completed propose_records tool call (see
+  // app/api/ai/chat/route.ts's runJob, which persists it onto the
+  // ai_messages row for a reloaded conversation) -- rendered as
+  // ProposedRecordsList below. A live/streaming turn instead derives this
+  // straight from toolCalls (see proposedRecordsFor below), since this
+  // field only ever arrives already-loaded from the server.
+  proposedRecords?: ProposedRecordsData;
+}
+
+// A live/streaming turn's propose_records call is only ever visible in its
+// toolCalls (the model's raw call input, matching ProposedRecordsData's
+// shape exactly -- see chat/route.ts's own comment on why it persists the
+// same raw input rather than the tool's result content) until this
+// conversation is reloaded from the server, at which point it's on
+// m.proposedRecords instead. Checking both means the checklist appears
+// immediately as the turn completes, not only after a refresh.
+function proposedRecordsFor(m: ChatMessage): ProposedRecordsData | null {
+  if (m.proposedRecords) return m.proposedRecords;
+  const call = [...(m.toolCalls ?? [])].reverse().find((c) => c.name === "propose_records" && c.phase === "done" && !c.isError);
+  if (!call) return null;
+  const input = call.input as Record<string, unknown>;
+  const candidates = Array.isArray(input.candidates) ? input.candidates : [];
+  if (!candidates.length) return null;
+  return { summary: String(input.summary || ""), action_label: String(input.action_label || ""), candidates: candidates as ProposedRecordsData["candidates"] };
 }
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
@@ -524,6 +549,11 @@ export default function AiChatThread({
                           {showCursor && <span className="inline-block w-[2px] h-[15px] bg-slate-400 mt-0.5 animate-pulse align-middle" />}
                         </>
                       ) : null}
+
+                      {(() => {
+                        const proposed = proposedRecordsFor(m);
+                        return proposed ? <ProposedRecordsList data={proposed} /> : null;
+                      })()}
                     </div>
                   )}
                 </motion.div>

@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { data: messages, error } = await admin
     .from("ai_messages")
-    .select("role, content, citations, created_at")
+    .select("role, content, citations, proposed_records, created_at")
     .eq("conversation_id", id)
     .order("created_at", { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

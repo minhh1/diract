@@ -52,10 +52,17 @@ interface DraftEntry {
   date: string;
   sourceTaskIds: string[];
   sourceEmailIds: string[];
+  // Tracked browser activity that was merged into this entry (see the
+  // time-tracking extension / app/api/time-tracking/sync) -- alongside
+  // sourceTaskIds/sourceEmailIds in the same claim-on-submit shape.
+  sourceSegmentIds: string[];
   // The actual email(s) this entry's description was drafted from -- shown
   // via an inline expand (see expandedKeys below) so the viewer can check
   // the AI's read of the correspondence without leaving this drawer.
   emailPreviews: { subject: string | null; snippet: string | null; fromName: string | null }[];
+  // Same idea for tracked browser activity -- domain/title only, never the
+  // full URL or page content (see the sync route's own comment on why).
+  segmentPreviews: { title: string | null; domain: string }[];
   // How much this entry's description currently says -- starts at whatever
   // level the batch generate() call used (see defaultDetailLevel below),
   // changed per-entry via the Brief/Standard/Detailed control, which
@@ -250,7 +257,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
     try {
       const res = await fetch("/api/time-entries/auto-generate/regenerate-description", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceTaskIds: entry.sourceTaskIds, sourceEmailIds: entry.sourceEmailIds, detailLevel: level }),
+        body: JSON.stringify({ sourceTaskIds: entry.sourceTaskIds, sourceEmailIds: entry.sourceEmailIds, sourceSegmentIds: entry.sourceSegmentIds, detailLevel: level }),
       });
       const json = await res.json();
       if (res.ok && json.description) updateEntry(key, { description: json.description });
@@ -306,6 +313,7 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
           entries: toSubmit.map(e => ({
             key: e.key, userId: e.userId, matterId: e.matterId, description: e.description,
             hours: e.hours, date: e.date, sourceTaskIds: e.sourceTaskIds, sourceEmailIds: e.sourceEmailIds,
+            sourceSegmentIds: e.sourceSegmentIds,
           })),
         }),
       });
@@ -458,11 +466,11 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
                           onChange={ev => updateEntry(e.key, { hours: Math.max(0.1, Number(ev.target.value) || 0.1) })}
                           className="w-20 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1 text-[11px] font-bold outline-none" />
                         <span className="text-[10px] text-slate-400 font-medium">hours</span>
-                        {e.emailPreviews.length > 0 && (
+                        {(e.emailPreviews.length > 0 || e.segmentPreviews.length > 0) && (
                           <button onClick={() => toggleExpanded(e.key)}
                             className="ml-auto flex items-center gap-1 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
                             <Mail size={11} />
-                            {e.emailPreviews.length} email{e.emailPreviews.length !== 1 ? "s" : ""}
+                            {e.emailPreviews.length + e.segmentPreviews.length} source{e.emailPreviews.length + e.segmentPreviews.length !== 1 ? "s" : ""}
                             {expandedKeys.has(e.key) ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
                           </button>
                         )}
@@ -474,6 +482,12 @@ export default function AutoTimeRecordingPanel({ label, isAdmin, onClose, onData
                               <p className="font-bold text-slate-700 truncate">{p.subject || "(no subject)"}</p>
                               {p.fromName && <p className="text-slate-400">From: {p.fromName}</p>}
                               {p.snippet && <p className="mt-0.5 text-slate-500">{p.snippet}</p>}
+                            </div>
+                          ))}
+                          {e.segmentPreviews.map((p, i) => (
+                            <div key={i} className="bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-2 text-[10px] text-slate-600">
+                              <p className="font-bold text-slate-700 truncate">{p.title || "(untitled page)"}</p>
+                              <p className="text-slate-400">{p.domain}</p>
                             </div>
                           ))}
                         </div>
