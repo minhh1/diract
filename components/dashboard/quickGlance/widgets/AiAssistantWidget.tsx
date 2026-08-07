@@ -208,7 +208,7 @@ export default function AiAssistantWidget() {
                 ? 'Tell me what you do, and I\'ll help set your database up -- e.g. "I run a plumbing company with 10 employees, I want to track jobs, invoices, and payroll."'
                 : undefined
             }
-            placeholder="Tell it what to add or change..."
+            placeholder="Add or change something..."
             onConversationCreated={setConversationId}
             onBuildProgress={refetch}
             onTurnComplete={loadConversations}

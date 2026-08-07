@@ -537,7 +537,16 @@ export default function AiChatThread({
             }}
             disabled={capReached}
             placeholder={placeholder}
-            className="flex-1 resize-none px-5 py-3.5 text-[15px] leading-relaxed outline-none disabled:opacity-40 bg-transparent max-h-[200px]"
+            // truncate (only while empty) keeps a too-long placeholder on
+            // one line instead of visually wrapping into a second line
+            // that gets clipped by the pill's own height -- the auto-grow
+            // effect above only measures the empty VALUE's scrollHeight
+            // (always one line), not how the placeholder text wraps, so a
+            // narrow host (e.g. AiAssistantWidget.tsx's Quick Glance card)
+            // never gets a chance to grow tall enough for it. Confirmed
+            // live on a phone screenshot. Real typed input still wraps
+            // normally the instant there's any value.
+            className={`flex-1 resize-none px-5 py-3.5 text-[15px] leading-relaxed outline-none disabled:opacity-40 bg-transparent max-h-[200px] ${input ? "" : "truncate"}`}
           />
           <button
             onClick={send}
