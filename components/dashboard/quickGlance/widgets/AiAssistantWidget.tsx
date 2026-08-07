@@ -103,7 +103,20 @@ export default function AiAssistantWidget() {
   };
 
   return (
-    <div className="space-y-3 h-full flex flex-col">
+    // Not h-full/flex-1 -- react-grid-layout (QuickGlanceCanvas.tsx) gives
+    // every cell a fixed PIXEL height (rowHeight * h) regardless of
+    // viewport width, with no responsive/mobile breakpoint handling at
+    // all. On a narrow phone that same fixed height (this widget's default
+    // layout is h:12, ~612px -- lib/dashboardWidgets/quickGlanceTypes.ts)
+    // is squarish on desktop but absurdly tall next to the shrunk mobile
+    // width. Every other widget already tolerates this by sizing to its
+    // own intrinsic content and leaving quiet background whitespace below
+    // -- this one was the outlier, explicitly stretching its bordered card
+    // to fill the whole oversized cell (confirmed live: a mostly-empty
+    // white rounded box with the input stranded near the top). Sizing to
+    // content instead, matching the others, rather than fixing the grid's
+    // actual sizing system (a much larger change affecting every widget).
+    <div className="space-y-3">
       <div className="flex items-center gap-2.5">
         <Sparkles size={15} className="text-slate-400 shrink-0" />
         <p className="text-[13px] font-medium text-slate-700 flex-1">AI Assistant</p>
@@ -184,7 +197,7 @@ export default function AiAssistantWidget() {
       </div>
 
       {isAdmin ? (
-        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl flex-1 min-h-0 overflow-y-auto p-4">
+        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl overflow-y-auto p-4">
           <AiChatThread
             key={openedConversationId ?? "new"}
             compact
@@ -202,7 +215,7 @@ export default function AiAssistantWidget() {
           />
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl flex-1 min-h-0 flex items-center justify-center p-4 text-center">
+        <div className="bg-white border border-slate-200 rounded-2xl flex items-center justify-center p-8 text-center">
           <p className="text-[12px] text-slate-400">
             Ask a company admin to describe your business to the AI assistant to set up tables, fields, and dashboards.
           </p>
