@@ -445,11 +445,15 @@ export default function AiChatThread({
   return (
     // h-full unconditionally -- both callers now explicitly own a real
     // bounding height for this to fill (the full page's own h-full chain,
-    // or AiAssistantWidget.tsx's fixed h-[420px] card), so the message
-    // area's flex-1 below has something concrete to grow into instead of
-    // collapsing to its own tiny natural size.
+    // or AiAssistantWidget.tsx's grid-cell card, now tall/full-width rather
+    // than the small fixed card it used to be). The message area below is
+    // flex-1 with NO max-height cap -- a cap here (this used to be
+    // max-h-[440px], sized for that old small card) stops it from growing
+    // to fill the real container height, leaving the input row stranded
+    // partway down the screen with empty space below it instead of pinned
+    // to the bottom. Confirmed live: this is exactly what caused that.
     <div className="flex flex-col h-full">
-      <div ref={messagesContainerRef} className={`flex-1 ${compact ? "max-h-[440px]" : ""} overflow-y-auto`}>
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto">
         <div className={`mx-auto w-full ${compact ? "" : "max-w-[720px]"} space-y-8`}>
           {messages.length === 0 && emptyStateHint && (
             <p className="text-[15px] text-slate-400 text-center py-16">{emptyStateHint}</p>
