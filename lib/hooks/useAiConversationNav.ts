@@ -15,6 +15,20 @@ import type { ChatMessage } from "@/components/ai/AiChatThread";
 
 const FIRST_TIME_WELCOME = 'Tell me what you do, and I\'ll help set your database up -- e.g. "I run a plumbing company with 10 employees, I want to track jobs, invoices, and payroll."';
 
+// A pool of returning-user greetings, one picked at random per fresh chat
+// (see greetingIndex below) -- a single fixed "Welcome back, {name}!" got
+// stale fast since it's the very first thing shown on every single New chat
+// click. Kept short and free of any specific claim about what changed since
+// last time (this hook doesn't know that), just varied phrasing.
+const RETURNING_GREETINGS: ((firstName?: string) => string)[] = [
+  (name) => `Welcome back${name ? `, ${name}` : ""}! What would you like to add or change?`,
+  (name) => `Good to see you${name ? `, ${name}` : ""}. What are we building today?`,
+  (name) => `Hey${name ? ` ${name}` : ""}, what's next on the list?`,
+  (name) => `${name ? `${name}, w` : "W"}hat would you like to update?`,
+  (name) => `Ready when you are${name ? `, ${name}` : ""}. What should we work on?`,
+  (name) => `Back again${name ? `, ${name}` : ""}? Let's pick up where we left off.`,
+];
+
 export function useAiConversationNav() {
   const { conversations, loading: conversationsLoading, refetch: loadConversations, rename, togglePin, remove } = useAiConversations();
   const { data: profile } = useProfile();
@@ -39,11 +53,17 @@ export function useAiConversationNav() {
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  // Re-rolled on every startNewChat so re-opening a blank chat repeatedly in
+  // the same session doesn't keep showing the exact same returning-user
+  // greeting -- lazy initializer so page load itself also picks randomly
+  // rather than always starting on index 0.
+  const [greetingIndex, setGreetingIndex] = useState(() => Math.floor(Math.random() * RETURNING_GREETINGS.length));
 
   const startNewChat = useCallback(() => {
     setConversationId(null);
     setOpenedConversationId(null);
     setInitialMessages([]);
+    setGreetingIndex(Math.floor(Math.random() * RETURNING_GREETINGS.length));
   }, []);
 
   const openConversation = useCallback(async (id: string) => {
