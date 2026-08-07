@@ -251,6 +251,18 @@
    named Tailwind classes above, so it needs its own override; same page-
    canvas role as bg-slate-50. */
 .dark .bg-\[\#F9FAFB\] { background-color: #262624; }
+/* AiChatThread.tsx/dashboard/ai/page.tsx's page-canvas background -- same
+   role as bg-\[#F9FAFB\] above, just a different one-off hex (a warm
+   cream instead of cool near-white in light mode). Left as its own
+   arbitrary-value class rather than switched to a named one so light mode
+   keeps its distinct cream tone; only dark mode needed teaching about it.
+   Confirmed live 2026-08-07: this was the one arbitrary-hex class on the
+   whole AI page that the sweep never covered, so it stayed cream while
+   the Sidebar and every other dashboard surface around it went dark. */
+.dark .bg-\[\#FAF9F6\] { background-color: #262624; }
+/* AiChatThread.tsx's user-message bubble -- a step up from the page
+   canvas, same role as bg-slate-100's "elevated surface" below. */
+.dark .bg-\[\#F0EFEA\] { background-color: #34322e; }
 .dark .bg-white { background-color: #2d2c2a; }
 .dark .bg-black { background-color: #0c0b0a; }
 .dark .text-black { color: #f5f3ea; }
@@ -296,6 +308,7 @@
 .dark .border-slate-50 { border-color: #2b2925; }
 .dark .border-slate-100 { border-color: #38362f; }
 .dark .border-slate-200 { border-color: #46443b; }
+.dark .border-slate-200\/70 { border-color: #46443b; }
 .dark .border-slate-300 { border-color: #55534a; }
 .dark .border-slate-400 { border-color: #6b6960; }
 .dark .border-slate-500 { border-color: #7d7b71; }
@@ -613,6 +626,7 @@
 .dark .focus\:ring-violet-100:focus { --tw-ring-color: #2c2657; }
 .dark .focus\:ring-slate-100:focus { --tw-ring-color: #38362f; }
 .dark .focus-within\:ring-indigo-100:focus-within { --tw-ring-color: #322f72; }
+.dark .focus-within\:border-slate-300:focus-within { border-color: #55534a; }
 
 /* ── sm: responsive-prefix coverage ───────────────────────────────────
    Same gap again -- `sm:bg-X` compiles to its own selector (media-query

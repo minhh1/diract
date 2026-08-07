@@ -199,7 +199,7 @@ export default function AiAssistantWidget() {
         // flex-1 min-h-0 fills whatever's left after the header above --
         // overflow-hidden since AiChatThread's own message area is the one
         // that scrolls internally, not this card.
-        <div className="bg-[#FAF9F6] border border-slate-200 rounded-2xl overflow-hidden p-4 flex-1 min-h-0 flex flex-col">
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden p-4 flex-1 min-h-0 flex flex-col">
           <AiChatThread
             key={openedConversationId ?? "new"}
             compact
