@@ -17,7 +17,7 @@ import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
   FileOutput, Users, Crown, Calendar, CalendarClock, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge, Flag,
-  Sparkles, Table2, LayoutDashboard,
+  Table2, LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 import { useMockupTheme } from "./MockupThemeProvider";
@@ -1305,14 +1305,13 @@ export function MockAiSafety() {
 // payroll."). Only which tables get created and the wrap-up reply are
 // shortened for the card -- the structure (a plain confirming sentence
 // after the tool activity, not a list) matches how a real turn actually
-// renders there.
+// renders there. One deliberate departure from the real screen: the header
+// row there literally reads "Ask AI" (Sidebar.tsx) -- dropped here per the
+// marketing site's voice, which doesn't name the underlying technology at
+// all ("we'll build it for you" instead), so this card has no header label.
 export function MockAiBuilder() {
   return (
     <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
-      <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-        <Sparkles size={14} className="text-slate-400" />
-        <span className="text-[13px] font-medium text-slate-700">Ask AI</span>
-      </div>
       <div className="flex justify-end">
         <div className="max-w-[85%] rounded-[18px] px-4 py-2.5 text-[12px] leading-relaxed bg-[#F0EFEA] text-slate-800">
           I run a plumbing company with 10 employees. I want to track jobs, invoices, and payroll.
