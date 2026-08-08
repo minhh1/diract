@@ -75,20 +75,24 @@ export default function RosterWeekView({ weekDays, shifts, staff, isAdmin, onCha
                   const dayShifts = shiftsFor(member.id, dateStr);
                   const color = staffColor(member.id);
                   return (
-                    <div key={i} className="group min-h-[56px] rounded-2xl border border-slate-100 bg-white p-1 flex flex-col gap-1">
+                    <div key={i} className="group min-h-[76px] rounded-2xl border border-slate-100 bg-white p-1 flex flex-col gap-1">
                       {dayShifts.map((s) => (
                         <button
                           key={s.id}
                           onClick={() => openShift(s, member.name)}
-                          className="text-left px-2 py-1 rounded-xl text-[10px] font-bold leading-tight transition-colors"
+                          className="relative text-left px-2.5 py-2 rounded-xl leading-tight transition-colors"
                           style={{
-                            border: `1px ${s.status === "draft" ? "dashed" : "solid"} ${color}`,
+                            border: `1.5px ${s.status === "draft" ? "dashed" : "solid"} ${color}`,
                             backgroundColor: `${color}1a`,
                             color,
                           }}
                         >
-                          {timeLabel(s.start_time)}-{timeLabel(s.end_time)}
-                          {s.role_note && <span className="block font-medium opacity-70 truncate">{s.role_note}</span>}
+                          {s.status === "draft" && (
+                            <span className="absolute top-1 right-1.5 text-[7px] font-bold uppercase tracking-wider opacity-70">Draft</span>
+                          )}
+                          <span className="block text-[11px] font-bold">{timeLabel(s.start_time)}</span>
+                          <span className="block text-[11px] font-bold">{timeLabel(s.end_time)}</span>
+                          {s.role_note && <span className="block text-[9px] font-medium opacity-70 truncate mt-0.5">{s.role_note}</span>}
                         </button>
                       ))}
                       {isAdmin && (

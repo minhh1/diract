@@ -5,9 +5,10 @@
 // booking calendar doesn't fit the generic per-table widget model).
 // Month/week/day shell, staff rostering, and event booking (invitations,
 // reminders, opt-in two-way Google Calendar sync) all live here.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { CalendarDays, Loader2, ChevronLeft, ChevronRight, Copy, Send, Plus, RefreshCw } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
+import { useKioskView } from "@/lib/hooks/useKioskView";
 import { useCalendarNav, toDateStr, type CalendarView } from "@/lib/hooks/useCalendarNav";
 import RosterWeekView, { type RosterShift, type RosterStaff } from "@/components/calendar/RosterWeekView";
 import ShiftModal, { shiftToModalState, type ShiftModalState } from "@/components/calendar/ShiftModal";
@@ -29,7 +30,16 @@ interface DateEvent {
 }
 
 export default function CalendarPage() {
-  const { isAdmin, role, userId } = useCompany();
+  return (
+    <Suspense fallback={null}>
+      <CalendarPageInner />
+    </Suspense>
+  );
+}
+
+function CalendarPageInner() {
+  const { isAdmin, userId } = useCompany();
+  const kioskView = useKioskView();
   const [settings, setSettings] = useState<CalendarSettings | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -77,12 +87,12 @@ export default function CalendarPage() {
   // Independent of rostering -- a company can have date-sourced events
   // (task due dates, etc.) on the calendar with rostering off entirely.
   const loadDateEvents = useCallback(async () => {
-    if (!settings?.enabled || role === "kiosk") return;
+    if (!settings?.enabled || kioskView) return;
     const res = await fetch(`/api/calendar/date-events?start=${rangeStart}&end=${rangeEnd}`);
     const json = await res.json().catch(() => null);
     if (res.ok) setDateEvents(json.events ?? []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.enabled, role, rangeStart, rangeEnd]);
+  }, [settings?.enabled, kioskView, rangeStart, rangeEnd]);
 
   useEffect(() => { loadDateEvents(); }, [loadDateEvents]);
 
@@ -91,9 +101,9 @@ export default function CalendarPage() {
   // Gmail connection to piggyback on (see app/api/calendar/google-sync).
   const [googleSync, setGoogleSync] = useState<{ connected: boolean; enabled: boolean } | null>(null);
   useEffect(() => {
-    if (!settings?.booking_enabled || role === "kiosk") return;
+    if (!settings?.booking_enabled || kioskView) return;
     fetch("/api/calendar/google-sync").then((res) => res.json()).then((json) => setGoogleSync(json)).catch(() => {});
-  }, [settings?.booking_enabled, role]);
+  }, [settings?.booking_enabled, kioskView]);
   const toggleGoogleSync = async () => {
     if (!googleSync) return;
     const next = !googleSync.enabled;
@@ -102,7 +112,7 @@ export default function CalendarPage() {
   };
 
   const loadEvents = useCallback(async () => {
-    if (!settings?.booking_enabled || role === "kiosk") return;
+    if (!settings?.booking_enabled || kioskView) return;
     const res = await fetch(`/api/calendar/events?start=${rangeStart}&end=${rangeEnd}`);
     const json = await res.json().catch(() => null);
     if (res.ok) {
@@ -111,7 +121,7 @@ export default function CalendarPage() {
       setBookingStaff(json.staff ?? []);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.booking_enabled, role, rangeStart, rangeEnd]);
+  }, [settings?.booking_enabled, kioskView, rangeStart, rangeEnd]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
@@ -172,7 +182,7 @@ export default function CalendarPage() {
   // RosterWeekView itself goes fully read-only with isAdmin={false} (no
   // edit/add affordances). See components/KioskAppShell.tsx for the rest
   // of the kiosk lockdown (no Sidebar, redirected off any other route).
-  if (role === "kiosk") {
+  if (kioskView) {
     return (
       <div className="max-w-6xl mx-auto p-8 space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -337,13 +347,19 @@ export default function CalendarPage() {
                   const color = staffColor(s.staff_entity_id);
                   return (
                     <button key={s.id} onClick={() => setShiftModal(shiftToModalState(s, member?.name || "Unknown"))}
-                      className="w-full text-left flex items-center gap-3 border rounded-2xl p-4 transition-opacity hover:opacity-90"
+                      className="relative w-full text-left border rounded-2xl p-4 transition-opacity hover:opacity-90"
                       style={{ borderStyle: s.status === "draft" ? "dashed" : "solid", borderColor: color, backgroundColor: `${color}0d` }}>
-                      {member && <StaffAvatar staff={member} size={32} />}
-                      <div className="min-w-0">
-                        <p className="text-[12px] font-bold text-slate-700 truncate">{member?.name || "Unknown"}</p>
-                        <p className="text-[11px] text-slate-500">{s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}{s.role_note ? ` · ${s.role_note}` : ""}</p>
+                      {s.status === "draft" && (
+                        <span className="absolute top-3 right-4 text-[9px] font-black uppercase tracking-widest opacity-70" style={{ color }}>Draft</span>
+                      )}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        {member && <StaffAvatar staff={member} size={22} />}
+                        <p className="text-[12px] font-bold text-slate-600 truncate">{member?.name || "Unknown"}</p>
                       </div>
+                      <p className="text-[14px] font-bold leading-none" style={{ color }}>
+                        {s.start_time.slice(0, 5)} <span className="opacity-50">&ndash;</span> {s.end_time.slice(0, 5)}
+                      </p>
+                      {s.role_note && <p className="text-[11px] font-medium text-slate-500 mt-1.5">{s.role_note}</p>}
                     </button>
                   );
                 })
