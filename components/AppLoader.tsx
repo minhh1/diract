@@ -215,14 +215,7 @@ export default function AppLoader({ children }: { children: ReactNode }) {
               keep the animation playing. Transparent background (no white
               tile behind it, unlike the old SVG-in-a-box icon), so it sits
               directly on the splash background with no wrapper. */}
-          <img src="/loader-d.gif" alt="" width={80} height={80} style={{ display: "block", marginBottom: 16 }} />
-          <h1 style={{
-            fontFamily: "system-ui, sans-serif", fontWeight: 900,
-            fontStyle: "italic", fontSize: 24, letterSpacing: "-0.04em",
-            color: "#fff", marginBottom: 24,
-          }}>
-            Diract
-          </h1>
+          <img src="/loader-d.gif" alt="" width={80} height={80} style={{ display: "block", marginBottom: 28 }} />
           <div style={{ width: 140, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
             <div style={{
               width: `${progress}%`, height: "100%", background: "#6366f1",
