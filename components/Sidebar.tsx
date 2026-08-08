@@ -126,7 +126,7 @@ const SETTINGS_LINKS = [
   { href: '/dashboard/settings?view=history', icon: Clock, label: 'Import history' },
   { href: '/dashboard/settings?view=schema', icon: Database, label: 'Schema configuration' },
   { href: '/dashboard/settings?view=duplicates_menu', icon: Copy, label: 'Reconciliation tool' },
-  { href: '/dashboard/settings?view=public_pages', icon: Share2, label: 'Public pages' },
+  { href: '/dashboard/settings?view=public_pages', icon: Share2, label: 'Pages' },
   { href: '/dashboard/settings/history', icon: Clock, label: 'Schema history' },
   { href: '/dashboard/settings?view=precedents', icon: PenSquare, label: 'Precedents' },
   { href: '/dashboard/settings?view=invoice_template', icon: Receipt, label: 'Invoice template' },

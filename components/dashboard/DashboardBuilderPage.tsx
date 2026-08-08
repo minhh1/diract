@@ -437,7 +437,7 @@ export default function DashboardBuilderPage({ slugParam }: { slugParam: string 
                 dashboardKind === 'public_pages' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
               }`}
             >
-              <Share2 size={13} /> Public pages
+              <Share2 size={13} /> Pages
             </button>
           </div>
           {!isNew && <p className="text-[10px] text-slate-400 mt-1 px-1">Can&apos;t be changed after creation. Delete and recreate to switch.</p>}
