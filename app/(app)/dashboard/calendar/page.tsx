@@ -10,6 +10,8 @@ import { CalendarDays, Loader2, ChevronLeft, ChevronRight, Copy, Send, Plus, Ref
 import { useCompany } from "@/components/CompanyContext";
 import { useCalendarNav, toDateStr, type CalendarView } from "@/lib/hooks/useCalendarNav";
 import RosterWeekView, { type RosterShift, type RosterStaff } from "@/components/calendar/RosterWeekView";
+import ShiftModal, { shiftToModalState, type ShiftModalState } from "@/components/calendar/ShiftModal";
+import { StaffAvatar, staffColor } from "@/components/calendar/StaffAvatar";
 import EventModal, { type CalendarEventData, type EventInvite, type StaffOption } from "@/components/calendar/EventModal";
 import CheckInPanel from "@/components/kiosk/CheckInPanel";
 import HoursSummaryPanel from "@/components/kiosk/HoursSummaryPanel";
@@ -31,13 +33,16 @@ export default function CalendarPage() {
   const [settings, setSettings] = useState<CalendarSettings | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
-  const { view, setView, viewDate, handlePrev, handleNext, goToday, weekDays, monthDays } = useCalendarNav("week");
+  const { view, setView, viewDate, setViewDate, handlePrev, handleNext, goToday, weekDays, monthDays } = useCalendarNav("week");
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [staff, setStaff] = useState<RosterStaff[]>([]);
   const [loadingShifts, setLoadingShifts] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const [dateEvents, setDateEvents] = useState<DateEvent[]>([]);
+  const [shiftModal, setShiftModal] = useState<ShiftModalState | null>(null);
+
+  const openDay = (date: Date) => { setViewDate(date); setView("day"); };
 
   const [events, setEvents] = useState<CalendarEventData[]>([]);
   const [eventInvites, setEventInvites] = useState<EventInvite[]>([]);
@@ -329,11 +334,17 @@ export default function CalendarPage() {
               ) : (
                 shifts.filter((s) => s.shift_date === toDateStr(viewDate)).map((s) => {
                   const member = staff.find((m) => m.id === s.staff_entity_id);
+                  const color = staffColor(s.staff_entity_id);
                   return (
-                    <div key={s.id} className={`border rounded-2xl p-4 ${s.status === "draft" ? "border-dashed border-indigo-300 bg-indigo-50/40" : "border-indigo-200 bg-indigo-50"}`}>
-                      <p className="text-[12px] font-bold text-slate-700">{member?.name || "Unknown"}</p>
-                      <p className="text-[11px] text-slate-500">{s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}{s.role_note ? ` · ${s.role_note}` : ""}</p>
-                    </div>
+                    <button key={s.id} onClick={() => setShiftModal(shiftToModalState(s, member?.name || "Unknown"))}
+                      className="w-full text-left flex items-center gap-3 border rounded-2xl p-4 transition-opacity hover:opacity-90"
+                      style={{ borderStyle: s.status === "draft" ? "dashed" : "solid", borderColor: color, backgroundColor: `${color}0d` }}>
+                      {member && <StaffAvatar staff={member} size={32} />}
+                      <div className="min-w-0">
+                        <p className="text-[12px] font-bold text-slate-700 truncate">{member?.name || "Unknown"}</p>
+                        <p className="text-[11px] text-slate-500">{s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}{s.role_note ? ` · ${s.role_note}` : ""}</p>
+                      </div>
+                    </button>
                   );
                 })
               )}
@@ -350,24 +361,49 @@ export default function CalendarPage() {
             <div key={d} className="text-center text-[9px] font-black text-slate-300 uppercase tracking-widest">{d}</div>
           ))}
           {monthDays.map((date, i) => {
-            const count = date ? shifts.filter((s) => s.shift_date === toDateStr(date)).length : 0;
-            const dayEvents = date ? dateEvents.filter((e) => e.date === toDateStr(date)) : [];
-            const dayBookedEvents = date ? events.filter((e) => toDateStr(new Date(e.start_at)) === toDateStr(date)) : [];
-            const isToday = date && toDateStr(date) === toDateStr(new Date());
+            const dateStr = date ? toDateStr(date) : null;
+            const dayShifts = dateStr ? shifts.filter((s) => s.shift_date === dateStr) : [];
+            const dayEvents = dateStr ? dateEvents.filter((e) => e.date === dateStr) : [];
+            const dayBookedEvents = dateStr ? events.filter((e) => toDateStr(new Date(e.start_at)) === dateStr) : [];
+            const isToday = dateStr === toDateStr(new Date());
+            const SHIFT_CAP = 4;
+            const visibleShifts = dayShifts.slice(0, SHIFT_CAP);
+            const hiddenShiftCount = dayShifts.length - visibleShifts.length;
             return (
-              <div key={i} className={`rounded-2xl border p-2.5 min-h-[64px] ${date ? "bg-white border-slate-100" : "border-transparent"} ${isToday ? "ring-2 ring-indigo-500" : ""}`}>
+              <div
+                key={i}
+                onClick={() => date && openDay(date)}
+                className={`rounded-2xl border p-2 min-h-[130px] flex flex-col gap-1 transition-colors ${date ? "bg-white border-slate-100 cursor-pointer hover:border-indigo-200" : "border-transparent"} ${isToday ? "ring-2 ring-indigo-500" : ""}`}
+              >
                 {date && (
                   <>
                     <span className={`text-[11px] font-black ${isToday ? "text-indigo-600" : "text-slate-400"}`}>{date.getDate()}</span>
-                    {count > 0 && <p className="text-[9px] font-bold text-indigo-500 mt-1">{count} shift{count !== 1 ? "s" : ""}</p>}
-                    {dayBookedEvents.slice(0, 2).map((e) => (
-                      <button key={e.id} onClick={() => setEventModal({ event: e })}
-                        className={`block w-full text-left truncate px-1.5 py-0.5 mt-1 rounded-md text-[9px] font-bold ${e.status === "cancelled" ? "bg-slate-100 text-slate-400 line-through" : "bg-indigo-100 text-indigo-700"}`}>
+                    {settings.rostering_enabled && visibleShifts.map((s) => {
+                      const member = staff.find((m) => m.id === s.staff_entity_id);
+                      const color = staffColor(s.staff_entity_id);
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={(ev) => { ev.stopPropagation(); setShiftModal(shiftToModalState(s, member?.name || "Unknown")); }}
+                          className="flex items-center gap-1 w-full text-left px-1.5 py-0.5 rounded-md text-[9px] font-bold"
+                          style={{ backgroundColor: `${color}1a`, color, border: `1px ${s.status === "draft" ? "dashed" : "solid"} ${color}` }}
+                        >
+                          {member && <StaffAvatar staff={member} size={12} />}
+                          <span className="truncate">{s.start_time.slice(0, 5)} {member?.name || "Unknown"}</span>
+                        </button>
+                      );
+                    })}
+                    {hiddenShiftCount > 0 && (
+                      <span className="text-[9px] font-bold text-slate-400 px-1.5">+{hiddenShiftCount} more</span>
+                    )}
+                    {settings.booking_enabled && dayBookedEvents.slice(0, 2).map((e) => (
+                      <button key={e.id} onClick={(ev) => { ev.stopPropagation(); setEventModal({ event: e }); }}
+                        className={`block w-full text-left truncate px-1.5 py-0.5 rounded-md text-[9px] font-bold ${e.status === "cancelled" ? "bg-slate-100 text-slate-400 line-through" : "bg-indigo-100 text-indigo-700"}`}>
                         {e.title}
                       </button>
                     ))}
                     {dayEvents.length > 0 && (
-                      <div className="flex flex-wrap gap-0.5 mt-1">
+                      <div className="flex flex-wrap gap-0.5 mt-auto pt-1">
                         {dayEvents.slice(0, 6).map((e) => (
                           <span key={e.source_id + e.record_id} title={`${e.label}: ${e.name}`} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: e.color }} />
                         ))}
@@ -379,6 +415,10 @@ export default function CalendarPage() {
             );
           })}
         </div>
+      )}
+
+      {shiftModal && (
+        <ShiftModal modal={shiftModal} staffList={staff} canEdit={isAdmin} onClose={() => setShiftModal(null)} onSaved={() => { setShiftModal(null); loadShifts(); }} />
       )}
 
       {eventModal && (

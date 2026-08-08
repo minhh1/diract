@@ -6,24 +6,21 @@
 // of its rostering genuinely reusable (its draft/publish/copy-week logic
 // doesn't exist there -- that project outsources rostering to Deputy).
 // Dashed border = draft, solid = final -- one grid, not two separate views,
-// since an admin needs to see both at once while building the week.
+// since an admin needs to see both at once while building the week. Shift
+// chips are color-coded per staff (see StaffAvatar.staffColor) and carry
+// the staff member's avatar, consistent with the month/day views.
 import { useState } from "react";
-import { Plus, X, Trash2, Loader2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toDateStr } from "@/lib/hooks/useCalendarNav";
+import { StaffAvatar, staffColor } from "./StaffAvatar";
+import ShiftModal, { shiftToModalState, type RosterShift, type ShiftModalState } from "./ShiftModal";
 
-export interface RosterShift {
-  id: string;
-  staff_entity_id: string;
-  shift_date: string;
-  start_time: string;
-  end_time: string;
-  role_note: string | null;
-  status: "draft" | "final";
-}
+export type { RosterShift } from "./ShiftModal";
 
 export interface RosterStaff {
   id: string;
   name: string;
+  avatar_url?: string | null;
 }
 
 interface Props {
@@ -40,70 +37,15 @@ function timeLabel(t: string): string {
   return t.slice(0, 5);
 }
 
-interface ModalState {
-  shiftId?: string;
-  staffId: string;
-  staffName: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  roleNote: string;
-}
-
 export default function RosterWeekView({ weekDays, shifts, staff, isAdmin, onChanged }: Props) {
-  const [modal, setModal] = useState<ModalState | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<ShiftModalState | null>(null);
 
   const shiftsFor = (staffId: string, date: string) => shifts.filter((s) => s.staff_entity_id === staffId && s.shift_date === date);
 
   const openNew = (staffId: string, staffName: string, date: string) => {
-    setError(null);
     setModal({ staffId, staffName, date, startTime: "09:00", endTime: "17:00", roleNote: "" });
   };
-  const openEdit = (shift: RosterShift, staffName: string) => {
-    setError(null);
-    setModal({
-      shiftId: shift.id, staffId: shift.staff_entity_id, staffName, date: shift.shift_date,
-      startTime: timeLabel(shift.start_time), endTime: timeLabel(shift.end_time), roleNote: shift.role_note || "",
-    });
-  };
-
-  const handleSave = async () => {
-    if (!modal) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const body = { staff_entity_id: modal.staffId, shift_date: modal.date, start_time: modal.startTime, end_time: modal.endTime, role_note: modal.roleNote || null };
-      const res = modal.shiftId
-        ? await fetch(`/api/calendar/roster/shifts/${modal.shiftId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-        : await fetch("/api/calendar/roster/shifts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Could not save shift");
-      setModal(null);
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save shift");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!modal?.shiftId) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/calendar/roster/shifts/${modal.shiftId}`, { method: "DELETE" });
-      if (!res.ok) { const json = await res.json().catch(() => null); throw new Error(json?.error || "Could not delete shift"); }
-      setModal(null);
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete shift");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const openShift = (shift: RosterShift, staffName: string) => setModal(shiftToModalState(shift, staffName));
 
   return (
     <div className="flex-1 overflow-auto">
@@ -124,21 +66,26 @@ export default function RosterWeekView({ weekDays, shifts, staff, isAdmin, onCha
           <div className="space-y-1.5">
             {staff.map((member) => (
               <div key={member.id} className="grid grid-cols-[160px_repeat(7,1fr)] gap-1.5">
-                <div className="flex items-center px-3 py-2 text-[11px] font-bold text-slate-600 truncate">{member.name}</div>
+                <div className="flex items-center gap-2 px-3 py-2 min-w-0">
+                  <StaffAvatar staff={member} size={20} />
+                  <span className="text-[11px] font-bold text-slate-600 truncate">{member.name}</span>
+                </div>
                 {weekDays.map((d, i) => {
                   const dateStr = toDateStr(d);
                   const dayShifts = shiftsFor(member.id, dateStr);
+                  const color = staffColor(member.id);
                   return (
                     <div key={i} className="group min-h-[56px] rounded-2xl border border-slate-100 bg-white p-1 flex flex-col gap-1">
                       {dayShifts.map((s) => (
                         <button
                           key={s.id}
-                          onClick={() => isAdmin && openEdit(s, member.name)}
-                          className={`text-left px-2 py-1 rounded-xl text-[10px] font-bold leading-tight transition-colors ${
-                            s.status === "draft"
-                              ? "border border-dashed border-indigo-300 bg-indigo-50/60 text-indigo-600"
-                              : "border border-indigo-200 bg-indigo-100 text-indigo-700"
-                          }`}
+                          onClick={() => openShift(s, member.name)}
+                          className="text-left px-2 py-1 rounded-xl text-[10px] font-bold leading-tight transition-colors"
+                          style={{
+                            border: `1px ${s.status === "draft" ? "dashed" : "solid"} ${color}`,
+                            backgroundColor: `${color}1a`,
+                            color,
+                          }}
                         >
                           {timeLabel(s.start_time)}-{timeLabel(s.end_time)}
                           {s.role_note && <span className="block font-medium opacity-70 truncate">{s.role_note}</span>}
@@ -162,48 +109,7 @@ export default function RosterWeekView({ weekDays, shifts, staff, isAdmin, onCha
       </div>
 
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !saving && setModal(null)}>
-          <div className="bg-white rounded-[28px] p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[13px] font-bold text-slate-800">{modal.staffName}</p>
-                <p className="text-[11px] text-slate-400">{modal.date}</p>
-              </div>
-              <button onClick={() => setModal(null)} className="p-1 text-slate-300 hover:text-slate-700"><X size={16} /></button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Start
-                <input type="time" value={modal.startTime} onChange={(e) => setModal({ ...modal, startTime: e.target.value })}
-                  className="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-1.5 text-[12px] font-medium outline-none" />
-              </label>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                End
-                <input type="time" value={modal.endTime} onChange={(e) => setModal({ ...modal, endTime: e.target.value })}
-                  className="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-1.5 text-[12px] font-medium outline-none" />
-              </label>
-            </div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Role / note (optional)
-              <input type="text" value={modal.roleNote} onChange={(e) => setModal({ ...modal, roleNote: e.target.value })}
-                placeholder="e.g. Front desk"
-                className="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-1.5 text-[12px] font-medium outline-none" />
-            </label>
-            {error && <p className="text-[11px] text-red-500">{error}</p>}
-            <div className="flex items-center gap-2 pt-1">
-              {modal.shiftId && (
-                <button onClick={handleDelete} disabled={saving} className="p-2.5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-40 transition-colors">
-                  <Trash2 size={14} />
-                </button>
-              )}
-              <button onClick={handleSave} disabled={saving}
-                className="ml-auto flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all">
-                {saving ? <Loader2 size={13} className="animate-spin" /> : null}
-                {modal.shiftId ? "Save changes" : "Add shift"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ShiftModal modal={modal} staffList={staff} canEdit={isAdmin} onClose={() => setModal(null)} onSaved={() => { setModal(null); onChanged(); }} />
       )}
     </div>
   );
