@@ -116,25 +116,28 @@ export interface ToolCallResult extends TokenUsage {
 // straight to plain RAG chat (callHostedModel/callSelfHostedModel above)
 // for self-hosted companies.
 //
-// max_tokens defaults to a generous 4096 rather than being left unset --
-// callTogetherModelWithTools below had to be given an explicit budget after
-// this exact model/provider was confirmed live to sometimes return an
-// unrequested reasoning trace that ate the whole default token budget and
-// left `content` truncated to empty (see that function's own comment). This
-// call site had no budget at all until now, so it was exposed to the same
-// failure with no way to tell -- a bot reply silently coming back empty or
-// cut off reads as "the bot didn't understand", when the real content was
-// there and just never made it out.
+// maxTokens/reasoningEffort default to the exact same values
+// callTogetherModelWithTools below passes for the table-builder assistant's
+// own tool-calling decision (max_tokens 6000, reasoning_effort "medium") --
+// deliberately kept in sync rather than each picking its own number, so the
+// bot's single tool-call decision gets the same room to think and the same
+// protection against this model/provider's confirmed failure mode (an
+// unrequested reasoning trace eating the whole token budget and leaving
+// `content` truncated to empty -- see callTogetherModelWithTools's own
+// comment) as the in-app assistant already has.
 export async function callHostedModelWithTools(
   modelId: string,
   messages: unknown[],
   tools: unknown[],
-  maxTokens: number = 4096
+  maxTokens: number = 6000,
+  reasoningEffort?: "low" | "medium" | "high"
 ): Promise<ToolCallResult> {
+  const body: Record<string, unknown> = { model: modelId, messages, tools, tool_choice: "auto", stream: false, max_tokens: maxTokens };
+  if (reasoningEffort) body.reasoning_effort = reasoningEffort;
   const res = await fetchTogetherWithRetry("https://api.together.xyz/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
-    body: JSON.stringify({ model: modelId, messages, tools, tool_choice: "auto", stream: false, max_tokens: maxTokens }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Together tool-calling completion failed: ${res.status} ${await res.text()}`);
 

@@ -401,7 +401,14 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
         loadFieldConfig(admin, companyId, "create_task"),
         loadFieldConfig(admin, companyId, "create_project"),
       ]);
-      toolResult = await callHostedModelWithTools(modelId, toolCallMessages, buildActionTools(taskFields, projectFields));
+      // maxTokens left at its default (undefined here) -- that default is
+      // already the same 6000 app/api/ai/chat/route.ts passes explicitly
+      // for the in-app assistant's own tool-calling decision, so the two
+      // stay in sync by construction. reasoning_effort has no default (a
+      // model that ignores an unrequested one is safer than one that
+      // ignores a requested one), so it's passed explicitly here to match
+      // that same in-app call.
+      toolResult = await callHostedModelWithTools(modelId, toolCallMessages, buildActionTools(taskFields, projectFields), undefined, "medium");
     } catch (err) {
       console.error("Bot tool-calling call failed, falling back to plain chat:", err);
       toolResult = null;
@@ -433,15 +440,16 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
 
   let usage;
   try {
-    // Explicit budget for the same reason callHostedModelWithTools above
-    // now has one: left unset, an unrequested reasoning trace from this
-    // model/provider has been confirmed (elsewhere in this codebase) to eat
-    // the whole default token budget and leave the real answer truncated to
-    // nothing, which reads as the bot simply not understanding the
-    // question.
+    // Same 6000-token budget as the tool-calling call above and the in-app
+    // assistant's own call (see callHostedModelWithTools's comment) --
+    // matched rather than picking a separate smaller number here, for the
+    // same reason: this model/provider has been confirmed to sometimes eat
+    // a whole default budget on an unrequested reasoning trace, leaving the
+    // real answer truncated to nothing, which reads as the bot simply not
+    // understanding the question.
     usage =
       provider === "hosted"
-        ? await callHostedModel(modelId, modelMessages, undefined, 4096)
+        ? await callHostedModel(modelId, modelMessages, undefined, 6000)
         : await callSelfHostedModel(ollamaUrl!, modelId, modelMessages);
   } catch (err) {
     await reply("Sorry, I couldn't get an answer just now -- please try again shortly.");
