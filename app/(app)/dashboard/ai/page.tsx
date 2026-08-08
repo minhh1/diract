@@ -124,14 +124,14 @@ export default function AiAssistantPage() {
           </div>
           {usage && (
             <div className="flex items-center gap-2 text-[12px] text-slate-400 shrink-0">
-              <span>{usage.tokensUsed.toLocaleString()} / {usage.tokenCap.toLocaleString()} tokens</span>
+              <span>{usage.tokensUsed.toLocaleString()} / {usage.effectiveTokenCap.toLocaleString()} tokens</span>
               <span className="text-slate-300">&middot;</span>
               <span>~${usage.estimatedCostUsd.toFixed(2)} spent</span>
               <div className="h-1 w-16 bg-slate-100 rounded-full overflow-hidden">
                 <motion.div
-                  className={`h-full rounded-full ${usage.tokensUsed >= usage.tokenCap ? "bg-red-400" : "bg-slate-300"}`}
+                  className={`h-full rounded-full ${usage.tokensUsed >= usage.effectiveTokenCap ? "bg-red-400" : "bg-slate-300"}`}
                   initial={false}
-                  animate={{ width: `${Math.min(100, (usage.tokensUsed / usage.tokenCap) * 100)}%` }}
+                  animate={{ width: `${Math.min(100, (usage.tokensUsed / usage.effectiveTokenCap) * 100)}%` }}
                   transition={{ duration: 0.6, ease: "easeOut" }}
                 />
               </div>

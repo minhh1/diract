@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { getStripe } from "@/lib/stripe";
+import { getOrCreateStripeCustomer } from "@/lib/billing/stripeCustomer";
 import { isPlanId, getStripePriceId } from "@/lib/billing/plans";
 
 export async function POST(req: NextRequest) {
@@ -20,24 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const stripe = getStripe();
-
-  const { data: existing } = await admin
-    .from("company_subscriptions")
-    .select("stripe_customer_id")
-    .eq("company_id", companyId)
-    .maybeSingle();
-
-  let stripeCustomerId = existing?.stripe_customer_id;
-  if (!stripeCustomerId) {
-    const customer = await stripe.customers.create({
-      email: user.email ?? undefined,
-      metadata: { companyId },
-    });
-    stripeCustomerId = customer.id;
-    await admin
-      .from("company_subscriptions")
-      .upsert({ company_id: companyId, stripe_customer_id: stripeCustomerId }, { onConflict: "company_id" });
-  }
+  const stripeCustomerId = await getOrCreateStripeCustomer(admin, companyId, user.email ?? undefined);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 

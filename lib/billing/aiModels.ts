@@ -87,6 +87,15 @@ export const ANTHROPIC_MODELS: Record<string, { inputUsdPer1kTokens: number; out
   "claude-opus-4-8": { inputUsdPer1kTokens: 0.005, outputUsdPer1kTokens: 0.025 },
 };
 
+// Platform margin stacked on top of real provider cost -- applied to every
+// dollar figure this file produces (ai_usage_events.cost_usd, from there the
+// Stripe meter and the usage-meter UI, see lib/billing/aiUsageReporting.ts
+// and app/api/ai/usage/route.ts) so there's exactly one "cost" number
+// anywhere in the app, already inclusive of margin. Not applied to
+// self_hosted below -- that's already a pure platform service fee with no
+// real provider cost underneath it to mark up.
+const AI_COST_MARKUP_MULTIPLIER = 1.2;
+
 // Shared by app/api/ai/chat/route.ts and app/api/teams/bot/[companyId]/route.ts
 // -- self-hosted usage has no real per-token provider cost, so it's billed
 // at a flat platform service fee instead (see PLATFORM_AI_SERVICE_FEE_USD_PER_1K_TOKENS
@@ -102,9 +111,11 @@ export function costUsd(
   if (provider === "anthropic") {
     const model = ANTHROPIC_MODELS[modelId];
     if (!model) return 0;
-    return (usage.inputTokens / 1000) * model.inputUsdPer1kTokens + (usage.outputTokens / 1000) * model.outputUsdPer1kTokens;
+    const raw = (usage.inputTokens / 1000) * model.inputUsdPer1kTokens + (usage.outputTokens / 1000) * model.outputUsdPer1kTokens;
+    return raw * AI_COST_MARKUP_MULTIPLIER;
   }
   const model = findHostedModel(modelId);
   if (!model) return 0;
-  return (usage.inputTokens / 1000) * model.inputUsdPer1kTokens + (usage.outputTokens / 1000) * model.outputUsdPer1kTokens;
+  const raw = (usage.inputTokens / 1000) * model.inputUsdPer1kTokens + (usage.outputTokens / 1000) * model.outputUsdPer1kTokens;
+  return raw * AI_COST_MARKUP_MULTIPLIER;
 }

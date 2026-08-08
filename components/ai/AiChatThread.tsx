@@ -192,6 +192,8 @@ function ThinkingBlock({ text, defaultExpanded }: { text: string; defaultExpande
 export interface Usage {
   tokensUsed: number;
   tokenCap: number;
+  creditTokensThisPeriod: number;
+  effectiveTokenCap: number;
   estimatedCostUsd: number;
   periodEnd: string;
 }
@@ -326,7 +328,7 @@ export default function AiChatThread({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
-  const capReached = usage ? usage.tokensUsed >= usage.tokenCap : false;
+  const capReached = usage ? usage.tokensUsed >= usage.effectiveTokenCap : false;
 
   // Applies one ai_chat_jobs row (from the attach-on-mount lookup or a
   // realtime update) to the last (assistant) message, and finalizes the

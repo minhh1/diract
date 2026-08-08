@@ -1,26 +1,22 @@
 // app/dashboard/billing/page.tsx
-// Company billing: view/subscribe to a platform plan (Stripe Checkout) and
-// manage an existing subscription (Stripe Billing Portal). Any company
-// member can view; only a company_admin sees the Subscribe/Manage buttons --
-// mirrors the admin-gating pattern in app/dashboard/admin/page.tsx, but
-// non-admins get a read-only view instead of a hard block, since their
-// virtual-computer options depend on knowing the plan/status.
+// Company billing: manage an existing subscription (Stripe Billing Portal).
+// Any company member can view; only a company_admin sees the Manage button --
+// mirrors the admin-gating pattern in app/dashboard/admin/page.tsx.
+//
+// The virtual-computer plan grid (Starter/Standard/Pro/PAYG -- selling new
+// VM-hosting capacity) was removed here: VM hosting is no longer sold. This
+// page now only shows/manages a subscription a company already has (nothing
+// left to subscribe to going forward). lib/billing/plans.ts, the checkout
+// route, and the VM feature itself (Admin -> Virtual computers) are
+// untouched -- existing VM subscribers can still manage/cancel via the
+// Stripe Portal button below.
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "next/navigation";
 import { useCompany } from "@/components/CompanyContext";
-import { CreditCard, CheckCircle2, AlertCircle } from "lucide-react";
+import { CreditCard, AlertCircle } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
-
-interface Plan {
-  id: string;
-  name: string;
-  priceUsdDisplay: number;
-  includedVmSlots: number;
-  meteredServiceFeeUsdPerHour?: number;
-}
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 interface Subscription {
   planId: string | null;
@@ -41,8 +37,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 interface BillingStatus {
   subscription: Subscription | null;
-  plans: Plan[];
-  usageThisMonthUsd: number | null;
+  planName: string | null;
 }
 
 async function fetchBillingStatus(): Promise<BillingStatus> {
@@ -50,74 +45,29 @@ async function fetchBillingStatus(): Promise<BillingStatus> {
   const json = await res.json();
   return {
     subscription: json.subscription,
-    plans: json.plans || [],
-    usageThisMonthUsd: typeof json.usageThisMonthUsd === "number" ? json.usageThisMonthUsd : null,
+    planName: json.plan?.name ?? null,
   };
 }
 
 export default function BillingPage() {
-  return (
-    <Suspense fallback={null}>
-      <BillingPageInner />
-    </Suspense>
-  );
-}
-
-function BillingPageInner() {
-  const searchParams = useSearchParams();
-  const checkoutResult = searchParams.get("checkout");
   // CompanyContext already resolved isAdmin (per-company role check) once
   // for the whole dashboard shell -- no need to re-derive it here via
   // auth.getUser()/profiles/company_memberships, same fix already applied
   // to app/dashboard/admin/page.tsx and settings/page.tsx.
   const { isAdmin } = useCompany();
 
-  const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   const [openingPortal, setOpeningPortal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data, isLoading: loading, refetch } = useQuery({
+  const { data, isLoading: loading } = useQuery({
     queryKey: ["billing-status"],
     queryFn: fetchBillingStatus,
     staleTime: 60 * 1000,
   });
   const subscription = data?.subscription ?? null;
-  const plans = data?.plans ?? [];
-  const usageThisMonthUsd = data?.usageThisMonthUsd ?? null;
-
-  useEffect(() => {
-    if (checkoutResult !== "success") return;
-    // The webhook lands a moment after the redirect -- re-poll briefly so
-    // the status badge catches up without requiring a manual refresh.
-    // refetch() (not the cached query itself) so this always hits the
-    // network regardless of staleTime.
-    let attempts = 0;
-    const interval = setInterval(async () => {
-      attempts += 1;
-      await refetch();
-      if (attempts >= 5) clearInterval(interval);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [checkoutResult, refetch]);
+  const planName = data?.planName ?? null;
 
   useProgressBarWhile(loading);
-
-  const subscribe = async (planId: string) => {
-    setError(null);
-    setSubscribingPlanId(planId);
-    const res = await fetch("/api/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planId }),
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Could not start checkout");
-      setSubscribingPlanId(null);
-      return;
-    }
-    window.location.href = json.url;
-  };
 
   const manageBilling = async () => {
     setError(null);
@@ -140,20 +90,9 @@ function BillingPageInner() {
     <div className="p-8 max-w-3xl mx-auto min-h-screen">
       <h1 className="text-xl font-bold text-slate-800 mb-1">Billing</h1>
       <p className="text-[13px] text-slate-400 mb-8">
-        Subscribe to a plan to let admins create platform-billed virtual computers -- we provision and pay the cloud provider, you pay us on a fixed monthly plan.
+        {subscription?.planId ? "Manage your subscription." : "No active subscription."}
       </p>
 
-      {checkoutResult === "success" && (
-        <div className="flex items-center gap-2 px-4 py-3 mb-6 bg-emerald-50 text-emerald-700 rounded-2xl text-[12px]">
-          <CheckCircle2 size={14} className="shrink-0" />
-          Checkout complete -- your subscription status will update shortly.
-        </div>
-      )}
-      {checkoutResult === "cancel" && (
-        <div className="flex items-center gap-2 px-4 py-3 mb-6 bg-slate-100 text-slate-600 rounded-2xl text-[12px]">
-          Checkout was canceled.
-        </div>
-      )}
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 mb-6 bg-red-50 text-red-600 rounded-2xl text-[12px]">
           <AlertCircle size={14} className="shrink-0" />
@@ -162,22 +101,17 @@ function BillingPageInner() {
       )}
 
       {subscription?.planId && (
-        <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-[32px] p-6 mb-6">
+        <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-[32px] p-6">
           <div className="w-11 h-11 rounded-full bg-indigo-50 flex items-center justify-center shrink-0">
             <CreditCard size={18} className="text-indigo-500" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-bold text-slate-800">
-              Current plan: {plans.find((p) => p.id === subscription.planId)?.name || subscription.planId}
+              Current plan: {planName || subscription.planId}
             </p>
             {subscription.currentPeriodEnd && (
               <p className="text-[11px] text-slate-400">
                 Renews {new Date(subscription.currentPeriodEnd).toLocaleDateString('en-AU')}
-              </p>
-            )}
-            {subscription.planId === "payg" && usageThisMonthUsd !== null && (
-              <p className="text-[11px] text-indigo-500 font-medium">
-                ~${usageThisMonthUsd.toFixed(2)} accrued this month so far (real cloud cost + $0.02/hr service fee)
               </p>
             )}
           </div>
@@ -199,49 +133,6 @@ function BillingPageInner() {
           )}
         </div>
       )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {plans.map((plan) => {
-          const isCurrent = subscription?.planId === plan.id && subscription?.status !== "canceled";
-          const isMetered = plan.id === "payg";
-          return (
-            <div key={plan.id} className="bg-white border border-slate-200 rounded-[32px] p-6 flex flex-col">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">{plan.name}</p>
-              {isMetered ? (
-                <>
-                  <p className="text-2xl font-bold text-slate-800 mb-1">
-                    +${plan.meteredServiceFeeUsdPerHour?.toFixed(2)}
-                    <span className="text-[12px] font-medium text-slate-400">/vm-hr</span>
-                  </p>
-                  <p className="text-[11px] text-slate-400 mb-6">
-                    No base fee -- real cloud cost plus this service fee, billed only for actual hours running (VMs
-                    hibernate when idle).
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-2xl font-bold text-slate-800 mb-1">
-                    ${plan.priceUsdDisplay}
-                    <span className="text-[12px] font-medium text-slate-400">/mo</span>
-                  </p>
-                  <p className="text-[12px] text-slate-500 mb-6">{plan.includedVmSlots} virtual computer{plan.includedVmSlots !== 1 ? "s" : ""} included</p>
-                </>
-              )}
-              {isAdmin && (
-                <button
-                  onClick={() => subscribe(plan.id)}
-                  disabled={isCurrent || subscribingPlanId !== null}
-                  className={`mt-auto px-5 py-2.5 text-[12px] font-bold rounded-full transition-colors disabled:opacity-40 ${
-                    isCurrent ? "bg-slate-100 text-slate-400" : "bg-indigo-600 text-white hover:bg-indigo-700"
-                  }`}
-                >
-                  {isCurrent ? "Current plan" : subscribingPlanId === plan.id ? "Redirecting..." : "Subscribe"}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

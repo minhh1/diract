@@ -6,7 +6,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, ShieldOff } from "lucide-react";
+import { Sparkles, ShieldOff, Zap } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 
 interface Props {
@@ -24,6 +24,15 @@ interface Settings {
   ai_enabled: boolean;
 }
 
+// Presets mirror lib/billing/aiCredit.ts's AI_CREDIT_PACKS -- the actual
+// price/token pair is always re-validated server-side by packId in
+// app/api/ai/credit/checkout/route.ts, this is display copy only.
+const CREDIT_PACKS = [
+  { id: "small", label: "5,000,000 tokens", priceLabel: "$25" },
+  { id: "medium", label: "10,000,000 tokens", priceLabel: "$50" },
+  { id: "large", label: "20,000,000 tokens", priceLabel: "$100" },
+];
+
 const SOURCE_TOGGLES: { key: keyof Settings; label: string }[] = [
   { key: "source_crm", label: "CRM records (properties, entities, projects)" },
   { key: "source_gmail", label: "Gmail" },
@@ -37,6 +46,8 @@ export default function AdminAiAssistantTab({ companyId }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [creditTokensThisPeriod, setCreditTokensThisPeriod] = useState(0);
+  const [buyingPackId, setBuyingPackId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,10 +57,33 @@ export default function AdminAiAssistantTab({ companyId }: Props) {
     setLoading(false);
   }, []);
 
+  const loadCredit = useCallback(async () => {
+    const res = await fetch("/api/ai/usage");
+    if (!res.ok) return;
+    const json = await res.json();
+    setCreditTokensThisPeriod(json.creditTokensThisPeriod ?? 0);
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadCredit();
+  }, [load, loadCredit]);
   useProgressBarWhile(loading);
+
+  const buyCredit = async (packId: string) => {
+    setBuyingPackId(packId);
+    const res = await fetch("/api/ai/credit/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packId }),
+    });
+    const json = await res.json();
+    if (json.url) {
+      window.location.href = json.url;
+    } else {
+      setBuyingPackId(null);
+    }
+  };
 
   const save = async (next: Settings) => {
     setSettings(next);
@@ -148,6 +182,33 @@ export default function AdminAiAssistantTab({ companyId }: Props) {
           className="w-full px-4 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400"
         />
         <p className="text-[10px] text-slate-300 mt-2">{saving ? "Saving..." : saved ? "Saved" : ""}</p>
+
+        <div className="mt-5 pt-5 border-t border-slate-100">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap size={13} className="text-amber-500" />
+            <p className="text-[11px] font-semibold text-slate-600">Need more this month?</p>
+          </div>
+          {creditTokensThisPeriod > 0 && (
+            <p className="text-[11px] text-emerald-600 mb-3">
+              +{creditTokensThisPeriod.toLocaleString()} extra tokens added, valid through the end of next month.
+            </p>
+          )}
+          <p className="text-[12px] text-slate-400 mb-3">
+            Buy extra capacity for this billing period -- added on top of the cap above.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {CREDIT_PACKS.map((pack) => (
+              <button
+                key={pack.id}
+                onClick={() => buyCredit(pack.id)}
+                disabled={buyingPackId !== null}
+                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 rounded-full text-[12px] font-medium text-slate-700 transition-colors"
+              >
+                {buyingPackId === pack.id ? "Redirecting..." : `${pack.label} -- ${pack.priceLabel}`}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
