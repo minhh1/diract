@@ -33,6 +33,15 @@ interface PageDetail extends PageSummary {
   blocks: PageBlock[];
 }
 
+// applied marks an assistant reply that came WITH drafted content (the
+// model called set_page_blocks) versus a clarifying question or options +
+// a recommendation, which just sits in the thread with nothing to apply.
+interface ChatMsg {
+  role: "user" | "assistant";
+  content: string;
+  applied?: boolean;
+}
+
 function AdminOnlyNote() {
   return <span className="flex items-center gap-1 text-[10px] text-slate-300"><Lock size={10} /> Admin only</span>;
 }
@@ -179,8 +188,9 @@ export default function ContentPagesTab() {
   const [newPrompt, setNewPrompt] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const [prompt, setPrompt] = useState("");
-  const [generating, setGenerating] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -216,29 +226,43 @@ export default function ContentPagesTab() {
     setError(null);
     const res = await fetch("/api/pages", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newTitle.trim(), prompt: newPrompt.trim() || undefined }),
+      body: JSON.stringify({ title: newTitle.trim() }),
     });
     const json = await res.json().catch(() => ({}));
     setCreating(false);
     if (!res.ok) { setError(json.error || "Failed to create page"); return; }
+    const initialPrompt = newPrompt.trim();
     setNewTitle(""); setNewPrompt("");
     loadList();
     setDetail(null);
+    setChatMessages([]);
     setActiveId(json.page.id);
+    if (initialPrompt) sendChatMessage(json.page.id, initialPrompt, []);
   };
 
-  const generate = async () => {
-    if (!activeId || !prompt.trim()) return;
-    setGenerating(true);
+  // pageId/priorMessages are passed explicitly rather than read from
+  // activeId/chatMessages state -- createPage calls this right after
+  // setActiveId(json.page.id), and React state updates aren't visible to
+  // the same closure until the next render, so reading activeId here would
+  // still see the PREVIOUS page (or null).
+  const sendChatMessage = async (pageId: string, text: string, priorMessages: ChatMsg[]) => {
+    const trimmed = text.trim();
+    if (!pageId || !trimmed) return;
+    const withUser: ChatMsg[] = [...priorMessages, { role: "user", content: trimmed }];
+    setChatMessages(withUser);
+    setChatInput("");
+    setSending(true);
     setError(null);
-    const res = await fetch(`/api/pages/${activeId}/generate`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: prompt.trim() }),
+    const res = await fetch(`/api/pages/${pageId}/generate`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ history: withUser.map(({ role, content }) => ({ role, content })) }),
     });
     const json = await res.json().catch(() => ({}));
-    setGenerating(false);
-    if (!res.ok) { setError(json.error || "Generation failed"); return; }
-    setDetail(d => d ? { ...d, blocks: json.page.blocks } : d);
-    setPrompt("");
+    setSending(false);
+    if (!res.ok) { setError(json.error || "Something went wrong"); return; }
+    const applied = !!json.page;
+    setChatMessages(m => [...m, { role: "assistant", content: json.message || (applied ? "Drafted." : "Sorry, something went wrong."), applied }]);
+    if (applied) setDetail(d => d ? { ...d, blocks: json.page.blocks } : d);
   };
 
   const save = async () => {
@@ -288,7 +312,7 @@ export default function ContentPagesTab() {
   if (activeId) {
     return (
       <div className="space-y-6">
-        <button onClick={() => { setDetail(null); setActiveId(null); }} className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-700 transition-colors">
+        <button onClick={() => { setDetail(null); setChatMessages([]); setActiveId(null); }} className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-700 transition-colors">
           <ArrowLeft size={13} /> All pages
         </button>
 
@@ -343,12 +367,36 @@ export default function ContentPagesTab() {
             {isAdmin && (
               <div className="bg-white border border-slate-200 rounded-[40px] p-8 space-y-4">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Draft with AI</p>
-                <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3} placeholder="Describe the page you want, e.g. 'A short overview of our conveyancing service, with a heading, two paragraphs, and a Book a consult button linking to our contact page.'" className={inputCls} />
-                <button onClick={generate} disabled={generating || !prompt.trim()}
-                  className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white text-[11px] font-bold rounded-full hover:bg-slate-700 disabled:opacity-40 transition-colors">
-                  {generating ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} Generate
-                </button>
-                <p className="text-[10px] text-slate-400">Replaces the content below -- review and hand-edit afterward before publishing.</p>
+                {chatMessages.length > 0 && (
+                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                    {chatMessages.map((m, i) => (
+                      <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[12px] whitespace-pre-wrap ${m.role === "user" ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-700 border border-slate-100"}`}>
+                          {m.content}
+                          {m.applied && (
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-500"><Check size={10} /> Applied to the page below</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {sending && (
+                      <div className="flex justify-start">
+                        <div className="rounded-2xl px-4 py-2.5 bg-slate-50 border border-slate-100"><Loader2 size={13} className="animate-spin text-slate-300" /></div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !sending) sendChatMessage(activeId, chatInput, chatMessages); }}
+                    placeholder={chatMessages.length ? "Reply..." : "Describe the page you want, e.g. 'A short overview of our conveyancing service, with a heading, two paragraphs, and a Book a consult button linking to our contact page.'"}
+                    className={inputCls} />
+                  <button onClick={() => sendChatMessage(activeId, chatInput, chatMessages)} disabled={sending || !chatInput.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white text-[11px] font-bold rounded-full hover:bg-slate-700 disabled:opacity-40 transition-colors shrink-0">
+                    {sending ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} Send
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400">I might ask a clarifying question or suggest a direction before drafting -- review and hand-edit the content below afterward before publishing.</p>
               </div>
             )}
 
@@ -423,7 +471,7 @@ export default function ContentPagesTab() {
               const Icon = VISIBILITY_META[p.visibility].icon;
               return (
                 <div key={p.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-colors">
-                  <button onClick={() => { setDetail(null); setActiveId(p.id); }} className="flex-1 text-left flex items-center gap-3">
+                  <button onClick={() => { setDetail(null); setChatMessages([]); setActiveId(p.id); }} className="flex-1 text-left flex items-center gap-3">
                     <span className="text-[13px] font-medium text-slate-700">{p.title}</span>
                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${p.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>{p.status}</span>
                     <span className="flex items-center gap-1 text-[10px] text-slate-400"><Icon size={11} /> {VISIBILITY_META[p.visibility].label}</span>

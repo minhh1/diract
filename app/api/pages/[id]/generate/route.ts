@@ -1,15 +1,37 @@
 // app/api/pages/[id]/generate/route.ts
-// Regenerates an existing page's blocks from a new prompt (used for both
-// "ask AI to redo this" and any future re-draft flow) -- same
-// generatePageBlocks -> validateBlocks path as the initial create in
-// app/api/pages/route.ts's POST. Overwrites blocks; the manual editor is
-// where a bad regeneration gets hand-fixed rather than an undo/versioning
-// system, consistent with this feature staying behind status = 'draft'
-// until explicitly published.
+// Drafts/redrafts a page's blocks through a short conversation, not a single
+// blind prompt -- see lib/ai/pageGenerate.ts's header comment. The caller
+// sends the FULL turn history each time (same convention as the dashboard
+// AI assistant's own client-held history, components/ai/AiChatThread.tsx);
+// this route has no server-side conversation state of its own.
+//
+// Two outcomes per call: the model called set_page_blocks (blocks.length >
+// 0) -> saved, returns { page, message }; or it just replied in plain text
+// (a clarifying question, or options + a recommendation) -> nothing saved,
+// returns { message } only. The UI is responsible for showing that message
+// as the assistant's reply and sending the user's next answer back in as
+// another turn of history, not treating an empty result as an error.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
-import { generatePageBlocks } from "@/lib/ai/pageGenerate";
+import { generatePageBlocks, type PageChatMessage } from "@/lib/ai/pageGenerate";
 import { costUsd, TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
+
+const MAX_MESSAGES = 20;
+const MAX_MESSAGE_CHARS = 2000;
+
+function parseHistory(input: unknown): PageChatMessage[] | null {
+  if (!Array.isArray(input) || !input.length || input.length > MAX_MESSAGES) return null;
+  const history: PageChatMessage[] = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object") return null;
+    const { role, content } = raw as Record<string, unknown>;
+    if (role !== "user" && role !== "assistant") return null;
+    if (typeof content !== "string" || !content.trim()) return null;
+    history.push({ role, content: content.trim().slice(0, MAX_MESSAGE_CHARS) });
+  }
+  if (history[history.length - 1].role !== "user") return null;
+  return history;
+}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeCompanyMember();
@@ -23,13 +45,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid body" }, { status: 400 }); }
-  const prompt = String(body?.prompt || "").trim();
-  if (!prompt) return NextResponse.json({ error: "A prompt is required" }, { status: 400 });
+  const history = parseHistory(body?.history);
+  if (!history) return NextResponse.json({ error: "history must be a non-empty list of {role, content} turns, ending with a user message" }, { status: 400 });
 
-  const result = await generatePageBlocks(page.title, prompt);
-  if (!result.blocks.length) {
-    return NextResponse.json({ error: "The assistant didn't return any usable content -- try a more specific prompt." }, { status: 502 });
-  }
+  const result = await generatePageBlocks(page.title, history);
 
   const cost = costUsd("hosted", TABLE_BUILDER_MODEL_ID, result);
   await admin.from("ai_usage_events").insert({
@@ -37,13 +56,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     input_tokens: result.inputTokens, output_tokens: result.outputTokens, cost_usd: cost,
   });
 
+  if (!result.blocks.length) {
+    return NextResponse.json({ message: result.message || "Could you say a bit more about what you'd like this page to say?" });
+  }
+
+  const lastUserMessage = history[history.length - 1].content;
   const { data: updated, error } = await admin
     .from("company_pages")
-    .update({ blocks: result.blocks, ai_prompt: prompt, updated_at: new Date().toISOString() })
+    .update({ blocks: result.blocks, ai_prompt: lastUserMessage, updated_at: new Date().toISOString() })
     .eq("id", id)
     .select("id, title, slug, visibility, status, blocks")
     .single();
   if (error || !updated) return NextResponse.json({ error: error?.message || "Failed to save generated content" }, { status: 500 });
 
-  return NextResponse.json({ page: updated });
+  return NextResponse.json({ page: updated, message: result.message || "Drafted." });
 }
