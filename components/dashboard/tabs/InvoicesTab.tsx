@@ -467,14 +467,20 @@ function EditInvoiceModal({
     const paymentsNum = parseFloat(payments) || 0;
     const trustAppliedNum = parseFloat(trustApplied) || 0;
     const waivedNum = parseFloat(waived) || 0;
+    const newAmountDue = invoice.totalIncGst - invoice.discountAmount - trustAppliedNum - paymentsNum - waivedNum;
     // This used to ignore updateCustomRecord's result entirely -- a failed
     // save (a required/unique-field validation error, a ledger refusal,
     // any DB error) still closed the modal via onSaved() below with no
     // indication anything went wrong, silently discarding the edit.
     const result = await updateCustomRecord(invoice.id, invoiceTableId, companyId, {
-      status, due_date: dueDate || null,
+      // Same "reaches $0 -> Paid" rule as RecordPaymentModal's own payment
+      // flow -- hand-editing payments/trust/waived here to fully cover the
+      // invoice should leave it looking paid too, not stuck showing
+      // whatever status happened to be selected before the edit.
+      status: newAmountDue <= 0 && status !== 'Void' ? 'Paid' : status,
+      due_date: dueDate || null,
       payments: paymentsNum, trust_applied: trustAppliedNum, waived_amount: waivedNum,
-      amount_due: invoice.totalIncGst - invoice.discountAmount - trustAppliedNum - paymentsNum - waivedNum,
+      amount_due: newAmountDue,
     }, invoiceFields);
     setSaving(false);
     if (result && 'error' in result) { setError(result.error); return; }
@@ -605,10 +611,17 @@ function RecordPaymentModal({
       return;
     }
 
+    const newAmountDue = Math.max(0, balanceAfter);
     await updateCustomRecord(invoice.id, invoiceTableId, companyId, {
       payments: invoice.payments + receivedNum,
       waived_amount: invoice.waivedAmount + waivedNum,
-      amount_due: Math.max(0, balanceAfter),
+      amount_due: newAmountDue,
+      // Reported live: an invoice paid down to $0 stayed "Sent"/"Overdue"
+      // forever (status is otherwise a purely manual dropdown -- see
+      // EditInvoiceModal below), so it never left the Unpaid Invoices
+      // widget despite nothing actually being owed. Void is a distinct
+      // terminal state this shouldn't silently override.
+      ...(newAmountDue <= 0 && invoice.status !== 'Void' ? { status: 'Paid' } : {}),
     }, invoiceFields);
 
     setSaving(false);

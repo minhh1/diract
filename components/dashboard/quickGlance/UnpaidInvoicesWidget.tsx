@@ -36,6 +36,13 @@ export default function UnpaidInvoicesWidget() {
         status: String(r.values.status || ''),
         amountDue: Number(r.values.amount_due) || 0,
       }))
+      // Belt-and-suspenders on top of status alone -- InvoicesTab.tsx's own
+      // payment/edit flows now flip status to 'Paid' the moment amount_due
+      // reaches $0, but a Sent/Overdue invoice that's genuinely fully paid
+      // shouldn't sit here even if something else left its status stale.
+      // Reported live: exactly this, an invoice showing "$0.00 due" but
+      // still listed.
+      .filter(u => u.amountDue > 0.004)
       .sort((a, b) => a.issueDate.localeCompare(b.issueDate));
   }, [records]);
 
