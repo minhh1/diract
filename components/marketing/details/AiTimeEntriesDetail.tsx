@@ -14,25 +14,65 @@ import { Sparkles, ListChecks, ChevronDown } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { MockAutoTimeEntries } from "@/components/marketing/mockups";
 import { DetailHero, Section } from "./Section";
+import type { FeatureDetailCopy } from "@/lib/marketingPages/publishedContent";
 
-export default function AiTimeEntriesDetail() {
+export const DEFAULT_CONTENT: FeatureDetailCopy = {
+  badgeText: "Auto time entries",
+  headlineLine1: "Time entries drafted for you,",
+  headlineLine2: "not invented for you.",
+  subheadline: "Every draft is built from work you actually did, whether a task you completed or an email you sent, attributed to a specific matter and person by real signals, never guessed. Nothing gets submitted until you review and approve it.",
+  sections: [
+    {
+      key: "where-to-find-it",
+      eyebrow: "Where to find it",
+      title: "One click from your Time Entry dashboard",
+      body: [`"Auto Time Recording" sits as a button right on the Time Entry dashboard, next to "My Tasks," the same dashboard you already open to log time. No separate tool, no extra tab.`],
+    },
+    {
+      key: "see-it-in-action",
+      eyebrow: "See it in action",
+      title: "Watch the descriptions redraft themselves",
+      body: ["This is the real drawer, cycling through Brief, Standard, and Detailed on its own so you can see the difference at a glance. Click anywhere in it to take over and switch levels yourself."],
+    },
+    {
+      key: "descriptions",
+      eyebrow: "Descriptions",
+      title: "Brief or Detailed: your call, per entry or for all of them",
+      body: ["Same underlying work, three ways to describe it (Brief, Standard, Detailed). Switch any single entry, or set every draft to the same level in one click. Here's the same matter at each end of that range:"],
+    },
+    {
+      key: "admin-controls",
+      eyebrow: "Admin controls",
+      title: "Reassign the timekeeper on any entry",
+      body: [`Admins reviewing "Everyone's day" can reassign any draft to a different staff member from a dropdown, including entries the matching couldn't confidently attribute to anyone, flagged so they don't get missed.`],
+    },
+    {
+      key: "how-it-works",
+      eyebrow: "How it works",
+      title: "How an email gets matched to a matter and a person",
+      body: ["Two separate, deterministic steps. Nothing here is a guess, and an email that doesn't confidently match just stays unassigned for a human to sort (see the admin control above)."],
+    },
+  ],
+};
+
+export default function AiTimeEntriesDetail({ content }: { content?: FeatureDetailCopy } = {}) {
   const isDark = useMockupTheme();
+  const copy = content ?? DEFAULT_CONTENT;
   return (
     <section className="px-6 pb-28">
       <div className="max-w-4xl mx-auto">
         <DetailHero
           badgeIcon={Sparkles}
-          badgeText="Auto time entries"
+          badgeText={copy.badgeText}
           badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
-          headlineLines={["Time entries drafted for you,", "not invented for you."]}
+          headlineLines={[copy.headlineLine1, copy.headlineLine2]}
           accentClass="text-indigo-600"
-          subheadline="Every draft is built from work you actually did, whether a task you completed or an email you sent, attributed to a specific matter and person by real signals, never guessed. Nothing gets submitted until you review and approve it."
+          subheadline={copy.subheadline}
         />
 
-        <Section eyebrow="Where to find it" title="One click from your Time Entry dashboard">
+        <Section eyebrow={copy.sections[0].eyebrow} title={copy.sections[0].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            "Auto Time Recording" sits as a button right on the Time Entry dashboard, next to "My Tasks," the same dashboard
-            you already open to log time. No separate tool, no extra tab.
+            {copy.sections[0].body[0]}
           </p>
           <div className={`flex gap-3 max-w-sm ${isDark ? "dark" : ""}`}>
             <div className="flex-1 h-14 flex items-center justify-center gap-2 px-4 py-3 bg-white border-2 border-indigo-300 rounded-2xl text-[12px] font-bold text-indigo-600 shadow-sm">
@@ -44,20 +84,18 @@ export default function AiTimeEntriesDetail() {
           </div>
         </Section>
 
-        <Section eyebrow="See it in action" title="Watch the descriptions redraft themselves">
+        <Section eyebrow={copy.sections[1].eyebrow} title={copy.sections[1].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            This is the real drawer, cycling through Brief, Standard, and Detailed on its own so you can see the difference at a
-            glance. Click anywhere in it to take over and switch levels yourself.
+            {copy.sections[1].body[0]}
           </p>
           <div className={isDark ? "dark" : ""}>
             <MockAutoTimeEntries />
           </div>
         </Section>
 
-        <Section eyebrow="Descriptions" title="Brief or Detailed: your call, per entry or for all of them">
+        <Section eyebrow={copy.sections[2].eyebrow} title={copy.sections[2].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Same underlying work, three ways to describe it (Brief, Standard, Detailed). Switch any single entry, or set every
-            draft to the same level in one click. Here's the same matter at each end of that range:
+            {copy.sections[2].body[0]}
           </p>
           <div className={`grid sm:grid-cols-2 gap-4 ${isDark ? "dark" : ""}`}>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -74,10 +112,9 @@ export default function AiTimeEntriesDetail() {
           </div>
         </Section>
 
-        <Section eyebrow="Admin controls" title="Reassign the timekeeper on any entry">
+        <Section eyebrow={copy.sections[3].eyebrow} title={copy.sections[3].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Admins reviewing "Everyone's day" can reassign any draft to a different staff member from a dropdown, including
-            entries the matching couldn't confidently attribute to anyone, flagged so they don't get missed.
+            {copy.sections[3].body[0]}
           </p>
           <div className="space-y-2.5 max-w-sm">
             <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white p-3">
@@ -95,10 +132,9 @@ export default function AiTimeEntriesDetail() {
           </div>
         </Section>
 
-        <Section eyebrow="How it works" title="How an email gets matched to a matter and a person">
+        <Section eyebrow={copy.sections[4].eyebrow} title={copy.sections[4].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Two separate, deterministic steps. Nothing here is a guess, and an email that doesn't confidently match just stays
-            unassigned for a human to sort (see the admin control above).
+            {copy.sections[4].body[0]}
           </p>
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-5">

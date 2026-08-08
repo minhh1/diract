@@ -10,35 +10,56 @@ import { Landmark } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { MOCKUPS } from "@/components/marketing/mockups";
 import { DetailHero, Section } from "./Section";
+import type { FeatureDetailCopy } from "@/lib/marketingPages/publishedContent";
 
 const LoanTableMockup = MOCKUPS.loanTable;
 
-export default function LoanFacilitiesDetail() {
+export const DEFAULT_CONTENT: FeatureDetailCopy = {
+  badgeText: "Loan tables",
+  headlineLine1: "Every facility on one board,",
+  headlineLine2: "not scattered across lenders.",
+  subheadline: "A portfolio-wide view of every loan across every deal, with name, lender type, and principal, and the messy detail of repayment phases fixable right from the same board.",
+  sections: [
+    {
+      key: "portfolio",
+      eyebrow: "Portfolio",
+      title: "One board, every facility",
+      body: ["Senior debt, mezzanine, private lenders: all in one place, not a separate spreadsheet per lender relationship."],
+    },
+    {
+      key: "phases",
+      eyebrow: "Phases",
+      title: "Fix a messy repayment structure in place",
+      body: ["Each loan is a sequence of repayment phases: interest-only or amortising, on a monthly, quarterly, six-monthly, or at-maturity schedule. Edit the sequence directly from the portfolio board, useful when phases come in messy from an import and need correcting without opening every loan individually."],
+    },
+  ],
+};
+
+export default function LoanFacilitiesDetail({ content }: { content?: FeatureDetailCopy } = {}) {
   const isDark = useMockupTheme();
+  const copy = content ?? DEFAULT_CONTENT;
   return (
     <section className="px-6 pb-28">
       <div className="max-w-4xl mx-auto">
         <DetailHero
           badgeIcon={Landmark}
-          badgeText="Loan tables"
+          badgeText={copy.badgeText}
           badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
-          headlineLines={["Every facility on one board,", "not scattered across lenders."]}
+          headlineLines={[copy.headlineLine1, copy.headlineLine2]}
           accentClass="text-indigo-600"
-          subheadline="A portfolio-wide view of every loan across every deal, with name, lender type, and principal, and the messy detail of repayment phases fixable right from the same board."
+          subheadline={copy.subheadline}
         />
 
-        <Section eyebrow="Portfolio" title="One board, every facility">
+        <Section eyebrow={copy.sections[0].eyebrow} title={copy.sections[0].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Senior debt, mezzanine, private lenders: all in one place, not a separate spreadsheet per lender relationship.
+            {copy.sections[0].body[0]}
           </p>
           <div className={isDark ? "dark" : ""}><LoanTableMockup /></div>
         </Section>
 
-        <Section eyebrow="Phases" title="Fix a messy repayment structure in place">
+        <Section eyebrow={copy.sections[1].eyebrow} title={copy.sections[1].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Each loan is a sequence of repayment phases: interest-only or amortising, on a monthly, quarterly, six-monthly, or
-            at-maturity schedule. Edit the sequence directly from the portfolio board, useful when phases come in messy from an
-            import and need correcting without opening every loan individually.
+            {copy.sections[1].body[0]}
           </p>
         </Section>
       </div>

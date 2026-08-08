@@ -6,6 +6,7 @@ import MarketingFooter from "@/components/marketing/MarketingFooter";
 import { MockupThemeProvider, MockupThemeToggle } from "@/components/marketing/MockupThemeProvider";
 import { ALL_FEATURES, getFeatureEntry } from "@/lib/marketing/allFeatures";
 import { audienceNavLinks } from "@/lib/marketing/audiences";
+import { getPublishedHeroSpotlightCopy, getPublishedFeatureDetailCopy, mergeFeatureCopy, type FeatureDetailCopy } from "@/lib/marketingPages/publishedContent";
 import GenericFeatureDetail from "@/components/marketing/details/GenericFeatureDetail";
 import AiTimeEntriesDetail from "@/components/marketing/details/AiTimeEntriesDetail";
 import TrustComplianceDetail from "@/components/marketing/details/TrustComplianceDetail";
@@ -36,7 +37,7 @@ import QuickGlanceDetail from "@/components/marketing/details/QuickGlanceDetail"
 // as more variants get built, same pattern as lib/marketing/audiences.ts's
 // registry. GenericFeatureDetail is kept as a fallback for any future
 // feature added without a deep-dive yet.
-const RICH_DETAILS: Record<string, React.ComponentType> = {
+const RICH_DETAILS: Record<string, React.ComponentType<{ content?: FeatureDetailCopy }>> = {
   "custom-tables-fields": CustomTablesDetail,
   "auto-add-rules": AutoAddRulesDetail,
   "multi-company": MultiCompanyDetail,
@@ -66,11 +67,26 @@ export function generateStaticParams() {
   return Object.keys(ALL_FEATURES).map((slug) => ({ slug }));
 }
 
+// GenericFeatureDetail's copy tracks whichever parent page (home, or a
+// /for/[audience] page) this feature's card lives on -- if that parent page
+// has a published title/body override for this slug, it applies here too,
+// same as it would on the card itself. A slug with a bespoke RichDetail
+// component (see RICH_DETAILS above) is unaffected -- those stay hardcoded.
+function parentPageKey(backHref: string): string {
+  return backHref === "/" ? "home" : backHref.replace(/^\//, "");
+}
+
 export default async function FeatureDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const entry = getFeatureEntry(slug);
   if (!entry) notFound();
   const RichDetail = RICH_DETAILS[slug];
+
+  const [published, richDetailContent] = await Promise.all([
+    getPublishedHeroSpotlightCopy(parentPageKey(entry.back.href)),
+    RichDetail ? getPublishedFeatureDetailCopy(`features/${slug}`) : Promise.resolve(null),
+  ]);
+  const feature = mergeFeatureCopy([entry.feature], published?.features)[0];
 
   return (
     <MockupThemeProvider>
@@ -86,7 +102,7 @@ export default async function FeatureDetailPage({ params }: { params: Promise<{ 
           </div>
         </div>
 
-        {RichDetail ? <RichDetail /> : <GenericFeatureDetail feature={entry.feature} />}
+        {RichDetail ? <RichDetail content={richDetailContent ?? undefined} /> : <GenericFeatureDetail feature={feature} />}
 
         <MarketingFooter />
       </div>

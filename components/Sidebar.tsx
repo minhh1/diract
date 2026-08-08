@@ -9,7 +9,7 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, MessageSquare, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet, Timer,
+  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet, Timer, Newspaper,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -33,6 +33,7 @@ import { perfLog } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 import NotificationBell from "@/components/NotificationBell";
 import { VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID } from "@/lib/vmProviders/allowedCompany";
+import { MINH_HUYNH_USER_ID } from "@/lib/marketingPages/ids";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -154,6 +155,7 @@ const ADMIN_LINKS = [
   { tab: 'timeTracking', icon: Timer, label: 'Time tracking' },
   { tab: 'propertyAutoLink', icon: Building2, label: 'Property auto-link' },
   { tab: 'company', icon: Settings, label: 'Company' },
+  { tab: 'landingPages', icon: Newspaper, label: 'Landing pages' },
 ] as const;
 
 // ── DB helpers ─────────────────────────────────────────────────────
@@ -1984,6 +1986,7 @@ export default function Sidebar() {
                   lib/vmProviders/allowedCompany.ts. */}
               {(ctxIsAdmin ? ADMIN_LINKS : ADMIN_LINKS.filter(link => link.tab === 'defaults'))
                 .filter(link => link.tab !== 'virtualComputers' || ctxCompanyId === VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID)
+                .filter(link => link.tab !== 'landingPages' || ctxUserId === MINH_HUYNH_USER_ID)
                 .map(link => (
                 <SidebarNavLink
                   key={link.tab}

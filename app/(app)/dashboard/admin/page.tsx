@@ -12,6 +12,7 @@ import {
   CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical, Check,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
+import { MINH_HUYNH_USER_ID } from "@/lib/marketingPages/ids";
 import { perfLog, perfLogPageStart, perfLogPageReady } from "@/lib/perfLog";
 import SourceEmailManager from "@/components/gmail/SourceEmailManager";
 import ArchiveSettingsManager from "@/components/gmail/ArchiveSettingsManager";
@@ -33,6 +34,7 @@ const AdminXeroTab = dynamic(() => import("@/components/admin/AdminXeroTab"));
 const AdminOneDriveTab = dynamic(() => import("@/components/admin/AdminOneDriveTab"));
 const AdminEmailTab = dynamic(() => import("@/components/admin/AdminEmailTab"));
 const AdminAiAssistantTab = dynamic(() => import("@/components/admin/AdminAiAssistantTab"));
+const AdminLandingPagesTab = dynamic(() => import("@/components/admin/AdminLandingPagesTab"));
 const AdminPerfTab = dynamic(() => import("@/components/admin/AdminPerfTab"));
 const AdminPlatformHealthTab = dynamic(() => import("@/components/admin/AdminPlatformHealthTab"));
 const AdminArchiveRequestsTab = dynamic(() => import("@/components/admin/AdminArchiveRequestsTab"));
@@ -267,8 +269,8 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'permissions' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink' | 'aiDataAccess' | 'timeTracking';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'permissions', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink', 'aiDataAccess', 'timeTracking'];
+type AdminTab = 'members' | 'teams' | 'permissions' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink' | 'aiDataAccess' | 'timeTracking' | 'landingPages';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'permissions', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink', 'aiDataAccess', 'timeTracking', 'landingPages'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', permissions: 'Permissions', defaults: 'Default Settings', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
@@ -276,6 +278,7 @@ const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
   platformHealth: 'Platform health', archiveRequests: 'Archive requests', leadEmailAssignments: 'Lead email assignments',
   propertyAutoLink: 'Property auto-link', aiDataAccess: 'AI data access', timeTracking: 'Time tracking',
+  landingPages: 'Landing pages',
 };
 
 export default function AdminPage() {
@@ -1091,6 +1094,13 @@ function AdminPageInner() {
           {/* ── AI Assistant ── */}
           {activeTab === 'aiAssistant' && companyId && (
             <AdminAiAssistantTab companyId={companyId} />
+          )}
+
+          {/* ── Landing pages (dashboard-editable marketing copy -- locked to
+               one specific user id, not just "any admin", see
+               lib/marketingPages/auth.ts) ── */}
+          {activeTab === 'landingPages' && userId === MINH_HUYNH_USER_ID && (
+            <AdminLandingPagesTab />
           )}
 
           {/* ── Performance (internal -- site-admin only) ── */}

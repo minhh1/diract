@@ -8,27 +8,43 @@ import { BarChart3 } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { MOCKUPS } from "@/components/marketing/mockups";
 import { DetailHero, Section } from "./Section";
+import type { FeatureDetailCopy } from "@/lib/marketingPages/publishedContent";
 
 const FeesReportMockup = MOCKUPS.feesReport;
 
-export default function FeesReportsDetail() {
+export const DEFAULT_CONTENT: FeatureDetailCopy = {
+  badgeText: "Fees reports",
+  headlineLine1: "Every fee earner's numbers,",
+  headlineLine2: "not a month-end guess.",
+  subheadline: "Built directly from the same time entries your team logs every day. There's no separate spreadsheet to keep in sync, no reconciling two sources of truth at month-end.",
+  sections: [
+    {
+      key: "report",
+      eyebrow: "Report",
+      title: "Entries, hours, billable hours, and amount, per person",
+      body: ["Switch between this week, this month, or all time. Every row totals automatically, so the bottom line is always right there."],
+    },
+  ],
+};
+
+export default function FeesReportsDetail({ content }: { content?: FeatureDetailCopy } = {}) {
   const isDark = useMockupTheme();
+  const copy = content ?? DEFAULT_CONTENT;
   return (
     <section className="px-6 pb-28">
       <div className="max-w-4xl mx-auto">
         <DetailHero
           badgeIcon={BarChart3}
-          badgeText="Fees reports"
+          badgeText={copy.badgeText}
           badgeClass="bg-sky-50 border-sky-100 text-sky-700"
-          headlineLines={["Every fee earner's numbers,", "not a month-end guess."]}
+          headlineLines={[copy.headlineLine1, copy.headlineLine2]}
           accentClass="text-sky-600"
-          subheadline="Built directly from the same time entries your team logs every day. There's no separate spreadsheet to keep in sync, no reconciling two sources of truth at month-end."
+          subheadline={copy.subheadline}
         />
 
-        <Section eyebrow="Report" eyebrowClass="text-sky-500" title="Entries, hours, billable hours, and amount, per person">
+        <Section eyebrow={copy.sections[0].eyebrow} eyebrowClass="text-sky-500" title={copy.sections[0].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Switch between this week, this month, or all time. Every row totals automatically, so the bottom line is always
-            right there.
+            {copy.sections[0].body[0]}
           </p>
           <div className={isDark ? "dark" : ""}><FeesReportMockup /></div>
         </Section>

@@ -21,25 +21,53 @@ import { Landmark, FileText, Printer } from "lucide-react";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { IconHeader, DetailedTable, FieldRow, TRUST_LEDGER_COLUMNS, TRUST_LEDGER_EXAMPLES, TRUST_LEDGER_FOOTER } from "@/components/marketing/mockups";
 import { DetailHero, Section } from "./Section";
+import type { FeatureDetailCopy } from "@/lib/marketingPages/publishedContent";
 
-export default function TrustComplianceDetail() {
+export const DEFAULT_CONTENT: FeatureDetailCopy = {
+  badgeText: "Trust account",
+  headlineLine1: "Built around compliance,",
+  headlineLine2: "not bolted on after.",
+  subheadline: "A live trust ledger per matter, a full report whenever you need one, a PDF in one click, and cleaner data going in, so there's less to catch at audit time, not more to reconcile.",
+  sections: [
+    {
+      key: "reporting",
+      eyebrow: "Reporting",
+      title: "Compliance reports show everything, not a summary",
+      body: ["Every transaction for a matter, in date order, with a running balance on every row. It's not a rolled-up total that hides how it got there."],
+    },
+    {
+      key: "export",
+      eyebrow: "Export",
+      title: "Generate a PDF in one click",
+      body: ["Print any statement straight to PDF, formatted for the file. There's no separate export tool, no reformatting a spreadsheet before it's fit to hand over."],
+    },
+    {
+      key: "data-entry",
+      eyebrow: "Data entry",
+      title: "Field validation, so there's less room for a mistake",
+      body: ["ABN and ACN are checked against the real ATO/ASIC checksum as they're typed, not just a length check. BSB and account number are checked too, at 6 digits and 4 to 10 digits respectively, catching a mistyped digit count on the spot, even though neither carries a public check-digit the way ABN/ACN do."],
+    },
+  ],
+};
+
+export default function TrustComplianceDetail({ content }: { content?: FeatureDetailCopy } = {}) {
   const isDark = useMockupTheme();
+  const copy = content ?? DEFAULT_CONTENT;
   return (
     <section className="px-6 pb-28">
       <div className="max-w-4xl mx-auto">
         <DetailHero
           badgeIcon={Landmark}
-          badgeText="Trust account"
+          badgeText={copy.badgeText}
           badgeClass="bg-emerald-50 border-emerald-100 text-emerald-700"
-          headlineLines={["Built around compliance,", "not bolted on after."]}
+          headlineLines={[copy.headlineLine1, copy.headlineLine2]}
           accentClass="text-emerald-600"
-          subheadline="A live trust ledger per matter, a full report whenever you need one, a PDF in one click, and cleaner data going in, so there's less to catch at audit time, not more to reconcile."
+          subheadline={copy.subheadline}
         />
 
-        <Section eyebrow="Reporting" eyebrowClass="text-emerald-500" title="Compliance reports show everything, not a summary">
+        <Section eyebrow={copy.sections[0].eyebrow} eyebrowClass="text-emerald-500" title={copy.sections[0].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Every transaction for a matter, in date order, with a running balance on every row. It's not a rolled-up total that
-            hides how it got there.
+            {copy.sections[0].body[0]}
           </p>
           <div className={`rounded-2xl border border-slate-200 bg-white p-4 max-w-3xl ${isDark ? "dark" : ""}`}>
             <IconHeader icon={FileText} tint="bg-violet-50" iconColor="text-violet-700" title="Trust Ledger Statement" subtitle="Every transaction for one matter, with running balance" />
@@ -49,21 +77,18 @@ export default function TrustComplianceDetail() {
           </div>
         </Section>
 
-        <Section eyebrow="Export" eyebrowClass="text-emerald-500" title="Generate a PDF in one click">
+        <Section eyebrow={copy.sections[1].eyebrow} eyebrowClass="text-emerald-500" title={copy.sections[1].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Print any statement straight to PDF, formatted for the file. There's no separate export tool, no reformatting a
-            spreadsheet before it's fit to hand over.
+            {copy.sections[1].body[0]}
           </p>
           <button className={`flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white rounded-full text-[11px] font-bold ${isDark ? "dark" : ""}`}>
             <Printer size={12} /> Print
           </button>
         </Section>
 
-        <Section eyebrow="Data entry" title="Field validation, so there's less room for a mistake">
+        <Section eyebrow={copy.sections[2].eyebrow} title={copy.sections[2].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            ABN and ACN are checked against the real ATO/ASIC checksum as they're typed, not just a length check. BSB and
-            account number are checked too, at 6 digits and 4 to 10 digits respectively, catching a mistyped digit count on the spot,
-            even though neither carries a public check-digit the way ABN/ACN do.
+            {copy.sections[2].body[0]}
           </p>
           <div className={`space-y-2 max-w-sm ${isDark ? "dark" : ""}`}>
             <FieldRow label="Company" value="Anchor Developments Pty Ltd" />

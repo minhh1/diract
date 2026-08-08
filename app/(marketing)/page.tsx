@@ -6,7 +6,13 @@ import FeatureSpotlight from "@/components/marketing/FeatureSpotlight";
 import { audienceNavLinks } from "@/lib/marketing/audiences";
 import { HOME_FEATURES } from "@/lib/marketing/homeFeatures";
 import { MockupThemeProvider, MockupThemeToggle } from "@/components/marketing/MockupThemeProvider";
+import { getPublishedHeroSpotlightCopy, mergeFeatureCopy } from "@/lib/marketingPages/publishedContent";
 
+// Copy fields below (badge/headline/subheadline/eyebrow/heading/CTA label,
+// and each feature's title/body) can be overridden from Admin -> Landing
+// pages once published -- see lib/marketingPages/publishedContent.ts. Falls
+// back to these exact hardcoded values whenever nothing's been published
+// yet. Layout, hrefs, and mockup/icon choices always come from code.
 
 const steps = [
   { n: "01", title: "Model your process", body: "Define the tables, fields, and statuses that match how your business actually runs." },
@@ -14,7 +20,18 @@ const steps = [
   { n: "03", title: "Stay in sync", body: "Everyone sees the same up-to-date picture, in the app and in their inbox." },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const published = await getPublishedHeroSpotlightCopy("home");
+  const badge = published?.badge ?? "A CRM that adapts to your business";
+  const headlineLines: [string, string] = published
+    ? [published.headlineLine1, published.headlineLine2]
+    : ["Built around your process,", "not the other way around."];
+  const subheadline = published?.subheadline ?? "Diract is a configurable CRM platform. You plug in the tables, fields, and workflows your business actually runs on, and manage everything from one place.";
+  const eyebrow = published?.eyebrow ?? "Everything your business needs";
+  const heading = published?.heading ?? "A CRM built around your tables, not a template";
+  const primaryCtaLabel = published?.primaryCtaLabel ?? "Get started";
+  const features = mergeFeatureCopy(HOME_FEATURES, published?.features);
+
   return (
     <MockupThemeProvider>
     <div className="min-h-screen bg-stone-50 text-slate-900 antialiased select-text">
@@ -22,17 +39,17 @@ export default function HomePage() {
       <MockupThemeToggle />
 
       <Hero
-        badge="A CRM that adapts to your business"
-        headlineLines={["Built around your process,", "not the other way around."]}
-        subheadline="Diract is a configurable CRM platform. You plug in the tables, fields, and workflows your business actually runs on, and manage everything from one place."
-        primaryCta={{ href: "/login", label: "Get started" }}
+        badge={badge}
+        headlineLines={headlineLines}
+        subheadline={subheadline}
+        primaryCta={{ href: "/login", label: primaryCtaLabel }}
         visual="customTable"
       />
 
       <FeatureSpotlight
-        eyebrow="Everything your business needs"
-        heading="A CRM built around your tables, not a template"
-        features={HOME_FEATURES}
+        eyebrow={eyebrow}
+        heading={heading}
+        features={features}
       />
 
       {/* How it works */}

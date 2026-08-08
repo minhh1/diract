@@ -13,38 +13,56 @@ import Link from "next/link";
 import { useMockupTheme } from "@/components/marketing/MockupThemeProvider";
 import { MOCKUPS } from "@/components/marketing/mockups";
 import { DetailHero, Section } from "./Section";
+import type { FeatureDetailCopy } from "@/lib/marketingPages/publishedContent";
 
 const AiSafetyMockup = MOCKUPS.aiSafety;
 
-export default function AiSafetyDetail() {
+export const DEFAULT_CONTENT: FeatureDetailCopy = {
+  badgeText: "AI safety controls",
+  headlineLine1: "AI reads and works on your data.",
+  headlineLine2: "It doesn't get to keep it.",
+  subheadline: "Your chat history doesn't sit around forever, and nothing you send is used to train a model. That's enforced in the code that runs and the contracts behind it, not just promised in a policy document.",
+  sections: [
+    {
+      key: "retention",
+      eyebrow: "Retention",
+      title: "Kept for 90 days, then deleted automatically",
+      body: ["Conversations you have with the assistant are kept so you can find an old answer again, the same as any chat app's history. A daily sweep deletes anything older than 90 days on its own. There's no manual cleanup step and no indefinite archive quietly growing in the background."],
+    },
+    {
+      key: "providers",
+      eyebrow: "Providers",
+      title: "What actually happens to a request",
+      body: ["Each request goes to whichever AI provider is configured for that feature (currently Anthropic and Together AI, or a self-hosted Ollama instance a company runs itself). Per our Privacy Policy, third-party providers act as sub-processors under contract terms that prohibit using your data to train their own models, and don't retain it beyond what's needed to return that one response."],
+    },
+  ],
+};
+
+export default function AiSafetyDetail({ content }: { content?: FeatureDetailCopy } = {}) {
   const isDark = useMockupTheme();
+  const copy = content ?? DEFAULT_CONTENT;
   return (
     <section className="px-6 pb-28">
       <div className="max-w-4xl mx-auto">
         <DetailHero
           badgeIcon={Lock}
-          badgeText="AI safety controls"
+          badgeText={copy.badgeText}
           badgeClass="bg-indigo-50 border-indigo-100 text-indigo-600"
-          headlineLines={["AI reads and works on your data.", "It doesn't get to keep it."]}
+          headlineLines={[copy.headlineLine1, copy.headlineLine2]}
           accentClass="text-indigo-600"
-          subheadline="Your chat history doesn't sit around forever, and nothing you send is used to train a model. That's enforced in the code that runs and the contracts behind it, not just promised in a policy document."
+          subheadline={copy.subheadline}
         />
 
-        <Section eyebrow="Retention" title="Kept for 90 days, then deleted automatically">
+        <Section eyebrow={copy.sections[0].eyebrow} title={copy.sections[0].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Conversations you have with the assistant are kept so you can find an old answer again, the same as any
-            chat app's history. A daily sweep deletes anything older than 90 days on its own. There's no manual
-            cleanup step and no indefinite archive quietly growing in the background.
+            {copy.sections[0].body[0]}
           </p>
           <div className={isDark ? "dark" : ""}><AiSafetyMockup /></div>
         </Section>
 
-        <Section eyebrow="Providers" title="What actually happens to a request">
+        <Section eyebrow={copy.sections[1].eyebrow} title={copy.sections[1].title}>
           <p className="text-[15px] text-slate-500 leading-relaxed mb-6">
-            Each request goes to whichever AI provider is configured for that feature (currently Anthropic and Together AI,
-            or a self-hosted Ollama instance a company runs itself). Per our Privacy Policy, third-party providers act as
-            sub-processors under contract terms that prohibit using your data to train their own models, and don't retain it
-            beyond what's needed to return that one response.
+            {copy.sections[1].body[0]}
           </p>
           <div className={`flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 max-w-md mb-6 ${isDark ? "dark" : ""}`}>
             <Clock size={14} className="text-indigo-500 shrink-0" />
