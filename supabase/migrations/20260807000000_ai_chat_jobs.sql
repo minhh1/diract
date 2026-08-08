@@ -32,8 +32,22 @@ alter table ai_chat_jobs enable row level security;
 -- update inside after()), which bypasses RLS entirely, so there's
 -- deliberately no insert/update/delete policy for the authenticated role.
 -- Same shape as auto_time_entry_generation_jobs_select_own.
+drop policy if exists ai_chat_jobs_select_own on ai_chat_jobs;
 create policy ai_chat_jobs_select_own
   on ai_chat_jobs for select
   using (user_id = auth.uid());
 
-alter publication supabase_realtime add table ai_chat_jobs;
+-- ALTER PUBLICATION has no IF NOT EXISTS form -- guarded so re-running this
+-- migration against a database where the table's already live (confirmed
+-- here: this table/policy already existed and Realtime was already
+-- delivering postgres_changes for it, just never recorded as applied in
+-- schema_migrations) doesn't error on "already member of publication".
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'ai_chat_jobs'
+  ) then
+    alter publication supabase_realtime add table ai_chat_jobs;
+  end if;
+end $$;

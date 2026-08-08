@@ -42,12 +42,15 @@ CREATE INDEX IF NOT EXISTS ai_data_access_requests_company_idx ON ai_data_access
 
 ALTER TABLE ai_data_access_requests ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS ai_data_access_requests_select ON ai_data_access_requests;
 CREATE POLICY ai_data_access_requests_select ON ai_data_access_requests
   FOR SELECT USING (company_id = active_company_id());
 
+DROP POLICY IF EXISTS ai_data_access_requests_insert ON ai_data_access_requests;
 CREATE POLICY ai_data_access_requests_insert ON ai_data_access_requests
   FOR INSERT WITH CHECK (company_id = active_company_id());
 
+DROP POLICY IF EXISTS ai_data_access_requests_admin_update ON ai_data_access_requests;
 CREATE POLICY ai_data_access_requests_admin_update ON ai_data_access_requests
   FOR UPDATE
   USING (company_id = active_company_id() AND is_current_user_admin())
