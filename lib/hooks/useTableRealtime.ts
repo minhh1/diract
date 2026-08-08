@@ -62,11 +62,23 @@ export function useTableRealtime({
 
   const effectiveFilterValue = filterValue ?? companyId;
 
+  // Unique per mounted instance of this hook, not just per table/filter --
+  // supabase-js returns the *same* channel object for two `.channel()`
+  // calls with an identical name, so two components subscribing to the
+  // same table+filter at once (e.g. a global nav badge and the full page
+  // it links to, both watching company-scoped messages) would have their
+  // second `.on()` call land after the first's `.subscribe()`, which
+  // throws ("cannot add postgres_changes callbacks ... after subscribe()")
+  // instead of silently sharing. A random suffix keeps every mount on its
+  // own channel so concurrent identical subscriptions never collide.
+  const instanceIdRef = useRef<string | undefined>(undefined);
+  if (!instanceIdRef.current) instanceIdRef.current = Math.random().toString(36).slice(2);
+
   useEffect(() => {
     if (!effectiveFilterValue) return;
 
     const channel = supabase
-      .channel(`realtime:${tableName}:${filterColumn}:${effectiveFilterValue}`)
+      .channel(`realtime:${tableName}:${filterColumn}:${effectiveFilterValue}:${instanceIdRef.current}`)
       .on(
         'postgres_changes',
         {

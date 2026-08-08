@@ -34,6 +34,7 @@ import { pushWithFallback } from "@/lib/navigateWithFallback";
 import { perfLog } from "@/lib/perfLog";
 import { useCompanyCustomFields } from "@/lib/hooks/useCompanyCustomFields";
 import NotificationBell from "@/components/NotificationBell";
+import MessagingBell from "@/components/MessagingBell";
 import { VIRTUAL_COMPUTERS_ALLOWED_COMPANY_ID } from "@/lib/vmProviders/allowedCompany";
 import { MINH_HUYNH_USER_ID } from "@/lib/marketingPages/ids";
 
@@ -1318,6 +1319,7 @@ export default function Sidebar() {
           >
             <Store size={17} />
           </Link>
+          <MessagingBell />
           <button
             onClick={() => toggleRailSection('settings')}
             title="Settings" aria-label="Settings"

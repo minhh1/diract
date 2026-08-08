@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
-import { Briefcase, CheckSquare, LayoutDashboard, MoreHorizontal, Users } from 'lucide-react-native';
+import { Briefcase, CheckSquare, LayoutDashboard, MessageCircle, MoreHorizontal, Users } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useIsTabletLayout } from '@/hooks/use-tablet-layout';
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { name: 'leads', title: 'Leads', Icon: Users },
   { name: 'tasks', title: 'Tasks', Icon: CheckSquare },
   { name: 'dashboards', title: 'Dashboards', Icon: LayoutDashboard },
+  { name: 'messages', title: 'Messages', Icon: MessageCircle },
   { name: 'more', title: 'More', Icon: MoreHorizontal },
 ] as const;
 

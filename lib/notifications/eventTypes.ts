@@ -84,4 +84,14 @@ export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
     label: "Calendar reminder",
     description: "A date you've added to the calendar (e.g. a task's due date) arrives.",
   },
+  {
+    key: "message_mentioned",
+    label: "Mentioned in a message",
+    description: "Someone @mentions you in a channel or DM.",
+  },
+  {
+    key: "message_dm",
+    label: "Direct message",
+    description: "Someone sends you a direct message.",
+  },
 ];

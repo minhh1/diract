@@ -21,7 +21,7 @@ const MASTER_DETAIL_ROUTES = new Set(['matters', 'leads']);
 // (components/Sidebar.tsx) rather than switching to a wider labeled panel
 // at any breakpoint. Unlike web's rail (hover tooltips for labels, no touch
 // input), each icon keeps a small label underneath -- a touch UI has no
-// hover state to reveal it otherwise. Only 5 fixed top-level sections, so
+// hover state to reveal it otherwise. Only 6 fixed top-level sections, so
 // no scroll container is needed either.
 //
 // The Drawer has headerShown: false (no native header to push content
