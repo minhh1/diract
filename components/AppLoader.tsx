@@ -210,18 +210,12 @@ export default function AppLoader({ children }: { children: ReactNode }) {
             pointerEvents: fadeOut ? "none" : "auto",
           }}
         >
-          <div style={{
-            width: 52, height: 52, borderRadius: 16,
-            background: "#fff", display: "flex",
-            alignItems: "center", justifyContent: "center",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
-            marginBottom: 20,
-          }}>
-            <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
-              <circle cx="14" cy="14" r="10" fill="#050a30"/>
-              <path d="M14 8v6l4 2" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- next/image
+              re-encodes GIFs as a static frame; a plain <img> is required to
+              keep the animation playing. Transparent background (no white
+              tile behind it, unlike the old SVG-in-a-box icon), so it sits
+              directly on the splash background with no wrapper. */}
+          <img src="/loader-d.gif" alt="" width={80} height={80} style={{ display: "block", marginBottom: 16 }} />
           <h1 style={{
             fontFamily: "system-ui, sans-serif", fontWeight: 900,
             fontStyle: "italic", fontSize: 24, letterSpacing: "-0.04em",
