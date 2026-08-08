@@ -114,8 +114,8 @@ function BlockEditor({ block, onChange, onRemove, onMove, isFirst, isLast }: {
     case "heading":
       fields = (
         <div className="flex gap-2">
-          <select value={block.level} onChange={e => onChange({ ...block, level: Number(e.target.value) as 1 | 2 | 3 })} className={`${inputCls} w-20 bg-white`}>
-            <option value={1}>H1</option><option value={2}>H2</option><option value={3}>H3</option>
+          <select value={block.level} onChange={e => onChange({ ...block, level: Number(e.target.value) as 2 | 3 })} className={`${inputCls} w-20 bg-white`}>
+            <option value={2}>H2</option><option value={3}>H3</option>
           </select>
           <input type="text" value={block.text} onChange={e => onChange({ ...block, text: e.target.value })} placeholder="Heading text" className={inputCls} />
         </div>

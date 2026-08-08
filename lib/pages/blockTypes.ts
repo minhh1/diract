@@ -22,9 +22,14 @@ interface BaseBlock {
   id: string;
 }
 
+// level is 2|3 only, never 1 -- the page's own title already renders as the
+// page's one H1 above every block (see app/(app)/public/pages/[slug]/page.tsx),
+// so a heading block claiming H1 would always be a second, competing
+// top-level heading, never a legitimate one. See validateBlocks.ts, which
+// enforces this the same way regardless of source (AI or manual edit).
 export interface HeadingBlock extends BaseBlock {
   type: "heading";
-  level: 1 | 2 | 3;
+  level: 2 | 3;
   text: string;
 }
 

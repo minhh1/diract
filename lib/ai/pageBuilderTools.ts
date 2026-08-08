@@ -14,7 +14,7 @@ const BLOCK_ITEM_SCHEMA = {
   type: "object",
   properties: {
     type: { type: "string", enum: [...PAGE_BLOCK_TYPES] },
-    level: { type: "number", enum: [1, 2, 3], description: "heading only: heading size, 1 is largest." },
+    level: { type: "number", enum: [2, 3], description: "heading only: section heading level. The page's title is already shown as its own top-level heading above your content, so never use 1 here -- 2 for a major section, 3 for a sub-point within one." },
     text: { type: "string", description: "heading/paragraph/quote only: the block's text." },
     url: { type: "string", description: "image/button only: a real http(s) URL. Never invent one -- only use a URL the user actually gave you." },
     alt: { type: "string", description: "image only: short alt text describing the image." },

@@ -23,8 +23,10 @@ const SPACER_HEIGHT: Record<"sm" | "md" | "lg", string> = { sm: "h-4", md: "h-8"
 function BlockView({ block }: { block: PageBlock }) {
   switch (block.type) {
     case "heading": {
-      const Tag = (`h${block.level}` as unknown) as "h1" | "h2" | "h3";
-      const sizeClass = block.level === 1 ? "text-3xl" : block.level === 2 ? "text-2xl" : "text-xl";
+      // Never h1 -- the page's own title already renders as the page's one
+      // h1 above every block (see blockTypes.ts's HeadingBlock comment).
+      const Tag = (`h${block.level}` as unknown) as "h2" | "h3";
+      const sizeClass = block.level === 2 ? "text-2xl" : "text-xl";
       return <Tag className={`${sizeClass} font-bold text-slate-900`}>{block.text}</Tag>;
     }
     case "paragraph":

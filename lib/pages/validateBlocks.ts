@@ -48,7 +48,9 @@ function validateOne(raw: unknown, allowNesting: boolean): PageBlock | null {
 
   switch (type) {
     case "heading": {
-      const level = b.level === 1 || b.level === 2 || b.level === 3 ? b.level : 2;
+      // level 1 is never valid here (coerced to 2) -- see blockTypes.ts's
+      // HeadingBlock comment on why the page title already owns the only H1.
+      const level = b.level === 3 ? 3 : 2;
       return { id: id(b.id), type: "heading", level, text: str(b.text, MAX_SHORT_TEXT) };
     }
     case "paragraph":
