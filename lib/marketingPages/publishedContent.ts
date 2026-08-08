@@ -70,6 +70,55 @@ export async function getPublishedFeatureDetailCopy(pageKey: string): Promise<Fe
   return (data?.published_content as FeatureDetailCopy | null) ?? null;
 }
 
+// Terms and Privacy (Phase C) -- longer, more structurally varied pages
+// than the feature-detail ones: numbered sections that are either plain
+// paragraphs, a bullet list, a stack of named sub-sections (see
+// components/legal/LegalPageShell.tsx's SubSection), or the special
+// AU/EU_UK/US JurisdictionTabs block (one per page, always the last
+// section). `kind` discriminates which fields apply -- only one of
+// body/listItems/subsections/jurisdiction is ever populated per section.
+// Inline **bold**/[link](url) markup is parsed by
+// lib/marketingPages/liteMarkdown.tsx, never raw HTML.
+export interface LegalSubSection {
+  title: string;
+  body: string[];
+}
+
+export interface LegalJurisdictionCopy {
+  AU: string[];
+  EU_UK: string[];
+  US: string[];
+}
+
+export interface LegalSection {
+  key: string;
+  title: string;
+  kind: "paragraphs" | "list" | "subsections" | "jurisdiction";
+  body?: string[];
+  listItems?: string[];
+  subsections?: LegalSubSection[];
+  jurisdiction?: LegalJurisdictionCopy;
+  // Rendered after the kind-specific block -- only the jurisdiction section
+  // on the Privacy page uses this today (a contact paragraph after the
+  // AU/EU_UK/US tabs), but it's generic so any section could.
+  trailingBody?: string[];
+}
+
+export interface LegalPageCopy {
+  sections: LegalSection[];
+}
+
+export async function getPublishedLegalCopy(pageKey: string): Promise<LegalPageCopy | null> {
+  const admin = serviceClient();
+  const { data } = await admin
+    .from("marketing_page_content")
+    .select("published_content")
+    .eq("company_id", MINH_HUYNH_COMPANY_ID)
+    .eq("page_key", pageKey)
+    .maybeSingle();
+  return (data?.published_content as LegalPageCopy | null) ?? null;
+}
+
 // Overlays a published copy's title/body onto the code-defined feature list
 // by slug -- icon/visual/accent/wideVisual always come from code, never from
 // published_content, so a copy edit can't reference a mockup or icon that

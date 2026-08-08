@@ -40,7 +40,8 @@ import { DEFAULT_CONTENT as financeModel } from "../components/marketing/details
 import { DEFAULT_CONTENT as loanSchedule } from "../components/marketing/details/LoanScheduleDetail";
 import { DEFAULT_CONTENT as residualLandSolver } from "../components/marketing/details/ResidualLandSolverDetail";
 import { DEFAULT_CONTENT as entityValidation } from "../components/marketing/details/EntityValidationDetail";
-import type { FeatureDetailCopy } from "../lib/marketingPages/publishedContent";
+import { TERMS_CONTENT, PRIVACY_CONTENT } from "../lib/marketing/legalContent";
+import type { FeatureDetailCopy, LegalPageCopy } from "../lib/marketingPages/publishedContent";
 
 const env = Object.fromEntries(
   readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -130,11 +131,13 @@ const FEATURE_DETAIL_PAGES: { slug: string; content: FeatureDetailCopy }[] = [
   { slug: "entity-validation", content: entityValidation },
 ];
 
-const SEED_PAGES: { page_key: string; page_kind: string; content: HeroSpotlightCopy | FeatureDetailCopy }[] = [
+const SEED_PAGES: { page_key: string; page_kind: string; content: HeroSpotlightCopy | FeatureDetailCopy | LegalPageCopy }[] = [
   { page_key: "home", page_kind: "hero-spotlight", content: HOME_COPY },
   { page_key: "for/law-firm-au", page_kind: "hero-spotlight", content: audienceCopy("law-firm-au") },
   { page_key: "for/property-developers-au", page_kind: "hero-spotlight", content: audienceCopy("property-developers-au") },
   ...FEATURE_DETAIL_PAGES.map(({ slug, content }) => ({ page_key: `features/${slug}`, page_kind: "feature-detail", content })),
+  { page_key: "terms", page_kind: "legal", content: TERMS_CONTENT },
+  { page_key: "privacy", page_kind: "legal", content: PRIVACY_CONTENT },
 ];
 
 async function findUserIdByEmail(email: string): Promise<string> {

@@ -14,12 +14,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireMinhHuynh, MINH_HUYNH_COMPANY_ID } from "@/lib/marketingPages/auth";
 
-// page_key -> the real marketing URL to revalidate on publish. Extend this
-// alongside Phase C (terms -> /terms, privacy -> /privacy) -- unmapped keys
-// still publish, just without knowing which path to revalidate immediately
-// (would show up on next natural revalidation/deploy instead).
+// page_key -> the real marketing URL to revalidate on publish. Unmapped
+// keys still publish, just without knowing which path to revalidate
+// immediately (would show up on next natural revalidation/deploy instead).
 function urlForPageKey(pageKey: string): string | null {
   if (pageKey === "home") return "/";
+  if (pageKey === "terms" || pageKey === "privacy") return `/${pageKey}`;
   if (pageKey.startsWith("for/") || pageKey.startsWith("features/")) return `/${pageKey}`;
   return null;
 }

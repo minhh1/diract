@@ -7,10 +7,10 @@
 // here, this is not a general-purpose admin feature.
 //
 // Draft edits autosave on blur; nothing on the live site changes until
-// "Push live" is clicked for that specific page. Two page kinds today:
-// hero-spotlight (home + /for/[audience]) and feature-detail (the 23
-// bespoke feature deep-dive pages, Phase B) -- each with its own content
-// shape and edit form below.
+// "Push live" is clicked for that specific page. Three page kinds today:
+// hero-spotlight (home + /for/[audience]), feature-detail (the 23 bespoke
+// feature deep-dive pages, Phase B), and legal (Terms/Privacy, Phase C) --
+// each with its own content shape and edit form below.
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -49,7 +49,33 @@ interface FeatureDetailCopy {
   sections: FeatureDetailSection[];
 }
 
-type PageContent = HeroSpotlightCopy | FeatureDetailCopy;
+interface LegalSubSection {
+  title: string;
+  body: string[];
+}
+
+interface LegalJurisdictionCopy {
+  AU: string[];
+  EU_UK: string[];
+  US: string[];
+}
+
+interface LegalSection {
+  key: string;
+  title: string;
+  kind: "paragraphs" | "list" | "subsections" | "jurisdiction";
+  body?: string[];
+  listItems?: string[];
+  subsections?: LegalSubSection[];
+  jurisdiction?: LegalJurisdictionCopy;
+  trailingBody?: string[];
+}
+
+interface LegalPageCopy {
+  sections: LegalSection[];
+}
+
+type PageContent = HeroSpotlightCopy | FeatureDetailCopy | LegalPageCopy;
 
 interface PageRow {
   page_key: string;
@@ -64,6 +90,8 @@ const PAGE_LABELS: Record<string, { title: string; url: string }> = {
   home: { title: "Homepage", url: "/" },
   "for/law-firm-au": { title: "For law firms", url: "/for/law-firm-au" },
   "for/property-developers-au": { title: "For property developers", url: "/for/property-developers-au" },
+  terms: { title: "Terms of Service", url: "/terms" },
+  privacy: { title: "Privacy Policy", url: "/privacy" },
 };
 
 function pageLabel(page: PageRow): { title: string; url: string } {
@@ -156,25 +184,44 @@ export default function AdminLandingPagesTab() {
           </div>
         </div>
 
-        {selected.page_kind === "hero-spotlight" ? (
-          <HeroSpotlightEditor
-            label={label.title}
-            content={selected.draft_content as HeroSpotlightCopy}
-            saving={saving}
-            saved={saved}
-            onChange={next => setPages(prev => prev?.map(p => (p.page_key === selected.page_key ? { ...p, draft_content: next } : p)) ?? prev)}
-            onBlur={commit}
-          />
-        ) : (
-          <FeatureDetailEditor
-            label={label.title}
-            content={selected.draft_content as FeatureDetailCopy}
-            saving={saving}
-            saved={saved}
-            onChange={next => setPages(prev => prev?.map(p => (p.page_key === selected.page_key ? { ...p, draft_content: next } : p)) ?? prev)}
-            onBlur={commit}
-          />
-        )}
+        {(() => {
+          const onChange = (next: PageContent) =>
+            setPages(prev => prev?.map(p => (p.page_key === selected.page_key ? { ...p, draft_content: next } : p)) ?? prev);
+          if (selected.page_kind === "hero-spotlight") {
+            return (
+              <HeroSpotlightEditor
+                label={label.title}
+                content={selected.draft_content as HeroSpotlightCopy}
+                saving={saving}
+                saved={saved}
+                onChange={onChange as (next: HeroSpotlightCopy) => void}
+                onBlur={commit}
+              />
+            );
+          }
+          if (selected.page_kind === "feature-detail") {
+            return (
+              <FeatureDetailEditor
+                label={label.title}
+                content={selected.draft_content as FeatureDetailCopy}
+                saving={saving}
+                saved={saved}
+                onChange={onChange as (next: FeatureDetailCopy) => void}
+                onBlur={commit}
+              />
+            );
+          }
+          return (
+            <LegalEditor
+              label={label.title}
+              content={selected.draft_content as LegalPageCopy}
+              saving={saving}
+              saved={saved}
+              onChange={onChange as (next: LegalPageCopy) => void}
+              onBlur={commit}
+            />
+          );
+        })()}
       </div>
     );
   }
@@ -196,7 +243,7 @@ export default function AdminLandingPagesTab() {
 
         <PageList title="Home & audience pages" pages={homeAndAudiencePages} onSelect={setSelectedKey} />
         <PageList title="Feature pages" pages={featureDetailPages} onSelect={setSelectedKey} />
-        {legalPages.length > 0 && <PageList title="Legal (reference only)" pages={legalPages} onSelect={setSelectedKey} />}
+        <PageList title="Legal" pages={legalPages} onSelect={setSelectedKey} />
       </div>
     </div>
   );
@@ -338,6 +385,133 @@ function FeatureDetailEditor({
           ))}
         </div>
       ))}
+    </>
+  );
+}
+
+function LegalEditor({
+  label, content, saving, saved, onChange, onBlur,
+}: {
+  label: string;
+  content: LegalPageCopy;
+  saving: boolean;
+  saved: boolean;
+  onChange: (next: LegalPageCopy) => void;
+  onBlur: () => void;
+}) {
+  const updateSection = (idx: number, patch: Partial<LegalSection>) => {
+    onChange({ sections: content.sections.map((s, i) => (i === idx ? { ...s, ...patch } : s)) });
+  };
+  const updateBodyParagraph = (sIdx: number, pIdx: number, value: string) => {
+    const body = (content.sections[sIdx].body ?? []).map((p, i) => (i === pIdx ? value : p));
+    updateSection(sIdx, { body });
+  };
+  const updateListItem = (sIdx: number, iIdx: number, value: string) => {
+    const listItems = content.sections[sIdx].listItems!.map((item, i) => (i === iIdx ? value : item));
+    updateSection(sIdx, { listItems });
+  };
+  const updateSubsection = (sIdx: number, subIdx: number, patch: Partial<LegalSubSection>) => {
+    const subsections = content.sections[sIdx].subsections!.map((sub, i) => (i === subIdx ? { ...sub, ...patch } : sub));
+    updateSection(sIdx, { subsections });
+  };
+  const updateSubsectionParagraph = (sIdx: number, subIdx: number, pIdx: number, value: string) => {
+    const sub = content.sections[sIdx].subsections![subIdx];
+    updateSubsection(sIdx, subIdx, { body: sub.body.map((p, i) => (i === pIdx ? value : p)) });
+  };
+  const updateJurisdictionParagraph = (sIdx: number, region: keyof LegalJurisdictionCopy, pIdx: number, value: string) => {
+    const jurisdiction = content.sections[sIdx].jurisdiction!;
+    updateSection(sIdx, { jurisdiction: { ...jurisdiction, [region]: jurisdiction[region].map((p, i) => (i === pIdx ? value : p)) } });
+  };
+  const updateTrailingParagraph = (sIdx: number, pIdx: number, value: string) => {
+    const trailingBody = content.sections[sIdx].trailingBody!.map((p, i) => (i === pIdx ? value : p));
+    updateSection(sIdx, { trailingBody });
+  };
+
+  return (
+    <>
+      <div className="bg-white border border-amber-200 bg-amber-50/40 rounded-[32px] p-5">
+        <p className="text-[12px] text-amber-800 leading-relaxed">
+          {label} is a binding legal document. Editing text here (including inside **bold** or [link](url) markers)
+          changes what&apos;s legally in effect once published -- have a lawyer review any real change before you push it live.
+        </p>
+      </div>
+
+      {content.sections.map((section, sIdx) => (
+        <div key={section.key} className="bg-white border border-slate-200 rounded-[32px] p-6 space-y-3">
+          <p className="text-[10px] font-mono text-slate-300">{section.key}</p>
+          <Field label="Title" value={section.title} onChange={v => updateSection(sIdx, { title: v })} onBlur={onBlur} />
+
+          {section.body?.map((paragraph, pIdx) => (
+            <Field
+              key={`body-${pIdx}`}
+              label={section.body!.length > 1 ? `Paragraph ${pIdx + 1}` : "Paragraph"}
+              value={paragraph}
+              onChange={v => updateBodyParagraph(sIdx, pIdx, v)}
+              onBlur={onBlur}
+              multiline
+            />
+          ))}
+
+          {section.kind === "list" && section.listItems!.map((item, iIdx) => (
+            <Field
+              key={`item-${iIdx}`}
+              label={`List item ${iIdx + 1}`}
+              value={item}
+              onChange={v => updateListItem(sIdx, iIdx, v)}
+              onBlur={onBlur}
+              multiline
+            />
+          ))}
+
+          {section.kind === "subsections" && section.subsections!.map((sub, subIdx) => (
+            <div key={subIdx} className="p-4 bg-slate-50 rounded-2xl space-y-2">
+              <Field label="Sub-heading" value={sub.title} onChange={v => updateSubsection(sIdx, subIdx, { title: v })} onBlur={onBlur} />
+              {sub.body.map((paragraph, pIdx) => (
+                <Field
+                  key={pIdx}
+                  label={sub.body.length > 1 ? `Paragraph ${pIdx + 1}` : "Paragraph"}
+                  value={paragraph}
+                  onChange={v => updateSubsectionParagraph(sIdx, subIdx, pIdx, v)}
+                  onBlur={onBlur}
+                  multiline
+                />
+              ))}
+            </div>
+          ))}
+
+          {section.kind === "jurisdiction" && (
+            <>
+              {(["AU", "EU_UK", "US"] as const).map(region => (
+                <div key={region} className="p-4 bg-slate-50 rounded-2xl space-y-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{region.replace("_", " & ")}</p>
+                  {section.jurisdiction![region].map((paragraph, pIdx) => (
+                    <Field
+                      key={pIdx}
+                      label={section.jurisdiction![region].length > 1 ? `Paragraph ${pIdx + 1}` : "Paragraph"}
+                      value={paragraph}
+                      onChange={v => updateJurisdictionParagraph(sIdx, region, pIdx, v)}
+                      onBlur={onBlur}
+                      multiline
+                    />
+                  ))}
+                </div>
+              ))}
+              {section.trailingBody?.map((paragraph, pIdx) => (
+                <Field
+                  key={`trailing-${pIdx}`}
+                  label={section.trailingBody!.length > 1 ? `Closing paragraph ${pIdx + 1}` : "Closing paragraph"}
+                  value={paragraph}
+                  onChange={v => updateTrailingParagraph(sIdx, pIdx, v)}
+                  onBlur={onBlur}
+                  multiline
+                />
+              ))}
+            </>
+          )}
+        </div>
+      ))}
+
+      <p className="text-[10px] text-slate-300 px-2">{saving ? "Saving..." : saved ? "Saved" : ""}</p>
     </>
   );
 }
