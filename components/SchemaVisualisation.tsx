@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Store } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { invalidateCompanyCustomFieldsCache } from "@/lib/hooks/useCompanyCustomFields";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
@@ -465,35 +465,10 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
     if (companyId && !isCustomTable) invalidateCompanyCustomFieldsCache(companyId, activeTable);
   };
 
-  // Snapshots every custom field on the active system table (entities/
-  // projects/properties) into a brand-new draft template -- a one-time copy,
-  // not a live link (see supabase/template_marketplace.sql).
-  const handlePublishSystemFields = async () => {
-    if (isCustomTable || !companyId || fields.length === 0) return;
-    const templateName = window.prompt(
-      `Publish these ${activeTable} fields to the marketplace as a new template. Template name:`,
-      `${activeTable.charAt(0).toUpperCase()}${activeTable.slice(1)} fields`
-    );
-    if (!templateName?.trim()) return;
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const slug = `${templateName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-')}-${Date.now().toString(36)}`;
-    const { data: template, error: tErr } = await supabase.from('template_definitions').insert({
-      slug, name: templateName.trim(), owner_company_id: companyId, is_published: false,
-    }).select().single();
-    if (tErr || !template) { alert(tErr?.message || 'Could not create template'); return; }
-
-    await supabase.from('template_definition_system_fields').insert(fields.map(f => ({
-      template_id: template.id, table_name: activeTable, field_key: f.field_key, label: f.label, field_type: f.field_type,
-      select_options: f.select_options, is_required: f.is_required, is_unique: f.is_unique,
-      display_order: f.display_order, section_name: f.section_name, help_text: f.help_text,
-      default_value: f.default_value, auto_generate: f.auto_generate, auto_generate_type: f.auto_generate_type,
-      auto_generate_prefix: f.auto_generate_prefix, linked_table: f.linked_table, linked_display_column: f.linked_display_column,
-    })));
-
-    logSchemaChange({ companyId, actorId: user?.id ?? null, entityType: 'template_definition', entityId: template.id, entityLabel: template.name, action: 'create', after: template });
-    alert(`Published as a draft template. Find it under Marketplace → My templates to review and publish.`);
-  };
+  // Publishing system fields to a template now goes exclusively through the
+  // Marketplace page's consolidated "Add to template" modal (see
+  // components/marketplace/AddToTemplateModal.tsx), which replaced this
+  // component's own always-create-a-new-template button.
 
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
 
@@ -566,15 +541,6 @@ const handleSaveField = async (updates: Partial<CustomField>) => {
             </div>
 
             <div className="flex items-center gap-2">
-              {!isCustomTable && fields.length > 0 && (
-                <button
-                  onClick={handlePublishSystemFields}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
-                  title="Publish these fields to the marketplace"
-                >
-                  <Store size={13} /> Publish to marketplace
-                </button>
-              )}
               {/* Only a company admin can add a field -- see ctf_insert/
                   ccf_insert in supabase/migrations/20260803030000_lock_
                   template_schema.sql. */}

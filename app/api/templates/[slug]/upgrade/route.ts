@@ -31,6 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     p_template_id: template.id,
     p_resolutions: resolutions,
     p_install_dashboards: body.installDashboards === true,
+    p_install_extras: body.installExtras || {},
   });
 
   if (error) {

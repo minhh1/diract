@@ -222,13 +222,36 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     ? await getPrecedentLibraryStatus(admin, companyId)
     : null;
 
+  // Extras summary (see supabase/migrations/20260808180300_install_extras.sql) --
+  // counts only, not a full per-item conflict manifest like tables/dashboards
+  // above, since install applies these as a single opt-in checkbox each,
+  // not per-item.
+  const [{ count: defaultViewsCount }, { data: pageDefs }] = await Promise.all([
+    admin.from("template_definition_default_views").select("id", { count: "exact", head: true }).eq("template_id", template.id),
+    admin.from("template_definition_pages").select("page_kind").eq("template_id", template.id),
+  ]);
+  const pagesByKind = { detailedTable: 0, publicTask: 0, documentFillPack: 0 };
+  for (const p of pageDefs || []) {
+    if (p.page_kind === "detailed_table") pagesByKind.detailedTable++;
+    else if (p.page_kind === "public_task") pagesByKind.publicTask++;
+    else if (p.page_kind === "document_fill_pack") pagesByKind.documentFillPack++;
+  }
+  const hasSettings = !!(template.settings_template && Object.keys(template.settings_template).length > 0);
+  const hasTablesVisibility = !!(template.disabled_system_tables && Object.keys(template.disabled_system_tables).length > 0);
+
   // Whether there's anything for upgrade_company_template to actually do --
   // only meaningful when alreadyInstalled (a fresh install always "has
   // everything to add" by definition, so this flag isn't shown then).
+  // Extras have no per-item "owned" tracking (they're a single opt-in
+  // checkbox each, not per-item like tables/dashboards) -- their mere
+  // presence in the catalog counts as "something available" here, same
+  // conservative treatment installDashboards already gets.
   const hasUpgrade =
     tableConflicts.some(t => !t.owned || t.newFields.length > 0) ||
     dashboards.some(d => !d.owned) ||
-    !!(precedentLibrary && precedentLibrary.available > 0);
+    !!(precedentLibrary && precedentLibrary.available > 0) ||
+    (defaultViewsCount ?? 0) > 0 ||
+    !!(pageDefs && pageDefs.length > 0);
 
   const fieldConflicts = await Promise.all(
     (systemFields || []).map(async f => {
@@ -303,5 +326,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     recordTabs,
     precedentLibrary,
     suggestedLabelOverrides: template.suggested_label_overrides || {},
+    extras: {
+      defaultViewsCount: defaultViewsCount ?? 0,
+      pages: pagesByKind,
+      hasSettings,
+      hasTablesVisibility,
+    },
   });
 }

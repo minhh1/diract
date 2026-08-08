@@ -10,6 +10,7 @@ import { Store, Plus, Loader2, Check, X, Trash2, FlaskConical } from "lucide-rea
 import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import TemplateTableBuilder from "@/components/marketplace/TemplateTableBuilder";
+import AddToTemplateModal from "@/components/marketplace/AddToTemplateModal";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
 import { clearAllClientCaches } from "@/lib/clearClientCaches";
 import { invalidateCustomTables } from "@/lib/hooks/useCustomTables";
@@ -93,6 +94,7 @@ interface PreviewResult {
   // here.
   precedentLibrary?: { total: number; installed: number; available: number } | null;
   suggestedLabelOverrides: Record<string, { singular: string; plural: string }>;
+  extras: { defaultViewsCount: number; pages: { detailedTable: number; publicTask: number; documentFillPack: number }; hasSettings: boolean; hasTablesVisibility: boolean };
 }
 
 const SYSTEM_TABLE_LABELS: Record<string, string> = { projects: 'Projects', entities: 'Entities', properties: 'Properties' };
@@ -241,6 +243,9 @@ export default function MarketplacePage() {
   // Bundled dashboards are opt-in (see install_company_template's
   // p_install_dashboards) -- tables always install, dashboards only if asked.
   const [installDashboards, setInstallDashboards] = useState(false);
+  // Each additive/non-destructive, each its own opt-in checkbox (see
+  // install_company_template's p_install_extras).
+  const [installExtras, setInstallExtras] = useState({ tablesVisibility: false, defaultViews: false, pages: false, settings: false });
   const [installBusy, setInstallBusy] = useState(false);
   const [installError, setInstallError] = useState('');
 
@@ -251,6 +256,7 @@ export default function MarketplacePage() {
   const [trialError, setTrialError] = useState('');
 
   const [managing, setManaging] = useState<Template | null>(null);
+  const [addingToTemplate, setAddingToTemplate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
@@ -265,6 +271,7 @@ export default function MarketplacePage() {
     setInstallError('');
     setPreview(null);
     setInstallDashboards(false);
+    setInstallExtras({ tablesVisibility: false, defaultViews: false, pages: false, settings: false });
     const res = await fetch(`/api/templates/${template.slug}/preview`, { method: 'POST' });
     const data = await res.json();
     if (!res.ok) { setInstallError(data.error || 'Could not load preview'); return; }
@@ -297,7 +304,7 @@ export default function MarketplacePage() {
     const endpoint = preview?.alreadyInstalled ? 'upgrade' : 'install';
     const res = await fetch(`/api/templates/${installing.slug}/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resolutions, installDashboards }),
+      body: JSON.stringify({ resolutions, installDashboards, installExtras }),
     });
     const data = await res.json();
     setInstallBusy(false);
@@ -334,19 +341,6 @@ export default function MarketplacePage() {
     // module caches are keyed by userId alone, not companyId).
     clearAllClientCaches();
     window.location.replace('/dashboard/properties');
-  };
-
-  // Owner-only: push this company's live dashboards (fields, layout, empty
-  // rows, conditions, widths, highlights) into the template catalog -- see
-  // supabase/template_dashboards_owner_sync.sql.
-  const [syncingDashboards, setSyncingDashboards] = useState<string | null>(null);
-  const syncDashboards = async (template: Template) => {
-    setSyncingDashboards(template.id);
-    const res = await fetch(`/api/templates/${template.slug}/sync-dashboards`, { method: 'POST' });
-    const data = await res.json();
-    setSyncingDashboards(null);
-    if (!res.ok) { alert(data.error || 'Sync failed'); return; }
-    alert(`Dashboards synced into the template: ${data.updated} updated, ${data.created} added${data.skipped ? `, ${data.skipped} skipped (no template table binding)` : ''}.`);
   };
 
   const uninstall = async (template: Template) => {
@@ -437,14 +431,6 @@ export default function MarketplacePage() {
         )}
         {mode === 'mine' && isAdmin && (
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => syncDashboards(template)}
-              disabled={syncingDashboards === template.id}
-              title="Copy this workspace's live dashboards (fields, layout, empty rows, conditions, widths, highlights) into the template"
-              className="px-3 py-2 bg-slate-50 text-slate-600 rounded-full text-[10px] font-bold hover:bg-slate-100 transition-all disabled:opacity-50"
-            >
-              {syncingDashboards === template.id ? <Loader2 size={12} className="animate-spin" /> : 'Sync dashboards'}
-            </button>
             <button onClick={() => togglePublish(template)} className="px-3 py-2 bg-slate-50 text-slate-600 rounded-full text-[10px] font-bold hover:bg-slate-100 transition-all">
               {template.is_published ? 'Unpublish' : 'Publish'}
             </button>
@@ -488,7 +474,12 @@ export default function MarketplacePage() {
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {isAdmin && mine.length > 0 && (
+              <button onClick={() => setAddingToTemplate(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:bg-slate-100 transition-all">
+                <Plus size={13} /> Add to template
+              </button>
+            )}
             <button onClick={() => setCreating(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-full text-[11px] font-bold hover:bg-indigo-700 transition-all">
               <Plus size={13} /> New template
             </button>
@@ -746,6 +737,36 @@ export default function MarketplacePage() {
                   Also create the template&apos;s ready-made dashboards
                 </label>
 
+                {/* Extras: each additive/non-destructive, each its own
+                    opt-in checkbox -- see install_company_template's
+                    p_install_extras. Only shown when the template actually
+                    ships that category. */}
+                {preview.extras?.hasTablesVisibility && (
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                    <input type="checkbox" checked={installExtras.tablesVisibility} onChange={e => setInstallExtras(prev => ({ ...prev, tablesVisibility: e.target.checked }))} />
+                    Apply the template&apos;s table visibility settings
+                  </label>
+                )}
+                {preview.extras?.defaultViewsCount > 0 && (
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                    <input type="checkbox" checked={installExtras.defaultViews} onChange={e => setInstallExtras(prev => ({ ...prev, defaultViews: e.target.checked }))} />
+                    Also create {preview.extras.defaultViewsCount} default view{preview.extras.defaultViewsCount === 1 ? '' : 's'} (won&apos;t replace any you already have)
+                  </label>
+                )}
+                {(preview.extras?.pages.detailedTable > 0 || preview.extras?.pages.publicTask > 0 || preview.extras?.pages.documentFillPack > 0) && (
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                    <input type="checkbox" checked={installExtras.pages} onChange={e => setInstallExtras(prev => ({ ...prev, pages: e.target.checked }))} />
+                    Also create the template&apos;s pages
+                    {preview.extras.pages.documentFillPack > 0 ? ' (document fill packs are suggested only, not auto-created)' : ''}
+                  </label>
+                )}
+                {preview.extras?.hasSettings && (
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                    <input type="checkbox" checked={installExtras.settings} onChange={e => setInstallExtras(prev => ({ ...prev, settings: e.target.checked }))} />
+                    Apply the template&apos;s settings (table labels / invoice terms)
+                  </label>
+                )}
+
                 {Object.keys(preview.suggestedLabelOverrides || {}).length > 0 && (
                   <label className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
                     <input type="checkbox" checked={resolutions.applyLabelOverrides} onChange={e => setResolutions(prev => ({ ...prev, applyLabelOverrides: e.target.checked }))} />
@@ -766,6 +787,18 @@ export default function MarketplacePage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Add to template modal -- the one consolidated entry point for
+          every exportable category (see components/marketplace/
+          AddToTemplateModal.tsx's own header for what replaced). */}
+      {addingToTemplate && companyId && (
+        <AddToTemplateModal
+          companyId={companyId}
+          ownedTemplates={mine.map(t => ({ id: t.id, slug: t.slug, name: t.name }))}
+          onClose={() => setAddingToTemplate(false)}
+          onDone={() => { setAddingToTemplate(false); refetch(); }}
+        />
       )}
 
       {/* Manage (schema editor) modal */}

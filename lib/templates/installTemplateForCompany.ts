@@ -10,7 +10,7 @@ import type { adminClient } from "@/lib/documentTemplateAuth";
 import { installPrecedentLibrary, TEMPLATES_WITH_PRECEDENT_LIBRARY } from "@/lib/precedents/installLibrary";
 
 export async function installTemplateForCompany({
-  supabase, admin, companyId, userId, slug, resolutions = {}, installDashboards = false,
+  supabase, admin, companyId, userId, slug, resolutions = {}, installDashboards = false, installExtras = {},
 }: {
   supabase: SupabaseClient;
   admin: ReturnType<typeof adminClient>;
@@ -19,6 +19,10 @@ export async function installTemplateForCompany({
   slug: string;
   resolutions?: Record<string, unknown>;
   installDashboards?: boolean;
+  // Opt-in, additive extras beyond tables/fields/dashboards -- see
+  // supabase/migrations/20260808180300_install_extras.sql for what each
+  // one does.
+  installExtras?: { tablesVisibility?: boolean; defaultViews?: boolean; pages?: boolean; settings?: boolean };
 }): Promise<{ data?: Record<string, unknown>; precedents?: unknown; error?: string }> {
   const { data: template } = await admin
     .from("template_definitions").select("id, is_published, owner_company_id").eq("slug", slug).maybeSingle();
@@ -31,6 +35,7 @@ export async function installTemplateForCompany({
     p_template_id: template.id,
     p_resolutions: resolutions,
     p_install_dashboards: installDashboards,
+    p_install_extras: installExtras,
   });
   if (error) return { error: error.message };
 

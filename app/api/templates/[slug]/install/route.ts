@@ -22,6 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     supabase, admin, companyId, userId: user.id, slug,
     resolutions: body.resolutions || {},
     installDashboards: body.installDashboards === true,
+    installExtras: body.installExtras || {},
   });
 
   if (result.error) {

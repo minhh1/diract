@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, Store, RotateCcw, MapPin, Building2, LayoutGrid, CheckSquare, Lock } from "lucide-react";
+import { Plus, Trash2, Loader2, Check, X, Settings, Pencil, RotateCcw, MapPin, Building2, LayoutGrid, CheckSquare, Lock } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { logSchemaChange } from "@/lib/services/schemaChangeLog";
@@ -317,46 +317,10 @@ export default function CustomTableBuilder() {
     refetch();
   };
 
-  // Snapshots this table's current shape into a brand-new draft template -
-  // a one-time copy, not a live link (see supabase/template_marketplace.sql).
-  // Cross-table relations to another *custom* table aren't carried over
-  // (nothing to resolve them against outside this single table's export);
-  // relations to a system table (entities/projects/properties) are kept.
-  const handlePublish = async (table: { id: string; name: string; icon: string; color: string; slug: string; primary_field_key: string | null }) => {
-    const templateName = window.prompt(`Publish "${table.name}" to the marketplace as a new template. Template name:`, table.name);
-    if (!templateName?.trim()) return;
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: prof } = await supabase.from('profiles').select('active_company_id').eq('id', user?.id).single();
-    const companyId = prof?.active_company_id;
-    if (!companyId) return;
-
-    const { data: fields } = await supabase.from('company_table_fields').select('*').eq('table_id', table.id).is('deleted_at', null).order('display_order');
-
-    const slug = `${templateName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '-')}-${Date.now().toString(36)}`;
-    const { data: template, error: tErr } = await supabase.from('template_definitions').insert({
-      slug, name: templateName.trim(), owner_company_id: companyId, is_published: false,
-    }).select().single();
-    if (tErr || !template) { alert(tErr?.message || 'Could not create template'); return; }
-
-    const { data: templateTable, error: ttErr } = await supabase.from('template_definition_tables').insert({
-      template_id: template.id, slug: table.slug, name: table.name, icon: table.icon, color: table.color,
-      primary_field_key: table.primary_field_key, display_order: 0,
-    }).select().single();
-    if (ttErr || !templateTable) { alert(ttErr?.message || 'Could not publish table'); return; }
-
-    if (fields && fields.length > 0) {
-      await supabase.from('template_definition_table_fields').insert(fields.map(f => ({
-        template_table_id: templateTable.id, field_key: f.field_key, label: f.label, field_type: f.field_type,
-        select_options: f.select_options, linked_system_table: f.linked_system_table, linked_display_field: f.linked_display_field,
-        is_required: f.is_required, is_unique: f.is_unique, show_in_table: f.show_in_table,
-        display_order: f.display_order, section_name: f.section_name, help_text: f.help_text,
-      })));
-    }
-
-    logSchemaChange({ companyId, actorId: user?.id ?? null, entityType: 'template_definition', entityId: template.id, entityLabel: template.name, action: 'create', after: template });
-    alert(`Published as a draft template. Find it under Marketplace → My templates to review and publish.`);
-  };
+  // Publishing a table to a template now goes exclusively through the
+  // Marketplace page's consolidated "Add to template" modal (see
+  // components/marketplace/AddToTemplateModal.tsx), which replaced this
+  // component's own always-create-a-new-template button.
 
   const visibleSystemTableDefs = SYSTEM_TABLE_DEFS.filter(t => !disabledSystemTables[t.slug]);
   // Only an admin can bring one back -- restoring is company-wide, same
@@ -489,13 +453,6 @@ export default function CustomTableBuilder() {
                   Deletion requested
                 </span>
               )}
-              <button
-                onClick={() => handlePublish(table)}
-                className="p-1.5 text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-all"
-                title="Publish to marketplace"
-              >
-                <Store size={14} />
-              </button>
               {/* Editing a shared table (not one you privately own) is
                   admin-only -- see ct_update in supabase/migrations/
                   20260803030000_lock_template_schema.sql, which also
