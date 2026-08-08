@@ -39,16 +39,44 @@ async function getAccessToken(userId: string): Promise<string | null> {
   return data.access_token;
 }
 
+// Google only returns nextSyncToken on the LAST page of a list call, so a
+// single-page fetch can silently never advance past bootstrap for an
+// account with enough recurring-event instances to fill a page (singleEvents
+// expansion of even a handful of undated-end recurring series -- birthdays,
+// compliance reminders -- easily exceeds Google's 250-per-page default).
+// Must page through with pageToken until a page comes back with no
+// nextPageToken. Bootstrap (no syncToken yet) also bounds the window to the
+// next 180 days -- syncToken-based calls can't combine with timeMin/timeMax
+// per Google's API restrictions, but bootstrap can and should, both to keep
+// the page count sane and because a Diract-pushed booking is inherently
+// near-term, not a decades-out recurring series.
 async function fetchChanges(token: string, syncToken: string | null): Promise<{ items: any[]; nextSyncToken: string | null; invalidToken: boolean }> {
-  const params = new URLSearchParams({ singleEvents: "true" });
-  if (syncToken) params.set("syncToken", syncToken);
-  else params.set("timeMin", new Date().toISOString()); // bootstrap: only need going forward, not full history
+  const items: any[] = [];
+  let pageToken: string | undefined;
+  const MAX_PAGES = 20; // safety net against a runaway loop; bootstrap's timeMax keeps real usage well under this
 
-  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (res.status === 410) return { items: [], nextSyncToken: null, invalidToken: true }; // expired/invalid syncToken -- caller re-bootstraps
-  if (!res.ok) { console.error("[calendar-push] list error:", await res.text()); return { items: [], nextSyncToken: syncToken, invalidToken: false }; }
-  const data = await res.json();
-  return { items: data.items ?? [], nextSyncToken: data.nextSyncToken ?? syncToken, invalidToken: false };
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const params = new URLSearchParams({ singleEvents: "true", maxResults: "2500" });
+    if (syncToken) params.set("syncToken", syncToken);
+    else {
+      params.set("timeMin", new Date().toISOString());
+      params.set("timeMax", new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString());
+    }
+    if (pageToken) params.set("pageToken", pageToken);
+
+    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 410) return { items: [], nextSyncToken: null, invalidToken: true }; // expired/invalid syncToken -- caller re-bootstraps
+    if (!res.ok) { console.error("[calendar-push] list error:", await res.text()); return { items, nextSyncToken: syncToken, invalidToken: false }; }
+    const data = await res.json();
+    items.push(...(data.items ?? []));
+
+    if (data.nextSyncToken) return { items, nextSyncToken: data.nextSyncToken, invalidToken: false };
+    if (!data.nextPageToken) return { items, nextSyncToken: syncToken, invalidToken: false }; // shouldn't happen (no token either way), but don't loop forever
+    pageToken = data.nextPageToken;
+  }
+
+  console.error("[calendar-push] hit MAX_PAGES without reaching nextSyncToken -- not advancing sync token, will retry from the same point next push");
+  return { items, nextSyncToken: syncToken, invalidToken: false };
 }
 
 Deno.serve(async (req) => {
