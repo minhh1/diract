@@ -16,6 +16,7 @@ interface Props {
 interface Settings {
   enabled: boolean;
   rostering_enabled: boolean;
+  booking_enabled: boolean;
 }
 
 export default function AdminCalendarTab({ companyId }: Props) {
@@ -85,6 +86,21 @@ export default function AdminCalendarTab({ companyId }: Props) {
             type="checkbox"
             checked={settings.rostering_enabled}
             onChange={(e) => save({ ...settings, rostering_enabled: e.target.checked })}
+            className="accent-indigo-600 shrink-0"
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 rounded-2xl cursor-pointer">
+          <span>
+            <span className="block text-[12px] font-medium text-slate-700">Enable event booking</span>
+            <span className="block text-[11px] text-slate-400 mt-0.5">
+              Lets staff with permission (or any admin) create bookable events and invite other staff or external
+              people -- external invitees get an emailed link to accept or decline, no login needed.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={settings.booking_enabled}
+            onChange={(e) => save({ ...settings, booking_enabled: e.target.checked })}
             className="accent-indigo-600 shrink-0"
           />
         </label>

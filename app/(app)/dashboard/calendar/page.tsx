@@ -3,21 +3,31 @@
 // Fixed nav-linked calendar page (like /dashboard/ai, /dashboard/schema --
 // not a dashboard-widget-builder instantiation, since a full rostering/
 // booking calendar doesn't fit the generic per-table widget model).
-// Phase 1: month/week/day shell + staff rostering. Event booking,
-// invitations, reminders, and Google Calendar sync are a deferred phase 2.
+// Month/week/day shell, staff rostering, and event booking (invitations,
+// reminders, opt-in two-way Google Calendar sync) all live here.
 import { useState, useEffect, useCallback } from "react";
-import { CalendarDays, Loader2, ChevronLeft, ChevronRight, Copy, Send } from "lucide-react";
+import { CalendarDays, Loader2, ChevronLeft, ChevronRight, Copy, Send, Plus, RefreshCw } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
 import { useCalendarNav, toDateStr, type CalendarView } from "@/lib/hooks/useCalendarNav";
 import RosterWeekView, { type RosterShift, type RosterStaff } from "@/components/calendar/RosterWeekView";
+import EventModal, { type CalendarEventData, type EventInvite, type StaffOption } from "@/components/calendar/EventModal";
+import CheckInPanel from "@/components/kiosk/CheckInPanel";
+import HoursSummaryPanel from "@/components/kiosk/HoursSummaryPanel";
 
 interface CalendarSettings {
   enabled: boolean;
   rostering_enabled: boolean;
+  booking_enabled: boolean;
+}
+
+interface DateEvent {
+  source_id: string; label: string; color: string;
+  record_id: string; name: string; date: string;
+  table_name: string | null; table_id: string | null;
 }
 
 export default function CalendarPage() {
-  const { isAdmin } = useCompany();
+  const { isAdmin, role, userId } = useCompany();
   const [settings, setSettings] = useState<CalendarSettings | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -27,6 +37,12 @@ export default function CalendarPage() {
   const [loadingShifts, setLoadingShifts] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
+  const [dateEvents, setDateEvents] = useState<DateEvent[]>([]);
+
+  const [events, setEvents] = useState<CalendarEventData[]>([]);
+  const [eventInvites, setEventInvites] = useState<EventInvite[]>([]);
+  const [bookingStaff, setBookingStaff] = useState<StaffOption[]>([]);
+  const [eventModal, setEventModal] = useState<{ event?: CalendarEventData; defaultDate?: Date } | null>(null);
 
   useEffect(() => {
     fetch("/api/calendar/settings").then((res) => res.json()).then((json) => {
@@ -52,6 +68,50 @@ export default function CalendarPage() {
   }, [settings?.rostering_enabled, rangeStart, rangeEnd]);
 
   useEffect(() => { loadShifts(); }, [loadShifts]);
+
+  // Independent of rostering -- a company can have date-sourced events
+  // (task due dates, etc.) on the calendar with rostering off entirely.
+  const loadDateEvents = useCallback(async () => {
+    if (!settings?.enabled || role === "kiosk") return;
+    const res = await fetch(`/api/calendar/date-events?start=${rangeStart}&end=${rangeEnd}`);
+    const json = await res.json().catch(() => null);
+    if (res.ok) setDateEvents(json.events ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.enabled, role, rangeStart, rangeEnd]);
+
+  useEffect(() => { loadDateEvents(); }, [loadDateEvents]);
+
+  // Per-user (not company-wide) opt-in for two-way Google Calendar sync --
+  // only shown once, near the top, when booking is on and the viewer has a
+  // Gmail connection to piggyback on (see app/api/calendar/google-sync).
+  const [googleSync, setGoogleSync] = useState<{ connected: boolean; enabled: boolean } | null>(null);
+  useEffect(() => {
+    if (!settings?.booking_enabled || role === "kiosk") return;
+    fetch("/api/calendar/google-sync").then((res) => res.json()).then((json) => setGoogleSync(json)).catch(() => {});
+  }, [settings?.booking_enabled, role]);
+  const toggleGoogleSync = async () => {
+    if (!googleSync) return;
+    const next = !googleSync.enabled;
+    setGoogleSync({ ...googleSync, enabled: next });
+    await fetch("/api/calendar/google-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: next }) });
+  };
+
+  const loadEvents = useCallback(async () => {
+    if (!settings?.booking_enabled || role === "kiosk") return;
+    const res = await fetch(`/api/calendar/events?start=${rangeStart}&end=${rangeEnd}`);
+    const json = await res.json().catch(() => null);
+    if (res.ok) {
+      setEvents(json.events ?? []);
+      setEventInvites(json.invites ?? []);
+      setBookingStaff(json.staff ?? []);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.booking_enabled, role, rangeStart, rangeEnd]);
+
+  useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  const canManageEvents = isAdmin; // custom-role calendar.book_events holders can still act via the API even without this button showing -- see EventModal's own header comment on this convention, matching Copy last week/Publish week above.
+  const invitesForEvent = (eventId: string) => eventInvites.filter((i) => i.event_id === eventId);
 
   const handleCopyLastWeek = async () => {
     setActing(true);
@@ -100,14 +160,104 @@ export default function CalendarPage() {
     );
   }
 
+  // A kiosk session gets a restricted screen: Today's check-in panel, plus
+  // read-only Weekly/Monthly roster views for anyone walking up to glance
+  // at the schedule. No admin controls render here -- Copy last week/
+  // Publish week only exist in the non-kiosk branch below, and
+  // RosterWeekView itself goes fully read-only with isAdmin={false} (no
+  // edit/add affordances). See components/KioskAppShell.tsx for the rest
+  // of the kiosk lockdown (no Sidebar, redirected off any other route).
+  if (role === "kiosk") {
+    return (
+      <div className="max-w-6xl mx-auto p-8 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-light uppercase tracking-tight text-slate-900">
+              {view === "day"
+                ? new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })
+                : viewDate.toLocaleString("en-AU", { month: "long", year: "numeric" })}
+            </h1>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {view === "day" ? "Tap your name to check in or out" : "Staff roster"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-slate-100 rounded-full p-1">
+              {(["day", "week", "month"] as CalendarView[]).map((v) => (
+                <button key={v} onClick={() => setView(v)}
+                  className={`px-4 py-1.5 text-[10px] font-bold uppercase rounded-full transition-all ${view === v ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
+                  {v === "day" ? "Today" : v === "week" ? "Weekly" : "Monthly"}
+                </button>
+              ))}
+            </div>
+            {view !== "day" && (
+              <>
+                <button onClick={goToday} className="px-3 py-1.5 rounded-full border border-slate-200 text-[10px] font-bold hover:bg-slate-50">Today</button>
+                <button onClick={handlePrev} className="p-2 rounded-full border border-slate-200 hover:bg-slate-50"><ChevronLeft size={14} /></button>
+                <button onClick={handleNext} className="p-2 rounded-full border border-slate-200 hover:bg-slate-50"><ChevronRight size={14} /></button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {!settings.rostering_enabled ? (
+          <p className="text-center text-[12px] text-slate-300 italic py-12">Rostering isn&apos;t turned on for this company yet.</p>
+        ) : view === "day" ? (
+          <CheckInPanel />
+        ) : loadingShifts ? (
+          <div className="flex items-center justify-center py-16"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
+        ) : view === "week" ? (
+          <>
+            <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} isAdmin={false} onChanged={() => {}} />
+            <HoursSummaryPanel start={rangeStart} end={rangeEnd} />
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-7 gap-2">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                <div key={d} className="text-center text-[9px] font-black text-slate-300 uppercase tracking-widest">{d}</div>
+              ))}
+              {monthDays.map((date, i) => {
+                const count = date ? shifts.filter((s) => s.shift_date === toDateStr(date)).length : 0;
+                const isToday = date && toDateStr(date) === toDateStr(new Date());
+                return (
+                  <div key={i} className={`rounded-2xl border p-2.5 min-h-[64px] ${date ? "bg-white border-slate-100" : "border-transparent"} ${isToday ? "ring-2 ring-indigo-500" : ""}`}>
+                    {date && (
+                      <>
+                        <span className={`text-[11px] font-black ${isToday ? "text-indigo-600" : "text-slate-400"}`}>{date.getDate()}</span>
+                        {count > 0 && <p className="text-[9px] font-bold text-indigo-500 mt-1">{count} shift{count !== 1 ? "s" : ""}</p>}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <HoursSummaryPanel start={rangeStart} end={rangeEnd} />
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-8 space-y-6">
-      <div className="flex items-center gap-3">
-        <CalendarDays size={22} className="text-indigo-600" />
-        <div>
-          <h1 className="text-xl font-light uppercase tracking-tight text-slate-900">Calendar</h1>
-          <p className="text-[11px] text-slate-400">{settings.rostering_enabled ? "Staff rostering" : "Event booking is coming soon"}</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <CalendarDays size={22} className="text-indigo-600" />
+          <div>
+            <h1 className="text-xl font-light uppercase tracking-tight text-slate-900">Calendar</h1>
+            <p className="text-[11px] text-slate-400">
+              {[settings.rostering_enabled && "Staff rostering", settings.booking_enabled && "Event booking"].filter(Boolean).join(" · ") || "Nothing turned on yet"}
+            </p>
+          </div>
         </div>
+        {googleSync?.connected && (
+          <label className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600 cursor-pointer">
+            <RefreshCw size={12} className="text-slate-400" />
+            Sync my events with Google Calendar
+            <input type="checkbox" checked={googleSync.enabled} onChange={toggleGoogleSync} className="accent-indigo-600" />
+          </label>
+        )}
       </div>
 
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -131,44 +281,68 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {settings.rostering_enabled && view === "week" && isAdmin && (
-        <div className="flex items-center gap-2">
-          <button onClick={handleCopyLastWeek} disabled={acting}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 disabled:opacity-50 transition-all"
-            title="Duplicates last week's shifts into this week as draft. Running it more than once will duplicate -- clean up manually if needed.">
-            <Copy size={12} /> Copy last week
-          </button>
-          <button onClick={handlePublishWeek} disabled={acting}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all">
-            <Send size={12} /> Publish week
-          </button>
+      {((settings.rostering_enabled && view === "week" && isAdmin) || (settings.booking_enabled && canManageEvents)) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {settings.rostering_enabled && view === "week" && isAdmin && (
+            <>
+              <button onClick={handleCopyLastWeek} disabled={acting}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 disabled:opacity-50 transition-all"
+                title="Duplicates last week's shifts into this week as draft. Running it more than once will duplicate -- clean up manually if needed.">
+                <Copy size={12} /> Copy last week
+              </button>
+              <button onClick={handlePublishWeek} disabled={acting}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all">
+                <Send size={12} /> Publish week
+              </button>
+            </>
+          )}
+          {settings.booking_enabled && canManageEvents && (
+            <button onClick={() => setEventModal({ defaultDate: viewDate })}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 transition-all">
+              <Plus size={12} /> New event
+            </button>
+          )}
           {actionMessage && <span className="text-[11px] text-slate-400">{actionMessage}</span>}
         </div>
       )}
 
-      {!settings.rostering_enabled ? (
+      {!settings.rostering_enabled && !settings.booking_enabled ? (
         <p className="text-center text-[12px] text-slate-300 italic py-16">
-          {isAdmin ? "Turn on staff rostering in Admin → Calendar to start building a roster." : "Rostering isn't turned on for this company yet."}
+          {isAdmin ? "Turn on staff rostering or event booking in Admin → Calendar to get started." : "Nothing is turned on for this company's calendar yet."}
         </p>
       ) : loadingShifts ? (
         <div className="flex items-center justify-center py-16"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
       ) : view === "week" ? (
-        <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} isAdmin={isAdmin} onChanged={loadShifts} />
-      ) : view === "day" ? (
-        <div className="space-y-2 max-w-lg">
-          {shifts.filter((s) => s.shift_date === toDateStr(viewDate)).length === 0 ? (
-            <p className="text-center text-[11px] text-slate-300 italic py-10">No shifts this day.</p>
-          ) : (
-            shifts.filter((s) => s.shift_date === toDateStr(viewDate)).map((s) => {
-              const member = staff.find((m) => m.id === s.staff_entity_id);
-              return (
-                <div key={s.id} className={`border rounded-2xl p-4 ${s.status === "draft" ? "border-dashed border-indigo-300 bg-indigo-50/40" : "border-indigo-200 bg-indigo-50"}`}>
-                  <p className="text-[12px] font-bold text-slate-700">{member?.name || "Unknown"}</p>
-                  <p className="text-[11px] text-slate-500">{s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}{s.role_note ? ` · ${s.role_note}` : ""}</p>
-                </div>
-              );
-            })
+        <>
+          {settings.rostering_enabled && <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} isAdmin={isAdmin} onChanged={loadShifts} />}
+          {settings.booking_enabled && (
+            <EventsList events={events} onOpen={(e) => setEventModal({ event: e })} />
           )}
+          <DateEventsList events={dateEvents} />
+        </>
+      ) : view === "day" ? (
+        <div className="space-y-4 max-w-lg">
+          {settings.rostering_enabled && (
+            <div className="space-y-2">
+              {shifts.filter((s) => s.shift_date === toDateStr(viewDate)).length === 0 ? (
+                <p className="text-center text-[11px] text-slate-300 italic py-10">No shifts this day.</p>
+              ) : (
+                shifts.filter((s) => s.shift_date === toDateStr(viewDate)).map((s) => {
+                  const member = staff.find((m) => m.id === s.staff_entity_id);
+                  return (
+                    <div key={s.id} className={`border rounded-2xl p-4 ${s.status === "draft" ? "border-dashed border-indigo-300 bg-indigo-50/40" : "border-indigo-200 bg-indigo-50"}`}>
+                      <p className="text-[12px] font-bold text-slate-700">{member?.name || "Unknown"}</p>
+                      <p className="text-[11px] text-slate-500">{s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}{s.role_note ? ` · ${s.role_note}` : ""}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+          {settings.booking_enabled && (
+            <EventsList events={events.filter((e) => toDateStr(new Date(e.start_at)) === toDateStr(viewDate))} onOpen={(e) => setEventModal({ event: e })} />
+          )}
+          <DateEventsList events={dateEvents.filter((e) => e.date === toDateStr(viewDate))} />
         </div>
       ) : (
         <div className="grid grid-cols-7 gap-2">
@@ -177,6 +351,8 @@ export default function CalendarPage() {
           ))}
           {monthDays.map((date, i) => {
             const count = date ? shifts.filter((s) => s.shift_date === toDateStr(date)).length : 0;
+            const dayEvents = date ? dateEvents.filter((e) => e.date === toDateStr(date)) : [];
+            const dayBookedEvents = date ? events.filter((e) => toDateStr(new Date(e.start_at)) === toDateStr(date)) : [];
             const isToday = date && toDateStr(date) === toDateStr(new Date());
             return (
               <div key={i} className={`rounded-2xl border p-2.5 min-h-[64px] ${date ? "bg-white border-slate-100" : "border-transparent"} ${isToday ? "ring-2 ring-indigo-500" : ""}`}>
@@ -184,6 +360,19 @@ export default function CalendarPage() {
                   <>
                     <span className={`text-[11px] font-black ${isToday ? "text-indigo-600" : "text-slate-400"}`}>{date.getDate()}</span>
                     {count > 0 && <p className="text-[9px] font-bold text-indigo-500 mt-1">{count} shift{count !== 1 ? "s" : ""}</p>}
+                    {dayBookedEvents.slice(0, 2).map((e) => (
+                      <button key={e.id} onClick={() => setEventModal({ event: e })}
+                        className={`block w-full text-left truncate px-1.5 py-0.5 mt-1 rounded-md text-[9px] font-bold ${e.status === "cancelled" ? "bg-slate-100 text-slate-400 line-through" : "bg-indigo-100 text-indigo-700"}`}>
+                        {e.title}
+                      </button>
+                    ))}
+                    {dayEvents.length > 0 && (
+                      <div className="flex flex-wrap gap-0.5 mt-1">
+                        {dayEvents.slice(0, 6).map((e) => (
+                          <span key={e.source_id + e.record_id} title={`${e.label}: ${e.name}`} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: e.color }} />
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -191,6 +380,53 @@ export default function CalendarPage() {
           })}
         </div>
       )}
+
+      {eventModal && (
+        <EventModal
+          event={eventModal.event}
+          invites={eventModal.event ? invitesForEvent(eventModal.event.id) : undefined}
+          staff={bookingStaff}
+          currentUserId={userId || ""}
+          canManage={canManageEvents || eventModal.event?.created_by === userId}
+          defaultDate={eventModal.defaultDate}
+          onClose={() => setEventModal(null)}
+          onSaved={() => { setEventModal(null); loadEvents(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EventsList({ events, onOpen }: { events: CalendarEventData[]; onOpen: (e: CalendarEventData) => void }) {
+  if (events.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Events</p>
+      {events.map((e) => (
+        <button key={e.id} onClick={() => onOpen(e)}
+          className={`w-full text-left flex items-center gap-2.5 px-4 py-2.5 bg-white border rounded-2xl transition-colors ${e.status === "cancelled" ? "border-slate-200 opacity-50" : "border-indigo-200 hover:border-indigo-300"}`}>
+          <span className="text-[12px] font-bold text-slate-700 truncate flex-1">{e.title}{e.status === "cancelled" ? " (cancelled)" : ""}</span>
+          <span className="text-[11px] text-slate-400 shrink-0">
+            {new Date(e.start_at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DateEventsList({ events }: { events: DateEvent[] }) {
+  if (events.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Due dates</p>
+      {events.map((e) => (
+        <div key={e.source_id + e.record_id} className="flex items-center gap-2.5 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: e.color }} />
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide shrink-0">{e.label}</span>
+          <span className="text-[12px] text-slate-700 truncate">{e.name}</span>
+        </div>
+      ))}
     </div>
   );
 }
