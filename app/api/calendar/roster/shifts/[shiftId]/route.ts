@@ -5,6 +5,7 @@
 // and .../copy-week ever change status themselves.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { hasOverlappingShift } from "@/lib/rosterOverlap";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ shiftId: string }> }) {
   const auth = await authorizeCompanyMember();
@@ -13,6 +14,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sh
   if (!isAdmin && !hasPermission("roster.edit")) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   const { shiftId } = await params;
 
+  const { data: existing } = await admin.from("roster_shifts").select("*").eq("id", shiftId).eq("company_id", companyId).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Shift not found" }, { status: 404 });
+
   const body = await req.json().catch(() => null);
   const updates: Record<string, unknown> = {};
   if (body?.staff_entity_id) updates.staff_entity_id = body.staff_entity_id;
@@ -20,8 +24,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sh
   if (body?.start_time) updates.start_time = body.start_time;
   if (body?.end_time) updates.end_time = body.end_time;
   if (typeof body?.role_note === "string" || body?.role_note === null) updates.role_note = body.role_note || null;
+  if (typeof body?.team_id === "string" || body?.team_id === null) {
+    if (body.team_id) {
+      const { data: team } = await admin.from("teams").select("id").eq("id", body.team_id).eq("company_id", companyId).maybeSingle();
+      if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    updates.team_id = body.team_id || null;
+  }
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   updates.updated_at = new Date().toISOString();
+
+  if (updates.staff_entity_id || updates.shift_date || updates.start_time || updates.end_time) {
+    const overlap = await hasOverlappingShift(admin, {
+      companyId,
+      staffEntityId: (updates.staff_entity_id as string) ?? existing.staff_entity_id,
+      shiftDate: (updates.shift_date as string) ?? existing.shift_date,
+      startTime: (updates.start_time as string) ?? existing.start_time,
+      endTime: (updates.end_time as string) ?? existing.end_time,
+      excludeShiftId: shiftId,
+    });
+    if (overlap) {
+      return NextResponse.json({ error: "This staff member already has a shift that overlaps this time -- edit that shift instead of creating a duplicate, since a duplicate would double-count their hours." }, { status: 409 });
+    }
+  }
 
   const { data: updated, error } = await admin
     .from("roster_shifts")

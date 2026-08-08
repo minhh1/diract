@@ -8,9 +8,9 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { CalendarDays, Loader2, ChevronLeft, ChevronRight, Copy, Send, Plus, RefreshCw } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
-import { useKioskView } from "@/lib/hooks/useKioskView";
+import { useKioskView, useKioskAccountId } from "@/lib/hooks/useKioskView";
 import { useCalendarNav, toDateStr, type CalendarView } from "@/lib/hooks/useCalendarNav";
-import RosterWeekView, { type RosterShift, type RosterStaff } from "@/components/calendar/RosterWeekView";
+import RosterWeekView, { type RosterShift, type RosterStaff, type RosterTeam, type TeamMembership } from "@/components/calendar/RosterWeekView";
 import ShiftModal, { shiftToModalState, type ShiftModalState } from "@/components/calendar/ShiftModal";
 import { StaffAvatar, staffColor } from "@/components/calendar/StaffAvatar";
 import EventModal, { type CalendarEventData, type EventInvite, type StaffOption } from "@/components/calendar/EventModal";
@@ -46,6 +46,8 @@ function CalendarPageInner() {
   const { view, setView, viewDate, setViewDate, handlePrev, handleNext, goToday, weekDays, monthDays } = useCalendarNav("week");
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [staff, setStaff] = useState<RosterStaff[]>([]);
+  const [teams, setTeams] = useState<RosterTeam[]>([]);
+  const [memberships, setMemberships] = useState<TeamMembership[]>([]);
   const [loadingShifts, setLoadingShifts] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
@@ -77,6 +79,8 @@ function CalendarPageInner() {
     if (res.ok) {
       setShifts(json.shifts ?? []);
       setStaff(json.staff ?? []);
+      setTeams(json.teams ?? []);
+      setMemberships(json.memberships ?? []);
     }
     setLoadingShifts(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,7 +227,7 @@ function CalendarPageInner() {
           <div className="flex items-center justify-center py-16"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
         ) : view === "week" ? (
           <>
-            <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} isAdmin={false} onChanged={() => {}} />
+            <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} teams={teams} memberships={memberships} isAdmin={false} onChanged={() => {}} />
             <HoursSummaryPanel start={rangeStart} end={rangeEnd} />
           </>
         ) : (
@@ -329,7 +333,7 @@ function CalendarPageInner() {
         <div className="flex items-center justify-center py-16"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
       ) : view === "week" ? (
         <>
-          {settings.rostering_enabled && <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} isAdmin={isAdmin} onChanged={loadShifts} />}
+          {settings.rostering_enabled && <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} teams={teams} memberships={memberships} isAdmin={isAdmin} onChanged={loadShifts} />}
           {settings.booking_enabled && (
             <EventsList events={events} onOpen={(e) => setEventModal({ event: e })} />
           )}
@@ -344,6 +348,7 @@ function CalendarPageInner() {
               ) : (
                 shifts.filter((s) => s.shift_date === toDateStr(viewDate)).map((s) => {
                   const member = staff.find((m) => m.id === s.staff_entity_id);
+                  const team = teams.find((t) => t.id === s.team_id);
                   const color = staffColor(s.staff_entity_id);
                   return (
                     <button key={s.id} onClick={() => setShiftModal(shiftToModalState(s, member?.name || "Unknown"))}
@@ -359,7 +364,8 @@ function CalendarPageInner() {
                       <p className="text-[14px] font-bold leading-none" style={{ color }}>
                         {s.start_time.slice(0, 5)} <span className="opacity-50">&ndash;</span> {s.end_time.slice(0, 5)}
                       </p>
-                      {s.role_note && <p className="text-[11px] font-medium text-slate-500 mt-1.5">{s.role_note}</p>}
+                      {team && <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400 mt-1.5">{team.team_name}</p>}
+                      {s.role_note && <p className="text-[11px] font-medium text-slate-500 mt-0.5">{s.role_note}</p>}
                     </button>
                   );
                 })
@@ -434,7 +440,7 @@ function CalendarPageInner() {
       )}
 
       {shiftModal && (
-        <ShiftModal modal={shiftModal} staffList={staff} canEdit={isAdmin} onClose={() => setShiftModal(null)} onSaved={() => { setShiftModal(null); loadShifts(); }} />
+        <ShiftModal modal={shiftModal} staffList={staff} teams={teams} canEdit={isAdmin} onClose={() => setShiftModal(null)} onSaved={() => { setShiftModal(null); loadShifts(); }} />
       )}
 
       {eventModal && (

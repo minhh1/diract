@@ -17,7 +17,16 @@ export interface RosterShift {
   start_time: string;
   end_time: string;
   role_note: string | null;
+  team_id: string | null;
   status: "draft" | "final";
+}
+
+// The app's existing teams (Admin -> Teams, components/admin/AdminTeamsTab.tsx)
+// -- roster_shifts.team_id points at the same `teams` table, not a
+// roster-specific one, so this shape matches its real column names.
+export interface RosterTeam {
+  id: string;
+  team_name: string;
 }
 
 export interface ShiftModalState {
@@ -28,6 +37,7 @@ export interface ShiftModalState {
   startTime: string;
   endTime: string;
   roleNote: string;
+  teamId: string | null;
   status?: "draft" | "final";
 }
 
@@ -38,29 +48,32 @@ function timeLabel(t: string): string {
 export function shiftToModalState(shift: RosterShift, staffName: string): ShiftModalState {
   return {
     shiftId: shift.id, staffId: shift.staff_entity_id, staffName, date: shift.shift_date,
-    startTime: timeLabel(shift.start_time), endTime: timeLabel(shift.end_time), roleNote: shift.role_note || "", status: shift.status,
+    startTime: timeLabel(shift.start_time), endTime: timeLabel(shift.end_time), roleNote: shift.role_note || "",
+    teamId: shift.team_id, status: shift.status,
   };
 }
 
 interface Props {
   modal: ShiftModalState;
   staffList: StaffLike[];
+  teams: RosterTeam[];
   canEdit: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function ShiftModal({ modal: initial, staffList, canEdit, onClose, onSaved }: Props) {
+export default function ShiftModal({ modal: initial, staffList, teams, canEdit, onClose, onSaved }: Props) {
   const [modal, setModal] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const staffMember = staffList.find((s) => s.id === modal.staffId);
+  const team = teams.find((t) => t.id === modal.teamId);
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      const body = { staff_entity_id: modal.staffId, shift_date: modal.date, start_time: modal.startTime, end_time: modal.endTime, role_note: modal.roleNote || null };
+      const body = { staff_entity_id: modal.staffId, shift_date: modal.date, start_time: modal.startTime, end_time: modal.endTime, role_note: modal.roleNote || null, team_id: modal.teamId };
       const res = modal.shiftId
         ? await fetch(`/api/calendar/roster/shifts/${modal.shiftId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         : await fetch("/api/calendar/roster/shifts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -115,6 +128,7 @@ export default function ShiftModal({ modal: initial, staffList, canEdit, onClose
                 </span>
               )}
             </div>
+            {team && <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{team.team_name}</p>}
             {modal.roleNote && <p className="text-[12px] text-slate-500">{modal.roleNote}</p>}
           </div>
         ) : (
@@ -131,6 +145,16 @@ export default function ShiftModal({ modal: initial, staffList, canEdit, onClose
                   className="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-1.5 text-[12px] font-medium outline-none" />
               </label>
             </div>
+            {teams.length > 0 && (
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Team (optional)
+                <select value={modal.teamId ?? ""} onChange={(e) => setModal({ ...modal, teamId: e.target.value || null })}
+                  className="mt-1 w-full border border-slate-200 rounded-xl px-2.5 py-1.5 text-[12px] font-medium outline-none">
+                  <option value="">No team</option>
+                  {teams.map((t) => <option key={t.id} value={t.id}>{t.team_name}</option>)}
+                </select>
+              </label>
+            )}
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
               Role / note (optional)
               <input type="text" value={modal.roleNote} onChange={(e) => setModal({ ...modal, roleNote: e.target.value })}

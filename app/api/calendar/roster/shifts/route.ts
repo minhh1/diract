@@ -4,6 +4,10 @@
 // RelationPicker.tsx's $team_scope sentinel already uses for Time & Fee
 // Entries' Staff field -- see lib/services/staffEntityService.ts) so the
 // client can render the staff x day grid without a second round trip.
+// Also returns the company's existing teams/team_members (see
+// components/admin/AdminTeamsTab.tsx -- teams are a pre-existing, admin-
+// managed concept the roster reuses via roster_shifts.team_id rather than
+// inventing its own).
 // Non-admins only ever see 'final' shifts -- draft/unconfirmed shifts
 // aren't "their schedule" yet (also enforced in RLS, this is defense in
 // depth since the admin client bypasses RLS). New shifts always start as
@@ -11,6 +15,7 @@
 // explicit action (see .../publish/route.ts), never implicit on create.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
+import { hasOverlappingShift } from "@/lib/rosterOverlap";
 
 export async function GET(req: NextRequest) {
   const auth = await authorizeCompanyMember();
@@ -44,9 +49,21 @@ export async function GET(req: NextRequest) {
     ? await admin.from("profiles").select("id, avatar_url").in("id", profileIds)
     : { data: [] };
   const avatarById = new Map((profiles ?? []).map((p: any) => [p.id, p.avatar_url]));
-  const staffWithAvatars = (staff ?? []).map((s: any) => ({ id: s.id, name: s.name, avatar_url: avatarById.get(s.linked_profile_id) ?? null }));
+  const staffWithAvatars = (staff ?? []).map((s: any) => ({
+    id: s.id, name: s.name, avatar_url: avatarById.get(s.linked_profile_id) ?? null, linked_profile_id: s.linked_profile_id,
+  }));
 
-  return NextResponse.json({ shifts: shifts ?? [], staff: staffWithAvatars });
+  const { data: teams } = await admin.from("teams").select("id, team_name").eq("company_id", companyId).eq("is_active", true).order("team_name");
+
+  // Which of a staff member's teams a shift's Team picker should offer --
+  // keyed by profile_id (team_members' own key), not staff_entity_id, since
+  // membership lives on the login, same join staffWithAvatars uses above.
+  const teamIds = (teams ?? []).map((t: any) => t.id);
+  const { data: memberships } = teamIds.length
+    ? await admin.from("team_members").select("team_id, profile_id").in("team_id", teamIds)
+    : { data: [] };
+
+  return NextResponse.json({ shifts: shifts ?? [], staff: staffWithAvatars, teams: teams ?? [], memberships: memberships ?? [] });
 }
 
 export async function POST(req: NextRequest) {
@@ -56,7 +73,7 @@ export async function POST(req: NextRequest) {
   if (!isAdmin && !hasPermission("roster.edit")) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
-  const { staff_entity_id, shift_date, start_time, end_time, role_note } = body ?? {};
+  const { staff_entity_id, shift_date, start_time, end_time, role_note, team_id } = body ?? {};
   if (!staff_entity_id || !shift_date || !start_time || !end_time) {
     return NextResponse.json({ error: "staff_entity_id, shift_date, start_time, and end_time are required" }, { status: 400 });
   }
@@ -64,11 +81,20 @@ export async function POST(req: NextRequest) {
   const { data: staffEntity } = await admin.from("entities").select("id").eq("id", staff_entity_id).eq("company_id", companyId).eq("entity_type", "Staff").is("deleted_at", null).maybeSingle();
   if (!staffEntity) return NextResponse.json({ error: "Staff member not found" }, { status: 404 });
 
+  if (team_id) {
+    const { data: team } = await admin.from("teams").select("id").eq("id", team_id).eq("company_id", companyId).maybeSingle();
+    if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  }
+
+  if (await hasOverlappingShift(admin, { companyId, staffEntityId: staff_entity_id, shiftDate: shift_date, startTime: start_time, endTime: end_time })) {
+    return NextResponse.json({ error: "This staff member already has a shift that overlaps this time -- edit that shift instead of adding a duplicate, since a duplicate would double-count their hours." }, { status: 409 });
+  }
+
   const { data: created, error } = await admin
     .from("roster_shifts")
     .insert({
       company_id: companyId, staff_entity_id, shift_date, start_time, end_time,
-      role_note: role_note ? String(role_note) : null, status: "draft", created_by: user.id,
+      role_note: role_note ? String(role_note) : null, team_id: team_id || null, status: "draft", created_by: user.id,
     })
     .select("*")
     .single();
