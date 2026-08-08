@@ -74,8 +74,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   // null when moving away from "team" so a stale team_id doesn't linger.
   if (nextScope === "team") {
     if (!teamId) return NextResponse.json({ error: "Team is required" }, { status: 400 });
-    const { data: team } = await admin.from("teams").select("id, leader_id").eq("id", teamId).maybeSingle();
-    if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    const { data: team } = await admin.from("teams").select("id, leader_id, company_id").eq("id", teamId).maybeSingle();
+    if (!team || team.company_id !== page.company_id) return NextResponse.json({ error: "Team not found" }, { status: 404 });
     if (!isAdmin && team.leader_id !== user.id) {
       const { data: teamMembership } = await admin
         .from("team_members").select("id").eq("team_id", teamId).eq("profile_id", user.id).maybeSingle();
