@@ -19,7 +19,8 @@ import { supabase } from "@/lib/supabase";
 import NewProjectModal from "./NewProjectModal";
 import NewEntityModal from "./NewEntityModal";
 import CreateCompanyModal from "./CreateCompanyModal";
-import EnterKioskDeviceModal, { kioskDeviceStorageKey } from "./kiosk/EnterKioskDeviceModal";
+import { getStoredKioskDeviceId, setStoredKioskDeviceId } from "@/lib/kioskDevice";
+import ChooseKioskModal from "./kiosk/ChooseKioskModal";
 import { useCustomTables, invalidateCustomTables, type CustomTable } from "@/lib/hooks/useCustomTables";
 import { useCustomDashboards, invalidateCustomDashboards, type CustomDashboard } from "@/lib/hooks/useCustomDashboards";
 import { useCompany } from "@/components/CompanyContext";
@@ -699,7 +700,7 @@ export default function Sidebar() {
   const [showCompanySwitcher, setShowCompanySwitcher] = useState(false);
   const [switchingCompany, setSwitchingCompany] = useState(false);
   const [showCreateCompany, setShowCreateCompany] = useState(false);
-  const [showKioskDeviceModal, setShowKioskDeviceModal] = useState(false);
+  const [showChooseKiosk, setShowChooseKiosk] = useState(false);
   // next-themes' `theme` reads as undefined until after mount (it doesn't
   // know the persisted/system preference during SSR) -- `mounted` gates the
   // active-option highlight below so the very first client render matches
@@ -1140,22 +1141,19 @@ export default function Sidebar() {
     if (pathname === `/dashboard/${dashboard.slug}`) { startNavigation(); router.push('/dashboard/properties'); }
   };
 
-  // "Enter kiosk mode" -- reuses this browser's already-provisioned kiosk
-  // identity for the current company if one exists (kioskDeviceStorageKey,
-  // see EnterKioskDeviceModal.tsx), otherwise prompts once to create one.
-  // A company with several physical kiosks gets a distinct id per device
-  // this way -- see app/api/kiosk/checkins/route.ts's resolveActingUserId.
+  // "Enter kiosk mode" -- reuses this browser's already-chosen kiosk
+  // identity for the current company if one's stored, otherwise opens
+  // ChooseKioskModal to pick one of the company's already-named
+  // kiosk_accounts (never invents a name here -- see lib/kioskDevice.ts's
+  // own comment). A company with several physical kiosks gets a distinct
+  // id per device this way -- see app/api/kiosk/checkins/route.ts's
+  // resolveActingUserId.
   const handleEnterKioskMode = () => {
     setShowCompanySwitcher(false);
     if (!ctxCompanyId) return;
-    const stored = localStorage.getItem(kioskDeviceStorageKey(ctxCompanyId));
-    if (stored) {
-      try {
-        const { id } = JSON.parse(stored) as { id: string };
-        if (id) { router.push(`/dashboard/calendar?view=kiosk&kioskAccountId=${id}`); return; }
-      } catch { /* fall through to re-prompt on corrupt localStorage value */ }
-    }
-    setShowKioskDeviceModal(true);
+    const stored = getStoredKioskDeviceId(ctxCompanyId);
+    if (stored) { router.push(`/dashboard/calendar?view=kiosk&kioskAccountId=${stored}`); return; }
+    setShowChooseKiosk(true);
   };
 
   const handleSwitchCompany = async (companyId: string) => {
@@ -2090,16 +2088,17 @@ export default function Sidebar() {
         />
       )}
 
-      {showKioskDeviceModal && ctxCompanyId && (
-        <EnterKioskDeviceModal
-          onCancel={() => setShowKioskDeviceModal(false)}
-          onCreated={(kioskAccountId) => {
-            localStorage.setItem(kioskDeviceStorageKey(ctxCompanyId), JSON.stringify({ id: kioskAccountId }));
-            setShowKioskDeviceModal(false);
+      {showChooseKiosk && ctxCompanyId && (
+        <ChooseKioskModal
+          onCancel={() => setShowChooseKiosk(false)}
+          onSelect={(kioskAccountId) => {
+            setStoredKioskDeviceId(ctxCompanyId, kioskAccountId);
+            setShowChooseKiosk(false);
             router.push(`/dashboard/calendar?view=kiosk&kioskAccountId=${kioskAccountId}`);
           }}
         />
       )}
+
       </div>
     </>
   );
