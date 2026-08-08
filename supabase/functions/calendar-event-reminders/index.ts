@@ -53,18 +53,49 @@ function formatEventTime(startAt: string, endAt: string): string {
   return `${start.toLocaleString("en-AU", opts)} - ${end.toLocaleString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
 }
 
+// Deno-side copy of lib/companyLocalDate.ts's companyDayRangeUtc() (can't
+// import Next.js/Node-only lib code into an edge function) -- computes the
+// real UTC instant range [startUtc, endUtc) that a Sydney calendar date
+// spans, instead of naively appending "T00:00:00"/"T23:59:59" to the date
+// string, which Postgres/PostgREST would interpret in the DB session's OWN
+// timezone (UTC), not Sydney's -- silently off by that day's AEST/AEDT
+// offset. Also fixes sydneyTodayStr() itself: the previous `new
+// Date(now.toLocaleString(..., {timeZone})).toISOString().slice(0,10)`
+// round-trips through a locale-parsed Date and can roll the date back a
+// day depending on the machine's own local offset (see
+// lib/companyLocalDate.ts's own comment on this exact pitfall) --
+// Intl.DateTimeFormat("en-CA", {timeZone}) avoids the round trip entirely.
+function sydneyTodayStr(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+function sydneyDayRangeUtc(dateStr: string): { startUtc: string; endUtc: string } {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const anchorUtcMs = Date.UTC(y, m - 1, d, 12, 0, 0);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Australia/Sydney", hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(anchorUtcMs));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const hour = get("hour") % 24; // some engines format midnight as "24"
+  const asIfUtc = Date.UTC(get("year"), get("month") - 1, get("day"), hour, get("minute"), get("second"));
+  const offsetMinutes = Math.round((asIfUtc - anchorUtcMs) / 60000);
+  const startUtcMs = anchorUtcMs - 12 * 60 * 60 * 1000 - offsetMinutes * 60 * 1000;
+  return { startUtc: new Date(startUtcMs).toISOString(), endUtc: new Date(startUtcMs + 24 * 60 * 60 * 1000).toISOString() };
+}
+
 Deno.serve(async (_req) => {
   const started = Date.now();
   let heartbeatResult: Record<string, unknown> = { ok: true };
   try {
     // "Today" pinned to Australia/Sydney, matching sweep_calendar_reminders'
     // own AEST convention -- every company using this today is AU-based.
-    const todayAEST = new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Sydney" }));
-    const today = todayAEST.toISOString().slice(0, 10);
+    const today = sydneyTodayStr(new Date());
+    const { startUtc, endUtc } = sydneyDayRangeUtc(today);
 
     const { data: events } = await db.from("calendar_events")
       .select("id, company_id, title, description, location, start_at, end_at")
-      .eq("status", "confirmed").gte("start_at", `${today}T00:00:00`).lt("start_at", `${today}T23:59:59.999`);
+      .eq("status", "confirmed").gte("start_at", startUtc).lt("start_at", endUtc);
 
     let sent = 0;
     let skipped = 0;

@@ -40,6 +40,7 @@ export default function CalendarPage() {
 function CalendarPageInner() {
   const { isAdmin, userId } = useCompany();
   const kioskView = useKioskView();
+  const kioskAccountId = useKioskAccountId();
   const [settings, setSettings] = useState<CalendarSettings | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -222,7 +223,7 @@ function CalendarPageInner() {
         {!settings.rostering_enabled ? (
           <p className="text-center text-[12px] text-slate-300 italic py-12">Rostering isn&apos;t turned on for this company yet.</p>
         ) : view === "day" ? (
-          <CheckInPanel />
+          <CheckInPanel kioskAccountId={kioskAccountId} />
         ) : loadingShifts ? (
           <div className="flex items-center justify-center py-16"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
         ) : view === "week" ? (

@@ -8,9 +8,14 @@
 // logged in -- the "zero login" design this whole feature is built around,
 // see staff_checkins' migration comment) keep the old plain-tap behaviour.
 // Mounted alongside the calendar on /dashboard/calendar when the signed-in
-// session is a kiosk account (see components/KioskAppShell.tsx). Talks to
-// app/api/kiosk/checkins/route.ts, not raw supabase -- that route does its
-// own companyId scoping server-side as a second layer alongside RLS.
+// session is a kiosk account, or an admin is previewing kiosk mode as one
+// (see components/KioskAppShell.tsx) -- kioskAccountId, when present, is
+// only relevant to the latter: it tells the API which of the company's
+// kiosk_accounts this admin's session should act as, so check-in/out stays
+// correctly scoped per physical device even though the admin never
+// actually logs into each one. Talks to app/api/kiosk/checkins/route.ts,
+// not raw supabase -- that route does its own companyId scoping
+// server-side as a second layer alongside RLS.
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -39,7 +44,7 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
 }
 
-export default function CheckInPanel() {
+export default function CheckInPanel({ kioskAccountId }: { kioskAccountId?: string | null }) {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [checkins, setCheckins] = useState<Checkin[]>([]);
@@ -71,8 +76,8 @@ export default function CheckInPanel() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(open
-        ? { action: "check_out", staff_entity_id: shift.staff_entity_id, pin }
-        : { action: "check_in", staff_entity_id: shift.staff_entity_id, roster_shift_id: shift.id, pin }),
+        ? { action: "check_out", staff_entity_id: shift.staff_entity_id, pin, kioskAccountId }
+        : { action: "check_in", staff_entity_id: shift.staff_entity_id, roster_shift_id: shift.id, pin, kioskAccountId }),
     });
     const data = await res.json().catch(() => null);
     setActingId(null);

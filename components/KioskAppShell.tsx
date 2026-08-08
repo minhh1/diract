@@ -19,7 +19,7 @@ import { useEffect, Suspense } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Tablet, X } from "lucide-react";
 import { useCompany } from "@/components/CompanyContext";
-import { useKioskView } from "@/lib/hooks/useKioskView";
+import { useKioskView, useKioskAccountId } from "@/lib/hooks/useKioskView";
 import { supabase } from "@/lib/supabase";
 import { clearAllClientCaches } from "@/lib/clearClientCaches";
 import { markIntentionalSignOut } from "@/components/SessionHealthBanner";
@@ -34,17 +34,18 @@ function signOut() {
   supabase.auth.signOut().then(() => window.location.replace("/login"));
 }
 
-function KioskShell({ companyName, isPreview, children }: {
+function KioskShell({ companyName, isPreview, previewQuery, children }: {
   companyName: string | null;
   isPreview: boolean;
+  previewQuery: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
-    if (pathname !== KIOSK_HOME) router.replace(isPreview ? `${KIOSK_HOME}?view=kiosk` : KIOSK_HOME);
-  }, [pathname, router, isPreview]);
+    if (pathname !== KIOSK_HOME) router.replace(isPreview ? `${KIOSK_HOME}${previewQuery}` : KIOSK_HOME);
+  }, [pathname, router, isPreview, previewQuery]);
 
   return (
     <div className="flex flex-col h-screen w-full bg-slate-50 overflow-hidden font-sans antialiased text-slate-900">
@@ -109,9 +110,16 @@ function NormalShell({ children }: { children: React.ReactNode }) {
 function KioskModeGate({ children }: { children: React.ReactNode }) {
   const { role, companyName } = useCompany();
   const kioskView = useKioskView();
+  const kioskAccountId = useKioskAccountId();
 
   if (kioskView) {
-    return <KioskShell companyName={companyName} isPreview={role !== "kiosk"}>{children}</KioskShell>;
+    const isPreview = role !== "kiosk";
+    const previewQuery = kioskAccountId ? `?view=kiosk&kioskAccountId=${kioskAccountId}` : "?view=kiosk";
+    return (
+      <KioskShell companyName={companyName} isPreview={isPreview} previewQuery={previewQuery}>
+        {children}
+      </KioskShell>
+    );
   }
   return <NormalShell>{children}</NormalShell>;
 }

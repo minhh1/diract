@@ -17,3 +17,12 @@ export function useKioskView(): boolean {
   const searchParams = useSearchParams();
   return role === "kiosk" || (isAdmin && searchParams.get("view") === "kiosk");
 }
+
+// Which of the company's kiosk_accounts an admin's preview session should
+// act as (see Sidebar.tsx's "Enter kiosk mode", which resolves/creates one
+// per physical device via localStorage before navigating here) -- null for
+// a real kiosk login, which always acts as itself.
+export function useKioskAccountId(): string | null {
+  const searchParams = useSearchParams();
+  return searchParams.get("kioskAccountId");
+}
