@@ -50,6 +50,10 @@ const SYSTEM_PROMPT =
   "Never add a divider, spacer, quote, or button just for variety or decoration -- include one only when it serves " +
   "a real structural or functional purpose (a divider between genuinely distinct sections, a button for an actual " +
   "call to action with a real URL you were actually given, never an invented one). " +
+  "Even when sections share the same structure, don't reuse the same sentence openings, transitions, or stock " +
+  "phrases across them (e.g. every section starting with the same kind of framing sentence, or 'peace of mind' / " +
+  "'look no further' style filler repeated more than once on the page) -- vary sentence structure and wording so " +
+  "each block reads as its own fresh content, not a reworded copy of another one on the same page. " +
   "\n\n" +
   "Keep prose professional and concise, no meta-commentary about the page itself. " +
   "Never use an em dash, a double hyphen (\"--\"), or a spaced hyphen (\" - \") as a separator -- use a comma, colon, period, or restructure the sentence instead.";

@@ -25,8 +25,19 @@ const MAX_LIST_ITEMS = 50;
 const MAX_SHORT_TEXT = 200; // heading text, button label, image alt
 const MAX_LONG_TEXT = 2000; // paragraph/quote text
 
+// Codebase-wide rule (AGENTS.md): no em dash, double hyphen, or spaced
+// hyphen as a separator in AI-generated/user-facing text. The system prompt
+// (lib/ai/pageGenerate.ts) already asks the model not to use them, but this
+// is the actual guarantee -- a deterministic fallback for whatever slips
+// through, same "enforce it, don't just ask" reasoning as heading level 1
+// below. Only matches the SPACED/doubled separator forms, so a real
+// mid-word hyphen (e.g. "full-service") is untouched.
+function stripBannedSeparators(text: string): string {
+  return text.replace(/\s*—\s*/g, ", ").replace(/\s*--\s*/g, ", ").replace(/ - /g, ", ");
+}
+
 function str(value: unknown, maxLen: number): string {
-  return String(value ?? "").slice(0, maxLen);
+  return stripBannedSeparators(String(value ?? "")).slice(0, maxLen);
 }
 
 function newId(): string {
