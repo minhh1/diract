@@ -46,7 +46,7 @@ interface Props {
   staff: RosterStaff[];
   teams: RosterTeam[];
   memberships: TeamMembership[];
-  isAdmin: boolean;
+  canEdit: boolean;
   onChanged: () => void;
 }
 
@@ -75,7 +75,7 @@ function DayHeader({ weekDays }: { weekDays: Date[] }) {
   );
 }
 
-export default function RosterWeekView({ weekDays, shifts, staff, teams, memberships, isAdmin, onChanged }: Props) {
+export default function RosterWeekView({ weekDays, shifts, staff, teams, memberships, canEdit, onChanged }: Props) {
   const [modal, setModal] = useState<ShiftModalState | null>(null);
 
   const shiftsFor = (staffId: string, date: string, teamId: string | null) =>
@@ -107,7 +107,7 @@ export default function RosterWeekView({ weekDays, shifts, staff, teams, members
             <div className="flex items-center gap-2 px-3 py-2 min-w-0">
               <StaffAvatar staff={member} size={20} />
               <span className="text-[11px] font-bold text-slate-600 truncate">{member.name}</span>
-              {isAdmin && weeklyHours(member.id) > 0 && (
+              {canEdit && weeklyHours(member.id) > 0 && (
                 <span className="ml-auto shrink-0 text-[9px] font-bold text-slate-400">{weeklyHours(member.id).toFixed(1)}h</span>
               )}
             </div>
@@ -140,7 +140,7 @@ export default function RosterWeekView({ weekDays, shifts, staff, teams, members
                       </button>
                     );
                   })}
-                  {isAdmin && (
+                  {canEdit && (
                     <button
                       onClick={() => openNew(member.id, member.name, dateStr, teamId)}
                       className="opacity-0 group-hover:opacity-100 flex items-center justify-center flex-1 min-h-[20px] text-slate-300 hover:text-indigo-500 transition-all"
@@ -196,7 +196,7 @@ export default function RosterWeekView({ weekDays, shifts, staff, teams, members
       </div>
 
       {modal && (
-        <ShiftModal modal={modal} staffList={staff} teams={teams} canEdit={isAdmin} onClose={() => setModal(null)} onSaved={() => { setModal(null); onChanged(); }} />
+        <ShiftModal modal={modal} staffList={staff} teams={teams} canEdit={canEdit} onClose={() => setModal(null)} onSaved={() => { setModal(null); onChanged(); }} />
       )}
     </div>
   );

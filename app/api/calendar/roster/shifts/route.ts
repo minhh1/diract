@@ -8,11 +8,15 @@
 // components/admin/AdminTeamsTab.tsx -- teams are a pre-existing, admin-
 // managed concept the roster reuses via roster_shifts.team_id rather than
 // inventing its own).
-// Non-admins only ever see 'final' shifts -- draft/unconfirmed shifts
-// aren't "their schedule" yet (also enforced in RLS, this is defense in
-// depth since the admin client bypasses RLS). New shifts always start as
-// 'draft' regardless of what the caller sends -- publishing is its own
-// explicit action (see .../publish/route.ts), never implicit on create.
+// A plain staff member (no roster.edit/roster.publish/admin) only ever
+// sees THEIR OWN final shifts, not the whole company's roster -- draft/
+// unconfirmed shifts aren't "their schedule" yet (also enforced in RLS,
+// this is defense in depth since the admin client bypasses RLS), and other
+// people's shifts aren't theirs to see either. A manager (roster.edit or
+// roster.publish) or admin sees everyone's, draft and final, so they can
+// actually build/review the week. New shifts always start as 'draft'
+// regardless of what the caller sends -- publishing is its own explicit
+// action (see .../publish/route.ts), never implicit on create.
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { hasOverlappingShift } from "@/lib/rosterOverlap";
@@ -20,26 +24,35 @@ import { hasOverlappingShift } from "@/lib/rosterOverlap";
 export async function GET(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, companyId, isAdmin, hasPermission } = auth;
-  const canSeeDrafts = isAdmin || hasPermission("roster.edit") || hasPermission("roster.publish");
+  const { admin, companyId, user, isAdmin, hasPermission } = auth;
+  const canEdit = isAdmin || hasPermission("roster.edit");
+  const canPublish = isAdmin || hasPermission("roster.publish");
+  const canSeeDrafts = canEdit || canPublish;
 
   const { searchParams } = new URL(req.url);
   const start = searchParams.get("start");
   const end = searchParams.get("end");
   if (!start || !end) return NextResponse.json({ error: "start and end (YYYY-MM-DD) are required" }, { status: 400 });
 
-  let query = admin.from("roster_shifts").select("*").eq("company_id", companyId).gte("shift_date", start).lte("shift_date", end);
-  if (!canSeeDrafts) query = query.eq("status", "final");
-  const { data: shifts, error } = await query.order("shift_date").order("start_time");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const { data: staff } = await admin
+  // A plain staff member only ever sees their own row and their own shifts
+  // -- not the rest of the company's roster.
+  let staffQuery = admin
     .from("entities")
     .select("id, name, linked_profile_id")
     .eq("company_id", companyId)
     .eq("entity_type", "Staff")
-    .is("deleted_at", null)
-    .order("name");
+    .is("deleted_at", null);
+  if (!canSeeDrafts) staffQuery = staffQuery.eq("linked_profile_id", user.id);
+  const { data: staff } = await staffQuery.order("name");
+
+  let query = admin.from("roster_shifts").select("*").eq("company_id", companyId).gte("shift_date", start).lte("shift_date", end);
+  if (!canSeeDrafts) {
+    query = query.eq("status", "final");
+    const ownIds = (staff ?? []).map((s: any) => s.id);
+    query = ownIds.length ? query.in("staff_entity_id", ownIds) : query.eq("staff_entity_id", "00000000-0000-0000-0000-000000000000");
+  }
+  const { data: shifts, error } = await query.order("shift_date").order("start_time");
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Profile pics come from the linked login (entities has no avatar of its
   // own) -- a separate lookup rather than a PostgREST embed since there's
@@ -63,7 +76,9 @@ export async function GET(req: NextRequest) {
     ? await admin.from("team_members").select("team_id, profile_id").in("team_id", teamIds)
     : { data: [] };
 
-  return NextResponse.json({ shifts: shifts ?? [], staff: staffWithAvatars, teams: teams ?? [], memberships: memberships ?? [] });
+  return NextResponse.json({
+    shifts: shifts ?? [], staff: staffWithAvatars, teams: teams ?? [], memberships: memberships ?? [], canEdit, canPublish,
+  });
 }
 
 export async function POST(req: NextRequest) {

@@ -49,6 +49,14 @@ function CalendarPageInner() {
   const [staff, setStaff] = useState<RosterStaff[]>([]);
   const [teams, setTeams] = useState<RosterTeam[]>([]);
   const [memberships, setMemberships] = useState<TeamMembership[]>([]);
+  // Whether the viewer can edit/publish the roster -- isAdmin OR a granted
+  // roster.edit/roster.publish custom-role permission (a non-admin
+  // "manager"), computed server-side (see /api/calendar/roster/shifts'
+  // GET) since hasPermission() isn't exposed client-side. A plain staff
+  // member gets neither, and the API has already scoped shifts/staff down
+  // to just their own row before this even renders.
+  const [canEditRoster, setCanEditRoster] = useState(false);
+  const [canPublishRoster, setCanPublishRoster] = useState(false);
   const [loadingShifts, setLoadingShifts] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
@@ -82,6 +90,8 @@ function CalendarPageInner() {
       setStaff(json.staff ?? []);
       setTeams(json.teams ?? []);
       setMemberships(json.memberships ?? []);
+      setCanEditRoster(!!json.canEdit);
+      setCanPublishRoster(!!json.canPublish);
     }
     setLoadingShifts(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,7 +194,7 @@ function CalendarPageInner() {
   // read-only Weekly/Monthly roster views for anyone walking up to glance
   // at the schedule. No admin controls render here -- Copy last week/
   // Publish week only exist in the non-kiosk branch below, and
-  // RosterWeekView itself goes fully read-only with isAdmin={false} (no
+  // RosterWeekView itself goes fully read-only with canEdit={false} (no
   // edit/add affordances). See components/KioskAppShell.tsx for the rest
   // of the kiosk lockdown (no Sidebar, redirected off any other route).
   if (kioskView) {
@@ -228,7 +238,7 @@ function CalendarPageInner() {
           <div className="flex items-center justify-center py-16"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
         ) : view === "week" ? (
           <>
-            <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} teams={teams} memberships={memberships} isAdmin={false} onChanged={() => {}} />
+            <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} teams={teams} memberships={memberships} canEdit={false} onChanged={() => {}} />
             <HoursSummaryPanel start={rangeStart} end={rangeEnd} />
           </>
         ) : (
@@ -301,20 +311,20 @@ function CalendarPageInner() {
         </div>
       </div>
 
-      {((settings.rostering_enabled && view === "week" && isAdmin) || (settings.booking_enabled && canManageEvents)) && (
+      {((settings.rostering_enabled && view === "week" && (canEditRoster || canPublishRoster)) || (settings.booking_enabled && canManageEvents)) && (
         <div className="flex items-center gap-2 flex-wrap">
-          {settings.rostering_enabled && view === "week" && isAdmin && (
-            <>
-              <button onClick={handleCopyLastWeek} disabled={acting}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 disabled:opacity-50 transition-all"
-                title="Duplicates last week's shifts into this week as draft. Running it more than once will duplicate -- clean up manually if needed.">
-                <Copy size={12} /> Copy last week
-              </button>
-              <button onClick={handlePublishWeek} disabled={acting}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all">
-                <Send size={12} /> Publish week
-              </button>
-            </>
+          {settings.rostering_enabled && view === "week" && canEditRoster && (
+            <button onClick={handleCopyLastWeek} disabled={acting}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 disabled:opacity-50 transition-all"
+              title="Duplicates last week's shifts into this week as draft. Running it more than once will duplicate -- clean up manually if needed.">
+              <Copy size={12} /> Copy last week
+            </button>
+          )}
+          {settings.rostering_enabled && view === "week" && canPublishRoster && (
+            <button onClick={handlePublishWeek} disabled={acting}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all">
+              <Send size={12} /> Publish week
+            </button>
           )}
           {settings.booking_enabled && canManageEvents && (
             <button onClick={() => setEventModal({ defaultDate: viewDate })}
@@ -334,7 +344,7 @@ function CalendarPageInner() {
         <div className="flex items-center justify-center py-16"><Loader2 size={18} className="animate-spin text-slate-300" /></div>
       ) : view === "week" ? (
         <>
-          {settings.rostering_enabled && <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} teams={teams} memberships={memberships} isAdmin={isAdmin} onChanged={loadShifts} />}
+          {settings.rostering_enabled && <RosterWeekView weekDays={weekDays} shifts={shifts} staff={staff} teams={teams} memberships={memberships} canEdit={canEditRoster} onChanged={loadShifts} />}
           {settings.booking_enabled && (
             <EventsList events={events} onOpen={(e) => setEventModal({ event: e })} />
           )}
@@ -441,7 +451,7 @@ function CalendarPageInner() {
       )}
 
       {shiftModal && (
-        <ShiftModal modal={shiftModal} staffList={staff} teams={teams} canEdit={isAdmin} onClose={() => setShiftModal(null)} onSaved={() => { setShiftModal(null); loadShifts(); }} />
+        <ShiftModal modal={shiftModal} staffList={staff} teams={teams} canEdit={canEditRoster} onClose={() => setShiftModal(null)} onSaved={() => { setShiftModal(null); loadShifts(); }} />
       )}
 
       {eventModal && (
