@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { ExternalLink, Maximize2, Minimize2 } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/use-theme';
 import { useSession } from '@/lib/session';
-import { APP_URL } from '@/lib/config';
+import { openOnWeb } from '@/lib/webHandoff';
 import { MaxContentWidth, Radii } from '@/constants/theme';
 import { useCompanyDashboard } from '@/lib/companyDashboards';
 import { useIsTabletLayout } from '@/hooks/use-tablet-layout';
@@ -68,7 +67,7 @@ export default function DashboardViewScreen() {
           This dashboard has no table backing it, which the mobile app doesn't render yet. View it on the web dashboard instead.
         </Text>
         <Pressable
-          onPress={() => WebBrowser.openBrowserAsync(`${APP_URL}/dashboard/boards/${slug}`)}
+          onPress={() => openOnWeb(`/dashboard/boards/${slug}`)}
           style={[styles.openWebButton, { borderColor: theme.border }]}
         >
           <ExternalLink size={14} color={theme.accent} />

@@ -1,10 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { FileDown } from 'lucide-react-native';
 
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { APP_URL } from '@/lib/config';
+import { openOnWeb } from '@/lib/webHandoff';
 import { formatCurrency } from '@/lib/format';
 import type { CustomTableRecord } from '@/lib/dashboardWidgets/customTableTypes';
 
@@ -43,7 +42,7 @@ export function LedesExportWidget({ records }: { records: CustomTableRecord[] })
               {r.values.total_inc_gst != null && r.values.total_inc_gst !== '' ? formatCurrency(Number(r.values.total_inc_gst) || 0) : '-'}
             </Text>
             <Pressable
-              onPress={() => WebBrowser.openBrowserAsync(`${APP_URL}/api/ledes/${r.id}`)}
+              onPress={() => openOnWeb(`/api/ledes/${r.id}`)}
               style={[styles.downloadButton, { backgroundColor: theme.backgroundSelected }]}
             >
               <FileDown size={11} color={theme.accent} />

@@ -8,6 +8,7 @@ export const WIDGET_TYPE_META: Record<DashboardWidgetType, { label: string; icon
   grid: { label: 'Data grid', icon: 'Table2' },
   summary_tile: { label: 'Summary tile', icon: 'Hash' },
   chart: { label: 'Activity chart', icon: 'BarChart2' },
+  calendar: { label: 'Calendar', icon: 'CalendarDays' },
   trust_reconciliation: { label: 'Trust reconciliation', icon: 'Landmark' },
   ledes_export: { label: 'LEDES export', icon: 'FileDown' },
   trust_ledger_statement: { label: 'Trust ledger statement', icon: 'FileText' },
@@ -36,6 +37,7 @@ export const DEFAULT_LAYOUT_BY_TYPE: Record<DashboardWidgetType, Omit<WidgetLayo
   grid: { w: 12, h: 6 },
   summary_tile: { w: 3, h: 2 }, // 4 fit per 12-col row
   chart: { w: 12, h: 4 },
+  calendar: { w: 12, h: 6 },
   trust_reconciliation: { w: 12, h: 10 },
   ledes_export: { w: 12, h: 6 },
   trust_ledger_statement: { w: 12, h: 8 },
@@ -92,6 +94,7 @@ export function createWidget(type: DashboardWidgetType, existingWidgets: Dashboa
     case 'grid': return { ...base, type, config: { fieldIds: [] } };
     case 'summary_tile': return { ...base, type, config: { label: '', fieldId: null, aggregate: 'sum', conditions: [] } };
     case 'chart': return { ...base, type, config: { dateFieldId: '', valueFieldId: null, aggregate: 'sum', granularity: 'day', series: [] } };
+    case 'calendar': return { ...base, type, config: { label: '', dateFieldId: null, conditions: [] } };
     case 'trust_reconciliation': return { ...base, type, config: {} };
     case 'ledes_export': return { ...base, type, config: {} };
     case 'trust_ledger_statement': return { ...base, type, config: {} };

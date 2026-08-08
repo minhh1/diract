@@ -1,10 +1,9 @@
-import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ExternalLink } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/use-theme';
-import { APP_URL } from '@/lib/config';
+import { openOnWeb } from '@/lib/webHandoff';
 import { computeSummaryTileValue, filterByConditions } from '@/lib/dashboardWidgets/compute';
 import { DashboardFilterBar, matchesFilterValue } from './DashboardFilterBar';
 import type { DashboardWidget } from '@/lib/dashboardWidgets/types';
@@ -97,7 +96,7 @@ function OpenOnWebFallback({ label, path }: { label: string; path: string }) {
   const theme = useTheme();
   return (
     <Pressable
-      onPress={() => WebBrowser.openBrowserAsync(`${APP_URL}${path}`)}
+      onPress={() => openOnWeb(path)}
       style={[styles.fallback, { borderColor: theme.border, backgroundColor: theme.backgroundSelected }]}
     >
       <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '600', flex: 1 }}>{label}</Text>

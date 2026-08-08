@@ -1,10 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { FileOutput, Settings2 } from 'lucide-react-native';
 
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { APP_URL } from '@/lib/config';
+import { openOnWeb } from '@/lib/webHandoff';
 import type { DocumentExportWidget as DocumentExportWidgetConfig } from '@/lib/dashboardWidgets/types';
 import type { CustomTableRecord } from '@/lib/dashboardWidgets/customTableTypes';
 
@@ -58,7 +57,7 @@ export function DocumentExportWidget({
             <View key={r.id} style={[styles.row, { borderColor: theme.border }]}>
               <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: '600', flex: 1 }}>{r.id.slice(0, 8).toUpperCase()}</Text>
               <Pressable
-                onPress={() => WebBrowser.openBrowserAsync(`${APP_URL}/api/document-export/${dashboardId}/${widgetId}/${r.id}`)}
+                onPress={() => openOnWeb(`/api/document-export/${dashboardId}/${widgetId}/${r.id}`)}
                 style={[styles.exportButton, { backgroundColor: theme.backgroundSelected }]}
               >
                 <FileOutput size={11} color={theme.accent} />

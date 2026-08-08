@@ -4,7 +4,7 @@
 // callable widget-by-widget now that each summary_tile is its own
 // independently-positioned widget. See components/dashboard/DashboardWidgetRenderer.tsx.
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
-import type { SummaryTileWidget, ChartWidget, ChartSeriesConfig, ChartGranularity, TileCondition } from "./types";
+import type { SummaryTileWidget, ChartWidget, ChartSeriesConfig, ChartGranularity, TileCondition, CalendarWidget } from "./types";
 import { matchesRelativeDate, type RelativeDateRange } from "./relativeDates";
 
 function isEmptyValue(v: any): boolean {
@@ -114,6 +114,39 @@ export function computeSummaryTileValue(
         ? sumOf(field) - sumOf(config.fieldBId ? fieldById.get(config.fieldBId) : undefined)
         : sumOf(field);
   return { value, fieldType: field?.field_type || 'number' };
+}
+
+export interface CalendarEvent {
+  id: string;
+  label: string;
+  date: string; // 'YYYY-MM-DD', via bucketKey(dateVal, 'day') below
+}
+
+// Groups this widget's own conditions-filtered records by day, for
+// CalendarWidgetView's month grid. Mirrors computeChartSeries' own
+// `r.values[dateField.field_key]` / bucketKey read exactly (a calendar is
+// architecturally "chart, but a month grid instead of bars") -- every
+// falsy/unparseable date value is silently skipped, same as chart. The
+// event label is always the record's own primary field (displayValues for a
+// relation-type primary field, otherwise the raw value) -- deliberately not
+// configurable, see CalendarWidget's own doc comment in types.ts.
+export function computeCalendarEvents(
+  config: CalendarWidget['config'],
+  records: CustomTableRecord[],
+  fieldById: Map<string, CustomTableField>,
+  primaryFieldKey: string | null | undefined
+): CalendarEvent[] {
+  const dateField = config.dateFieldId ? fieldById.get(config.dateFieldId) : undefined;
+  if (!dateField) return [];
+  const rows = filterByConditions(records, config.conditions, fieldById);
+  const events: CalendarEvent[] = [];
+  for (const r of rows) {
+    const dateVal = r.values[dateField.field_key];
+    if (!dateVal) continue;
+    const label = primaryFieldKey ? (r.displayValues[primaryFieldKey] ?? r.values[primaryFieldKey]) : undefined;
+    events.push({ id: r.id, label: label != null && label !== '' ? String(label) : 'Untitled', date: bucketKey(dateVal, 'day') });
+  }
+  return events;
 }
 
 // Normalizes a chart's series, preferring the new array but falling back to

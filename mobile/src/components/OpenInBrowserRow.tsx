@@ -1,10 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { ExternalLink, type LucideIcon } from 'lucide-react-native';
 
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { APP_URL } from '@/lib/config';
+import { openOnWeb } from '@/lib/webHandoff';
 import { IconBadge } from '@/components/ui/IconBadge';
 
 // A handful of Diract features (the low-code schema/dashboard builder, the
@@ -12,15 +11,16 @@ import { IconBadge } from '@/components/ui/IconBadge';
 // tools) are either desktop-oriented editing surfaces or not yet ported
 // natively. Rather than a native screen that's a worse copy of the real
 // thing, these open the already-responsive web dashboard in an in-app
-// browser, authenticated via the same Supabase session cookie once the
-// user signs in there once. (The AI assistant used to be in this list too
+// browser -- openOnWeb (lib/webHandoff.ts) hands the browser off already
+// signed in when it can, falling back to a plain link (requiring a one-time
+// web login) if that fails. (The AI assistant used to be in this list too
 // -- see src/app/(app)/more/ai/ and its own README section for why it's a
 // native screen now.)
 export function OpenInBrowserRow({ label, path, icon: Icon, index = 0 }: { label: string; path: string; icon: LucideIcon; index?: number }) {
   const theme = useTheme();
   return (
     <Pressable
-      onPress={() => WebBrowser.openBrowserAsync(`${APP_URL}${path}`)}
+      onPress={() => openOnWeb(path)}
       style={[styles.row, { backgroundColor: theme.backgroundElement }]}
     >
       <View style={styles.left}>

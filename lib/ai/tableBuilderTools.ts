@@ -38,7 +38,7 @@ type FormulaType = (typeof FORMULA_TYPES)[number];
 // which need context this assistant doesn't have and aren't broadly
 // applicable. A user can add those manually afterward.
 const GENERAL_WIDGET_TYPES: DashboardWidgetType[] = [
-  "heading", "text", "filter_bar", "quick_add_form", "grid", "summary_tile", "chart", "document_export", "invoice_import",
+  "heading", "text", "filter_bar", "quick_add_form", "grid", "summary_tile", "chart", "calendar", "document_export", "invoice_import",
 ];
 
 function slugify(name: string): string {
@@ -158,7 +158,7 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
   },
   {
     name: "add_widget",
-    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers. 'document_export' gives records a working PDF download (letter or invoice style); 'invoice_import' lets someone upload a PDF invoice and import its line items as new records -- see each one's own params. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this widget.",
+    description: "Add a widget to a dashboard created with create_dashboard. Reference fields by their LABEL (e.g. 'Amount'), not id -- this tool resolves labels to the right field for you. Add a grid and/or quick_add_form first so the dashboard is actually usable, then summary_tile/chart for at-a-glance numbers, or calendar for a month view of records by date (e.g. matter due dates). 'document_export' gives records a working PDF download (letter or invoice style); 'invoice_import' lets someone upload a PDF invoice and import its line items as new records -- see each one's own params. Requires confirm=true -- only set this after the user has explicitly agreed to the plan that includes this widget.",
     input_schema: {
       type: "object",
       properties: {
@@ -167,10 +167,10 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         text: { type: "string", description: "heading/text widgets: the text to show." },
         heading_level: { type: "number", enum: [1, 2, 3], description: "heading widgets only, defaults to 2." },
         field_labels: { type: "array", items: { type: "string" }, description: "filter_bar/quick_add_form/grid widgets: which fields to show, in order." },
-        summary_label: { type: "string", description: "summary_tile widgets: the tile's title; chart widgets: the series label." },
+        summary_label: { type: "string", description: "summary_tile widgets: the tile's title; chart widgets: the series label; calendar widgets: an optional heading above the grid." },
         summary_field_label: { type: "string", description: "summary_tile/chart widgets: the field to aggregate (omit for a plain record-count tile)." },
         summary_aggregate: { type: "string", enum: ["sum", "count", "net", "count-distinct"], description: "summary_tile/chart widgets, defaults to 'count'." },
-        chart_date_field_label: { type: "string", description: "chart widgets (required): the date field for the x-axis." },
+        chart_date_field_label: { type: "string", description: "chart widgets (required): the date field for the x-axis. calendar widgets (required): the date field each record is plotted on." },
         document_export_style: { type: "string", enum: ["letter", "invoice"], description: "document_export widgets (required): 'letter' renders onto the company's letterhead (needs a letterhead already uploaded in Settings -> Precedents); 'invoice' renders a generic billing-document layout. All fields below are on the dashboard's OWN bound table." },
         recipient_name_field_label: { type: "string", description: "document_export style 'letter': field holding who the letter is addressed to." },
         recipient_address_field_label: { type: "string", description: "document_export style 'letter': field holding the recipient's mailing address." },
@@ -679,6 +679,11 @@ async function addWidget(admin: any, companyId: string, userId: string, input: R
         aggregate: (input.summary_aggregate as "sum" | "count" | "count-distinct") || "sum",
       }];
     }
+  } else if (widget.type === "calendar") {
+    const dateFieldId = input.chart_date_field_label ? resolveLabel(String(input.chart_date_field_label)) : null;
+    if (!dateFieldId) return { content: "calendar widgets need chart_date_field_label to match an existing date field on the dashboard's table", isError: true };
+    widget.config.label = String(input.summary_label || "");
+    widget.config.dateFieldId = dateFieldId;
   } else if (widget.type === "document_export") {
     const style = String(input.document_export_style || "");
     if (style !== "letter" && style !== "invoice") {

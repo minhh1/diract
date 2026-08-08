@@ -222,6 +222,24 @@ export interface ChartWidget extends BaseWidget {
   };
 }
 
+// A month-grid calendar of this dashboard's own bound-table records, grouped
+// by one date field -- e.g. a Matters dashboard showing due dates. Shares
+// dateFieldId's naming/convention with ChartWidget above (this is
+// architecturally "chart, but rendered as a month grid instead of bars"),
+// and reuses the same conditions shape summary_tile/grid already use to
+// narrow which records show. No separate title-field config -- each day's
+// event label is always the record's own primary display field, same as a
+// grid's own primary column, kept deliberately unconfigurable to minimize
+// setup (see components/dashboard/CalendarWidgetView.tsx).
+export interface CalendarWidget extends BaseWidget {
+  type: 'calendar';
+  config: {
+    label: string; // optional heading above the grid, e.g. "Due Dates"
+    dateFieldId: string | null;
+    conditions?: TileCondition[];
+  };
+}
+
 // Trust three-way reconciliation (see components/dashboard/TrustReconciliationWidget.tsx).
 // No config: it always reconciles the dashboard's own bound table, reading
 // date/matter/amount_in/amount_out by field_key convention -- meaningful on
@@ -463,7 +481,7 @@ export interface InvoiceImportWidget extends BaseWidget {
 
 export type DashboardWidget =
   | HeadingWidget | TextWidget | FilterBarWidget | QuickAddFormWidget
-  | GridWidget | SummaryTileWidget | ChartWidget
+  | GridWidget | SummaryTileWidget | ChartWidget | CalendarWidget
   | TrustReconciliationWidget | LedesExportWidget
   | TrustLedgerStatementWidget | TrustCashBookWidget | TrustAgedBalancesWidget
   | PublicTaskPageWidget | PublicDocumentPageWidget | PublicClientUpdatePageWidget | MyTasksButtonWidget

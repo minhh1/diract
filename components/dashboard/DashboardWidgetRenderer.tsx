@@ -11,6 +11,7 @@ import DashboardQuickAddForm from "./DashboardQuickAddForm";
 import DashboardGrid from "./DashboardGrid";
 import { SummaryTile } from "./DashboardSummaryTiles";
 import DashboardActivityChart from "./DashboardActivityChart";
+import CalendarWidgetView from "./CalendarWidgetView";
 // Every dashboard imports this ONE renderer regardless of which widget
 // types it actually uses (see the switch below) -- filter_bar/quick_add_
 // form/grid/summary_tile/chart stay static imports since nearly every
@@ -37,7 +38,7 @@ const FinanceModelSearchWidget = dynamic(() => import("./FinanceModelSearchWidge
 const ResidualLandSolverContent = dynamic(() => import("@/components/public/ResidualLandSolverContent"));
 const DocumentExportWidget = dynamic(() => import("./DocumentExportWidget"));
 const InvoiceImportWidget = dynamic(() => import("./InvoiceImportWidget"));
-import { computeSummaryTileValue, computeChartSeries, filterByConditions } from "@/lib/dashboardWidgets/compute";
+import { computeSummaryTileValue, computeChartSeries, computeCalendarEvents, filterByConditions } from "@/lib/dashboardWidgets/compute";
 import type { DashboardWidget } from "@/lib/dashboardWidgets/types";
 import type { CustomTableField, CustomTableRecord } from "@/lib/hooks/useCustomTable";
 import type { DashboardSourceKind } from "@/lib/hooks/useDashboardData";
@@ -259,6 +260,11 @@ export default function DashboardWidgetRenderer({
             : undefined}
         />
       );
+    }
+
+    case 'calendar': {
+      const events = computeCalendarEvents(widget.config, records, fieldById, primaryFieldKey);
+      return <CalendarWidgetView label={widget.config.label} events={events} />;
     }
 
     case 'trust_reconciliation':

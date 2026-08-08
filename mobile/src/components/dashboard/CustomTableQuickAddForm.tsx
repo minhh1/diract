@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useQueryClient } from '@tanstack/react-query';
-import * as WebBrowser from 'expo-web-browser';
 import { ExternalLink } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/use-theme';
-import { APP_URL } from '@/lib/config';
+import { openOnWeb } from '@/lib/webHandoff';
 import { useRelationLabel } from '@/lib/relationLabels';
 import { createCustomTableRecord, isSupportedForWrite } from '@/lib/customTableWrite';
 import type { CustomTableField } from '@/lib/dashboardWidgets/customTableTypes';
@@ -238,7 +237,7 @@ export function CustomTableQuickAddForm({
   if (!supported) {
     return (
       <Pressable
-        onPress={() => WebBrowser.openBrowserAsync(`${APP_URL}/dashboard/boards/${dashboardSlug}`)}
+        onPress={() => openOnWeb(`/dashboard/boards/${dashboardSlug}`)}
         style={[styles.fallback, { borderColor: theme.border, backgroundColor: theme.backgroundSelected }]}
       >
         <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '600', flex: 1 }}>This widget only renders on the web dashboard</Text>

@@ -846,21 +846,22 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
     });
   };
 
-  // Shared by summary_tile's "only count/sum when..." and grid's "only show
-  // rows when..." -- same TileCondition[] shape, same semantics (every
-  // condition ANDed), just filtering summed rows vs. displayed rows.
+  // Shared by summary_tile's "only count/sum when...", grid's "only show
+  // rows when...", and calendar's "only show events when..." -- same
+  // TileCondition[] shape, same semantics (every condition ANDed), just
+  // filtering summed/displayed/plotted rows.
   const addCondition = () => {
-    if (draft.type !== 'summary_tile' && draft.type !== 'grid') return;
+    if (draft.type !== 'summary_tile' && draft.type !== 'grid' && draft.type !== 'calendar') return;
     const conditions = [...(draft.config.conditions || []), { fieldId: '', operator: 'eq' as const, value: undefined }];
     updateConfig({ conditions });
   };
   const updateCondition = (index: number, patch: Partial<TileCondition>) => {
-    if (draft.type !== 'summary_tile' && draft.type !== 'grid') return;
+    if (draft.type !== 'summary_tile' && draft.type !== 'grid' && draft.type !== 'calendar') return;
     const conditions = (draft.config.conditions || []).map((c, i) => i === index ? { ...c, ...patch } : c);
     updateConfig({ conditions });
   };
   const removeCondition = (index: number) => {
-    if (draft.type !== 'summary_tile' && draft.type !== 'grid') return;
+    if (draft.type !== 'summary_tile' && draft.type !== 'grid' && draft.type !== 'calendar') return;
     updateConfig({ conditions: (draft.config.conditions || []).filter((_, i) => i !== index) });
   };
 
@@ -1409,6 +1410,53 @@ export default function WidgetConfigPanel({ widget, fields, allWidgets, onSave, 
             <p className="text-[10px] text-slate-400 px-1">
               Tip: plot multiple series of the SAME unit on one chart (e.g. billable vs non-billable hours). For different units, use separate chart widgets.
             </p>
+          </div>
+        )}
+
+        {draft.type === 'calendar' && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Label</label>
+              <input
+                value={draft.config.label}
+                onChange={e => updateConfig({ label: e.target.value })}
+                placeholder="e.g. Due Dates"
+                className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none focus:ring-4 focus:ring-indigo-100"
+              />
+            </div>
+            <select
+              value={draft.config.dateFieldId || ''}
+              onChange={e => updateConfig({ dateFieldId: e.target.value || null })}
+              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+            >
+              <option value="">Date field...</option>
+              {dateFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                  Only show when... (all must match)
+                </label>
+                <button
+                  onClick={addCondition}
+                  className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700"
+                >
+                  <Plus size={11} /> Add condition
+                </button>
+              </div>
+              {(draft.config.conditions || []).map((cond, i) => (
+                <ConditionRow
+                  key={i}
+                  condition={cond}
+                  fields={fields}
+                  onChange={patch => updateCondition(i, patch)}
+                  onRemove={() => removeCondition(i)}
+                />
+              ))}
+              {(!draft.config.conditions || draft.config.conditions.length === 0) && (
+                <p className="text-[11px] text-slate-300 italic py-1">No conditions. Shows every record with a date</p>
+              )}
+            </div>
           </div>
         )}
 
