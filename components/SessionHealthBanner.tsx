@@ -51,6 +51,21 @@ function isDeadRefreshTokenError(message: string): boolean {
   return m.includes("refresh token") && (m.includes("invalid") || m.includes("not found"));
 }
 
+// Confirmed live (2026-08-08): auth-js v2.107+'s "lockless" cross-tab/cross-
+// call refresh coordination snapshots storage before hitting the token
+// endpoint and re-checks after -- if something else (a background auto-
+// refresh tick, another tab's call) changed storage in between, it throws
+// away the result it just fetched rather than risk overwriting newer state,
+// and resolves with this specific AuthRefreshDiscardedError instead of a
+// real failure. Per @supabase/auth-js's own docs this is meant to be a
+// harmless retry-and-move-on case, not a broken session -- but this
+// component was showing it as a scary raw SDK error message. Retried once,
+// silently, in checkSession below.
+function isDiscardedRefreshError(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes("discarded") || m.includes("state changed mid-flight");
+}
+
 // signOut() below itself fires a SIGNED_OUT event, which would otherwise
 // re-enter this same function -- guard so only the first caller actually
 // signs out/redirects (harmless race either way, but avoids duplicate
@@ -173,30 +188,49 @@ export default function SessionHealthBanner() {
     let active = true;
     let hiddenAt: number | null = null;
 
+    // User-facing text is deliberately plain -- what to do, not what the SDK
+    // detected. The technical detail (context + real error) still goes to
+    // console.error so this stays useful for diagnosing a repeat of the
+    // original "left it open, came back, broken" report, without putting
+    // raw SDK internals in front of someone who just wants to know if they
+    // need to log back in.
+    const fetchSession = async (): Promise<{ session: any; error: any }> => {
+      return supabase.auth.getSession().then(r => ({ session: r.data.session, error: r.error }));
+    };
+
     const checkSession = async (context: string) => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        let { session, error } = await fetchSession();
         if (!active) return;
+        if (error && isDiscardedRefreshError(error.message)) {
+          // Benign race, not a broken session -- see isDiscardedRefreshError's
+          // comment. One silent retry is enough since whatever else was
+          // mid-flight has settled by the time this runs.
+          ({ session, error } = await fetchSession());
+          if (!active) return;
+        }
         if (error) {
+          console.error(`[SessionHealthBanner] check failed (${context}):`, error.message);
           if (isDeadRefreshTokenError(error.message)) {
             if (Date.now() < justLoggedInUntil) return;
-            setProblem(`Your session expired (${context}) -- signing you out...`);
+            setProblem("Your session expired -- signing you out...");
             forceReauth(window.location.pathname);
             return;
           }
-          setProblem(`Session check failed (${context}): ${error.message}`);
+          setProblem("We couldn't confirm your session is still active. Try refreshing the page.");
           return;
         }
-        if (!session) { setProblem(`No active session detected (${context}) -- you may have been signed out.`); return; }
+        if (!session) { setProblem("You've been signed out. Please sign in again."); return; }
         if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-          setProblem(`Session token expired (${context}) and didn't refresh in time.`);
+          setProblem("Your session has expired. Refresh the page to continue.");
           return;
         }
         // Genuinely healthy -- clear any earlier flag rather than leaving a
         // stale warning up once things recover on their own.
         setProblem(null);
       } catch (e: any) {
-        if (active) setProblem(`Session check threw (${context}): ${e?.message || "unknown error"}`);
+        console.error(`[SessionHealthBanner] check threw (${context}):`, e?.message || e);
+        if (active) setProblem("Something went wrong checking your session. Try refreshing the page.");
       }
     };
 
