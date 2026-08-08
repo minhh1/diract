@@ -14,12 +14,27 @@
 // tool schema -- that function, not this one, is the real security boundary
 // for this feature.
 import { callTogetherModelWithTools } from "./modelCall";
-import { PAGE_BUILDER_TOOLS } from "./pageBuilderTools";
-import { validateBlocks } from "@/lib/pages/validateBlocks";
+import { PAGE_BUILDER_TOOLS, executePageBuilderTool } from "./pageBuilderTools";
+import { validateBlocks, stripBannedSeparators } from "@/lib/pages/validateBlocks";
 import type { PageBlock } from "@/lib/pages/blockTypes";
 import { TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
 
-const SYSTEM_PROMPT =
+// The system prompt tells the model never to use em dashes/double hyphens or
+// markdown list markers in its own chat replies (unlike block text, this
+// string is shown to the user completely as-is, never re-typed by them into
+// a block) -- but a prompt instruction is a strong hint, not a guarantee, so
+// this is the deterministic fallback, same "enforce it, don't just ask"
+// reasoning as stripBannedSeparators itself. Only strips a leading "- "/"1. "
+// at the START of a line (an actual list marker), never a real mid-sentence
+// hyphen or a number followed by a period elsewhere in a sentence.
+function sanitizeReply(text: string): string {
+  return stripBannedSeparators(text)
+    .replace(/^[ \t]*[-*]\s+/gm, "")
+    .replace(/^[ \t]*\d+\.\s+/gm, "")
+    .trim();
+}
+
+const BASE_SYSTEM_PROMPT =
   "You design the content of a single web page for a law firm, working with a staff member in a short back-and-forth. " +
   "When their request is clear enough to draft well (you know roughly what the page should say and who it's for), " +
   "call set_page_blocks with the page's full content as an ordered list of blocks, then briefly confirm what you " +
@@ -55,6 +70,22 @@ const SYSTEM_PROMPT =
   "'look no further' style filler repeated more than once on the page) -- vary sentence structure and wording so " +
   "each block reads as its own fresh content, not a reworded copy of another one on the same page. " +
   "\n\n" +
+  "Record data -- record_field shows one live field from this page's linked matter (if any); record_list shows a " +
+  "capped table of related records (e.g. every Invoice linked to it). Never invent a fieldKey/childTableId/" +
+  "relationFieldId/fieldIds -- call list_record_fields and/or list_related_tables first and use only what they " +
+  "return. If the page isn't linked to a matter, those tools will tell you so; don't use record_field/record_list " +
+  "at all in that case, and don't ask the user to link one yourself -- that's done in Page Settings, outside this " +
+  "conversation, mention it only if they ask why real data isn't available. " +
+  "\n\n" +
+  "Multiple matters -- when the user describes a KIND of matter they want shown (e.g. \"matters with an email from " +
+  "niksen.com.au\", \"open matters with Smith in the name\"), call search_matters with the right criteria, then " +
+  "present the results in plain text: how many were found and a few example names. Do not call link_matters yet -- " +
+  "wait for the user to explicitly confirm before linking, then call link_matters with confirm=true and the " +
+  "matter ids they agreed to. Call list_linked_matters first if you're unsure whether matters were already linked " +
+  "in an earlier turn, so you don't propose duplicates. Once matters are linked, use a matter_list block (with " +
+  "fields from list_record_fields) to actually show them -- linking alone doesn't add anything to the page. " +
+  "\n\n" +
+  "Never refer to yourself as \"AI\" or \"the assistant\" when talking to the user -- say \"we\" instead (e.g. \"we've drafted...\", not \"the AI drafted...\"). " +
   "Keep prose professional and concise, no meta-commentary about the page itself. " +
   "Never use an em dash, a double hyphen (\"--\"), or a spaced hyphen (\" - \") as a separator -- use a comma, colon, period, or restructure the sentence instead.";
 
@@ -70,32 +101,58 @@ export interface PageGenerateResult {
   outputTokens: number;
 }
 
-export async function generatePageBlocks(title: string, history: PageChatMessage[]): Promise<PageGenerateResult> {
+export async function generatePageBlocks(
+  admin: any,
+  companyId: string,
+  pageId: string,
+  title: string,
+  visibility: "company" | "client" | "public",
+  projectId: string | null,
+  history: PageChatMessage[]
+): Promise<PageGenerateResult> {
   let captured: unknown = null;
 
-  const executeTool = async (name: string, input: Record<string, unknown>) => {
+  let matterContext = "This page is not linked to any matter -- record_field/record_list blocks have nothing to show, don't use them.";
+  if (projectId) {
+    const { data: project } = await admin.from("projects").select("name, status").eq("id", projectId).eq("company_id", companyId).maybeSingle();
+    matterContext = project
+      ? `This page is linked to the matter "${project.name}" (status: ${project.status}). You may use record_field/record_list blocks to show real data from it, via list_record_fields/list_related_tables.`
+      : "This page's linked matter could not be found -- treat it as not linked.";
+  }
+
+  // The exposure warning only applies when there's actually record data
+  // AND the page has no gate at all -- 'client' pages already require a
+  // PIN by default in the UI, and 'company' pages aren't public in the
+  // first place, so this is specifically about 'public' visibility.
+  const exposureWarning = visibility === "public"
+    ? "This page's visibility is currently set to fully Public (no PIN). If you use a record_field/record_list block, your confirmation reply MUST say so plainly and state the real safeguards already in place: it's read-only, it only shows the fields you explicitly included, and there's no way for a visitor to search or edit anything else in the system. Then ask if they'd like a PIN added (possible even on a Public page) or to switch to a Client link instead -- don't just silently comply."
+    : "";
+
+  const systemPrompt = [BASE_SYSTEM_PROMPT, matterContext, exposureWarning].filter(Boolean).join("\n\n") + `\n\nPage title: ${title}`;
+
+  const executeTool = async (name: string, input: Record<string, any>) => {
     if (name === "set_page_blocks") {
       captured = input.blocks;
       return { content: "Blocks set." };
     }
-    return { content: `Unknown tool: ${name}`, isError: true };
+    return executePageBuilderTool(admin, companyId, projectId, pageId, name, input);
   };
 
   const result = await callTogetherModelWithTools(
     TABLE_BUILDER_MODEL_ID,
-    `${SYSTEM_PROMPT}\n\nPage title: ${title}`,
+    systemPrompt,
     history,
     PAGE_BUILDER_TOOLS,
     executeTool,
     undefined,
     undefined,
     undefined,
-    3
+    6
   );
 
   return {
     blocks: validateBlocks(captured),
-    message: (result.content || "").trim(),
+    message: sanitizeReply(result.content || ""),
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
   };

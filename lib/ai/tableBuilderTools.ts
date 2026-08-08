@@ -23,6 +23,7 @@ import type { DashboardWidget, DashboardWidgetType } from "@/lib/dashboardWidget
 import { callTogetherModelWithTools, type ToolSchema } from "@/lib/ai/modelCall";
 import { TAX_SCHEMES } from "@/lib/invoices/taxSchemes";
 import { costUsd, TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
+import { hasDataAccessGrant, grantAiDataAccess } from "./dataAccessGrant";
 
 const FIELD_TYPES = ["text", "number", "date", "boolean", "select", "email", "url", "currency", "table_relation"] as const;
 type FieldType = (typeof FIELD_TYPES)[number];
@@ -756,12 +757,6 @@ const PROJECT_SYSTEM_FIELDS = ["id", "name", "status", "description", "created_a
 // than raising the cap.
 const QUERY_RECORDS_LIMIT = 200;
 
-async function hasDataAccessGrant(admin: any, companyId: string): Promise<boolean> {
-  const { data } = await admin.from("ai_chat_settings").select("data_access_granted_until").eq("company_id", companyId).maybeSingle();
-  if (!data?.data_access_granted_until) return false;
-  return new Date(data.data_access_granted_until) > new Date();
-}
-
 async function queryRecords(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
   const tableId = String(input.table_id || "").trim();
   if (!tableId) return { content: "table_id is required", isError: true };
@@ -859,28 +854,6 @@ async function queryRecords(admin: any, companyId: string, userId: string, input
     return values;
   });
   return { content: JSON.stringify(result) };
-}
-
-async function grantAiDataAccess(admin: any, companyId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
-  const duration = String(input.duration || "");
-  if (duration !== "one_time" && duration !== "30_days") return { content: "duration must be 'one_time' or '30_days'", isError: true };
-
-  // 'one_time' isn't set to an already-past timestamp -- this same tool
-  // loop's very next query_records call (the whole point of calling this)
-  // would then immediately find itself unauthorized again. A short window
-  // covers the rest of this turn (and any quick follow-up in the same
-  // conversation) without leaving standing access open the way 30_days
-  // deliberately does.
-  const grantedUntil = duration === "30_days"
-    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    : new Date(Date.now() + 10 * 60 * 1000);
-
-  const { error } = await admin.from("ai_chat_settings").upsert(
-    { company_id: companyId, data_access_granted_until: grantedUntil.toISOString() },
-    { onConflict: "company_id" }
-  );
-  if (error) return { content: `Failed to record access grant: ${error.message}`, isError: true };
-  return { content: duration === "30_days" ? "Access granted for 30 days." : "Access granted for this conversation." };
 }
 
 async function proposeRecords(input: Record<string, any>): Promise<ToolExecutionResult> {

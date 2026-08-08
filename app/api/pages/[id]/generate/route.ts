@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 import { generatePageBlocks, type PageChatMessage } from "@/lib/ai/pageGenerate";
 import { costUsd, TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
+import { resolveRecordBlocks } from "@/lib/pages/resolveRecordBlocks";
 
 const MAX_MESSAGES = 20;
 const MAX_MESSAGE_CHARS = 2000;
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!isAdmin) return NextResponse.json({ error: "Only a company admin can generate page content" }, { status: 403 });
   const { id } = await params;
 
-  const { data: page } = await admin.from("company_pages").select("id, title").eq("id", id).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
+  const { data: page } = await admin.from("company_pages").select("id, title, visibility, project_id").eq("id", id).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
   if (!page) return NextResponse.json({ error: "Page not found" }, { status: 404 });
 
   let body: Record<string, unknown>;
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const history = parseHistory(body?.history);
   if (!history) return NextResponse.json({ error: "history must be a non-empty list of {role, content} turns, ending with a user message" }, { status: 400 });
 
-  const result = await generatePageBlocks(page.title, history);
+  const result = await generatePageBlocks(admin, companyId, id, page.title, page.visibility, page.project_id, history);
 
   const cost = costUsd("hosted", TABLE_BUILDER_MODEL_ID, result);
   await admin.from("ai_usage_events").insert({
@@ -69,5 +70,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .single();
   if (error || !updated) return NextResponse.json({ error: error?.message || "Failed to save generated content" }, { status: 500 });
 
-  return NextResponse.json({ page: updated, message: result.message || "Drafted." });
+  // Resolved before returning -- the client applies this straight onto its
+  // live preview, which otherwise briefly loses record_field/record_list's
+  // resolved values until the next full reload.
+  const blocks = await resolveRecordBlocks(admin, companyId, id, page.project_id, updated.blocks ?? []);
+
+  // link_matters may have just changed company_page_projects this same turn
+  // -- returned here too (same shape as GET) so the client's "apply this
+  // turn's result" merge doesn't leave the Linked matters UI stale until the
+  // next full page reload, the same staleness bug already fixed above for
+  // record_field/record_list.
+  const { data: links } = await admin.from("company_page_projects").select("project_id").eq("page_id", id);
+  const linkedIds = (links || []).map((l: { project_id: string }) => l.project_id);
+  const { data: linkedMatterRows } = linkedIds.length
+    ? await admin.from("projects").select("id, name, status").in("id", linkedIds).eq("company_id", companyId).is("deleted_at", null)
+    : { data: [] };
+
+  return NextResponse.json({ page: { ...updated, blocks, linkedMatters: linkedMatterRows || [] }, message: result.message || "Drafted." });
 }

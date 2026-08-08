@@ -10,12 +10,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Loader2, Lock } from "lucide-react";
 import { PageBlocks } from "@/components/pages/PageBlockRenderer";
-import type { PageBlock } from "@/lib/pages/blockTypes";
+import type { ResolvedPageBlock } from "@/lib/pages/resolveRecordBlocks";
 
 interface PublicPageResult {
   title: string;
   requiresCode: boolean;
-  blocks: PageBlock[];
+  blocks: ResolvedPageBlock[];
 }
 
 export default function PublicPage() {

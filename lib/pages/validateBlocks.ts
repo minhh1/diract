@@ -24,6 +24,8 @@ const MAX_COLUMNS = 3;
 const MAX_LIST_ITEMS = 50;
 const MAX_SHORT_TEXT = 200; // heading text, button label, image alt
 const MAX_LONG_TEXT = 2000; // paragraph/quote text
+const MAX_IDENTIFIER = 200; // fieldKey/childTableId/relationFieldId -- internal ids, not prose
+const MAX_FIELD_IDS = 6;
 
 // Codebase-wide rule (AGENTS.md): no em dash, double hyphen, or spaced
 // hyphen as a separator in AI-generated/user-facing text. The system prompt
@@ -32,7 +34,7 @@ const MAX_LONG_TEXT = 2000; // paragraph/quote text
 // through, same "enforce it, don't just ask" reasoning as heading level 1
 // below. Only matches the SPACED/doubled separator forms, so a real
 // mid-word hyphen (e.g. "full-service") is untouched.
-function stripBannedSeparators(text: string): string {
+export function stripBannedSeparators(text: string): string {
   return text.replace(/\s*—\s*/g, ", ").replace(/\s*--\s*/g, ", ").replace(/ - /g, ", ");
 }
 
@@ -46,6 +48,16 @@ function newId(): string {
 
 function id(raw: unknown): string {
   return typeof raw === "string" && raw.trim() ? raw : newId();
+}
+
+// For fieldKey/childTableId/relationFieldId -- internal identifiers, not
+// display text, so no dash-stripping (str()'s cleanup is for prose).
+// Deliberately permissive on an invalid/empty value here (e.g. a field that
+// was later deleted) -- resolveRecordBlocks.ts renders a "not available"
+// placeholder for anything it can't resolve rather than erroring, so this
+// layer only needs to bound size/shape.
+function ident(value: unknown): string {
+  return String(value ?? "").trim().slice(0, MAX_IDENTIFIER);
 }
 
 // allowNesting is false when validating a column's own children -- a column
@@ -84,6 +96,31 @@ function validateOne(raw: unknown, allowNesting: boolean): PageBlock | null {
     case "spacer": {
       const size = b.size === "sm" || b.size === "lg" ? b.size : "md";
       return { id: id(b.id), type: "spacer", size };
+    }
+    case "record_field": {
+      const fieldSource = b.fieldSource === "custom" ? "custom" : "base";
+      return { id: id(b.id), type: "record_field", fieldSource, fieldKey: ident(b.fieldKey), label: str(b.label, MAX_SHORT_TEXT) };
+    }
+    case "record_list": {
+      const fieldIds = Array.isArray(b.fieldIds) ? b.fieldIds.slice(0, MAX_FIELD_IDS).map(ident).filter(Boolean) : [];
+      return {
+        id: id(b.id), type: "record_list",
+        childTableId: ident(b.childTableId), relationFieldId: ident(b.relationFieldId),
+        fieldIds, title: str(b.title, MAX_SHORT_TEXT),
+      };
+    }
+    case "matter_list": {
+      const rawFields = Array.isArray(b.fields) ? b.fields.slice(0, MAX_FIELD_IDS) : [];
+      const fields = rawFields
+        .map((f: unknown) => {
+          if (!f || typeof f !== "object") return null;
+          const fr = f as Record<string, unknown>;
+          const fieldKey = ident(fr.fieldKey);
+          if (!fieldKey) return null;
+          return { fieldSource: fr.fieldSource === "custom" ? "custom" as const : "base" as const, fieldKey, label: str(fr.label, MAX_SHORT_TEXT) };
+        })
+        .filter((f): f is { fieldSource: "base" | "custom"; fieldKey: string; label: string } => f !== null);
+      return { id: id(b.id), type: "matter_list", title: str(b.title, MAX_SHORT_TEXT), fields };
     }
     case "columns": {
       const rawColumns = Array.isArray(b.columns) ? b.columns.slice(0, MAX_COLUMNS) : [];

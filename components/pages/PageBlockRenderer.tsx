@@ -17,10 +17,50 @@
 // re-request the current page).
 import React from "react";
 import type { PageBlock, NonColumnsBlock } from "@/lib/pages/blockTypes";
+import type { ResolvedPageBlock } from "@/lib/pages/resolveRecordBlocks";
 
 const SPACER_HEIGHT: Record<"sm" | "md" | "lg", string> = { sm: "h-4", md: "h-8", lg: "h-16" };
 
-function BlockView({ block }: { block: PageBlock }) {
+// Shared by record_list (a child table's records related to the page's
+// primary matter) and matter_list (the page's own additional linked
+// matters) -- identical shape once resolved, just a different real-world
+// source.
+function RecordTable({ title, fields, rows, emptyLabel }: {
+  title: string;
+  fields: { id: string; label: string }[];
+  rows: Record<string, string>[];
+  emptyLabel: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 overflow-hidden">
+      {title && <p className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 bg-slate-50">{title}</p>}
+      {fields.length === 0 || rows.length === 0 ? (
+        <p className="px-4 py-4 text-slate-400 text-sm">{emptyLabel}</p>
+      ) : (
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              {fields.map((f) => (
+                <th key={f.id} className="px-3 py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">{f.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="border-b border-slate-50 last:border-0">
+                {fields.map((f) => (
+                  <td key={f.id} className="px-3 py-2.5 text-slate-700 text-sm">{row[f.id] || ""}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function BlockView({ block }: { block: ResolvedPageBlock }) {
   switch (block.type) {
     case "heading": {
       // Never h1 -- the page's own title already renders as the page's one
@@ -80,12 +120,23 @@ function BlockView({ block }: { block: PageBlock }) {
           ))}
         </div>
       );
+    case "record_field":
+      return (
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{block.label}</p>
+          <p className="text-slate-800 mt-0.5">{block.resolvedValue || "Not available"}</p>
+        </div>
+      );
+    case "record_list":
+      return <RecordTable title={block.title} fields={block.resolvedFields} rows={block.resolvedRows} emptyLabel="No related records to show." />;
+    case "matter_list":
+      return <RecordTable title={block.title} fields={block.resolvedFields} rows={block.resolvedRows} emptyLabel="No linked matters to show." />;
     default:
       return null;
   }
 }
 
-export function PageBlocks({ blocks }: { blocks: PageBlock[] }) {
+export function PageBlocks({ blocks }: { blocks: ResolvedPageBlock[] }) {
   return (
     <div className="space-y-4">
       {blocks.map((block) => <BlockView key={block.id} block={block} />)}
