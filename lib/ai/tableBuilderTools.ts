@@ -24,6 +24,7 @@ import { callTogetherModelWithTools, type ToolSchema } from "@/lib/ai/modelCall"
 import { TAX_SCHEMES } from "@/lib/invoices/taxSchemes";
 import { costUsd, TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
 import { hasDataAccessGrant, grantAiDataAccess } from "./dataAccessGrant";
+import { getValueColumn } from "@/lib/schema/fieldCapabilities";
 
 const FIELD_TYPES = ["text", "number", "date", "boolean", "select", "email", "url", "currency", "table_relation"] as const;
 type FieldType = (typeof FIELD_TYPES)[number];
@@ -239,16 +240,31 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
   },
   {
     name: "query_records",
-    description: "Read actual business records (not schema) from a table, so you can answer questions about the company's real data or propose specific records for an action (see propose_records). Use table_id 'projects' for the built-in Matters/Projects system table; otherwise pass a custom table's id from list_existing_tables. Reading real data always requires the user's (or an admin's) explicit consent first -- if it hasn't been granted yet, this returns instructions instead of data; follow them exactly rather than guessing or making up an answer.",
+    description: "Read actual business records (not schema) from a table, so you can answer questions about the company's real data or propose specific records for an action (see propose_records). Use table_id 'projects' for the built-in Matters/Projects system table (this returns both its fixed columns -- name, status, description, purchase_price, property_id, estimated_completion_date -- and any custom fields this company has added to Matters, e.g. Matter Number); otherwise pass a custom table's id from list_existing_tables. Any question that names a specific matter, property, client, or record (a purchase price, a client's name, a due date, anything on one record) always needs this tool first -- never answer from your own general knowledge, and never suggest the user look somewhere outside this app. Reading real data always requires the user's (or an admin's) explicit consent first -- if it hasn't been granted yet, this returns instructions instead of data; follow them exactly rather than guessing or making up an answer.",
     input_schema: {
       type: "object",
       properties: {
         table_id: { type: "string", description: "'projects' for the Matters system table, or a custom table's id." },
         field_labels: { type: "array", items: { type: "string" }, description: "Custom tables only: which fields to return, by label. Omit for all fields." },
-        filter_field_label: { type: "string", description: "Optional: a field label to filter on (for 'projects', use 'status'). Pair with filter_value." },
-        filter_value: { type: "string", description: "Required if filter_field_label is set -- the value that field must equal." },
+        filter_field_label: { type: "string", description: "Optional: a field label to filter on -- for 'projects', 'name'/'description' match on partial text (e.g. a matter's approximate name), 'status' matches exactly, or any custom field label this company has added to Matters. Pair with filter_value." },
+        filter_value: { type: "string", description: "Required if filter_field_label is set -- the text to match." },
       },
       required: ["table_id"],
+    },
+  },
+  {
+    name: "update_record_field",
+    description: "Sets a single field's value on one existing record -- e.g. filling in a matter's purchase price the user just told you, after query_records showed it was empty. Data entry, not schema: open to any member the same as query_records, not admin-only. Only ever call this after you've stated plainly what you're about to set (which field, on which record, to what value) and the user has explicitly agreed in their next message -- then call again with confirm=true. Works on table_id 'projects' (both its fixed columns -- purchase_price, estimated_completion_date, description -- and any custom field this company has added to Matters) and on custom tables (any of their own fields, by label from query_records/list_existing_tables).",
+    input_schema: {
+      type: "object",
+      properties: {
+        table_id: { type: "string", description: "'projects' for a Matters record, or a custom table's id." },
+        record_id: { type: "string", description: "The record's real id, from a prior query_records call." },
+        field_label: { type: "string", description: "The field to set, by label (e.g. 'Purchase Price')." },
+        value: { type: "string", description: "The new value, as the user gave it. Numbers/dates are parsed automatically." },
+        confirm: { type: "boolean", description: "Must be true, and only after the user has explicitly confirmed this exact field/record/value in this conversation." },
+      },
+      required: ["table_id", "record_id", "field_label", "value"],
     },
   },
   {
@@ -285,6 +301,18 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
         },
       },
       required: ["summary", "action_label", "candidates"],
+    },
+  },
+  {
+    name: "create_calendar",
+    description: "Turns on the company's Calendar page (/dashboard/calendar -- month/week/day views), optionally with staff rostering (a weekly staff x day grid for building draft rosters and publishing them). Event booking/invitations aren't built yet -- if asked for that, explain it's not available rather than claiming this tool provides it. Requires confirm=true -- only set this after you've told the user what you're about to turn on (calendar, and whether rostering too) and they've explicitly agreed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        enable_rostering: { type: "boolean", description: "Whether to also turn on staff rostering, not just the calendar shell." },
+        confirm: { type: "boolean", description: "Must be true, and only after you've stated what will be turned on and the user has explicitly agreed in this conversation." },
+      },
+      required: ["enable_rostering", "confirm"],
     },
   },
 ];
@@ -748,7 +776,12 @@ async function deleteDashboard(admin: any, companyId: string, userId: string, in
 // has no company_table_fields to look up field_labels/filter against the
 // way a custom table does. status <> 'Closed' is this app's actual,
 // currently-unrestricted definition of "active" -- see that same migration.
-const PROJECT_SYSTEM_FIELDS = ["id", "name", "status", "description", "created_at", "updated_at"];
+// purchase_price/property_id/estimated_completion_date are real projects
+// columns (property-developer matters especially) that used to be silently
+// excluded here -- confirmed live: asked for a matter's purchase price, the
+// assistant had no way to see it via query_records at all and fell back to
+// suggesting the user check Zillow/Redfin instead of its own database.
+const PROJECT_SYSTEM_FIELDS = ["id", "name", "status", "description", "purchase_price", "property_id", "estimated_completion_date", "created_at", "updated_at"];
 
 // Every read this file's tools can reach is capped here -- this is meant to
 // ground a conversational answer or a short proposal list, not export a
@@ -804,12 +837,84 @@ async function queryRecords(admin: any, companyId: string, userId: string, input
     let query = admin.from("projects").select(PROJECT_SYSTEM_FIELDS.join(", ")).eq("company_id", companyId).is("deleted_at", null).limit(QUERY_RECORDS_LIMIT);
     const filterField = String(input.filter_field_label || "").toLowerCase();
     if (filterField && input.filter_value !== undefined) {
-      if (!PROJECT_SYSTEM_FIELDS.includes(filterField)) return { content: `filter_field_label must be one of: ${PROJECT_SYSTEM_FIELDS.join(", ")}`, isError: true };
-      query = query.eq(filterField, String(input.filter_value));
+      if (PROJECT_SYSTEM_FIELDS.includes(filterField)) {
+        // name/description are free text a user asks about by partial,
+        // not exact, phrasing ("lot 3, 10 astral court" vs. the record's
+        // actual full name) -- ilike so a real substring still resolves,
+        // matching how a human would search rather than requiring the
+        // model to already know the record's literal stored name.
+        query = filterField === "name" || filterField === "description"
+          ? query.ilike(filterField, `%${String(input.filter_value)}%`)
+          : query.eq(filterField, String(input.filter_value));
+      } else {
+        // Not one of the fixed columns -- try it as a company-defined
+        // custom field on Matters/Projects (e.g. "Matter Number"), the
+        // same extension mechanism a custom table's own fields use, just
+        // keyed by table_name instead of table_id since 'projects' isn't
+        // a company_tables row (see this const's own comment above).
+        const { data: customField } = await admin
+          .from("company_custom_fields")
+          .select("id, label")
+          .eq("company_id", companyId)
+          .eq("table_name", "projects")
+          .ilike("label", filterField)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (!customField) {
+          return { content: `filter_field_label "${filterField}" is not a Matters/Projects field. Fixed fields: ${PROJECT_SYSTEM_FIELDS.join(", ")} -- or the label of a custom field this company has added to Matters.`, isError: true };
+        }
+        const { data: matchingValues } = await admin
+          .from("company_custom_field_values")
+          .select("record_id")
+          .eq("company_id", companyId)
+          .eq("table_name", "projects")
+          .eq("field_id", customField.id)
+          .ilike("value_text", `%${String(input.filter_value)}%`);
+        const matchingIds = (matchingValues ?? []).map((v: any) => v.record_id);
+        if (!matchingIds.length) return { content: "[]" };
+        query = query.in("id", matchingIds);
+      }
     }
     const { data, error } = await query;
     if (error) return { content: `Failed to read matters: ${error.message}`, isError: true };
-    return { content: JSON.stringify(data ?? []) };
+    const projectRows: any[] = data ?? [];
+    if (!projectRows.length) return { content: "[]" };
+
+    // Merge in every OTHER custom field this company has added to Matters
+    // too (not just the one just filtered on, if any) -- otherwise a
+    // record fetched by name would come back missing fields like Matter
+    // Number/Client/Purchase Price that only exist as custom fields, the
+    // same gap that originally hid purchase_price before it was promoted
+    // to PROJECT_SYSTEM_FIELDS above (property-developer companies keep
+    // some matter-level numbers as custom fields instead).
+    const { data: customFields } = await admin
+      .from("company_custom_fields")
+      .select("id, label")
+      .eq("company_id", companyId)
+      .eq("table_name", "projects")
+      .is("deleted_at", null);
+    const allCustomFields: { id: string; label: string }[] = customFields ?? [];
+    if (allCustomFields.length) {
+      const recordIds = projectRows.map((r) => r.id);
+      const { data: customValues } = await admin
+        .from("company_custom_field_values")
+        .select("record_id, field_id, value_text, value_number, value_date, value_boolean, value_record_id")
+        .eq("company_id", companyId)
+        .eq("table_name", "projects")
+        .in("record_id", recordIds);
+      const fieldById = new Map(allCustomFields.map((f) => [f.id, f]));
+      const valuesByRecord = new Map<string, Record<string, any>>();
+      (customValues ?? []).forEach((v: any) => {
+        const field = fieldById.get(v.field_id);
+        if (!field) return;
+        const bucket = valuesByRecord.get(v.record_id) ?? {};
+        bucket[field.label] = v.value_record_id ?? v.value_text ?? v.value_number ?? v.value_date ?? v.value_boolean ?? null;
+        valuesByRecord.set(v.record_id, bucket);
+      });
+      projectRows.forEach((r) => Object.assign(r, valuesByRecord.get(r.id) ?? {}));
+    }
+
+    return { content: JSON.stringify(projectRows) };
   }
 
   const { data: table } = await admin.from("company_tables").select("id, name").eq("id", tableId).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
@@ -856,6 +961,111 @@ async function queryRecords(admin: any, companyId: string, userId: string, input
   return { content: JSON.stringify(result) };
 }
 
+// Coerces the model's string `value` to whatever type the target column
+// actually stores -- the tool schema only accepts a string (the shape a
+// chat reply naturally comes in as), so a currency/number field's text
+// ("450000" or "$450,000") needs stripping/parsing before it can go into
+// value_number, same for a boolean field's "yes"/"true".
+function coerceValueForColumn(valueCol: string, raw: string): { value: unknown } | { error: string } {
+  if (valueCol === "value_number") {
+    const cleaned = raw.replace(/[,$\s]/g, "");
+    const n = Number(cleaned);
+    if (!Number.isFinite(n)) return { error: `"${raw}" isn't a valid number` };
+    return { value: n };
+  }
+  if (valueCol === "value_boolean") {
+    const lower = raw.trim().toLowerCase();
+    if (["true", "yes", "y"].includes(lower)) return { value: true };
+    if (["false", "no", "n"].includes(lower)) return { value: false };
+    return { error: `"${raw}" isn't a valid yes/no value` };
+  }
+  // value_date and value_text both pass the string straight through --
+  // date columns expect YYYY-MM-DD, which is what the model is asked to
+  // produce in its own reply before confirming (same convention every
+  // other date-taking tool in this file relies on).
+  return { value: raw };
+}
+
+async function updateRecordField(admin: any, companyId: string, userId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  if (input.confirm !== true) {
+    return { content: "Setting a field's value requires confirm=true. First state exactly which field, on which record, to what value, and wait for the user's explicit agreement in their next message, then call this tool again.", isError: true };
+  }
+  const tableId = String(input.table_id || "").trim();
+  const recordId = String(input.record_id || "").trim();
+  const fieldLabel = String(input.field_label || "").trim();
+  const rawValue = String(input.value ?? "").trim();
+  if (!tableId || !recordId || !fieldLabel || !rawValue) {
+    return { content: "table_id, record_id, field_label, and value are all required", isError: true };
+  }
+
+  if (tableId === "projects") {
+    const { data: project } = await admin.from("projects").select("id, name").eq("id", recordId).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
+    if (!project) return { content: "Matter not found", isError: true };
+
+    // A deliberately small allow-list of the projects table's own hardcoded
+    // columns that are safe free-text/number/date data entry -- name,
+    // status, id, company_id, and the relation/review columns are excluded
+    // since those have real structural meaning or dedicated flows elsewhere,
+    // not something this tool should let a chat reply casually overwrite.
+    const WRITABLE_PROJECT_COLUMNS: Record<string, string> = {
+      "purchase price": "purchase_price",
+      "description": "description",
+      "estimated completion date": "estimated_completion_date",
+    };
+    const column = WRITABLE_PROJECT_COLUMNS[fieldLabel.toLowerCase()];
+    if (column) {
+      const valueCol = column === "purchase_price" ? "value_number" : column === "estimated_completion_date" ? "value_date" : "value_text";
+      const coerced = coerceValueForColumn(valueCol, rawValue);
+      if ("error" in coerced) return { content: coerced.error, isError: true };
+      const { error } = await admin.from("projects").update({ [column]: coerced.value, updated_at: new Date().toISOString() }).eq("id", recordId);
+      if (error) return { content: `Failed to update: ${error.message}`, isError: true };
+      return { content: `Set ${fieldLabel} to ${rawValue} on "${project.name}".` };
+    }
+
+    const { data: customField } = await admin
+      .from("company_custom_fields")
+      .select("id, field_type")
+      .eq("company_id", companyId)
+      .eq("table_name", "projects")
+      .ilike("label", fieldLabel)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (!customField) return { content: `"${fieldLabel}" isn't a field on Matters. Check query_records' output for the exact field labels available.`, isError: true };
+
+    const valueCol = getValueColumn(customField.field_type);
+    const coerced = coerceValueForColumn(valueCol, rawValue);
+    if ("error" in coerced) return { content: coerced.error, isError: true };
+    const { error } = await admin.from("company_custom_field_values").upsert(
+      { company_id: companyId, table_name: "projects", record_id: recordId, field_id: customField.id, [valueCol]: coerced.value },
+      { onConflict: "field_id,record_id" }
+    );
+    if (error) return { content: `Failed to update: ${error.message}`, isError: true };
+    return { content: `Set ${fieldLabel} to ${rawValue} on "${project.name}".` };
+  }
+
+  const { data: record } = await admin.from("company_table_records").select("id").eq("id", recordId).eq("table_id", tableId).is("deleted_at", null).maybeSingle();
+  if (!record) return { content: "Record not found", isError: true };
+
+  const { data: field } = await admin
+    .from("company_table_fields")
+    .select("id, field_type")
+    .eq("table_id", tableId)
+    .ilike("label", fieldLabel)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!field) return { content: `"${fieldLabel}" isn't a field on this table. Check query_records' output for the exact field labels available.`, isError: true };
+
+  const valueCol = getValueColumn(field.field_type);
+  const coerced = coerceValueForColumn(valueCol, rawValue);
+  if ("error" in coerced) return { content: coerced.error, isError: true };
+  const { error } = await admin.from("company_table_values").upsert(
+    { company_id: companyId, table_id: tableId, record_id: recordId, field_id: field.id, [valueCol]: coerced.value },
+    { onConflict: "record_id,field_id" }
+  );
+  if (error) return { content: `Failed to update: ${error.message}`, isError: true };
+  return { content: `Set ${fieldLabel} to ${rawValue}.` };
+}
+
 async function proposeRecords(input: Record<string, any>): Promise<ToolExecutionResult> {
   const candidates = Array.isArray(input.candidates) ? input.candidates : [];
   if (!candidates.length) return { content: "candidates must be a non-empty array", isError: true };
@@ -865,18 +1075,40 @@ async function proposeRecords(input: Record<string, any>): Promise<ToolExecution
   return { content: `Presented ${candidates.length} record(s) for review.` };
 }
 
+// Upserts calendar_settings the same way a human would via
+// AdminCalendarTab.tsx -- a settings toggle, not a company_dashboards
+// widget, since a full rostering/booking calendar doesn't fit the generic
+// per-table widget model add_widget already deliberately restricts to.
+async function createCalendar(admin: any, companyId: string, input: Record<string, any>): Promise<ToolExecutionResult> {
+  if (input.confirm !== true) return { content: "Turning on the calendar requires confirm=true. First tell the user what you're about to turn on (calendar, and whether rostering too) and get their explicit agreement, then call this tool again.", isError: true };
+  const enableRostering = input.enable_rostering === true;
+
+  const { error } = await admin.from("calendar_settings").upsert(
+    { company_id: companyId, enabled: true, rostering_enabled: enableRostering, updated_at: new Date().toISOString() },
+    { onConflict: "company_id" }
+  );
+  if (error) return { content: `Failed to turn on the calendar: ${error.message}`, isError: true };
+
+  return { content: `Calendar turned on${enableRostering ? " with staff rostering" : ""}. It's now available at /dashboard/calendar.` };
+}
+
 // Schema-mutating tools stay admin-only even though the chat route itself
 // (app/api/ai/chat/route.ts) is now open to any company member -- checked
 // here, not just in the system prompt, so a non-admin can't reach these by
 // steering the model, only by an admin actually being the one chatting.
-// query_records/propose_records are available to any member (query_records
-// gates itself on the data-access grant/relay flow above); grant_ai_data_access
-// only makes sense for whoever the model is actively walking through the
-// direct consent flow, which the system prompt restricts to an admin.
+// query_records/propose_records/update_record_field are available to any
+// member -- these are data entry (query_records gates itself on the
+// data-access grant/relay flow above; update_record_field requires the
+// same explicit per-value chat confirmation every other mutation here
+// does), not schema, and any member who can already edit a record in the
+// UI should be able to do the same thing by telling the assistant the
+// value instead. grant_ai_data_access only makes sense for whoever the
+// model is actively walking through the direct consent flow, which the
+// system prompt restricts to an admin.
 const ADMIN_ONLY_TOOLS = new Set([
   "create_table", "create_field", "create_dashboard", "add_widget",
   "delete_table", "delete_field", "remove_widget", "delete_dashboard",
-  "grant_ai_data_access",
+  "grant_ai_data_access", "create_calendar",
 ]);
 
 export async function executeTableBuilderTool(
@@ -904,8 +1136,10 @@ export async function executeTableBuilderTool(
       case "remove_widget": return await removeWidget(admin, companyId, userId, input);
       case "delete_dashboard": return await deleteDashboard(admin, companyId, userId, input);
       case "query_records": return await queryRecords(admin, companyId, userId, input);
+      case "update_record_field": return await updateRecordField(admin, companyId, userId, input);
       case "grant_ai_data_access": return await grantAiDataAccess(admin, companyId, input);
       case "propose_records": return await proposeRecords(input);
+      case "create_calendar": return await createCalendar(admin, companyId, input);
       default: return { content: `Unknown tool: ${name}`, isError: true };
     }
   } catch (err) {

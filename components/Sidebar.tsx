@@ -9,7 +9,7 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, MessageSquare, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet, Timer, Newspaper,
+  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet, Timer, Newspaper, CalendarDays,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -112,6 +112,7 @@ type RailSection = 'tables' | 'tools' | 'settings' | 'admin';
 
 const TOOLS_LINKS = [
   { href: '/dashboard/ai', icon: Sparkles, label: 'Ask AI' },
+  { href: '/dashboard/calendar', icon: CalendarDays, label: 'Calendar' },
   { href: '/dashboard/gmail', icon: Mail, label: 'Gmail' },
   { href: '/dashboard/sms', icon: MessageSquare, label: 'Send SMS' },
   { href: '/dashboard/pdf-editor', icon: PenSquare, label: 'PDF editor' },
@@ -153,6 +154,7 @@ const ADMIN_LINKS = [
   { tab: 'leadEmailAssignments', icon: UserPlus, label: 'Lead email assignments' },
   { tab: 'aiDataAccess', icon: Database, label: 'AI data access' },
   { tab: 'timeTracking', icon: Timer, label: 'Time tracking' },
+  { tab: 'calendar', icon: CalendarDays, label: 'Calendar' },
   { tab: 'propertyAutoLink', icon: Building2, label: 'Property auto-link' },
   { tab: 'company', icon: Settings, label: 'Company' },
   { tab: 'landingPages', icon: Newspaper, label: 'Landing pages' },
