@@ -110,11 +110,16 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
       properties: {
         table_id: { type: "string" },
         label: { type: "string", description: "Field label, e.g. 'Amount Due'." },
-        field_type: { type: "string", enum: [...FIELD_TYPES], description: "'table_relation' links this field to another table's records -- pair it with relation_table_id." },
+        field_type: { type: "string", enum: [...FIELD_TYPES], description: "'table_relation' links this field to another table's records, or to a built-in system list (Matters, Entities, Properties, or real company members) -- pair it with exactly one of relation_table_id or relation_system_table." },
         select_options: { type: "array", items: { type: "string" }, description: "Only for field_type 'select' -- the list of choices, e.g. ['Draft','Sent','Paid']." },
         is_required: { type: "boolean" },
         help_text: { type: "string" },
-        relation_table_id: { type: "string", description: "Required when field_type is 'table_relation' -- the id (from create_table/list_existing_tables) of the table this field links to." },
+        relation_table_id: { type: "string", description: "field_type 'table_relation' only, when linking to another CUSTOM table this company built -- the id (from create_table/list_existing_tables) of that table. Use relation_system_table instead for Matters/Entities/Properties/company members." },
+        relation_system_table: {
+          type: "string",
+          enum: ["projects", "entities", "properties", "profiles"],
+          description: "field_type 'table_relation' only, when linking to a built-in list instead of a custom table: 'projects' for Matters, 'entities' for Entities, 'properties' for Properties, 'profiles' for real company members (people with a login -- use this for e.g. a Payroll table's Employee field, never a plain text name/email field for something that should reference an actual team member).",
+        },
         formula_type: {
           type: "string",
           enum: [...FORMULA_TYPES],
@@ -466,10 +471,28 @@ async function createField(admin: any, companyId: string, userId: string, input:
   if (table.is_from_template) return { content: "This table was installed from a template and is locked -- it cannot be edited", isError: true };
 
   let linkedTableId: string | null = null;
+  let linkedSystemTable: string | null = null;
+  let linkedDisplayField: string | null = null;
   if (fieldType === "table_relation") {
-    linkedTableId = String(input.relation_table_id || "");
-    const { data: relTable } = await admin.from("company_tables").select("id").eq("id", linkedTableId).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
-    if (!relTable) return { content: "relation_table_id not found -- field_type 'table_relation' requires a valid relation_table_id", isError: true };
+    const relationSystemTable = input.relation_system_table ? String(input.relation_system_table) : "";
+    const relationTableId = input.relation_table_id ? String(input.relation_table_id) : "";
+    if (!relationSystemTable && !relationTableId) {
+      return { content: "field_type 'table_relation' requires exactly one of relation_table_id (a custom table) or relation_system_table (projects/entities/properties/profiles)", isError: true };
+    }
+    if (relationSystemTable && relationTableId) {
+      return { content: "Pass only one of relation_table_id or relation_system_table, not both", isError: true };
+    }
+    if (relationSystemTable) {
+      if (!["projects", "entities", "properties", "profiles"].includes(relationSystemTable)) {
+        return { content: "relation_system_table must be one of: projects, entities, properties, profiles", isError: true };
+      }
+      linkedSystemTable = relationSystemTable;
+      linkedDisplayField = relationSystemTable === "properties" ? "street_address" : relationSystemTable === "profiles" ? "full_name" : "name";
+    } else {
+      linkedTableId = relationTableId;
+      const { data: relTable } = await admin.from("company_tables").select("id").eq("id", linkedTableId).eq("company_id", companyId).is("deleted_at", null).maybeSingle();
+      if (!relTable) return { content: "relation_table_id not found -- field_type 'table_relation' requires a valid relation_table_id", isError: true };
+    }
   }
 
   // Resolves a field by LABEL on a specific table -- same convention as
@@ -545,6 +568,8 @@ async function createField(admin: any, companyId: string, userId: string, input:
       label,
       field_type: fieldType,
       linked_table_id: linkedTableId,
+      linked_system_table: linkedSystemTable,
+      linked_display_field: linkedDisplayField,
       select_options: selectOptions,
       is_required: !!input.is_required,
       help_text: input.help_text ? String(input.help_text) : null,

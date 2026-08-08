@@ -5,6 +5,7 @@ import { Search } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/lib/supabase';
+import { fetchMatterNumbersByProjectId, withMatterNumber } from '@/lib/matterNumberDisplay';
 
 type Option = { id: string; label: string };
 
@@ -34,11 +35,62 @@ export function RelationPickerSheet({
       // '*' and picking the column off the resulting row sidesteps that
       // entirely, at the cost of a few unused columns over the wire.
       let request = supabase.from(table).select('*').limit(25);
+      // profiles (real users) has no deleted_at column -- is_active is its
+      // equivalent "still a live option" flag, matching the web picker's
+      // same special case (components/dashboard/RelationPicker.tsx).
+      if (table === 'profiles') request = request.eq('is_active', true);
       if (query.trim()) request = request.ilike(displayColumn, `%${query.trim()}%`);
       const { data: rows } = await request;
-      return ((rows ?? []) as Record<string, unknown>[]).map((row) => ({
+      const byId = new Map<string, Record<string, unknown>>((rows ?? []).map((row: any) => [row.id as string, row]));
+
+      // A Matter search also needs to match on its matter number, not just
+      // its name -- e.g. typing "1234" should find matter "1234, Smith v
+      // Jones" even though "1234" never appears in its name column. Fetches
+      // the number-matched rows as a second query rather than reworking
+      // this into "fetch everything, filter client-side" (RelationPicker.tsx's
+      // own web-side fix for the same problem) -- fine at this table's scale
+      // via .limit(25) on each side. Wrapped in try/catch so a failure here
+      // (or in the label-enrichment below) still leaves the plain
+      // name-matched results usable rather than failing the whole search.
+      if (table === 'projects' && query.trim()) {
+        try {
+          const { data: numberField } = await supabase
+            .from('company_custom_fields')
+            .select('id')
+            .eq('table_name', 'projects')
+            .eq('field_key', 'matter_number')
+            .is('deleted_at', null)
+            .maybeSingle();
+          if (numberField) {
+            const { data: numberMatches } = await supabase
+              .from('company_custom_field_values')
+              .select('record_id')
+              .eq('field_id', numberField.id)
+              .ilike('value_text', `%${query.trim()}%`)
+              .limit(25);
+            const missingIds = (numberMatches ?? []).map((v: any) => v.record_id as string).filter((id) => !byId.has(id));
+            if (missingIds.length) {
+              const { data: extraRows } = await supabase.from(table).select('*').in('id', missingIds);
+              (extraRows ?? []).forEach((row: any) => byId.set(row.id as string, row));
+            }
+          }
+        } catch (err) {
+          console.error('[RelationPickerSheet] matter number search failed:', err);
+        }
+      }
+
+      const allRows = Array.from(byId.values());
+      let numberById = new Map<string, string>();
+      if (table === 'projects') {
+        try {
+          numberById = await fetchMatterNumbersByProjectId(allRows.map((row) => row.id as string));
+        } catch (err) {
+          console.error('[RelationPickerSheet] fetchMatterNumbersByProjectId failed:', err);
+        }
+      }
+      return allRows.map((row) => ({
         id: row.id as string,
-        label: String(row[displayColumn] ?? '(untitled)'),
+        label: withMatterNumber(String(row[displayColumn] ?? '(untitled)'), numberById.get(row.id as string)),
       }));
     },
   });

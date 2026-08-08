@@ -7,6 +7,7 @@ import { readCache, writeCache } from "@/lib/queryCache";
 import { useCompany } from "@/components/CompanyContext";
 import { useIsomorphicLayoutEffect } from "./useIsomorphicLayoutEffect";
 import { perfLog } from "@/lib/perfLog";
+import { fetchMatterNumbersByProjectId, withMatterNumber } from "@/lib/matterNumberDisplay";
 import type { CustomTable } from "./useCustomTables";
 
 interface CachedTableShell {
@@ -299,11 +300,32 @@ export async function resolveRelationLabels(fieldList: CustomTableField[], recor
           if (label) labelById.set(r.id, `${label} (Removed)`);
         });
       }
+    } else if (field.linked_system_table === 'profiles') {
+      // profiles (real users) has no deleted_at column -- is_active is its
+      // own "no longer a live option" flag instead, confirmed live (a
+      // deleted_at select against profiles 400s). "(Inactive)" rather than
+      // "(Removed)" since deactivating a member isn't a delete.
+      const col = field.linked_display_field || 'full_name';
+      const { data: rows } = await supabase.from('profiles').select(`id, ${col}, is_active`).in('id', targetIds);
+      (rows || []).forEach((r: any) => {
+        if (r[col] != null) {
+          labelById.set(r.id, r.is_active ? String(r[col]) : `${r[col]} (Inactive)`);
+        }
+      });
     } else if (field.linked_system_table) {
       const col = field.linked_display_field || 'name';
       const { data: rows } = await supabase.from(field.linked_system_table).select(`id, ${col}, deleted_at`).in('id', targetIds);
+      // A linked Matter also gets its per-company matter number prefixed on
+      // -- see matterNumberDisplay.ts's header comment for why this is
+      // detected by field presence, not gated on company_type.
+      const numberById = field.linked_system_table === 'projects'
+        ? await fetchMatterNumbersByProjectId(supabase, targetIds)
+        : new Map<string, string>();
       (rows || []).forEach((r: any) => {
-        if (r[col] != null) labelById.set(r.id, r.deleted_at ? `${r[col]} (Removed)` : String(r[col]));
+        if (r[col] != null) {
+          const label = withMatterNumber(String(r[col]), numberById.get(r.id));
+          labelById.set(r.id, r.deleted_at ? `${label} (Removed)` : label);
+        }
       });
     }
 

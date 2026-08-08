@@ -369,12 +369,12 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                 value={draft.linked_table || draft.linked_table_id || ''}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {  // ← HERE
                   const val = e.target.value;
-                  const isSystem = ['properties', 'entities', 'projects'].includes(val);
+                  const isSystem = ['properties', 'entities', 'projects', 'profiles'].includes(val);
                   if (isSystem) {
                     update('linked_table', val);
                     update('linked_table_id', null);
                     update('linked_display_column',
-                      val === 'properties' ? 'street_address' : 'name'
+                      val === 'properties' ? 'street_address' : val === 'profiles' ? 'full_name' : 'name'
                     );
                   } else if (val) {
                     update('linked_table', null);
@@ -392,6 +392,7 @@ export default function FieldConfigPanel({ field, siblingFields = [], onSave, on
                 <option value="properties">Properties</option>
                 <option value="entities">Entities</option>
                 <option value="projects">Projects</option>
+                <option value="profiles">Members</option>
                 {customTables.map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}

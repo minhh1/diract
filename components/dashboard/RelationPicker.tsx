@@ -386,7 +386,13 @@ async function fetchAllSystemTableOptions(
   const isEntities = linkedSystemTable === 'entities';
   const nativeCols = Array.from(new Set([col, ...nativeExtra, ...(col2Native ? [col2Native] : []), ...(isEntities ? ['roles'] : [])]));
 
-  let q = supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null).order(col).limit(5000);
+  // profiles has no deleted_at column (real users aren't soft-deleted the
+  // way records are) -- is_active is its equivalent "still a live option"
+  // flag, so a real-user target needs its own filter here instead of the
+  // deleted_at check every other system table uses.
+  let q = linkedSystemTable === 'profiles'
+    ? supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).eq('is_active', true).order(col).limit(5000)
+    : supabase.from(linkedSystemTable).select(`id, ${nativeCols.join(', ')}`).is('deleted_at', null).order(col).limit(5000);
   if (filterColumn && filterValue === TEAM_SCOPE_SENTINEL) {
     q = q.eq('entity_type', 'Staff');
     const scopeIds = await dedupedFetch('team-scope-ids', getStaffScopeIds);
@@ -623,7 +629,11 @@ export default function RelationPicker({
         // a relation pointing at a soft-deleted entity/project/property
         // would keep showing its stale label forever, inconsistently with
         // how a deleted custom-table record's relation goes blank instead.
-        const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).eq('id', value).is('deleted_at', null).maybeSingle();
+        // profiles has no deleted_at -- is_active is its equivalent (see
+        // fetchAllSystemTableOptions's own version of this same check).
+        const { data } = linkedSystemTable === 'profiles'
+          ? await supabase.from(linkedSystemTable).select(`id, ${col}`).eq('id', value).eq('is_active', true).maybeSingle()
+          : await supabase.from(linkedSystemTable).select(`id, ${col}`).eq('id', value).is('deleted_at', null).maybeSingle();
         const primary = data ? String((data as any)[col] ?? '') : '';
         if (!primary) return '';
         const [resolved] = await resolveLabels([{ id: value, label: primary }], linkedSystemTable, displayField2);
@@ -654,7 +664,9 @@ export default function RelationPicker({
       let resolved: RelationOption[] = [];
       if (linkedSystemTable) {
         const col = displayField || 'name';
-        const { data } = await supabase.from(linkedSystemTable).select(`id, ${col}`).in('id', unresolved).is('deleted_at', null);
+        const { data } = linkedSystemTable === 'profiles'
+          ? await supabase.from(linkedSystemTable).select(`id, ${col}`).in('id', unresolved).eq('is_active', true)
+          : await supabase.from(linkedSystemTable).select(`id, ${col}`).in('id', unresolved).is('deleted_at', null);
         resolved = await resolveLabels(
           (data || []).map((r: any) => ({ id: r.id, label: String(r[col] ?? 'Untitled') })),
           linkedSystemTable, displayField2
