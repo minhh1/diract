@@ -433,9 +433,15 @@ export async function handleChannelMessage(admin: any, companyId: string, adapte
 
   let usage;
   try {
+    // Explicit budget for the same reason callHostedModelWithTools above
+    // now has one: left unset, an unrequested reasoning trace from this
+    // model/provider has been confirmed (elsewhere in this codebase) to eat
+    // the whole default token budget and leave the real answer truncated to
+    // nothing, which reads as the bot simply not understanding the
+    // question.
     usage =
       provider === "hosted"
-        ? await callHostedModel(modelId, modelMessages)
+        ? await callHostedModel(modelId, modelMessages, undefined, 4096)
         : await callSelfHostedModel(ollamaUrl!, modelId, modelMessages);
   } catch (err) {
     await reply("Sorry, I couldn't get an answer just now -- please try again shortly.");

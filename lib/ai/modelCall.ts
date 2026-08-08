@@ -115,15 +115,26 @@ export interface ToolCallResult extends TokenUsage {
 // reliability to build data-mutating actions on top of, so the bot skips
 // straight to plain RAG chat (callHostedModel/callSelfHostedModel above)
 // for self-hosted companies.
+//
+// max_tokens defaults to a generous 4096 rather than being left unset --
+// callTogetherModelWithTools below had to be given an explicit budget after
+// this exact model/provider was confirmed live to sometimes return an
+// unrequested reasoning trace that ate the whole default token budget and
+// left `content` truncated to empty (see that function's own comment). This
+// call site had no budget at all until now, so it was exposed to the same
+// failure with no way to tell -- a bot reply silently coming back empty or
+// cut off reads as "the bot didn't understand", when the real content was
+// there and just never made it out.
 export async function callHostedModelWithTools(
   modelId: string,
   messages: unknown[],
-  tools: unknown[]
+  tools: unknown[],
+  maxTokens: number = 4096
 ): Promise<ToolCallResult> {
   const res = await fetchTogetherWithRetry("https://api.together.xyz/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOGETHER_API_KEY}` },
-    body: JSON.stringify({ model: modelId, messages, tools, tool_choice: "auto", stream: false }),
+    body: JSON.stringify({ model: modelId, messages, tools, tool_choice: "auto", stream: false, max_tokens: maxTokens }),
   });
   if (!res.ok) throw new Error(`Together tool-calling completion failed: ${res.status} ${await res.text()}`);
 
