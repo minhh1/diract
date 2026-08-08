@@ -1354,6 +1354,22 @@ export default function Sidebar() {
                 </div>
               </Link>
 
+              {ctxIsAdmin && (
+                <Link
+                  href="/dashboard/calendar?view=kiosk"
+                  onClick={() => setShowCompanySwitcher(false)}
+                  className="flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-100"
+                >
+                  <div className="h-7 w-7 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                    <Tablet size={13} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-bold text-slate-600">Enter kiosk mode</p>
+                    <p className="text-[9px] text-slate-400">Turn this device into a check-in kiosk</p>
+                  </div>
+                </Link>
+              )}
+
               {memberships.length > 0 && (
                 <>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-5 pt-4 pb-2">
