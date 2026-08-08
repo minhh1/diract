@@ -16,10 +16,8 @@ export type InviteTokenData = {
 // Mirrors validateToken() in app/login/page.tsx.
 export async function validateInviteToken(token: string): Promise<InviteTokenData | null> {
   const { data, error } = await supabase
-    .from('registration_tokens')
-    .select('id, note, expires_at, used_at, company_id, default_team_id, role, company:company_id(name)')
-    .eq('token', token)
-    .single();
+    .rpc('validate_registration_token', { p_token: token })
+    .single() as { data: Omit<InviteTokenData, 'token'> | null; error: unknown };
 
   if (error || !data) return null;
 
@@ -30,7 +28,7 @@ export async function validateInviteToken(token: string): Promise<InviteTokenDat
     id: data.id,
     token,
     company_id: data.company_id,
-    company_name: (data.company as { name?: string } | null)?.name ?? null,
+    company_name: data.company_name ?? null,
     note: data.note,
     expires_at: data.expires_at,
     used_at: data.used_at,

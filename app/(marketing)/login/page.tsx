@@ -115,10 +115,11 @@ function LoginPageInner() {
 
   const validateToken = async () => {
     const { data, error } = await supabase
-      .from('registration_tokens')
-      .select('id, note, expires_at, used_at, company_id, default_team_id, role, company:company_id(name)')
-      .eq('token', inviteToken!)
-      .single();
+      .rpc('validate_registration_token', { p_token: inviteToken! })
+      .single() as { data: {
+        id: string; company_id: string | null; company_name: string | null; note: string | null;
+        expires_at: string | null; used_at: string | null; default_team_id: string | null; role: string;
+      } | null; error: unknown };
 
     if (error || !data) {
       setTokenValid(false);
@@ -140,7 +141,7 @@ function LoginPageInner() {
     setTokenData({
       id: data.id,
       company_id: data.company_id,
-      company_name: (data.company as any)?.name || null,
+      company_name: data.company_name || null,
       note: data.note,
       expires_at: data.expires_at,
       used_at: data.used_at,
